@@ -43,23 +43,37 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Map checkout to a short drive
+        shell: pwsh
+        run: |
+          subst S: "$env:GITHUB_WORKSPACE\s"
+          if (-not (Test-Path -LiteralPath 'S:\package.json')) {
+            throw 'Failed to map the checkout to S:\'
+          }
+
       - name: Install immutable dependencies
         shell: pwsh
-        run: pnpm install --frozen-lockfile
+        run: |
+          Set-Location S:\
+          pnpm install --frozen-lockfile
 
       - name: Build the one-click Windows Setup
         shell: pwsh
-        run: pnpm run desktop:setup
+        run: |
+          Set-Location S:\
+          pnpm run desktop:setup
 
       - name: Install and exercise the packaged application
         shell: pwsh
-        run: >-
+        run: |
+          Set-Location S:\
           ./scripts/windows-desktop-setup-smoke.ps1
           -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe
 
       - name: Record SHA-256
         shell: pwsh
         run: |
+          Set-Location S:\
           $artifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe'
           $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $(Split-Path -Leaf $artifact)" | Set-Content -LiteralPath "$artifact.sha256" -Encoding ascii

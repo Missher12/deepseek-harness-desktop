@@ -392,7 +392,7 @@ describe('Python release workflows', () => {
 })
 
 describe('Windows desktop Setup workflow', () => {
-  it('checks out to a short root so native MSVC rebuilds stay below MAX_PATH', () => {
+  it('maps the checkout to a drive root so native MSVC rebuilds stay below MAX_PATH', () => {
     const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
     const job = workflowJob(workflow, 'build-install-smoke')
     if (!Array.isArray(job.steps) || !isRecord(job.defaults) || !isRecord(job.defaults.run)) {
@@ -401,11 +401,23 @@ describe('Windows desktop Setup workflow', () => {
 
     const checkout = job.steps.filter(isRecord).find(step => step.uses === 'actions/checkout@v6')
     const pnpmSetup = job.steps.filter(isRecord).find(step => step.uses === 'pnpm/action-setup@v4')
+    const mapDrive = job.steps.filter(isRecord).find(step => step.name === 'Map checkout to a short drive')
+    const install = job.steps.filter(isRecord).find(step => step.name === 'Install immutable dependencies')
+    const build = job.steps.filter(isRecord).find(step => step.name === 'Build the one-click Windows Setup')
+    const smoke = job.steps.filter(isRecord).find(step => step.name === 'Install and exercise the packaged application')
+    const checksum = job.steps.filter(isRecord).find(step => step.name === 'Record SHA-256')
     const upload = job.steps.filter(isRecord).find(step => step.uses === 'actions/upload-artifact@v7')
 
     expect(checkout).toMatchObject({ with: { path: 's', 'persist-credentials': false } })
     expect(pnpmSetup).toMatchObject({ with: { version: '11.7.0' } })
     expect(job.defaults.run['working-directory']).toBe('s')
+    expect(mapDrive).toMatchObject({
+      shell: 'pwsh',
+      run: expect.stringContaining('subst S: "$env:GITHUB_WORKSPACE\\s"'),
+    })
+    for (const step of [install, build, smoke, checksum]) {
+      expect(step).toMatchObject({ run: expect.stringContaining('Set-Location S:\\') })
+    }
     expect(upload).toMatchObject({
       with: {
         path: expect.stringContaining('s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe'),
