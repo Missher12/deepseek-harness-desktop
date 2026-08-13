@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { findConflictingHarness } from '../src/harness/ownership.ts'
+import { describe, expect, it, vi } from 'vitest'
+import { findConflictingHarness, parseWindowsProcesses } from '../src/harness/ownership.ts'
 
 describe('findConflictingHarness', () => {
   it('reports another dsh web process holding a file below the same DSH_HOME', async () => {
@@ -27,5 +27,47 @@ describe('findConflictingHarness', () => {
     })
 
     expect(conflict).toBeUndefined()
+  })
+
+  it('fails closed on an observable Windows dsh web command without open-file inspection', async () => {
+    const listOpenFiles = vi.fn(async () => [])
+    const conflict = await findConflictingHarness('C:\\Users\\test\\.dsh', {
+      platform: 'win32',
+      listProcesses: async () => [
+        {
+          pid: 91,
+          command: '"C:\\Program Files\\DeepSeek Harness\\DeepSeek Harness.exe" "C:\\Program Files\\DeepSeek Harness\\resources\\app.asar.unpacked\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js" web --port 65000',
+        },
+      ],
+      listOpenFiles,
+      ownPid: 10,
+    })
+
+    expect(conflict?.pid).toBe(91)
+    expect(listOpenFiles).not.toHaveBeenCalled()
+  })
+
+  it('ignores unrelated Windows commands and propagates process inspection failure', async () => {
+    await expect(findConflictingHarness('C:\\Users\\test\\.dsh', {
+      platform: 'win32',
+      listProcesses: async () => [
+        { pid: 91, command: '"C:\\Program Files\\DeepSeek Harness\\DeepSeek Harness.exe"' },
+        { pid: 92, command: 'node C:\\tools\\script.js web' },
+      ],
+      ownPid: 10,
+    })).resolves.toBeUndefined()
+
+    await expect(findConflictingHarness('C:\\Users\\test\\.dsh', {
+      platform: 'win32',
+      listProcesses: async () => { throw new Error('CIM unavailable') },
+    })).rejects.toThrow('CIM unavailable')
+  })
+
+  it('parses the array returned by Windows PowerShell process discovery', () => {
+    expect(parseWindowsProcesses('[{"pid":91,"command":"dsh web"}]')).toEqual([
+      { pid: 91, command: 'dsh web' },
+    ])
+    expect(parseWindowsProcesses('null')).toEqual([])
+    expect(() => parseWindowsProcesses('{"pid":"91","command":null}')).toThrow(/invalid/i)
   })
 })
