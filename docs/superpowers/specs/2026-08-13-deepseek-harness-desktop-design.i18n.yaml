@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/specs/2026-08-13-deepseek-harness-desktop-design.md
-2026-08-13-deepseek-harness-desktop-design.md: d7cf408adbdc3eb7ed220758b406cb0d7d818a50
-2026-08-13-deepseek-harness-desktop-design.zh.md: 8ebd950e16d9b385abc58ee90c2153df298ebab4
+2026-08-13-deepseek-harness-desktop-design.md: 1e260473f208f982bf3e46811bb2c4f6f0c83f8a
+2026-08-13-deepseek-harness-desktop-design.zh.md: ba5550b2e9f9296196db993928ca4875308b8785

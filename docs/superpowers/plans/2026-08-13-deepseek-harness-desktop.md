@@ -4,11 +4,11 @@ English | [中文](2026-08-13-deepseek-harness-desktop.zh.md)
 
 **Date:** 2026-08-13
 
-**Status:** Implemented; live runtime migration pending confirmation
+**Status:** Implemented; Intel macOS live migration verified; native Windows artifact verification pending
 
 ## Objective
 
-Convert the official DeepSeek Harness Web surface into a self-contained Intel macOS application with a Codex-style focused window, random loopback port, native lifecycle, and the user-supplied icon.
+Convert the official DeepSeek Harness Web surface into a self-contained Intel macOS application with a Codex-style focused window, random loopback port, native lifecycle, and rounded whale icon.
 
 ## Phase 1: Baseline and safety
 
@@ -33,7 +33,7 @@ Convert the official DeepSeek Harness Web surface into a self-contained Intel ma
 - Add an explicit desktop surface query and body marker.
 - Keep the sessions, conversation, and details columns while reducing browser-only chrome.
 - Wire the native new-session, command-search, and settings actions to stable renderer hooks.
-- Convert the accepted shared 1254×1254 RGBA icon master to a standard macOS `.icns` without redesigning it.
+- Preserve the accepted shared 1254×1254 RGBA whale icon master without redesigning it, and generate the macOS `.icns` plus Windows `.ico` from that master.
 
 ## Phase 4: Self-contained packaging
 
@@ -80,6 +80,6 @@ The packaged smoke must launch from an external temporary directory, verify the 
 - Existing Web client packages: desktop markers, presentation, and native command hooks.
 - `PROJECT_CONTEXT.md`: project status, architecture, safety boundary, and release evidence.
 
-## Remaining controlled operation
+## Live migration result
 
-The software artifact is complete. The existing Hermes-launched Harness on port 65000 still owns the real `~/.dsh` runtime. Moving live ownership to the desktop application is a separate operation: confirm the exact old process, stop it, launch the installed application against the unchanged data root, and verify one random loopback listener and one owner. No data migration or credential copy is required.
+The Intel macOS application now owns the live `~/.dsh` runtime. The exact legacy process group stopped gracefully, port 65000 was released, the independent Hermes gateway remained running, and the installed application passed HTTP, window, Dock, Finder icon, and physical package-link checks on a random loopback port. A permission-restricted pre-migration backup remains available; no data migration or credential copy was performed.

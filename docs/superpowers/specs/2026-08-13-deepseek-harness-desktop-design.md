@@ -17,7 +17,7 @@ Version 1 preserves the official agent, session, plugin, model, WebSocket, and p
 ## User experience
 
 - The product and Dock name are **DeepSeek Harness**.
-- The user-supplied whale image is the application icon.
+- The white whale identity is presented inside the approved rounded blue and cream desktop tile.
 - The workspace keeps the simple three-column Harness layout: sessions on the left, conversation in the center, and contextual details on the right.
 - `Cmd+N`, `Cmd+K`, and `Cmd+,` invoke new session, command search, and settings.
 - A second launch focuses the existing window.
@@ -56,7 +56,7 @@ The child binds only to `127.0.0.1` on an operating-system-assigned port. Startu
 
 The Intel-only Electron application is packaged as an `.app` and DMG. Runtime packages are stored physically under `app.asar.unpacked/node_modules` because the Harness profile fallback creates filesystem symlinks to installed packages. The main entry remains in `app.asar`, and the preload is emitted as `preload.cjs` for Electron's sandboxed preload loader.
 
-The local build is unsigned and unnotarized. Apple Developer signing, notarization, automatic updates, Apple Silicon, Windows, and Linux are version 1 non-goals.
+The local build is unsigned and unnotarized. Apple Developer signing, notarization, automatic updates, Apple Silicon, and Linux remain outside this Intel package. The separate [Windows Setup design](2026-08-14-deepseek-harness-windows-setup-design.md) owns Windows delivery.
 
 ## Failure handling
 
@@ -68,7 +68,7 @@ The local build is unsigned and unnotarized. Apple Developer signing, notarizati
 
 ## Acceptance criteria
 
-- A Finder-launchable Intel `.app` and valid DMG are produced with the supplied icon.
+- A Finder-launchable Intel `.app` and valid DMG are produced with the rounded desktop icon.
 - No browser window or terminal is required.
 - The listener uses a random loopback port rather than port 65000.
 - The complete plugin graph remains stable after onboarding.

@@ -2,7 +2,7 @@
 
 ## Project Goal
 
-Turn the official DeepSeek Harness browser surface into a standalone Intel macOS application with a simple Codex-style desktop experience. The user must be able to launch it from Finder or the Dock without opening a browser or terminal.
+Turn the official DeepSeek Harness browser surface into standalone Intel macOS and Windows x64 applications with a simple Codex-style desktop experience. The user launches the Mac application from Finder or the Dock, or installs the Windows application through one Setup executable, without opening a browser or terminal.
 
 ## Verified Baseline
 
@@ -19,7 +19,7 @@ Turn the official DeepSeek Harness browser surface into a standalone Intel macOS
 
 ## Confirmed Product Decisions
 
-- Platform: this Intel Mac only for version 1.
+- Platforms: Intel macOS and Windows 10/11 x64.
 - Product name: **DeepSeek Harness**.
 - Layout: simple Codex-style three-pane workspace.
 - Runtime ownership: the app starts and stops its own Harness; it does not depend on Hermes.
@@ -27,6 +27,7 @@ Turn the official DeepSeek Harness browser surface into a standalone Intel macOS
 - Transport: the embedded Harness binds to `127.0.0.1` on an OS-assigned random port; users never interact with the port.
 - Startup: restore the last workspace and session.
 - Scope: reuse the official UI and capabilities; add desktop behavior and targeted Codex-style polish instead of rewriting the interface.
+- Installation: Windows uses one per-user, non-elevating NSIS Setup with desktop and Start menu shortcuts; macOS keeps the Intel app and DMG flow.
 
 ## Architecture Summary
 
@@ -39,6 +40,7 @@ Turn the official DeepSeek Harness browser surface into a standalone Intel macOS
 - Desktop-only presentation changes live in explicit source modules, not injected selectors against minified bundles.
 - The packaged app keeps its JS entrypoint in `app.asar` and unpacks runtime `node_modules`, allowing the profile fallback to create valid filesystem symlinks to in-box plugins.
 - The preload bridge is one bundled CommonJS file because Electron's sandboxed preload runtime does not execute the main process's ESM format.
+- Platform decisions keep macOS close-to-Dock and process-group cleanup while Windows uses a standard frame, close-to-quit, fail-closed PowerShell conflict discovery, and exact-PID process-tree termination.
 
 ## Repository Shape
 
@@ -47,6 +49,7 @@ The repository is based on the pinned official source and adds the desktop appli
 - `apps/desktop/`: Electron main process, preload, lifecycle, packaging, and tests.
 - `apps/web/` and `packages/client/`: reused renderer with narrow desktop presentation and command hooks.
 - `scripts/stage-desktop.ts`: creates and validates a self-contained package staging tree.
+- `scripts/windows-desktop-setup-smoke.ps1`: verifies isolated Setup install, shortcuts, packaged launch, window close, process cleanup, uninstall, and data preservation on native Windows.
 - `docs/superpowers/specs/`: product, architecture, and implementation plans.
 
 ## Safety Boundaries
@@ -63,7 +66,7 @@ The repository is based on the pinned official source and adds the desktop appli
 - Read-only local runtime audit complete.
 - Official source and architecture audit complete.
 - Electron x64 application shell, native menu, loading/failure surfaces, random-port runtime ownership, window-state persistence, and the accepted cross-platform icon master complete.
-- macOS and Windows share the exact 1254×1254 RGBA icon master (SHA-256 `1fe0c2a3b6475c451f86dc999e97de33e4aabace244e35a284d1c5e162b0672a`); the generated macOS 16–1024 px `.icns` has SHA-256 `d453a58a11cb5247f83f3b220bca2c6f0f216f07a6c7dfbb4998bb9f9f72c54e`.
+- macOS and Windows share the exact 1254×1254 RGBA icon master (SHA-256 `1fe0c2a3b6475c451f86dc999e97de33e4aabace244e35a284d1c5e162b0672a`); the generated macOS `.icns` and Windows `.ico` have SHA-256 values `d453a58a11cb5247f83f3b220bca2c6f0f216f07a6c7dfbb4998bb9f9f72c54e` and `2331df774341ce7796c1c0d06e708ae37bbde84a53e4edd2741659bbe8d4e4ae`.
 - Desktop renderer styling and command hooks complete.
 - Standalone package staging and unsigned local `.app` packaging complete.
 - Isolated packaged smoke passed from outside the repository: clean `DSH_HOME`, preload bridge, random loopback listener, stable plugin graph, settings dialog, native quit, and complete process/port cleanup.
@@ -71,11 +74,14 @@ The repository is based on the pinned official source and adds the desktop appli
 - Live ownership migration complete on 2026-08-14: the exact legacy process group stopped gracefully, port 65000 was released, and the independent Hermes gateway remained running.
 - A permission-restricted pre-migration backup is stored under `~/Library/Application Support/DeepSeek Harness Backups/pre-desktop-20260814-021540`.
 - The final-icon application installed at `/Applications/DeepSeek Harness.app` passed live acceptance against the existing `~/.dsh`: HTTP 200 on random port 65320, the saved application window and Dock item loaded, Finder resolved `icon.icns`, all 518 profile fallback links resolved to physical packaged modules, and no virtual-asar link remained.
+- Windows window/menu behavior, runtime conflict discovery, exact process-tree shutdown, x64 NSIS packaging, and native installer lifecycle automation complete.
+- The existing native Windows CI builds `DeepSeek-Harness-Setup-0.1.0-win-x64.exe`, runs the installed application against isolated data, uninstalls it, records SHA-256, and uploads the Setup plus checksum. A native run has not been claimed from this macOS worktree.
 
 ## Known Risks
 
 - Upstream is still a release candidate and may change quickly.
 - The installed package does not ship a ready-made Electron shell.
 - The desktop source baseline is `0.1.0-rc.5`, while the previous npm runtime reported `0.1.0-rc.6`; the pre-migration backup is retained until longer-term use confirms compatibility.
-- Signed/notarized distribution and automatic updates require Apple Developer credentials and are outside version 1.
-- This local build is unsigned, so a copied build may require Finder's **Open** action on first launch.
+- Signed/notarized distribution and automatic updates require Apple Developer and Windows code-signing credentials and are outside version 1.
+- Unsigned local artifacts may require Finder's **Open** action or a Windows SmartScreen confirmation on first launch.
+- Windows release evidence must come from native Windows x64 because Electron native dependency rebuilding cannot safely cross-compile from macOS.
