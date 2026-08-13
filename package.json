@@ -141,10 +141,12 @@
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
     "dev:web": "tsx scripts/dev-web.ts --poll",
     "desktop:dev": "pnpm run build && pnpm run build:desktop:main && pnpm --filter @deepseek-ai/dsh-desktop start",
-    "desktop:stage": "pnpm run build && pnpm run build:desktop:main && pnpm exec tsx scripts/stage-desktop.ts",
+    "desktop:stage:built": "pnpm run build:desktop:main && pnpm exec tsx scripts/stage-desktop.ts",
+    "desktop:stage": "pnpm run build && pnpm run desktop:stage:built",
     "desktop:pack": "pnpm run desktop:stage && pnpm --filter @deepseek-ai/dsh-desktop run pack:dir",
     "desktop:dmg": "pnpm run desktop:stage && pnpm --filter @deepseek-ai/dsh-desktop run pack:dmg",
-    "desktop:setup": "pnpm run desktop:stage && pnpm --filter @deepseek-ai/dsh-desktop run pack:setup",
+    "desktop:setup:built": "pnpm run desktop:stage:built && pnpm --filter @deepseek-ai/dsh-desktop run pack:setup",
+    "desktop:setup": "pnpm run build && pnpm run desktop:setup:built",
     "postinstall": "node scripts/install-lefthook.mjs"
   },
   "devDependencies": {

@@ -452,7 +452,7 @@ jobs:
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
           || 'dsh-windows-2025-16core' }}
     name: windows node 24 / native complete
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       DSH_COVERAGE_MAX_WORKERS: '2'
       DSH_GATE_CONCURRENCY: '2'
@@ -487,6 +487,23 @@ jobs:
       - name: Run complete native Windows gate inventory
         shell: pwsh
         run: pnpm run check:ci:windows-complete
+
+      - name: Build the one-click Windows desktop Setup
+        shell: pwsh
+        run: pnpm run desktop:setup:built
+
+      - name: Smoke the installed Windows desktop lifecycle
+        shell: pwsh
+        run: >-
+          ./scripts/windows-desktop-setup-smoke.ps1
+          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DeepSeek-Harness-Setup-win-x64-${{ github.sha }}
+          path: apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe
+          if-no-files-found: error
+          retention-days: 7
 
   # The hosted reference jobs below are temporarily disabled; the self-hosted
   # standby remains active. Each enabled host executes the complete, unsharded
@@ -659,7 +676,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     name: serial / windows (self-hosted standby)
     runs-on: [self-hosted, dsh-win-ci, windows]
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v6
 
@@ -694,6 +711,16 @@ jobs:
           DSH_GATE_CONCURRENCY: '1'
           DSH_PUBLINT_CONCURRENCY: '1'
         run: pnpm run check:ci:windows-complete
+
+      - name: Build the one-click Windows desktop Setup
+        shell: pwsh
+        run: pnpm run desktop:setup:built
+
+      - name: Smoke the installed Windows desktop lifecycle
+        shell: pwsh
+        run: >-
+          ./scripts/windows-desktop-setup-smoke.ps1
+          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe
 
   # Manual, bounded comparison of the actual critical Linux and Windows lanes.
   # The named pools are restricted at the organization level to this repository.

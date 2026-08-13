@@ -76,6 +76,14 @@ describe('CI workflow', () => {
       isRecord(step) && typeof step.run === 'string'
     ))
     expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
+    expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run desktop:setup:built')
+    expect(nativeCommandSteps.some(step => step.run.includes('windows-desktop-setup-smoke.ps1'))).toBe(true)
+    expect((windowsNative.steps as unknown[]).some(step => (
+      isRecord(step)
+      && step.uses === 'actions/upload-artifact@v7'
+      && isRecord(step.with)
+      && step.with.path === 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe'
+    ))).toBe(true)
 
     // wine-apt-cache: master-only, seeds the Wine apt cache.
     expect(wineAptCache.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
@@ -85,6 +93,12 @@ describe('CI workflow', () => {
     expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
+    if (!Array.isArray(serialWindows.steps)) throw new TypeError('serial-windows must define steps')
+    const serialWindowsCommands = serialWindows.steps.filter(
+      (step): step is Record<string, unknown> & { run: string } => isRecord(step) && typeof step.run === 'string',
+    )
+    expect(serialWindowsCommands.map(step => step.run)).toContain('pnpm run desktop:setup:built')
+    expect(serialWindowsCommands.some(step => step.run.includes('windows-desktop-setup-smoke.ps1'))).toBe(true)
 
     // Aggregate: Wine `windows` required, native `windows-native` excluded.
     expect(aggregate.needs).toContain('windows')

@@ -76,7 +76,8 @@ describe('desktop package manifest', () => {
     ) as BuilderConfiguration
 
     expect(manifest.scripts['pack:setup']).toContain('--win nsis --x64')
-    expect(rootManifest.scripts['desktop:setup']).toContain('pack:setup')
+    expect(rootManifest.scripts['desktop:setup:built']).toContain('pack:setup')
+    expect(rootManifest.scripts['desktop:setup']).toContain('desktop:setup:built')
     expect(builder.mac?.icon).toBe('assets/icon.icns')
     expect(builder.win).toMatchObject({
       target: [{ target: 'nsis', arch: ['x64'] }],
