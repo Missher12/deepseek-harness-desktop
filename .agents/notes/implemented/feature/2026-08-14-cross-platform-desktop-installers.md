@@ -22,7 +22,7 @@ One Electron desktop source supports Intel macOS and Windows x64. The shared she
 
 Platform-independent tests exercise Windows menu and window decisions, command parsing, fail-closed ownership discovery, process-tree termination, NSIS settings, workflow wiring, and packaged-smoke process parsing on macOS. Production staging validates the built desktop entrypoints, Web client, runtime CLI, icon containers, and native-module presence.
 
-The repository's existing native Windows pull-request job builds Setup after the complete Windows inventory, installs it into an isolated directory, verifies both shortcuts, launches the installed executable with temporary Harness and Electron data, opens settings, closes the native window, proves that the listener and owned process tree disappear, uninstalls, confirms both data markers remain, records SHA-256, and uploads the executable with its checksum. The self-hosted master standby runs the same build and lifecycle smoke.
+The repository's native Windows pull-request job runs on GitHub's standard public `windows-2025` runner. It builds Setup after the complete Windows inventory, installs it into an isolated directory, verifies both shortcuts, launches the installed executable with temporary Harness and Electron data, opens settings, closes the native window, proves that the listener and owned process tree disappear, uninstalls, confirms both data markers remain, records SHA-256, and uploads the executable with its checksum. The self-hosted master standby runs the same build and lifecycle smoke when such a runner is configured.
 
 ## Alternatives considered
 
