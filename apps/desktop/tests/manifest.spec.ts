@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 
 interface DesktopManifest {
@@ -9,6 +10,25 @@ interface DesktopManifest {
   dependencies: Record<string, string>
   devDependencies: Record<string, string>
   scripts: Record<string, string>
+}
+
+interface BuilderConfiguration {
+  mac?: { icon?: string }
+  win?: {
+    icon?: string
+    target?: Array<{ target?: string; arch?: string[] }>
+  }
+  nsis?: {
+    oneClick?: boolean
+    perMachine?: boolean
+    allowElevation?: boolean
+    createDesktopShortcut?: boolean
+    createStartMenuShortcut?: boolean
+    runAfterFinish?: boolean
+    deleteAppDataOnUninstall?: boolean
+    shortcutName?: string
+    artifactName?: string
+  }
 }
 
 describe('desktop package manifest', () => {
@@ -42,6 +62,37 @@ describe('desktop package manifest', () => {
     expect(manifest.devDependencies.playwright).toBe('^1.49.0')
     expect(manifest.scripts['pack:dir']).toContain('--mac dir --x64')
     expect(manifest.scripts['pack:dmg']).toContain('--mac dmg --x64')
+  })
+
+  it('builds one per-user Windows x64 Setup with shortcuts and launch-after-install', () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as DesktopManifest
+    const rootManifest = JSON.parse(
+      readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
+    ) as Pick<DesktopManifest, 'scripts'>
+    const builder = yaml.load(
+      readFileSync(new URL('../electron-builder.yml', import.meta.url), 'utf8'),
+    ) as BuilderConfiguration
+
+    expect(manifest.scripts['pack:setup']).toContain('--win nsis --x64')
+    expect(rootManifest.scripts['desktop:setup']).toContain('pack:setup')
+    expect(builder.mac?.icon).toBe('assets/icon.icns')
+    expect(builder.win).toMatchObject({
+      target: [{ target: 'nsis', arch: ['x64'] }],
+      icon: 'assets/icon.ico',
+    })
+    expect(builder.nsis).toMatchObject({
+      oneClick: true,
+      perMachine: false,
+      allowElevation: false,
+      createDesktopShortcut: true,
+      createStartMenuShortcut: true,
+      runAfterFinish: true,
+      deleteAppDataOnUninstall: false,
+      shortcutName: 'DeepSeek Harness',
+      artifactName: 'DeepSeek-Harness-Setup-${version}-win-x64.${ext}',
+    })
   })
 
   it('includes the repository standalone runtime dependency closure', () => {

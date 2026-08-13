@@ -14,7 +14,6 @@ files:
   - "assets/**"
   - "node_modules/**"
   - "!node_modules/node-pty/prebuilds/win32-arm64/**"
-  - "!node_modules/node-pty/prebuilds/win32-x64/**"
   - "!node_modules/node-pty/prebuilds/darwin-arm64/**"
   - "package.json"
 mac:
@@ -25,8 +24,33 @@ mac:
   category: public.app-category.developer-tools
   icon: assets/icon.icns
   identity: null
+  files:
+    - "!node_modules/node-pty/prebuilds/win32-x64/**"
 dmg:
   title: DeepSeek Harness
   artifactName: "DeepSeek-Harness-${version}-mac-x64.${ext}"
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: assets/icon.ico
+  requestedExecutionLevel: asInvoker
+  files:
+    - "!node_modules/node-pty/prebuilds/darwin-x64/**"
+    - "!node_modules/**/*.pdb"
+nsis:
+  oneClick: true
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+  shortcutName: DeepSeek Harness
+  artifactName: "DeepSeek-Harness-Setup-${version}-win-x64.${ext}"
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
 directories:
   output: ../release
