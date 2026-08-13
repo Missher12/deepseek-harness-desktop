@@ -28,7 +28,8 @@ describe('HarnessProcess', () => {
       executable: '/Electron',
       cli: '/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
       waitForHarness,
-      killGroup: vi.fn(),
+      platform: 'darwin',
+      terminateTree: vi.fn(),
     })
 
     const pending = owned.start('/workspace')
@@ -54,13 +55,14 @@ describe('HarnessProcess', () => {
 
   it('signals and awaits only its child process group during stop', async () => {
     const child = new FakeChild()
-    const killGroup = vi.fn(() => { queueMicrotask(() => { child.exit() }) })
+    const terminateTree = vi.fn(() => { queueMicrotask(() => { child.exit() }) })
     const owned = new HarnessProcess({
       spawn: () => child as unknown as ChildProcess,
       executable: '/Electron',
       cli: '/cli.js',
       waitForHarness: async () => undefined,
-      killGroup,
+      platform: 'darwin',
+      terminateTree,
     })
     const pending = owned.start('/workspace')
     child.stdout.write('dsh web: http://127.0.0.1:45678\n')
@@ -68,8 +70,32 @@ describe('HarnessProcess', () => {
 
     await owned.stop()
 
-    expect(killGroup).toHaveBeenCalledOnce()
-    expect(killGroup).toHaveBeenCalledWith(4321, 'SIGTERM')
+    expect(terminateTree).toHaveBeenCalledOnce()
+    expect(terminateTree).toHaveBeenCalledWith(4321, 'graceful', 'darwin')
+    expect(owned.pid).toBeUndefined()
+  })
+
+  it('spawns without a detached group and force-stops the owned tree on Windows', async () => {
+    const child = new FakeChild()
+    const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(
+      () => child as unknown as ChildProcess,
+    )
+    const terminateTree = vi.fn(() => { queueMicrotask(() => { child.exit() }) })
+    const owned = new HarnessProcess({
+      spawn,
+      executable: 'C:\\Program Files\\DeepSeek Harness\\DeepSeek Harness.exe',
+      cli: 'C:\\Program Files\\DeepSeek Harness\\resources\\app.asar.unpacked\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js',
+      waitForHarness: async () => undefined,
+      platform: 'win32',
+      terminateTree,
+    })
+    const pending = owned.start('C:\\workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\r\n')
+    await pending
+
+    expect(spawn.mock.calls[0]?.[2].detached).toBe(false)
+    await owned.stop()
+    expect(terminateTree).toHaveBeenCalledWith(4321, 'force', 'win32')
     expect(owned.pid).toBeUndefined()
   })
 
@@ -80,7 +106,7 @@ describe('HarnessProcess', () => {
       executable: '/Electron',
       cli: '/cli.js',
       waitForHarness: async () => undefined,
-      killGroup: vi.fn(),
+      terminateTree: vi.fn(),
     })
     const pending = owned.start('/workspace')
     await expect(owned.start('/workspace')).rejects.toThrow(/already running/)
@@ -96,7 +122,7 @@ describe('HarnessProcess', () => {
       executable: '/Electron',
       cli: '/cli.js',
       waitForHarness: async () => undefined,
-      killGroup: vi.fn(),
+      terminateTree: vi.fn(),
       onExit,
     })
     const pending = owned.start('/workspace')
