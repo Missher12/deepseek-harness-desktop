@@ -279,6 +279,11 @@ async function exerciseWindowsClipboard(
   const previousClipboard = await application.evaluate(({ clipboard }) => clipboard.readText())
 
   try {
+    const collapsedFrame = page.locator('[data-sidebar-collapsed="true"]')
+    if (await collapsedFrame.count() === 1) {
+      await page.getByRole('button', { name: /^(?:Open sidebar|打开侧边栏)$/u }).click()
+      await collapsedFrame.waitFor({ state: 'detached', timeout: 15_000 })
+    }
     const ungrouped = page.getByText(/^(?:Ungrouped|未分组)$/u, { exact: true }).first()
     await ungrouped.waitFor({ state: 'visible', timeout: 30_000 })
     const activeRow = page.getByRole('treeitem').filter({ hasText: seeded.activeSessionTitle }).first()
@@ -426,7 +431,14 @@ export async function runPackagedDesktopSmoke(
     expect(await page.locator('#root').evaluate((element: HTMLElement) => !element.inert)).toBe(true)
 
     if (clipboardSeed !== undefined) {
-      await exerciseWindowsClipboard(page, nativeApp, clipboardSeed)
+      try {
+        await exerciseWindowsClipboard(page, nativeApp, clipboardSeed)
+      } catch (error) {
+        throw new Error(
+          `Packaged smoke: Windows clipboard acceptance failed: ${String(error)}\n${await desktopStartupDiagnostic(page, userData)}`,
+          { cause: error },
+        )
+      }
     } else {
       await page.getByRole('button', { name: /^(?:Archive|Archived|归档)$/u }).click()
       const archiveDialog = page.getByRole('dialog', {
