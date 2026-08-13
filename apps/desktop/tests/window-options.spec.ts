@@ -6,6 +6,7 @@ describe('createWindowOptions', () => {
     const options = createWindowOptions(
       { x: 80, y: 50, width: 1200, height: 760 },
       '/app/lib/preload.js',
+      'darwin',
     )
 
     expect(options).toMatchObject({
@@ -25,6 +26,24 @@ describe('createWindowOptions', () => {
         webSecurity: true,
         partition: 'persist:dsh-desktop',
       },
+    })
+  })
+
+  it('uses the standard native frame on Windows', () => {
+    const options = createWindowOptions(
+      { x: 80, y: 50, width: 1200, height: 760 },
+      'C:\\app\\lib\\preload.cjs',
+      'win32',
+    )
+
+    expect(options.titleBarStyle).toBeUndefined()
+    expect(options.trafficLightPosition).toBeUndefined()
+    expect(options.webPreferences).toMatchObject({
+      preload: 'C:\\app\\lib\\preload.cjs',
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
     })
   })
 })

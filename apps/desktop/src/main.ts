@@ -25,6 +25,7 @@ import { isRecoveryAction, type DesktopCommand } from './preload-api.ts'
 import { classifyNavigation } from './window/navigation.ts'
 import { createMenuTemplate } from './window/menu.ts'
 import { createWindowOptions } from './window/options.ts'
+import { desktopPlatformBehavior } from './window/platform.ts'
 import { readWindowBounds, writeWindowBounds } from './window/state.ts'
 
 const PRODUCT_NAME = 'DeepSeek Harness'
@@ -33,6 +34,7 @@ const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 const loadingPath = fileURLToPath(new URL('../renderer/loading.html', import.meta.url))
 const failurePath = fileURLToPath(new URL('../renderer/failure.html', import.meta.url))
 const iconPath = fileURLToPath(new URL('../assets/icon-source.png', import.meta.url))
+const platformBehavior = desktopPlatformBehavior(process.platform)
 
 function resolveCliPath(): string {
   const packageJson = require.resolve('@deepseek-ai/dsh/package.json')
@@ -133,7 +135,7 @@ function createStateWriter(window: BrowserWindow): () => void {
 async function createDesktopWindow(): Promise<DesktopWindow> {
   const displays = screen.getAllDisplays().map(display => display.workArea)
   const bounds = await readWindowBounds(windowStatePath, displays)
-  const window = new BrowserWindow(createWindowOptions(bounds, preloadPath))
+  const window = new BrowserWindow(createWindowOptions(bounds, preloadPath, process.platform))
   nativeWindow = window
   let ownedRoot: string | undefined
   installNavigationPolicy(window, () => ownedRoot)
@@ -142,7 +144,8 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
   window.on('close', (event) => {
     event.preventDefault()
     persistState()
-    window.hide()
+    if (platformBehavior.hideWindowOnClose) window.hide()
+    else app.quit()
   })
   window.webContents.on('render-process-gone', () => { void controller.rendererExited() })
   window.webContents.on('did-fail-load', (_event, errorCode) => {
@@ -196,12 +199,12 @@ ipcMain.on('desktop:recovery', (event, value: unknown) => {
   if (isFailureSender(event) && isRecoveryAction(value)) controller.recover(value)
 })
 
-Menu.setApplicationMenu(Menu.buildFromTemplate(createMenuTemplate(PRODUCT_NAME, (command) => {
-  controller.sendCommand(command)
-})))
+Menu.setApplicationMenu(Menu.buildFromTemplate(
+  createMenuTemplate(PRODUCT_NAME, (command) => { controller.sendCommand(command) }, process.platform),
+))
 
 void controller.run().then(() => {
-  app.dock?.setIcon(iconPath)
+  if (platformBehavior.setDockIcon) app.dock?.setIcon(iconPath)
   record('desktop application ready')
 }).catch((error: unknown) => {
   record(`desktop application failed: ${error instanceof Error ? error.message : String(error)}`)
