@@ -117,6 +117,7 @@ export async function stageDesktop(
     'renderer/failure.html',
     'assets/icon-source.png',
     'assets/icon.icns',
+    'assets/icon.ico',
     'node_modules/@deepseek-ai/dsh/lib/bin.js',
     'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
   ]

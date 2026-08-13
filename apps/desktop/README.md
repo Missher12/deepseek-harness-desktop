@@ -2,10 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Native Intel macOS shell for the official DeepSeek Harness runtime. The app
-owns one loopback-only Harness child process on an operating-system-assigned
-port and renders the existing Harness Web client inside a hardened Electron
-window.
+Native desktop shell for the official DeepSeek Harness runtime. The app owns one loopback-only Harness child process on an operating-system-assigned port and renders the existing Harness Web client inside a hardened Electron window.
 
 ## Icon provenance
 
@@ -18,8 +15,10 @@ Source SHA-256:
 `1fe0c2a3b6475c451f86dc999e97de33e4aabace244e35a284d1c5e162b0672a`
 
 `assets/icon.icns` is a local format conversion of that source into the
-standard macOS 16–1024 px iconset. Its SHA-256 is
-`d453a58a11cb5247f83f3b220bca2c6f0f216f07a6c7dfbb4998bb9f9f72c54e`.
+standard macOS 16–1024 px iconset, and `assets/icon.ico` is the Windows
+container generated from the same master. Their SHA-256 values are
+`d453a58a11cb5247f83f3b220bca2c6f0f216f07a6c7dfbb4998bb9f9f72c54e`
+and `2331df774341ce7796c1c0d06e708ae37bbde84a53e4edd2741659bbe8d4e4ae`.
 
 ## Build
 

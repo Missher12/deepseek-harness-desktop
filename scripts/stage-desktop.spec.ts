@@ -50,6 +50,10 @@ describe('stageDesktop', () => {
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html')
     expect(result.validatedFiles).toContain('lib/preload.cjs')
     expect(result.validatedFiles).not.toContain('lib/preload.js')
+    expect(result.validatedFiles).toContain('assets/icon-source.png')
+    expect(result.validatedFiles).toContain('assets/icon.icns')
+    expect(result.validatedFiles).toContain('assets/icon.ico')
+    expect(result.validatedFiles).not.toContain('assets/icon-source-rounded.png')
     expect(result.validatedFiles).toContain('node_modules/node-pty/prebuilds/darwin-x64/pty.node')
   })
 

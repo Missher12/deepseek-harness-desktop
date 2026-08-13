@@ -2,9 +2,7 @@
 
 [English](README.md) | 中文
 
-这是官方 DeepSeek Harness 运行时的 Intel macOS 原生外壳。应用只在本机
-回环地址启动一个由自身管理的 Harness 子进程，端口由操作系统随机分配，
-现有 Harness Web 客户端运行在加固后的 Electron 窗口内。
+这是官方 DeepSeek Harness 运行时的原生桌面外壳。应用只在本机回环地址启动一个由自身管理的 Harness 子进程，端口由操作系统随机分配，现有 Harness Web 客户端运行在加固后的 Electron 窗口内。
 
 ## 图标来源
 
@@ -15,9 +13,10 @@ DeepSeek 白鲸均保持原样，未替换、未重新设计。
 母版 SHA-256：
 `1fe0c2a3b6475c451f86dc999e97de33e4aabace244e35a284d1c5e162b0672a`
 
-`assets/icon.icns` 仅由该母版在本机转换为 macOS 标准 16–1024 px 图标集，
-SHA-256 为
-`d453a58a11cb5247f83f3b220bca2c6f0f216f07a6c7dfbb4998bb9f9f72c54e`。
+`assets/icon.icns` 是由该母版转换的 macOS 标准 16–1024 px 图标集，
+`assets/icon.ico` 是由同一母版生成的 Windows 容器。对应 SHA-256 分别为
+`d453a58a11cb5247f83f3b220bca2c6f0f216f07a6c7dfbb4998bb9f9f72c54e`
+和 `2331df774341ce7796c1c0d06e708ae37bbde84a53e4edd2741659bbe8d4e4ae`。
 
 ## 构建
 

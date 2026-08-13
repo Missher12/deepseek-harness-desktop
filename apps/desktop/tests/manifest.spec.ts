@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 interface DesktopManifest {
@@ -12,6 +12,16 @@ interface DesktopManifest {
 }
 
 describe('desktop package manifest', () => {
+  it('uses one rounded icon source with native macOS and Windows containers', () => {
+    const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
+
+    expect(existsSync(new URL('../assets/icon-source.png', import.meta.url))).toBe(true)
+    expect(existsSync(new URL('../assets/icon.icns', import.meta.url))).toBe(true)
+    expect(existsSync(new URL('../assets/icon.ico', import.meta.url))).toBe(true)
+    expect(mainSource).toContain('../assets/icon-source.png')
+    expect(mainSource).not.toContain('../assets/icon-source-rounded.png')
+  })
+
   it('ships Harness and pins the Electron toolchain', () => {
     const manifest = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
