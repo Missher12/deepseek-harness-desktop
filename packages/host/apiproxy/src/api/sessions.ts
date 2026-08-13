@@ -262,6 +262,14 @@ export interface SessionsApi {
   Promise<RpcResponse<{ sessionId: SessionId; agentPreset?: string }>>
 
   /**
+   * Permanently deletes an archived ordinary session. Non-archived, running,
+   * subagent-owned, or otherwise unowned live sessions are refused. Project
+   * files, workspace directories, credentials, and shared attachments remain.
+   */
+  delete(request: RpcRequest<{ sessionId: SessionId }>):
+  Promise<RpcResponse<{ deleted: true }>>
+
+  /**
    * Reads a window of history events; page boundaries align to append-origin message
    * boundaries: one page = all raw events owned by a whole number of such messages (including
    * their chunk / tool events), never cut mid-message. Model-only replacement copies consume no

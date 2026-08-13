@@ -116,6 +116,17 @@ describe('packaged DeepSeek Harness desktop', () => {
         { timeout: 15_000 },
       ).toBe(true)
 
+      const archiveButton = page.getByRole('button', { name: /^(?:Archived|归档)$/u })
+      await archiveButton.waitFor({ state: 'visible', timeout: 15_000 })
+      await archiveButton.click()
+      const archiveDialog = page.getByRole('dialog', {
+        name: /^(?:Archived sessions|已归档会话)$/u,
+      })
+      await archiveDialog.waitFor({ state: 'visible', timeout: 15_000 })
+      expect(await archiveDialog.getByText(/^(?:No archived sessions|暂无已归档会话)$/u).isVisible()).toBe(true)
+      await page.keyboard.press('Escape')
+      await archiveDialog.waitFor({ state: 'detached', timeout: 15_000 })
+
       await page.waitForTimeout(15_000)
       expect(await page.locator('body').innerText()).not.toContain('Failed to load plugins')
       expect(await page.locator('[class*="centerCol"]').count()).toBe(1)

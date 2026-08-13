@@ -11,7 +11,7 @@ Turn the official DeepSeek Harness browser surface into a standalone Intel macOS
 - Desktop source baseline: official repository version `0.1.0-rc.5` at upstream commit `47f943859bef60e4160492346772ded9b24f765a`.
 - Previous launch path: Hermes gateway → `npm exec @deepseek-ai/dsh web --port 65000` → Node web host.
 - Current launch path: `/Applications/DeepSeek Harness.app` → owned bundled CLI → random loopback listener.
-- Current UI: React/Vite browser application with workspaces, sessions, model and permission selection, tools, plans, jobs, settings, and a details pane.
+- Current UI: React/Vite application with workspaces, sessions, model and permission selection, tools, plans, jobs, settings, a details pane, and a Codex-style archived-session manager.
 - User data root: `~/.dsh`.
 - Official source: <https://github.com/deepseek-ai/deepseek-harness>.
 - Inspected upstream head: `47f943859bef60e4160492346772ded9b24f765a` on 2026-08-13.
@@ -65,12 +65,14 @@ The repository is based on the pinned official source and adds the desktop appli
 - Electron x64 application shell, native menu, loading/failure surfaces, random-port runtime ownership, window-state persistence, and the accepted cross-platform icon master complete.
 - macOS and Windows share the exact 1254×1254 RGBA icon master (SHA-256 `1fe0c2a3b6475c451f86dc999e97de33e4aabace244e35a284d1c5e162b0672a`); the generated macOS 16–1024 px `.icns` has SHA-256 `d453a58a11cb5247f83f3b220bca2c6f0f216f07a6c7dfbb4998bb9f9f72c54e`.
 - Desktop renderer styling and command hooks complete.
+- Archived-session management complete: the sidebar archive lists hidden sessions, restores them to their retained Workspace positions, and gates permanent deletion behind an archive-only Host check plus an explicit irreversible-action confirmation. Running, externally owned, and subagent-owned sessions are refused; project files, shared attachments, settings, and credentials remain outside the deletion boundary.
 - Standalone package staging and unsigned local `.app` packaging complete.
 - Isolated packaged smoke passed from outside the repository: clean `DSH_HOME`, preload bridge, random loopback listener, stable plugin graph, settings dialog, native quit, and complete process/port cleanup.
-- Intel DMG regenerated with the accepted icon master and verified with `hdiutil`: `DeepSeek-Harness-0.1.0-mac-x64.dmg` (SHA-256 `6c8b1319563563ac204a77a274e2dcc57f5640026b3b2424d47c077bae5a8cae`).
+- Intel DMG regenerated with the accepted icon master and verified with `hdiutil`: `DeepSeek-Harness-0.1.1-mac-x64.dmg` (SHA-256 `e715b4e85553a904d619568803e778fde952c69b2419b1e9d2cf9948bc6e9aad`).
 - Live ownership migration complete on 2026-08-14: the exact legacy process group stopped gracefully, port 65000 was released, and the independent Hermes gateway remained running.
 - A permission-restricted pre-migration backup is stored under `~/Library/Application Support/DeepSeek Harness Backups/pre-desktop-20260814-021540`.
-- The final-icon application installed at `/Applications/DeepSeek Harness.app` passed live acceptance against the existing `~/.dsh`: HTTP 200 on random port 65320, the saved application window and Dock item loaded, Finder resolved `icon.icns`, all 518 profile fallback links resolved to physical packaged modules, and no virtual-asar link remained.
+- Version 0.1.1 is installed at `/Applications/DeepSeek Harness.app`; the replaced 0.1.0 application is retained under `~/Library/Application Support/DeepSeek Harness Backups/DeepSeek Harness-0.1.0-20260814-0405.app`.
+- The installed 0.1.1 application passed live acceptance against the existing `~/.dsh`: HTTP 200 on random port 49375, the archive manager displayed the retained `AI助手功能简介` session with Restore and Delete actions, the archived log SHA-256 remained unchanged, and neither action was invoked during acceptance.
 
 ## Known Risks
 

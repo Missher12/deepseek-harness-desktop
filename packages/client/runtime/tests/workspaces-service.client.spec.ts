@@ -488,6 +488,24 @@ describe('WorkspaceRuntime', () => {
     expect(workspaces.list.getSnapshot().archivedSessionIds).toEqual(['s-open'])
   })
 
+  it('restores an archived session and installs the returned full archive set', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    workspaces.handleHostEnvelope({
+      rpcId: 'archive-set' as never,
+      payload: { type: 'host/archived-sessions-changed', archivedSessionIds: [sid('s-one'), sid('s-two')] },
+    } as never)
+    await Promise.resolve()
+    api.onWorkspaceRestoreSession = () => Promise.resolve(ok({ archivedSessionIds: [sid('s-two')] }))
+
+    await expect(workspaces.restoreSession(sid('s-one'))).resolves.toBeUndefined()
+
+    expect(api.callsOf('workspace.restoreSession')).toEqual([{ sessionId: 's-one' }])
+    expect(workspaces.list.getSnapshot().archivedSessionIds).toEqual(['s-two'])
+  })
+
   it('clears a current archived by a remote frame and shields the set from a stale in-flight baseline', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()

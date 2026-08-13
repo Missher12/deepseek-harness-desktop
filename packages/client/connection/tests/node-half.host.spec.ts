@@ -169,6 +169,7 @@ describe('connection node half', () => {
     // ordinary reads (carrier-level 404 from the empty proxy proves the fence
     // passed), but each privileged method stays loopback-only and 403s.
     for (const method of [
+      'session.delete',
       'host.pickDirectory', 'host.openPath',
       'settings.describe', 'settings.openDocument', 'settings.update', 'settings.replace', 'settings.mutate',
       'credentials.describe', 'credentials.set', 'credentials.unset',
@@ -471,6 +472,7 @@ describe('connection node half over a real HTTP server', () => {
         // URL the caller picked: an anonymous LAN caller must not reach it.
         'llm.discoverModels',
         'agentPreset.read', 'agentPreset.copy', 'agentPreset.openDocument', 'agentPreset.remove',
+        'session.delete',
       ]) {
         expect([method, await call(port, method, 'harness.example')]).toEqual([method, 403])
       }
