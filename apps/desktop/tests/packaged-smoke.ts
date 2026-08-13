@@ -176,6 +176,11 @@ function parsePidLines(raw: string): number[] {
   return raw.split(/\s+/u).filter(Boolean).map(Number).filter(Number.isSafeInteger)
 }
 
+/** Whether a native inspection command reported that it found no matching row. */
+export function isCommandNoMatch(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 1
+}
+
 async function processTree(rootPid: number, platform: NodeJS.Platform): Promise<number[]> {
   if (platform === 'win32') {
     const { stdout } = await execFileAsync('powershell.exe', [
@@ -208,14 +213,19 @@ function processExists(pid: number): boolean {
 
 async function listenerPids(port: number, platform: NodeJS.Platform): Promise<number[]> {
   if (platform === 'win32') {
-    const { stdout } = await execFileAsync('powershell.exe', [
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      `Get-NetTCPConnection -State Listen -LocalPort ${String(port)} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess`,
-    ])
-    return parsePidLines(stdout)
+    try {
+      const { stdout } = await execFileAsync('powershell.exe', [
+        '-NoLogo',
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Get-NetTCPConnection -State Listen -LocalPort ${String(port)} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess`,
+      ])
+      return parsePidLines(stdout)
+    } catch (error) {
+      if (isCommandNoMatch(error)) return []
+      throw error
+    }
   }
 
   try {
@@ -224,7 +234,7 @@ async function listenerPids(port: number, platform: NodeJS.Platform): Promise<nu
     ])
     return parsePidLines(stdout)
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 1) return []
+    if (isCommandNoMatch(error)) return []
     throw error
   }
 }

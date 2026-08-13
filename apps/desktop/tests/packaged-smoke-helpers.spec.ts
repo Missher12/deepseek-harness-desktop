@@ -7,6 +7,7 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { describe, expect, it } from 'vitest'
 import {
   descendantProcessTree,
+  isCommandNoMatch,
   parseWindowsProcessRows,
   seedWindowsClipboardSmokeState,
 } from './packaged-smoke.ts'
@@ -30,6 +31,12 @@ describe('packaged desktop process inspection', () => {
       { processId: 10, parentProcessId: 12 },
       { processId: 99, parentProcessId: 1 },
     ])).toEqual([10, 11, 12])
+  })
+
+  it('recognizes an empty native command result without swallowing other failures', () => {
+    expect(isCommandNoMatch(Object.assign(new Error('no listener'), { code: 1 }))).toBe(true)
+    expect(isCommandNoMatch(Object.assign(new Error('access denied'), { code: 5 }))).toBe(false)
+    expect(isCommandNoMatch(new Error('missing exit code'))).toBe(false)
   })
 
   it('seeds isolated ordinary and archived sessions for the real clipboard smoke', async () => {

@@ -31,8 +31,28 @@ function Wait-PathRemoved {
     Start-Sleep -Milliseconds 250
   }
   if (Test-Path -LiteralPath $LiteralPath) {
-    throw "Timed out waiting for uninstall cleanup: $LiteralPath"
+    $remaining = @(Get-ChildItem -LiteralPath $LiteralPath -Recurse -Force -ErrorAction SilentlyContinue |
+      Select-Object -First 20 -ExpandProperty FullName)
+    $details = if ($remaining.Count -eq 0) { '[empty directory]' } else { $remaining -join '; ' }
+    throw "Timed out waiting for uninstall cleanup: $LiteralPath. Remaining: $details"
   }
+}
+
+function Invoke-IsolatedUninstall {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$InstalledUninstaller,
+    [Parameter(Mandatory = $true)]
+    [string]$InstallRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$LauncherPath
+  )
+
+  # NSIS normally relaunches an installed uninstaller from a temporary copy.
+  # Make that copy explicit so Start-Process waits for the process that performs
+  # the deletion, matching electron-builder's own upgrade-uninstall path.
+  Copy-Item -LiteralPath $InstalledUninstaller -Destination $LauncherPath -Force
+  Invoke-CheckedProcess -FilePath $LauncherPath -ArgumentList @('/S', "_?=$InstallRoot")
 }
 
 function Get-IsolatedInstalledProcesses {
@@ -67,6 +87,7 @@ $userDataMarker = Join-Path $userData 'preserve-after-uninstall.txt'
 $desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'DeepSeek Harness.lnk'
 $startMenuShortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'DeepSeek Harness.lnk'
 $uninstaller = $null
+$uninstallerLauncher = Join-Path $temporaryRoot 'DeepSeek-Harness-Uninstall-Smoke.exe'
 $executable = $null
 $installed = $false
 
@@ -112,7 +133,7 @@ try {
     throw "Packaged smoke left $($remainingProcesses.Count) installed application process(es) running."
   }
 
-  Invoke-CheckedProcess -FilePath $uninstaller -ArgumentList @('/S')
+  Invoke-IsolatedUninstall -InstalledUninstaller $uninstaller -InstallRoot $installRoot -LauncherPath $uninstallerLauncher
   $installed = $false
   Wait-PathRemoved -LiteralPath $installRoot
 
@@ -134,7 +155,7 @@ finally {
   }
   if ($installed -and $null -ne $uninstaller -and (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
     try {
-      Invoke-CheckedProcess -FilePath $uninstaller -ArgumentList @('/S')
+      Invoke-IsolatedUninstall -InstalledUninstaller $uninstaller -InstallRoot $installRoot -LauncherPath $uninstallerLauncher
       $installed = $false
       Wait-PathRemoved -LiteralPath $installRoot
     }
