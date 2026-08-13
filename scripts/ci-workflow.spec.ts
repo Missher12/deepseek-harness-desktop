@@ -401,7 +401,6 @@ describe('Windows desktop Setup workflow', () => {
 
     const checkout = job.steps.filter(isRecord).find(step => step.uses === 'actions/checkout@v6')
     const pnpmSetup = job.steps.filter(isRecord).find(step => step.uses === 'pnpm/action-setup@v4')
-    const mapDrive = job.steps.filter(isRecord).find(step => step.name === 'Map checkout to a short drive')
     const install = job.steps.filter(isRecord).find(step => step.name === 'Install immutable dependencies')
     const build = job.steps.filter(isRecord).find(step => step.name === 'Build the one-click Windows Setup')
     const smoke = job.steps.filter(isRecord).find(step => step.name === 'Install and exercise the packaged application')
@@ -414,23 +413,18 @@ describe('Windows desktop Setup workflow', () => {
     expect(checkout).toMatchObject({ with: { path: 's', 'persist-credentials': false } })
     expect(pnpmSetup).toMatchObject({ with: { version: '11.7.0' } })
     expect(job.defaults.run['working-directory']).toBe('s')
-    expect(mapDrive).toMatchObject({
-      shell: 'pwsh',
-      run: expect.stringContaining('subst S: "$env:GITHUB_WORKSPACE\\s"'),
-    })
+    expect(job.env).toMatchObject({ DSH_DESKTOP_STAGE_DIR: '${{ runner.temp }}\\dsh-desktop-stage' })
     expect(install).toMatchObject({ run: 'pnpm install --frozen-lockfile' })
     expect(build).toMatchObject({
       run: expect.stringContaining('pnpm run desktop:stage'),
     })
     expect(build).toMatchObject({
-      run: expect.stringContaining('pnpm --filter @deepseek-ai/dsh-desktop run pack:setup'),
+      run: expect.stringContaining('pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"'),
     })
-    expect(build.run.indexOf('pnpm run desktop:stage'))
-      .toBeLessThan(build.run.indexOf('Set-Location S:\\'))
+    expect(build.run).toContain('Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact')
     expect(build.run).not.toContain('pnpm run desktop:setup\n')
-    for (const step of [build, smoke, checksum]) {
-      expect(step).toMatchObject({ run: expect.stringContaining('Set-Location S:\\') })
-    }
+    expect(smoke).not.toMatchObject({ run: expect.stringContaining('Set-Location S:\\') })
+    expect(checksum).not.toMatchObject({ run: expect.stringContaining('Set-Location S:\\') })
     expect(upload).toMatchObject({
       with: {
         path: expect.stringContaining('s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe'),

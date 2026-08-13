@@ -19,6 +19,8 @@ jobs:
     name: build, install, launch, and uninstall
     runs-on: windows-2025
     timeout-minutes: 60
+    env:
+      DSH_DESKTOP_STAGE_DIR: '${{ runner.temp }}\dsh-desktop-stage'
     defaults:
       run:
         working-directory: s
@@ -43,14 +45,6 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Map checkout to a short drive
-        shell: pwsh
-        run: |
-          subst S: "$env:GITHUB_WORKSPACE\s"
-          if (-not (Test-Path -LiteralPath 'S:\package.json')) {
-            throw 'Failed to map the checkout to S:\'
-          }
-
       - name: Install immutable dependencies
         shell: pwsh
         run: pnpm install --frozen-lockfile
@@ -59,20 +53,21 @@ jobs:
         shell: pwsh
         run: |
           pnpm run desktop:stage
-          Set-Location S:\
-          pnpm --filter @deepseek-ai/dsh-desktop run pack:setup
+          pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR" --config "$env:DSH_DESKTOP_STAGE_DIR\electron-builder.yml" --win nsis --x64
+          $builtArtifact = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) 'release\DeepSeek-Harness-Setup-0.1.0-win-x64.exe'
+          $workspaceArtifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe'
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $workspaceArtifact) | Out-Null
+          Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact
 
       - name: Install and exercise the packaged application
         shell: pwsh
         run: |
-          Set-Location S:\
           ./scripts/windows-desktop-setup-smoke.ps1
           -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe
 
       - name: Record SHA-256
         shell: pwsh
         run: |
-          Set-Location S:\
           $artifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe'
           $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $(Split-Path -Leaf $artifact)" | Set-Content -LiteralPath "$artifact.sha256" -Encoding ascii

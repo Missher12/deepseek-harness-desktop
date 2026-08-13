@@ -88,4 +88,18 @@ describe('stageDesktop', () => {
 
     expect(dependencies.removed).toEqual([join('/repo', 'apps/desktop/.stage')])
   })
+
+  it('allows only a dedicated external short stage directory', async () => {
+    const externalStage = '/runner-temp/dsh-desktop-stage'
+    const dependencies = fakeDependencies(true, [
+      `${externalStage}/node_modules/node-pty/prebuilds/win32-x64/pty.node`,
+    ])
+
+    const result = await stageDesktop('/repo', dependencies, externalStage)
+
+    expect(dependencies.removed).toEqual([externalStage])
+    expect(dependencies.commands[0]?.[1]).toContain(externalStage)
+    expect(result.stageDir).toBe(externalStage)
+    await expect(stageDesktop('/repo', fakeDependencies(), '/runner-temp/other')).rejects.toThrow(/unexpected deletion target/i)
+  })
 })

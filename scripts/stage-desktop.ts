@@ -103,11 +103,15 @@ function stageRelative(stageDir: string, path: string): string {
 export async function stageDesktop(
   repositoryRoot: string,
   dependencies: StageDesktopDependencies = realDependencies,
+  requestedStageDir?: string,
 ): Promise<DesktopStageResult> {
   const root = resolve(repositoryRoot)
   const desktopDir = resolve(root, 'apps', 'desktop')
-  const stageDir = resolve(desktopDir, '.stage')
-  if (basename(stageDir) !== '.stage' || dirname(stageDir) !== desktopDir) {
+  const defaultStageDir = resolve(desktopDir, '.stage')
+  const stageDir = requestedStageDir === undefined ? defaultStageDir : resolve(requestedStageDir)
+  const isDefaultStage = stageDir === defaultStageDir
+  const isDedicatedExternalStage = basename(stageDir) === 'dsh-desktop-stage' && dirname(stageDir) !== stageDir
+  if (!isDefaultStage && !isDedicatedExternalStage) {
     throw new Error(`Desktop staging refused an unexpected deletion target: ${stageDir}`)
   }
 
@@ -155,7 +159,11 @@ export async function stageDesktop(
 const invokedPath = process.argv[1]
 if (invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invokedPath)).href) {
   try {
-    const result = await stageDesktop(resolve(import.meta.dirname, '..'))
+    const result = await stageDesktop(
+      resolve(import.meta.dirname, '..'),
+      realDependencies,
+      process.env.DSH_DESKTOP_STAGE_DIR,
+    )
     console.log(`desktop stage: ${result.validatedFiles.length} required file(s) validated in ${result.stageDir}`)
   } catch (error) {
     console.error(error instanceof Error ? error.message : 'Desktop staging failed with a non-Error value.')
