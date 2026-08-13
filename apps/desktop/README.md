@@ -7,6 +7,11 @@ owns one loopback-only Harness child process on an operating-system-assigned
 port and renders the existing Harness Web client inside a hardened Electron
 window.
 
+The sidebar includes a Codex-style archived-session manager. Archiving keeps
+the session log and its Workspace position; the manager can restore it in
+place. Permanent deletion is available only from the archive, requires an
+explicit confirmation, and is rejected while the session is running.
+
 ## Icon provenance
 
 `assets/icon-source.png` is the exact 1254×1254 RGBA master accepted for the
@@ -38,6 +43,9 @@ isolated under `apps/desktop/.stage`; output is written to
 the install image. The app uses an operating-system-assigned loopback port and
 does not reserve port 65000.
 
+The current Intel artifact is `DeepSeek-Harness-0.1.1-mac-x64.dmg`, SHA-256
+`e715b4e85553a904d619568803e778fde952c69b2419b1e9d2cf9948bc6e9aad`.
+
 ## Packaged verification
 
 Build the directory app, then run from the repository root:
@@ -49,7 +57,7 @@ pnpm exec vitest run apps/desktop/tests/packaged-smoke.spec.ts --config vitest.c
 The smoke uses an external temporary working directory, temporary Electron
 data, and temporary `DSH_HOME`. It verifies the preload bridge, three-column
 workspace, settings dialog, random listener, and complete process cleanup after
-native Quit.
+native Quit. It also opens the archived-session manager in the packaged UI.
 
 The local build is not signed or notarized with an Apple Developer identity.
 Finder may require **Open** from the context menu on first launch after copying

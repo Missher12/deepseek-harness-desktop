@@ -282,6 +282,7 @@ describe('cold history recovery view', () => {
       readStoredRevision: id => Promise.resolve(
         id === sessionId ? SessionPersistenceRevision('history-recovery-test:1') : undefined,
       ),
+      deleteStored: () => Promise.resolve(false),
       appendBatch: () => Promise.resolve(),
       commitRepair: () => Promise.resolve(),
       list: () => Promise.resolve([structuredClone(meta)]),

@@ -1039,6 +1039,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'id', description: 'the session the batch belongs to.' }, { name: 'events', description: 'the contiguous batch to persist, in seq order.' }],
       },
       {
+        signature: 'delete(_id: SessionId): Promise<boolean>',
+        description: 'Permanently remove one persisted session. Implementations serialize this operation with every read/write for the same id and reject while a live Session is attached. Shared attachments and project files are outside the session-persistence ownership boundary and are never removed.',
+        parameters: [{ name: '_id', description: 'persisted session identity to remove (unused by the default: deletion unsupported).' }],
+        returns: '`true` when durable session state existed, `false` when absent.',
+      },
+      {
         signature: 'async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation>',
         description: 'Prepare the exact unpublished Session used by resume. Implementations may reuse object graphs retained by an earlier inspect after confirming their durable revision is still current; disposal releases an unpublished reservation. Revision retries require the durable log to remain unchanged for one read/check round trip; continuous external writers may delay completion.',
         parameters: [{ name: 'id', description: 'persisted session to prepare.' }, { name: 'signal', description: 'optional cancellation for preparation work.' }],
@@ -2144,6 +2150,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Archive one session durably. The session must exist (live or in session persistence); its workspace accounting — or lack of one — is irrelevant. An already archived id resolves without writing.',
         parameters: [{ name: 'sessionId', description: 'The session to archive.' }],
         returns: 'resolution after durability.',
+      },
+      {
+        signature: 'restoreSession(sessionId: SessionId): Promise<void>',
+        description: 'Restore one archived session to normal grouping surfaces. The workspace accounting slot was retained by archiveSession, so removing the archive marker also restores the session\'s former group and order. Unknown and already-restored ids are idempotent no-ops.',
+        parameters: [{ name: 'sessionId', description: 'The archived session to restore.' }],
+        returns: 'resolution after durability, when a write was needed.',
+      },
+      {
+        signature: 'purgeSession(sessionId: SessionId): Promise<void>',
+        description: 'Remove a deleted session from every workspace account and from the archive set. This method never deletes the session log itself; callers invoke it only after the persistence owner confirms durable deletion. Repeats are safe and perform no writes once every reference is gone.',
+        parameters: [{ name: 'sessionId', description: 'The durably deleted session id.' }],
+        returns: 'resolution after all workspace-domain writes settle.',
       },
       {
         signature: 'async resolveByPath(path: string): Promise<Workspace | undefined>',
@@ -3635,7 +3653,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RpcErrorDetailsMap',
-    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-conflict\': {\n        sessionId: SessionId;\n        requestedPreset: string;\n        existingPreset?: string;\n    };\n    \'agent-preset-not-found\': {\n        agentPreset: string;\n      /* …truncated — full shape in source */',
+    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'session-not-archived\': {\n        sessionId: SessionId;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-conflict\': {\n        sessionId: SessionId;\n        requestedPreset: string;\n        existingPreset?: string;\n    }; /* …truncated — full shape in source */',
   },
   {
     name: 'RpcId',

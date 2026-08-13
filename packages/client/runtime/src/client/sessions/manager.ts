@@ -527,6 +527,38 @@ export class SessionManager {
   }
 
   /**
+   * Permanently delete one Host-approved archived session and immediately
+   * remove its local list/object projections.
+   * @param sessionId - archived ordinary session to delete.
+   * @returns the Host result or a folded transport error.
+   */
+  async delete(sessionId: SessionId): Promise<RpcResult<{ deleted: true }>> {
+    try {
+      const { result } = await this.api.sessions.delete({ sessionId })
+      if (result.ok) {
+        if (this.selected === sessionId) this.selected = undefined
+        this.recordMutation({ kind: 'remove', sessionId })
+        this.sessions.get(sessionId)?.handleRemoved()
+        this.pendingBuffers.delete(sessionId)
+        this.pendingInteractions.delete(sessionId)
+        this.completedNotifications.delete(sessionId)
+        this.prevRunning.delete(sessionId)
+        this.jobsBySession.delete(sessionId)
+        this.projectionStores.delete(sessionId)
+        this.catalogs.delete(sessionId)
+        this.openCatalogs.delete(sessionId)
+        this.catalogStale.delete(sessionId)
+        const timer = this.catalogDebounce.get(sessionId)
+        if (timer !== undefined) clearTimeout(timer)
+        this.catalogDebounce.delete(sessionId)
+      }
+      return result
+    } catch (error: unknown) {
+      return transportError(error)
+    }
+  }
+
+  /**
    * Contract session.create; on success merge into summaries immediately (no
    * wait for the next refresh). A created session is blank by definition
    * (entity birth precedes the first message).

@@ -6,6 +6,10 @@
 回环地址启动一个由自身管理的 Harness 子进程，端口由操作系统随机分配，
 现有 Harness Web 客户端运行在加固后的 Electron 窗口内。
 
+侧栏提供类似 Codex 的已归档会话管理器。归档会保留会话日志及其原有
+Workspace 位置，可在管理器中原位恢复；永久删除只能从归档管理器进入，
+必须明确二次确认，且运行中的会话会被拒绝删除。
+
 ## 图标来源
 
 `assets/icon-source.png` 是 2026-08-14 通过 macOS 与 Windows 两端验收的
@@ -34,6 +38,9 @@ pnpm run desktop:dmg
 `desktop:pack` 生成可直接启动的 `.app`，`desktop:dmg` 生成安装镜像。应用
 使用操作系统分配的随机回环端口，不会占用固定的 65000 端口。
 
+当前 Intel 成品为 `DeepSeek-Harness-0.1.1-mac-x64.dmg`，SHA-256：
+`e715b4e85553a904d619568803e778fde952c69b2419b1e9d2cf9948bc6e9aad`。
+
 ## 成品验证
 
 先生成目录版应用，再从仓库根目录运行：
@@ -43,7 +50,8 @@ pnpm exec vitest run apps/desktop/tests/packaged-smoke.spec.ts --config vitest.c
 ```
 
 测试使用临时工作目录、临时用户数据和临时 `DSH_HOME`，验证 preload、
-三栏工作台、设置窗口、随机监听端口，以及原生退出后的完整进程回收。
+三栏工作台、归档管理器、设置窗口、随机监听端口，以及原生退出后的完整
+进程回收。
 
 当前本机构建未使用 Apple Developer 证书签名或公证；首次从其他位置打开时，
 可能需要在 Finder 中右键选择“打开”。

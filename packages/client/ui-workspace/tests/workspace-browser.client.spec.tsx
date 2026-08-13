@@ -76,6 +76,8 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     renameWorkspace: vi.fn(async () => {}),
     deleteWorkspace: vi.fn(async () => {}),
     archiveSession: vi.fn(async () => {}),
+    restoreSession: vi.fn(async () => {}),
+    deleteSession: vi.fn(async () => {}),
     insertWorkspaceBefore: vi.fn(async () => {}),
     insertSessionBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
@@ -355,6 +357,53 @@ describe('WorkspaceBrowser', () => {
     } finally {
       warn.mockRestore()
     }
+  })
+
+  it('opens archived sessions and restores one to its retained position', async () => {
+    const restoreSession = vi.fn(async () => {})
+    mount({
+      useSessions: hook(sessionState([
+        summary('archived-s', 2, { displayTitle: '归档对话' }),
+        summary('active-s', 1, { displayTitle: '正常对话' }),
+      ])),
+      useWorkspaces: hook(workspaceState(
+        [workspace('alpha', ['archived-s', 'active-s'])],
+        [sid('archived-s')],
+      )),
+      restoreSession,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '归档' }))
+    const dialog = screen.getByRole('dialog', { name: '已归档会话' })
+    expect(dialog.textContent).toContain('归档对话')
+    expect(dialog.textContent).not.toContain('正常对话')
+    fireEvent.click(screen.getByRole('button', { name: '恢复“归档对话”' }))
+
+    await waitFor(() => { expect(restoreSession).toHaveBeenCalledWith(sid('archived-s')) })
+  })
+
+  it('requires confirmation before permanently deleting an archived session', async () => {
+    let resolveDelete!: () => void
+    const deleteSession = vi.fn(() => new Promise<void>((resolve) => { resolveDelete = resolve }))
+    mount({
+      useSessions: hook(sessionState([summary('archived-s', 2, { displayTitle: '旧对话' })])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['archived-s'])], [sid('archived-s')])),
+      deleteSession,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '归档' }))
+    fireEvent.click(screen.getByRole('button', { name: '删除“旧对话”' }))
+    const dialog = screen.getByRole('dialog', { name: '永久删除会话' })
+    expect(dialog.textContent).toContain('无法恢复')
+    expect(dialog.textContent).toContain('工作区文件、全局设置和凭据不会被删除')
+    const confirm = screen.getByRole<HTMLButtonElement>('button', { name: '永久删除' })
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+    expect(deleteSession).toHaveBeenCalledOnce()
+    expect(deleteSession).toHaveBeenCalledWith(sid('archived-s'))
+    expect(confirm.disabled).toBe(true)
+    await act(async () => { resolveDelete() })
+    await waitFor(() => { expect(screen.getByRole('dialog', { name: '已归档会话' })).toBeTruthy() })
   })
 
   it('renders a fork child as a top-level row without a session twist', () => {

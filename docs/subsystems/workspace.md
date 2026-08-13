@@ -213,6 +213,26 @@ insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly Workspac
 archiveSession(sessionId: SessionId): Promise<void>
 
 /**
+ * Restore one archived session to normal grouping surfaces. The workspace
+ * accounting slot was retained by {@link archiveSession}, so removing the
+ * archive marker also restores the session's former group and order.
+ * Unknown and already-restored ids are idempotent no-ops.
+ * @param sessionId - The archived session to restore.
+ * @returns resolution after durability, when a write was needed.
+ */
+restoreSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Remove a deleted session from every workspace account and from the archive
+ * set. This method never deletes the session log itself; callers invoke it
+ * only after the persistence owner confirms durable deletion. Repeats are
+ * safe and perform no writes once every reference is gone.
+ * @param sessionId - The durably deleted session id.
+ * @returns resolution after all workspace-domain writes settle.
+ */
+purgeSession(sessionId: SessionId): Promise<void>
+
+/**
  * Resolve by canonical directory path without creating or mutating a
  * workspace. A missing path rejects during `realpath`; an existing unowned
  * directory returns `undefined`.
