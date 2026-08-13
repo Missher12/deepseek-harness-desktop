@@ -498,10 +498,19 @@ jobs:
           ./scripts/windows-desktop-setup-smoke.ps1
           -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe
 
+      - name: Record the Windows Setup checksum
+        shell: pwsh
+        run: |
+          $artifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe'
+          $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path -Leaf $artifact)" | Set-Content -LiteralPath "$artifact.sha256" -Encoding ascii
+
       - uses: actions/upload-artifact@v7
         with:
           name: DeepSeek-Harness-Setup-win-x64-${{ github.sha }}
-          path: apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe
+          path: |
+            apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe
+            apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe.sha256
           if-no-files-found: error
           retention-days: 7
 

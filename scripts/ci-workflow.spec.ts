@@ -78,11 +78,16 @@ describe('CI workflow', () => {
     expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
     expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run desktop:setup:built')
     expect(nativeCommandSteps.some(step => step.run.includes('windows-desktop-setup-smoke.ps1'))).toBe(true)
+    expect(nativeCommandSteps.some(step => (
+      step.run.includes('Get-FileHash') && step.run.includes('.sha256')
+    ))).toBe(true)
     expect((windowsNative.steps as unknown[]).some(step => (
       isRecord(step)
       && step.uses === 'actions/upload-artifact@v7'
       && isRecord(step.with)
-      && step.with.path === 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe'
+      && typeof step.with.path === 'string'
+      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe\n')
+      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe.sha256')
     ))).toBe(true)
 
     // wine-apt-cache: master-only, seeds the Wine apt cache.
