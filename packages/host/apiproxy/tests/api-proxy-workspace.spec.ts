@@ -75,22 +75,31 @@ async function harness(
   const storageDomain = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', storageDomain)
   ctx.provide('storageDomain', storageDomain)
-  ctx.provide('sessionPersistence', { list: () => Promise.resolve([]) } as never)
+  const deleteSession = vi.fn(async () => true)
+  ctx.provide('sessionPersistence', {
+    list: () => Promise.resolve([]),
+    delete: deleteSession,
+  } as never)
   await ctx.plugin(WorkspaceRegistry)
 
   const factory: AgentFactory = {
     async createAgent(_ownerCtx, options) {
-      const session = ctx.sessions.create(
-        options.sessionId,
-        options.meta === undefined ? {} : { meta: options.meta },
-      )
-      const agent = stubAgent(session)
-      const unregister = ctx.agents.register(agent)
+      let session!: Session
+      let agent!: Agent
+      let unregister!: () => void
+      const sessionFiber = await ctx.plugin(Object.assign((inner: Context) => {
+        session = inner.sessions.create(
+          options.sessionId,
+          options.meta === undefined ? {} : { meta: options.meta },
+        )
+        agent = stubAgent(session)
+        unregister = ctx.agents.register(agent)
+      }, { inject: ['sessions'] }))
       return {
         agent,
-        dispose: () => {
+        dispose: async () => {
           unregister()
-          return Promise.resolve()
+          await sessionFiber.dispose()
         },
       }
     },
@@ -108,7 +117,7 @@ async function harness(
     ...extras.openPath === undefined ? {} : { openPath: extras.openPath },
     ...extras.canOpenPath === undefined ? {} : { canOpenPath: extras.canOpenPath },
   })
-  return { api, ctx, storageDomain, root }
+  return { api, ctx, storageDomain, root, deleteSession }
 }
 
 /** Stage one directory under the harness root for path adoption. */
@@ -566,5 +575,41 @@ describe('Host Workspace increments', () => {
       error: { code: 'session-not-found', details: { sessionId: 'session-ghost' } },
     })
     abort.abort()
+  })
+
+  it('restores an archived session and keeps its original workspace accounting slot', async () => {
+    const { api, root } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({ path: stageDir(root, 'restore-home') }))).workspace
+    const sessionId = SessionId('session-to-restore')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
+    expect(expectOk(await api.workspace.archiveSession(request({ sessionId }))).archivedSessionIds)
+      .toEqual([sessionId])
+
+    expect(expectOk(await api.workspace.restoreSession(request({ sessionId }))).archivedSessionIds)
+      .toEqual([])
+    expect(expectOk(await api.workspace.list(request({}))).items[0]?.sessionIds).toEqual([sessionId])
+  })
+
+  it('permanently deletes only archived idle sessions and purges workspace references', async () => {
+    const { api, ctx, root, deleteSession } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({ path: stageDir(root, 'delete-home') }))).workspace
+    const sessionId = SessionId('session-to-delete')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
+
+    const refused = await api.sessions.delete(request({ sessionId }))
+    expect(refused.result).toMatchObject({
+      ok: false,
+      error: { code: 'session-not-archived', details: { sessionId } },
+    })
+    expect(deleteSession).not.toHaveBeenCalled()
+
+    expectOk(await api.workspace.archiveSession(request({ sessionId })))
+    expect(expectOk(await api.sessions.delete(request({ sessionId }))).deleted).toBe(true)
+    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    expect(deleteSession).toHaveBeenCalledWith(sessionId)
+    const listed = expectOk(await api.workspace.list(request({})))
+    expect(listed.archivedSessionIds).toEqual([])
+    expect(listed.items[0]?.sessionIds).toEqual([])
   })
 })

@@ -80,6 +80,9 @@ const lifecycle: { controller?: DesktopApplication } = {}
 
 const runtime = new HarnessProcess({
   cli: resolveCliPath(),
+  onOutput: (source, output) => {
+    record(`Harness ${source}: ${output}`)
+  },
   onExit: () => { void lifecycle.controller?.runtimeExited() },
 })
 

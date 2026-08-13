@@ -1,13 +1,106 @@
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { _electron as electron, type ElectronApplication } from 'playwright'
+import { Context } from '@deepseek-ai/cordis'
+import SessionStore, {
+  SESSION_FORMAT_VERSION,
+  SessionId,
+  type SessionEvent,
+  type SessionHeader,
+} from '@deepseek-ai/dsh-session'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { _electron as electron, type ElectronApplication, type Page } from 'playwright'
 import { expect } from 'vitest'
 
 const execFileAsync = promisify(execFile)
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
+const ACTIVE_CLIPBOARD_SESSION_ID = 'desktop-smoke-active-session-id'
+const ARCHIVED_CLIPBOARD_SESSION_ID = 'desktop-smoke-archived-session-id'
+
+/** Isolated on-disk state used only by the native Windows clipboard smoke. */
+export interface WindowsClipboardSmokeState {
+  activeSessionId: string
+  archivedSessionId: string
+  protectedPaths: readonly string[]
+}
+
+function completeTurn(createdAt: number): SessionEvent[] {
+  return [
+    { type: 'turn/start', seq: 0, time: createdAt, data: { turn: 1 } },
+    {
+      type: 'turn/end',
+      seq: 1,
+      time: createdAt + 1,
+      data: { turn: 1, reason: { kind: 'completed' } },
+    },
+  ]
+}
+
+/**
+ * Seed one ordinary and one archived cold Session through the shipped JSONL
+ * persistence implementation. The smoke never writes into the user's home.
+ * @param harnessHome - Exact isolated DSH_HOME prepared by the installer smoke.
+ * @returns Stable ids and files whose bytes must remain unchanged by copying.
+ */
+export async function seedWindowsClipboardSmokeState(
+  harnessHome: string,
+): Promise<WindowsClipboardSmokeState> {
+  const persistenceRoot = join(harnessHome, 'sessions')
+  const createdAt = Date.now() - 60_000
+  const headers: SessionHeader[] = [
+    {
+      version: SESSION_FORMAT_VERSION,
+      id: SessionId(ACTIVE_CLIPBOARD_SESSION_ID),
+      createdAt,
+      delegationDepth: 0,
+    },
+    {
+      version: SESSION_FORMAT_VERSION,
+      id: SessionId(ARCHIVED_CLIPBOARD_SESSION_ID),
+      createdAt: createdAt + 1,
+      delegationDepth: 0,
+    },
+  ]
+
+  const seeder = new Context()
+  const sessionPaths: string[] = []
+  try {
+    await seeder.plugin(SessionStore)
+    await seeder.plugin(JsonlSessionPersistence, { root: persistenceRoot })
+    for (const header of headers) {
+      await seeder.sessionPersistence.create(header)
+      await seeder.sessionPersistence.append(header.id, completeTurn(header.createdAt))
+      const location = seeder.sessionPersistence.locate(header)
+      if (location === undefined || location.kind !== 'jsonl') {
+        throw new Error(`Packaged smoke: seeded Session ${header.id} has no JSONL location.`)
+      }
+      sessionPaths.push(location.path)
+    }
+  } finally {
+    await seeder.fiber.dispose()
+  }
+
+  const storageRoot = join(harnessHome, 'storages')
+  const workspacePath = join(storageRoot, 'workspace.json')
+  await mkdir(storageRoot, { recursive: true })
+  await writeFile(workspacePath, `${JSON.stringify({
+    unit: { name: 'workspace', version: 2 },
+    global: {
+      initialized: true,
+      workspaceIds: [],
+      archivedSessionIds: [ARCHIVED_CLIPBOARD_SESSION_ID],
+    },
+    tables: { workspaces: {} },
+  }, null, 2)}\n`, 'utf8')
+
+  return {
+    activeSessionId: ACTIVE_CLIPBOARD_SESSION_ID,
+    archivedSessionId: ARCHIVED_CLIPBOARD_SESSION_ID,
+    protectedPaths: [...sessionPaths, workspacePath],
+  }
+}
 
 /** One Windows process inventory row returned by Win32_Process. */
 export interface WindowsProcessRow {
@@ -122,6 +215,110 @@ async function listenerPids(port: number, platform: NodeJS.Platform): Promise<nu
   }
 }
 
+async function protectedFileSnapshot(paths: readonly string[]): Promise<Record<string, string>> {
+  const snapshot: Record<string, string> = {}
+  await Promise.all(paths.map(async (path) => {
+    snapshot[path] = (await readFile(path)).toString('base64')
+  }))
+  return snapshot
+}
+
+async function desktopStartupDiagnostic(page: Page, userData: string): Promise<string> {
+  const url = page.isClosed() ? '[window closed]' : page.url()
+  const body = page.isClosed()
+    ? '[window closed]'
+    : await page.locator('body').innerText().catch((error: unknown) => `[body unavailable: ${String(error)}]`)
+  const lifecyclePath = join(userData, 'logs', 'lifecycle.log')
+  const lifecycle = await readFile(lifecyclePath, 'utf8')
+    .then(text => text.slice(-24_000))
+    .catch((error: unknown) => `[lifecycle log unavailable: ${String(error)}]`)
+  return `URL: ${url}\nRendered body:\n${body}\nLifecycle log tail:\n${lifecycle}`
+}
+
+async function waitForDesktopSurface(page: Page, userData: string): Promise<void> {
+  const deadline = Date.now() + 120_000
+  while (Date.now() < deadline) {
+    if (page.isClosed()) {
+      throw new Error(`Packaged smoke: desktop window closed during startup.\n${await desktopStartupDiagnostic(page, userData)}`)
+    }
+    if (await page.locator('body[data-dsh-surface="desktop"]').count() === 1) return
+    try {
+      const url = new URL(page.url())
+      if (url.protocol === 'file:' && url.pathname.endsWith('/failure.html')) {
+        throw new Error(`Packaged smoke: application rendered its failure surface.\n${await desktopStartupDiagnostic(page, userData)}`)
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Packaged smoke:')) throw error
+    }
+    await page.waitForTimeout(250)
+  }
+  throw new Error(`Packaged smoke: desktop surface missed its startup deadline.\n${await desktopStartupDiagnostic(page, userData)}`)
+}
+
+async function exerciseWindowsClipboard(
+  page: Page,
+  application: ElectronApplication,
+  seeded: WindowsClipboardSmokeState,
+): Promise<void> {
+  const beforeFiles = await protectedFileSnapshot(seeded.protectedPaths)
+  const selectedBefore = await page.locator('[role="treeitem"][aria-selected="true"]').allTextContents()
+  const previousClipboard = await application.evaluate(({ clipboard }) => clipboard.readText())
+
+  try {
+    const activeActions = page.locator(`button[aria-label*="${seeded.activeSessionId}"]`).first()
+    if (!await activeActions.isVisible()) {
+      await page.getByText(/^(?:Ungrouped|未分组)$/u, { exact: true }).first().click()
+    }
+    await activeActions.waitFor({ state: 'visible', timeout: 15_000 })
+
+    await application.evaluate(({ clipboard }, text) => { clipboard.writeText(text) }, 'desktop-smoke-before-active-copy')
+    await activeActions.click()
+    await page.getByRole('menuitem', { name: /^(?:Copy session ID|复制会话 ID)$/u }).click()
+    await expect.poll(
+      () => application.evaluate(({ clipboard }) => clipboard.readText()),
+      { timeout: 10_000 },
+    ).toBe(seeded.activeSessionId)
+    await page.getByRole('alert').filter({ hasText: /^(?:Session ID copied|会话 ID 已复制)$/u })
+      .waitFor({ state: 'visible', timeout: 10_000 })
+
+    await page.getByRole('button', { name: /^(?:Archive|Archived|归档)$/u }).click()
+    const archiveDialog = page.getByRole('dialog', { name: /^(?:Archived sessions|已归档会话)$/u })
+    await archiveDialog.waitFor({ state: 'visible', timeout: 15_000 })
+    const archivedCopy = archiveDialog.getByRole('button', {
+      name: new RegExp(`^(?:Copy session ID|复制会话 ID).*${seeded.archivedSessionId}`, 'u'),
+    })
+    await archivedCopy.waitFor({ state: 'visible', timeout: 15_000 })
+
+    await application.evaluate(({ clipboard }, text) => { clipboard.writeText(text) }, 'desktop-smoke-before-archived-copy')
+    await archivedCopy.click()
+    await expect.poll(
+      () => application.evaluate(({ clipboard }) => clipboard.readText()),
+      { timeout: 10_000 },
+    ).toBe(seeded.archivedSessionId)
+    expect(await archiveDialog.isVisible()).toBe(true)
+    expect(await archiveDialog.getByRole('button', { name: /^(?:Restore|恢复)/u }).count()).toBe(1)
+    expect(await archiveDialog.getByRole('button', { name: /^(?:Delete|删除)/u }).count()).toBe(1)
+
+    await page.waitForTimeout(500)
+    expect(await protectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
+    expect(await page.locator('[role="treeitem"][aria-selected="true"]').allTextContents()).toEqual(selectedBefore)
+    await page.keyboard.press('Escape')
+    await archiveDialog.waitFor({ state: 'detached', timeout: 15_000 })
+  } finally {
+    await application.evaluate(({ clipboard }, text) => { clipboard.writeText(text) }, previousClipboard)
+  }
+}
+
+async function quitAfterSmokeFailure(application: ElectronApplication): Promise<void> {
+  try {
+    const closed = application.waitForEvent('close', { timeout: 15_000 })
+    await application.evaluate(({ app }) => { app.quit() })
+    await closed
+  } catch {
+    await application.close().catch(() => undefined)
+  }
+}
+
 async function quitDesktop(application: ElectronApplication, platform: NodeJS.Platform): Promise<void> {
   if (platform === 'win32') {
     await application.evaluate(({ BrowserWindow }) => {
@@ -157,6 +354,9 @@ export async function runPackagedDesktopSmoke(
   const harnessHome = process.env.DSH_DESKTOP_SMOKE_DSH_HOME ?? join(temporaryRoot, 'dsh-home')
   const userData = process.env.DSH_DESKTOP_SMOKE_USER_DATA ?? join(temporaryRoot, 'electron-data')
   await Promise.all([mkdir(harnessHome, { recursive: true }), mkdir(userData, { recursive: true })])
+  const clipboardSeed = platform === 'win32'
+    ? await seedWindowsClipboardSmokeState(harnessHome)
+    : undefined
 
   let nativeApp: ElectronApplication | undefined
   let quitCompleted = false
@@ -169,7 +369,7 @@ export async function runPackagedDesktopSmoke(
       timeout: 120_000,
     })
     const page = await nativeApp.firstWindow({ timeout: 120_000 })
-    await page.locator('body[data-dsh-surface="desktop"]').waitFor({ timeout: 120_000 })
+    await waitForDesktopSurface(page, userData)
 
     expect(await page.evaluate(() => (
       typeof window.dshDesktop?.onCommand === 'function'
@@ -199,6 +399,19 @@ export async function runPackagedDesktopSmoke(
       if (await configureLaterButton.isVisible()) await configureLaterButton.click()
       return page.locator('#root').evaluate((element: HTMLElement) => !element.inert)
     }, { timeout: 15_000 }).toBe(true)
+
+    if (clipboardSeed !== undefined) {
+      await exerciseWindowsClipboard(page, nativeApp, clipboardSeed)
+    } else {
+      await page.getByRole('button', { name: /^(?:Archive|Archived|归档)$/u }).click()
+      const archiveDialog = page.getByRole('dialog', {
+        name: /^(?:Archived sessions|已归档会话)$/u,
+      })
+      await archiveDialog.waitFor({ state: 'visible', timeout: 15_000 })
+      expect(await archiveDialog.getByText(/^(?:No archived sessions|暂无已归档会话)$/u).isVisible()).toBe(true)
+      await page.keyboard.press('Escape')
+      await archiveDialog.waitFor({ state: 'detached', timeout: 15_000 })
+    }
 
     await page.waitForTimeout(15_000)
     expect(await page.locator('body').innerText()).not.toContain('Failed to load plugins')
@@ -230,6 +443,6 @@ export async function runPackagedDesktopSmoke(
     await expect.poll(() => trackedPids.filter(processExists), { timeout: 15_000 }).toEqual([])
     await expect.poll(() => listenerPids(port, platform), { timeout: 15_000 }).toEqual([])
   } finally {
-    if (!quitCompleted && nativeApp !== undefined) await nativeApp.close()
+    if (!quitCompleted && nativeApp !== undefined) await quitAfterSmokeFailure(nativeApp)
   }
 }

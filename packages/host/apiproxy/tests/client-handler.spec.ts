@@ -38,6 +38,7 @@ function scriptedApi(overrides: {
       list: r => ok(r, { items: [] }),
       search: r => ok(r, { items: [], hasMore: false }),
       create: r => ok(r, { sessionId: sid('s-new') }),
+      delete: r => ok(r, { deleted: true as const }),
       history: r => ok(r, {
         events: [],
         hasMore: false,
@@ -88,6 +89,7 @@ function scriptedApi(overrides: {
       insertBefore: r => ok(r, { workspaceIds: [r.payload.workspaceId] }),
       insertSessionBefore: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),
       archiveSession: r => ok(r, { archivedSessionIds: [r.payload.sessionId] }),
+      restoreSession: r => ok(r, { archivedSessionIds: [] }),
     },
     skills: { list: r => ok(r, { skills: [] }), ...overrides.skills },
     agentPresets: {

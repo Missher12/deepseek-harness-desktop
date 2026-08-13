@@ -446,6 +446,23 @@ export class SessionRuntime implements ISessions {
   }
 
   /**
+   * Permanently delete an archived ordinary session. The Host owns the
+   * archive-only and idle-session safety checks.
+   * @param sessionId - archived session to delete.
+   */
+  async delete(sessionId: SessionId): Promise<void> {
+    const result = await this.manager.delete(sessionId)
+    if (!result.ok) throw new Error(`session delete failed: ${result.error.code}: ${result.error.message}`)
+    // Make completion structurally synchronous for callers instead of waiting
+    // for the manager notifier's microtask.
+    this.projectList()
+    if (this.watched === sessionId) {
+      this.watched = undefined
+      this.sweepDeferred()
+    }
+  }
+
+  /**
    * Route a mux stream envelope into the Session object layer.
    * @param envelope - validated mux stream envelope.
    */

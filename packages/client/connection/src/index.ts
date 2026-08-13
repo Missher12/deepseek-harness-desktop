@@ -87,6 +87,7 @@ export const Config: z<ConnectionConfig> = z.object({
  * keys, or key state — and a LAN client's model picker legitimately needs it.
  */
 const PRIVILEGED_METHODS = new Set([
+  'session.delete',
   // A preset composition names the plugins a session runs, so reading one is
   // reconnaissance; copy and remove rearrange what the deployment offers, and
   // openDocument drives the host desktop — all more than the roster beside

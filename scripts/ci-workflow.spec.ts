@@ -87,8 +87,8 @@ describe('CI workflow', () => {
       && step.uses === 'actions/upload-artifact@v7'
       && isRecord(step.with)
       && typeof step.with.path === 'string'
-      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe\n')
-      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe.sha256')
+      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe\n')
+      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe.sha256')
     ))).toBe(true)
 
     // wine-apt-cache: master-only, seeds the Wine apt cache.
@@ -409,31 +409,30 @@ describe('Windows desktop Setup workflow', () => {
     if (!isRecord(build) || typeof build.run !== 'string') {
       throw new TypeError('Windows desktop workflow must define the Setup build command')
     }
+    if (!isRecord(smoke) || typeof smoke.run !== 'string') {
+      throw new TypeError('Windows desktop workflow must define the installed application smoke command')
+    }
+    if (!isRecord(checksum) || typeof checksum.run !== 'string') {
+      throw new TypeError('Windows desktop workflow must define the checksum command')
+    }
+    if (!isRecord(upload) || !isRecord(upload.with) || typeof upload.with.path !== 'string') {
+      throw new TypeError('Windows desktop workflow must define the Setup artifact upload')
+    }
 
     expect(checkout).toMatchObject({ with: { path: 's', 'persist-credentials': false } })
     expect(pnpmSetup).toMatchObject({ with: { version: '11.7.0' } })
     expect(job.defaults.run['working-directory']).toBe('s')
     expect(job.env).toBeUndefined()
     expect(install).toMatchObject({ run: 'pnpm install --frozen-lockfile' })
-    expect(build).toMatchObject({
-      run: expect.stringContaining('pnpm run desktop:stage'),
-    })
+    expect(build.run).toContain('pnpm run desktop:stage')
     expect(build.run).toContain("$env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'")
-    expect(build).toMatchObject({
-      run: expect.stringContaining('pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"'),
-    })
+    expect(build.run).toContain('pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"')
     expect(build.run).toContain('Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact')
     expect(build.run).not.toContain('pnpm run desktop:setup\n')
-    expect(smoke).toMatchObject({
-      run: expect.stringContaining('./scripts/windows-desktop-setup-smoke.ps1 -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe'),
-    })
-    expect(smoke).not.toMatchObject({ run: expect.stringContaining('Set-Location S:\\') })
-    expect(checksum).not.toMatchObject({ run: expect.stringContaining('Set-Location S:\\') })
-    expect(upload).toMatchObject({
-      with: {
-        path: expect.stringContaining('s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe'),
-      },
-    })
+    expect(smoke.run).toContain('./scripts/windows-desktop-setup-smoke.ps1 -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe')
+    expect(smoke.run).not.toContain('Set-Location S:\\')
+    expect(checksum.run).not.toContain('Set-Location S:\\')
+    expect(upload.with.path).toContain('s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe')
   })
 })
 

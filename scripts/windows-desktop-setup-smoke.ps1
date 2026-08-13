@@ -35,6 +35,28 @@ function Wait-PathRemoved {
   }
 }
 
+function Get-IsolatedInstalledProcesses {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$ExecutablePath
+  )
+
+  return @(Get-CimInstance Win32_Process | Where-Object {
+    $null -ne $_.ExecutablePath -and $_.ExecutablePath -eq $ExecutablePath
+  })
+}
+
+function Stop-IsolatedInstalledProcesses {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$ExecutablePath
+  )
+
+  foreach ($process in @(Get-IsolatedInstalledProcesses -ExecutablePath $ExecutablePath)) {
+    Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+  }
+}
+
 $resolvedSetup = (Resolve-Path -LiteralPath $SetupPath).Path
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "dsh-windows-setup-smoke-$([Guid]::NewGuid().ToString('N'))"
 $installRoot = Join-Path $temporaryRoot 'application'
@@ -45,6 +67,7 @@ $userDataMarker = Join-Path $userData 'preserve-after-uninstall.txt'
 $desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'DeepSeek Harness.lnk'
 $startMenuShortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'DeepSeek Harness.lnk'
 $uninstaller = $null
+$executable = $null
 $installed = $false
 
 if ((Test-Path -LiteralPath $desktopShortcut) -or (Test-Path -LiteralPath $startMenuShortcut)) {
@@ -84,6 +107,10 @@ try {
   if ($LASTEXITCODE -ne 0) {
     throw "Packaged Windows desktop smoke failed with exit code $LASTEXITCODE."
   }
+  $remainingProcesses = @(Get-IsolatedInstalledProcesses -ExecutablePath $executable)
+  if ($remainingProcesses.Count -ne 0) {
+    throw "Packaged smoke left $($remainingProcesses.Count) installed application process(es) running."
+  }
 
   Invoke-CheckedProcess -FilePath $uninstaller -ArgumentList @('/S')
   $installed = $false
@@ -102,6 +129,9 @@ try {
   Write-Host 'Windows desktop Setup smoke passed: install, shortcuts, launch, close, process cleanup, uninstall, and data preservation.'
 }
 finally {
+  if ($null -ne $executable) {
+    Stop-IsolatedInstalledProcesses -ExecutablePath $executable
+  }
   if ($installed -and $null -ne $uninstaller -and (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
     try {
       Invoke-CheckedProcess -FilePath $uninstaller -ArgumentList @('/S')

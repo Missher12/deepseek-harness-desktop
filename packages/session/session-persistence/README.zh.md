@@ -15,6 +15,7 @@
 | `readRaw(id, signal?): Promise<SessionRawArtifact \| undefined>` | 读取受支持后端自身的逐字工件文本；只解码物理编码，绝不从事件重建。`undefined` 仅表示所请求工件缺失；不支持的后端会拒绝。 |
 | `create(meta): Promise<void>` | 注册新会话元数据。可以将物理写入延迟到第一次 `append`（延迟实体化）。 |
 | `append(id, events): Promise<void>` | 持久保存一个批次。仅追加；任何修复后，第一个事件 `seq` == 已存储 next-seq；非 JSON 可序列化数据会被拒绝，并命名违规类型。 |
+| `delete(id): Promise<boolean>` | 永久移除一个冷会话。基于协调器的实现会等待退役并与同 id 操作串行，在 Session 仍附加或 preparation 被预留时拒绝，并返回是否存在持久或已跟踪状态。附件与项目文件不属于该所有权边界。 |
 | `prepare(id, signal?): Promise<SessionPreparation>` | 预留恢复所使用的那个未发布 Session。协调器会尽可能复用之前的检查结果、提交待处理恢复，并在 dispose（资源释放）时将未发布 reservation 释放回有界缓存。 |
 | `load(id): Promise<{ meta; events }>` | 转换同一格式版本中受支持的旧记录后，返回不可变、平衡的逻辑日志，并提交冷恢复。实时 load 先 flush 其快照，并在轮次开放时拒绝；冷 load 保留中断的最终轮次，并用合成 `tool/result`/`step/end?`/`turn/end {interrupted}` 事件持久关闭它。只丢弃撕裂尾部碎片；已提交损坏和格式错误的记录以 `SessionPersistenceCorruptionError` 拒绝，不支持的格式 `version` 或本构建不认识且信封未带 `ignorable` 标记的事件类型以 `SessionFormatUnsupportedError` 拒绝，消息说明拒绝方向，并在后端为每个会话保留独立文件时给出原始日志路径。 |
 | `inspect(id, signal?): Promise<{ meta; events }>` | 返回已经升级、验证和深度冻结的逻辑视图，但不提交恢复或发布 Session。冷视图会获得仅存在于内存的合成恢复 closer，物理撕裂尾部保持不变；实时状态下的视图则是当前不可变快照，可能包含开放的轮次。基于协调器的实现会在有界 LRU 中保留该冷状态下未发布的 Session 本身，供后续 `prepare` 使用，但已存储修订值变化后会丢弃并重新读取。同 id 检查共享进行中的读取。 |
@@ -50,6 +51,7 @@
 | `name` | dispose 失败 `AggregateError` 的后端标签。 |
 | `loadStored(id, signal?)` | 在全部存储范围中按 id 读取已存储前缀。用于恢复／加载、非修改式 inspect、活动会话接管和 create 冲突探测。可选信号属于仅观察读取。返回元数据标识 `id`；`revision` 精确标识返回的 header 和事件；当且仅当必须截断撕裂尾部时才存在不透明 `tornMarker`。 |
 | `readStoredRevision(id, signal?)` | 在不加载事件日志的情况下读取一个 id 当前的来源限定修订值。它使用与 `loadStored` 相同的修订值表示；id 不存在时返回 `undefined`。 |
+| `deleteStored(id)` | 只永久移除一个 id 的后端自有状态，并报告其是否存在。协调器仅在实时性、退役、reservation 和同 id 串行门禁通过后调用。 |
 | `loadStoredFrom?(id, fromSeq, signal?)` | 服务 `readFrom` 背后的可选可寻址后缀读取：返回 header 和 `seq >= fromSeq` 的已存储事件，非修改式、无撕裂标记。SQLite 实现它（`WHERE seq >= ?`）；不实现的后端使用协调器回退——`loadStored` 加向前跳过。 |
 | `appendBatch(meta, events, isMaterialized)` | 持久追加连续批次；尚未实体化时以原子方式延迟实体化。 |
 | `commitRepair(meta, tornMarker, closers)` | 使崩溃修复持久：截断撕裂尾部（当且仅当 `tornMarker !== undefined`；标记可为 falsy，例如 seq/offset `0`），并追加 `closers`。不要求原子性。由 load（截断 + closer）和活动会话接管（仅截断）使用。 |
@@ -80,6 +82,5 @@
 
 ## 已知限制与暂缓事项
 
-- **无删除或保留接口**：剪枝已存储会话是带外后端维护。
 - **`list()` 无分页且无过滤**：它返回每个已存储会话的 header；适合本地存储，大规模时无索引。
 - **修复时合成 closer 是唯一崩溃方案**：后端必须在 load 时合成 `tool/result`/`step/end`/`turn/end` closer；没有继续中断轮次而不先关闭它的部分轮次恢复。

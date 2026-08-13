@@ -185,7 +185,7 @@ export class TestSessions implements ISessions {
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
     method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
-      | 'clear' | 'search' | 'fork'
+      | 'clear' | 'search' | 'fork' | 'delete'
     args: unknown[]
   }[] = []
 
@@ -313,6 +313,12 @@ export class TestSessions implements ISessions {
       if (record.scopeFiber !== undefined) await record.scopeFiber.dispose()
       this.rootCtx.get('slots')?.pruneStoreScope(id)
     })
+  }
+
+  /** Permanently delete a fixture session through the production action face. */
+  async delete(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'delete', args: [sessionId] })
+    await this.remove(sessionId)
   }
 
   /**
