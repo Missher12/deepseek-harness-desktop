@@ -53,15 +53,14 @@ jobs:
 
       - name: Install immutable dependencies
         shell: pwsh
-        run: |
-          Set-Location S:\
-          pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build the one-click Windows Setup
         shell: pwsh
         run: |
+          pnpm run desktop:stage
           Set-Location S:\
-          pnpm run desktop:setup
+          pnpm --filter @deepseek-ai/dsh-desktop run pack:setup
 
       - name: Install and exercise the packaged application
         shell: pwsh

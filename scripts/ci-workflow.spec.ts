@@ -407,6 +407,9 @@ describe('Windows desktop Setup workflow', () => {
     const smoke = job.steps.filter(isRecord).find(step => step.name === 'Install and exercise the packaged application')
     const checksum = job.steps.filter(isRecord).find(step => step.name === 'Record SHA-256')
     const upload = job.steps.filter(isRecord).find(step => step.uses === 'actions/upload-artifact@v7')
+    if (!isRecord(build) || typeof build.run !== 'string') {
+      throw new TypeError('Windows desktop workflow must define the Setup build command')
+    }
 
     expect(checkout).toMatchObject({ with: { path: 's', 'persist-credentials': false } })
     expect(pnpmSetup).toMatchObject({ with: { version: '11.7.0' } })
@@ -415,7 +418,17 @@ describe('Windows desktop Setup workflow', () => {
       shell: 'pwsh',
       run: expect.stringContaining('subst S: "$env:GITHUB_WORKSPACE\\s"'),
     })
-    for (const step of [install, build, smoke, checksum]) {
+    expect(install).toMatchObject({ run: 'pnpm install --frozen-lockfile' })
+    expect(build).toMatchObject({
+      run: expect.stringContaining('pnpm run desktop:stage'),
+    })
+    expect(build).toMatchObject({
+      run: expect.stringContaining('pnpm --filter @deepseek-ai/dsh-desktop run pack:setup'),
+    })
+    expect(build.run.indexOf('pnpm run desktop:stage'))
+      .toBeLessThan(build.run.indexOf('Set-Location S:\\'))
+    expect(build.run).not.toContain('pnpm run desktop:setup\n')
+    for (const step of [build, smoke, checksum]) {
       expect(step).toMatchObject({ run: expect.stringContaining('Set-Location S:\\') })
     }
     expect(upload).toMatchObject({
