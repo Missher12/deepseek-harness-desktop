@@ -46,6 +46,19 @@ function hook<T>(snapshot: T) {
   return function select<S>(selector: (state: T) => S): S { return selector(snapshot) }
 }
 
+/** Install the async browser clipboard and restore its prior host shape. */
+function installClipboard(writeText: (text: string) => Promise<void>): () => void {
+  const prior = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText },
+  })
+  return () => {
+    if (prior === undefined) Reflect.deleteProperty(navigator, 'clipboard')
+    else Object.defineProperty(navigator, 'clipboard', prior)
+  }
+}
+
 /** jsdom lacks DragEvent — the fireEvent fallback drops clientY, so pin it on the built event. */
 function fireDrag(row: HTMLElement, kind: 'dragOver' | 'drop', clientY: number): void {
   const event = kind === 'dragOver' ? createEvent.dragOver(row) : createEvent.drop(row)
@@ -337,6 +350,46 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('gone-s')).toBeNull()
   })
 
+  it('copies the exact session id from the row menu without opening the session', async () => {
+    const writeText = vi.fn(async () => {})
+    const restoreClipboard = installClipboard(writeText)
+    try {
+      const open = vi.fn()
+      mount({
+        useSessions: hook(sessionState([summary('session-id-exact', 1, { displayTitle: '可复制会话' })])),
+        useWorkspaces: hook(workspaceState([workspace('alpha', ['session-id-exact'])])),
+        open,
+      })
+      fireEvent.click(screen.getByText('alpha'))
+      fireEvent.click(screen.getByRole('button', { name: '会话“可复制会话”的操作' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: '复制会话 ID' }))
+
+      await waitFor(() => { expect(writeText).toHaveBeenCalledWith('session-id-exact') })
+      expect(open).not.toHaveBeenCalled()
+      expect(screen.getByRole('alert').textContent).toBe('会话 ID 已复制')
+    } finally {
+      restoreClipboard()
+    }
+  })
+
+  it('does not claim success when the host refuses the clipboard write', async () => {
+    const restoreClipboard = installClipboard(vi.fn(async () => { throw new Error('denied') }))
+    try {
+      mount({
+        useSessions: hook(sessionState([summary('copy-denied', 1)])),
+        useWorkspaces: hook(workspaceState([workspace('alpha', ['copy-denied'])])),
+      })
+      fireEvent.click(screen.getByText('alpha'))
+      fireEvent.click(screen.getByRole('button', { name: '会话“copy-denied”的操作' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: '复制会话 ID' }))
+
+      await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('无法复制会话 ID') })
+      expect(screen.queryByText('会话 ID 已复制')).toBeNull()
+    } finally {
+      restoreClipboard()
+    }
+  })
+
   it('logs and keeps the tree when the archive call rejects', async () => {
     const rejection = new Error('archive exploded')
     const archiveSession = vi.fn(async () => { throw rejection })
@@ -380,6 +433,37 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: '恢复“归档对话”' }))
 
     await waitFor(() => { expect(restoreSession).toHaveBeenCalledWith(sid('archived-s')) })
+  })
+
+  it('copies the exact archived session id without restoring or deleting it', async () => {
+    const writeText = vi.fn(async () => {})
+    const restoreClipboard = installClipboard(writeText)
+    try {
+      const restoreSession = vi.fn(async () => {})
+      const deleteSession = vi.fn(async () => {})
+      mount({
+        useSessions: hook(sessionState([
+          summary('archived-id-exact', 2, { displayTitle: '归档对话' }),
+        ])),
+        useWorkspaces: hook(workspaceState(
+          [workspace('alpha', ['archived-id-exact'])],
+          [sid('archived-id-exact')],
+        )),
+        restoreSession,
+        deleteSession,
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: '归档' }))
+      fireEvent.click(screen.getByRole('button', { name: '复制会话 ID“归档对话”' }))
+
+      await waitFor(() => { expect(writeText).toHaveBeenCalledWith('archived-id-exact') })
+      expect(restoreSession).not.toHaveBeenCalled()
+      expect(deleteSession).not.toHaveBeenCalled()
+      expect(screen.getByRole('dialog', { name: '已归档会话' })).toBeTruthy()
+      expect(screen.getByRole('alert').textContent).toBe('会话 ID 已复制')
+    } finally {
+      restoreClipboard()
+    }
   })
 
   it('requires confirmation before permanently deleting an archived session', async () => {

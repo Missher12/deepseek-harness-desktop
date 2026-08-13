@@ -11,6 +11,10 @@ The sidebar includes a Codex-style archived-session manager. Archiving keeps
 the session log and its Workspace position; the manager can restore it in
 place. Permanent deletion is available only from the archive, requires an
 explicit confirmation, and is rejected while the session is running.
+Every non-blank session row exposes **Copy session ID** in its action menu,
+and archived-session cards expose the same action without restoring or
+deleting the session. The app copies the exact stable id and reports whether
+the host clipboard accepted the write.
 
 ## Icon provenance
 
@@ -43,8 +47,8 @@ isolated under `apps/desktop/.stage`; output is written to
 the install image. The app uses an operating-system-assigned loopback port and
 does not reserve port 65000.
 
-The current Intel artifact is `DeepSeek-Harness-0.1.1-mac-x64.dmg`, SHA-256
-`e715b4e85553a904d619568803e778fde952c69b2419b1e9d2cf9948bc6e9aad`.
+The current Intel artifact is `DeepSeek-Harness-0.1.2-mac-x64.dmg`, SHA-256
+`40e20ade2025116e0b80181529ba5fef4fbe11087690894636a0c9c5bd4ff138`.
 
 ## Packaged verification
 

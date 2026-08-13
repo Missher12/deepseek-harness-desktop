@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Button, IconArchiveOutline20, IconCloseFill14, IconPersonalizationOutline16,
-  IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Tooltip,
+  IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Toast, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   SessionId, SessionListState, SessionSearchResultItem, WorkspaceId, WorkspaceView,
@@ -239,6 +239,8 @@ type SessionTreeProps = Pick<
   onDeleteRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
   /** Open the browser-owned session rename dialog. */
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
+  /** Copy one exact session id and announce whether the host accepted it. */
+  onSessionIdCopy: (sessionId: SessionNode['id']) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
   onSessionArchive: (sessionId: SessionNode['id']) => void
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
@@ -248,7 +250,7 @@ type SessionTreeProps = Pick<
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
   useSessions, startSession, open, forkSession, workspaces, archivedSessionIds,
-  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
+  onRenameRequest, onDeleteRequest, onSessionRename, onSessionIdCopy, onSessionArchive,
   insertWorkspaceBefore, insertSessionBefore, orderBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
@@ -515,6 +517,7 @@ function SessionTree({
                     onOpen={open}
                     onRename={onSessionRename}
                     onFork={forkSession}
+                    onCopyId={onSessionIdCopy}
                     onArchive={onSessionArchive}
                     drag={dragProps}
                     t={t}
@@ -544,7 +547,7 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  useSessions, open, forkSession, onSessionRename, onSessionArchive, archivedSessionIds,
+  useSessions, open, forkSession, onSessionRename, onSessionIdCopy, onSessionArchive, archivedSessionIds,
   orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
 }: Pick<
   SessionTreeProps,
@@ -552,6 +555,7 @@ function FlatList({
   | 'open'
   | 'forkSession'
   | 'onSessionRename'
+  | 'onSessionIdCopy'
   | 'onSessionArchive'
   | 'archivedSessionIds'
   | 'orderBy'
@@ -631,6 +635,7 @@ function FlatList({
               onOpen={open}
               onRename={onSessionRename}
               onFork={forkSession}
+              onCopyId={onSessionIdCopy}
               onArchive={onSessionArchive}
               flat
               drag={{
@@ -984,6 +989,17 @@ export function WorkspaceBrowser({
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<{ sessionId: SessionId; title: string } | null>(null)
   const [permanentDeleting, setPermanentDeleting] = useState(false)
   const [permanentDeleteError, setPermanentDeleteError] = useState<string | null>(null)
+  const copyToastSeq = useRef(0)
+  const [copyToast, setCopyToast] = useState<{ seq: number; text: string } | null>(null)
+  const copySessionId = (sessionId: SessionId): void => {
+    void writeClipboard(sessionId).then((accepted) => {
+      copyToastSeq.current += 1
+      setCopyToast({
+        seq: copyToastSeq.current,
+        text: t(accepted ? 'copy.sessionIdSuccess' : 'copy.sessionIdFailed'),
+      })
+    })
+  }
   const archivedRows = archivedSessionIds.map((sessionId) => {
     const session = sessionList.byId[sessionId]
     const owningWorkspace = workspaces.find(candidate => candidate.sessionIds.includes(sessionId))
@@ -1200,7 +1216,8 @@ export function WorkspaceBrowser({
             ? (
               <FlatList
                 useSessions={useSessions} open={open} forkSession={forkSession}
-                onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
+                onSessionRename={onSessionRename} onSessionIdCopy={copySessionId}
+                onSessionArchive={onSessionArchive}
                 archivedSessionIds={archivedSessionIds}
                 orderBy={orderBy}
                 sessionOrderByAccount={sessionOrderByAccount}
@@ -1214,6 +1231,7 @@ export function WorkspaceBrowser({
               <SessionTree
                 useSessions={useSessions}
                 onSessionRename={onSessionRename}
+                onSessionIdCopy={copySessionId}
                 onSessionArchive={onSessionArchive}
                 forkSession={forkSession}
                 workspaces={workspaces}
@@ -1355,6 +1373,14 @@ export function WorkspaceBrowser({
                     <Button
                       variant="outline"
                       disabled={archiveBusyId !== null}
+                      aria-label={`${t('menu.copySessionId')}“${row.title}”`}
+                      onClick={() => { copySessionId(row.sessionId) }}
+                    >
+                      {t('menu.copySessionId')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={archiveBusyId !== null}
                       aria-label={`${t('archive.restore')}“${row.title}”`}
                       onClick={() => { restoreArchived(row.sessionId) }}
                     >
@@ -1402,6 +1428,13 @@ export function WorkspaceBrowser({
         {permanentDeleting && <div className={css.deleteStatus} role="status">{t('archive.delete.pending')}</div>}
         {permanentDeleteError !== null && <div className={css.renameError} role="alert">{permanentDeleteError}</div>}
       </Modal>
+      {copyToast !== null && (
+        <Toast
+          key={copyToast.seq}
+          text={copyToast.text}
+          onDone={() => { setCopyToast(null) }}
+        />
+      )}
     </div>
   )
 }
