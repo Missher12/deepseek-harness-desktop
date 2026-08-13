@@ -19,9 +19,13 @@ jobs:
     name: build, install, launch, and uninstall
     runs-on: windows-2025
     timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: s
     steps:
       - uses: actions/checkout@v6
         with:
+          path: s
           persist-credentials: false
 
       - name: Enable Developer Mode for workspace symlinks
@@ -63,7 +67,7 @@ jobs:
         with:
           name: DeepSeek-Harness-Setup-win-x64-${{ github.sha }}
           path: |
-            apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe
-            apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe.sha256
+            s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe
+            s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe.sha256
           if-no-files-found: error
           retention-days: 14

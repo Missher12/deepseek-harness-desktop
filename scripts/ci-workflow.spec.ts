@@ -391,6 +391,27 @@ describe('Python release workflows', () => {
   })
 })
 
+describe('Windows desktop Setup workflow', () => {
+  it('checks out to a short root so native MSVC rebuilds stay below MAX_PATH', () => {
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+    const job = workflowJob(workflow, 'build-install-smoke')
+    if (!Array.isArray(job.steps) || !isRecord(job.defaults) || !isRecord(job.defaults.run)) {
+      throw new TypeError('Windows desktop workflow must define job steps and run defaults')
+    }
+
+    const checkout = job.steps.filter(isRecord).find(step => step.uses === 'actions/checkout@v6')
+    const upload = job.steps.filter(isRecord).find(step => step.uses === 'actions/upload-artifact@v7')
+
+    expect(checkout).toMatchObject({ with: { path: 's', 'persist-credentials': false } })
+    expect(job.defaults.run['working-directory']).toBe('s')
+    expect(upload).toMatchObject({
+      with: {
+        path: expect.stringContaining('s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe'),
+      },
+    })
+  })
+})
+
 describe('Issue lifecycle workflow', () => {
   it('uses explicit review handoff events without rerunning when a draft becomes ready', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
