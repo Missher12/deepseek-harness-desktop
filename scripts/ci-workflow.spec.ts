@@ -400,9 +400,11 @@ describe('Windows desktop Setup workflow', () => {
     }
 
     const checkout = job.steps.filter(isRecord).find(step => step.uses === 'actions/checkout@v6')
+    const pnpmSetup = job.steps.filter(isRecord).find(step => step.uses === 'pnpm/action-setup@v4')
     const upload = job.steps.filter(isRecord).find(step => step.uses === 'actions/upload-artifact@v7')
 
     expect(checkout).toMatchObject({ with: { path: 's', 'persist-credentials': false } })
+    expect(pnpmSetup).toMatchObject({ with: { version: '11.7.0' } })
     expect(job.defaults.run['working-directory']).toBe('s')
     expect(upload).toMatchObject({
       with: {
