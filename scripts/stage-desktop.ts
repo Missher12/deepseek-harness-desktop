@@ -8,6 +8,7 @@ const DESKTOP_PACKAGE = '@deepseek-ai/dsh-desktop'
 /** OS seams injected by staging tests. */
 export interface StageDesktopDependencies {
   remove(path: string): Promise<void>
+  pnpmInvocation(args: readonly string[]): { command: string; args: readonly string[] }
   run(command: string, args: readonly string[], cwd: string): void
   copy(source: string, target: string): Promise<void>
   isFile(path: string): Promise<boolean>
@@ -63,8 +64,22 @@ function run(command: string, args: readonly string[], cwd: string): void {
   }
 }
 
+/** Build a shell-free pnpm invocation that also works on Windows. */
+export function desktopStagePnpmInvocation(
+  args: readonly string[],
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+  nodeExecutable = process.execPath,
+): { command: string; args: string[] } {
+  const entrypoint = environment.npm_execpath
+  if (entrypoint === undefined || entrypoint === '') {
+    throw new Error('Desktop staging: npm_execpath is unavailable; invoke staging through a pnpm package script.')
+  }
+  return { command: nodeExecutable, args: [entrypoint, ...args] }
+}
+
 const realDependencies: StageDesktopDependencies = {
   remove: async (path) => { await rm(path, { recursive: true, force: true }) },
+  pnpmInvocation: desktopStagePnpmInvocation,
   run,
   copy: async (source, target) => { await cp(source, target, { recursive: true, force: true }) },
   isFile: pathIsFile,
@@ -102,7 +117,8 @@ export async function stageDesktop(
   // only verification. The stage may contain dev tools, but electron-builder's
   // production dependency graph and explicit files allowlist exclude them from
   // the shipped application.
-  dependencies.run('pnpm', ['--filter', DESKTOP_PACKAGE, 'deploy', '--legacy', stageDir], root)
+  const deploy = dependencies.pnpmInvocation(['--filter', DESKTOP_PACKAGE, 'deploy', '--legacy', stageDir])
+  dependencies.run(deploy.command, deploy.args, root)
 
   for (const entry of ['lib', 'renderer', 'assets', 'electron-builder.yml'] as const) {
     await dependencies.copy(join(desktopDir, entry), join(stageDir, entry))
