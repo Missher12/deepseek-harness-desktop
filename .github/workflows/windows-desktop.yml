@@ -60,7 +60,7 @@ jobs:
 
       - name: Install and exercise the packaged application
         shell: pwsh
-        run: |
+        run: >-
           ./scripts/windows-desktop-setup-smoke.ps1
           -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe
 

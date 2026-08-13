@@ -424,6 +424,9 @@ describe('Windows desktop Setup workflow', () => {
     })
     expect(build.run).toContain('Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact')
     expect(build.run).not.toContain('pnpm run desktop:setup\n')
+    expect(smoke).toMatchObject({
+      run: expect.stringContaining('./scripts/windows-desktop-setup-smoke.ps1 -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe'),
+    })
     expect(smoke).not.toMatchObject({ run: expect.stringContaining('Set-Location S:\\') })
     expect(checksum).not.toMatchObject({ run: expect.stringContaining('Set-Location S:\\') })
     expect(upload).toMatchObject({
