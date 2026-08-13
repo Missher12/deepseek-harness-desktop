@@ -1,0 +1,32 @@
+appId: ai.deepseek.harness.desktop
+productName: DeepSeek Harness
+electronVersion: 43.4.0
+npmRebuild: true
+nativeRebuilder: sequential
+asar: true
+asarUnpack:
+  # The Harness profile fallback creates filesystem symlinks to installed
+  # packages. Keep runtime packages physical so those links can target them.
+  - "node_modules/**"
+files:
+  - "lib/**"
+  - "renderer/**"
+  - "assets/**"
+  - "node_modules/**"
+  - "!node_modules/node-pty/prebuilds/win32-arm64/**"
+  - "!node_modules/node-pty/prebuilds/win32-x64/**"
+  - "!node_modules/node-pty/prebuilds/darwin-arm64/**"
+  - "package.json"
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+  category: public.app-category.developer-tools
+  icon: assets/icon.icns
+  identity: null
+dmg:
+  title: DeepSeek Harness
+  artifactName: "DeepSeek-Harness-${version}-mac-x64.${ext}"
+directories:
+  output: ../release

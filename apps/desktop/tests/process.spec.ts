@@ -1,0 +1,109 @@
+import type { ChildProcess } from 'node:child_process'
+import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
+import { describe, expect, it, vi } from 'vitest'
+import { HarnessProcess, type HarnessProcessOptions } from '../src/harness/process.ts'
+
+class FakeChild extends EventEmitter {
+  readonly pid = 4321
+  readonly stdout = new PassThrough()
+  readonly stderr = new PassThrough()
+  exitCode: number | null = null
+
+  exit(code = 0): void {
+    this.exitCode = code
+    this.emit('exit', code, null)
+  }
+}
+
+describe('HarnessProcess', () => {
+  it('starts the built CLI on loopback port zero and returns its ready URL', async () => {
+    const child = new FakeChild()
+    const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(
+      () => child as unknown as ChildProcess,
+    )
+    const waitForHarness = vi.fn(async () => undefined)
+    const owned = new HarnessProcess({
+      spawn,
+      executable: '/Electron',
+      cli: '/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
+      waitForHarness,
+      killGroup: vi.fn(),
+    })
+
+    const pending = owned.start('/workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+
+    await expect(pending).resolves.toBe('http://127.0.0.1:45678/')
+    expect(waitForHarness).toHaveBeenCalledWith('http://127.0.0.1:45678/')
+    expect(spawn).toHaveBeenCalledOnce()
+    const [executable, args, options] = spawn.mock.calls[0]!
+    expect(executable).toBe('/Electron')
+    expect(args).toEqual([
+      '/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
+      'web',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '0',
+    ])
+    expect(options.cwd).toBe('/workspace')
+    expect(options.detached).toBe(true)
+    expect(options.env?.ELECTRON_RUN_AS_NODE).toBe('1')
+  })
+
+  it('signals and awaits only its child process group during stop', async () => {
+    const child = new FakeChild()
+    const killGroup = vi.fn(() => { queueMicrotask(() => { child.exit() }) })
+    const owned = new HarnessProcess({
+      spawn: () => child as unknown as ChildProcess,
+      executable: '/Electron',
+      cli: '/cli.js',
+      waitForHarness: async () => undefined,
+      killGroup,
+    })
+    const pending = owned.start('/workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await pending
+
+    await owned.stop()
+
+    expect(killGroup).toHaveBeenCalledOnce()
+    expect(killGroup).toHaveBeenCalledWith(4321, 'SIGTERM')
+    expect(owned.pid).toBeUndefined()
+  })
+
+  it('rejects an early child exit and duplicate starts', async () => {
+    const child = new FakeChild()
+    const owned = new HarnessProcess({
+      spawn: () => child as unknown as ChildProcess,
+      executable: '/Electron',
+      cli: '/cli.js',
+      waitForHarness: async () => undefined,
+      killGroup: vi.fn(),
+    })
+    const pending = owned.start('/workspace')
+    await expect(owned.start('/workspace')).rejects.toThrow(/already running/)
+    child.exit(2)
+    await expect(pending).rejects.toThrow(/exited before startup.*2/i)
+  })
+
+  it('reports an owned child exit to the application controller', async () => {
+    const child = new FakeChild()
+    const onExit = vi.fn()
+    const owned = new HarnessProcess({
+      spawn: () => child as unknown as ChildProcess,
+      executable: '/Electron',
+      cli: '/cli.js',
+      waitForHarness: async () => undefined,
+      killGroup: vi.fn(),
+      onExit,
+    })
+    const pending = owned.start('/workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await pending
+
+    child.exit(9)
+    await vi.waitFor(() => { expect(onExit).toHaveBeenCalledWith({ code: 9, signal: null }) })
+  })
+})

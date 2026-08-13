@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+  <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DeepSeek Harness</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; color-scheme: light dark; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: Canvas; color: CanvasText; }
+    main { display: grid; justify-items: center; gap: 18px; opacity: .86; }
+    h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.015em; }
+    p { margin: 0; font-size: 13px; opacity: .62; }
+    .bar { width: 180px; height: 3px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, CanvasText 10%, transparent); }
+    .bar::after { content: ""; display: block; width: 45%; height: 100%; border-radius: inherit; background: #4f6df5; animation: move 1.15s ease-in-out infinite alternate; }
+    @keyframes move { from { transform: translateX(-15%); } to { transform: translateX(140%); } }
+    @media (prefers-reduced-motion: reduce) { .bar::after { animation-duration: 3s; } }
+  </style>
+</head>
+<body>
+  <main aria-live="polite">
+    <h1>DeepSeek Harness</h1>
+    <div class="bar" role="progressbar" aria-label="Starting"></div>
+    <p>Starting DeepSeek Harness…</p>
+  </main>
+</body>
+</html>
