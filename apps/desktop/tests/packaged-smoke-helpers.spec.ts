@@ -1,6 +1,9 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Context } from '@deepseek-ai/cordis'
+import SessionStore from '@deepseek-ai/dsh-session'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { describe, expect, it } from 'vitest'
 import {
   descendantProcessTree,
@@ -36,6 +39,21 @@ describe('packaged desktop process inspection', () => {
       expect(seeded.activeSessionId).not.toBe(seeded.archivedSessionId)
       expect(seeded.protectedPaths).toHaveLength(3)
       await expect(Promise.all(seeded.protectedPaths.map(path => readFile(path)))).resolves.toHaveLength(3)
+
+      const reader = new Context()
+      try {
+        await reader.plugin(SessionStore)
+        await reader.plugin(JsonlSessionPersistence, { root: join(root, 'sessions') })
+        const headers = await reader.sessionPersistence.list()
+        expect(headers.map(header => header.id).sort()).toEqual([
+          seeded.activeSessionId,
+          seeded.archivedSessionId,
+        ].sort())
+        expect(headers.every(header => header.cwd !== undefined)).toBe(true)
+        expect(new Set(headers.map(header => header.cwd)).size).toBe(2)
+      } finally {
+        await reader.fiber.dispose()
+      }
 
       const workspace = JSON.parse(await readFile(join(root, 'storages', 'workspace.json'), 'utf8')) as {
         unit: { name: string; version: number }

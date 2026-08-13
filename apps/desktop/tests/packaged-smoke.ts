@@ -22,7 +22,9 @@ const ARCHIVED_CLIPBOARD_SESSION_ID = 'desktop-smoke-archived-session-id'
 /** Isolated on-disk state used only by the native Windows clipboard smoke. */
 export interface WindowsClipboardSmokeState {
   activeSessionId: string
+  activeSessionTitle: string
   archivedSessionId: string
+  archivedSessionTitle: string
   protectedPaths: readonly string[]
 }
 
@@ -49,18 +51,28 @@ export async function seedWindowsClipboardSmokeState(
 ): Promise<WindowsClipboardSmokeState> {
   const persistenceRoot = join(harnessHome, 'sessions')
   const createdAt = Date.now() - 60_000
+  const activeSessionTitle = 'desktop-smoke-active-workspace'
+  const archivedSessionTitle = 'desktop-smoke-archived-workspace'
+  const activeSessionCwd = join(harnessHome, activeSessionTitle)
+  const archivedSessionCwd = join(harnessHome, archivedSessionTitle)
+  await Promise.all([
+    mkdir(activeSessionCwd, { recursive: true }),
+    mkdir(archivedSessionCwd, { recursive: true }),
+  ])
   const headers: SessionHeader[] = [
     {
       version: SESSION_FORMAT_VERSION,
       id: SessionId(ACTIVE_CLIPBOARD_SESSION_ID),
       createdAt,
       delegationDepth: 0,
+      cwd: activeSessionCwd,
     },
     {
       version: SESSION_FORMAT_VERSION,
       id: SessionId(ARCHIVED_CLIPBOARD_SESSION_ID),
       createdAt: createdAt + 1,
       delegationDepth: 0,
+      cwd: archivedSessionCwd,
     },
   ]
 
@@ -97,7 +109,9 @@ export async function seedWindowsClipboardSmokeState(
 
   return {
     activeSessionId: ACTIVE_CLIPBOARD_SESSION_ID,
+    activeSessionTitle,
     archivedSessionId: ARCHIVED_CLIPBOARD_SESSION_ID,
+    archivedSessionTitle,
     protectedPaths: [...sessionPaths, workspacePath],
   }
 }
@@ -265,9 +279,12 @@ async function exerciseWindowsClipboard(
   const previousClipboard = await application.evaluate(({ clipboard }) => clipboard.readText())
 
   try {
-    const activeActions = page.locator(`button[aria-label*="${seeded.activeSessionId}"]`).first()
+    const ungrouped = page.getByText(/^(?:Ungrouped|未分组)$/u, { exact: true }).first()
+    await ungrouped.waitFor({ state: 'visible', timeout: 30_000 })
+    const activeRow = page.getByRole('treeitem').filter({ hasText: seeded.activeSessionTitle }).first()
+    const activeActions = activeRow.getByRole('button').first()
     if (!await activeActions.isVisible()) {
-      await page.getByText(/^(?:Ungrouped|未分组)$/u, { exact: true }).first().click()
+      await ungrouped.click()
     }
     await activeActions.waitFor({ state: 'visible', timeout: 15_000 })
 
@@ -284,8 +301,10 @@ async function exerciseWindowsClipboard(
     await page.getByRole('button', { name: /^(?:Archive|Archived|归档)$/u }).click()
     const archiveDialog = page.getByRole('dialog', { name: /^(?:Archived sessions|已归档会话)$/u })
     await archiveDialog.waitFor({ state: 'visible', timeout: 15_000 })
-    const archivedCopy = archiveDialog.getByRole('button', {
-      name: new RegExp(`^(?:Copy session ID|复制会话 ID).*${seeded.archivedSessionId}`, 'u'),
+    const archivedRow = archiveDialog.getByText(seeded.archivedSessionTitle, { exact: true })
+      .locator('..').locator('..')
+    const archivedCopy = archivedRow.getByRole('button', {
+      name: /^(?:Copy session ID|复制会话 ID)/u,
     })
     await archivedCopy.waitFor({ state: 'visible', timeout: 15_000 })
 
@@ -390,15 +409,21 @@ export async function runPackagedDesktopSmoke(
     expect(await page.locator('[data-dsh-desktop-command="open-command-menu"]').count()).toBe(1)
     expect(await page.locator('[data-dsh-desktop-command="open-settings"]').count()).toBe(1)
 
-    const continueButton = page.getByRole('button', { name: /^(?:Continue|继续)$/u })
-    if (await continueButton.isVisible()) await continueButton.click()
-    const configureLaterButton = page.getByRole('button', {
-      name: /^(?:Configure later|稍后配置)$/u,
+    const welcomeDialog = page.getByRole('dialog', {
+      name: /^(?:Internal Testing Notice|内测声明)$/u,
     })
-    await expect.poll(async () => {
-      if (await configureLaterButton.isVisible()) await configureLaterButton.click()
-      return page.locator('#root').evaluate((element: HTMLElement) => !element.inert)
-    }, { timeout: 15_000 }).toBe(true)
+    await welcomeDialog.waitFor({ state: 'visible', timeout: 30_000 })
+    await welcomeDialog.getByRole('button', { name: /^(?:Continue|继续)$/u }).click()
+    await welcomeDialog.waitFor({ state: 'detached', timeout: 30_000 })
+    const credentialDialog = page.getByRole('dialog', {
+      name: /^(?:Add an API key to get started|添加一个 API Key 开始使用)$/u,
+    })
+    await credentialDialog.waitFor({ state: 'visible', timeout: 30_000 })
+    await credentialDialog.getByRole('button', {
+      name: /^(?:Configure later|稍后配置)$/u,
+    }).click()
+    await credentialDialog.waitFor({ state: 'detached', timeout: 30_000 })
+    expect(await page.locator('#root').evaluate((element: HTMLElement) => !element.inert)).toBe(true)
 
     if (clipboardSeed !== undefined) {
       await exerciseWindowsClipboard(page, nativeApp, clipboardSeed)
