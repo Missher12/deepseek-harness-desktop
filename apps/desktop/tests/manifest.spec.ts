@@ -96,6 +96,16 @@ describe('desktop package manifest', () => {
     })
   })
 
+  it('exercises uninstall from a realistic short per-user install path', () => {
+    const smoke = readFileSync(
+      new URL('../../../scripts/windows-desktop-setup-smoke.ps1', import.meta.url),
+      'utf8',
+    )
+
+    expect(smoke).toContain("[Environment]::GetFolderPath('LocalApplicationData')")
+    expect(smoke).not.toContain('[IO.Path]::GetTempPath()')
+  })
+
   it('includes the repository standalone runtime dependency closure', () => {
     const manifest = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),

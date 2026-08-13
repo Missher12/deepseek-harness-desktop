@@ -78,7 +78,9 @@ function Stop-IsolatedInstalledProcesses {
 }
 
 $resolvedSetup = (Resolve-Path -LiteralPath $SetupPath).Path
-$temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "dsh-windows-setup-smoke-$([Guid]::NewGuid().ToString('N'))"
+$localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+$smokeId = [Guid]::NewGuid().ToString('N').Substring(0, 8)
+$temporaryRoot = Join-Path $localAppData "dsh-setup-smoke-$smokeId"
 $installRoot = Join-Path $temporaryRoot 'application'
 $harnessHome = Join-Path $temporaryRoot 'dsh-home'
 $userData = Join-Path $temporaryRoot 'electron-data'
