@@ -70,13 +70,17 @@ export function parseWindowsProcesses(output: string): ProcessRecord[] {
   })
 }
 
-async function listWindowsProcesses(): Promise<readonly ProcessRecord[]> {
-  const script = [
+/** Build the one-line PowerShell process query without inserting pipe-breaking semicolons. */
+export function windowsProcessQuery(): string {
+  return [
     "$ErrorActionPreference = 'Stop'",
-    '$processes = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine }',
-    "  | Select-Object @{Name='pid';Expression={[int]$_.ProcessId}}, @{Name='command';Expression={$_.CommandLine}})",
+    "$processes = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine } | Select-Object @{Name='pid';Expression={[int]$_.ProcessId}}, @{Name='command';Expression={$_.CommandLine}})",
     'ConvertTo-Json -InputObject $processes -Compress',
   ].join('; ')
+}
+
+async function listWindowsProcesses(): Promise<readonly ProcessRecord[]> {
+  const script = windowsProcessQuery()
   const stdout = await execText('powershell.exe', [
     '-NoLogo',
     '-NoProfile',

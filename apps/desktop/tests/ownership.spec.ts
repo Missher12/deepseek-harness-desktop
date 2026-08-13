@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { findConflictingHarness, parseWindowsProcesses } from '../src/harness/ownership.ts'
+import {
+  findConflictingHarness,
+  parseWindowsProcesses,
+  windowsProcessQuery,
+} from '../src/harness/ownership.ts'
 
 describe('findConflictingHarness', () => {
   it('reports another dsh web process holding a file below the same DSH_HOME', async () => {
@@ -69,5 +73,12 @@ describe('findConflictingHarness', () => {
     ])
     expect(parseWindowsProcesses('null')).toEqual([])
     expect(() => parseWindowsProcesses('{"pid":"91","command":null}')).toThrow(/invalid/i)
+  })
+
+  it('keeps the Windows process-selection pipe inside one PowerShell statement', () => {
+    const script = windowsProcessQuery()
+    expect(script).toContain('Where-Object { $_.CommandLine } | Select-Object')
+    expect(script).not.toMatch(/;\s*\|/u)
+    expect(script).toContain('; ConvertTo-Json -InputObject $processes -Compress')
   })
 })
