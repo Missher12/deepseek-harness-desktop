@@ -286,11 +286,15 @@ async function exerciseWindowsClipboard(
     }
     const ungrouped = page.getByText(/^(?:Ungrouped|未分组)$/u, { exact: true }).first()
     await ungrouped.waitFor({ state: 'visible', timeout: 30_000 })
-    const activeRow = page.getByRole('treeitem').filter({ hasText: seeded.activeSessionTitle }).first()
-    const activeActions = activeRow.getByRole('button').first()
-    if (!await activeActions.isVisible()) {
+    const ungroupedRow = ungrouped.locator('..').locator('..')
+    if (await ungroupedRow.getAttribute('aria-expanded') !== 'true') {
       await ungrouped.click()
+      await expect.poll(() => ungroupedRow.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('true')
     }
+    const activeRow = page.getByRole('treeitem').filter({ hasText: seeded.activeSessionTitle }).first()
+    await activeRow.waitFor({ state: 'visible', timeout: 15_000 })
+    await activeRow.hover()
+    const activeActions = activeRow.getByRole('button').first()
     await activeActions.waitFor({ state: 'visible', timeout: 15_000 })
 
     await application.evaluate(({ clipboard }, text) => { clipboard.writeText(text) }, 'desktop-smoke-before-active-copy')
@@ -406,6 +410,13 @@ export async function runPackagedDesktopSmoke(
     const port = Number(url.port)
     expect(port).toBeGreaterThan(0)
     expect(await listenerPids(port, platform)).not.toEqual([])
+
+    if (clipboardSeed !== undefined) {
+      // CDP-driven Electron clicks do not carry the browser's ordinary user
+      // clipboard permission. Grant the same automation permission as the
+      // browser E2E suite, then verify the native Electron clipboard itself.
+      await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: url.origin })
+    }
 
     expect(await page.locator('[class*="sidebarCol"]').count()).toBe(1)
     expect(await page.locator('[class*="centerCol"]').count()).toBe(1)

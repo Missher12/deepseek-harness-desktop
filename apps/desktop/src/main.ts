@@ -22,7 +22,7 @@ import { HarnessProcess } from './harness/process.ts'
 import { findConflictingHarness } from './harness/ownership.ts'
 import { createLifecycleLogger } from './logging.ts'
 import { isRecoveryAction, type DesktopCommand } from './preload-api.ts'
-import { classifyNavigation } from './window/navigation.ts'
+import { allowRendererPermission, classifyNavigation } from './window/navigation.ts'
 import { createMenuTemplate } from './window/menu.ts'
 import { createWindowOptions } from './window/options.ts'
 import { desktopPlatformBehavior } from './window/platform.ts'
@@ -112,8 +112,23 @@ function installNavigationPolicy(window: BrowserWindow, ownedRoot: () => string 
     return { action: 'deny' }
   })
   window.webContents.on('will-attach-webview', (event) => { event.preventDefault() })
-  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => {
-    callback(false)
+  window.webContents.session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
+    return allowRendererPermission(
+      permission,
+      details.requestingUrl ?? requestingOrigin,
+      details.isMainFrame,
+      ownedRoot(),
+      contents === window.webContents,
+    )
+  })
+  window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(allowRendererPermission(
+      permission,
+      details.requestingUrl,
+      details.isMainFrame,
+      ownedRoot(),
+      contents === window.webContents,
+    ))
   })
 }
 
