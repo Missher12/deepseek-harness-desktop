@@ -19,8 +19,6 @@ jobs:
     name: build, install, launch, and uninstall
     runs-on: windows-2025
     timeout-minutes: 60
-    env:
-      DSH_DESKTOP_STAGE_DIR: '${{ runner.temp }}\dsh-desktop-stage'
     defaults:
       run:
         working-directory: s
@@ -52,6 +50,7 @@ jobs:
       - name: Build the one-click Windows Setup
         shell: pwsh
         run: |
+          $env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'
           pnpm run desktop:stage
           pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR" --config "$env:DSH_DESKTOP_STAGE_DIR\electron-builder.yml" --win nsis --x64
           $builtArtifact = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) 'release\DeepSeek-Harness-Setup-0.1.0-win-x64.exe'

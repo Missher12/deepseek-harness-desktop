@@ -413,11 +413,12 @@ describe('Windows desktop Setup workflow', () => {
     expect(checkout).toMatchObject({ with: { path: 's', 'persist-credentials': false } })
     expect(pnpmSetup).toMatchObject({ with: { version: '11.7.0' } })
     expect(job.defaults.run['working-directory']).toBe('s')
-    expect(job.env).toMatchObject({ DSH_DESKTOP_STAGE_DIR: '${{ runner.temp }}\\dsh-desktop-stage' })
+    expect(job.env).toBeUndefined()
     expect(install).toMatchObject({ run: 'pnpm install --frozen-lockfile' })
     expect(build).toMatchObject({
       run: expect.stringContaining('pnpm run desktop:stage'),
     })
+    expect(build.run).toContain("$env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'")
     expect(build).toMatchObject({
       run: expect.stringContaining('pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"'),
     })
