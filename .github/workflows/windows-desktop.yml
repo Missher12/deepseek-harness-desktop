@@ -1,0 +1,69 @@
+name: Windows Desktop Setup
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  build-install-smoke:
+    name: build, install, launch, and uninstall
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Enable Developer Mode for workspace symlinks
+        shell: pwsh
+        run: >-
+          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install immutable dependencies
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the one-click Windows Setup
+        shell: pwsh
+        run: pnpm run desktop:setup
+
+      - name: Install and exercise the packaged application
+        shell: pwsh
+        run: >-
+          ./scripts/windows-desktop-setup-smoke.ps1
+          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe
+
+      - name: Record SHA-256
+        shell: pwsh
+        run: |
+          $artifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe'
+          $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path -Leaf $artifact)" | Set-Content -LiteralPath "$artifact.sha256" -Encoding ascii
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DeepSeek-Harness-Setup-win-x64-${{ github.sha }}
+          path: |
+            apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe
+            apps/desktop/release/DeepSeek-Harness-Setup-0.1.0-win-x64.exe.sha256
+          if-no-files-found: error
+          retention-days: 14
