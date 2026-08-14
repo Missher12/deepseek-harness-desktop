@@ -13,6 +13,16 @@ files:
   - "renderer/**"
   - "assets/**"
   - "node_modules/**"
+  # Runtime JavaScript never needs source maps or TypeScript declarations.
+  # Omitting them also keeps the unpacked Windows tree below NSIS path limits.
+  - "!node_modules/**/*.map"
+  - "!node_modules/**/*.d.ts"
+  - "!node_modules/**/*.d.cts"
+  - "!node_modules/**/*.d.mts"
+  - "!node_modules/**/*.tsbuildinfo"
+  # The telemetry package accepts resources 2.x and the deployed graph already
+  # carries a compatible top-level copy. Avoid a duplicate deeply nested tree.
+  - "!node_modules/@deepseek-ai/dsh-session-telemetry-otel/node_modules/@opentelemetry/resources/**"
   - "!node_modules/node-pty/prebuilds/win32-arm64/**"
   - "!node_modules/node-pty/prebuilds/darwin-arm64/**"
   - "package.json"

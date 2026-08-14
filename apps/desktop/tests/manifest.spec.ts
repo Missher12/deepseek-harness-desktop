@@ -13,6 +13,7 @@ interface DesktopManifest {
 }
 
 interface BuilderConfiguration {
+  files?: string[]
   mac?: { icon?: string }
   win?: {
     icon?: string
@@ -94,6 +95,14 @@ describe('desktop package manifest', () => {
       shortcutName: 'DeepSeek Harness',
       artifactName: 'DeepSeek-Harness-Setup-${version}-win-x64.${ext}',
     })
+    expect(builder.files).toContain('!node_modules/**/*.map')
+    expect(builder.files).toContain('!node_modules/**/*.d.ts')
+    expect(builder.files).toContain('!node_modules/**/*.d.cts')
+    expect(builder.files).toContain('!node_modules/**/*.d.mts')
+    expect(builder.files).toContain('!node_modules/**/*.tsbuildinfo')
+    expect(builder.files).toContain(
+      '!node_modules/@deepseek-ai/dsh-session-telemetry-otel/node_modules/@opentelemetry/resources/**',
+    )
   })
 
   it('exercises uninstall from a realistic short per-user install path', () => {
