@@ -22,9 +22,10 @@ import { HarnessProcess } from './harness/process.ts'
 import { findConflictingHarness } from './harness/ownership.ts'
 import { createLifecycleLogger } from './logging.ts'
 import { isRecoveryAction, type DesktopCommand } from './preload-api.ts'
-import { classifyNavigation } from './window/navigation.ts'
+import { allowRendererPermission, classifyNavigation } from './window/navigation.ts'
 import { createMenuTemplate } from './window/menu.ts'
 import { createWindowOptions } from './window/options.ts'
+import { desktopPlatformBehavior } from './window/platform.ts'
 import { readWindowBounds, writeWindowBounds } from './window/state.ts'
 
 const PRODUCT_NAME = 'DeepSeek Harness'
@@ -33,6 +34,7 @@ const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 const loadingPath = fileURLToPath(new URL('../renderer/loading.html', import.meta.url))
 const failurePath = fileURLToPath(new URL('../renderer/failure.html', import.meta.url))
 const iconPath = fileURLToPath(new URL('../assets/icon-source.png', import.meta.url))
+const platformBehavior = desktopPlatformBehavior(process.platform)
 
 function resolveCliPath(): string {
   const packageJson = require.resolve('@deepseek-ai/dsh/package.json')
@@ -78,6 +80,9 @@ const lifecycle: { controller?: DesktopApplication } = {}
 
 const runtime = new HarnessProcess({
   cli: resolveCliPath(),
+  onOutput: (source, output) => {
+    record(`Harness ${source}: ${output}`)
+  },
   onExit: () => { void lifecycle.controller?.runtimeExited() },
 })
 
@@ -107,8 +112,23 @@ function installNavigationPolicy(window: BrowserWindow, ownedRoot: () => string 
     return { action: 'deny' }
   })
   window.webContents.on('will-attach-webview', (event) => { event.preventDefault() })
-  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => {
-    callback(false)
+  window.webContents.session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
+    return allowRendererPermission(
+      permission,
+      details.requestingUrl ?? requestingOrigin,
+      details.isMainFrame,
+      ownedRoot(),
+      contents === window.webContents,
+    )
+  })
+  window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(allowRendererPermission(
+      permission,
+      details.requestingUrl,
+      details.isMainFrame,
+      ownedRoot(),
+      contents === window.webContents,
+    ))
   })
 }
 
@@ -133,7 +153,7 @@ function createStateWriter(window: BrowserWindow): () => void {
 async function createDesktopWindow(): Promise<DesktopWindow> {
   const displays = screen.getAllDisplays().map(display => display.workArea)
   const bounds = await readWindowBounds(windowStatePath, displays)
-  const window = new BrowserWindow(createWindowOptions(bounds, preloadPath))
+  const window = new BrowserWindow(createWindowOptions(bounds, preloadPath, process.platform))
   nativeWindow = window
   let ownedRoot: string | undefined
   installNavigationPolicy(window, () => ownedRoot)
@@ -142,7 +162,8 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
   window.on('close', (event) => {
     event.preventDefault()
     persistState()
-    window.hide()
+    if (platformBehavior.hideWindowOnClose) window.hide()
+    else app.quit()
   })
   window.webContents.on('render-process-gone', () => { void controller.rendererExited() })
   window.webContents.on('did-fail-load', (_event, errorCode) => {
@@ -196,12 +217,12 @@ ipcMain.on('desktop:recovery', (event, value: unknown) => {
   if (isFailureSender(event) && isRecoveryAction(value)) controller.recover(value)
 })
 
-Menu.setApplicationMenu(Menu.buildFromTemplate(createMenuTemplate(PRODUCT_NAME, (command) => {
-  controller.sendCommand(command)
-})))
+Menu.setApplicationMenu(Menu.buildFromTemplate(
+  createMenuTemplate(PRODUCT_NAME, (command) => { controller.sendCommand(command) }, process.platform),
+))
 
 void controller.run().then(() => {
-  app.dock?.setIcon(iconPath)
+  if (platformBehavior.setDockIcon) app.dock?.setIcon(iconPath)
   record('desktop application ready')
 }).catch((error: unknown) => {
   record(`desktop application failed: ${error instanceof Error ? error.message : String(error)}`)

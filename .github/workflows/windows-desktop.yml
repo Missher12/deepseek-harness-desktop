@@ -1,0 +1,81 @@
+name: Windows Desktop Setup
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  build-install-smoke:
+    name: build, install, launch, and uninstall
+    runs-on: windows-2025
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: s
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: s
+          persist-credentials: false
+
+      - name: Enable Developer Mode for workspace symlinks
+        shell: pwsh
+        run: >-
+          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.7.0'
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install immutable dependencies
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the one-click Windows Setup
+        shell: pwsh
+        run: |
+          $env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'
+          pnpm run desktop:stage
+          pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR" --config "$env:DSH_DESKTOP_STAGE_DIR\electron-builder.yml" --win nsis --x64
+          $builtArtifact = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) 'release\DeepSeek-Harness-Setup-0.1.2-win-x64.exe'
+          $workspaceArtifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe'
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $workspaceArtifact) | Out-Null
+          Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact
+
+      - name: Install and exercise the packaged application
+        shell: pwsh
+        run: >-
+          ./scripts/windows-desktop-setup-smoke.ps1
+          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe
+
+      - name: Record SHA-256
+        shell: pwsh
+        run: |
+          $artifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe'
+          $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path -Leaf $artifact)" | Set-Content -LiteralPath "$artifact.sha256" -Encoding ascii
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DeepSeek-Harness-Setup-win-x64-${{ github.sha }}
+          path: |
+            s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe
+            s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe.sha256
+          if-no-files-found: error
+          retention-days: 14

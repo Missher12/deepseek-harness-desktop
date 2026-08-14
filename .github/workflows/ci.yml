@@ -437,10 +437,11 @@ jobs:
   # Every pull request also gets a real Windows-kernel signal. This job keeps
   # its own unmasked conclusion but is deliberately absent from
   # all-checks-passed.needs, so it never delays or changes that required
-  # verdict. Under normal operation it runs on the hosted larger runner; under
+  # verdict. In this public distribution it runs on GitHub's standard hosted
+  # Windows runner; under
   # Windows failover (DSH_CI_FAILOVER_WINDOWS=selfhosted) it retargets onto the
   # in-house self-hosted Windows pool. Dependabot PRs are excluded from the
-  # self-hosted pool and stay queued for the hosted runner — see the failover
+  # self-hosted pool and stay queued for the standard hosted runner — see the failover
   # runbook. This Windows switch is independent of the Linux
   # DSH_CI_FAILOVER_LINUX variable that retargets the three required Linux jobs
   # and the all-checks-passed verdict above.
@@ -450,9 +451,9 @@ jobs:
       ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
-          || 'dsh-windows-2025-16core' }}
+          || 'windows-2025' }}
     name: windows node 24 / native complete
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       DSH_COVERAGE_MAX_WORKERS: '2'
       DSH_GATE_CONCURRENCY: '2'
@@ -487,6 +488,32 @@ jobs:
       - name: Run complete native Windows gate inventory
         shell: pwsh
         run: pnpm run check:ci:windows-complete
+
+      - name: Build the one-click Windows desktop Setup
+        shell: pwsh
+        run: pnpm run desktop:setup:built
+
+      - name: Smoke the installed Windows desktop lifecycle
+        shell: pwsh
+        run: >-
+          ./scripts/windows-desktop-setup-smoke.ps1
+          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe
+
+      - name: Record the Windows Setup checksum
+        shell: pwsh
+        run: |
+          $artifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe'
+          $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path -Leaf $artifact)" | Set-Content -LiteralPath "$artifact.sha256" -Encoding ascii
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DeepSeek-Harness-Setup-win-x64-${{ github.sha }}
+          path: |
+            apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe
+            apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe.sha256
+          if-no-files-found: error
+          retention-days: 7
 
   # The hosted reference jobs below are temporarily disabled; the self-hosted
   # standby remains active. Each enabled host executes the complete, unsharded
@@ -659,7 +686,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     name: serial / windows (self-hosted standby)
     runs-on: [self-hosted, dsh-win-ci, windows]
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v6
 
@@ -694,6 +721,16 @@ jobs:
           DSH_GATE_CONCURRENCY: '1'
           DSH_PUBLINT_CONCURRENCY: '1'
         run: pnpm run check:ci:windows-complete
+
+      - name: Build the one-click Windows desktop Setup
+        shell: pwsh
+        run: pnpm run desktop:setup:built
+
+      - name: Smoke the installed Windows desktop lifecycle
+        shell: pwsh
+        run: >-
+          ./scripts/windows-desktop-setup-smoke.ps1
+          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe
 
   # Manual, bounded comparison of the actual critical Linux and Windows lanes.
   # The named pools are restricted at the organization level to this repository.

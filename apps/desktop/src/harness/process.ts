@@ -1,12 +1,10 @@
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { readHarnessUrl } from './startup-url.ts'
 import { waitForHarness as probeHarness } from './readiness.ts'
+import { terminateProcessTree, type TerminationMode } from './process-tree.ts'
 
 const MAX_STARTUP_OUTPUT_BYTES = 64 * 1024
 const DEFAULT_STOP_TIMEOUT_MS = 3_000
-
-/** Signals used to stop an owned Harness process group. */
-export type KillSignal = 'SIGTERM' | 'SIGKILL'
 
 /** Settlement reported when the exact owned child exits. */
 export interface ExitState {
@@ -23,19 +21,11 @@ export interface HarnessProcessOptions {
   executable?: string
   spawn?: SpawnHarness
   waitForHarness?: (url: string) => Promise<void>
-  killGroup?: (pid: number, signal: KillSignal) => void
+  platform?: NodeJS.Platform
+  terminateTree?: (pid: number, mode: TerminationMode, platform: NodeJS.Platform) => void
   stopTimeoutMs?: number
   onOutput?: (source: 'stdout' | 'stderr', text: string) => void
   onExit?: (state: ExitState) => void
-}
-
-/**
- * Signal one detached process group created by this application.
- * @param pid - Exact positive PID returned by spawn.
- * @param signal - Graceful or forced termination signal.
- */
-export function killProcessGroup(pid: number, signal: KillSignal): void {
-  process.kill(-pid, signal)
 }
 
 function describeExit(state: ExitState): string {
@@ -63,7 +53,7 @@ function settledWithin(promise: Promise<unknown>, timeoutMs: number): Promise<bo
 /** Owns startup, readiness, and quiescent shutdown for one Harness child. */
 export class HarnessProcess {
   private readonly options: Required<Pick<HarnessProcessOptions,
-    'executable' | 'spawn' | 'waitForHarness' | 'killGroup' | 'stopTimeoutMs'>>
+    'executable' | 'spawn' | 'waitForHarness' | 'platform' | 'terminateTree' | 'stopTimeoutMs'>>
     & Pick<HarnessProcessOptions, 'cli' | 'onOutput' | 'onExit'>
   private child: ChildProcess | undefined
   private exitPromise: Promise<ExitState> | undefined
@@ -80,7 +70,8 @@ export class HarnessProcess {
       spawn: options.spawn ?? ((executable, args, spawnOptions) =>
         nodeSpawn(executable, [...args], spawnOptions)),
       waitForHarness: options.waitForHarness ?? probeHarness,
-      killGroup: options.killGroup ?? killProcessGroup,
+      platform: options.platform ?? process.platform,
+      terminateTree: options.terminateTree ?? terminateProcessTree,
       stopTimeoutMs: options.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS,
     }
   }
@@ -106,7 +97,7 @@ export class HarnessProcess {
       '0',
     ], {
       cwd: workspace,
-      detached: true,
+      detached: this.options.platform !== 'win32',
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -187,7 +178,7 @@ export class HarnessProcess {
     }
   }
 
-  /** Stop the exact owned process group and await its exit. */
+  /** Stop the exact owned process tree and await its exit. */
   async stop(): Promise<void> {
     const child = this.child
     const exitPromise = this.exitPromise
@@ -196,9 +187,13 @@ export class HarnessProcess {
     this.detachOutput = undefined
     const pid = child.pid
     if (child.exitCode === null && pid !== undefined) {
-      this.options.killGroup(pid, 'SIGTERM')
+      const initialMode = this.options.platform === 'win32' ? 'force' : 'graceful'
+      this.options.terminateTree(pid, initialMode, this.options.platform)
       if (!await settledWithin(exitPromise, this.options.stopTimeoutMs)) {
-        this.options.killGroup(pid, 'SIGKILL')
+        this.options.terminateTree(pid, 'force', this.options.platform)
+        if (!await settledWithin(exitPromise, this.options.stopTimeoutMs)) {
+          throw new Error(`Harness process tree ${String(pid)} did not exit after forced termination.`)
+        }
       }
     }
     await exitPromise

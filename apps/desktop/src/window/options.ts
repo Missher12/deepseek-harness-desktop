@@ -10,6 +10,7 @@ import type { WindowBounds } from './state.ts'
 export function createWindowOptions(
   bounds: WindowBounds,
   preload: string,
+  platform: NodeJS.Platform = process.platform,
 ): BrowserWindowConstructorOptions {
   return {
     ...bounds,
@@ -17,8 +18,12 @@ export function createWindowOptions(
     minHeight: 620,
     show: false,
     title: 'DeepSeek Harness',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
+    ...(platform === 'darwin'
+      ? {
+        titleBarStyle: 'hiddenInset' as const,
+        trafficLightPosition: { x: 16, y: 16 },
+      }
+      : {}),
     webPreferences: {
       preload,
       nodeIntegration: false,

@@ -17,7 +17,7 @@
 ## 用户体验
 
 - 产品名称和程序坞名称均为 **DeepSeek Harness**。
-- 应用图标使用用户提供的鲸鱼图片。
+- 白鲸图形身份展示在已经确认的蓝色与奶白圆角桌面底板内。
 - 工作区保留简洁的 Harness 三栏布局：左侧为会话，中间为对话，右侧为上下文详情。
 - `Cmd+N`、`Cmd+K` 和 `Cmd+,` 分别调用新建会话、命令搜索和设置。
 - 再次启动应用时聚焦已有窗口。
@@ -56,7 +56,7 @@ flowchart TD
 
 Intel 专用 Electron 应用同时打包为 `.app` 与 DMG。Harness profile fallback 需要创建指向已安装包的文件系统软链接，因此运行时包以实体文件形式存放在 `app.asar.unpacked/node_modules` 下。主入口保留在 `app.asar` 中，preload 则输出为 `preload.cjs`，供 Electron 的沙箱 preload loader 加载。
 
-当前本机构建未签名、未公证。Apple Developer 签名与公证、自动更新、Apple Silicon、Windows 和 Linux 均不属于版本 1 范围。
+当前本机构建没有签名或公证。Apple Developer 签名、公证、自动更新、Apple Silicon 和 Linux 仍不属于这个 Intel 安装包的范围。Windows 交付由独立的 [Windows Setup 设计](2026-08-14-deepseek-harness-windows-setup-design.md)负责。
 
 ## 失败处理
 
@@ -68,7 +68,7 @@ Intel 专用 Electron 应用同时打包为 `.app` 与 DMG。Harness profile fal
 
 ## 验收标准
 
-- 使用指定图标生成可从 Finder 启动的 Intel `.app` 和有效 DMG。
+- 使用圆角桌面图标生成可从 Finder 启动的 Intel `.app` 和有效 DMG。
 - 无需浏览器窗口或终端。
 - 监听端口使用随机回环端口，而不是 65000。
 - 完成初始设置后，完整插件图持续稳定。

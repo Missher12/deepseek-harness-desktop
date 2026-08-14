@@ -69,13 +69,27 @@ describe('CI workflow', () => {
     expect(windowsNative['runs-on']).not.toContain('DSH_CI_FAILOVER_LINUX')
     expect(windowsNative['runs-on']).toContain('self-hosted')
     expect(windowsNative['runs-on']).toContain('dsh-win-ci')
-    expect(windowsNative['runs-on']).toContain('dsh-windows-2025-16core')
+    expect(windowsNative['runs-on']).toContain('windows-2025')
+    expect(windowsNative['runs-on']).not.toContain('dsh-windows-2025-16core')
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
     const nativeCommandSteps = (windowsNative.steps as unknown[]).filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
     expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
+    expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run desktop:setup:built')
+    expect(nativeCommandSteps.some(step => step.run.includes('windows-desktop-setup-smoke.ps1'))).toBe(true)
+    expect(nativeCommandSteps.some(step => (
+      step.run.includes('Get-FileHash') && step.run.includes('.sha256')
+    ))).toBe(true)
+    expect((windowsNative.steps as unknown[]).some(step => (
+      isRecord(step)
+      && step.uses === 'actions/upload-artifact@v7'
+      && isRecord(step.with)
+      && typeof step.with.path === 'string'
+      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe\n')
+      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe.sha256')
+    ))).toBe(true)
 
     // wine-apt-cache: master-only, seeds the Wine apt cache.
     expect(wineAptCache.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
@@ -85,6 +99,12 @@ describe('CI workflow', () => {
     expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
+    if (!Array.isArray(serialWindows.steps)) throw new TypeError('serial-windows must define steps')
+    const serialWindowsCommands = serialWindows.steps.filter(
+      (step): step is Record<string, unknown> & { run: string } => isRecord(step) && typeof step.run === 'string',
+    )
+    expect(serialWindowsCommands.map(step => step.run)).toContain('pnpm run desktop:setup:built')
+    expect(serialWindowsCommands.some(step => step.run.includes('windows-desktop-setup-smoke.ps1'))).toBe(true)
 
     // Aggregate: Wine `windows` required, native `windows-native` excluded.
     expect(aggregate.needs).toContain('windows')
@@ -368,6 +388,51 @@ describe('Python release workflows', () => {
 
     expect(macosCheck).toContain('scripts/check-macos-deployment-target.py')
     expect(macosCheck).toContain('"$EXE" "$EXE-spawn-helper"')
+  })
+})
+
+describe('Windows desktop Setup workflow', () => {
+  it('maps the checkout to a drive root so native MSVC rebuilds stay below MAX_PATH', () => {
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+    const job = workflowJob(workflow, 'build-install-smoke')
+    if (!Array.isArray(job.steps) || !isRecord(job.defaults) || !isRecord(job.defaults.run)) {
+      throw new TypeError('Windows desktop workflow must define job steps and run defaults')
+    }
+
+    const checkout = job.steps.filter(isRecord).find(step => step.uses === 'actions/checkout@v6')
+    const pnpmSetup = job.steps.filter(isRecord).find(step => step.uses === 'pnpm/action-setup@v4')
+    const install = job.steps.filter(isRecord).find(step => step.name === 'Install immutable dependencies')
+    const build = job.steps.filter(isRecord).find(step => step.name === 'Build the one-click Windows Setup')
+    const smoke = job.steps.filter(isRecord).find(step => step.name === 'Install and exercise the packaged application')
+    const checksum = job.steps.filter(isRecord).find(step => step.name === 'Record SHA-256')
+    const upload = job.steps.filter(isRecord).find(step => step.uses === 'actions/upload-artifact@v7')
+    if (!isRecord(build) || typeof build.run !== 'string') {
+      throw new TypeError('Windows desktop workflow must define the Setup build command')
+    }
+    if (!isRecord(smoke) || typeof smoke.run !== 'string') {
+      throw new TypeError('Windows desktop workflow must define the installed application smoke command')
+    }
+    if (!isRecord(checksum) || typeof checksum.run !== 'string') {
+      throw new TypeError('Windows desktop workflow must define the checksum command')
+    }
+    if (!isRecord(upload) || !isRecord(upload.with) || typeof upload.with.path !== 'string') {
+      throw new TypeError('Windows desktop workflow must define the Setup artifact upload')
+    }
+
+    expect(checkout).toMatchObject({ with: { path: 's', 'persist-credentials': false } })
+    expect(pnpmSetup).toMatchObject({ with: { version: '11.7.0' } })
+    expect(job.defaults.run['working-directory']).toBe('s')
+    expect(job.env).toBeUndefined()
+    expect(install).toMatchObject({ run: 'pnpm install --frozen-lockfile' })
+    expect(build.run).toContain('pnpm run desktop:stage')
+    expect(build.run).toContain("$env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'")
+    expect(build.run).toContain('pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"')
+    expect(build.run).toContain('Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact')
+    expect(build.run).not.toContain('pnpm run desktop:setup\n')
+    expect(smoke.run).toContain('./scripts/windows-desktop-setup-smoke.ps1 -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe')
+    expect(smoke.run).not.toContain('Set-Location S:\\')
+    expect(checksum.run).not.toContain('Set-Location S:\\')
+    expect(upload.with.path).toContain('s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe')
   })
 })
 

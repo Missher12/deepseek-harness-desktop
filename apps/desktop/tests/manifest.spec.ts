@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 
 interface DesktopManifest {
@@ -11,7 +12,37 @@ interface DesktopManifest {
   scripts: Record<string, string>
 }
 
+interface BuilderConfiguration {
+  files?: string[]
+  mac?: { icon?: string }
+  win?: {
+    icon?: string
+    target?: Array<{ target?: string; arch?: string[] }>
+  }
+  nsis?: {
+    oneClick?: boolean
+    perMachine?: boolean
+    allowElevation?: boolean
+    createDesktopShortcut?: boolean
+    createStartMenuShortcut?: boolean
+    runAfterFinish?: boolean
+    deleteAppDataOnUninstall?: boolean
+    shortcutName?: string
+    artifactName?: string
+  }
+}
+
 describe('desktop package manifest', () => {
+  it('uses one rounded icon source with native macOS and Windows containers', () => {
+    const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
+
+    expect(existsSync(new URL('../assets/icon-source.png', import.meta.url))).toBe(true)
+    expect(existsSync(new URL('../assets/icon.icns', import.meta.url))).toBe(true)
+    expect(existsSync(new URL('../assets/icon.ico', import.meta.url))).toBe(true)
+    expect(mainSource).toContain('../assets/icon-source.png')
+    expect(mainSource).not.toContain('../assets/icon-source-rounded.png')
+  })
+
   it('ships Harness and pins the Electron toolchain', () => {
     const manifest = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -32,6 +63,56 @@ describe('desktop package manifest', () => {
     expect(manifest.devDependencies.playwright).toBe('^1.49.0')
     expect(manifest.scripts['pack:dir']).toContain('--mac dir --x64')
     expect(manifest.scripts['pack:dmg']).toContain('--mac dmg --x64')
+  })
+
+  it('builds one per-user Windows x64 Setup with shortcuts and launch-after-install', () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as DesktopManifest
+    const rootManifest = JSON.parse(
+      readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
+    ) as Pick<DesktopManifest, 'scripts'>
+    const builder = yaml.load(
+      readFileSync(new URL('../electron-builder.yml', import.meta.url), 'utf8'),
+    ) as BuilderConfiguration
+
+    expect(manifest.scripts['pack:setup']).toContain('--win nsis --x64')
+    expect(rootManifest.scripts['desktop:setup:built']).toContain('pack:setup')
+    expect(rootManifest.scripts['desktop:setup']).toContain('desktop:setup:built')
+    expect(builder.mac?.icon).toBe('assets/icon.icns')
+    expect(builder.win).toMatchObject({
+      target: [{ target: 'nsis', arch: ['x64'] }],
+      icon: 'assets/icon.ico',
+    })
+    expect(builder.nsis).toMatchObject({
+      oneClick: true,
+      perMachine: false,
+      allowElevation: false,
+      createDesktopShortcut: true,
+      createStartMenuShortcut: true,
+      runAfterFinish: true,
+      deleteAppDataOnUninstall: false,
+      shortcutName: 'DeepSeek Harness',
+      artifactName: 'DeepSeek-Harness-Setup-${version}-win-x64.${ext}',
+    })
+    expect(builder.files).toContain('!node_modules/**/*.map')
+    expect(builder.files).toContain('!node_modules/**/*.d.ts')
+    expect(builder.files).toContain('!node_modules/**/*.d.cts')
+    expect(builder.files).toContain('!node_modules/**/*.d.mts')
+    expect(builder.files).toContain('!node_modules/**/*.tsbuildinfo')
+    expect(builder.files).toContain(
+      '!node_modules/@deepseek-ai/dsh-session-telemetry-otel/node_modules/@opentelemetry/resources/**',
+    )
+  })
+
+  it('exercises uninstall from a realistic short per-user install path', () => {
+    const smoke = readFileSync(
+      new URL('../../../scripts/windows-desktop-setup-smoke.ps1', import.meta.url),
+      'utf8',
+    )
+
+    expect(smoke).toContain("[Environment]::GetFolderPath('LocalApplicationData')")
+    expect(smoke).not.toContain('[IO.Path]::GetTempPath()')
   })
 
   it('includes the repository standalone runtime dependency closure', () => {

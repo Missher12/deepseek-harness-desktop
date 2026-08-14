@@ -1,6 +1,10 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { stageDesktop, type StageDesktopDependencies } from './stage-desktop.ts'
+import {
+  desktopStagePnpmInvocation,
+  stageDesktop,
+  type StageDesktopDependencies,
+} from './stage-desktop.ts'
 
 function fakeDependencies(
   filesPresent = true,
@@ -21,6 +25,7 @@ function fakeDependencies(
     removed,
     validated,
     remove: async (path) => { removed.push(path) },
+    pnpmInvocation: args => ({ command: 'pnpm', args }),
     run: (command, args) => { commands.push([command, args]) },
     copy: async (source, target) => { copies.push([source, target]) },
     isFile: async (path) => {
@@ -32,6 +37,21 @@ function fakeDependencies(
 }
 
 describe('stageDesktop', () => {
+  it('spawns pnpm through its JavaScript entrypoint without a platform shell', () => {
+    expect(desktopStagePnpmInvocation(
+      ['--filter', '@deepseek-ai/dsh-desktop'],
+      { npm_execpath: 'C:\\pnpm\\pnpm.cjs' },
+      'C:\\node\\node.exe',
+    )).toEqual({
+      command: 'C:\\node\\node.exe',
+      args: ['C:\\pnpm\\pnpm.cjs', '--filter', '@deepseek-ai/dsh-desktop'],
+    })
+  })
+
+  it('fails closed when pnpm does not expose its JavaScript entrypoint', () => {
+    expect(() => desktopStagePnpmInvocation([], {}, '/node')).toThrow(/npm_execpath.*pnpm package script/i)
+  })
+
   it('deploys production dependencies and validates the complete app closure', async () => {
     const dependencies = fakeDependencies()
 
@@ -50,6 +70,10 @@ describe('stageDesktop', () => {
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html')
     expect(result.validatedFiles).toContain('lib/preload.cjs')
     expect(result.validatedFiles).not.toContain('lib/preload.js')
+    expect(result.validatedFiles).toContain('assets/icon-source.png')
+    expect(result.validatedFiles).toContain('assets/icon.icns')
+    expect(result.validatedFiles).toContain('assets/icon.ico')
+    expect(result.validatedFiles).not.toContain('assets/icon-source-rounded.png')
     expect(result.validatedFiles).toContain('node_modules/node-pty/prebuilds/darwin-x64/pty.node')
   })
 
@@ -63,5 +87,19 @@ describe('stageDesktop', () => {
     await stageDesktop('/repo', dependencies)
 
     expect(dependencies.removed).toEqual([join('/repo', 'apps/desktop/.stage')])
+  })
+
+  it('allows only a dedicated external short stage directory', async () => {
+    const externalStage = '/runner-temp/dsh-desktop-stage'
+    const dependencies = fakeDependencies(true, [
+      `${externalStage}/node_modules/node-pty/prebuilds/win32-x64/pty.node`,
+    ])
+
+    const result = await stageDesktop('/repo', dependencies, externalStage)
+
+    expect(dependencies.removed).toEqual([externalStage])
+    expect(dependencies.commands[0]?.[1]).toContain(externalStage)
+    expect(result.stageDir).toBe(externalStage)
+    await expect(stageDesktop('/repo', fakeDependencies(), '/runner-temp/other')).rejects.toThrow(/unexpected deletion target/i)
   })
 })

@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
-  "description": "Native macOS desktop shell for DeepSeek Harness",
+  "description": "Native desktop shell for DeepSeek Harness",
   "version": "0.1.2",
   "license": "MIT",
   "author": "DeepSeek Harness Contributors",
@@ -19,7 +19,9 @@
     "build:main": "tsc -b && tsdown",
     "start": "electron .",
     "pack:dir": "electron-builder --projectDir .stage --config electron-builder.yml --mac dir --x64",
-    "pack:dmg": "electron-builder --projectDir .stage --config electron-builder.yml --mac dmg --x64"
+    "pack:dmg": "electron-builder --projectDir .stage --config electron-builder.yml --mac dmg --x64",
+    "pack:win-dir": "electron-builder --projectDir .stage --config electron-builder.yml --win dir --x64",
+    "pack:setup": "electron-builder --projectDir .stage --config electron-builder.yml --win nsis --x64"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "workspace:^",

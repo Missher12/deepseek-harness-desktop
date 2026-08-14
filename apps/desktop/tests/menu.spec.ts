@@ -16,6 +16,14 @@ function itemWithAccelerator(
   return undefined
 }
 
+function hasRole(
+  template: readonly MenuItemConstructorOptions[],
+  role: MenuItemConstructorOptions['role'],
+): boolean {
+  return template.some(item => item.role === role
+    || (Array.isArray(item.submenu) && hasRole(item.submenu, role)))
+}
+
 describe('createMenuTemplate', () => {
   it.each([
     ['CmdOrCtrl+N', 'new-session'],
@@ -23,10 +31,30 @@ describe('createMenuTemplate', () => {
     ['CmdOrCtrl+,', 'open-settings'],
   ] as const)('routes %s to %s', (accelerator, command) => {
     const send = vi.fn()
-    const item = itemWithAccelerator(createMenuTemplate('DeepSeek Harness', send), accelerator)
+    const item = itemWithAccelerator(
+      createMenuTemplate('DeepSeek Harness', send, 'darwin'),
+      accelerator,
+    )
 
     expect(item).toBeDefined()
     item?.click?.({} as MenuItem, undefined, {})
     expect(send).toHaveBeenCalledWith(command)
+  })
+
+  it('uses the application menu on macOS', () => {
+    const template = createMenuTemplate('DeepSeek Harness', vi.fn(), 'darwin')
+
+    expect(template[0]?.label).toBe('DeepSeek Harness')
+    expect(hasRole(template, 'hide')).toBe(true)
+  })
+
+  it('uses standard File through Help menus on Windows', () => {
+    const template = createMenuTemplate('DeepSeek Harness', vi.fn(), 'win32')
+
+    expect(template.map(item => item.label)).toEqual(['File', 'Edit', 'View', 'Window', 'Help'])
+    expect(itemWithAccelerator(template, 'CmdOrCtrl+N')).toBeDefined()
+    expect(itemWithAccelerator(template, 'CmdOrCtrl+,')).toBeDefined()
+    expect(hasRole(template, 'quit')).toBe(true)
+    expect(hasRole(template, 'hide')).toBe(false)
   })
 })

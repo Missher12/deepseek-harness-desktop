@@ -8,6 +8,7 @@ const DESKTOP_PACKAGE = '@deepseek-ai/dsh-desktop'
 /** OS seams injected by staging tests. */
 export interface StageDesktopDependencies {
   remove(path: string): Promise<void>
+  pnpmInvocation(args: readonly string[]): { command: string; args: readonly string[] }
   run(command: string, args: readonly string[], cwd: string): void
   copy(source: string, target: string): Promise<void>
   isFile(path: string): Promise<boolean>
@@ -63,8 +64,22 @@ function run(command: string, args: readonly string[], cwd: string): void {
   }
 }
 
+/** Build a shell-free pnpm invocation that also works on Windows. */
+export function desktopStagePnpmInvocation(
+  args: readonly string[],
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+  nodeExecutable = process.execPath,
+): { command: string; args: string[] } {
+  const entrypoint = environment.npm_execpath
+  if (entrypoint === undefined || entrypoint === '') {
+    throw new Error('Desktop staging: npm_execpath is unavailable; invoke staging through a pnpm package script.')
+  }
+  return { command: nodeExecutable, args: [entrypoint, ...args] }
+}
+
 const realDependencies: StageDesktopDependencies = {
   remove: async (path) => { await rm(path, { recursive: true, force: true }) },
+  pnpmInvocation: desktopStagePnpmInvocation,
   run,
   copy: async (source, target) => { await cp(source, target, { recursive: true, force: true }) },
   isFile: pathIsFile,
@@ -88,11 +103,15 @@ function stageRelative(stageDir: string, path: string): string {
 export async function stageDesktop(
   repositoryRoot: string,
   dependencies: StageDesktopDependencies = realDependencies,
+  requestedStageDir?: string,
 ): Promise<DesktopStageResult> {
   const root = resolve(repositoryRoot)
   const desktopDir = resolve(root, 'apps', 'desktop')
-  const stageDir = resolve(desktopDir, '.stage')
-  if (basename(stageDir) !== '.stage' || dirname(stageDir) !== desktopDir) {
+  const defaultStageDir = resolve(desktopDir, '.stage')
+  const stageDir = requestedStageDir === undefined ? defaultStageDir : resolve(requestedStageDir)
+  const isDefaultStage = stageDir === defaultStageDir
+  const isDedicatedExternalStage = basename(stageDir) === 'dsh-desktop-stage' && dirname(stageDir) !== stageDir
+  if (!isDefaultStage && !isDedicatedExternalStage) {
     throw new Error(`Desktop staging refused an unexpected deletion target: ${stageDir}`)
   }
 
@@ -102,7 +121,8 @@ export async function stageDesktop(
   // only verification. The stage may contain dev tools, but electron-builder's
   // production dependency graph and explicit files allowlist exclude them from
   // the shipped application.
-  dependencies.run('pnpm', ['--filter', DESKTOP_PACKAGE, 'deploy', '--legacy', stageDir], root)
+  const deploy = dependencies.pnpmInvocation(['--filter', DESKTOP_PACKAGE, 'deploy', '--legacy', stageDir])
+  dependencies.run(deploy.command, deploy.args, root)
 
   for (const entry of ['lib', 'renderer', 'assets', 'electron-builder.yml'] as const) {
     await dependencies.copy(join(desktopDir, entry), join(stageDir, entry))
@@ -117,6 +137,7 @@ export async function stageDesktop(
     'renderer/failure.html',
     'assets/icon-source.png',
     'assets/icon.icns',
+    'assets/icon.ico',
     'node_modules/@deepseek-ai/dsh/lib/bin.js',
     'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
   ]
@@ -138,7 +159,11 @@ export async function stageDesktop(
 const invokedPath = process.argv[1]
 if (invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invokedPath)).href) {
   try {
-    const result = await stageDesktop(resolve(import.meta.dirname, '..'))
+    const result = await stageDesktop(
+      resolve(import.meta.dirname, '..'),
+      realDependencies,
+      process.env.DSH_DESKTOP_STAGE_DIR,
+    )
     console.log(`desktop stage: ${result.validatedFiles.length} required file(s) validated in ${result.stageDir}`)
   } catch (error) {
     console.error(error instanceof Error ? error.message : 'Desktop staging failed with a non-Error value.')
