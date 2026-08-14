@@ -69,7 +69,8 @@ jobs:
         run: |
           $artifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.2-win-x64.exe'
           $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $(Split-Path -Leaf $artifact)" | Set-Content -LiteralPath "$artifact.sha256" -Encoding ascii
+          $checksum = "$hash  $(Split-Path -Leaf $artifact)`n"
+          [System.IO.File]::WriteAllText("$artifact.sha256", $checksum, [System.Text.Encoding]::ASCII)
 
       - uses: actions/upload-artifact@v7
         with:
