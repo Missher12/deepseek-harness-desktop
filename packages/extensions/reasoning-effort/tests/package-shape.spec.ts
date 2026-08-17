@@ -6,9 +6,19 @@ const PACKAGE_ROOT = new URL('../', import.meta.url)
 const REPOSITORY_ROOT = new URL('../../../', PACKAGE_ROOT)
 const PINNED_LICENSE_SHA256 = 'c3cf95d2fa3e68f8a40cc4bd941097b85e740623df940fd4ded471065d74fa06'
 const PINNED_SPRITE_SHA256 = '1222c5a2a70087cacb6da338f5d6e3e3fa7585259c67a80a943b2cab6901f51e'
-const REQUIRED_WORKSPACE_PEERS = [
+const WORKSPACE_PEERS = [
   '@deepseek-ai/cordis',
+  '@deepseek-ai/dsh-api-remotes',
+  '@deepseek-ai/dsh-client-connection',
+  '@deepseek-ai/dsh-client-runtime',
+  '@deepseek-ai/dsh-client-ui-conversation',
+  '@deepseek-ai/dsh-client-ui-model-selection',
+  '@deepseek-ai/dsh-client-ui-primitives',
+  '@deepseek-ai/dsh-client-ui-settings',
+  '@deepseek-ai/dsh-client-ui-slots',
+  '@deepseek-ai/dsh-host-webserver',
   '@deepseek-ai/dsh-invariants',
+  '@deepseek-ai/dsh-settings',
 ] as const
 
 interface PackageManifest {
@@ -94,19 +104,27 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
     expect(manifest.exports['./cordis.patch.yml']).toBe('./cordis.patch.yml')
   })
 
-  test('declares only the dependencies required by the current scaffold', async () => {
+  test('publishes the complete rc.5 compatibility contract without adding scaffold dependencies', async () => {
     const manifest = await readManifest()
     const tsconfig = JSON.parse(await readFile(new URL('tsconfig.json', PACKAGE_ROOT), 'utf8')) as {
       references: readonly { readonly path: string }[]
     }
 
     expect(manifest.dependencies).toBeUndefined()
-    expect(manifest.peerDependencies).toEqual(Object.fromEntries(
-      REQUIRED_WORKSPACE_PEERS.map(dependency => [dependency, 'workspace:^']),
-    ))
-    expect(manifest.devDependencies).toEqual(Object.fromEntries(
-      REQUIRED_WORKSPACE_PEERS.map(dependency => [dependency, 'workspace:^']),
-    ))
+    expect(manifest.peerDependencies).toEqual({
+      ...Object.fromEntries(WORKSPACE_PEERS.map(dependency => [dependency, 'workspace:^'])),
+      react: '^18.2.0',
+      'react-dom': '^18.2.0',
+    })
+    expect(manifest.devDependencies).toEqual({
+      ...Object.fromEntries(WORKSPACE_PEERS.map(dependency => [dependency, 'workspace:^'])),
+      '@deepseek-ai/dsh-client-test-runtime': 'workspace:^',
+      '@testing-library/react': '^16.1.0',
+      '@types/react': '~18.3.1',
+      '@types/react-dom': '~18.3.0',
+      react: '^18.2.0',
+      'react-dom': '^18.2.0',
+    })
     expect(tsconfig.references).toEqual([
       { path: '../../../vendor/cordis' },
       { path: '../../runtime-diagnostics/invariants' },
