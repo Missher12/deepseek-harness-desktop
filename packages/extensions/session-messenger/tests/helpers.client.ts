@@ -66,7 +66,32 @@ export function fakeAgent(
   }
 }
 
-export function fakeContext(targets: ReturnType<typeof fakeAgent>[]) {
+interface FakeContextHarness {
+  ctx: {
+    workspaceRegistry: { archivedSessionIds: Array<ReturnType<typeof SessionId>> }
+    typert: { lookups: { get: ReturnType<typeof vi.fn> } }
+    agents: {
+      get: ReturnType<typeof vi.fn>
+      isOwnedBy: ReturnType<typeof vi.fn>
+      resume: ReturnType<typeof vi.fn>
+    }
+    sessions: { get: ReturnType<typeof vi.fn> }
+    sessionPersistence: { inspect: ReturnType<typeof vi.fn>; list: ReturnType<typeof vi.fn> }
+    on: ReturnType<typeof vi.fn>
+    effect: ReturnType<typeof vi.fn>
+    logger: {
+      warn: ReturnType<typeof vi.fn>
+      error: ReturnType<typeof vi.fn>
+      info: ReturnType<typeof vi.fn>
+    }
+  }
+  byId: Map<ReturnType<typeof SessionId>, ReturnType<typeof fakeAgent>>
+  listeners: Map<string, Array<(...args: never[]) => unknown>>
+  inspect: ReturnType<typeof vi.fn>
+  list: ReturnType<typeof vi.fn>
+}
+
+export function fakeContext(targets: ReturnType<typeof fakeAgent>[]): FakeContextHarness {
   const byId = new Map(targets.map(target => [target.id, target]))
   const listeners = new Map<string, Array<(...args: never[]) => unknown>>()
   const inspect = vi.fn(async () => { throw new Error('not found') })

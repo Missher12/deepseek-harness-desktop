@@ -6,7 +6,7 @@ import {
   type CoordinatorOptions,
 } from '../src/coordinator.ts'
 import { DeliveryId, ReplyToken } from '../src/types.ts'
-import { fakeAgent, fakeContext, MemoryReceiptStore } from './helpers.ts'
+import { fakeAgent, fakeContext, MemoryReceiptStore } from './helpers.client.ts'
 
 function options(now = 1_000): CoordinatorOptions {
   let delivery = 0

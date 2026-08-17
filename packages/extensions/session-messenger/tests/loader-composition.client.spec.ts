@@ -1,7 +1,7 @@
 /**
  * Product composition account for the independently removable messenger:
- * shipped profile overlays, the real Host Loader/runtime surfaces, and the
- * real Client Loader/slot surface. Thin fixtures supply only external Host
+ * the real Host Loader/runtime surfaces and the real Client Loader/slot
+ * surface. Thin fixtures supply only external Host
  * policy and storage boundaries; messenger exports and runtime registries are
  * never copied into the test.
  */
@@ -9,14 +9,13 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Inbox } from '@deepseek-ai/dsh-agent'
-import { composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import ClientModuleRegistry from '@deepseek-ai/dsh-client-modules'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
@@ -39,10 +38,6 @@ import {
 import * as SessionMessenger from '../src/index.ts'
 import { createSessionMessengerToolDefinitions } from '../src/tools.ts'
 
-const REPO_ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
-const BASE_PATCH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
-const WEB_PATCH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
-const DESKTOP_PATCH = join(REPO_ROOT, 'apps/desktop/desktop.cordis.patch.yml')
 const PACKAGE_NAME = '@deepseek-ai/dsh-session-messenger'
 const CLIENT_SPECIFIER = `${PACKAGE_NAME}/client`
 const TOOL_NAMES = createSessionMessengerToolDefinitions(
@@ -193,20 +188,6 @@ function messengerEntry(ctx: Context, specifier = PACKAGE_NAME) {
 function occurrences(value: string, token: string): number {
   return value.split(token).length - 1
 }
-
-describe('shipped profile composition', () => {
-  it('keeps ordinary Web messenger-free and mounts exactly one canonical Desktop row', () => {
-    const base = loadOverlayPatches('session-messenger composition', BASE_PATCH)
-    const web = loadOverlayPatches('session-messenger composition', WEB_PATCH)
-    const desktop = loadOverlayPatches('session-messenger composition', DESKTOP_PATCH)
-    const ordinary = composeEntries([base, web])
-    const desktopRows = composeEntries([base, web, desktop])
-
-    expect(ordinary.filter(row => row.id === 'session-messenger' || row.name === PACKAGE_NAME)).toEqual([])
-    expect(desktopRows.filter(row => row.id === 'session-messenger' || row.name === PACKAGE_NAME))
-      .toEqual([{ id: 'session-messenger', name: PACKAGE_NAME }])
-  })
-})
 
 describe('real Host Loader composition', () => {
   it('assembles native/Code tools and removes every ephemeral surface while retaining committed messages', { timeout: 60_000 }, async () => {

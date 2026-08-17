@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MessageId } from '@deepseek-ai/dsh-llm'
 import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
@@ -45,7 +46,7 @@ function notification(
     deliveryId,
     sourceSessionId: CURRENT,
     targetSessionId: 'target-session' as SessionId,
-    messageId: `${deliveryId}-message`,
+    messageId: MessageId(`${deliveryId}-message`),
     status,
     wakeRequested: false,
     updatedAt: 10,
@@ -139,7 +140,7 @@ describe('session messenger Client registration', () => {
       },
       locale: { register: vi.fn(() => localeDispose) },
       slots: {
-        inject(name: string, register: () => unknown) {
+        inject(name: string, register: () => (() => void) | undefined) {
           expect(name).toBe('sidebar.footer.action')
           const dispose = register()
           if (typeof dispose === 'function') disposers.push(dispose)

@@ -8,7 +8,7 @@ import {
 } from '../src/coordinator.ts'
 import { RECEIPT_TTL_MS } from '../src/spec.ts'
 import { DeliveryId, ReplyToken, type Receipt } from '../src/types.ts'
-import { fakeAgent, fakeContext, MemoryReceiptStore } from './helpers.ts'
+import { fakeAgent, fakeContext, MemoryReceiptStore } from './helpers.client.ts'
 
 const now = 10_000
 const options: CoordinatorOptions = {
@@ -94,7 +94,7 @@ describe('write-ahead recovery', () => {
       h.inspect.mockResolvedValue({
         meta: { version: 0, id: SessionId('target'), createdAt: 1 },
         events: [persistedInsertion()],
-      } as never)
+      })
     }
     const store = new MemoryReceiptStore()
     store.records.set(DeliveryId('delivery-1'), recoverable())
@@ -177,17 +177,22 @@ describe('write-ahead recovery', () => {
     const h = fakeContext([target])
     const store = new MemoryReceiptStore()
     const expired = { ...recoverable(), createdAt: now - RECEIPT_TTL_MS, expiresAt: now, updatedAt: now - 1 }
-    const oldTerminal = {
-      ...recoverable(),
+    const oldTerminal: Receipt = {
       id: DeliveryId('old'),
+      sourceSessionId: SessionId('source'),
+      targetSessionId: SessionId('target'),
+      messageId: MessageId('old-message'),
+      mode: 'inject',
       status: 'failed' as const,
       settledAt: now - 8 * 24 * 60 * 60 * 1_000,
       updatedAt: now - 8 * 24 * 60 * 60 * 1_000,
       createdAt: now - 9 * 24 * 60 * 60 * 1_000,
       expiresAt: now - 8 * 24 * 60 * 60 * 1_000,
       errorCode: 'delivery-failed',
+      replyToken: ReplyToken('old-token'),
+      hop: 0,
+      wakeRequested: false,
     }
-    delete (oldTerminal as Partial<typeof oldTerminal>).envelope
     store.records.set(DeliveryId('delivery-1'), expired)
     store.records.set(DeliveryId('old'), oldTerminal)
     const coordinator = new SessionMessengerCoordinator(h.ctx as never, store, options)

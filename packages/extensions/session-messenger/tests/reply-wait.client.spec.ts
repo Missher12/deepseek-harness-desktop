@@ -15,8 +15,9 @@ import {
   ReplyToken,
   type DeliveredReceipt,
   type Receipt,
+  type ReceiptTransition,
 } from '../src/types.ts'
-import { fakeAgent, fakeContext, MemoryReceiptStore } from './helpers.ts'
+import { fakeAgent, fakeContext, MemoryReceiptStore } from './helpers.client.ts'
 
 function options(now: () => number): CoordinatorOptions {
   let delivery = 1
@@ -138,10 +139,10 @@ describe('explicit reply wait', () => {
       replyDeliveryId: DeliveryId('reply'),
     }
     const records = new Map<DeliveryId, Receipt>([[DeliveryId('original'), original]])
-    let listener: ((receipt: Receipt) => void) | undefined
+    let listener: ((transition: ReceiptTransition) => void) | undefined
     const source = {
       receipt: (id: DeliveryId) => records.get(id),
-      subscribe: (next: (receipt: Receipt) => void) => {
+      subscribe: (next: (transition: ReceiptTransition) => void) => {
         listener = next
         records.set(DeliveryId('original'), replied)
         records.set(DeliveryId('reply'), reverse)
@@ -150,7 +151,7 @@ describe('explicit reply wait', () => {
     }
     const waiter = new SessionReplyWaiter(source)
 
-    listener?.(delivered({ id: DeliveryId('unrelated') }))
+    listener?.({ kind: 'upsert', receipt: delivered({ id: DeliveryId('unrelated') }) })
     await expect(waiter.wait(fakeAgent('source'), DeliveryId('original'), 1_000, new AbortController().signal))
       .resolves.toMatchObject({
         deliveryId: DeliveryId('original'), messageId: MessageId('original-message'),

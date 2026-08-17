@@ -9,7 +9,7 @@ import {
   registerSessionMessengerTools,
 } from '../src/tools.ts'
 import { DeliveryId } from '../src/types.ts'
-import { fakeAgent } from './helpers.ts'
+import { fakeAgent } from './helpers.client.ts'
 
 const signal = new AbortController().signal
 
