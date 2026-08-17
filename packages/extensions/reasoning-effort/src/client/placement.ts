@@ -34,6 +34,7 @@ export interface PopupPlacement {
   readonly top: number
   readonly left: number
   readonly maxHeight: number
+  readonly maxWidth: number
 }
 
 const GAP = 8
@@ -59,6 +60,7 @@ export function placePopup(input: PlacementInput): PopupPlacement {
   const viewportBottom = viewport.offsetTop + viewport.height - MARGIN
   const viewportLeft = viewport.offsetLeft + MARGIN
   const viewportRight = viewport.offsetLeft + viewport.width - MARGIN
+  const maxWidth = Math.max(0, viewport.width - MARGIN * 2)
   const belowTop = clamp(anchor.bottom + GAP, viewportTop, viewportBottom)
   const aboveBottom = clamp(anchor.top - GAP, viewportTop, viewportBottom)
   const available = {
@@ -84,7 +86,8 @@ export function placePopup(input: PlacementInput): PopupPlacement {
   const top = side === 'below'
     ? belowTop
     : aboveBottom - Math.min(popup.height, maxHeight)
-  const left = clamp(anchor.left, viewportLeft, viewportRight - popup.width)
+  const effectiveWidth = Math.min(Math.max(0, popup.width), maxWidth)
+  const left = clamp(anchor.left, viewportLeft, viewportRight - effectiveWidth)
 
-  return { side, top, left, maxHeight }
+  return { side, top, left, maxHeight, maxWidth }
 }

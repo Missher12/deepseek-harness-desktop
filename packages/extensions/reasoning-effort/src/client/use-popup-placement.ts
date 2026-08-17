@@ -16,6 +16,7 @@ const samePlacement = (left: PopupPlacement | null, right: PopupPlacement): bool
   && left.top === right.top
   && left.left === right.left
   && left.maxHeight === right.maxHeight
+  && left.maxWidth === right.maxWidth
 )
 
 /**
@@ -26,22 +27,64 @@ const samePlacement = (left: PopupPlacement | null, right: PopupPlacement): bool
 export function usePopupPlacement(input: UsePopupPlacementInput): PopupPlacement | null {
   const { anchorRef, popupRef, open, preferred = 'below' } = input
   const [placement, setPlacement] = useState<PopupPlacement | null>(null)
+  const placementRef = useRef<PopupPlacement | null>(null)
   const currentSideRef = useRef<PopupSide | undefined>(undefined)
 
   useLayoutEffect(() => {
     if (!open) {
       currentSideRef.current = undefined
-      setPlacement(previous => previous === null ? previous : null)
+      if (placementRef.current !== null) {
+        placementRef.current = null
+        setPlacement(null)
+      }
       return
     }
 
+    let active = true
     let animationFrame: number | null = null
     const visualViewport = window.visualViewport
-    const measure = (): void => {
+    let resizeObserver: ResizeObserver | null = null
+    let observedAnchor: HTMLElement | null = null
+    let observedPopup: HTMLElement | null = null
+
+    const syncObserverTargets = (
+      anchor: HTMLElement | null,
+      popup: HTMLElement | null,
+    ): void => {
+      if (anchor === observedAnchor && popup === observedPopup) return
+      resizeObserver?.disconnect()
+      if (resizeObserver !== null) {
+        if (anchor !== null) resizeObserver.observe(anchor)
+        if (popup !== null) resizeObserver.observe(popup)
+      }
+      observedAnchor = anchor
+      observedPopup = popup
+    }
+    const publish = (next: PopupPlacement | null): void => {
+      if (next === null) {
+        if (placementRef.current === null) return
+        placementRef.current = null
+        setPlacement(null)
+        return
+      }
+      if (samePlacement(placementRef.current, next)) return
+      placementRef.current = next
+      setPlacement(next)
+    }
+    function scheduleMeasurement(): void {
+      if (!active || animationFrame !== null) return
+      animationFrame = requestAnimationFrame(measure)
+    }
+    function measure(): void {
       animationFrame = null
       const anchor = anchorRef.current
       const popup = popupRef.current
-      if (anchor === null || popup === null) return
+      syncObserverTargets(anchor, popup)
+      if (anchor === null || popup === null) {
+        publish(null)
+        scheduleMeasurement()
+        return
+      }
 
       const currentSide = currentSideRef.current
       const next = placePopup({
@@ -57,35 +100,31 @@ export function usePopupPlacement(input: UsePopupPlacementInput): PopupPlacement
         ...(currentSide === undefined ? {} : { currentSide }),
       })
       currentSideRef.current = next.side
-      setPlacement(previous => samePlacement(previous, next) ? previous : next)
-    }
-    const scheduleMeasurement = (): void => {
-      if (animationFrame !== null) return
-      animationFrame = requestAnimationFrame(measure)
+      publish(next)
+      scheduleMeasurement()
     }
 
+    resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(scheduleMeasurement)
+    syncObserverTargets(anchorRef.current, popupRef.current)
     scheduleMeasurement()
     window.addEventListener('resize', scheduleMeasurement)
     window.addEventListener('scroll', scheduleMeasurement, true)
     visualViewport?.addEventListener('resize', scheduleMeasurement)
     visualViewport?.addEventListener('scroll', scheduleMeasurement)
-    const resizeObserver = typeof ResizeObserver === 'undefined'
-      ? null
-      : new ResizeObserver(scheduleMeasurement)
-    const anchor = anchorRef.current
-    const popup = popupRef.current
-    if (resizeObserver !== null && anchor !== null && popup !== null) {
-      resizeObserver.observe(anchor)
-      resizeObserver.observe(popup)
-    }
 
     return () => {
+      active = false
       window.removeEventListener('resize', scheduleMeasurement)
       window.removeEventListener('scroll', scheduleMeasurement, true)
       visualViewport?.removeEventListener('resize', scheduleMeasurement)
       visualViewport?.removeEventListener('scroll', scheduleMeasurement)
       resizeObserver?.disconnect()
-      if (animationFrame !== null) cancelAnimationFrame(animationFrame)
+      if (animationFrame !== null) {
+        cancelAnimationFrame(animationFrame)
+        animationFrame = null
+      }
     }
   }, [anchorRef, open, popupRef, preferred])
 
