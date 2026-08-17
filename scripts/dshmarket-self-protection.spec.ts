@@ -1,9 +1,18 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mountMarketRoutes, type MarketHost } from '../apps/desktop/node_modules/dshmarket/src/routes.ts'
-import type { PluginCommandRuntime } from '../apps/desktop/node_modules/dshmarket/src/dsh-cli.ts'
+import type { PluginCommandRuntime } from '../apps/desktop/node_modules/dshmarket/lib/types/dsh-cli.d.ts'
+
+type MountMarketRoutes = typeof import('../apps/desktop/node_modules/dshmarket/lib/types/routes.d.ts').mountMarketRoutes
+
+const root = resolve(import.meta.dirname, '..')
+const desktopRequire = createRequire(join(root, 'apps/desktop/package.json'))
+const packageRoot = dirname(desktopRequire.resolve('dshmarket/package.json'))
+const routesUrl = pathToFileURL(join(packageRoot, 'lib/routes.js')).href
+const { mountMarketRoutes } = await import(routesUrl) as { mountMarketRoutes: MountMarketRoutes }
 
 type Handler = (request: never, response: never) => void | Promise<void>
 
@@ -38,7 +47,7 @@ function createTestbed(profileDirectory: string, runtime: PluginCommandRuntime):
     plugin: () => ({ await: () => Promise.resolve(), dispose: () => {} }),
     on: () => () => {},
   }
-  const dispose = mountMarketRoutes(host as unknown as MarketHost, {
+  const dispose = mountMarketRoutes(host, {
     profile: 'web',
     profileDirectory,
     allowRestart: false,
@@ -121,13 +130,15 @@ describe('active marketplace self-protection', () => {
   it('keeps self-update and self-uninstall stable while an ordinary operation is busy', async () => {
     let finish: (() => void) | undefined
     const pending = new Promise<Awaited<ReturnType<PluginCommandRuntime['runPlugin']>>>((resolve) => {
-      finish = () => resolve({
-        exitCode: 1,
-        timedOut: false,
-        stdout: '',
-        stderr: 'expected smoke hold',
-        cancelled: false,
-      })
+      finish = () => {
+        resolve({
+          exitCode: 1,
+          timedOut: false,
+          stdout: '',
+          stderr: 'expected smoke hold',
+          cancelled: false,
+        })
+      }
     })
     runPlugin.mockImplementationOnce(async () => await pending)
 

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '..')
@@ -43,7 +44,11 @@ describe('Harness-native dshmarket presentation', () => {
   })
 
   it('keeps both active-market aliases read-only even when updateAvailable is true', async () => {
-    const marketData = await import('../apps/desktop/node_modules/dshmarket/src/client/market-data.ts')
+    // Resolve the patched dependency at runtime. A literal source import makes
+    // the repository's stricter TypeScript aggregate type-check third-party
+    // source with our compiler options instead of dshmarket's own build.
+    const marketDataUrl = pathToFileURL(join(packageRoot, 'src/client/market-data.ts')).href
+    const marketData = await import(marketDataUrl) as Record<string, unknown>
     expect(marketData).toHaveProperty('isMarketPackage')
     expect(marketData).toHaveProperty('canUpdatePackage')
     const isMarketPackage = marketData.isMarketPackage as (name: string) => boolean
