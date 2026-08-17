@@ -16,11 +16,6 @@ export const DEFAULT_REASONING_EFFORT_PREFERENCE: Readonly<ReasoningEffortPrefer
   chibiThumb: false,
 })
 
-/** One profile-scoped, defaulted boolean; no unrelated settings live here. */
-export const ReasoningEffortPreferenceSchema: z<ReasoningEffortPreference> = z.object({
-  chibiThumb: z.boolean().default(false),
-})
-
 /**
  * Read one untrusted standalone preference value. Absent, malformed, or
  * extended values fail closed so corrupt browser/bootstrap data never enables
@@ -38,3 +33,19 @@ export function readPreference(value: unknown): Readonly<ReasoningEffortPreferen
   }
   return { chibiThumb: record.chibiThumb }
 }
+
+/** Normalize persisted input to a detached, one-key preference section. */
+function normalizePersistedPreference(value: unknown): ReasoningEffortPreference {
+  return { chibiThumb: readPreference(value).chibiThumb }
+}
+
+/**
+ * Profile schema with a character-off default. The transform deliberately
+ * receives the untrusted object before an object schema could discard extra
+ * keys, so corrupt or extended stored values fail closed instead of blocking
+ * plugin activation. The exact PUT parser remains the strict write boundary.
+ */
+export const ReasoningEffortPreferenceSchema = z.transform(
+  z.any<unknown>(),
+  normalizePersistedPreference,
+).default(DEFAULT_REASONING_EFFORT_PREFERENCE)

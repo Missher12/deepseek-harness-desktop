@@ -30,8 +30,12 @@ class MemorySettings extends SettingsProvider {
   readonly writable = true
   readonly writes: Array<{ ns: SettingsNamespace; section: Record<string, unknown> }> = []
 
+  constructor(ctx: Context, private readonly config: { doc?: Record<string, unknown> } = {}) {
+    super(ctx)
+  }
+
   protected load(): Promise<Record<string, unknown>> {
-    return Promise.resolve({})
+    return Promise.resolve(structuredClone(this.config.doc ?? {}))
   }
 
   protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
@@ -262,8 +266,9 @@ describe('reasoning-effort Host registration', () => {
 
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(ctx.settings.get(settingsNamespace(REASONING_EFFORT_SETTINGS_NAMESPACE)))
-      .toEqual({ chibiThumb: false })
+    const resolved = ctx.settings.get(settingsNamespace(REASONING_EFFORT_SETTINGS_NAMESPACE))
+    expect(resolved).toEqual({ chibiThumb: false })
+    expect(Object.isFrozen(resolved)).toBe(true)
     expect(routes).toHaveLength(2)
     expect(routes[1]).toMatchObject({ kind: 'exact', path: PREFERENCE_PATH })
     expect(taps).toHaveLength(1)
@@ -304,6 +309,46 @@ describe('reasoning-effort Host registration', () => {
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await new Promise<void>((resolve) => { setImmediate(resolve) })
     expect(routes).toHaveLength(0)
+    await fiber.dispose()
+  })
+
+  it.each([
+    ['wrong field type', { chibiThumb: 'bad' }],
+    ['extended object', { chibiThumb: true, extra: 'bad' }],
+    ['malformed field object', { chibiThumb: { enabled: true } }],
+  ])('fails closed while mounting over a persisted corrupt object: %s', async (_label, stored) => {
+    const ctx = new Context()
+    await ctx.plugin(MemorySettings, {
+      doc: { [REASONING_EFFORT_SETTINGS_NAMESPACE]: stored },
+    }).await()
+    const routes: WebRoute[] = []
+    const taps: Array<(html: string) => string> = []
+    ctx.provide('webServer', {
+      port: PORT,
+      register(route: WebRoute) {
+        routes.push(route)
+        return () => { routes.splice(routes.indexOf(route), 1) }
+      },
+      tapIndex(tap: (html: string) => string) {
+        taps.push(tap)
+        return () => { taps.splice(taps.indexOf(tap), 1) }
+      },
+    } as WebServer)
+
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(ctx.settings.get(settingsNamespace(REASONING_EFFORT_SETTINGS_NAMESPACE)))
+      .toEqual({ chibiThumb: false })
+    expect(routes).toHaveLength(1)
+    expect(taps).toHaveLength(1)
+
+    const capability = /"capability":"([^"]+)"/.exec(taps[0]!('<head></head>'))?.[1]
+    const get = await invoke(routes[0]!.handler, 'GET', {
+      host: AUTHORITY,
+      [PREFERENCE_CAPABILITY_HEADER]: capability!,
+    })
+    expect(get.status).toBe(200)
+    expect(JSON.parse(get.body)).toEqual({ chibiThumb: false })
     await fiber.dispose()
   })
 })

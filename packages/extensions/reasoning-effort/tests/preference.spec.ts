@@ -32,9 +32,13 @@ describe('reasoning-effort character preference', () => {
     expect(readPreference({ chibiThumb: false })).toEqual({ chibiThumb: false })
   })
 
-  it('declares one defaulted boolean in the durable settings schema', () => {
+  it('normalizes persisted data to one detached defaulted boolean', () => {
     expect(ReasoningEffortPreferenceSchema({})).toEqual({ chibiThumb: false })
-    expect(ReasoningEffortPreferenceSchema({ chibiThumb: true })).toEqual({ chibiThumb: true })
-    expect(() => ReasoningEffortPreferenceSchema({ chibiThumb: 'true' })).toThrow()
+    const valid = { chibiThumb: true }
+    expect(ReasoningEffortPreferenceSchema(valid)).toEqual({ chibiThumb: true })
+    expect(ReasoningEffortPreferenceSchema(valid)).not.toBe(valid)
+    expect(ReasoningEffortPreferenceSchema({ chibiThumb: 'true' })).toEqual({ chibiThumb: false })
+    expect(ReasoningEffortPreferenceSchema({ chibiThumb: true, extra: true }))
+      .toEqual({ chibiThumb: false })
   })
 })
