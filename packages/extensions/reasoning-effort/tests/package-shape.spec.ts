@@ -6,19 +6,9 @@ const PACKAGE_ROOT = new URL('../', import.meta.url)
 const REPOSITORY_ROOT = new URL('../../../', PACKAGE_ROOT)
 const PINNED_LICENSE_SHA256 = 'c3cf95d2fa3e68f8a40cc4bd941097b85e740623df940fd4ded471065d74fa06'
 const PINNED_SPRITE_SHA256 = '1222c5a2a70087cacb6da338f5d6e3e3fa7585259c67a80a943b2cab6901f51e'
-const WORKSPACE_PEERS = [
+const REQUIRED_WORKSPACE_PEERS = [
   '@deepseek-ai/cordis',
-  '@deepseek-ai/dsh-api-remotes',
-  '@deepseek-ai/dsh-client-connection',
-  '@deepseek-ai/dsh-client-runtime',
-  '@deepseek-ai/dsh-client-ui-conversation',
-  '@deepseek-ai/dsh-client-ui-model-selection',
-  '@deepseek-ai/dsh-client-ui-primitives',
-  '@deepseek-ai/dsh-client-ui-settings',
-  '@deepseek-ai/dsh-client-ui-slots',
-  '@deepseek-ai/dsh-host-webserver',
   '@deepseek-ai/dsh-invariants',
-  '@deepseek-ai/dsh-settings',
 ] as const
 
 interface PackageManifest {
@@ -38,10 +28,11 @@ interface PackageManifest {
     readonly default: string
   }>
   readonly dsh: {
-    readonly client: { readonly platform: string }
+    readonly client: { readonly inject: readonly string[]; readonly platform: string }
     readonly bundle: { readonly patch: string }
   }
   readonly files: readonly string[]
+  readonly dependencies?: Record<string, string>
   readonly peerDependencies: Record<string, string>
   readonly devDependencies: Record<string, string>
 }
@@ -98,21 +89,28 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
     const manifest = await readManifest()
 
     expect(manifest.dsh.client.platform).toBe('web')
+    expect(manifest.dsh.client.inject).toEqual([])
     expect(manifest.dsh.bundle.patch).toBe('./cordis.patch.yml')
     expect(manifest.exports['./cordis.patch.yml']).toBe('./cordis.patch.yml')
   })
 
-  test('pins Harness peers to the rc.5 workspace and React 18', async () => {
+  test('declares only the dependencies required by the current scaffold', async () => {
     const manifest = await readManifest()
-
-    for (const dependency of WORKSPACE_PEERS) {
-      expect(manifest.peerDependencies[dependency], dependency).toBe('workspace:^')
-      expect(manifest.devDependencies[dependency], dependency).toBe('workspace:^')
+    const tsconfig = JSON.parse(await readFile(new URL('tsconfig.json', PACKAGE_ROOT), 'utf8')) as {
+      references: readonly { readonly path: string }[]
     }
-    expect(manifest.peerDependencies.react).toBe('^18.2.0')
-    expect(manifest.devDependencies.react).toBe('^18.2.0')
-    expect(manifest.peerDependencies['react-dom']).toBe('^18.2.0')
-    expect(manifest.devDependencies['react-dom']).toBe('^18.2.0')
+
+    expect(manifest.dependencies).toBeUndefined()
+    expect(manifest.peerDependencies).toEqual(Object.fromEntries(
+      REQUIRED_WORKSPACE_PEERS.map(dependency => [dependency, 'workspace:^']),
+    ))
+    expect(manifest.devDependencies).toEqual(Object.fromEntries(
+      REQUIRED_WORKSPACE_PEERS.map(dependency => [dependency, 'workspace:^']),
+    ))
+    expect(tsconfig.references).toEqual([
+      { path: '../../../vendor/cordis' },
+      { path: '../../runtime-diagnostics/invariants' },
+    ])
   })
 
   test('preserves the pinned upstream license, attribution, and sprite bytes', async () => {
@@ -139,6 +137,14 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
     expect(host).toContain('export function apply(): void {}')
     expect(client).toContain("export const name = 'reasoning-effort-client'")
     expect(client).toContain('export function apply(): void {}')
+  })
+
+  test('describes the invariant companion as a scaffold without claiming unbuilt behavior', async () => {
+    const invariant = await readFile(new URL('src/invariant.ts', PACKAGE_ROOT), 'utf8')
+
+    expect(invariant).toContain('this package is currently a scaffold with no Host behavior')
+    expect(invariant).not.toContain('owns route and settings registrations')
+    expect(invariant).not.toContain('composition tests')
   })
 
   test('inserts exactly one scoped reasoning-effort row', async () => {

@@ -15,10 +15,7 @@ export const name = 'reasoning-effort-invariant'
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: the Host half owns route and settings registrations
- * whose disposal is covered by its composition tests, while selection state
- * and slot ownership live in the browser process outside the Host invariant
- * service.
+ * No runtime invariant: this package is currently a scaffold with no Host behavior.
  */
 const install: InvariantInstaller = () => {}
 
