@@ -12,6 +12,8 @@ This community repository preserves the official source and adds an unofficial I
 
 Download the DMG from this repository's [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases). The current local build is unsigned and unnotarized; on first launch, macOS may require **Open** from Finder's context menu.
 
+The Desktop source manifest now targets version 0.1.5. The Intel macOS 0.1.5 build is still awaiting packaging and verification, while Windows 0.1.5 packaging and native acceptance are deferred. The version change alone is not release or artifact-verification evidence.
+
 ## Developer preview
 
 DeepSeek Harness is currently in _developer preview_ and is iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**
