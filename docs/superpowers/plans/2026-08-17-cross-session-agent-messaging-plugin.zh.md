@@ -131,7 +131,7 @@ expect(await store.get(receipt.id)).toMatchObject({ status: 'delivered' })
 
 - [ ] **步骤 2：编写失败的崩溃窗口测试**
 
-模拟 `prepared` 后、入队后和写 delivered 状态期间的进程死亡。恢复必须用 `MessageId(receipt.messageId)` 重建原始 frozen `UserMessage`，先搜索 inbox 和 `user/message` 事件，绝不重复入队同一个 ID。
+模拟 `prepared` 后、入队后和写 delivered 状态期间的进程死亡。恢复必须用 `freezeMessage()` 和 `MessageId(receipt.messageId)` 重建原始 frozen `UserMessage`，先在 live inbox／session 事件与 cold persistence 中搜索该精确 ID，绝不重复入队同一个 ID。不得使用 `createUserMessage()`，因为它会在恢复时生成不同 ID。
 
 - [ ] **步骤 3：运行测试并确认 RED**
 
@@ -141,10 +141,11 @@ expect(await store.get(receipt.id)).toMatchObject({ status: 'delivered' })
 
 - [ ] **步骤 4：实现 write-ahead 协调器**
 
-通过 `ctx.storageDomain.open()` 打开 `sessionMessengerDomainSpec`，并通过插件 effect disposer 关闭 domain。先创建消息并持久化包含完整未解决信封的 receipt，再通过 `inject` 或 `followup` 同步入队，随后用不含正文的 delivered 记录替换 receipt。若入队后的存储写入结果不确定，持久化或返回 `delivery-recovery-pending`。订阅精确的 inbox inserted／claimed／discarded 事件和 Agent 失败／取消边界，按 Message ID 更新非回复状态。每个来源在滚动一分钟内最多 30 次投递，未解决 receipt 最多 256 个；在启动时和一个有界定时器中让未解决 receipt 于 24 小时后过期，并在七天后压缩已完成元数据。
+通过 `ctx.storageDomain.open()` 打开 `sessionMessengerDomainSpec`，并通过插件 effect disposer 关闭 domain。预先创建精确 Message ID 并持久化包含完整未解决信封的 receipt；在等待 `prepared` 写入后、真正入队前执行第三次归档检查，再通过 `inject` 或 `followup` 同步入队，随后用不含正文的 delivered 记录替换 receipt。第三次检查失败时必须把 prepared receipt 结算为 rejected，不能留下可恢复投递。若入队后的存储写入结果不确定，持久化或返回 `delivery-recovery-pending`。订阅精确的 inbox inserted／claimed／discarded 事件和 Agent 失败／取消边界，按 Message ID 更新非回复状态。每个来源在滚动一分钟内最多 30 次投递，未解决 receipt 最多 256 个；在启动时和一个有界定时器中让未解决 receipt 于 24 小时后过期，并在七天后压缩已完成元数据。
 
 ```ts
 await receipts.put(prepared)
+await assertTargetStillOrdinaryAndUnarchived(target.id)
 target[mode === 'send' ? 'inject' : 'followup'](message)
 await receipts.put(toDelivered(prepared))
 ```
@@ -223,7 +224,7 @@ git commit -m "feat: add cross-session messaging tools"
 
 - [ ] **步骤 1：编写失败的 HTTP 信任与重连测试**
 
-覆盖精确 Host 与 Origin、cross-site 拒绝、capability 缺失／错误、无 ACAO header、4 KiB ack 上限、SSE client 数量上限、仅元数据 frame、单调 event ID、Last-Event-ID replay、权威 snapshot 和路由／连接 dispose。
+覆盖 mutation／stream 请求的精确 Host 与 Origin、cross-site 拒绝、capability 缺失／错误、无 ACAO header、4 KiB ack 上限、SSE client 数量上限、仅元数据 frame、单调 event ID、Last-Event-ID replay、权威 snapshot 和路由／连接 dispose。snapshot 与事件流必须使用 POST，确保真实同源 Chromium 会可靠附带 Origin。
 
 - [ ] **步骤 2：编写失败的 Client slot 测试**
 
@@ -237,7 +238,7 @@ git commit -m "feat: add cross-session messaging tools"
 
 - [ ] **步骤 4：实现路由与 streaming-fetch SSE**
 
-在 `/plugins/dsh-session-messenger` 下注册精确 snapshot、ack 和 events 路由。向 index HTML 注入经过转义的每代 capability。Client 用带 capability header 的 `fetch` 解析 SSE frame，避免把 token 放入 URL；重连从 snapshot 开始，并按 event ID 去重。
+在 `/plugins/dsh-session-messenger` 下注册精确的 POST snapshot、ack 和事件流路由。向 index HTML 注入经过转义的每代 capability。Client 用带 capability header 的 POST `fetch` 解析 SSE frame，避免把 token 放入 URL；重连从 snapshot 开始，并按 event ID 去重。不得依赖 GET／EventSource 自定义 Origin，因为 Chromium 可能省略它，脚本也不能设置该 forbidden header。
 
 - [ ] **步骤 5：实现紧凑的 Harness footer 入口**
 

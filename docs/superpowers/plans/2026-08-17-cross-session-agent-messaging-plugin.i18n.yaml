@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-08-17-cross-session-agent-messaging-plugin.md
-2026-08-17-cross-session-agent-messaging-plugin.md: 033b16b012d67d2152743592d4259b850d7d680a
-2026-08-17-cross-session-agent-messaging-plugin.zh.md: 63ede747153195f2760538b4939ed05c9db08ce0
+2026-08-17-cross-session-agent-messaging-plugin.md: 914b31451f6fcc3eaf810442d1f1da552ca5a5f4
+2026-08-17-cross-session-agent-messaging-plugin.zh.md: f28ab3c5d62f859005d112d50e83102483468678

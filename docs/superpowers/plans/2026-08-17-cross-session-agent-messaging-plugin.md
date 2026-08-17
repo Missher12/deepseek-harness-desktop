@@ -131,7 +131,7 @@ expect(await store.get(receipt.id)).toMatchObject({ status: 'delivered' })
 
 - [ ] **Step 2: Write failing crash-window tests**
 
-Simulate death after `prepared`, after enqueue, and during delivered-status write. Recovery must rebuild the original frozen `UserMessage` with `MessageId(receipt.messageId)`, search inbox and `user/message` events first, and never enqueue the same ID twice.
+Simulate death after `prepared`, after enqueue, and during delivered-status write. Recovery must rebuild the original frozen `UserMessage` with `freezeMessage()` and `MessageId(receipt.messageId)`, search live inbox/session events and cold persistence for that exact ID first, and never enqueue the same ID twice. Do not use `createUserMessage()`, because it would generate a different ID during recovery.
 
 - [ ] **Step 3: Run the tests and confirm RED**
 
@@ -141,10 +141,11 @@ Expected: FAIL because delivery coordination is missing.
 
 - [ ] **Step 4: Implement the write-ahead coordinator**
 
-Open `sessionMessengerDomainSpec` through `ctx.storageDomain.open()`, and close the domain through the plugin effect disposer. Create the message first, persist its full unresolved envelope, synchronously enqueue with `inject` or `followup`, then replace the receipt with a delivered record that omits the body. If the post-enqueue store write is indeterminate, persist or return `delivery-recovery-pending`. Subscribe to exact inbox inserted, claimed, and discarded events plus Agent failure/cancellation boundaries to update non-reply status by Message ID. Rate-limit each source to 30 deliveries per rolling minute, cap unresolved receipts at 256, expire unresolved receipts after 24 hours, and compact settled metadata after seven days at startup and on one bounded timer.
+Open `sessionMessengerDomainSpec` through `ctx.storageDomain.open()`, and close the domain through the plugin effect disposer. Pre-create the exact message ID, persist its full unresolved envelope, perform a third archive check after the awaited `prepared` write and immediately before enqueue, synchronously enqueue with `inject` or `followup`, then replace the receipt with a delivered record that omits the body. If that third check fails, settle the prepared receipt as rejected rather than leaving recoverable work. If the post-enqueue store write is indeterminate, persist or return `delivery-recovery-pending`. Subscribe to exact inbox inserted, claimed, and discarded events plus Agent failure/cancellation boundaries to update non-reply status by Message ID. Rate-limit each source to 30 deliveries per rolling minute, cap unresolved receipts at 256, expire unresolved receipts after 24 hours, and compact settled metadata after seven days at startup and on one bounded timer.
 
 ```ts
 await receipts.put(prepared)
+await assertTargetStillOrdinaryAndUnarchived(target.id)
 target[mode === 'send' ? 'inject' : 'followup'](message)
 await receipts.put(toDelivered(prepared))
 ```
@@ -223,7 +224,7 @@ git commit -m "feat: add cross-session messaging tools"
 
 - [ ] **Step 1: Write failing HTTP trust and reconnect tests**
 
-Cover exact Host and Origin, cross-site rejection, missing/wrong capability, no ACAO header, 4 KiB ack bound, bounded SSE clients, metadata-only frames, monotonic event IDs, Last-Event-ID replay, authoritative snapshot, and disposal of routes/connections.
+Cover exact Host and Origin on mutation/stream requests, cross-site rejection, missing/wrong capability, no ACAO header, 4 KiB ack bound, bounded SSE clients, metadata-only frames, monotonic event IDs, Last-Event-ID replay, authoritative snapshot, and disposal of routes/connections. Snapshot and event-stream requests must use POST so real same-origin Chromium supplies Origin reliably.
 
 - [ ] **Step 2: Write failing Client slot tests**
 
@@ -237,7 +238,7 @@ Expected: FAIL because notification surfaces are missing.
 
 - [ ] **Step 4: Implement routes and streaming-fetch SSE**
 
-Register exact snapshot, ack, and events routes below `/plugins/dsh-session-messenger`. Inject an escaped per-generation capability into index HTML. The Client uses `fetch` with a capability header and parses SSE frames, avoiding a token in the URL; reconnect begins from snapshot and deduplicates by event ID.
+Register exact POST snapshot, ack, and event-stream routes below `/plugins/dsh-session-messenger`. Inject an escaped per-generation capability into index HTML. The Client uses POST `fetch` with a capability header and parses SSE frames, avoiding a token in the URL; reconnect begins from snapshot and deduplicates by event ID. Do not require a custom Origin on GET/EventSource, because Chromium may omit it and scripts cannot set that forbidden header.
 
 - [ ] **Step 5: Implement the compact Harness footer entry**
 
