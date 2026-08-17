@@ -44,8 +44,8 @@ describe('packaged desktop process inspection', () => {
     try {
       const seeded = await seedWindowsClipboardSmokeState(root)
       expect(seeded.activeSessionId).not.toBe(seeded.archivedSessionId)
-      expect(seeded.protectedPaths).toHaveLength(3)
-      await expect(Promise.all(seeded.protectedPaths.map(path => readFile(path)))).resolves.toHaveLength(3)
+      expect(seeded.protectedPaths).toHaveLength(5)
+      await expect(Promise.all(seeded.protectedPaths.map(path => readFile(path)))).resolves.toHaveLength(5)
 
       const reader = new Context()
       try {
@@ -55,9 +55,10 @@ describe('packaged desktop process inspection', () => {
         expect(headers.map(header => header.id).sort()).toEqual([
           seeded.activeSessionId,
           seeded.archivedSessionId,
+          'desktop-smoke-messenger-source-session-id',
         ].sort())
         expect(headers.every(header => header.cwd !== undefined)).toBe(true)
-        expect(new Set(headers.map(header => header.cwd)).size).toBe(2)
+        expect(new Set(headers.map(header => header.cwd)).size).toBe(3)
       } finally {
         await reader.fiber.dispose()
       }

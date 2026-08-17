@@ -166,6 +166,16 @@ describe('desktop package manifest', () => {
     expect(smoke).toContain("code: 'self-protected'")
   })
 
+  it('exercises the native reasoning slider and session-messenger footer', () => {
+    const smoke = readFileSync(new URL('./packaged-smoke.ts', import.meta.url), 'utf8')
+
+    expect(smoke).toContain('desktop-smoke-reasoning-${platform}.png')
+    expect(smoke).toContain('data-messenger-state="pending"')
+    expect(smoke).toContain('Copy current Session ID')
+    expect(smoke).toContain('desktop-smoke-messenger-${platform}.png')
+    expect(smoke).not.toContain("platform === 'win32'\n    ? await seedWindowsClipboardSmokeState")
+  })
+
   it('includes the repository standalone runtime dependency closure', () => {
     const manifest = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
