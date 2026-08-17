@@ -6,12 +6,12 @@ import { SessionId, type SessionId as SessionIdType } from '@deepseek-ai/dsh-ses
 import type { DomainChanged } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-workspace'
-import type { DeliveryId, MessengerErrorCode, Receipt } from './types.ts'
+import type { DeliveryId, MessengerErrorCode, Receipt, ReceiptTransition } from './types.ts'
 
 /** Small receipt projection required by the waiter. */
 export interface WaitReceiptSource {
   receipt(id: DeliveryId): Receipt | undefined
-  subscribe(listener: (receipt: Receipt) => void): () => void
+  subscribe(listener: (transition: ReceiptTransition) => void): () => void
 }
 
 /** Read-only policy result: uncertain storage never masquerades as deletion. */

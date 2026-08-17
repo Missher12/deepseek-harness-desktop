@@ -82,6 +82,11 @@ export type TerminalReceipt = ReceiptBase & {
 /** Complete durable receipt vocabulary. */
 export type Receipt = RecoverableReceipt | DeliveredReceipt | ClaimedReceipt | RepliedReceipt | TerminalReceipt
 
+/** One durable receipt-store transition observed by waits and notification projections. */
+export type ReceiptTransition =
+  | { readonly kind: 'upsert'; readonly receipt: Receipt }
+  | { readonly kind: 'delete'; readonly deliveryId: DeliveryId }
+
 /** Stable plugin error codes returned by tools and resolver boundaries. */
 export type MessengerErrorCode =
   | 'caller-required'

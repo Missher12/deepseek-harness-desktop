@@ -31,6 +31,7 @@ import {
   ReplyToken,
   type DeliveryMode,
   type Receipt,
+  type ReceiptTransition,
   type RecoverableReceipt,
 } from './types.ts'
 
@@ -77,7 +78,7 @@ export interface DeliveryResult {
 }
 
 /** Receipt transition subscriber used by notifications and explicit waits. */
-export type ReceiptListener = (receipt: Receipt) => void
+export type ReceiptListener = (transition: ReceiptTransition) => void
 
 /** Owns one receipt store and every cross-service sequencing decision. */
 export class SessionMessengerCoordinator {
@@ -426,7 +427,8 @@ export class SessionMessengerCoordinator {
         continue
       }
       if (isSettled(receipt) && receipt.updatedAt <= now - SETTLED_RETENTION_MS) {
-        await this.receipts.delete(id)
+        const deleted = await this.receipts.delete(id)
+        if (deleted) this.publishTransition({ kind: 'delete', deliveryId: id })
       }
     }
   }
@@ -514,9 +516,13 @@ export class SessionMessengerCoordinator {
 
   private async commit(receipt: Receipt): Promise<void> {
     await this.receipts.put(receipt)
+    this.publishTransition({ kind: 'upsert', receipt })
+  }
+
+  private publishTransition(transition: ReceiptTransition): void {
     for (const listener of this.listeners) {
       try {
-        listener(receipt)
+        listener(transition)
       } catch (error: unknown) {
         this.ctx.logger.warn(`session messenger listener failed: ${String(error)}`)
       }

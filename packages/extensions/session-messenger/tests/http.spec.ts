@@ -23,7 +23,7 @@ import {
   type ReceiptEventSource,
   type ReceiptTransitionListener,
 } from '../src/events.ts'
-import { DeliveryId, ReplyToken, type Receipt } from '../src/types.ts'
+import { DeliveryId, ReplyToken, type Receipt, type ReceiptTransition } from '../src/types.ts'
 import { inject as messengerInject } from '../src/index.ts'
 
 const PORT = 50_288
@@ -99,7 +99,15 @@ class FakeSource implements ReceiptEventSource {
 
   emit(item: Receipt): void {
     this.records.set(item.id, item)
-    for (const listener of this.listeners) listener(item)
+    const transition: ReceiptTransition = { kind: 'upsert', receipt: item }
+    for (const listener of this.listeners) listener(transition)
+  }
+
+  remove(id: DeliveryId): void {
+    this.records.delete(id)
+    for (const listener of this.listeners) {
+      listener({ kind: 'delete', deliveryId: id })
+    }
   }
 
   listenerCount(): number {
@@ -285,6 +293,28 @@ describe('session messenger metadata event stream', () => {
     expect(Object.keys(output.state.headers)).not.toContain('access-control-allow-origin')
     surface.dispose()
     expect(output.state.ended).toBe(true)
+  })
+
+  it('removes compacted metadata from snapshots and publishes a metadata-only tombstone', () => {
+    const incoming = receipt('reply', 'delivered', {
+      replyToDeliveryId: DeliveryId('original'),
+    })
+    const source = new FakeSource([incoming])
+    const hub = new SessionMessengerEventHub(source)
+    expect(hub.acknowledge('target-session' as SessionId, [DeliveryId('reply')])).toBe(1)
+
+    source.remove(DeliveryId('reply'))
+
+    expect(hub.snapshot().receipts).toEqual([])
+    const replay: unknown[] = []
+    hub.subscribeAfter(0, (event) => { replay.push(event) })()
+    expect(replay).toContainEqual({ id: 2, kind: 'remove', deliveryId: DeliveryId('reply') })
+    expect(JSON.stringify(replay)).not.toContain('secret body')
+    expect(JSON.stringify(replay)).not.toContain('private-reply-token')
+
+    source.emit(receipt('reply', 'delivered', { replyToDeliveryId: DeliveryId('replacement') }))
+    expect(hub.snapshot().receipts[0]?.acknowledged).toBe(false)
+    hub.dispose()
   })
 
   it('caps active streaming clients and releases every connection on dispose', async () => {

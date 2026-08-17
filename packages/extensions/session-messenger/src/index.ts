@@ -22,6 +22,7 @@ export async function apply(ctx: Context): Promise<void> {
 export * from './coordinator.ts'
 export * from './events.ts'
 export * from './http.ts'
+export * from './protocol.ts'
 export * from './spec.ts'
 export * from './target-resolver.ts'
 export * from './tools.ts'

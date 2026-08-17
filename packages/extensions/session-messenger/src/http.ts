@@ -11,7 +11,10 @@ import {
   type NotificationEvent,
   type ReceiptEventSource,
 } from './events.ts'
+import { MAX_ACK_BODY_BYTES, MAX_ACK_DELIVERY_IDS } from './protocol.ts'
 import { DeliveryId } from './types.ts'
+
+export { MAX_ACK_BODY_BYTES, MAX_ACK_DELIVERY_IDS } from './protocol.ts'
 
 /** Exact plugin route namespace. */
 export const SNAPSHOT_PATH = '/plugins/dsh-session-messenger/snapshot'
@@ -21,8 +24,6 @@ export const EVENTS_PATH = '/plugins/dsh-session-messenger/events'
 export const MESSENGER_CAPABILITY_HEADER = 'x-dsh-session-messenger-capability'
 /** Inline bootstrap variable read by the Client half. */
 export const MESSENGER_BOOTSTRAP_GLOBAL = '__DSH_SESSION_MESSENGER__'
-/** Maximum acknowledgement request bytes. */
-export const MAX_ACK_BODY_BYTES = 4 * 1024
 /** One stream is intentionally short-lived so reconnect revalidates a fresh snapshot. */
 export const EVENT_STREAM_LIFETIME_MS = 55_000
 /** Keep intermediaries from treating an otherwise quiet bounded stream as dead. */
@@ -147,7 +148,7 @@ function parseAckBody(raw: Buffer): AckBody | undefined {
   if (Object.keys(record).length !== 2
     || !safeOpaqueId(record.sessionId)
     || !Array.isArray(record.deliveryIds)
-    || record.deliveryIds.length > 128
+    || record.deliveryIds.length > MAX_ACK_DELIVERY_IDS
     || !record.deliveryIds.every(safeOpaqueId)) return undefined
   return {
     sessionId: record.sessionId as SessionId,

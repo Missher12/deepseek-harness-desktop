@@ -54,8 +54,12 @@ export function MessengerStatus({ wide, useSessions, store, t }: MessengerStatus
       setFeedback(t('noSession'))
       return
     }
-    const accepted = await writeClipboard(sessionId)
-    setFeedback(t(accepted ? 'copied' : 'copyFailed'))
+    try {
+      const accepted = await writeClipboard(sessionId)
+      setFeedback(t(accepted ? 'copied' : 'copyFailed'))
+    } catch {
+      setFeedback(t('copyFailed'))
+    }
   }
 
   const markRead = async (): Promise<void> => {
@@ -137,16 +141,22 @@ export function MessengerStatus({ wide, useSessions, store, t }: MessengerStatus
               <span>{t('markRead')}</span>
             </button>
           </div>
-          {feedback !== null && <p className={css.feedback}>{feedback}</p>}
+          {feedback !== null && (
+            <p className={css.feedback} role="status" aria-live="polite" aria-atomic="true">
+              {feedback}
+            </p>
+          )}
           {snapshot.connectionError !== null && (
             <p className={`${css.feedback} ${css.error}`}>{snapshot.connectionError}</p>
           )}
         </section>
       )}
 
-      <span className={css.live} role="status" aria-live="polite" aria-atomic="true">
-        {liveSummary}
-      </span>
+      {(!open || feedback === null) && (
+        <span className={css.live} role="status" aria-live="polite" aria-atomic="true">
+          {feedback ?? liveSummary}
+        </span>
+      )}
     </div>
   )
 }

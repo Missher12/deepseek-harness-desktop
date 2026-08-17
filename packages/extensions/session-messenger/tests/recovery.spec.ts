@@ -191,11 +191,17 @@ describe('write-ahead recovery', () => {
     store.records.set(DeliveryId('delivery-1'), expired)
     store.records.set(DeliveryId('old'), oldTerminal)
     const coordinator = new SessionMessengerCoordinator(h.ctx as never, store, options)
+    const transitions: unknown[] = []
+    coordinator.subscribe((transition) => { transitions.push(transition) })
 
     await coordinator.recover()
 
     expect(target.inject).not.toHaveBeenCalled()
     expect(store.get(DeliveryId('delivery-1'))).toMatchObject({ status: 'expired' })
     expect(store.records.has(DeliveryId('old'))).toBe(false)
+    expect(transitions).toContainEqual({
+      kind: 'delete',
+      deliveryId: DeliveryId('old'),
+    })
   })
 })

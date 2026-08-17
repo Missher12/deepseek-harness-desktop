@@ -99,6 +99,11 @@ function snapshot(receipts: NotificationReceipt[], lastEventId = 0): MessengerSn
   return { lastEventId, receipts }
 }
 
+function uuidLike(index: number): string {
+  const suffix = String(index).padStart(12, '0')
+  return `${String(index).padStart(8, '0')}-1111-4111-8111-${suffix}`
+}
+
 beforeEach(() => {
   vi.mocked(writeClipboard).mockReset()
   vi.stubGlobal('matchMedia', vi.fn(() => ({
@@ -203,10 +208,17 @@ describe('MessengerStatus', () => {
     await waitFor(() => { expect(writeClipboard).toHaveBeenLastCalledWith(CURRENT) })
     expect(await screen.findByText('Copy failed')).toBeTruthy()
     expect(screen.queryByText('Session ID copied')).toBeNull()
+    expect(screen.getAllByRole('status')).toHaveLength(1)
+    expect(screen.getByRole('status').textContent).toBe('Copy failed')
 
     fireEvent.click(copy)
     expect(await screen.findByText('Session ID copied')).toBeTruthy()
     expect(writeClipboard).toHaveBeenLastCalledWith(CURRENT)
+    expect(screen.getByRole('status').textContent).toBe('Session ID copied')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close session messages' }))
+    expect(screen.getAllByRole('status')).toHaveLength(1)
+    expect(screen.getByRole('status').textContent).toBe('Session ID copied')
   })
 
   it('acknowledges only current unread reply notifications without deleting receipt metadata', async () => {
@@ -244,6 +256,28 @@ describe('MessengerStatus', () => {
     expect(trigger.tagName).toBe('BUTTON')
     expect(trigger.getAttribute('aria-haspopup')).toBe('dialog')
     expect(view.container.querySelector('[aria-live="polite"]')).not.toBeNull()
+  })
+
+  it('announces acknowledgement failures through the single polite status region', async () => {
+    const store = new MessengerStore({
+      snapshot: vi.fn(),
+      events: vi.fn(),
+      acknowledge: vi.fn(async () => { throw new Error('network down') }),
+    })
+    store.replaceSnapshot(snapshot([
+      notification('reply', 'delivered', {
+        sourceSessionId: 'other-session' as SessionId,
+        targetSessionId: CURRENT,
+        replyToDeliveryId: 'original',
+      }),
+    ]))
+    renderStatus(store)
+    fireEvent.click(screen.getByRole('button', { name: /Session messages/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mark read' }))
+
+    expect(await screen.findByText('Could not mark notifications read')).toBeTruthy()
+    expect(screen.getAllByRole('status')).toHaveLength(1)
+    expect(screen.getByRole('status').textContent).toBe('Could not mark notifications read')
   })
 
   it('keeps the compact panel usable at 200% zoom and removes motion on user request', () => {
@@ -341,6 +375,33 @@ describe('session messenger streaming-fetch transport', () => {
     expect(store.getSnapshot().lastEventId).toBe(5)
   })
 
+  it('applies a replayed removal so snapshots and streams converge', async () => {
+    const removed: MessengerEvent = {
+      id: 5,
+      kind: 'remove',
+      deliveryId: 'base',
+    }
+    const body = `id: 5\nevent: remove\ndata: ${JSON.stringify(removed)}\n\n`
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(body, {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    }))
+    const transport = createHttpMessengerTransport({
+      snapshotPath: SNAPSHOT_PATH,
+      ackPath: ACK_PATH,
+      eventsPath: EVENTS_PATH,
+      capabilityHeader: MESSENGER_CAPABILITY_HEADER,
+      capability: 'browser-capability',
+    }, fetcher)
+    const store = new MessengerStore(transport)
+    store.replaceSnapshot(snapshot([notification('base')], 4))
+
+    await transport.events(4, (event) => { store.accept(event) }, new AbortController().signal)
+
+    expect(store.getSnapshot().receipts.has('base')).toBe(false)
+    expect(store.getSnapshot().lastEventId).toBe(5)
+  })
+
   it('parses CRLF event separators split across streaming chunks', async () => {
     const streamed: MessengerEvent = {
       id: 9,
@@ -388,5 +449,55 @@ describe('session messenger streaming-fetch transport', () => {
     ]))
     await expect(store.acknowledge(CURRENT, ['reply'])).rejects.toThrow('acknowledgement mismatch')
     expect(store.getSnapshot().receipts.get('reply')?.acknowledged).toBe(false)
+  })
+
+  it('batches more than one hundred UUID-like acknowledgements under count and byte limits', async () => {
+    const deliveryIds = Array.from({ length: 120 }, (_, index) => uuidLike(index))
+    const acknowledge = vi.fn(async (_sessionId: SessionId, batch: readonly string[]) => batch.length)
+    const store = new MessengerStore({ snapshot: vi.fn(), events: vi.fn(), acknowledge })
+    store.replaceSnapshot(snapshot(deliveryIds.map(deliveryId => notification(deliveryId, 'delivered', {
+      sourceSessionId: 'other-session' as SessionId,
+      targetSessionId: CURRENT,
+      replyToDeliveryId: 'original',
+    }))))
+
+    await expect(store.acknowledge(CURRENT, deliveryIds)).resolves.toBe(deliveryIds.length)
+
+    expect(acknowledge.mock.calls.length).toBeGreaterThan(1)
+    const submitted = acknowledge.mock.calls.flatMap(([, batch]) => batch)
+    expect(submitted).toEqual(deliveryIds)
+    for (const [, batch] of acknowledge.mock.calls) {
+      expect(batch.length).toBeLessThanOrEqual(128)
+      const body = JSON.stringify({ sessionId: CURRENT, deliveryIds: batch })
+      expect(new TextEncoder().encode(body).byteLength).toBeLessThanOrEqual(4 * 1024)
+    }
+    expect([...store.getSnapshot().receipts.values()].every(receipt => receipt.acknowledged)).toBe(true)
+  })
+
+  it('keeps completed acknowledgement batches read when a later batch fails and permits retry', async () => {
+    const deliveryIds = Array.from({ length: 120 }, (_, index) => uuidLike(index))
+    let call = 0
+    const acknowledge = vi.fn(async (_sessionId: SessionId, batch: readonly string[]) => {
+      call += 1
+      if (call === 2) throw new Error('temporary network failure')
+      return batch.length
+    })
+    const store = new MessengerStore({ snapshot: vi.fn(), events: vi.fn(), acknowledge })
+    store.replaceSnapshot(snapshot(deliveryIds.map(deliveryId => notification(deliveryId, 'delivered', {
+      sourceSessionId: 'other-session' as SessionId,
+      targetSessionId: CURRENT,
+      replyToDeliveryId: 'original',
+    }))))
+
+    await expect(store.acknowledge(CURRENT, deliveryIds)).rejects.toThrow('temporary network failure')
+    const completed = acknowledge.mock.calls[0]?.[1] ?? []
+    const remaining = deliveryIds.filter(deliveryId => !completed.includes(deliveryId))
+    expect(completed.length).toBeGreaterThan(0)
+    expect(remaining.length).toBeGreaterThan(0)
+    expect(completed.every(id => store.getSnapshot().receipts.get(id)?.acknowledged)).toBe(true)
+    expect(remaining.every(id => !store.getSnapshot().receipts.get(id)?.acknowledged)).toBe(true)
+
+    await expect(store.acknowledge(CURRENT, remaining)).resolves.toBe(remaining.length)
+    expect(deliveryIds.every(id => store.getSnapshot().receipts.get(id)?.acknowledged)).toBe(true)
   })
 })

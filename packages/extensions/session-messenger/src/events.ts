@@ -2,7 +2,7 @@
 
 import type { MessageId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { DeliveryId, Receipt } from './types.ts'
+import type { DeliveryId, Receipt, ReceiptTransition } from './types.ts'
 
 /** Maximum metadata events retained for reconnect replay. */
 export const EVENT_RING_SIZE = 256
@@ -16,7 +16,7 @@ export interface ReceiptEventSource {
 }
 
 /** Receipt transition callback shared with the coordinator. */
-export type ReceiptTransitionListener = (receipt: Receipt) => void
+export type ReceiptTransitionListener = (transition: ReceiptTransition) => void
 
 /** Browser-safe receipt metadata. Bodies and reply authority never cross this boundary. */
 export interface NotificationReceipt {
@@ -44,6 +44,11 @@ export type NotificationEvent =
     readonly kind: 'ack'
     readonly sessionId: SessionId
     readonly deliveryIds: readonly DeliveryId[]
+  }
+  | {
+    readonly id: number
+    readonly kind: 'remove'
+    readonly deliveryId: DeliveryId
   }
 
 /** Authoritative current projection returned before each stream connection. */
@@ -78,7 +83,7 @@ export function notificationReceiptOf(
  * notice read; it never mutates or deletes the coordinator's durable receipt.
  */
 export class SessionMessengerEventHub {
-  private readonly receipts = new Map<DeliveryId, Receipt>()
+  private readonly receipts = new Map<DeliveryId, NotificationReceipt>()
   private readonly acknowledged = new Map<SessionId, Set<DeliveryId>>()
   private readonly ring: NotificationEvent[] = []
   private readonly listeners = new Set<(event: NotificationEvent) => void>()
@@ -87,15 +92,17 @@ export class SessionMessengerEventHub {
   private disposed = false
 
   constructor(source: ReceiptEventSource) {
-    for (const [id, receipt] of source.receiptEntries()) this.receipts.set(id, receipt)
-    this.unsubscribe = source.subscribe((receipt) => { this.recordReceipt(receipt) })
+    for (const [id, receipt] of source.receiptEntries()) {
+      this.receipts.set(id, notificationReceiptOf(receipt, false))
+    }
+    this.unsubscribe = source.subscribe((transition) => { this.recordTransition(transition) })
   }
 
   /** Current complete metadata view paired with the journal cursor. */
   snapshot(): NotificationSnapshot {
     const receipts = [...this.receipts.values()]
-      .sort((left, right) => left.updatedAt - right.updatedAt || left.id.localeCompare(right.id))
-      .map(receipt => notificationReceiptOf(receipt, this.isAcknowledged(receipt)))
+      .sort((left, right) => left.updatedAt - right.updatedAt
+        || left.deliveryId.localeCompare(right.deliveryId))
     return { lastEventId: this.lastEventId, receipts }
   }
 
@@ -112,6 +119,7 @@ export class SessionMessengerEventHub {
       if (receipt?.targetSessionId !== sessionId || receipt.replyToDeliveryId === undefined) continue
       if (bucket.has(deliveryId)) continue
       bucket.add(deliveryId)
+      this.receipts.set(deliveryId, { ...receipt, acknowledged: true })
       accepted.push(deliveryId)
     }
     if (accepted.length === 0) return 0
@@ -146,18 +154,42 @@ export class SessionMessengerEventHub {
     this.listeners.clear()
   }
 
+  private recordTransition(transition: ReceiptTransition): void {
+    if (transition.kind === 'delete') {
+      this.recordRemoval(transition.deliveryId)
+      return
+    }
+    this.recordReceipt(transition.receipt)
+  }
+
   private recordReceipt(receipt: Receipt): void {
     if (this.disposed) return
-    this.receipts.set(receipt.id, receipt)
+    const metadata = notificationReceiptOf(receipt, this.isAcknowledged(
+      receipt.targetSessionId,
+      receipt.id,
+    ))
+    this.receipts.set(receipt.id, metadata)
     this.publish({
       id: this.nextId(),
       kind: 'receipt',
-      receipt: notificationReceiptOf(receipt, this.isAcknowledged(receipt)),
+      receipt: metadata,
     })
   }
 
-  private isAcknowledged(receipt: Receipt): boolean {
-    return this.acknowledged.get(receipt.targetSessionId)?.has(receipt.id) === true
+  private recordRemoval(deliveryId: DeliveryId): void {
+    if (this.disposed) return
+    const previous = this.receipts.get(deliveryId)
+    this.receipts.delete(deliveryId)
+    if (previous !== undefined) {
+      const bucket = this.acknowledged.get(previous.targetSessionId)
+      bucket?.delete(deliveryId)
+      if (bucket?.size === 0) this.acknowledged.delete(previous.targetSessionId)
+    }
+    this.publish({ id: this.nextId(), kind: 'remove', deliveryId })
+  }
+
+  private isAcknowledged(targetSessionId: SessionId, deliveryId: DeliveryId): boolean {
+    return this.acknowledged.get(targetSessionId)?.has(deliveryId) === true
   }
 
   private nextId(): number {

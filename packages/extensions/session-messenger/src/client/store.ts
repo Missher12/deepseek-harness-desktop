@@ -1,6 +1,7 @@
 /** Browser notification state and authenticated streaming-fetch transport. */
 
 import type { MessageId, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import { MAX_ACK_BODY_BYTES, MAX_ACK_DELIVERY_IDS } from '../protocol.ts'
 
 /** Browser-safe receipt metadata. No message body or reply capability exists here. */
 export interface NotificationReceipt {
@@ -41,6 +42,7 @@ export type MessengerEvent =
     readonly sessionId: SessionId
     readonly deliveryIds: readonly string[]
   }
+  | { readonly id: number; readonly kind: 'remove'; readonly deliveryId: string }
 
 /** Index-injected same-origin route facts. */
 export interface SessionMessengerBootstrap {
@@ -166,7 +168,41 @@ function parseEvent(value: unknown, frameId: number, frameKind: string | undefin
       deliveryIds: value.deliveryIds,
     }
   }
+  if (value.kind === 'remove' && safeString(value.deliveryId)) {
+    return { id: value.id, kind: 'remove', deliveryId: value.deliveryId }
+  }
   throw new Error('invalid messenger event')
+}
+
+function acknowledgementBody(sessionId: SessionId, deliveryIds: readonly string[]): string {
+  return JSON.stringify({ sessionId, deliveryIds })
+}
+
+function acknowledgementBatches(
+  sessionId: SessionId,
+  deliveryIds: readonly string[],
+): readonly (readonly string[])[] {
+  const batches: string[][] = []
+  let current: string[] = []
+  for (const deliveryId of deliveryIds) {
+    const candidate = [...current, deliveryId]
+    const fits = candidate.length <= MAX_ACK_DELIVERY_IDS
+      && new TextEncoder().encode(acknowledgementBody(sessionId, candidate)).byteLength
+        <= MAX_ACK_BODY_BYTES
+    if (fits) {
+      current = candidate
+      continue
+    }
+    if (current.length === 0) throw new Error('session messenger acknowledgement item exceeded limit')
+    batches.push(current)
+    current = [deliveryId]
+    if (new TextEncoder().encode(acknowledgementBody(sessionId, current)).byteLength
+      > MAX_ACK_BODY_BYTES) {
+      throw new Error('session messenger acknowledgement item exceeded limit')
+    }
+  }
+  if (current.length > 0) batches.push(current)
+  return batches
 }
 
 function checkedBootstrap(value: SessionMessengerBootstrap): SessionMessengerBootstrap {
@@ -277,7 +313,7 @@ export function createHttpMessengerTransport(
         headers: { ...capabilityHeaders, 'content-type': 'application/json' },
         credentials: 'same-origin',
         cache: 'no-store',
-        body: JSON.stringify({ sessionId, deliveryIds }),
+        body: acknowledgementBody(sessionId, deliveryIds),
       })
       const value = await responseJson(response, 'session messenger acknowledgement')
       if (!isRecord(value) || !Number.isSafeInteger(value.acknowledged) || Number(value.acknowledged) < 0) {
@@ -333,6 +369,8 @@ export class MessengerStore {
     const receipts = new Map(this.state.receipts)
     if (event.kind === 'receipt') {
       receipts.set(event.receipt.deliveryId, event.receipt)
+    } else if (event.kind === 'remove') {
+      receipts.delete(event.deliveryId)
     } else {
       for (const deliveryId of event.deliveryIds) {
         const current = receipts.get(deliveryId)
@@ -346,19 +384,23 @@ export class MessengerStore {
 
   /** Ack current reply notices after the Host accepts the request; keep metadata locally. */
   async acknowledge(sessionId: SessionId, deliveryIds: readonly string[]): Promise<number> {
-    const count = await this.transport.acknowledge(sessionId, deliveryIds)
-    if (count !== deliveryIds.length) {
-      throw new Error('session messenger acknowledgement mismatch')
-    }
-    const receipts = new Map(this.state.receipts)
-    for (const deliveryId of deliveryIds) {
-      const current = receipts.get(deliveryId)
-      if (current?.targetSessionId === sessionId) {
-        receipts.set(deliveryId, { ...current, acknowledged: true })
+    let total = 0
+    for (const batch of acknowledgementBatches(sessionId, deliveryIds)) {
+      const count = await this.transport.acknowledge(sessionId, batch)
+      if (count !== batch.length) {
+        throw new Error('session messenger acknowledgement mismatch')
       }
+      const receipts = new Map(this.state.receipts)
+      for (const deliveryId of batch) {
+        const current = receipts.get(deliveryId)
+        if (current?.targetSessionId === sessionId) {
+          receipts.set(deliveryId, { ...current, acknowledged: true })
+        }
+      }
+      this.publish({ ...this.state, receipts, connectionError: null })
+      total += count
     }
-    this.publish({ ...this.state, receipts, connectionError: null })
-    return count
+    return total
   }
 
   /** Start snapshot-first reconnect cycles; returns an idempotent abort disposer. */
