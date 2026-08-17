@@ -20,7 +20,7 @@ This design does not override the existing marketplace through runtime CSS, DOM 
 - Desktop composition changes only the marketplace-plugin source to the replacement build; Harness core packages, Electron preload, and the `desktopProfiles` and `desktopPnpm` services do not change.
 - Host routes, request fields, catalog validation, the package-operation lock, rollback, hot-mount decisions, and security confirmations accept no presentation-layer changes.
 - Each upstream update reapplies the isolated Client patch and runs Host behavior-equivalence tests. If the patch cannot apply cleanly, Desktop retains the verified version and does not download or inject a patch at startup.
-- Desktop preserves the dependency key, Loader id, Settings id, and active-market self-protection expected by `dshmarket`; the replacement and original cannot mount together, and the active marketplace cannot update or remove itself through its own package actions.
+- Desktop preserves the dependency key, Loader id, Settings id, and active-market self-protection expected by `dshmarket`; the replacement and original cannot mount together. The pinned Host patch rejects update, disablement, and removal when the target package is `dshmarket`, while every other package operation retains the upstream behavior.
 
 ## Information Architecture
 
@@ -51,7 +51,7 @@ The replacement build never mounts alongside the original marketplace. Duplicate
 - Upstream marketplace business tests continue to cover search, filtering, pagination, installation, update, enablement, disablement, removal, diagnostics, backup, restore, confirmation, and rollback on failure.
 - New component tests cover list information hierarchy, a single primary action, the overflow menu, status text, empty state, offline snapshot, load failure, and the operation lock.
 - Browser acceptance uses a real 800-pixel Settings window and an approximately 564-pixel content area, covering light and dark themes, long English labels, 320-pixel reflow, 200% zoom, keyboard focus, and reduced motion.
-- Assembly and preflight tests prove that Desktop mounts exactly one marketplace plugin, ordinary Web composition does not mount the Desktop marketplace, collisions fail before package mutation, self-update and self-removal remain blocked, and Host routes and the package runner gain no authority.
+- Assembly and preflight tests prove that Desktop mounts exactly one marketplace plugin, ordinary Web composition does not mount the Desktop marketplace, collisions fail before package mutation, self-update, self-disablement, and self-removal remain blocked, and every other Host route and package-runner operation retains its upstream authority.
 - Mac staged-artifact and packaged-smoke tests verify the replacement marketplace's Host, Client, Desktop adapter, pnpm entry, third-party notices, random port, and exit cleanup; this delivery does not modify or publish Windows artifacts.
 
 ## Out of Scope

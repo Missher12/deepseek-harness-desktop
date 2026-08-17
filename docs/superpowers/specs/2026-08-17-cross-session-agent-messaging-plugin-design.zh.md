@@ -36,11 +36,11 @@
 
 目标会话使用 Harness 的品牌化 Session ID 校验，并通过 ApiProxy 已配置的 Typert `agent` lookup 解析。该路径复用 live Agent、去重并发冷恢复，并恢复目标会话原有的 preset 与 model；插件不得直接调用 `ctx.agents.resume()` 绕过这些规则。
 
-插件只允许当前 profile 内的普通会话。格式错误、缺失、已删除、已归档、子 Agent 所有、当前会话自身或无法安全恢复的目标都在创建消息前拒绝；拒绝后目标日志、inbox、运行状态和 receipt 存储保持零变化。普通 fork 会话只要仍是可用的普通会话即可作为目标。
+插件只允许当前 profile 内的普通会话。格式错误、缺失、已删除、已归档、子 Agent 所有、当前会话自身或无法安全恢复的目标都在创建消息前拒绝；拒绝后目标日志、inbox、运行状态和 receipt 存储保持零变化。插件在 lookup 前检查一次归档集合，并在入队前立即再次检查，既避免恢复已知的归档目标，也缩小跨服务竞态；若其他参与方在入队已接受后归档或删除会话，插件不回滚这次投递。解析 cold no-wake 目标仍会发布其内存 Agent，以便寻址持久 inbox，但不会启动模型 driver。普通 fork 会话只要仍是可用的普通会话即可作为目标。
 
 投递内容使用 Harness 的 `createUserMessage`，source 为 `{ kind: 'plugin', plugin: 'dsh-session-messenger', form: 'relay' }`。模型可见文本包含清楚但不可伪装成权限的来源 Session ID、delivery ID、投递模式和用户消息；结构化 receipt 单独持久化，原始文本不能覆盖发送者、目标、Message ID、reply token、hop 或过期时间。
 
-每个 receipt 至少记录源 Session ID、目标 Session ID、投递 UserMessage ID、模式、状态、创建与过期时间、reply token 和 hop。存储位于当前 profile 的插件专属数据区，并遵循 write-ahead 顺序：原子持久化 `prepared`、用预先创建的 Message ID 入队，再原子标记 `delivered`。已经处理的入队拒绝会在工具返回 rejection 前原子标记为 terminal `failed` 或 `aborted`，并且绝不重试。只有进程死亡或入队后状态写入不确定而留下的 `prepared` 或 `delivery-recovery-pending` receipt 才进入恢复：恢复时先在目标 inbox 与日志中查找该 Message ID，找到后标记 delivered，只对消息缺失的 `prepared` receipt 重试入队。插件不复制完整会话历史，也不把内容发送到本机以外。
+每个 receipt 至少记录源 Session ID、目标 Session ID、投递 UserMessage ID、模式、状态、创建与过期时间、reply token 和 hop。receipt 尚未解决时还会保留受限的 relay 信封，以便进程在持久化 `prepared` 后、入队前崩溃时重建完全相同的消息；完成后的压缩会移除正文。存储位于当前 profile 的插件专属数据区，并遵循 write-ahead 顺序：原子持久化 `prepared`、用预先创建的 Message ID 入队，再原子标记 `delivered`。已经处理的入队拒绝会在工具返回 rejection 前原子标记为 terminal `failed` 或 `aborted`，并且绝不重试。只有进程死亡或入队后状态写入不确定而留下的 `prepared` 或 `delivery-recovery-pending` receipt 才进入恢复：恢复时先在目标 inbox 与日志中查找该 Message ID，找到后标记 delivered，只对消息缺失的 `prepared` receipt 使用原 Message ID 和信封重建后重试入队。插件不复制完整会话历史，也不把内容发送到本机以外。
 
 Host companion 在 `/plugins/dsh-session-messenger/` 下拥有精确的同源快照、确认与 SSE 通知路由。注入同源 index 的 per-generation capability 用于验证 Client；每条路由检查当前精确 loopback origin，不启用 CORS，校验输入大小，限制每个 SSE 连接，并随插件撤销连接和路由。SSE 事件携带 receipt 元数据与状态，但不携带消息正文；重连使用 event id 与 Client 去重，快照路由恢复遗漏的未读状态。
 
