@@ -1,7 +1,11 @@
 import { freezeMessage, MessageId, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { describe, expect, it } from 'vitest'
-import { SessionMessengerCoordinator, type CoordinatorOptions } from '../src/coordinator.ts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  MAINTENANCE_INTERVAL_MS,
+  SessionMessengerCoordinator,
+  type CoordinatorOptions,
+} from '../src/coordinator.ts'
 import { RECEIPT_TTL_MS } from '../src/spec.ts'
 import { DeliveryId, ReplyToken, type Receipt } from '../src/types.ts'
 import { fakeAgent, fakeContext, MemoryReceiptStore } from './helpers.ts'
@@ -14,6 +18,8 @@ const options: CoordinatorOptions = {
   nextReplyToken: () => ReplyToken('unused-token'),
   installLifecycle: false,
 }
+
+afterEach(() => { vi.useRealTimers() })
 
 function recoverable(status: 'prepared' | 'delivery-recovery-pending' = 'prepared'): Receipt {
   const common = {
@@ -114,6 +120,56 @@ describe('write-ahead recovery', () => {
     expect((target.inject.mock.calls[0]![0] as UserMessage).id).toBe(MessageId('fixed-message'))
     expect(store.get(DeliveryId('delivery-1'))).toMatchObject({ status: 'delivered' })
     expect(store.get(DeliveryId('delivery-1'))).not.toHaveProperty('envelope')
+  })
+
+  it('preserves recoverable work when cold persistence cannot prove the exact Message ID absent', async () => {
+    const h = fakeContext([])
+    h.inspect.mockRejectedValue(new Error('persistence temporarily unavailable'))
+    const store = new MemoryReceiptStore()
+    store.records.set(DeliveryId('delivery-1'), recoverable())
+    const coordinator = new SessionMessengerCoordinator(h.ctx as never, store, options)
+
+    await expect(coordinator.recover()).resolves.toBeUndefined()
+
+    expect(store.writes).toHaveLength(0)
+    expect(store.get(DeliveryId('delivery-1'))).toMatchObject({
+      status: 'prepared', envelope: { body: 'recover me' },
+    })
+  })
+
+  it('never terminalizes or drops the envelope when both post-enqueue recovery writes fail', async () => {
+    const target = fakeAgent('target')
+    const h = fakeContext([target])
+    const store = new MemoryReceiptStore()
+    store.records.set(DeliveryId('delivery-1'), recoverable())
+    store.failPut = receipt => receipt.status === 'delivered'
+      || receipt.status === 'delivery-recovery-pending'
+    const coordinator = new SessionMessengerCoordinator(h.ctx as never, store, options)
+
+    await expect(coordinator.recover()).resolves.toBeUndefined()
+
+    expect(target.inject).toHaveBeenCalledTimes(1)
+    expect(store.get(DeliveryId('delivery-1'))).toMatchObject({
+      status: 'prepared', envelope: { body: 'recover me' },
+    })
+    expect(store.writes.every(receipt => receipt.status !== 'failed')).toBe(true)
+  })
+
+  it('uses one bounded recovery timer and stops retrying after disposal', async () => {
+    vi.useFakeTimers()
+    const h = fakeContext([])
+    const store = new MemoryReceiptStore()
+    const coordinator = new SessionMessengerCoordinator(h.ctx as never, store, {
+      ...options, installLifecycle: true,
+    })
+    const recover = vi.spyOn(coordinator, 'recover').mockResolvedValue()
+
+    await vi.advanceTimersByTimeAsync(MAINTENANCE_INTERVAL_MS)
+    expect(recover).toHaveBeenCalledTimes(1)
+
+    await coordinator.dispose()
+    await vi.advanceTimersByTimeAsync(MAINTENANCE_INTERVAL_MS * 2)
+    expect(recover).toHaveBeenCalledTimes(1)
   })
 
   it('expires recoverable work before any lookup or enqueue and compacts old settled records', async () => {

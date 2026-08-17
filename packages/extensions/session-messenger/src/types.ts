@@ -37,6 +37,8 @@ export interface ReceiptBase {
   readonly replyToken: ReplyToken
   readonly hop: number
   readonly wakeRequested: boolean
+  /** Reverse receipt authorization link, present only for replies. */
+  readonly replyToDeliveryId?: DeliveryId
 }
 
 /** Write-ahead state whose exact message has not been proven enqueued. */

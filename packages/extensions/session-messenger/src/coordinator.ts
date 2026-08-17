@@ -9,11 +9,13 @@ import {
   toClaimed,
   toDelivered,
   toRecoveryPending,
+  toReplied,
   toTerminal,
 } from './envelope.ts'
 import { openReceiptStore, type ReceiptRepository } from './receipt-store.ts'
 import {
   MAX_MESSAGE_BYTES,
+  MAX_HOP,
   RECEIPT_TTL_MS,
   relayEnvelopeSchema,
 } from './spec.ts'
@@ -56,6 +58,14 @@ export interface DeliveryRequest {
   readonly message: string
   readonly mode: DeliveryMode
   readonly hop?: number
+}
+
+/** One capability-bound reverse delivery request. */
+export interface ReplyRequest {
+  readonly deliveryId: DeliveryId
+  readonly replyToken: ReplyToken
+  readonly message: string
+  readonly wake: boolean
 }
 
 /** JSON-safe immediate delivery result. */
@@ -115,6 +125,11 @@ export class SessionMessengerCoordinator {
     return this.serialize(() => this.deliverNow(caller, request, signal))
   }
 
+  /** Consume one exact reply capability and deliver back to the recorded source. */
+  reply(caller: Agent, request: ReplyRequest, signal?: AbortSignal): Promise<DeliveryResult> {
+    return this.serialize(() => this.replyNow(caller, request, signal))
+  }
+
   /** Recover crash-window records without generating replacement identities. */
   recover(): Promise<void> {
     return this.serialize(async () => {
@@ -122,11 +137,24 @@ export class SessionMessengerCoordinator {
       for (const [, snapshot] of this.receipts.entries()) {
         const current = this.receipts.get(snapshot.id)
         if (current?.status !== 'prepared' && current?.status !== 'delivery-recovery-pending') continue
-        if (await this.messageAlreadyExists(current)) {
-          await this.commit(toDelivered(current, this.now()))
-          continue
+        try {
+          if (!this.replyPreparationAuthorized(current)) {
+            await this.commit(toTerminal(current, 'rejected', this.now(), 'reply-forbidden'))
+            continue
+          }
+          if (await this.messageAlreadyExists(current)) {
+            await this.commit(toDelivered(current, this.now()))
+            continue
+          }
+          await this.recoverPrepared(current)
+        } catch (error: unknown) {
+          if (error instanceof MessengerError
+            && (error.code === 'target-unavailable' || error.code === 'delivery-recovery-pending')) {
+            this.ctx.logger.warn(`session messenger: deferred recoverable receipt (${error.code})`)
+            continue
+          }
+          throw error
         }
-        await this.recoverPrepared(current)
       }
     })
   }
@@ -181,8 +209,85 @@ export class SessionMessengerCoordinator {
       wakeRequested: request.mode === 'followup',
       envelope: envelope.data,
     }
-    const message = createRelayMessage(prepared)
     await this.commit(prepared)
+
+    return this.enqueuePrepared(target, prepared, signal)
+  }
+
+  private async replyNow(
+    caller: Agent,
+    request: ReplyRequest,
+    signal?: AbortSignal,
+  ): Promise<DeliveryResult> {
+    this.assertActive()
+    signal?.throwIfAborted()
+    const original = this.receipts.get(request.deliveryId)
+    if (original === undefined) throw messengerError('receipt-not-found', 'delivery receipt was not found')
+    if (original.targetSessionId !== caller.id) {
+      throw messengerError('reply-forbidden', 'reply authority is bound to the original target session')
+    }
+    if (original.status === 'replied') throw messengerError('reply-consumed', 'reply token was already consumed')
+    if (original.status !== 'delivered' && original.status !== 'claimed') {
+      throw messengerError(
+        original.status === 'expired' ? 'reply-expired' : 'reply-consumed',
+        'delivery is no longer replyable',
+      )
+    }
+    const at = this.now()
+    if (original.expiresAt <= at) throw messengerError('reply-expired', 'reply token expired')
+    if (original.replyToken !== request.replyToken) throw messengerError('reply-forbidden', 'invalid reply token')
+    if (original.hop >= MAX_HOP) throw messengerError('hop-limit', 'maximum reply chain depth reached')
+    const envelope = relayEnvelopeSchema.safeParse({ body: request.message })
+    if (!envelope.success) {
+      throw messengerError(
+        'message-too-large',
+        `message must not exceed ${MAX_MESSAGE_BYTES} UTF-8 bytes`,
+        { cause: envelope.error },
+      )
+    }
+    this.assertAdmission(caller.id)
+    const target = await resolveOrdinaryTarget(this.ctx, caller, original.sourceSessionId)
+    signal?.throwIfAborted()
+
+    const prepared: RecoverableReceipt = {
+      id: this.nextDeliveryId(),
+      sourceSessionId: caller.id,
+      targetSessionId: target.id,
+      messageId: this.nextMessageId(),
+      mode: request.wake ? 'followup' : 'inject',
+      status: 'prepared',
+      createdAt: at,
+      updatedAt: at,
+      expiresAt: at + RECEIPT_TTL_MS,
+      replyToken: this.nextReplyToken(),
+      hop: original.hop + 1,
+      wakeRequested: request.wake,
+      replyToDeliveryId: original.id,
+      envelope: envelope.data,
+    }
+    await this.commit(prepared)
+    try {
+      await this.commit(toReplied(original, this.now(), prepared.id))
+    } catch (error: unknown) {
+      try {
+        await this.commit(toTerminal(prepared, 'rejected', this.now(), 'reply-forbidden'))
+      } catch {
+        // Recovery rejects an orphan preparation through replyToDeliveryId.
+      }
+      throw messengerError('delivery-failed', 'could not consume reply token', { cause: error })
+    }
+
+    // The original one-use token is now durably consumed. From this commit
+    // point the reverse delivery must finish even if the calling tool aborts.
+    return this.enqueuePrepared(target, prepared)
+  }
+
+  private async enqueuePrepared(
+    target: Agent,
+    prepared: RecoverableReceipt,
+    signal?: AbortSignal,
+  ): Promise<DeliveryResult> {
+    const message = createRelayMessage(prepared)
 
     try {
       signal?.throwIfAborted()
@@ -228,7 +333,14 @@ export class SessionMessengerCoordinator {
     }
   }
 
+  private replyPreparationAuthorized(receipt: RecoverableReceipt): boolean {
+    if (receipt.replyToDeliveryId === undefined) return true
+    const original = this.receipts.get(receipt.replyToDeliveryId)
+    return original?.status === 'replied' && original.replyDeliveryId === receipt.id
+  }
+
   private async recoverPrepared(receipt: RecoverableReceipt): Promise<void> {
+    let enqueued = false
     try {
       const target = await resolveOrdinaryTargetForSource(
         this.ctx,
@@ -239,16 +351,33 @@ export class SessionMessengerCoordinator {
       assertTargetStillOrdinaryAndUnarchived(this.ctx, target)
       if (receipt.mode === 'followup') target.followup(message)
       else target.inject(message)
+      enqueued = true
       try {
         await this.commit(toDelivered(receipt, this.now()))
-      } catch {
-        await this.commit(toRecoveryPending(
-          receipt,
-          this.now(),
-          'recovery-post-enqueue-status-write-indeterminate',
-        ))
+      } catch (deliveredError: unknown) {
+        try {
+          await this.commit(toRecoveryPending(
+            receipt,
+            this.now(),
+            'recovery-post-enqueue-status-write-indeterminate',
+          ))
+        } catch (pendingError: unknown) {
+          throw messengerError(
+            'delivery-recovery-pending',
+            'post-enqueue recovery status remains indeterminate',
+            { cause: pendingError ?? deliveredError },
+          )
+        }
       }
     } catch (error: unknown) {
+      if (enqueued) {
+        this.ctx.logger.warn('session messenger: post-enqueue recovery state could not be persisted')
+        throw error instanceof MessengerError
+          ? error
+          : messengerError('delivery-recovery-pending', 'post-enqueue recovery state remains indeterminate', {
+            cause: error,
+          })
+      }
       if (error instanceof MessengerError) {
         await this.commit(toTerminal(receipt, 'rejected', this.now(), error.code))
         return
@@ -267,8 +396,12 @@ export class SessionMessengerCoordinator {
     try {
       const inspected = await this.ctx.sessionPersistence.inspect(receipt.targetSessionId)
       return eventsContainMessage(inspected.events, receipt.messageId)
-    } catch {
-      return false
+    } catch (error: unknown) {
+      throw messengerError(
+        'target-unavailable',
+        'could not inspect cold target persistence for exact-message recovery',
+        { cause: error },
+      )
     }
   }
 
@@ -333,7 +466,11 @@ export class SessionMessengerCoordinator {
       }
     }))
 
-    const timer = setInterval(() => { void this.maintain() }, MAINTENANCE_INTERVAL_MS)
+    const timer = setInterval(() => {
+      void this.recover().catch((error: unknown) => {
+        this.ctx.logger.warn(`session messenger bounded recovery failed: ${String(error)}`)
+      })
+    }, MAINTENANCE_INTERVAL_MS)
     timer.unref()
     this.disposers.push(() => { clearInterval(timer) })
   }

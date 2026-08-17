@@ -4712,6 +4712,9 @@ importers:
 
   packages/extensions/session-messenger:
     dependencies:
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
       zod:
         specifier: ^4.4.3
         version: 4.4.3

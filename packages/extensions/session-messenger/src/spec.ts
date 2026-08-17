@@ -40,6 +40,7 @@ const common = z.object({
   replyToken: replyTokenSchema,
   hop: z.number().int().min(0).max(MAX_HOP),
   wakeRequested: z.boolean(),
+  replyToDeliveryId: deliveryIdSchema.optional(),
 })
 
 const recoverable = [

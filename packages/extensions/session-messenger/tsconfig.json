@@ -14,6 +14,7 @@
     { "path": "../../core/tools" },
     { "path": "../../session/session-persistence" },
     { "path": "../../storage/storage-domain" },
+    { "path": "../../core/system-prompt" },
     { "path": "../../typert/protocol" },
     { "path": "../../typert/registry" },
     { "path": "../../workspace/workspace" },
