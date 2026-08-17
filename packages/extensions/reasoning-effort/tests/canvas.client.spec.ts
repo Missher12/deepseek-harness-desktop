@@ -68,7 +68,7 @@ describe('attributed Canvas radiation', () => {
       dragging: false,
       chibiThumb: false,
       error: null,
-      t: ((key: string) => (zh as Record<string, string>)[key] ?? key) as never,
+      t: (key: string) => (zh as Record<string, string>)[key] ?? key,
       onPreview: vi.fn(),
       onCommit: vi.fn(),
       onDraggingChange: vi.fn(),
