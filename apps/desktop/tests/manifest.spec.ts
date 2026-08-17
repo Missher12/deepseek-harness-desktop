@@ -155,6 +155,17 @@ describe('desktop package manifest', () => {
     expect(smoke).not.toContain('[IO.Path]::GetTempPath()')
   })
 
+  it('exercises the patched marketplace and both protected and ordinary package routes', () => {
+    const smoke = readFileSync(new URL('./packaged-smoke.ts', import.meta.url), 'utf8')
+
+    expect(smoke).toContain('data-dshmarket-layout="compact"')
+    expect(smoke).toContain('data-dshmarket-plugin-row')
+    expect(smoke).toContain('data-dshmarket-primary-action')
+    expect(smoke).toContain("'/dsh-market/update'")
+    expect(smoke).toContain("'/dsh-market/uninstall'")
+    expect(smoke).toContain("code: 'self-protected'")
+  })
+
   it('includes the repository standalone runtime dependency closure', () => {
     const manifest = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),

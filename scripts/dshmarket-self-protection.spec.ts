@@ -117,4 +117,29 @@ describe('active marketplace self-protection', () => {
     expect(result.json).toMatchObject({ ok: true })
     expect(runPlugin).toHaveBeenCalledWith('web', ['add', 'dsh-loop@latest'])
   })
+
+  it('keeps self-update and self-uninstall stable while an ordinary operation is busy', async () => {
+    let finish: (() => void) | undefined
+    const pending = new Promise<Awaited<ReturnType<PluginCommandRuntime['runPlugin']>>>((resolve) => {
+      finish = () => resolve({
+        exitCode: 1,
+        timedOut: false,
+        stdout: '',
+        stderr: 'expected smoke hold',
+        cancelled: false,
+      })
+    })
+    runPlugin.mockImplementationOnce(async () => await pending)
+
+    const ordinary = bed.dispatch('/dsh-market/update', { name: 'dsh-loop' })
+    await vi.waitFor(() => { expect(runPlugin).toHaveBeenCalledOnce() })
+
+    await expect(bed.dispatch('/dsh-market/update', { name: 'dshmarket' }))
+      .resolves.toEqual({ status: 409, json: { ok: false, code: 'self-protected' } })
+    await expect(bed.dispatch('/dsh-market/uninstall', { name: 'dsh-market' }))
+      .resolves.toEqual({ status: 409, json: { ok: false, code: 'self-protected' } })
+
+    finish?.()
+    await ordinary
+  })
 })

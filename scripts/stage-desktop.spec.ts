@@ -16,27 +16,40 @@ const VALID_DESKTOP_PATCH = `
     - id: dsh-market
       name: 'dshmarket'
 `
+const DEFAULT_NATIVE_BINARIES = ['/repo/apps/desktop/.stage/node_modules/node-pty/prebuilds/darwin-x64/pty.node'] as const
 
 function fakeDependencies(
   filesPresent = true,
-  nativeBinaries: readonly string[] = ['/repo/apps/desktop/.stage/node_modules/node-pty/prebuilds/darwin-x64/pty.node'],
+  nativeBinaries: readonly string[] = DEFAULT_NATIVE_BINARIES,
+  semanticOverrides: Readonly<Record<string, string>> = {},
+  marketPackageDirectories: readonly string[] = ['/repo/apps/desktop/.stage/node_modules/.pnpm/dshmarket/node_modules/dshmarket'],
 ): StageDesktopDependencies & {
   commands: Array<[string, readonly string[]]>
   copies: Array<[string, string]>
   removed: string[]
   validated: string[]
+  read: string[]
 } {
   const commands: Array<[string, readonly string[]]> = []
   const copies: Array<[string, string]> = []
   const removed: string[] = []
   const validated: string[] = []
+  const read: string[] = []
+  const semanticFiles: Readonly<Record<string, string>> = {
+    'node_modules/dshmarket/package.json': JSON.stringify({ name: 'dshmarket', version: '1.10.1' }),
+    'node_modules/dshmarket/src/client/MarketSection.tsx': 'data-dshmarket-layout="compact"',
+    'node_modules/dshmarket/client/client.js': 'data-dshmarket-layout compact',
+    'node_modules/dshmarket/client/client.js.map': 'data-dshmarket-layout compact sourcesContent',
+    'node_modules/dshmarket/lib/routes.js': "code: 'self-protected'",
+    ...semanticOverrides,
+  }
   return {
     commands,
     copies,
     removed,
     validated,
+    read,
     remove: async (path) => { removed.push(path) },
-    readText: async () => VALID_DESKTOP_PATCH,
     pnpmInvocation: args => ({ command: 'pnpm', args }),
     run: (command, args) => { commands.push([command, args]) },
     copy: async (source, target) => { copies.push([source, target]) },
@@ -44,6 +57,14 @@ function fakeDependencies(
       validated.push(path)
       return filesPresent
     },
+    readText: async (path) => {
+      read.push(path)
+      if (path.endsWith('apps/desktop/desktop.cordis.patch.yml')) return VALID_DESKTOP_PATCH
+      const entry = Object.entries(semanticFiles).find(([suffix]) => path.endsWith(suffix))
+      if (entry === undefined) throw new Error(`Unexpected semantic read: ${path}`)
+      return entry[1]
+    },
+    findPackageDirectories: async () => marketPackageDirectories,
     findNativeBinaries: async () => nativeBinaries,
   }
 }
@@ -86,7 +107,11 @@ describe('stageDesktop', () => {
     expect(result.validatedFiles).toContain('THIRD_PARTY_NOTICES.md')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-host-desktop-plugin-runtime/lib/index.js')
     expect(result.validatedFiles).toContain('node_modules/dshmarket/lib/index.js')
+    expect(result.validatedFiles).toContain('node_modules/dshmarket/lib/routes.js')
+    expect(result.validatedFiles).toContain('node_modules/dshmarket/package.json')
+    expect(result.validatedFiles).toContain('node_modules/dshmarket/src/client/MarketSection.tsx')
     expect(result.validatedFiles).toContain('node_modules/dshmarket/client/client.js')
+    expect(result.validatedFiles).toContain('node_modules/dshmarket/client/client.js.map')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-reasoning-effort/lib/index.js')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-reasoning-effort/lib/client.js')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-reasoning-effort/LICENSE')
@@ -136,6 +161,25 @@ describe('stageDesktop', () => {
     await expect(stageDesktop('/repo', dependencies)).rejects.toThrow(/exactly one.*reasoning-effort/i)
     expect(dependencies.removed).toEqual([])
     expect(dependencies.commands).toEqual([])
+  })
+
+  it('fails closed when the staged market is unpatched, incoherent, or duplicated', async () => {
+    await expect(stageDesktop('/repo', fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {
+      'node_modules/dshmarket/package.json': JSON.stringify({ name: 'dshmarket', version: '1.10.0' }),
+    }))).rejects.toThrow(/dshmarket@1\.10\.1/i)
+    await expect(stageDesktop('/repo', fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {
+      'node_modules/dshmarket/client/client.js': 'unpatched client bundle',
+    }))).rejects.toThrow(/compact.*client/i)
+    await expect(stageDesktop('/repo', fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {
+      'node_modules/dshmarket/client/client.js.map': 'stale source map',
+    }))).rejects.toThrow(/compact.*source map/i)
+    await expect(stageDesktop('/repo', fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {
+      'node_modules/dshmarket/lib/routes.js': 'unprotected host bundle',
+    }))).rejects.toThrow(/self-protection/i)
+    await expect(stageDesktop('/repo', fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {}, [
+      '/repo/apps/desktop/.stage/node_modules/.pnpm/one/node_modules/dshmarket',
+      '/repo/apps/desktop/.stage/node_modules/.pnpm/two/node_modules/dshmarket',
+    ]))).rejects.toThrow(/exactly one dshmarket/i)
   })
 
   it('removes only the exact desktop stage directory', async () => {

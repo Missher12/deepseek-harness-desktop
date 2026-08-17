@@ -14,6 +14,7 @@ export interface StageDesktopDependencies {
   run(command: string, args: readonly string[], cwd: string): void
   copy(source: string, target: string): Promise<void>
   isFile(path: string): Promise<boolean>
+  findPackageDirectories(root: string, packageDirectoryName: string): Promise<readonly string[]>
   findNativeBinaries(root: string): Promise<readonly string[]>
 }
 
@@ -58,6 +59,32 @@ async function findNativeBinaries(root: string): Promise<string[]> {
   return found.sort()
 }
 
+async function findPackageDirectories(root: string, packageDirectoryName: string): Promise<string[]> {
+  const found: string[] = []
+  const pending = [root]
+  while (pending.length > 0) {
+    const directory = pending.pop()
+    if (directory === undefined) break
+    let entries
+    try {
+      entries = await readdir(directory, { withFileTypes: true })
+    } catch (error) {
+      if (isMissing(error)) continue
+      throw error
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const path = join(directory, entry.name)
+      if (entry.name === packageDirectoryName && await pathIsFile(join(path, 'package.json'))) {
+        found.push(path)
+        continue
+      }
+      pending.push(path)
+    }
+  }
+  return found.sort()
+}
+
 function run(command: string, args: readonly string[], cwd: string): void {
   const result = spawnSync(command, [...args], { cwd, stdio: 'inherit', shell: false })
   if (result.error !== undefined) throw result.error
@@ -86,6 +113,7 @@ const realDependencies: StageDesktopDependencies = {
   run,
   copy: async (source, target) => { await cp(source, target, { recursive: true, force: true }) },
   isFile: pathIsFile,
+  findPackageDirectories,
   findNativeBinaries,
 }
 
@@ -196,8 +224,12 @@ export async function stageDesktop(
     'node_modules/@deepseek-ai/dsh/lib/bin.js',
     'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
     'node_modules/@deepseek-ai/dsh-host-desktop-plugin-runtime/lib/index.js',
+    'node_modules/dshmarket/package.json',
     'node_modules/dshmarket/lib/index.js',
+    'node_modules/dshmarket/lib/routes.js',
+    'node_modules/dshmarket/src/client/MarketSection.tsx',
     'node_modules/dshmarket/client/client.js',
+    'node_modules/dshmarket/client/client.js.map',
     'node_modules/@deepseek-ai/dsh-reasoning-effort/lib/index.js',
     'node_modules/@deepseek-ai/dsh-reasoning-effort/lib/client.js',
     'node_modules/@deepseek-ai/dsh-reasoning-effort/LICENSE',
@@ -209,6 +241,49 @@ export async function stageDesktop(
     if (!await dependencies.isFile(join(stageDir, path))) {
       throw new Error(`Desktop staging missing required file: ${path}`)
     }
+  }
+
+  const marketPackageDirectories = await dependencies.findPackageDirectories(
+    join(stageDir, 'node_modules'),
+    'dshmarket',
+  )
+  if (marketPackageDirectories.length !== 1) {
+    throw new Error(`Desktop staging expected exactly one dshmarket package; found ${String(marketPackageDirectories.length)}.`)
+  }
+
+  const marketRoot = join(stageDir, 'node_modules', 'dshmarket')
+  let marketManifest: unknown
+  try {
+    marketManifest = JSON.parse(await dependencies.readText(join(marketRoot, 'package.json')))
+  } catch (error) {
+    throw new Error('Desktop staging could not parse the staged dshmarket manifest.', { cause: error })
+  }
+  if (
+    typeof marketManifest !== 'object'
+    || marketManifest === null
+    || !('name' in marketManifest)
+    || !('version' in marketManifest)
+    || marketManifest.name !== 'dshmarket'
+    || marketManifest.version !== '1.10.1'
+  ) {
+    throw new Error('Desktop staging expected dshmarket@1.10.1 exactly.')
+  }
+
+  const compactMarker = 'data-dshmarket-layout'
+  const semanticArtifacts = [
+    ['Client source', 'src/client/MarketSection.tsx'],
+    ['Client bundle', 'client/client.js'],
+    ['Client source map', 'client/client.js.map'],
+  ] as const
+  for (const [label, path] of semanticArtifacts) {
+    const contents = await dependencies.readText(join(marketRoot, path))
+    if (!contents.includes(compactMarker)) {
+      throw new Error(`Desktop staging compact marker missing from ${label}.`)
+    }
+  }
+  const hostBundle = await dependencies.readText(join(marketRoot, 'lib/routes.js'))
+  if (!hostBundle.includes('self-protected')) {
+    throw new Error('Desktop staging dshmarket Host self-protection marker is missing.')
   }
 
   const nativeBinaries = await dependencies.findNativeBinaries(join(stageDir, 'node_modules'))

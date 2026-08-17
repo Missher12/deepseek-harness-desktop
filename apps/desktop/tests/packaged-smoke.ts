@@ -347,6 +347,100 @@ async function exerciseWindowsClipboard(
   }
 }
 
+interface MarketRouteResult {
+  status: number
+  body: unknown
+}
+
+async function postMarket(page: Page, path: string, body: Record<string, unknown>): Promise<MarketRouteResult> {
+  return await page.evaluate(async ({ route, payload }) => {
+    const response = await fetch(route, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    return { status: response.status, body: await response.json() as unknown }
+  }, { route: path, payload: body })
+}
+
+async function seedOrdinaryMarketFixture(harnessHome: string): Promise<string> {
+  const packageName = 'dsh-desktop-smoke-plugin'
+  const profileDirectory = join(harnessHome, 'profiles', 'web')
+  const manifestPath = join(profileDirectory, 'package.json')
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+    dependencies?: Record<string, string>
+    [key: string]: unknown
+  }
+  const fixtureDirectory = join(profileDirectory, packageName)
+  await mkdir(fixtureDirectory, { recursive: true })
+  await writeFile(join(fixtureDirectory, 'package.json'), `${JSON.stringify({
+    name: packageName,
+    version: '1.0.0',
+    private: true,
+    dsh: {},
+  }, null, 2)}\n`, 'utf8')
+  manifest.dependencies = {
+    ...manifest.dependencies,
+    [packageName]: `file:./${packageName}`,
+  }
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+  return packageName
+}
+
+async function exercisePluginMarket(page: Page, harnessHome: string, platform: NodeJS.Platform): Promise<void> {
+  await page.locator('[data-dsh-desktop-command="open-settings"]').click()
+  const settingsDialog = page.getByRole('dialog').last()
+  await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
+  await settingsDialog.getByRole('button', { name: /^(?:Plugin Market|插件市场)$/u }).click()
+
+  const market = settingsDialog.locator('[data-dshmarket-layout="compact"]')
+  await market.waitFor({ state: 'visible', timeout: 30_000 })
+  const tabs = ['discover', 'installed', 'updates', 'activity'] as const
+  for (const tab of tabs) {
+    const button = market.locator(`[data-dshmarket-tab="${tab}"]`)
+    expect(await button.count()).toBe(1)
+    await button.click()
+    expect(await market.isVisible()).toBe(true)
+  }
+  await market.locator('[data-dshmarket-tab="discover"]').click()
+
+  const toolbar = market.locator('[data-dshmarket-toolbar]')
+  const categories = market.locator('[data-dshmarket-categories]')
+  await toolbar.waitFor({ state: 'visible', timeout: 30_000 })
+  await categories.waitFor({ state: 'visible', timeout: 30_000 })
+  expect(await categories.evaluate(element => (
+    [...element.querySelectorAll('div')].some((child) => {
+      const overflow = getComputedStyle(child).overflowX
+      return overflow === 'auto' || overflow === 'scroll'
+    })
+  ))).toBe(true)
+
+  const firstRow = market.locator('[data-dshmarket-plugin-row]').first()
+  await firstRow.waitFor({ state: 'visible', timeout: 30_000 })
+  expect(await firstRow.locator('[data-dshmarket-primary-action]').count()).toBe(1)
+  const packageName = await firstRow.getAttribute('data-package')
+  expect(packageName).toBeTruthy()
+  const search = toolbar.getByRole('textbox').first()
+  await search.fill(packageName ?? '')
+  expect(await market.locator('[data-dshmarket-plugin-row]').first().isVisible()).toBe(true)
+  await search.fill('')
+
+  await page.screenshot({
+    path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-market-${platform}.png`),
+  })
+
+  const protectedUpdate = await postMarket(page, '/dsh-market/update', { name: 'dshmarket' })
+  expect(protectedUpdate).toEqual({ status: 409, body: { ok: false, code: 'self-protected' } })
+
+  const fixtureName = await seedOrdinaryMarketFixture(harnessHome)
+  const ordinaryUninstall = await postMarket(page, '/dsh-market/uninstall', { name: fixtureName })
+  expect(ordinaryUninstall.status).toBe(200)
+  expect(ordinaryUninstall.body).toMatchObject({ ok: true, exitCode: 0 })
+
+  await page.keyboard.press('Escape')
+  await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
+}
+
 async function quitAfterSmokeFailure(application: ElectronApplication): Promise<void> {
   try {
     const closed = application.waitForEvent('close', { timeout: 15_000 })
@@ -407,6 +501,11 @@ export async function runPackagedDesktopSmoke(
       timeout: 120_000,
     })
     const page = await nativeApp.firstWindow({ timeout: 120_000 })
+    const consoleErrors: string[] = []
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text())
+    })
+    page.on('pageerror', error => consoleErrors.push(error.message))
     await waitForDesktopSurface(page, userData)
 
     expect(await page.evaluate(() => (
@@ -478,13 +577,8 @@ export async function runPackagedDesktopSmoke(
       path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-${platform}.png`),
     })
 
-    await page.locator('[data-dsh-desktop-command="open-settings"]').click()
-    const settingsDialog = page.getByRole('dialog')
-    await settingsDialog.waitFor({ state: 'visible' })
-    expect(await settingsDialog.isVisible()).toBe(true)
-    await page.keyboard.press('Escape')
-    await settingsDialog.waitFor({ state: 'detached' })
-    expect(await settingsDialog.count()).toBe(0)
+    await exercisePluginMarket(page, harnessHome, platform)
+    expect(consoleErrors).toEqual([])
 
     const mainPid = nativeApp.process().pid
     if (mainPid === undefined) throw new Error('Packaged smoke: Electron main PID is unavailable.')

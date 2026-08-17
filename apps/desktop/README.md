@@ -27,6 +27,14 @@ profile remains unchanged when the Desktop-only patch is absent. Plugins are
 third-party code: inspect their source and requested build-script approvals
 before installing them.
 
+The market presentation uses a compact, single-column Harness list with
+40-pixel icons, two-line descriptions, a sticky search/category toolbar, and
+stable **Discover / Installed / Updates / Activity** tabs. Each discovery row
+keeps one primary action; details, source, and package-name copy live in its
+overflow menu. The active market package cannot disable, uninstall, or update
+itself (`dshmarket` and `dsh-market` are both rejected before the package
+runner), while ordinary plugin operations retain the upstream route behavior.
+
 ## Icon provenance
 
 `assets/icon-source.png` is the exact 1254×1254 RGBA master accepted for the
@@ -87,6 +95,6 @@ For Windows, build the Setup on native Windows and run:
   -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.4-win-x64.exe
 ```
 
-The packaged smokes use an external temporary working directory, temporary Electron data, and temporary `DSH_HOME`. They verify the preload bridge, three-column workspace, archived-session manager, settings dialog, random listener, and complete process cleanup after macOS native Quit or Windows window close. Desktop staging additionally requires the immutable market patch, Desktop plugin-runtime provider, `dshmarket` Host and Client artifacts, and packaged pnpm bin. The Windows smoke additionally proves silent install, shortcut creation, real clipboard copy, uninstall cleanup, and data preservation. Native Windows CI builds the Setup, runs this smoke, records SHA-256, and uploads both files.
+The packaged smokes use an external temporary working directory, temporary Electron data, and temporary `DSH_HOME`. They verify the preload bridge, three-column workspace, archived-session manager, compact Plugin Market tabs/search/categories/row actions, protected self-update, an ordinary isolated-profile package operation, random listener, and complete process cleanup after macOS native Quit or Windows window close. Desktop staging additionally requires exactly one `dshmarket@1.10.1`, coherent compact markers in its source, Client bundle, and source map, the Host self-protection marker, the immutable Desktop patch, plugin-runtime provider, and packaged pnpm bin. The Windows smoke additionally proves silent install, shortcut creation, real clipboard copy, uninstall cleanup, and data preservation. Native Windows CI builds the Setup, runs this smoke, records SHA-256, and uploads both files.
 
 Local artifacts are unsigned. macOS may require **Open** from Finder's context menu; Windows SmartScreen may require confirmation of the unknown publisher. Removing those prompts requires trusted platform signing credentials.

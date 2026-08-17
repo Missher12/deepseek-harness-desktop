@@ -21,6 +21,12 @@ Desktop 专属组合还固定接入 `dshmarket@1.10.1`，在设置中提供**插
 Desktop patch 的普通浏览器 profile 不受影响。插件属于第三方代码，安装前
 仍应查看源码，并审阅其请求的构建脚本授权。
 
+市场界面采用紧凑的 Harness 单列列表：40 像素图标、两行简介、固定的搜索／
+分类工具栏，以及稳定的“发现／已安装／更新／活动”标签。每个发现项只保留一个
+主操作，详情、源码和复制包名统一放入更多菜单。当前市场包不能停用、卸载或
+更新自身（`dshmarket` 与 `dsh-market` 都会在包运行器启动前被拒绝），普通插件
+操作仍保留上游路由行为。
+
 ## 图标来源
 
 `assets/icon-source.png` 是 2026-08-14 通过 macOS 与 Windows 两端验收的
@@ -79,6 +85,6 @@ Windows 在原生系统生成 Setup 后运行：
   -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.4-win-x64.exe
 ```
 
-成品测试使用仓库外的临时工作目录、临时 Electron 用户数据和临时 `DSH_HOME`，验证 preload、三栏工作台、归档管理器、设置窗口、随机监听端口，以及 macOS 原生退出或 Windows 关闭窗口后的完整进程回收。Desktop staging 还强制检查不可变市场 patch、Desktop 插件运行时 provider、`dshmarket` Host/Client 产物及内置 pnpm 入口确实进入成品。Windows 测试还会验证静默安装、快捷方式创建、真实剪贴板复制、卸载清理和数据保留。原生 Windows CI 会构建 Setup、运行这项测试、记录 SHA-256，并上传两个文件。
+成品测试使用仓库外的临时工作目录、临时 Electron 用户数据和临时 `DSH_HOME`，验证 preload、三栏工作台、归档管理器、紧凑插件市场的标签／搜索／分类／行操作、自更新保护、隔离 profile 内的一次普通包操作、随机监听端口，以及 macOS 原生退出或 Windows 关闭窗口后的完整进程回收。Desktop staging 还要求 staged 树中有且只有一个 `dshmarket@1.10.1`，其源码、Client bundle 与 source map 的紧凑布局标记一致，Host 自保护标记存在，并强制检查不可变 Desktop patch、插件运行时 provider 及内置 pnpm 入口确实进入成品。Windows 测试还会验证静默安装、快捷方式创建、真实剪贴板复制、卸载清理和数据保留。原生 Windows CI 会构建 Setup、运行这项测试、记录 SHA-256，并上传两个文件。
 
 本地产物没有签名。macOS 可能要求从 Finder 右键菜单选择“打开”，Windows SmartScreen 可能要求确认未知发布者；只有受信任的平台签名凭据才能消除这些系统提示。
