@@ -10,6 +10,7 @@ const WORKSPACE_PEERS = [
   '@deepseek-ai/cordis',
   '@deepseek-ai/dsh-api-remotes',
   '@deepseek-ai/dsh-client-connection',
+  '@deepseek-ai/dsh-client-locale',
   '@deepseek-ai/dsh-client-runtime',
   '@deepseek-ai/dsh-client-ui-conversation',
   '@deepseek-ai/dsh-client-ui-model-selection',
@@ -98,7 +99,15 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
     const manifest = await readManifest()
 
     expect(manifest.dsh.client.platform).toBe('web')
-    expect(manifest.dsh.client.inject).toEqual([])
+    expect(manifest.dsh.client.inject).toEqual([
+      '@deepseek-ai/dsh-client-locale',
+      '@deepseek-ai/dsh-client-runtime',
+      '@deepseek-ai/dsh-client-ui-conversation',
+      '@deepseek-ai/dsh-client-ui-model-selection',
+      '@deepseek-ai/dsh-client-ui-primitives',
+      '@deepseek-ai/dsh-client-ui-slots',
+      '@deepseek-ai/dsh-api-remotes',
+    ])
     expect(manifest.dsh.bundle.patch).toBe('./cordis.patch.yml')
     expect(manifest.exports['./cordis.patch.yml']).toBe('./cordis.patch.yml')
   })
@@ -107,6 +116,7 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
     const manifest = await readManifest()
     const tsconfig = JSON.parse(await readFile(new URL('tsconfig.json', PACKAGE_ROOT), 'utf8')) as {
       references: readonly { readonly path: string }[]
+      exclude: readonly string[]
     }
 
     expect(manifest.dependencies).toEqual({
@@ -127,11 +137,19 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
       react: '^18.2.0',
       'react-dom': '^18.2.0',
     })
+    expect(tsconfig.exclude).toEqual(['src/client/index.ts'])
     expect(tsconfig.references).toEqual([
+      { path: '../../api/remotes/tsconfig.client.json' },
       { path: '../../../vendor/cordis' },
       { path: '../../../vendor/schemastery' },
       { path: '../../host/webserver' },
       { path: '../../settings/settings' },
+      { path: '../../client/locale' },
+      { path: '../../client/runtime' },
+      { path: '../../client/ui-conversation' },
+      { path: '../../client/ui-model-selection' },
+      { path: '../../client/ui-primitives' },
+      { path: '../../client/ui-slots' },
       { path: '../../runtime-diagnostics/invariants' },
     ])
   })
@@ -151,16 +169,20 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
   })
 
   test('provides the Host and Client source entries consumed by clientBundle', async () => {
-    const [host, client] = await Promise.all([
+    const [host, clientEntry, client, bundle] = await Promise.all([
       readFile(new URL('src/index.ts', PACKAGE_ROOT), 'utf8'),
       readFile(new URL('src/client/index.ts', PACKAGE_ROOT), 'utf8'),
+      readFile(new URL('src/client/index.tsx', PACKAGE_ROOT), 'utf8'),
+      readFile(new URL('tsdown.config.ts', PACKAGE_ROOT), 'utf8'),
     ])
 
     expect(host).toContain("export const name = 'reasoning-effort'")
     expect(host).toContain("export const inject = ['settings', 'webServer']")
     expect(host).toContain('export function apply(ctx: Context): void')
+    expect(clientEntry).toContain("export * from './index.tsx'")
     expect(client).toContain("export const name = 'reasoning-effort-client'")
-    expect(client).toContain('export function apply(): void {}')
+    expect(client).toContain('export function apply(ctx: ClientContext): void')
+    expect(bundle).toContain("loader: { ...config.loader, '.png': 'dataurl' }")
   })
 
   test('describes the invariant companion without denying implemented Host behavior', async () => {
