@@ -10,6 +10,11 @@ export interface RadiationState {
  * This algorithm is intentionally retained from dsh-reasoning-effort v0.6.0,
  * commit f94622b46078ac8c064f91bdc10ab27e8cf32270 (MIT). Placement and
  * product chrome live elsewhere; the effect itself is not redrawn.
+ * @param context - Canvas 2D context owned by the effort control.
+ * @param width - Current backing-store width in pixels.
+ * @param height - Current backing-store height in pixels.
+ * @param time - Animation timestamp supplied by requestAnimationFrame.
+ * @param state - Current slider progress and drag state.
  */
 export function drawRadiation(
   context: CanvasRenderingContext2D,

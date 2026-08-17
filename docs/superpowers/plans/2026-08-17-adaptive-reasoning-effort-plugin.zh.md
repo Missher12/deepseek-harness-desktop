@@ -73,7 +73,7 @@ git commit -m "feat: scaffold attributed reasoning effort plugin"
 **文件：**
 - 新建：`packages/extensions/reasoning-effort/src/client/placement.ts`
 - 新建：`packages/extensions/reasoning-effort/src/client/use-popup-placement.ts`
-- 新建：`packages/extensions/reasoning-effort/tests/placement.spec.ts`
+- 新建：`packages/extensions/reasoning-effort/tests/placement.client.spec.ts`
 
 - [ ] **步骤 1：编写失败的定位矩阵**
 
@@ -88,7 +88,7 @@ expect(placePopup({ anchor: nearBottom, popup, viewport, preferred: 'below' }).s
 
 - [ ] **步骤 2：运行测试并确认 RED**
 
-运行：`pnpm exec vitest run packages/extensions/reasoning-effort/tests/placement.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/reasoning-effort/tests/placement.client.spec.ts`
 
 预期：因为缺少 `placePopup` 而 FAIL。
 
@@ -113,14 +113,14 @@ export function placePopup(input: PlacementInput): PopupPlacement
 
 - [ ] **步骤 5：运行定位测试**
 
-运行：`pnpm exec vitest run packages/extensions/reasoning-effort/tests/placement.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/reasoning-effort/tests/placement.client.spec.ts`
 
 预期：PASS。
 
 - [ ] **步骤 6：提交定位逻辑**
 
 ```bash
-git add packages/extensions/reasoning-effort/src/client/placement.ts packages/extensions/reasoning-effort/src/client/use-popup-placement.ts packages/extensions/reasoning-effort/tests/placement.spec.ts
+git add packages/extensions/reasoning-effort/src/client/placement.ts packages/extensions/reasoning-effort/src/client/use-popup-placement.ts packages/extensions/reasoning-effort/tests/placement.client.spec.ts
 git commit -m "feat: add down-first effort popup placement"
 ```
 
@@ -130,8 +130,8 @@ git commit -m "feat: add down-first effort popup placement"
 - 新建：`packages/extensions/reasoning-effort/src/preference.ts`
 - 新建：`packages/extensions/reasoning-effort/src/http.ts`
 - 新建：`packages/extensions/reasoning-effort/src/index.ts`
-- 新建：`packages/extensions/reasoning-effort/tests/preference.spec.ts`
-- 新建：`packages/extensions/reasoning-effort/tests/http.spec.ts`
+- 新建：`packages/extensions/reasoning-effort/tests/preference.client.spec.ts`
+- 新建：`packages/extensions/reasoning-effort/tests/http.client.spec.ts`
 
 - [ ] **步骤 1：编写失败的偏好与请求边界测试**
 
@@ -144,7 +144,7 @@ await expect(request({ origin: 'http://localhost:5000' })).resolves.toMatchObjec
 
 - [ ] **步骤 2：运行测试并确认 RED**
 
-运行：`pnpm exec vitest run packages/extensions/reasoning-effort/tests/preference.spec.ts packages/extensions/reasoning-effort/tests/http.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/reasoning-effort/tests/preference.client.spec.ts packages/extensions/reasoning-effort/tests/http.client.spec.ts`
 
 预期：因为 Host 端缺失而 FAIL。
 
@@ -159,14 +159,14 @@ export const PREFERENCE_PATH = '/plugins/dsh-reasoning-effort/preference'
 
 - [ ] **步骤 4：运行 Host 测试**
 
-运行：`pnpm exec vitest run packages/extensions/reasoning-effort/tests/preference.spec.ts packages/extensions/reasoning-effort/tests/http.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/reasoning-effort/tests/preference.client.spec.ts packages/extensions/reasoning-effort/tests/http.client.spec.ts`
 
 预期：PASS。
 
 - [ ] **步骤 5：提交偏好存储**
 
 ```bash
-git add packages/extensions/reasoning-effort/src packages/extensions/reasoning-effort/tests/preference.spec.ts packages/extensions/reasoning-effort/tests/http.spec.ts
+git add packages/extensions/reasoning-effort/src packages/extensions/reasoning-effort/tests/preference.client.spec.ts packages/extensions/reasoning-effort/tests/http.client.spec.ts
 git commit -m "feat: persist effort character preference"
 ```
 
@@ -179,8 +179,8 @@ git commit -m "feat: persist effort character preference"
 - 新建：`packages/extensions/reasoning-effort/src/client/draw-radiation.ts`
 - 新建：`packages/extensions/reasoning-effort/src/client/locales.ts`
 - 新建：`packages/extensions/reasoning-effort/src/client/css-modules.d.ts`
-- 新建：`packages/extensions/reasoning-effort/tests/client.spec.tsx`
-- 新建：`packages/extensions/reasoning-effort/tests/canvas.spec.ts`
+- 新建：`packages/extensions/reasoning-effort/tests/client.client.spec.tsx`
+- 新建：`packages/extensions/reasoning-effort/tests/canvas.client.spec.ts`
 
 - [ ] **步骤 1：编写失败的 ModelDirectory 与交互测试**
 
@@ -199,7 +199,7 @@ mock `CanvasRenderingContext2D`，断言保留的上游 renderer 发出 14 条 s
 
 - [ ] **步骤 3：运行 Client 测试并确认 RED**
 
-运行：`pnpm exec vitest run packages/extensions/reasoning-effort/tests/client.spec.tsx packages/extensions/reasoning-effort/tests/canvas.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/reasoning-effort/tests/client.client.spec.tsx packages/extensions/reasoning-effort/tests/canvas.client.spec.ts`
 
 预期：因为 Client 端缺失而 FAIL。
 
@@ -216,7 +216,7 @@ mock `CanvasRenderingContext2D`，断言保留的上游 renderer 发出 14 条 s
 - [ ] **步骤 6：提交 Client**
 
 ```bash
-git add packages/extensions/reasoning-effort/src/client packages/extensions/reasoning-effort/tests/client.spec.tsx packages/extensions/reasoning-effort/tests/canvas.spec.ts
+git add packages/extensions/reasoning-effort/src/client packages/extensions/reasoning-effort/tests/client.client.spec.tsx packages/extensions/reasoning-effort/tests/canvas.client.spec.ts
 git commit -m "feat: add Harness-native effort selector"
 ```
 

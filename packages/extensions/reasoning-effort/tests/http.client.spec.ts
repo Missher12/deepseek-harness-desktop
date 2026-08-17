@@ -262,7 +262,7 @@ describe('reasoning-effort Host registration', () => {
         taps.push(tap)
         return () => { taps.splice(taps.indexOf(tap), 1) }
       },
-    } as WebServer)
+    } as unknown as WebServer)
 
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
@@ -304,7 +304,7 @@ describe('reasoning-effort Host registration', () => {
         return () => { routes.splice(routes.indexOf(route), 1) }
       },
       tapIndex: () => () => undefined,
-    } as WebServer)
+    } as unknown as WebServer)
 
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await new Promise<void>((resolve) => { setImmediate(resolve) })
@@ -333,7 +333,7 @@ describe('reasoning-effort Host registration', () => {
         taps.push(tap)
         return () => { taps.splice(taps.indexOf(tap), 1) }
       },
-    } as WebServer)
+    } as unknown as WebServer)
 
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()

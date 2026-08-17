@@ -1,13 +1,15 @@
 import { spawnSync } from 'node:child_process'
-import { cp, readdir, rm, stat } from 'node:fs/promises'
+import { cp, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import * as yaml from 'js-yaml'
 
 const DESKTOP_PACKAGE = '@deepseek-ai/dsh-desktop'
 
 /** OS seams injected by staging tests. */
 export interface StageDesktopDependencies {
   remove(path: string): Promise<void>
+  readText(path: string): Promise<string>
   pnpmInvocation(args: readonly string[]): { command: string; args: readonly string[] }
   run(command: string, args: readonly string[], cwd: string): void
   copy(source: string, target: string): Promise<void>
@@ -79,11 +81,58 @@ export function desktopStagePnpmInvocation(
 
 const realDependencies: StageDesktopDependencies = {
   remove: async (path) => { await rm(path, { recursive: true, force: true }) },
+  readText: async path => await readFile(path, 'utf8'),
   pnpmInvocation: desktopStagePnpmInvocation,
   run,
   copy: async (source, target) => { await cp(source, target, { recursive: true, force: true }) },
   isFile: pathIsFile,
   findNativeBinaries,
+}
+
+const REASONING_EFFORT_PACKAGE = '@deepseek-ai/dsh-reasoning-effort'
+const REASONING_EFFORT_IDENTITIES = new Set([
+  REASONING_EFFORT_PACKAGE,
+  'dsh-reasoning-effort',
+])
+
+/**
+ * Fail closed when the immutable Desktop patch omits the attributed fork or
+ * also mounts the upstream package that competes for the same single slot.
+ * @param source - Complete Desktop patch YAML.
+ */
+export function validateReasoningEffortPatch(source: string): void {
+  let document: unknown
+  try {
+    document = yaml.load(source)
+  } catch (cause) {
+    throw new Error('Desktop staging preflight could not parse desktop.cordis.patch.yml.', { cause })
+  }
+
+  const matching: Array<{ id?: string; name?: string }> = []
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item)
+      return
+    }
+    if (value === null || typeof value !== 'object') return
+    const row = value as Record<string, unknown>
+    const id = typeof row.id === 'string' ? row.id : undefined
+    const name = typeof row.name === 'string' ? row.name : undefined
+    if (id === 'reasoning-effort' || (name !== undefined && REASONING_EFFORT_IDENTITIES.has(name))) {
+      matching.push({ ...(id === undefined ? {} : { id }), ...(name === undefined ? {} : { name }) })
+    }
+    for (const child of Object.values(row)) visit(child)
+  }
+  visit(document)
+
+  if (matching.length !== 1
+    || matching[0]?.id !== 'reasoning-effort'
+    || matching[0]?.name !== REASONING_EFFORT_PACKAGE) {
+    throw new Error(
+      'Desktop staging preflight requires exactly one reasoning-effort row for '
+      + `${REASONING_EFFORT_PACKAGE}; the upstream original and attributed fork cannot be enabled together.`,
+    )
+  }
 }
 
 function stageRelative(stageDir: string, path: string): string {
@@ -115,6 +164,9 @@ export async function stageDesktop(
     throw new Error(`Desktop staging refused an unexpected deletion target: ${stageDir}`)
   }
 
+  validateReasoningEffortPatch(
+    await dependencies.readText(join(desktopDir, 'desktop.cordis.patch.yml')),
+  )
   await dependencies.remove(stageDir)
   // pnpm 11's legacy deploy writes its dependency mode into the root workspace
   // state. Passing --prod there corrupts later root commands into production-
@@ -146,6 +198,11 @@ export async function stageDesktop(
     'node_modules/@deepseek-ai/dsh-host-desktop-plugin-runtime/lib/index.js',
     'node_modules/dshmarket/lib/index.js',
     'node_modules/dshmarket/client/client.js',
+    'node_modules/@deepseek-ai/dsh-reasoning-effort/lib/index.js',
+    'node_modules/@deepseek-ai/dsh-reasoning-effort/lib/client.js',
+    'node_modules/@deepseek-ai/dsh-reasoning-effort/LICENSE',
+    'node_modules/@deepseek-ai/dsh-reasoning-effort/THIRD_PARTY_NOTICES.md',
+    'node_modules/@deepseek-ai/dsh-reasoning-effort/lib/assets/chibi-runner-strip.png',
     'node_modules/pnpm/bin/pnpm.mjs',
   ]
   for (const path of required) {

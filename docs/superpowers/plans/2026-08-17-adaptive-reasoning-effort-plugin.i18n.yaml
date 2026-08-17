@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-08-17-adaptive-reasoning-effort-plugin.md
-2026-08-17-adaptive-reasoning-effort-plugin.md: 00bc96ff86ec5b01f646f266a519404cfa9d412e
-2026-08-17-adaptive-reasoning-effort-plugin.zh.md: f44074cea5495646dbd564a29a4446d1228df626
+2026-08-17-adaptive-reasoning-effort-plugin.md: 03bc085ed661ff695199bd10abce2cc9fe40a7f9
+2026-08-17-adaptive-reasoning-effort-plugin.zh.md: a104f50d966518490fa3a40182ae22473c984384

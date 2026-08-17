@@ -6,5 +6,8 @@
       config:
         profile: web
 
+    - id: reasoning-effort
+      name: '@deepseek-ai/dsh-reasoning-effort'
+
     - id: dsh-market
       name: 'dshmarket'

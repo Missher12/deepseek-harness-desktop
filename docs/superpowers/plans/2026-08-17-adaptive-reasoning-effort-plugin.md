@@ -73,7 +73,7 @@ git commit -m "feat: scaffold attributed reasoning effort plugin"
 **Files:**
 - Create: `packages/extensions/reasoning-effort/src/client/placement.ts`
 - Create: `packages/extensions/reasoning-effort/src/client/use-popup-placement.ts`
-- Create: `packages/extensions/reasoning-effort/tests/placement.spec.ts`
+- Create: `packages/extensions/reasoning-effort/tests/placement.client.spec.ts`
 
 - [ ] **Step 1: Write the failing placement matrix**
 
@@ -88,7 +88,7 @@ expect(placePopup({ anchor: nearBottom, popup, viewport, preferred: 'below' }).s
 
 - [ ] **Step 2: Run the test and confirm RED**
 
-Run: `pnpm exec vitest run packages/extensions/reasoning-effort/tests/placement.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/reasoning-effort/tests/placement.client.spec.ts`
 
 Expected: FAIL because `placePopup` is missing.
 
@@ -113,14 +113,14 @@ export function placePopup(input: PlacementInput): PopupPlacement
 
 - [ ] **Step 5: Run the placement tests**
 
-Run: `pnpm exec vitest run packages/extensions/reasoning-effort/tests/placement.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/reasoning-effort/tests/placement.client.spec.ts`
 
 Expected: PASS.
 
 - [ ] **Step 6: Commit placement**
 
 ```bash
-git add packages/extensions/reasoning-effort/src/client/placement.ts packages/extensions/reasoning-effort/src/client/use-popup-placement.ts packages/extensions/reasoning-effort/tests/placement.spec.ts
+git add packages/extensions/reasoning-effort/src/client/placement.ts packages/extensions/reasoning-effort/src/client/use-popup-placement.ts packages/extensions/reasoning-effort/tests/placement.client.spec.ts
 git commit -m "feat: add down-first effort popup placement"
 ```
 
@@ -130,8 +130,8 @@ git commit -m "feat: add down-first effort popup placement"
 - Create: `packages/extensions/reasoning-effort/src/preference.ts`
 - Create: `packages/extensions/reasoning-effort/src/http.ts`
 - Create: `packages/extensions/reasoning-effort/src/index.ts`
-- Create: `packages/extensions/reasoning-effort/tests/preference.spec.ts`
-- Create: `packages/extensions/reasoning-effort/tests/http.spec.ts`
+- Create: `packages/extensions/reasoning-effort/tests/preference.client.spec.ts`
+- Create: `packages/extensions/reasoning-effort/tests/http.client.spec.ts`
 
 - [ ] **Step 1: Write failing preference and request-fence tests**
 
@@ -144,7 +144,7 @@ await expect(request({ origin: 'http://localhost:5000' })).resolves.toMatchObjec
 
 - [ ] **Step 2: Run the tests and confirm RED**
 
-Run: `pnpm exec vitest run packages/extensions/reasoning-effort/tests/preference.spec.ts packages/extensions/reasoning-effort/tests/http.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/reasoning-effort/tests/preference.client.spec.ts packages/extensions/reasoning-effort/tests/http.client.spec.ts`
 
 Expected: FAIL because the Host half is missing.
 
@@ -159,14 +159,14 @@ export const PREFERENCE_PATH = '/plugins/dsh-reasoning-effort/preference'
 
 - [ ] **Step 4: Run the Host tests**
 
-Run: `pnpm exec vitest run packages/extensions/reasoning-effort/tests/preference.spec.ts packages/extensions/reasoning-effort/tests/http.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/reasoning-effort/tests/preference.client.spec.ts packages/extensions/reasoning-effort/tests/http.client.spec.ts`
 
 Expected: PASS.
 
 - [ ] **Step 5: Commit preference storage**
 
 ```bash
-git add packages/extensions/reasoning-effort/src packages/extensions/reasoning-effort/tests/preference.spec.ts packages/extensions/reasoning-effort/tests/http.spec.ts
+git add packages/extensions/reasoning-effort/src packages/extensions/reasoning-effort/tests/preference.client.spec.ts packages/extensions/reasoning-effort/tests/http.client.spec.ts
 git commit -m "feat: persist effort character preference"
 ```
 
@@ -179,8 +179,8 @@ git commit -m "feat: persist effort character preference"
 - Create: `packages/extensions/reasoning-effort/src/client/draw-radiation.ts`
 - Create: `packages/extensions/reasoning-effort/src/client/locales.ts`
 - Create: `packages/extensions/reasoning-effort/src/client/css-modules.d.ts`
-- Create: `packages/extensions/reasoning-effort/tests/client.spec.tsx`
-- Create: `packages/extensions/reasoning-effort/tests/canvas.spec.ts`
+- Create: `packages/extensions/reasoning-effort/tests/client.client.spec.tsx`
+- Create: `packages/extensions/reasoning-effort/tests/canvas.client.spec.ts`
 
 - [ ] **Step 1: Write failing ModelDirectory and interaction tests**
 
@@ -199,7 +199,7 @@ Mock `CanvasRenderingContext2D` and assert the retained upstream renderer issues
 
 - [ ] **Step 3: Run the Client tests and confirm RED**
 
-Run: `pnpm exec vitest run packages/extensions/reasoning-effort/tests/client.spec.tsx packages/extensions/reasoning-effort/tests/canvas.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/reasoning-effort/tests/client.client.spec.tsx packages/extensions/reasoning-effort/tests/canvas.client.spec.ts`
 
 Expected: FAIL because the Client half is missing.
 
@@ -216,7 +216,7 @@ Expected: all targeted and GUI tests PASS.
 - [ ] **Step 6: Commit the Client**
 
 ```bash
-git add packages/extensions/reasoning-effort/src/client packages/extensions/reasoning-effort/tests/client.spec.tsx packages/extensions/reasoning-effort/tests/canvas.spec.ts
+git add packages/extensions/reasoning-effort/src/client packages/extensions/reasoning-effort/tests/client.client.spec.tsx packages/extensions/reasoning-effort/tests/canvas.client.spec.ts
 git commit -m "feat: add Harness-native effort selector"
 ```
 

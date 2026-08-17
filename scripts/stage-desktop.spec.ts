@@ -3,8 +3,19 @@ import { describe, expect, it } from 'vitest'
 import {
   desktopStagePnpmInvocation,
   stageDesktop,
+  validateReasoningEffortPatch,
   type StageDesktopDependencies,
 } from './stage-desktop.ts'
+
+const VALID_DESKTOP_PATCH = `
+- insert:
+    - id: desktop-plugin-runtime
+      name: '@deepseek-ai/dsh-host-desktop-plugin-runtime'
+    - id: reasoning-effort
+      name: '@deepseek-ai/dsh-reasoning-effort'
+    - id: dsh-market
+      name: 'dshmarket'
+`
 
 function fakeDependencies(
   filesPresent = true,
@@ -25,6 +36,7 @@ function fakeDependencies(
     removed,
     validated,
     remove: async (path) => { removed.push(path) },
+    readText: async () => VALID_DESKTOP_PATCH,
     pnpmInvocation: args => ({ command: 'pnpm', args }),
     run: (command, args) => { commands.push([command, args]) },
     copy: async (source, target) => { copies.push([source, target]) },
@@ -75,6 +87,11 @@ describe('stageDesktop', () => {
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-host-desktop-plugin-runtime/lib/index.js')
     expect(result.validatedFiles).toContain('node_modules/dshmarket/lib/index.js')
     expect(result.validatedFiles).toContain('node_modules/dshmarket/client/client.js')
+    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-reasoning-effort/lib/index.js')
+    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-reasoning-effort/lib/client.js')
+    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-reasoning-effort/LICENSE')
+    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-reasoning-effort/THIRD_PARTY_NOTICES.md')
+    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-reasoning-effort/lib/assets/chibi-runner-strip.png')
     expect(result.validatedFiles).toContain('node_modules/pnpm/bin/pnpm.mjs')
     expect(result.validatedFiles).toContain('lib/preload.cjs')
     expect(result.validatedFiles).not.toContain('lib/preload.js')
@@ -88,6 +105,37 @@ describe('stageDesktop', () => {
   it('fails closed when a required file or native module is absent', async () => {
     await expect(stageDesktop('/repo', fakeDependencies(false))).rejects.toThrow(/missing required file/i)
     await expect(stageDesktop('/repo', fakeDependencies(true, []))).rejects.toThrow(/native.*\.node/i)
+  })
+
+  it('fails closed when either reasoning-effort runtime half or attributed asset is absent', async () => {
+    for (const missing of [
+      'node_modules/@deepseek-ai/dsh-reasoning-effort/lib/index.js',
+      'node_modules/@deepseek-ai/dsh-reasoning-effort/lib/client.js',
+      'node_modules/@deepseek-ai/dsh-reasoning-effort/LICENSE',
+      'node_modules/@deepseek-ai/dsh-reasoning-effort/THIRD_PARTY_NOTICES.md',
+      'node_modules/@deepseek-ai/dsh-reasoning-effort/lib/assets/chibi-runner-strip.png',
+    ]) {
+      const dependencies = fakeDependencies()
+      dependencies.isFile = async path => !path.endsWith(missing)
+      await expect(stageDesktop('/repo', dependencies)).rejects.toThrow(`missing required file: ${missing}`)
+    }
+  })
+
+  it('rejects duplicate upstream and fork effort rows before deleting or deploying', async () => {
+    const duplicate = `
+- insert:
+    - id: reasoning-effort-upstream
+      name: 'dsh-reasoning-effort'
+    - id: reasoning-effort
+      name: '@deepseek-ai/dsh-reasoning-effort'
+`
+    expect(() => validateReasoningEffortPatch(duplicate)).toThrow(/exactly one.*reasoning-effort/i)
+
+    const dependencies = fakeDependencies()
+    dependencies.readText = async () => duplicate
+    await expect(stageDesktop('/repo', dependencies)).rejects.toThrow(/exactly one.*reasoning-effort/i)
+    expect(dependencies.removed).toEqual([])
+    expect(dependencies.commands).toEqual([])
   })
 
   it('removes only the exact desktop stage directory', async () => {

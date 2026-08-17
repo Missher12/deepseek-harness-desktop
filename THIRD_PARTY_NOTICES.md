@@ -25,6 +25,14 @@ The Cordis framework and its foundation libraries are source-vendored into this 
 | `@deepseek-ai/cordis-plugin-hmr` | `@cordisjs/plugin-hmr` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
 | `@deepseek-ai/cordis-plugin-logger-console` | `@cordisjs/plugin-logger-console` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
 
+## Adapted third-party source
+
+The removable `@deepseek-ai/dsh-reasoning-effort` workspace package retains the following pinned upstream Canvas implementation and sprite under its original MIT terms. Its package-local `LICENSE` and `THIRD_PARTY_NOTICES.md` carry the complete attribution.
+
+| Source | Version | Commit | License and attribution |
+| --- | --- | --- | --- |
+| [`dsh-reasoning-effort`](https://github.com/HanaAyane/dsh-reasoning-effort) | `v0.6.0` | `f94622b46078ac8c064f91bdc10ab27e8cf32270` | MIT; Copyright (c) 2026 HanaAyane |
+
 ## Runtime npm dependencies
 
 External packages that a workspace package resolves at runtime. The tier covers every plugin a user can mount from `cordis.yml` — not only what the `dsh` CLI, Web UI, and Python SDK runtime load by default.

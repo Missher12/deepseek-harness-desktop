@@ -700,6 +700,9 @@ importers:
       '@deepseek-ai/dsh-pwsh-sandbox':
         specifier: workspace:^
         version: link:../../packages/shell/pwsh-sandbox
+      '@deepseek-ai/dsh-reasoning-effort':
+        specifier: workspace:^
+        version: link:../../packages/extensions/reasoning-effort
       '@deepseek-ai/dsh-repeat-tool-reminder':
         specifier: workspace:^
         version: link:../../packages/guard/repeat-tool-reminder

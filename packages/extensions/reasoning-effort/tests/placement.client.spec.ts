@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, type Mock, vi } from 'vitest'
 import { placePopup, type PlacementRect, type PopupViewport } from '../src/client/placement.ts'
 import { usePopupPlacement } from '../src/client/use-popup-placement.ts'
 
@@ -135,13 +135,13 @@ describe('placePopup', () => {
 interface ResizeObserverRecord {
   readonly callback: ResizeObserverCallback
   readonly observed: Set<Element>
-  readonly disconnect: ReturnType<typeof vi.fn>
+  readonly disconnect: Mock<() => void>
 }
 
 interface IntersectionObserverRecord {
   readonly callback: IntersectionObserverCallback
   readonly observed: Set<Element>
-  readonly disconnect: ReturnType<typeof vi.fn>
+  readonly disconnect: Mock<() => void>
   readonly options: IntersectionObserverInit | undefined
 }
 
@@ -456,9 +456,10 @@ describe('usePopupPlacement', () => {
       readonly popup: HTMLElement | null
       readonly open: boolean
     }
+    const initialProps: HookProps = { anchor: null, popup: null, open: true }
     const { result, rerender, unmount } = renderHook(
       (props: HookProps) => usePopupPlacement(props),
-      { initialProps: { anchor: null, popup: null, open: true } },
+      { initialProps },
     )
 
     browser.flushNextFrame()

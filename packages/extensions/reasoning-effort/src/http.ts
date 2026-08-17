@@ -33,7 +33,10 @@ export interface PreferenceHttpOptions {
   write(value: ReasoningEffortPreference): Promise<void>
 }
 
-/** Produce a 256-bit, URL/header-safe capability for one plugin generation. */
+/**
+ * Produce a 256-bit, URL/header-safe capability for one plugin generation.
+ * @returns A fresh base64url capability.
+ */
 export function createPreferenceCapability(): string {
   return randomBytes(32).toString('base64url')
 }
@@ -120,6 +123,8 @@ function parsePutBody(body: Buffer): ReasoningEffortPreference | undefined {
  * Create the exact route handler. Host and capability bind every method; GET
  * rejects a supplied foreign Origin while allowing the markerless shape real
  * same-origin browser GETs emit. PUT additionally requires the exact Origin.
+ * @param options - Active loopback authority, capability, and settings seams.
+ * @returns The exact WebServer route handler.
  */
 export function createPreferenceHttpHandler(options: PreferenceHttpOptions): WebRoute['handler'] {
   const authority = `127.0.0.1:${String(options.port)}`
@@ -177,6 +182,9 @@ export function createPreferenceHttpHandler(options: PreferenceHttpOptions): Web
 /**
  * Inject the per-generation route facts before the shell bundle. `<` is JSON-
  * escaped so even a hostile test capability cannot terminate the script.
+ * @param html - Complete index document served by the Host.
+ * @param capability - Fresh capability for this plugin generation.
+ * @returns The index document with one bootstrap script injected.
  */
 export function injectPreferenceCapability(html: string, capability: string): string {
   const data = {

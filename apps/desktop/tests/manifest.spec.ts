@@ -57,12 +57,52 @@ describe('desktop package manifest', () => {
     expect(manifest.dependencies['@deepseek-ai/dsh']).toBe('workspace:^')
     expect(manifest.dependencies['@deepseek-ai/dsh-home-paths']).toBe('workspace:^')
     expect(manifest.dependencies['@deepseek-ai/dsh-web-frontend']).toBe('workspace:^')
+    expect(manifest.dependencies['@deepseek-ai/dsh-reasoning-effort']).toBe('workspace:^')
     expect(manifest.devDependencies.electron).toBe('43.4.0')
     expect(manifest.devDependencies['electron-builder']).toBe('26.15.3')
     expect(manifest.devDependencies['@electron/rebuild']).toBe('4.2.0')
     expect(manifest.devDependencies.playwright).toBe('^1.49.0')
     expect(manifest.scripts['pack:dir']).toContain('--mac dir --x64')
     expect(manifest.scripts['pack:dmg']).toContain('--mac dmg --x64')
+  })
+
+  it('mounts exactly one attributed reasoning-effort fork in the Desktop patch', () => {
+    const patch = yaml.load(
+      readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8'),
+    ) as Array<{ insert?: Array<{ id?: string; name?: string }> }>
+    const rows = patch.flatMap(operation => operation.insert ?? [])
+      .filter(row => row.id === 'reasoning-effort'
+        || row.name === 'dsh-reasoning-effort'
+        || row.name === '@deepseek-ai/dsh-reasoning-effort')
+
+    expect(rows).toEqual([{
+      id: 'reasoning-effort',
+      name: '@deepseek-ai/dsh-reasoning-effort',
+    }])
+  })
+
+  it('keeps module, missing-service, and apply failures outside the activated Web UI', () => {
+    const host = readFileSync(
+      new URL('../../../packages/extensions/reasoning-effort/src/index.ts', import.meta.url),
+      'utf8',
+    )
+    const client = readFileSync(
+      new URL('../../../packages/extensions/reasoning-effort/src/client/index.tsx', import.meta.url),
+      'utf8',
+    )
+    const boot = readFileSync(
+      new URL('../../../packages/client/web/src/boot.tsx', import.meta.url),
+      'utf8',
+    )
+
+    expect(host).toContain("export const inject = ['settings', 'webServer']")
+    expect(client).toContain("export const inject = ['locale', 'modelDirectories', 'sessions', 'slots']")
+    expect(boot).toContain('entry.fiber === undefined')
+    expect(boot).toContain("state === 'pending'")
+    expect(boot).toContain('failures.push(`${name}: ${state}`)')
+    expect(boot).toContain('did not activate')
+    expect(boot).toContain('await this.runPluginBoot(prefetching)\n      this.settled.set(true)')
+    expect(boot).toContain('await loader.await()\n    this.assertEntriesActive()')
   })
 
   it('builds one per-user Windows x64 Setup with shortcuts and launch-after-install', () => {
