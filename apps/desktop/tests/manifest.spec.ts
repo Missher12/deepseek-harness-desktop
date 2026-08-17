@@ -32,6 +32,10 @@ interface BuilderConfiguration {
   }
 }
 
+interface DesktopPatch {
+  insert?: Array<Record<string, unknown>>
+}
+
 describe('desktop package manifest', () => {
   it('uses one rounded icon source with native macOS and Windows containers', () => {
     const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
@@ -57,12 +61,69 @@ describe('desktop package manifest', () => {
     expect(manifest.dependencies['@deepseek-ai/dsh']).toBe('workspace:^')
     expect(manifest.dependencies['@deepseek-ai/dsh-home-paths']).toBe('workspace:^')
     expect(manifest.dependencies['@deepseek-ai/dsh-web-frontend']).toBe('workspace:^')
+    expect(manifest.dependencies['@deepseek-ai/dsh-reasoning-effort']).toBe('workspace:^')
+    expect(manifest.dependencies['@deepseek-ai/dsh-session-messenger']).toBe('workspace:^')
     expect(manifest.devDependencies.electron).toBe('43.4.0')
     expect(manifest.devDependencies['electron-builder']).toBe('26.15.3')
     expect(manifest.devDependencies['@electron/rebuild']).toBe('4.2.0')
     expect(manifest.devDependencies.playwright).toBe('^1.49.0')
     expect(manifest.scripts['pack:dir']).toContain('--mac dir --x64')
     expect(manifest.scripts['pack:dmg']).toContain('--mac dmg --x64')
+  })
+
+  it('mounts exactly one attributed reasoning-effort fork in the Desktop patch', () => {
+    const patch = yaml.load(
+      readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8'),
+    ) as Array<{ insert?: Array<{ id?: string; name?: string }> }>
+    const rows = patch.flatMap(operation => operation.insert ?? [])
+      .filter(row => row.id === 'reasoning-effort'
+        || row.name === 'dsh-reasoning-effort'
+        || row.name === '@deepseek-ai/dsh-reasoning-effort')
+
+    expect(rows).toEqual([{
+      id: 'reasoning-effort',
+      name: '@deepseek-ai/dsh-reasoning-effort',
+    }])
+  })
+
+  it('keeps module, missing-service, and apply failures outside the activated Web UI', () => {
+    const host = readFileSync(
+      new URL('../../../packages/extensions/reasoning-effort/src/index.ts', import.meta.url),
+      'utf8',
+    )
+    const client = readFileSync(
+      new URL('../../../packages/extensions/reasoning-effort/src/client/index.tsx', import.meta.url),
+      'utf8',
+    )
+    const boot = readFileSync(
+      new URL('../../../packages/client/web/src/boot.tsx', import.meta.url),
+      'utf8',
+    )
+
+    expect(host).toContain("export const inject = ['settings', 'webServer']")
+    expect(client).toContain("export const inject = ['locale', 'modelDirectories', 'sessions', 'slots']")
+    expect(boot).toContain('entry.fiber === undefined')
+    expect(boot).toContain("state === 'pending'")
+    expect(boot).toContain('failures.push(`${name}: ${state}`)')
+    expect(boot).toContain('did not activate')
+    expect(boot).toContain('await this.runPluginBoot(prefetching)\n      this.settled.set(true)')
+    expect(boot).toContain('await loader.await()\n    this.assertEntriesActive()')
+  })
+
+  it('mounts one canonical session messenger row in the Desktop-only overlay', () => {
+    const patches = yaml.load(
+      readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8'),
+    ) as DesktopPatch[]
+    const rows = patches.flatMap(patch => patch.insert ?? [])
+
+    expect(rows.filter(row => row.id === 'session-messenger')).toEqual([{
+      id: 'session-messenger',
+      name: '@deepseek-ai/dsh-session-messenger',
+    }])
+    expect(rows.find(row => row.id === 'dsh-market')).toEqual({
+      id: 'dsh-market',
+      name: 'dshmarket',
+    })
   })
 
   it('builds one per-user Windows x64 Setup with shortcuts and launch-after-install', () => {
@@ -113,6 +174,27 @@ describe('desktop package manifest', () => {
 
     expect(smoke).toContain("[Environment]::GetFolderPath('LocalApplicationData')")
     expect(smoke).not.toContain('[IO.Path]::GetTempPath()')
+  })
+
+  it('exercises the patched marketplace and both protected and ordinary package routes', () => {
+    const smoke = readFileSync(new URL('./packaged-smoke.ts', import.meta.url), 'utf8')
+
+    expect(smoke).toContain('data-dshmarket-layout="compact"')
+    expect(smoke).toContain('data-dshmarket-plugin-row')
+    expect(smoke).toContain('data-dshmarket-primary-action')
+    expect(smoke).toContain("'/dsh-market/update'")
+    expect(smoke).toContain("'/dsh-market/uninstall'")
+    expect(smoke).toContain("code: 'self-protected'")
+  })
+
+  it('exercises the native reasoning slider and session-messenger footer', () => {
+    const smoke = readFileSync(new URL('./packaged-smoke.ts', import.meta.url), 'utf8')
+
+    expect(smoke).toContain('desktop-smoke-reasoning-${platform}.png')
+    expect(smoke).toContain('data-messenger-state="pending"')
+    expect(smoke).toContain('Copy current Session ID')
+    expect(smoke).toContain('desktop-smoke-messenger-${platform}.png')
+    expect(smoke).not.toContain("platform === 'win32'\n    ? await seedWindowsClipboardSmokeState")
   })
 
   it('includes the repository standalone runtime dependency closure', () => {

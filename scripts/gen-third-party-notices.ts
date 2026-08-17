@@ -101,37 +101,15 @@ const BUILD_TIME_TOOLS = [
   },
 ]
 
-/** Source-level adaptation shipped by the first-party effort surface. */
-const EFFORT_SLIDER_NOTICE = `BSD 3-Clause License
-
-Copyright (c) 2026, dsh-web-ui-custom contributors
-Copyright (c) 2026, dsh-effort-slider contributors (standalone extraction)
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.`
+/** Attributed source incorporated into a first-party workspace package. */
+const ADAPTED_THIRD_PARTY_SOURCE = {
+  name: 'dsh-reasoning-effort',
+  version: 'v0.6.0',
+  commit: 'f94622b46078ac8c064f91bdc10ab27e8cf32270',
+  repo: 'https://github.com/HanaAyane/dsh-reasoning-effort',
+  license: 'MIT',
+  attribution: 'Copyright (c) 2026 HanaAyane',
+} as const
 
 /** The `package.json` fields this generator reads. */
 export interface Manifest {
@@ -737,13 +715,13 @@ The Cordis framework and its foundation libraries are source-vendored into this 
 | --- | --- | --- | --- |
 ${vendored.map(row => `| \`${row.npmName}\` | \`${row.upstreamName}\` | [${row.upstream.replace('https://', '')}](${row.upstream}) | MIT |`).join('\n')}
 
-## Adapted source
+## Adapted third-party source
 
-The built-in reasoning-effort animation adapts the three-pass WebGL renderer from [\`dsh-effort-slider\`](https://github.com/2768651338/dsh-effort-slider) 0.2.5. DeepSeek Harness changes its composition, colors, layout, accessibility, and selection ownership while preserving the upstream BSD 3-Clause notice:
+The removable \`@deepseek-ai/dsh-reasoning-effort\` workspace package retains the following pinned upstream Canvas implementation and sprite under its original MIT terms. Its package-local \`LICENSE\` and \`THIRD_PARTY_NOTICES.md\` carry the complete attribution.
 
-\`\`\`text
-${EFFORT_SLIDER_NOTICE}
-\`\`\`
+| Source | Version | Commit | License and attribution |
+| --- | --- | --- | --- |
+| [\`${ADAPTED_THIRD_PARTY_SOURCE.name}\`](${ADAPTED_THIRD_PARTY_SOURCE.repo}) | \`${ADAPTED_THIRD_PARTY_SOURCE.version}\` | \`${ADAPTED_THIRD_PARTY_SOURCE.commit}\` | ${ADAPTED_THIRD_PARTY_SOURCE.license}; ${ADAPTED_THIRD_PARTY_SOURCE.attribution} |
 
 ## Runtime npm dependencies
 

@@ -110,6 +110,14 @@
         "zod"
       ]
     },
+    "packages/extensions/reasoning-effort": {
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-test-runtime",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@types/react-dom"
+      ]
+    },
     "packages/host/directory-picker-native": {
       "entry": [
         "tests/**/*.spec.{ts,tsx}",

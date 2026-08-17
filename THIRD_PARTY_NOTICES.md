@@ -25,42 +25,13 @@ The Cordis framework and its foundation libraries are source-vendored into this 
 | `@deepseek-ai/cordis-plugin-hmr` | `@cordisjs/plugin-hmr` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
 | `@deepseek-ai/cordis-plugin-logger-console` | `@cordisjs/plugin-logger-console` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
 
-## Adapted source
+## Adapted third-party source
 
-The built-in reasoning-effort animation adapts the three-pass WebGL renderer from [`dsh-effort-slider`](https://github.com/2768651338/dsh-effort-slider) 0.2.5. DeepSeek Harness changes its composition, colors, layout, accessibility, and selection ownership while preserving the upstream BSD 3-Clause notice:
+The removable `@deepseek-ai/dsh-reasoning-effort` workspace package retains the following pinned upstream Canvas implementation and sprite under its original MIT terms. Its package-local `LICENSE` and `THIRD_PARTY_NOTICES.md` carry the complete attribution.
 
-```text
-BSD 3-Clause License
-
-Copyright (c) 2026, dsh-web-ui-custom contributors
-Copyright (c) 2026, dsh-effort-slider contributors (standalone extraction)
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-```
+| Source | Version | Commit | License and attribution |
+| --- | --- | --- | --- |
+| [`dsh-reasoning-effort`](https://github.com/HanaAyane/dsh-reasoning-effort) | `v0.6.0` | `f94622b46078ac8c064f91bdc10ab27e8cf32270` | MIT; Copyright (c) 2026 HanaAyane |
 
 ## Runtime npm dependencies
 
@@ -132,6 +103,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 
 pnpm applies local patches to the following packages at install time, so shipped artifacts carry modified copies; each patch file is the complete record of the modification:
 
+- `dshmarket@1.10.1` — [`patches/dshmarket@1.10.1.patch`](patches/dshmarket@1.10.1.patch)
 - `node-pty@1.1.0` — [`patches/node-pty@1.1.0.patch`](patches/node-pty@1.1.0.patch)
 
 ## Official Claude Code platform payloads

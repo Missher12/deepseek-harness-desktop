@@ -25,7 +25,7 @@ describe('release families', () => {
       ['packages/core/library', '@deepseek-ai/dsh-library', '0.1.0-rc.5', false],
       ['apps/cli', '@deepseek-ai/dsh', '0.1.0-rc.5', false],
       ['apps/web', '@deepseek-ai/dsh-web-frontend', '0.1.0-rc.5', false],
-      ['apps/desktop', '@deepseek-ai/dsh-desktop', '0.1.3', true],
+      ['apps/desktop', '@deepseek-ai/dsh-desktop', '0.1.5', true],
     ] as const
 
     try {

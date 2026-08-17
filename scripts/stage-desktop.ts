@@ -1,17 +1,24 @@
 import { spawnSync } from 'node:child_process'
-import { cp, readdir, rm, stat } from 'node:fs/promises'
+import { cp, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import * as yaml from 'js-yaml'
 
 const DESKTOP_PACKAGE = '@deepseek-ai/dsh-desktop'
+const SESSION_MESSENGER_PACKAGE = '@deepseek-ai/dsh-session-messenger'
+const SESSION_MESSENGER_ROW_ID = 'session-messenger'
 
 /** OS seams injected by staging tests. */
 export interface StageDesktopDependencies {
+  readText(path: string): Promise<string>
   remove(path: string): Promise<void>
   pnpmInvocation(args: readonly string[]): { command: string; args: readonly string[] }
   run(command: string, args: readonly string[], cwd: string): void
   copy(source: string, target: string): Promise<void>
   isFile(path: string): Promise<boolean>
+  findPackageDirectories(root: string, packageDirectoryName: string): Promise<readonly string[]>
   findNativeBinaries(root: string): Promise<readonly string[]>
 }
 
@@ -56,6 +63,32 @@ async function findNativeBinaries(root: string): Promise<string[]> {
   return found.sort()
 }
 
+async function findPackageDirectories(root: string, packageDirectoryName: string): Promise<string[]> {
+  const found: string[] = []
+  const pending = [root]
+  while (pending.length > 0) {
+    const directory = pending.pop()
+    if (directory === undefined) break
+    let entries
+    try {
+      entries = await readdir(directory, { withFileTypes: true })
+    } catch (error) {
+      if (isMissing(error)) continue
+      throw error
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const path = join(directory, entry.name)
+      if (entry.name === packageDirectoryName && await pathIsFile(join(path, 'package.json'))) {
+        found.push(path)
+        continue
+      }
+      pending.push(path)
+    }
+  }
+  return found.sort()
+}
+
 function run(command: string, args: readonly string[], cwd: string): void {
   const result = spawnSync(command, [...args], { cwd, stdio: 'inherit', shell: false })
   if (result.error !== undefined) throw result.error
@@ -79,11 +112,61 @@ export function desktopStagePnpmInvocation(
 
 const realDependencies: StageDesktopDependencies = {
   remove: async (path) => { await rm(path, { recursive: true, force: true }) },
+  readText: async path => await readFile(path, 'utf8'),
   pnpmInvocation: desktopStagePnpmInvocation,
   run,
   copy: async (source, target) => { await cp(source, target, { recursive: true, force: true }) },
   isFile: pathIsFile,
+  findPackageDirectories,
   findNativeBinaries,
+}
+
+const REASONING_EFFORT_PACKAGE = '@deepseek-ai/dsh-reasoning-effort'
+const REASONING_EFFORT_IDENTITIES = new Set([
+  REASONING_EFFORT_PACKAGE,
+  'dsh-reasoning-effort',
+])
+
+/**
+ * Fail closed when the immutable Desktop patch omits the attributed fork or
+ * also mounts the upstream package that competes for the same single slot.
+ * @param source - Complete Desktop patch YAML.
+ */
+export function validateReasoningEffortPatch(source: string): void {
+  let document: unknown
+  try {
+    document = yaml.load(source)
+  } catch (cause) {
+    throw new Error('Desktop staging preflight could not parse desktop.cordis.patch.yml.', { cause })
+  }
+
+  const matching: Array<{ id?: string; name?: string }> = []
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item)
+      return
+    }
+    if (value === null || typeof value !== 'object') return
+    const row = value as Record<string, unknown>
+    const id = typeof row.id === 'string' ? row.id : undefined
+    const name = typeof row.name === 'string' ? row.name : undefined
+    if (id === 'reasoning-effort' || (name !== undefined && REASONING_EFFORT_IDENTITIES.has(name))) {
+      matching.push({ ...(id === undefined ? {} : { id }), ...(name === undefined ? {} : { name }) })
+    }
+    for (const child of Object.values(row)) visit(child)
+  }
+  visit(document)
+
+  const candidate = matching[0]
+  if (matching.length !== 1
+    || candidate === undefined
+    || candidate.id !== 'reasoning-effort'
+    || candidate.name !== REASONING_EFFORT_PACKAGE) {
+    throw new Error(
+      'Desktop staging preflight requires exactly one reasoning-effort row for '
+      + `${REASONING_EFFORT_PACKAGE}; the upstream original and attributed fork cannot be enabled together.`,
+    )
+  }
 }
 
 function stageRelative(stageDir: string, path: string): string {
@@ -92,6 +175,46 @@ function stageRelative(stageDir: string, path: string): string {
     throw new Error(`Desktop staging found a file outside the stage directory: ${path}`)
   }
   return value.split(sep).join('/')
+}
+
+function assertCanonicalSessionMessengerRow(content: string): void {
+  let parsed: unknown
+  try {
+    parsed = yaml.load(content, { schema: entryListSchema })
+  } catch (error: unknown) {
+    throw new Error('Desktop staging requires exactly one canonical session-messenger row.', { cause: error })
+  }
+  if (!Array.isArray(parsed) || parsed.some(patch => (
+    typeof patch !== 'object' || patch === null || Array.isArray(patch)
+  ))) {
+    throw new Error('Desktop staging requires exactly one canonical session-messenger row.')
+  }
+  const patches = parsed as PatchOptions[]
+  if (patches.some(patch => (
+    patch.id === SESSION_MESSENGER_ROW_ID || patch.name === SESSION_MESSENGER_PACKAGE
+  ))) {
+    throw new Error('Desktop staging requires exactly one canonical session-messenger row.')
+  }
+  const entries = applyEntryPatches([], patches, () => {})
+  const rows: EntryOptions[] = []
+  const visit = (children: EntryOptions[]): void => {
+    for (const row of children) {
+      rows.push(row)
+      if (row.group && Array.isArray(row.config)) visit(row.config as EntryOptions[])
+    }
+  }
+  visit(entries)
+  const candidates = rows.filter(row => (
+    row.id === SESSION_MESSENGER_ROW_ID || row.name === SESSION_MESSENGER_PACKAGE
+  ))
+  const candidate = candidates[0]
+  if (candidates.length !== 1
+    || candidate === undefined
+    || candidate.id !== SESSION_MESSENGER_ROW_ID
+    || candidate.name !== SESSION_MESSENGER_PACKAGE
+    || Object.keys(candidate).sort().join(',') !== 'id,name') {
+    throw new Error('Desktop staging requires exactly one canonical session-messenger row.')
+  }
 }
 
 /**
@@ -115,6 +238,9 @@ export async function stageDesktop(
     throw new Error(`Desktop staging refused an unexpected deletion target: ${stageDir}`)
   }
 
+  const desktopPatch = await dependencies.readText(join(desktopDir, 'desktop.cordis.patch.yml'))
+  validateReasoningEffortPatch(desktopPatch)
+  assertCanonicalSessionMessengerRow(desktopPatch)
   await dependencies.remove(stageDir)
   // pnpm 11's legacy deploy writes its dependency mode into the root workspace
   // state. Passing --prod there corrupts later root commands into production-
@@ -144,14 +270,70 @@ export async function stageDesktop(
     'node_modules/@deepseek-ai/dsh/lib/bin.js',
     'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
     'node_modules/@deepseek-ai/dsh-host-desktop-plugin-runtime/lib/index.js',
+    'node_modules/dshmarket/package.json',
+    'node_modules/@deepseek-ai/dsh-session-messenger/package.json',
+    'node_modules/@deepseek-ai/dsh-session-messenger/lib/index.js',
+    'node_modules/@deepseek-ai/dsh-session-messenger/lib/client.js',
+    'node_modules/@deepseek-ai/dsh-session-messenger/cordis.patch.yml',
     'node_modules/dshmarket/lib/index.js',
+    'node_modules/dshmarket/lib/routes.js',
+    'node_modules/dshmarket/src/client/MarketSection.tsx',
     'node_modules/dshmarket/client/client.js',
+    'node_modules/dshmarket/client/client.js.map',
+    'node_modules/@deepseek-ai/dsh-reasoning-effort/lib/index.js',
+    'node_modules/@deepseek-ai/dsh-reasoning-effort/lib/client.js',
+    'node_modules/@deepseek-ai/dsh-reasoning-effort/LICENSE',
+    'node_modules/@deepseek-ai/dsh-reasoning-effort/THIRD_PARTY_NOTICES.md',
+    'node_modules/@deepseek-ai/dsh-reasoning-effort/lib/assets/chibi-runner-strip.png',
     'node_modules/pnpm/bin/pnpm.mjs',
   ]
   for (const path of required) {
     if (!await dependencies.isFile(join(stageDir, path))) {
       throw new Error(`Desktop staging missing required file: ${path}`)
     }
+  }
+
+  const marketPackageDirectories = await dependencies.findPackageDirectories(
+    join(stageDir, 'node_modules'),
+    'dshmarket',
+  )
+  if (marketPackageDirectories.length !== 1) {
+    throw new Error(`Desktop staging expected exactly one dshmarket package; found ${String(marketPackageDirectories.length)}.`)
+  }
+
+  const marketRoot = join(stageDir, 'node_modules', 'dshmarket')
+  let marketManifest: unknown
+  try {
+    marketManifest = JSON.parse(await dependencies.readText(join(marketRoot, 'package.json')))
+  } catch (error) {
+    throw new Error('Desktop staging could not parse the staged dshmarket manifest.', { cause: error })
+  }
+  if (
+    typeof marketManifest !== 'object'
+    || marketManifest === null
+    || !('name' in marketManifest)
+    || !('version' in marketManifest)
+    || marketManifest.name !== 'dshmarket'
+    || marketManifest.version !== '1.10.1'
+  ) {
+    throw new Error('Desktop staging expected dshmarket@1.10.1 exactly.')
+  }
+
+  const compactMarker = 'data-dshmarket-layout'
+  const semanticArtifacts = [
+    ['Client source', 'src/client/MarketSection.tsx'],
+    ['Client bundle', 'client/client.js'],
+    ['Client source map', 'client/client.js.map'],
+  ] as const
+  for (const [label, path] of semanticArtifacts) {
+    const contents = await dependencies.readText(join(marketRoot, path))
+    if (!contents.includes(compactMarker)) {
+      throw new Error(`Desktop staging compact marker missing from ${label}.`)
+    }
+  }
+  const hostBundle = await dependencies.readText(join(marketRoot, 'lib/routes.js'))
+  if (!hostBundle.includes('self-protected')) {
+    throw new Error('Desktop staging dshmarket Host self-protection marker is missing.')
   }
 
   const nativeBinaries = await dependencies.findNativeBinaries(join(stageDir, 'node_modules'))

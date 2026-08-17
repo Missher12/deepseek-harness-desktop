@@ -29,6 +29,14 @@ describe('THIRD_PARTY_NOTICES.md', () => {
     expect(generated).toContain('It depends on the third-party software listed below.')
     expect(readFileSync(resolve(root, 'THIRD_PARTY_NOTICES.md'), 'utf8'), 'stale notices — run `pnpm run gen-third-party-notices`').toBe(generated)
   })
+
+  it('discloses the exact attributed reasoning-effort source used by Desktop', () => {
+    const generated = render()
+
+    expect(generated).toContain('Copyright (c) 2026 HanaAyane')
+    expect(generated).toContain('https://github.com/HanaAyane/dsh-reasoning-effort')
+    expect(generated).toContain('f94622b46078ac8c064f91bdc10ab27e8cf32270')
+  })
 })
 
 /** Build the (manifests, names) pair `tierExternalDeps` consumes. */

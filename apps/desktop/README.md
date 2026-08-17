@@ -13,14 +13,20 @@ and archived-session cards expose the same action without restoring or
 deleting the session. The app copies the exact stable id and reports whether
 the host clipboard accepted the write.
 
-The composer model control includes a Claude Code-inspired reasoning-effort
-landscape inside the existing model menu. Its wide DeepSeek-blue WebGL energy
-field, Faster/Smarter direction labels, thin track, and luminous selected stop
-remain part of the native Harness surface instead of appearing as a separate
-skin. It renders only stops advertised by the selected model, preserves the
-underlying effort id, and presents the exact `max` id as **ULTRACODE**. Pointer,
-arrow-key, Home, and End interaction share the same validated selection path;
-reduced-motion and WebGL-unavailable environments retain a static fallback.
+The removable `@deepseek-ai/dsh-session-messenger` plugin adds bounded,
+same-profile session communication. Native Function Calling and Code Mode can
+send without waking, queue a wake-up follow-up, reply through a single-use
+receipt token, or wait for the matching reply. The compact sidebar-footer
+panel reports pending and unread receipts, marks notifications read, and
+copies the current Session ID. It never creates automatic Agent-to-Agent
+loops, and received text remains untrusted content.
+
+The removable `@deepseek-ai/dsh-reasoning-effort` plugin replaces the plain
+effort rows with a keyboard-accessible slider that uses only values advertised
+by the selected model. Its Harness-styled portal opens below when space allows
+and flips above when needed, retains HanaAyane's attributed Canvas particles,
+keeps the optional character disabled by default, and persists the accepted
+effort through the existing model-selection path.
 
 The Desktop composition also pins `dshmarket@1.10.1` as an in-app **Plugin
 Market** settings section. Search, install, update, uninstall, grouping, and
@@ -31,6 +37,14 @@ origin, and installs must match the curated registry. The ordinary browser
 profile remains unchanged when the Desktop-only patch is absent. Plugins are
 third-party code: inspect their source and requested build-script approvals
 before installing them.
+
+The market presentation uses a compact, single-column Harness list with
+40-pixel icons, two-line descriptions, a sticky search/category toolbar, and
+stable **Discover / Installed / Updates / Activity** tabs. Each discovery row
+keeps one primary action; details, source, and package-name copy live in its
+overflow menu. The active market package cannot disable, uninstall, or update
+itself (`dshmarket` and `dsh-market` are both rejected before the package
+runner), while ordinary plugin operations retain the upstream route behavior.
 
 ## Icon provenance
 
@@ -67,15 +81,15 @@ Both commands target Intel (`x86_64`) macOS. `desktop:pack` produces a directly 
 pnpm run desktop:setup
 ```
 
-Run this command on native Windows x64. It produces `apps/desktop/release/DeepSeek-Harness-Setup-0.1.3-win-x64.exe`. Production staging uses a dedicated short directory on Windows CI to keep native MSVC rebuilds below legacy path limits; all release output is written to `apps/desktop/release`.
+Run this command on native Windows x64. It produces `apps/desktop/release/DeepSeek-Harness-Setup-0.1.5-win-x64.exe`. Production staging uses a dedicated short directory on Windows CI to keep native MSVC rebuilds below legacy path limits; all release output is written to `apps/desktop/release`.
 
 The Windows Setup is a one-click, per-user NSIS installer. It needs no administrator elevation, Node.js, pnpm, terminal, browser, or fixed port; it creates desktop and Start menu shortcuts and launches DeepSeek Harness after an interactive install. Uninstall removes the application and shortcuts while preserving Harness and Electron user data.
 
 The application uses an operating-system-assigned loopback port and does not reserve port 65000.
 
 The current locally verified Intel artifact is
-`DeepSeek-Harness-0.1.3-mac-x64.dmg`, 160,717,590 bytes, SHA-256
-`21127170a7f28fef0646706507cb0f7cc5bddd23f2170de0d32df8f14ff57760`.
+`DeepSeek-Harness-0.1.5-mac-x64.dmg`, 163,338,960 bytes, SHA-256
+`f04df6f48f868384edd1cd855429a2c5f43a059c7e63bd181e09297f38532422`.
 
 ## Packaged verification
 
@@ -89,9 +103,9 @@ For Windows, build the Setup on native Windows and run:
 
 ```powershell
 ./scripts/windows-desktop-setup-smoke.ps1 `
-  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.3-win-x64.exe
+  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.5-win-x64.exe
 ```
 
-The packaged smokes use an external temporary working directory, temporary Electron data, and temporary `DSH_HOME`. They verify the preload bridge, three-column workspace, archived-session manager, settings dialog, random listener, and complete process cleanup after macOS native Quit or Windows window close. Desktop staging additionally requires the immutable market patch, Desktop plugin-runtime provider, `dshmarket` Host and Client artifacts, and packaged pnpm bin. The Windows smoke additionally proves silent install, shortcut creation, real clipboard copy, uninstall cleanup, and data preservation. Native Windows CI builds the Setup, runs this smoke, records SHA-256, and uploads both files.
+The packaged smokes use an external temporary working directory, temporary Electron data, and temporary `DSH_HOME`. The Intel macOS smoke verifies the preload bridge, three-column workspace, exact ordinary and archived Session IDs in the real system clipboard without opening, restoring, deleting, sending, or starting an Agent, session-messenger notification/read/copy behavior, the down-first adaptive reasoning slider and persisted effort, visible Canvas output with the optional character off, compact Plugin Market tabs/search/categories/row geometry, protected self-update, a real ordinary isolated-profile uninstall, random listener, and complete process cleanup after native Quit. Desktop staging additionally requires exactly one `dshmarket@1.10.1`, coherent compact markers in its source, Client bundle, and source map, the Host self-protection marker, immutable Desktop patches, plugin-runtime providers, and packaged pnpm bin. The Windows smoke additionally proves silent install, shortcut creation, real clipboard copy, uninstall cleanup, and data preservation. Native Windows CI builds the Setup, runs this smoke, records SHA-256, and uploads both files.
 
 Local artifacts are unsigned. macOS may require **Open** from Finder's context menu; Windows SmartScreen may require confirmation of the unknown publisher. Removing those prompts requires trusted platform signing credentials.

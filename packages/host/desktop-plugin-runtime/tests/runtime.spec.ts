@@ -1,6 +1,8 @@
 import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
+import * as desktopPluginRuntime from '../src/index.ts'
 import {
   installDesktopPluginServices,
   resolvePackagedPnpmEntry,
@@ -49,6 +51,17 @@ function harness() {
 }
 
 describe('Desktop plugin runtime services', () => {
+  it('keeps its subprocess injection through the real Loader export shape', () => {
+    expect('default' in desktopPluginRuntime).toBe(false)
+
+    const loader = Object.create(Loader.prototype) as Loader
+    const unwrapped = loader.unwrapExports(desktopPluginRuntime) as Record<string, unknown>
+    expect(unwrapped).toBe(desktopPluginRuntime)
+    expect(unwrapped.name).toBe('desktop-plugin-runtime')
+    expect(unwrapped.inject).toEqual(['subprocess'])
+    expect(typeof unwrapped.apply).toBe('function')
+  })
+
   it('resolves the packaged pnpm bin through its supported package root export', () => {
     expect(resolvePackagedPnpmEntry()).toMatch(/\/pnpm\/bin\/pnpm\.mjs$/u)
   })

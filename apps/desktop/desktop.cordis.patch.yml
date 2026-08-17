@@ -6,5 +6,11 @@
       config:
         profile: web
 
+    - id: reasoning-effort
+      name: '@deepseek-ai/dsh-reasoning-effort'
+
+    - id: session-messenger
+      name: '@deepseek-ai/dsh-session-messenger'
+
     - id: dsh-market
       name: 'dshmarket'
