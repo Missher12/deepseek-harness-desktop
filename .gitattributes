@@ -8,6 +8,10 @@
 
 *.pdf binary
 
+# Unified diff syntax intentionally uses a leading context marker before the
+# patched line's own indentation, so nested patch files need tailored checks.
+patches/*.patch whitespace=-blank-at-eol,-space-before-tab
+
 # Pairing records are generated from the three confirmed owner-blob pairs.
 # The worktree-local installer registers the fail-closed driver command.
 *.i18n.yaml merge=dsh-translation-pairing

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
+import { Script } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '..')
@@ -12,6 +13,11 @@ function text(relativePath: string): string {
 }
 
 describe('patched dshmarket artifacts', () => {
+  it('ships a syntactically valid browser bundle', () => {
+    const bundle = text('client/client.js')
+    expect(() => new Script(bundle, { filename: 'dshmarket/client/client.js' })).not.toThrow()
+  })
+
   it('keeps source, generated Client bundle, and source map semantically coherent', () => {
     const source = text('src/client/MarketSection.tsx')
     const bundle = text('client/client.js')
@@ -47,7 +53,7 @@ describe('patched dshmarket artifacts', () => {
 
   it('retains the exact npm integrity while applying a locked pnpm patch hash', () => {
     const lockfile = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8')
-    expect(lockfile).toContain('dshmarket@1.10.1: d43c931eb03ef635afccec27d3cf6365f7015029af1d69b40ebda44169ee83d5')
+    expect(lockfile).toContain('dshmarket@1.10.1: 6714fcb93eb31b3ff40cd9cd4532f47e854da606484e5e71de82d19586f41548')
     expect(lockfile).toContain('integrity: sha512-8AWM8RT2tttJsozTBm6mAfI+cNpCIbeBdP9IoydJdHlH/+x72aNqmv3AWdbNfKDDwkkqM2Ce/XRDhha9HG0Q5Q==')
   })
 })
