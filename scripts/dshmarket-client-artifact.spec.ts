@@ -33,9 +33,21 @@ describe('patched dshmarket artifacts', () => {
     }
   })
 
+  it('ships the read-only active-market state in source, bundle, and source map', () => {
+    const source = text('src/client/MarketSection.tsx')
+    const bundle = text('client/client.js')
+    const sourceMap = text('client/client.js.map')
+
+    for (const artifact of [source, bundle, sourceMap]) {
+      expect(artifact).toContain('data-dshmarket-protected-package')
+      expect(artifact).toContain('managedByDesktop')
+      expect(artifact).toContain('canUpdatePackage')
+    }
+  })
+
   it('retains the exact npm integrity while applying a locked pnpm patch hash', () => {
     const lockfile = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8')
-    expect(lockfile).toContain('dshmarket@1.10.1: 243d2d50d32d816f00d8238f8c9b35b323571b18b984d91d6b851d59cf2531d2')
+    expect(lockfile).toContain('dshmarket@1.10.1: d43c931eb03ef635afccec27d3cf6365f7015029af1d69b40ebda44169ee83d5')
     expect(lockfile).toContain('integrity: sha512-8AWM8RT2tttJsozTBm6mAfI+cNpCIbeBdP9IoydJdHlH/+x72aNqmv3AWdbNfKDDwkkqM2Ce/XRDhha9HG0Q5Q==')
   })
 })

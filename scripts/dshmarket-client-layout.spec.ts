@@ -41,4 +41,28 @@ describe('Harness-native dshmarket presentation', () => {
       expect(source).toContain(callback)
     }
   })
+
+  it('keeps both active-market aliases read-only even when updateAvailable is true', async () => {
+    const marketData = await import('../apps/desktop/node_modules/dshmarket/src/client/market-data.ts')
+    expect(marketData).toHaveProperty('isMarketPackage')
+    expect(marketData).toHaveProperty('canUpdatePackage')
+    const isMarketPackage = marketData.isMarketPackage as (name: string) => boolean
+    const canUpdatePackage = marketData.canUpdatePackage as (
+      name: string,
+      status: { updateAvailable?: boolean } | undefined,
+    ) => boolean
+    const available = { updateAvailable: true }
+
+    for (const alias of ['dshmarket', 'dsh-market']) {
+      expect(isMarketPackage(alias)).toBe(true)
+      expect(canUpdatePackage(alias, available)).toBe(false)
+    }
+    expect(isMarketPackage('dsh-loop')).toBe(false)
+    expect(canUpdatePackage('dsh-loop', available)).toBe(true)
+
+    expect(source.match(/canUpdatePackage\(name, updates\[name\]\)/g)).toHaveLength(2)
+    expect(source).toContain('canUpdatePackage(name, status)')
+    expect(source).toContain('data-dshmarket-protected-package')
+    expect(locales).toContain('managedByDesktop:')
+  })
 })
