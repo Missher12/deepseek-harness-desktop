@@ -6,8 +6,16 @@
     "types": ["node"]
   },
   "include": ["src"],
+  "exclude": ["src/client/index.ts"],
   "references": [
+    { "path": "../../api/remotes/tsconfig.client.json" },
     { "path": "../../../vendor/cordis" },
+    { "path": "../../host/webserver" },
+    { "path": "../../client/locale" },
+    { "path": "../../client/runtime" },
+    { "path": "../../client/ui-primitives" },
+    { "path": "../../client/ui-sidebar" },
+    { "path": "../../client/ui-slots" },
     { "path": "../../llm/llm" },
     { "path": "../../core/session" },
     { "path": "../../core/agent" },

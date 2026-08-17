@@ -1,5 +1,6 @@
 /** DeepSeek Harness cross-session messaging plugin. */
 import type { Context } from '@deepseek-ai/cordis'
+import { installSessionMessengerHttp } from './http.ts'
 import { activateSessionMessenger } from './tools.ts'
 
 export const name = 'session-messenger'
@@ -10,13 +11,17 @@ export const inject = [
   'typert',
   'agents',
   'sessionPersistence',
+  'webServer',
 ]
 
 export async function apply(ctx: Context): Promise<void> {
-  await activateSessionMessenger(ctx)
+  const coordinator = await activateSessionMessenger(ctx)
+  installSessionMessengerHttp(ctx, coordinator)
 }
 
 export * from './coordinator.ts'
+export * from './events.ts'
+export * from './http.ts'
 export * from './spec.ts'
 export * from './target-resolver.ts'
 export * from './tools.ts'
