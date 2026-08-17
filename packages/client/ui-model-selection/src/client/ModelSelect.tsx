@@ -23,11 +23,18 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
-import { EffortSlider, effortDisplayName, type EffortChoice } from './EffortSlider.tsx'
 import css from './ModelSelect.module.css'
 
 /** Which pane the dropdown shows: the two-row root or one drilled-in list. */
 type Pane = 'root' | 'model' | 'effort'
+
+/** One dynamic effort row; undefined means preserve the provider default. */
+interface EffortChoice {
+  key: string
+  effort: string | undefined
+  label: string
+  description?: string
+}
 
 /**
  * Render the composer model seat.
@@ -79,12 +86,7 @@ export function ModelSelect(
     ? undefined
     : effectiveEffort === undefined
       ? t('effort.providerDefault')
-      : (() => {
-        const level = reasoning.efforts.find(level => level.id === effectiveEffort)
-        return level === undefined
-          ? effectiveEffort
-          : effortDisplayName({ effort: level.id, label: level.name })
-      })()
+      : reasoning.efforts.find(level => level.id === effectiveEffort)?.name ?? effectiveEffort
   const effortChoices = useMemo<readonly EffortChoice[]>(() => reasoning === undefined
     ? []
     : [
@@ -242,7 +244,7 @@ export function ModelSelect(
       {open && (
         <div
           id={`${id}-menu`}
-          className={clsx(css.menu, pane === 'effort' && css.effortMenu)}
+          className={css.menu}
           role="menu"
           aria-label={t('menu.aria')}
           aria-busy={state.status === 'loading' || busy}
@@ -333,17 +335,28 @@ export function ModelSelect(
               )}
               {effortChoices.length === 0
                 ? <div className={css.empty}>{t('empty.efforts')}</div>
-                : (
-                  <EffortSlider
-                    label={t('menu.effort')}
-                    fasterLabel={t('effort.faster')}
-                    smarterLabel={t('effort.smarter')}
-                    choices={effortChoices}
-                    value={effectiveEffort}
+                : effortChoices.map(level => (
+                  <button
+                    ref={itemRef()}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={effectiveEffort === level.effort}
+                    className={clsx(css.option, effectiveEffort === level.effort && css.selected)}
+                    key={level.key}
                     disabled={busy}
-                    onCommit={chooseEffort}
-                  />
-                )}
+                    onClick={() => { chooseEffort(level.effort) }}
+                  >
+                    <span className={css.optionCopy}>
+                      <span className={css.modelName}>{level.label}</span>
+                      {level.description !== undefined && (
+                        <span className={css.description}>{level.description}</span>
+                      )}
+                    </span>
+                    <span className={css.check}>
+                      {effectiveEffort === level.effort ? <IconCheckOutline16 /> : null}
+                    </span>
+                  </button>
+                ))}
             </>
           )}
         </div>

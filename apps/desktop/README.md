@@ -13,14 +13,9 @@ and archived-session cards expose the same action without restoring or
 deleting the session. The app copies the exact stable id and reports whether
 the host clipboard accepted the write.
 
-The composer model control includes a Claude Code-inspired reasoning-effort
-landscape inside the existing model menu. Its wide DeepSeek-blue WebGL energy
-field, Faster/Smarter direction labels, thin track, and luminous selected stop
-remain part of the native Harness surface instead of appearing as a separate
-skin. It renders only stops advertised by the selected model, preserves the
-underlying effort id, and presents the exact `max` id as **ULTRACODE**. Pointer,
-arrow-key, Home, and End interaction share the same validated selection path;
-reduced-motion and WebGL-unavailable environments retain a static fallback.
+The composer model control keeps the native Harness effort list. It displays
+only the exact rows advertised by the selected model and submits the original
+effort identifier through the existing validated selection path.
 
 The Desktop composition also pins `dshmarket@1.10.1` as an in-app **Plugin
 Market** settings section. Search, install, update, uninstall, grouping, and
@@ -67,15 +62,15 @@ Both commands target Intel (`x86_64`) macOS. `desktop:pack` produces a directly 
 pnpm run desktop:setup
 ```
 
-Run this command on native Windows x64. It produces `apps/desktop/release/DeepSeek-Harness-Setup-0.1.3-win-x64.exe`. Production staging uses a dedicated short directory on Windows CI to keep native MSVC rebuilds below legacy path limits; all release output is written to `apps/desktop/release`.
+Run this command on native Windows x64. It produces `apps/desktop/release/DeepSeek-Harness-Setup-0.1.4-win-x64.exe`. Production staging uses a dedicated short directory on Windows CI to keep native MSVC rebuilds below legacy path limits; all release output is written to `apps/desktop/release`.
 
 The Windows Setup is a one-click, per-user NSIS installer. It needs no administrator elevation, Node.js, pnpm, terminal, browser, or fixed port; it creates desktop and Start menu shortcuts and launches DeepSeek Harness after an interactive install. Uninstall removes the application and shortcuts while preserving Harness and Electron user data.
 
 The application uses an operating-system-assigned loopback port and does not reserve port 65000.
 
 The current locally verified Intel artifact is
-`DeepSeek-Harness-0.1.3-mac-x64.dmg`, 160,717,590 bytes, SHA-256
-`21127170a7f28fef0646706507cb0f7cc5bddd23f2170de0d32df8f14ff57760`.
+`DeepSeek-Harness-0.1.4-mac-x64.dmg`, 160,692,416 bytes, SHA-256
+`a1b79014e040634c44b24dc4b91ff3f7c00374e92ab53a27dfb6705fabae5865`.
 
 ## Packaged verification
 
@@ -89,7 +84,7 @@ For Windows, build the Setup on native Windows and run:
 
 ```powershell
 ./scripts/windows-desktop-setup-smoke.ps1 `
-  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.3-win-x64.exe
+  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.4-win-x64.exe
 ```
 
 The packaged smokes use an external temporary working directory, temporary Electron data, and temporary `DSH_HOME`. They verify the preload bridge, three-column workspace, archived-session manager, settings dialog, random listener, and complete process cleanup after macOS native Quit or Windows window close. Desktop staging additionally requires the immutable market patch, Desktop plugin-runtime provider, `dshmarket` Host and Client artifacts, and packaged pnpm bin. The Windows smoke additionally proves silent install, shortcut creation, real clipboard copy, uninstall cleanup, and data preservation. Native Windows CI builds the Setup, runs this smoke, records SHA-256, and uploads both files.
