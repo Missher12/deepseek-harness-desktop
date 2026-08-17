@@ -106,6 +106,12 @@ export class SessionMessengerEventHub {
     return { lastEventId: this.lastEventId, receipts }
   }
 
+  /** Whether the bounded ring still covers every event newer than this cursor. */
+  canReplayAfter(lastSeenId: number): boolean {
+    const oldest = this.ring[0]
+    return oldest === undefined || lastSeenId >= oldest.id - 1
+  }
+
   /**
    * Mark only receipt-bound replies addressed to the claimed session as read.
    * Returns the number newly acknowledged; receipt storage remains untouched.

@@ -61,13 +61,17 @@ declare global {
 
 /** Injectable transport face used by the store and browser tests. */
 export interface MessengerTransport {
-  snapshot(): Promise<MessengerSnapshot>
+  snapshot(signal: AbortSignal): Promise<MessengerSnapshot>
   events(
     afterId: number,
     listener: (event: MessengerEvent) => void,
     signal: AbortSignal,
   ): Promise<void>
-  acknowledge(sessionId: SessionId, deliveryIds: readonly string[]): Promise<number>
+  acknowledge(
+    sessionId: SessionId,
+    deliveryIds: readonly string[],
+    signal: AbortSignal,
+  ): Promise<number>
 }
 
 /** Immutable external-store snapshot. */
@@ -93,6 +97,19 @@ const RECEIPT_STATUSES = new Set<NotificationReceipt['status']>([
 
 const MAX_STREAM_FRAME_BYTES = 64 * 1024
 const RECONNECT_DELAY_MS = 1_000
+
+function reconnectDelay(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise((resolve) => {
+    const finish = (): void => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', finish)
+      resolve()
+    }
+    const timer = setTimeout(finish, RECONNECT_DELAY_MS)
+    signal.addEventListener('abort', finish, { once: true })
+  })
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -282,12 +299,13 @@ export function createHttpMessengerTransport(
   const bootstrap = checkedBootstrap(rawBootstrap)
   const capabilityHeaders = { [bootstrap.capabilityHeader]: bootstrap.capability }
   return {
-    async snapshot(): Promise<MessengerSnapshot> {
+    async snapshot(signal): Promise<MessengerSnapshot> {
       const response = await fetcher(bootstrap.snapshotPath, {
         method: 'POST',
         headers: capabilityHeaders,
         credentials: 'same-origin',
         cache: 'no-store',
+        signal,
       })
       return parseSnapshot(await responseJson(response, 'session messenger snapshot'))
     },
@@ -307,13 +325,14 @@ export function createHttpMessengerTransport(
       if (response.body === null) throw new Error('session messenger event stream is unavailable')
       await readEventStream(response.body, listener, signal)
     },
-    async acknowledge(sessionId, deliveryIds): Promise<number> {
+    async acknowledge(sessionId, deliveryIds, signal): Promise<number> {
       const response = await fetcher(bootstrap.ackPath, {
         method: 'POST',
         headers: { ...capabilityHeaders, 'content-type': 'application/json' },
         credentials: 'same-origin',
         cache: 'no-store',
         body: acknowledgementBody(sessionId, deliveryIds),
+        signal,
       })
       const value = await responseJson(response, 'session messenger acknowledgement')
       if (!isRecord(value) || !Number.isSafeInteger(value.acknowledged) || Number(value.acknowledged) < 0) {
@@ -342,13 +361,22 @@ export class MessengerStore {
     connectionError: null,
   }
   private readonly listeners = new Set<() => void>()
-  private stopActive: (() => void) | undefined
+  private readonly lifetimeController = new AbortController()
+  private readonly acknowledgementTasks = new Set<Promise<number>>()
+  private active: {
+    readonly controller: AbortController
+    readonly done: Promise<void>
+    readonly stop: () => Promise<void>
+  } | undefined
+  private disposed = false
+  private disposalTask: Promise<void> | undefined
 
   constructor(private readonly transport: MessengerTransport = unavailableTransport()) {}
 
   readonly getSnapshot = (): MessengerStoreSnapshot => this.state
 
   readonly subscribe = (listener: () => void): (() => void) => {
+    if (this.disposed) return () => {}
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
@@ -366,6 +394,9 @@ export class MessengerStore {
   /** Apply only a newer monotonic stream event. */
   accept(event: MessengerEvent): void {
     if (event.id <= this.state.lastEventId) return
+    if (event.id !== this.state.lastEventId + 1) {
+      throw new Error('session messenger event cursor gap')
+    }
     const receipts = new Map(this.state.receipts)
     if (event.kind === 'receipt') {
       receipts.set(event.receipt.deliveryId, event.receipt)
@@ -383,10 +414,21 @@ export class MessengerStore {
   }
 
   /** Ack current reply notices after the Host accepts the request; keep metadata locally. */
-  async acknowledge(sessionId: SessionId, deliveryIds: readonly string[]): Promise<number> {
+  acknowledge(sessionId: SessionId, deliveryIds: readonly string[]): Promise<number> {
+    const task = this.acknowledgeNow(sessionId, deliveryIds)
+    this.acknowledgementTasks.add(task)
+    const forget = (): void => { this.acknowledgementTasks.delete(task) }
+    void task.then(forget, forget)
+    return task
+  }
+
+  private async acknowledgeNow(sessionId: SessionId, deliveryIds: readonly string[]): Promise<number> {
+    const signal = this.lifetimeController.signal
+    signal.throwIfAborted()
     let total = 0
     for (const batch of acknowledgementBatches(sessionId, deliveryIds)) {
-      const count = await this.transport.acknowledge(sessionId, batch)
+      const count = await this.transport.acknowledge(sessionId, batch, signal)
+      signal.throwIfAborted()
       if (count !== batch.length) {
         throw new Error('session messenger acknowledgement mismatch')
       }
@@ -403,28 +445,38 @@ export class MessengerStore {
     return total
   }
 
-  /** Start snapshot-first reconnect cycles; returns an idempotent abort disposer. */
-  start(): () => void {
-    this.stopActive?.()
+  /** Start snapshot-first reconnect cycles after the previous generation reaches quiescence. */
+  async start(): Promise<() => Promise<void>> {
+    if (this.hasBeenDisposed()) return () => Promise.resolve()
+    await this.active?.stop()
+    if (this.hasBeenDisposed()) return () => Promise.resolve()
     const controller = new AbortController()
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const active = (): boolean => !controller.signal.aborted
-    const stop = (): void => {
-      if (!active()) return
-      controller.abort()
-      if (timer !== undefined) clearTimeout(timer)
-      if (this.stopActive === stop) this.stopActive = undefined
-    }
-    this.stopActive = stop
     this.publish({ ...this.state, phase: 'connecting', connectionError: null })
+    const done = this.run(controller)
+    let stopping = false
+    const stop = async (): Promise<void> => {
+      if (!stopping) {
+        stopping = true
+        controller.abort()
+      }
+      await done
+      if (this.active?.controller === controller) this.active = undefined
+    }
+    this.active = { controller, done, stop }
+    return stop
+  }
 
-    const cycle = async (): Promise<void> => {
-      if (!active()) return
+  private async run(controller: AbortController): Promise<void> {
+    const signal = controller.signal
+    const active = (): boolean => !this.disposed && !signal.aborted
+    while (active()) {
       try {
-        const snapshot = await this.transport.snapshot()
+        const snapshot = await this.transport.snapshot(signal)
         if (!active()) return
         this.replaceSnapshot(snapshot)
-        await this.transport.events(snapshot.lastEventId, (event) => { this.accept(event) }, controller.signal)
+        await this.transport.events(snapshot.lastEventId, (event) => {
+          if (active()) this.accept(event)
+        }, signal)
       } catch (error: unknown) {
         if (!active()) return
         this.publish({
@@ -433,21 +485,31 @@ export class MessengerStore {
           connectionError: error instanceof Error ? error.message : String(error),
         })
       }
-      if (active()) timer = setTimeout(() => { void cycle() }, RECONNECT_DELAY_MS)
+      if (active()) await reconnectDelay(signal)
     }
-    void cycle()
-    return stop
   }
 
-  /** Stop network work and release subscribers. */
-  dispose(): void {
-    this.stopActive?.()
+  /** Abort and join every admitted network operation; safe and idempotent. */
+  dispose(): Promise<void> {
+    if (this.disposalTask !== undefined) return this.disposalTask
+    this.disposed = true
     this.listeners.clear()
+    this.lifetimeController.abort()
+    const active = this.active
+    return this.disposalTask = (async () => {
+      await active?.stop()
+      await Promise.allSettled([...this.acknowledgementTasks])
+    })()
   }
 
   private publish(next: MessengerStoreSnapshot): void {
+    if (this.disposed) return
     this.state = next
     for (const listener of [...this.listeners]) listener()
+  }
+
+  private hasBeenDisposed(): boolean {
+    return this.disposed
   }
 }
 

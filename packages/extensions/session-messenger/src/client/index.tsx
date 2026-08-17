@@ -36,7 +36,7 @@ export function apply(ctx: ClientContext): void {
   const store = bootstrap === undefined
     ? new MessengerStore()
     : new MessengerStore(createHttpMessengerTransport(bootstrap))
-  ctx.effect(() => () => { store.dispose() }, 'session-messenger: browser notification store')
+  ctx.effect(() => async () => { await store.dispose() }, 'session-messenger: browser notification store')
   if (bootstrap !== undefined) {
     ctx.effect(() => store.start(), 'session-messenger: browser metadata stream')
   }

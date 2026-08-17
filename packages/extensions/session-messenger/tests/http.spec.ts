@@ -1,11 +1,11 @@
 import { EventEmitter } from 'node:events'
-import type { IncomingMessage, ServerResponse } from 'node:http'
-import { Readable } from 'node:stream'
+import { IncomingMessage, type ServerResponse } from 'node:http'
+import { Socket } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import type { WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import type { MessageId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   ACK_PATH,
   EVENTS_PATH,
@@ -24,7 +24,7 @@ import {
   type ReceiptTransitionListener,
 } from '../src/events.ts'
 import { DeliveryId, ReplyToken, type Receipt, type ReceiptTransition } from '../src/types.ts'
-import { inject as messengerInject } from '../src/index.ts'
+import { apply as applyMessenger, inject as messengerInject } from '../src/index.ts'
 
 const PORT = 50_288
 const AUTHORITY = `127.0.0.1:${String(PORT)}`
@@ -127,9 +127,15 @@ function request(
   method: string,
   headers: Record<string, string>,
   body?: string | Buffer,
+  rawHeaders: readonly string[] = Object.entries(headers).flatMap(([name, value]) => [name, value]),
 ): IncomingMessage {
-  const req = Readable.from(body === undefined ? [] : [Buffer.isBuffer(body) ? body : Buffer.from(body)]) as unknown as IncomingMessage
-  Object.assign(req, { url: path, method, headers })
+  const req = new IncomingMessage(new Socket())
+  req.url = path
+  req.method = method
+  req.headers = headers
+  req.rawHeaders = [...rawHeaders]
+  if (body !== undefined) req.push(Buffer.isBuffer(body) ? body : Buffer.from(body))
+  req.push(null)
   return req
 }
 
@@ -228,6 +234,35 @@ describe('session messenger HTTP trust fence', () => {
     surface.dispose()
   })
 
+  it('rejects duplicate security headers even when normalized headers contain the trusted value', async () => {
+    const source = new FakeSource()
+    const surface = createSessionMessengerHttpSurface({ port: PORT, capability: CAPABILITY, source })
+    const headers = validHeaders(true)
+    const trustedRaw = Object.entries(headers).flatMap(([name, value]) => [name, value])
+    const ambiguous = [
+      [...trustedRaw, 'Host', 'evil.example'],
+      [...trustedRaw, 'Origin', 'http://evil.example'],
+      [...trustedRaw, MESSENGER_CAPABILITY_HEADER, 'evil-capability'],
+      [],
+    ]
+
+    for (const path of [SNAPSHOT_PATH, ACK_PATH, EVENTS_PATH]) {
+      for (const rawHeaders of ambiguous) {
+        const output = response()
+        const body = path === ACK_PATH
+          ? JSON.stringify({ sessionId: 'target-session', deliveryIds: [] })
+          : undefined
+        await route(surface, path).handler(
+          request(path, 'POST', headers, body, rawHeaders),
+          output.res,
+        )
+        expect(output.state.status, `${path} accepted ${JSON.stringify(rawHeaders)}`).toBe(403)
+        expect(Object.keys(output.state.headers)).not.toContain('access-control-allow-origin')
+      }
+    }
+    surface.dispose()
+  })
+
   it('bounds acknowledgement JSON to 4 KiB before changing notification state', async () => {
     const incoming = receipt('reply', 'delivered', { replyToDeliveryId: DeliveryId('original') })
     const source = new FakeSource([incoming])
@@ -293,6 +328,32 @@ describe('session messenger metadata event stream', () => {
     expect(Object.keys(output.state.headers)).not.toContain('access-control-allow-origin')
     surface.dispose()
     expect(output.state.ended).toBe(true)
+  })
+
+  it('returns 409 when the requested cursor predates the bounded replay ring', async () => {
+    const source = new FakeSource()
+    const surface = createSessionMessengerHttpSurface({ port: PORT, capability: CAPABILITY, source })
+    for (let index = 1; index <= 257; index += 1) {
+      source.emit(receipt(`receipt-${String(index)}`))
+    }
+
+    const stale = await invoke(route(surface, EVENTS_PATH), {
+      ...validHeaders(),
+      'last-event-id': '0',
+    })
+    expect(stale.status).toBe(409)
+    expect(stale.body).toBe('event replay unavailable')
+    expect(Object.keys(stale.headers)).not.toContain('access-control-allow-origin')
+
+    const replayable = response()
+    await route(surface, EVENTS_PATH).handler(request(EVENTS_PATH, 'POST', {
+      ...validHeaders(),
+      'last-event-id': '1',
+    }), replayable.res)
+    expect(replayable.state.status).toBe(200)
+    expect(replayable.state.body).toContain('id: 2\n')
+    expect(replayable.state.body).toContain('id: 257\n')
+    surface.dispose()
   })
 
   it('removes compacted metadata from snapshots and publishes a metadata-only tombstone', () => {
@@ -394,15 +455,106 @@ describe('session messenger Host registration', () => {
     expect(html).toContain(EVENTS_PATH)
   })
 
+  it('reserves every HTTP and index seat before opening receipts and rolls partial registration back', async () => {
+    vi.useFakeTimers()
+    const cases = ['route', 'index'] as const
+    try {
+      for (const collision of cases) {
+        const routes = new Map<string, WebRoute>()
+        if (collision === 'route') {
+          routes.set(ACK_PATH, { kind: 'exact', path: ACK_PATH, handler: () => undefined })
+        }
+        const taps: Array<(html: string) => string> = []
+        const effects: Array<() => void | Promise<void>> = []
+        const generationValues = new Map<string, unknown>()
+        const open = vi.fn(async () => ({
+          table: () => {
+            const records = new Map<string, unknown>()
+            return {
+              get: (id: string) => records.get(id),
+              entries: () => records.entries(),
+              put: async (id: string, value: unknown) => { records.set(id, value) },
+              delete: async (id: string) => records.delete(id),
+            }
+          },
+          close: vi.fn(async () => undefined),
+        }))
+        const registerTool = vi.fn(() => vi.fn())
+        const on = vi.fn(() => vi.fn())
+        const ctx = {
+          webServer: {
+            port: PORT,
+            generationValue<T>(key: string, initialize: () => T): T {
+              if (generationValues.has(key)) return generationValues.get(key) as T
+              const value = initialize()
+              generationValues.set(key, value)
+              return value
+            },
+            register(candidate: WebRoute) {
+              if (routes.has(candidate.path)) throw new Error(`collision: ${candidate.path}`)
+              routes.set(candidate.path, candidate)
+              return () => { routes.delete(candidate.path) }
+            },
+            tapIndex(tap: (html: string) => string) {
+              if (collision === 'index') throw new Error('index tap collision')
+              taps.push(tap)
+              return () => { taps.splice(taps.indexOf(tap), 1) }
+            },
+          },
+          storageDomain: { open },
+          tools: { register: registerTool },
+          workspaceRegistry: { archivedSessionIds: [] },
+          sessionPersistence: { inspect: vi.fn(), list: vi.fn(async () => []) },
+          agents: { get: vi.fn(), isOwnedBy: vi.fn(() => false) },
+          typert: { lookups: { get: vi.fn() } },
+          logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
+          on,
+          effect(setup: () => unknown) {
+            const result = setup()
+            const admitted: Array<() => void | Promise<void>> = []
+            try {
+              if (typeof result === 'function') admitted.push(result as () => void | Promise<void>)
+              else if (typeof (result as { [Symbol.iterator]?: unknown })?.[Symbol.iterator] === 'function') {
+                for (const dispose of result as Iterable<() => void | Promise<void>>) admitted.push(dispose)
+              }
+            } catch (error: unknown) {
+              for (const dispose of admitted.reverse()) void dispose()
+              throw error
+            }
+            effects.push(...admitted)
+          },
+        }
+
+        await expect(applyMessenger(ctx as never)).rejects.toThrow(/collision/)
+        expect(open).not.toHaveBeenCalled()
+        expect(registerTool).not.toHaveBeenCalled()
+        expect(on).not.toHaveBeenCalled()
+        expect([...routes.keys()]).toEqual(collision === 'route' ? [ACK_PATH] : [])
+        expect(taps).toHaveLength(0)
+        expect(vi.getTimerCount()).toBe(0)
+        await Promise.allSettled(effects.reverse().map(dispose => Promise.resolve(dispose())))
+      }
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('registers exactly three routes plus one index tap and disposes only its own surfaces', async () => {
     const source = new FakeSource()
     const ctx = new Context()
     const routes: WebRoute[] = []
     const taps: Array<(html: string) => string> = []
+    const generationValues = new Map<string, unknown>()
     const unrelated: WebRoute = { kind: 'exact', path: '/unrelated', handler: () => undefined }
     routes.push(unrelated)
     ctx.provide('webServer', {
       port: PORT,
+      generationValue<T>(key: string, initialize: () => T): T {
+        if (generationValues.has(key)) return generationValues.get(key) as T
+        const value = initialize()
+        generationValues.set(key, value)
+        return value
+      },
       register(candidate: WebRoute) {
         routes.push(candidate)
         return () => { routes.splice(routes.indexOf(candidate), 1) }
@@ -430,5 +582,58 @@ describe('session messenger Host registration', () => {
     expect(routes).toEqual([unrelated])
     expect(taps).toHaveLength(0)
     expect(source.listenerCount()).toBe(0)
+  })
+
+  it('keeps the page capability valid across Host disable and re-enable on the same WebServer', async () => {
+    const ctx = new Context()
+    const routes = new Map<string, WebRoute>()
+    const taps: Array<(html: string) => string> = []
+    const generationValues = new Map<string, unknown>()
+    const webServer = {
+      port: PORT,
+      generationValue<T>(key: string, initialize: () => T): T {
+        if (generationValues.has(key)) return generationValues.get(key) as T
+        const value = initialize()
+        generationValues.set(key, value)
+        return value
+      },
+      register(candidate: WebRoute) {
+        if (routes.has(candidate.path)) throw new Error(`duplicate ${candidate.path}`)
+        routes.set(candidate.path, candidate)
+        return () => { routes.delete(candidate.path) }
+      },
+      tapIndex(tap: (html: string) => string) {
+        taps.push(tap)
+        return () => { taps.splice(taps.indexOf(tap), 1) }
+      },
+    }
+    ctx.provide('webServer', webServer as WebServer)
+    const mount = async () => {
+      const fiber = ctx.plugin({
+        inject: ['webServer'],
+        apply(httpCtx: Context) { installSessionMessengerHttp(httpCtx, new FakeSource()) },
+      })
+      await fiber.await()
+      const html = taps[0]?.('<html><head></head></html>') ?? ''
+      const capability = /"capability":"([A-Za-z0-9_-]+)"/u.exec(html)?.[1]
+      if (capability === undefined) throw new Error('missing capability bootstrap')
+      return { fiber, capability }
+    }
+
+    const first = await mount()
+    await first.fiber.dispose()
+    expect(routes.size).toBe(0)
+    expect(taps).toHaveLength(0)
+
+    const second = await mount()
+    const headers = {
+      host: AUTHORITY,
+      origin: ORIGIN,
+      [MESSENGER_CAPABILITY_HEADER]: first.capability,
+    }
+    const state = await invoke(routes.get(SNAPSHOT_PATH)!, headers)
+    expect(second.capability).toBe(first.capability)
+    expect(state.status).toBe(200)
+    await second.fiber.dispose()
   })
 })

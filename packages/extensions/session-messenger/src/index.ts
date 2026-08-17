@@ -15,8 +15,9 @@ export const inject = [
 ]
 
 export async function apply(ctx: Context): Promise<void> {
+  const http = installSessionMessengerHttp(ctx)
   const coordinator = await activateSessionMessenger(ctx)
-  installSessionMessengerHttp(ctx, coordinator)
+  http.bind(coordinator)
 }
 
 export * from './coordinator.ts'

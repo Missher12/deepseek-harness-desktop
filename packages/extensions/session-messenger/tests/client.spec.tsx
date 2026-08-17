@@ -119,6 +119,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   cleanup()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -236,7 +237,9 @@ describe('MessengerStatus', () => {
     expect(screen.getByText('1 unread')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Mark read' }))
-    await waitFor(() => { expect(acknowledge).toHaveBeenCalledWith(CURRENT, ['reply']) })
+    await waitFor(() => {
+      expect(acknowledge).toHaveBeenCalledWith(CURRENT, ['reply'], expect.any(AbortSignal))
+    })
     await waitFor(() => { expect(screen.getByText('0 unread')).toBeTruthy() })
     expect(store.getSnapshot().receipts.get('reply')).toMatchObject({
       deliveryId: 'reply',
@@ -341,22 +344,25 @@ describe('session messenger streaming-fetch transport', () => {
     })
     const transport = createHttpMessengerTransport(window.__DSH_SESSION_MESSENGER__, fetcher)
 
-    expect(await transport.snapshot()).toEqual(snapshot([], 7))
+    const signal = new AbortController().signal
+    expect(await transport.snapshot(signal)).toEqual(snapshot([], 7))
     const received: MessengerEvent[] = []
     await transport.events(7, (event) => { received.push(event) }, new AbortController().signal)
     expect(received).toEqual([event])
-    expect(await transport.acknowledge(CURRENT, ['streamed'])).toBe(1)
+    expect(await transport.acknowledge(CURRENT, ['streamed'], signal)).toBe(1)
 
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual([SNAPSHOT_PATH, EVENTS_PATH, ACK_PATH])
     const snapshotInit = fetcher.mock.calls[0]?.[1]
     const eventsInit = fetcher.mock.calls[1]?.[1]
     const ackInit = fetcher.mock.calls[2]?.[1]
     expect(snapshotInit?.method).toBe('POST')
+    expect(snapshotInit?.signal).toBe(signal)
     expect(new Headers(snapshotInit?.headers).get(MESSENGER_CAPABILITY_HEADER)).toBe('browser-capability')
     expect(eventsInit?.method).toBe('POST')
     expect(new Headers(eventsInit?.headers).get(MESSENGER_CAPABILITY_HEADER)).toBe('browser-capability')
     expect(new Headers(eventsInit?.headers).get('last-event-id')).toBe('7')
     expect(ackInit?.method).toBe('POST')
+    expect(ackInit?.signal).toBe(signal)
     expect(new Headers(ackInit?.headers).get(MESSENGER_CAPABILITY_HEADER)).toBe('browser-capability')
     expect(new Headers(ackInit?.headers).get('content-type')).toBe('application/json')
     expect(ackInit?.body).toBe(JSON.stringify({ sessionId: CURRENT, deliveryIds: ['streamed'] }))
@@ -373,6 +379,140 @@ describe('session messenger streaming-fetch transport', () => {
     store.accept({ id: 5, kind: 'receipt', receipt: notification('fresh') })
     expect([...store.getSnapshot().receipts.keys()]).toEqual(['base', 'fresh'])
     expect(store.getSnapshot().lastEventId).toBe(5)
+    expect(() => {
+      store.accept({ id: 7, kind: 'receipt', receipt: notification('gap') })
+    }).toThrow('event cursor gap')
+    expect(store.getSnapshot().lastEventId).toBe(5)
+  })
+
+  it('reconnects snapshot-first after a non-contiguous stream event repairs stale state', async () => {
+    vi.useFakeTimers()
+    const authoritative = snapshot([notification('authoritative')], 6)
+    const snapshotRequest = vi.fn()
+      .mockResolvedValueOnce(snapshot([notification('stale')], 4))
+      .mockResolvedValue(authoritative)
+    let stream = 0
+    const events = vi.fn(async (
+      _afterId: number,
+      listener: (event: MessengerEvent) => void,
+    ) => {
+      stream += 1
+      if (stream === 1) {
+        listener({ id: 6, kind: 'receipt', receipt: notification('gap') })
+      }
+    })
+    const store = new MessengerStore({
+      snapshot: snapshotRequest,
+      events,
+      acknowledge: vi.fn(async () => 0),
+    })
+    const stop = await store.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.getSnapshot().phase).toBe('error')
+
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(snapshotRequest).toHaveBeenCalledTimes(2)
+    expect(events.mock.calls.map(([afterId]) => afterId)).toEqual([4, 6])
+    expect([...store.getSnapshot().receipts.keys()]).toEqual(['authoritative'])
+    await stop()
+  })
+
+  it('aborts a hanging snapshot and reaches quiescence without publishing after disposal', async () => {
+    let observedSignal: AbortSignal | undefined
+    let release!: () => void
+    const snapshotRequest = vi.fn((signal?: AbortSignal) => new Promise<MessengerSnapshot>((resolve, reject) => {
+      observedSignal = signal
+      release = () => { resolve(snapshot([notification('late')], 1)) }
+      signal?.addEventListener('abort', () => { reject(new Error('snapshot aborted')) }, { once: true })
+    }))
+    const store = new MessengerStore({
+      snapshot: snapshotRequest,
+      events: vi.fn(),
+      acknowledge: vi.fn(async () => 0),
+    })
+    await store.start()
+    await Promise.resolve()
+
+    const disposal = Promise.resolve(store.dispose())
+    release()
+    await disposal
+
+    expect(observedSignal).toBeInstanceOf(AbortSignal)
+    expect(observedSignal?.aborted).toBe(true)
+    expect(store.getSnapshot().receipts.size).toBe(0)
+    expect(store.getSnapshot().phase).not.toBe('connected')
+  })
+
+  it('aborts a hanging acknowledgement and never applies its late result after disposal', async () => {
+    let observedSignal: AbortSignal | undefined
+    let release!: () => void
+    const acknowledge = vi.fn((
+      _sessionId: SessionId,
+      _deliveryIds: readonly string[],
+      signal?: AbortSignal,
+    ) => new Promise<number>((resolve, reject) => {
+      observedSignal = signal
+      release = () => { resolve(1) }
+      signal?.addEventListener('abort', () => { reject(new Error('acknowledgement aborted')) }, { once: true })
+    }))
+    const store = new MessengerStore({ snapshot: vi.fn(), events: vi.fn(), acknowledge })
+    store.replaceSnapshot(snapshot([
+      notification('reply', 'delivered', {
+        sourceSessionId: 'other-session' as SessionId,
+        targetSessionId: CURRENT,
+        replyToDeliveryId: 'original',
+      }),
+    ]))
+    const acknowledgement = store.acknowledge(CURRENT, ['reply']).then(
+      () => 'resolved' as const,
+      () => 'rejected' as const,
+    )
+    await Promise.resolve()
+
+    const disposal = Promise.resolve(store.dispose())
+    release()
+    await disposal
+
+    expect(observedSignal).toBeInstanceOf(AbortSignal)
+    expect(observedSignal?.aborted).toBe(true)
+    expect(await acknowledgement).toBe('rejected')
+    expect(store.getSnapshot().receipts.get('reply')?.acknowledged).toBe(false)
+  })
+
+  it('aborts the previous snapshot on restart and ignores its late stale result', async () => {
+    let firstSignal: AbortSignal | undefined
+    let resolveFirst!: (value: MessengerSnapshot) => void
+    const snapshotRequest = vi.fn((signal?: AbortSignal) => {
+      if (snapshotRequest.mock.calls.length === 1) {
+        firstSignal = signal
+        return new Promise<MessengerSnapshot>((resolve) => { resolveFirst = resolve })
+      }
+      return Promise.resolve(snapshot([notification('authoritative')], 2))
+    })
+    const events = vi.fn(async () => undefined)
+    const store = new MessengerStore({
+      snapshot: snapshotRequest,
+      events,
+      acknowledge: vi.fn(async () => 0),
+    })
+    await store.start()
+    await Promise.resolve()
+    let restarted = false
+    const restart = store.start().then((stop) => {
+      restarted = true
+      return stop
+    })
+    await Promise.resolve()
+    expect(restarted).toBe(false)
+    expect(firstSignal).toBeInstanceOf(AbortSignal)
+    expect(firstSignal?.aborted).toBe(true)
+    resolveFirst(snapshot([notification('stale')], 1))
+    const stop = await restart
+
+    expect([...store.getSnapshot().receipts.keys()]).toEqual(['authoritative'])
+    await stop()
+    await store.dispose()
   })
 
   it('applies a replayed removal so snapshots and streams converge', async () => {

@@ -43,6 +43,12 @@ export interface SessionMessengerHttpSurface {
   dispose(): void
 }
 
+/** Routes and bootstrap claimed before durable activation, then bound exactly once. */
+export interface SessionMessengerHttpReservation {
+  bind(source: ReceiptEventSource): SessionMessengerHttpSurface
+  dispose(): Promise<void>
+}
+
 interface AckBody {
   readonly sessionId: SessionId
   readonly deliveryIds: readonly DeliveryId[]
@@ -66,6 +72,19 @@ export function createSessionMessengerCapability(): string {
 function header(headers: IncomingHttpHeaders, name: string): string | undefined {
   const value = headers[name]
   return typeof value === 'string' ? value : undefined
+}
+
+/** Read one security-sensitive header only when the wire contains it exactly once. */
+function exactWireHeader(req: IncomingMessage, name: string): string | undefined {
+  const wanted = name.toLowerCase()
+  let match: string | undefined
+  let count = 0
+  for (let index = 0; index + 1 < req.rawHeaders.length; index += 2) {
+    if (req.rawHeaders[index]?.toLowerCase() !== wanted) continue
+    count += 1
+    match = req.rawHeaders[index + 1]
+  }
+  return count === 1 ? match : undefined
 }
 
 /** Constant-time secret comparison after an exact byte-length check. */
@@ -181,10 +200,10 @@ export function createSessionMessengerHttpSurface(
   let disposed = false
 
   const trusted = (req: IncomingMessage): boolean =>
-    header(req.headers, 'host') === authority
-    && header(req.headers, 'origin') === origin
+    exactWireHeader(req, 'host') === authority
+    && exactWireHeader(req, 'origin') === origin
     && matchesCapability(
-      header(req.headers, MESSENGER_CAPABILITY_HEADER),
+      exactWireHeader(req, MESSENGER_CAPABILITY_HEADER),
       options.capability,
     )
 
@@ -246,6 +265,10 @@ export function createSessionMessengerHttpSurface(
       }
       if (connections.size >= MAX_EVENT_CLIENTS) {
         text(res, 503, 'too many event streams')
+        return
+      }
+      if (!hub.canReplayAfter(lastEventId)) {
+        text(res, 409, 'event replay unavailable')
         return
       }
 
@@ -320,21 +343,59 @@ export function injectSessionMessengerCapability(html: string, capability: strin
 }
 
 /** Register all three exact routes and the index tap under one Cordis fiber. */
-export function installSessionMessengerHttp(ctx: Context, source: ReceiptEventSource): void {
-  const surface = createSessionMessengerHttpSurface({
-    port: ctx.webServer.port,
-    capability: createSessionMessengerCapability(),
-    source,
-  })
-  ctx.effect(() => () => { surface.dispose() }, 'session-messenger: notification journal')
-  for (const route of surface.routes) {
-    ctx.effect(
-      () => ctx.webServer.register(route),
-      `session-messenger: ${route.path}`,
-    )
-  }
-  ctx.effect(
-    () => ctx.webServer.tapIndex(surface.injectIndex),
-    'session-messenger: browser capability bootstrap',
+export function reserveSessionMessengerHttp(ctx: Context): SessionMessengerHttpReservation {
+  const capability = ctx.webServer.generationValue(
+    'dsh-session-messenger.capability',
+    createSessionMessengerCapability,
   )
+  let surface: SessionMessengerHttpSurface | undefined
+  let disposed = false
+  const paths = [SNAPSHOT_PATH, ACK_PATH, EVENTS_PATH] as const
+  const proxies: WebRoute[] = paths.map((path, index) => ({
+    kind: 'exact',
+    path,
+    handler(req, res) {
+      const route = surface?.routes[index]
+      if (route === undefined) {
+        text(res, 503, 'unavailable')
+        return
+      }
+      return route.handler(req, res)
+    },
+  }))
+  const release = ctx.effect(function* () {
+    // Yield first so reverse disposal unpublishes tap/routes before closing streams.
+    yield () => {
+      disposed = true
+      surface?.dispose()
+      surface = undefined
+    }
+    for (const route of proxies) yield ctx.webServer.register(route)
+    yield ctx.webServer.tapIndex(html => injectSessionMessengerCapability(html, capability))
+  }, 'session-messenger: reserved HTTP surface')
+
+  return {
+    bind(source) {
+      if (disposed) throw new Error('session messenger HTTP reservation is disposed')
+      if (surface !== undefined) throw new Error('session messenger HTTP reservation is already bound')
+      const next = createSessionMessengerHttpSurface({
+        port: ctx.webServer.port,
+        capability,
+        source,
+      })
+      surface = next
+      return next
+    },
+    dispose: release,
+  }
+}
+
+/** Reserve the HTTP surface and optionally bind an already-created source. */
+export function installSessionMessengerHttp(
+  ctx: Context,
+  source?: ReceiptEventSource,
+): SessionMessengerHttpReservation {
+  const reservation = reserveSessionMessengerHttp(ctx)
+  if (source !== undefined) reservation.bind(source)
+  return reservation
 }
