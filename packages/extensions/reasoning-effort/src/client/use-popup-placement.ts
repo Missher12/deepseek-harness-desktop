@@ -28,15 +28,9 @@ const movedFrom = (current: DOMRect, baseline: DOMRect): boolean => (
   || Math.abs(current.bottom - baseline.bottom) > LAYOUT_SHIFT_EPSILON
 )
 
-const clippedRootMargin = (rect: DOMRect): string | null => {
-  const viewportWidth = window.innerWidth
-  const viewportHeight = window.innerHeight
-  const top = Math.min(Math.max(rect.top, 0), viewportHeight)
-  const left = Math.min(Math.max(rect.left, 0), viewportWidth)
-  const right = Math.min(Math.max(rect.right, 0), viewportWidth)
-  const bottom = Math.min(Math.max(rect.bottom, 0), viewportHeight)
-  if (right - left <= LAYOUT_SHIFT_EPSILON || bottom - top <= LAYOUT_SHIFT_EPSILON) return null
-  return `${-top}px ${-(viewportWidth - right)}px ${-(viewportHeight - bottom)}px ${-left}px`
+const fullAnchorRootMargin = (rect: DOMRect): string | null => {
+  if (rect.width <= LAYOUT_SHIFT_EPSILON || rect.height <= LAYOUT_SHIFT_EPSILON) return null
+  return `${-rect.top}px ${-(window.innerWidth - rect.right)}px ${-(window.innerHeight - rect.bottom)}px ${-rect.left}px`
 }
 
 /**
@@ -88,7 +82,7 @@ export function usePopupPlacement(input: UsePopupPlacementInput): PopupPlacement
       layoutObserver?.disconnect()
       layoutObserver = null
       if (typeof IntersectionObserver === 'undefined' || anchor === null) return
-      const rootMargin = clippedRootMargin(anchorRect)
+      const rootMargin = fullAnchorRootMargin(anchorRect)
       if (rootMargin === null) return
 
       const baseline = anchorRect

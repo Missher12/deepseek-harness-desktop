@@ -259,6 +259,10 @@ function installBrowserHarness() {
   }
 }
 
+const fullAnchorRootMargin = (anchor: PlacementRect): string => (
+  `${-anchor.top}px ${-(window.innerWidth - anchor.right)}px ${-(window.innerHeight - anchor.bottom)}px ${-anchor.left}px`
+)
+
 describe('usePopupPlacement', () => {
   it('stays idle after initial measurement and coalesces a burst of geometry events', () => {
     const browser = installBrowserHarness()
@@ -294,6 +298,60 @@ describe('usePopupPlacement', () => {
     expect(browser.frames.size).toBe(1)
     browser.flushNextFrame()
     expect(result.current).toBe(stablePlacement)
+    expect(browser.frames.size).toBe(0)
+    unmount()
+  })
+
+  it.each([
+    ['left', -20, 100, 100, 40],
+    ['top', 100, -20, 100, 40],
+    ['right', window.innerWidth - 80, 100, 100, 40],
+    ['bottom', 100, window.innerHeight - 20, 100, 40],
+  ])('preserves the full anchor rectangle when it is clipped at the %s edge', (
+    _edge,
+    left,
+    top,
+    width,
+    height,
+  ) => {
+    const browser = installBrowserHarness()
+    const anchor = document.createElement('button')
+    const popup = document.createElement('div')
+    const anchorRect = rect(left, top, width, height)
+    vi.spyOn(anchor, 'getBoundingClientRect').mockReturnValue(anchorRect as DOMRect)
+    vi.spyOn(popup, 'getBoundingClientRect').mockReturnValue(rect(0, 0, 240, 200) as DOMRect)
+    const { unmount } = renderHook(() => usePopupPlacement({ anchor, popup, open: true }))
+
+    browser.flushNextFrame()
+    expect(browser.latestIntersectionObserver()?.options?.rootMargin).toBe(fullAnchorRootMargin(anchorRect))
+    expect(browser.frames.size).toBe(0)
+    unmount()
+  })
+
+  it('detects same-size movement from a partially offscreen anchor without polling', () => {
+    const browser = installBrowserHarness()
+    const anchor = document.createElement('button')
+    const popup = document.createElement('div')
+    let anchorRect = rect(-20, 100, 100, 40)
+    vi.spyOn(anchor, 'getBoundingClientRect').mockImplementation(() => anchorRect as DOMRect)
+    vi.spyOn(popup, 'getBoundingClientRect').mockReturnValue(rect(0, 0, 240, 200) as DOMRect)
+    const { result, unmount } = renderHook(() => usePopupPlacement({ anchor, popup, open: true }))
+
+    browser.flushNextFrame()
+    const partiallyOffscreenSensor = browser.latestIntersectionObserver()
+    expect(partiallyOffscreenSensor?.options?.rootMargin).toBe(fullAnchorRootMargin(anchorRect))
+    expect(partiallyOffscreenSensor?.options?.rootMargin).toMatch(/ 20px$/)
+    act(() => { browser.notifyLayoutShift(partiallyOffscreenSensor) })
+    expect(browser.frames.size).toBe(0)
+
+    anchorRect = rect(20, 100, 100, 40)
+    act(() => {
+      browser.notifyLayoutShift(partiallyOffscreenSensor)
+      browser.notifyLayoutShift(partiallyOffscreenSensor)
+    })
+    expect(browser.frames.size).toBe(1)
+    browser.flushNextFrame()
+    expect(result.current).toMatchObject({ left: 20, top: 148 })
     expect(browser.frames.size).toBe(0)
     unmount()
   })
