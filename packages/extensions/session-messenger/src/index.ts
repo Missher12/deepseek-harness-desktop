@@ -12,8 +12,8 @@ export const inject = [
   'sessionPersistence',
 ]
 
-export function apply(ctx: Context): Promise<void> {
-  return activateSessionMessenger(ctx)
+export async function apply(ctx: Context): Promise<void> {
+  await activateSessionMessenger(ctx)
 }
 
 export * from './coordinator.ts'

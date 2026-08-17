@@ -70,6 +70,7 @@ export function fakeContext(targets: ReturnType<typeof fakeAgent>[]) {
   const byId = new Map(targets.map(target => [target.id, target]))
   const listeners = new Map<string, Array<(...args: never[]) => unknown>>()
   const inspect = vi.fn(async () => { throw new Error('not found') })
+  const list = vi.fn(async () => targets.map(target => target.session.header))
   const ctx = {
     workspaceRegistry: { archivedSessionIds: [] as ReturnType<typeof SessionId>[] },
     typert: {
@@ -85,7 +86,7 @@ export function fakeContext(targets: ReturnType<typeof fakeAgent>[]) {
       resume: vi.fn(),
     },
     sessions: { get: vi.fn() },
-    sessionPersistence: { inspect },
+    sessionPersistence: { inspect, list },
     on: vi.fn((event: string, listener: (...args: never[]) => unknown) => {
       const entries = listeners.get(event) ?? []
       entries.push(listener)
@@ -95,5 +96,5 @@ export function fakeContext(targets: ReturnType<typeof fakeAgent>[]) {
     effect: vi.fn((setup: () => unknown) => setup()),
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
   }
-  return { ctx, byId, listeners, inspect }
+  return { ctx, byId, listeners, inspect, list }
 }

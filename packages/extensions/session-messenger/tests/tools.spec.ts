@@ -144,4 +144,31 @@ describe('session messenger tools', () => {
     expect(createCoordinator).not.toHaveBeenCalled()
     expect(ctx.tools.schemas().map(schema => schema.name)).toEqual(['send_message_to_session'])
   })
+
+  it('returns canonical disposed during async activation and later returns the coordinator', async () => {
+    const ctx = await toolContext()
+    let release!: (coordinator: unknown) => void
+    const opening = new Promise<unknown>((resolve) => { release = resolve })
+    const coordinator = {
+      deliver: vi.fn(), reply: vi.fn(), receipt: vi.fn(), subscribe: vi.fn(() => vi.fn()),
+    }
+    const activation = activateSessionMessenger(ctx, (() => opening) as never)
+
+    const waiting = await ctx.tools.execute({
+      callId: CallId('activation-window'), signal, agent: fakeAgent('caller'),
+      name: 'wait_for_session_reply', arguments: { delivery_id: 'delivery-1' },
+    })
+    expect(waiting.isError).toBe(false)
+    expect(waiting.value).toEqual({
+      deliveryId: DeliveryId('delivery-1'),
+      messageId: null,
+      status: 'disposed',
+      wakeRequested: false,
+      errorCode: 'disposed',
+      replyDeliveryId: null,
+    })
+
+    release(coordinator)
+    await expect(activation).resolves.toBe(coordinator)
+  })
 })

@@ -8,6 +8,7 @@ import {
   type SessionMessengerCoordinator,
 } from './coordinator.ts'
 import {
+  createContextTargetAvailabilityPolicy,
   SessionReplyWaiter,
   type ReplyWaitResult,
 } from './waits.ts'
@@ -157,7 +158,19 @@ export function createSessionMessengerToolDefinitions(
             replyDeliveryId: null,
           }
         }
-        return waiter().wait(caller, deliveryId, args.timeout_ms, exec.signal)
+        try {
+          return await waiter().wait(caller, deliveryId, args.timeout_ms, exec.signal)
+        } catch (error: unknown) {
+          const errorCode = codeOf(error)
+          return {
+            deliveryId,
+            messageId: null,
+            status: errorCode === 'disposed' ? 'disposed' : 'rejected',
+            wakeRequested: false,
+            errorCode,
+            replyDeliveryId: null,
+          }
+        }
       },
     }),
   ] as const
@@ -190,7 +203,7 @@ export function registerSessionMessengerTools(
 export async function activateSessionMessenger(
   ctx: Context,
   createCoordinator: (ctx: Context) => Promise<SessionMessengerCoordinator> = createSessionMessengerCoordinator,
-): Promise<void> {
+): Promise<SessionMessengerCoordinator> {
   let coordinator: SessionMessengerCoordinator | undefined
   let waiter: SessionReplyWaiter | undefined
   const getCoordinator = (): SessionMessengerCoordinator => {
@@ -204,7 +217,7 @@ export async function activateSessionMessenger(
   const disposeTools = registerSessionMessengerTools(ctx, getCoordinator, getWaiter)
   try {
     coordinator = await createCoordinator(ctx)
-    waiter = new SessionReplyWaiter(coordinator)
+    waiter = new SessionReplyWaiter(coordinator, createContextTargetAvailabilityPolicy(ctx))
   } catch (error: unknown) {
     disposeTools()
     throw error
@@ -213,6 +226,7 @@ export async function activateSessionMessenger(
     waiter.dispose()
     disposeTools()
   }, 'session-messenger: global tools and explicit waits')
+  return coordinator
 }
 
 function success(result: DeliveryResult): MessengerToolValue {

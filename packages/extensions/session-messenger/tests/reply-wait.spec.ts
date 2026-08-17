@@ -1,8 +1,14 @@
 import { MessageId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import type { DomainChanged } from '@deepseek-ai/dsh-storage-domain'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionMessengerCoordinator, type CoordinatorOptions } from '../src/coordinator.ts'
-import { SessionReplyWaiter } from '../src/waits.ts'
+import {
+  createContextTargetAvailabilityPolicy,
+  SessionReplyWaiter,
+  type TargetAvailability,
+  type TargetAvailabilityPolicy,
+} from '../src/waits.ts'
 import { MAX_HOP, RECEIPT_TTL_MS } from '../src/spec.ts'
 import {
   DeliveryId,
@@ -192,4 +198,99 @@ describe('explicit reply wait', () => {
     await expect(disposed).resolves.toMatchObject({ status: 'disposed', errorCode: 'disposed' })
     expect(caller.whenIdle).not.toHaveBeenCalled()
   })
+
+  it('returns target-unavailable immediately for an archived accepted target without mutation', async () => {
+    const original = delivered()
+    const records = new Map<DeliveryId, Receipt>([[original.id, original]])
+    const availability = fakeAvailability('unavailable')
+    const waiter = new SessionReplyWaiter({
+      receipt: id => records.get(id),
+      subscribe: () => vi.fn(),
+    }, availability)
+    const caller = fakeAgent('source')
+
+    await expect(waiter.wait(caller, original.id, 55_000)).resolves.toEqual({
+      deliveryId: original.id,
+      messageId: original.messageId,
+      status: 'target-unavailable',
+      wakeRequested: false,
+      errorCode: 'target-unavailable',
+      replyDeliveryId: null,
+    })
+    expect(records).toEqual(new Map([[original.id, original]]))
+    expect(caller.whenIdle).not.toHaveBeenCalled()
+  })
+
+  it('rechecks availability after deletion notification instead of timing out', async () => {
+    const original = delivered()
+    const availability = fakeAvailability('available')
+    const waiter = new SessionReplyWaiter({
+      receipt: id => id === original.id ? original : undefined,
+      subscribe: () => vi.fn(),
+    }, availability)
+    const caller = fakeAgent('source')
+    const pending = waiter.wait(caller, original.id, 55_000)
+    await vi.waitFor(() => { expect(availability.listenerCount()).toBe(1) })
+
+    availability.set('unavailable')
+
+    await expect(pending).resolves.toMatchObject({
+      deliveryId: original.id,
+      status: 'target-unavailable',
+      errorCode: 'target-unavailable',
+    })
+    expect(caller.whenIdle).not.toHaveBeenCalled()
+  })
+
+  it('uses only read-only registry/agent/persistence seams for archive and deletion checks', async () => {
+    const source = fakeAgent('source')
+    const target = fakeAgent('target')
+    const h = fakeContext([source, target])
+    const policy = createContextTargetAvailabilityPolicy(h.ctx as never)
+    h.ctx.workspaceRegistry.archivedSessionIds.push(target.id)
+
+    await expect(policy.check(target.id)).resolves.toBe('unavailable')
+    h.ctx.workspaceRegistry.archivedSessionIds.length = 0
+    const domainListeners = h.listeners.get('domain/changed') ?? []
+    const publishWorkspace = (archivedSessionIds: string[]): void => {
+      const change: DomainChanged = {
+        domain: 'workspace', table: '', key: '', operation: 'put',
+        value: { archivedSessionIds },
+      }
+      for (const listener of domainListeners) {
+        (listener as unknown as (event: DomainChanged) => void)(change)
+      }
+    }
+    publishWorkspace([target.id])
+    await expect(policy.check(target.id)).resolves.toBe('unavailable')
+    // The policy observes restore even while no wait is subscribed.
+    publishWorkspace([])
+    h.byId.delete(target.id)
+    h.list.mockResolvedValue([])
+    await expect(policy.check(target.id)).resolves.toBe('unavailable')
+
+    expect(h.ctx.typert.lookups.get).not.toHaveBeenCalled()
+    expect(h.ctx.agents.resume).not.toHaveBeenCalled()
+    expect(target.whenIdle).not.toHaveBeenCalled()
+  })
 })
+
+function fakeAvailability(initial: TargetAvailability): TargetAvailabilityPolicy & {
+  set(value: TargetAvailability): void
+  listenerCount(): number
+} {
+  let current = initial
+  const listeners = new Set<() => void>()
+  return {
+    check: vi.fn(async () => current),
+    subscribe(_targetSessionId, listener) {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+    set(value) {
+      current = value
+      for (const listener of listeners) listener()
+    },
+    listenerCount: () => listeners.size,
+  }
+}
