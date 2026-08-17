@@ -264,6 +264,32 @@ describe('EffortControl', () => {
     expect(slider.value).toBe('1')
   })
 
+  it('rolls back a Host-rejected effort by stable ID after Host reorders the levels', async () => {
+    const reordered = models({
+      groups: [{
+        id: 'deepseek',
+        name: 'DeepSeek',
+        models: [{
+          id: 'chat',
+          name: 'DeepSeek Chat',
+          reasoning: { efforts: [efforts[1]!, efforts[0]!, efforts[2]!], defaultEffort: 'high' },
+        }],
+      }],
+    })
+    const b = makeController([models(), reordered])
+    b.select.mockRejectedValueOnce(new Error('provider refused max'))
+    renderControl(b.controller)
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
+    await flushFrames()
+    const slider = await screen.findByRole('slider', { name: '推理等级' }) as HTMLInputElement
+
+    fireEvent.keyDown(slider, { key: 'End' })
+
+    await screen.findByRole('alert')
+    expect(slider.value).toBe('0')
+    expect(slider.getAttribute('aria-valuetext')).toBe('High')
+  })
+
   it('keeps model selection but renders no meaningless slider for fewer than two efforts', async () => {
     const oneEffort = models({
       groups: [{

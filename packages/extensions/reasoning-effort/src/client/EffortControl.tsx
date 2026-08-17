@@ -84,6 +84,15 @@ export function effectiveEffortIndex(
   return Math.floor((levels.length - 1) / 2)
 }
 
+function resolvedEffortIndex(
+  levels: readonly EffortLevel[],
+  state: ModelDirectoryState,
+  acceptedEffortId: string | null,
+): number {
+  const accepted = effortIndex(levels, acceptedEffortId ?? undefined)
+  return accepted >= 0 ? accepted : effectiveEffortIndex(levels, state)
+}
+
 function validBootstrap(value: unknown): PreferenceBootstrap | undefined {
   if (typeof value !== 'object' || value === null) return undefined
   const candidate = value as Partial<PreferenceBootstrap>
@@ -401,12 +410,11 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
   const [popup, setPopup] = useState<HTMLDivElement | null>(null)
   const [previewIndex, setPreviewIndex] = useState(0)
-  const [acceptedIndex, setAcceptedIndex] = useState(0)
   const [dragging, setDragging] = useState(false)
   const [committing, setCommitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
-  const acceptedIndexRef = useRef(0)
+  const acceptedEffortIdRef = useRef<string | null>(null)
   const committingRef = useRef(false)
   const id = useId()
   const preference = useCharacterPreference()
@@ -414,6 +422,9 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
   const levels = sliderLevels(state)
   const choice = currentModel(state)
   const effectiveIndex = levels.length >= 2 ? effectiveEffortIndex(levels, state) : -1
+  const acceptedIndex = levels.length >= 2
+    ? resolvedEffortIndex(levels, state, acceptedEffortIdRef.current)
+    : -1
   const effortName = effectiveIndex >= 0 ? levels[effectiveIndex]?.name : undefined
   const modelName = choice?.name ?? state.current?.model ?? t('trigger.fallback')
   const busy = committing || state.status === 'selecting'
@@ -425,9 +436,8 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
 
   useEffect(() => {
     if (levels.length < 2 || committingRef.current || dragging) return
-    const next = effectiveEffortIndex(levels, state)
-    acceptedIndexRef.current = next
-    setAcceptedIndex(next)
+    const next = resolvedEffortIndex(levels, state, acceptedEffortIdRef.current)
+    acceptedEffortIdRef.current = levels[next]?.id ?? null
     setPreviewIndex(next)
     setError(null)
   }, [dragging, levels, state])
@@ -479,7 +489,9 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
     const target = levels[index]
     if (target === undefined) return
     const route = { provider: state.current.provider, model: state.current.model }
-    const previous = acceptedIndexRef.current
+    const previousId = acceptedEffortIdRef.current ?? levels[acceptedIndex]?.id ?? null
+    let rollbackState = state
+    let rollbackLevels = levels
     committingRef.current = true
     setCommitting(true)
     setDragging(false)
@@ -487,27 +499,28 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
     setError(null)
     try {
       const fresh = await controller.load()
+      const freshState = stateFromModels(fresh)
+      const available = sliderLevels(freshState)
+      rollbackState = freshState
+      rollbackLevels = available
       if (fresh.current.provider !== route.provider || fresh.current.model !== route.model) {
         throw new Error(t('error.staleRoute'))
       }
-      const freshState = stateFromModels(fresh)
-      const available = sliderLevels(freshState)
       if (!available.some(level => level.id === target.id)) throw new Error(t('error.staleEffort'))
       await controller.select({ ...route, reasoningEffort: target.id })
       const settled = available.findIndex(level => level.id === target.id)
-      acceptedIndexRef.current = settled
-      setAcceptedIndex(settled)
+      acceptedEffortIdRef.current = target.id
       setPreviewIndex(settled)
     } catch (cause) {
-      acceptedIndexRef.current = previous
-      setAcceptedIndex(previous)
-      setPreviewIndex(previous)
+      const rollback = resolvedEffortIndex(rollbackLevels, rollbackState, previousId)
+      acceptedEffortIdRef.current = rollbackLevels[rollback]?.id ?? null
+      setPreviewIndex(rollback)
       setError(t('error.action', { message: cause instanceof Error ? cause.message : String(cause) }))
     } finally {
       committingRef.current = false
       setCommitting(false)
     }
-  }, [controller, levels, state.current, t])
+  }, [acceptedIndex, controller, levels, state, t])
 
   const chooseModel = async (
     provider: string,
