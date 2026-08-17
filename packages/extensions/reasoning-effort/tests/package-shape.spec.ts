@@ -18,7 +18,6 @@ const WORKSPACE_PEERS = [
   '@deepseek-ai/dsh-client-ui-slots',
   '@deepseek-ai/dsh-host-webserver',
   '@deepseek-ai/dsh-invariants',
-  '@deepseek-ai/dsh-settings',
 ] as const
 
 interface PackageManifest {
@@ -104,13 +103,16 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
     expect(manifest.exports['./cordis.patch.yml']).toBe('./cordis.patch.yml')
   })
 
-  test('publishes the complete rc.5 compatibility contract without adding scaffold dependencies', async () => {
+  test('publishes the complete rc.5 compatibility contract and owned Host dependencies', async () => {
     const manifest = await readManifest()
     const tsconfig = JSON.parse(await readFile(new URL('tsconfig.json', PACKAGE_ROOT), 'utf8')) as {
       references: readonly { readonly path: string }[]
     }
 
-    expect(manifest.dependencies).toBeUndefined()
+    expect(manifest.dependencies).toEqual({
+      '@deepseek-ai/dsh-settings': 'workspace:^',
+      '@deepseek-ai/schemastery': 'workspace:^',
+    })
     expect(manifest.peerDependencies).toEqual({
       ...Object.fromEntries(WORKSPACE_PEERS.map(dependency => [dependency, 'workspace:^'])),
       react: '^18.2.0',
@@ -127,6 +129,9 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
     })
     expect(tsconfig.references).toEqual([
       { path: '../../../vendor/cordis' },
+      { path: '../../../vendor/schemastery' },
+      { path: '../../host/webserver' },
+      { path: '../../settings/settings' },
       { path: '../../runtime-diagnostics/invariants' },
     ])
   })
@@ -152,17 +157,17 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
     ])
 
     expect(host).toContain("export const name = 'reasoning-effort'")
-    expect(host).toContain('export function apply(): void {}')
+    expect(host).toContain("export const inject = ['settings', 'webServer']")
+    expect(host).toContain('export function apply(ctx: Context): void')
     expect(client).toContain("export const name = 'reasoning-effort-client'")
     expect(client).toContain('export function apply(): void {}')
   })
 
-  test('describes the invariant companion as a scaffold without claiming unbuilt behavior', async () => {
+  test('describes the invariant companion without denying implemented Host behavior', async () => {
     const invariant = await readFile(new URL('src/invariant.ts', PACKAGE_ROOT), 'utf8')
 
-    expect(invariant).toContain('this package is currently a scaffold with no Host behavior')
-    expect(invariant).not.toContain('owns route and settings registrations')
-    expect(invariant).not.toContain('composition tests')
+    expect(invariant).toContain('route and settings ownership is covered by composition tests')
+    expect(invariant).not.toContain('scaffold with no Host behavior')
   })
 
   test('inserts exactly one scoped reasoning-effort row', async () => {

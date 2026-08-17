@@ -15,7 +15,7 @@ export const name = 'reasoning-effort-invariant'
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: this package is currently a scaffold with no Host behavior.
+ * No additional runtime invariant: route and settings ownership is covered by composition tests.
  */
 const install: InvariantInstaller = () => {}
 
