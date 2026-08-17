@@ -422,9 +422,7 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
   const levels = sliderLevels(state)
   const choice = currentModel(state)
   const effectiveIndex = levels.length >= 2 ? effectiveEffortIndex(levels, state) : -1
-  const acceptedIndex = levels.length >= 2
-    ? resolvedEffortIndex(levels, state, acceptedEffortIdRef.current)
-    : -1
+  const acceptedIndex = effectiveIndex
   const effortName = effectiveIndex >= 0 ? levels[effectiveIndex]?.name : undefined
   const modelName = choice?.name ?? state.current?.model ?? t('trigger.fallback')
   const busy = committing || state.status === 'selecting'
@@ -436,7 +434,7 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
 
   useEffect(() => {
     if (levels.length < 2 || committingRef.current || dragging) return
-    const next = resolvedEffortIndex(levels, state, acceptedEffortIdRef.current)
+    const next = effectiveEffortIndex(levels, state)
     acceptedEffortIdRef.current = levels[next]?.id ?? null
     setPreviewIndex(next)
     setError(null)

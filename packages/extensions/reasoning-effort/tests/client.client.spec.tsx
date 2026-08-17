@@ -185,6 +185,42 @@ describe('reasoning-effort Client registration', () => {
 })
 
 describe('EffortControl', () => {
+  it('resyncs from Host effort and model updates instead of retaining an old accepted ID', async () => {
+    const sameModelLow = models({
+      current: { provider: 'deepseek', model: 'chat', reasoningEffort: 'low' },
+    })
+    const changedModelDefaultLow = models({
+      current: { provider: 'deepseek', model: 'coder' },
+    })
+    const b = makeController([models(), sameModelLow, changedModelDefaultLow])
+    renderControl(b.controller)
+    let trigger = screen.getByRole('button', { name: /DeepSeek Chat.*High/ })
+    fireEvent.click(trigger)
+    await flushFrames()
+    let slider = await screen.findByRole('slider', { name: '推理等级' }) as HTMLInputElement
+    expect(slider.value).toBe('1')
+    fireEvent.keyDown(slider, { key: 'Escape' })
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+
+    act(() => { b.store.set(stateOf(sameModelLow)) })
+    trigger = await screen.findByRole('button', { name: /DeepSeek Chat.*Low/ })
+    fireEvent.click(trigger)
+    await flushFrames()
+    slider = await screen.findByRole('slider', { name: '推理等级' }) as HTMLInputElement
+    expect(slider.value).toBe('0')
+    expect(slider.getAttribute('aria-valuetext')).toBe('Low')
+    fireEvent.keyDown(slider, { key: 'Escape' })
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+
+    act(() => { b.store.set(stateOf(changedModelDefaultLow)) })
+    trigger = await screen.findByRole('button', { name: /DeepSeek Coder.*Low/ })
+    fireEvent.click(trigger)
+    await flushFrames()
+    slider = await screen.findByRole('slider', { name: '推理等级' }) as HTMLInputElement
+    expect(slider.value).toBe('0')
+    expect(slider.getAttribute('aria-valuetext')).toBe('Low')
+  })
+
   it('refreshes on open, portals down-first with every bound, and commits a revalidated Host effort', async () => {
     const b = makeController([models(), models()])
     renderControl(b.controller)
