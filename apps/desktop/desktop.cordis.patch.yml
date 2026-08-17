@@ -1,0 +1,10 @@
+# Desktop-only plugin management. This immutable application resource is
+# composed after the ordinary Web profile and is never written to ~/.dsh.
+- insert:
+    - id: desktop-plugin-runtime
+      name: '@deepseek-ai/dsh-host-desktop-plugin-runtime'
+      config:
+        profile: web
+
+    - id: dsh-market
+      name: 'dshmarket'

@@ -548,6 +548,22 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'The transport-agnostic host gateway face: it dispatches browser API calls, and each open host stream subscribes to the events it forwards rather than being pushed to through a broadcast verb.',
   },
   {
+    key: 'desktopProfiles',
+    pkg: 'desktop-plugin-runtime',
+    title: 'Desktop active-profile identity',
+    mode: 'core',
+    consumers: ['dshmarket'],
+    note: 'Publishes one immutable active web-profile identity to the trusted Desktop package manager; it exposes no profile-switching authority.',
+  },
+  {
+    key: 'desktopPnpm',
+    pkg: 'desktop-plugin-runtime',
+    title: 'Desktop packaged plugin operations',
+    mode: 'core',
+    consumers: ['dshmarket'],
+    note: 'Serializes cancellable package operations through the bundled DSH CLI and pnpm entry, without granting a generic renderer subprocess bridge.',
+  },
+  {
     key: 'dynamicCordisRunner',
     pkg: 'cordis-host-runner',
     title: 'Dynamic Cordis package host runner',

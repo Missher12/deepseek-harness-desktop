@@ -64,6 +64,51 @@ Types: [Agent](core.md)
 
 Source: [`packages/extensions/cordis-host-runner/src/inspect-registry.ts:46`](../../packages/extensions/cordis-host-runner/src/inspect-registry.ts)
 
+<a id="ctxdesktoppnpm--desktoppnpm"></a>
+
+### `ctx.desktopPnpm` — `DesktopPnpm`
+
+Restricted command runner that invokes the bundled DSH plugin command.
+
+```ts cordis-catalog
+/**
+ * Run one validated DSH plugin command through the packaged pnpm entry.
+ *
+ * @param args - Trusted plugin-command arguments supplied by the Host plugin.
+ * @param invokingDir - Absolute caller directory used for package resolution.
+ * @param signal - Optional cancellation signal scoped to the operation.
+ * @returns Managed output streams, completion promise, and cancellation hook.
+ */
+runPlugin(args: readonly string[], invokingDir: string, signal?: AbortSignal): DesktopPnpmHandle
+```
+
+Source: [`packages/host/desktop-plugin-runtime/src/index.ts:59`](../../packages/host/desktop-plugin-runtime/src/index.ts)
+
+<a id="ctxdesktopprofiles--desktopprofiles"></a>
+
+### `ctx.desktopProfiles` — `DesktopProfiles`
+
+Fixed-profile facade consumed by trusted package-management plugins.
+
+```ts cordis-catalog
+/**
+ * List profiles exposed to the package manager.
+ *
+ * @returns The single Desktop-owned profile available in this generation.
+ */
+list(): readonly DesktopCurrentProfile[]
+
+/**
+ * Accept the active profile name and reject every profile switch attempt.
+ *
+ * @param name - Requested Harness profile name.
+ * @returns A settled promise when the requested name is already active.
+ */
+select(name: string): Promise<void>
+```
+
+Source: [`packages/host/desktop-plugin-runtime/src/index.ts:33`](../../packages/host/desktop-plugin-runtime/src/index.ts)
+
 <a id="ctxdynamiccordisrunner--dynamiccordisrunnerservice"></a>
 
 ### `ctx.dynamicCordisRunner` — `DynamicCordisRunnerService`

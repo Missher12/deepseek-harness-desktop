@@ -1,5 +1,8 @@
 /** Release family discovery, publish order, tag naming, and the bump judgements. */
 
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { releaseFamily, type ReleaseMember } from './families.ts'
 import { compareVersions, nextVendorVersion, reachesPayload } from './bump.ts'
@@ -16,6 +19,33 @@ function member(directory: string, name: string, manifest: Record<string, unknow
 }
 
 describe('release families', () => {
+  it('keeps the independently versioned desktop product out of the npm family', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-release-family-'))
+    const manifests = [
+      ['packages/core/library', '@deepseek-ai/dsh-library', '0.1.0-rc.5', false],
+      ['apps/cli', '@deepseek-ai/dsh', '0.1.0-rc.5', false],
+      ['apps/web', '@deepseek-ai/dsh-web-frontend', '0.1.0-rc.5', false],
+      ['apps/desktop', '@deepseek-ai/dsh-desktop', '0.1.3', true],
+    ] as const
+
+    try {
+      for (const [directory, name, version, isPrivate] of manifests) {
+        mkdirSync(join(root, directory), { recursive: true })
+        writeFileSync(join(root, directory, 'package.json'), JSON.stringify({ name, version, private: isPrivate }))
+      }
+
+      const members = releaseFamily('dsh').members(root)
+      expect(members.map(member => member.name)).toEqual([
+        '@deepseek-ai/dsh',
+        '@deepseek-ai/dsh-web-frontend',
+        '@deepseek-ai/dsh-library',
+      ])
+      expect(() => { releaseFamily('dsh').verifyVersions(members) }).not.toThrow()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('names one tag for the whole dsh family and one per vendored package', () => {
     const dsh = releaseFamily('dsh')
     const vendor = releaseFamily('vendor')

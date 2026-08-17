@@ -12,6 +12,8 @@ files:
   - "lib/**"
   - "renderer/**"
   - "assets/**"
+  - "desktop.cordis.patch.yml"
+  - "THIRD_PARTY_NOTICES.md"
   - "node_modules/**"
   # Runtime JavaScript never needs source maps or TypeScript declarations.
   # Omitting them also keeps the unpacked Windows tree below NSIS path limits.
