@@ -185,6 +185,28 @@ describe('reasoning-effort Client registration', () => {
 })
 
 describe('EffortControl', () => {
+  it('loads an idle model directory on mount before the user opens the control', async () => {
+    const b = makeController()
+    act(() => {
+      b.store.set({
+        current: null,
+        routable: false,
+        groups: [],
+        failures: [],
+        status: 'idle',
+        error: null,
+      })
+    })
+
+    renderControl(b.controller)
+
+    await waitFor(() => { expect(b.load).toHaveBeenCalledTimes(1) })
+    expect(await screen.findByRole('button', {
+      name: /选择模型.*DeepSeek Chat.*High/,
+    })).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('resyncs from Host effort and model updates instead of retaining an old accepted ID', async () => {
     const sameModelLow = models({
       current: { provider: 'deepseek', model: 'chat', reasoningEffort: 'low' },

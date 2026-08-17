@@ -264,5 +264,3 @@ export interface Config {
 export function apply(ctx: Context, config: Config = {}): void {
   installDesktopPluginServices(ctx, resolveDesktopPluginRuntimeFacts(config.profile ?? 'web'))
 }
-
-export default apply

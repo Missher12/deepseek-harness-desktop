@@ -455,6 +455,10 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
     }
   }, [controller, t])
 
+  useEffect(() => {
+    if (state.status === 'idle') void refresh()
+  }, [refresh, state.status])
+
   const show = (): void => {
     setOpen(true)
     void refresh()

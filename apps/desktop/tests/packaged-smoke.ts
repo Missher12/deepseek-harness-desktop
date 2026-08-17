@@ -99,6 +99,7 @@ function completeTurn(createdAt: number): SessionEvent[] {
       time: createdAt + 1,
       data: { turn: 1, reason: { kind: 'completed' } },
     },
+    { type: 'session/end-seed', seq: 2, time: createdAt + 2, data: {} },
   ]
 }
 
@@ -469,10 +470,12 @@ async function exerciseReasoningEffort(
   harnessHome: string,
   platform: NodeJS.Platform,
 ): Promise<void> {
-  const trigger = page.getByRole('button', {
-    name: /^(?:Select model, current Native Smoke Thinker, reasoning effort High|选择模型，当前 Native Smoke Thinker，推理等级 High)$/u,
-  })
+  const trigger = page.locator('button[aria-haspopup="dialog"]')
+    .filter({ hasText: 'Native Smoke Thinker' })
   await trigger.waitFor({ state: 'visible', timeout: 30_000 })
+  expect(await trigger.getAttribute('aria-label')).toMatch(
+    /^(?:Select model, current Native Smoke Thinker, reasoning effort High|选择模型，当前 Native Smoke Thinker，推理等级 High)$/u,
+  )
   await trigger.click()
 
   const popup = page.getByRole('dialog', {
@@ -621,7 +624,12 @@ async function seedOrdinaryMarketFixture(harnessHome: string): Promise<string> {
   return packageName
 }
 
-async function exercisePluginMarket(page: Page, harnessHome: string, platform: NodeJS.Platform): Promise<void> {
+async function exercisePluginMarket(
+  page: Page,
+  harnessHome: string,
+  platform: NodeJS.Platform,
+  consoleErrors: string[],
+): Promise<void> {
   await page.locator('[data-dsh-desktop-command="open-settings"]').click()
   const settingsDialog = page.getByRole('dialog').last()
   await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
@@ -663,12 +671,17 @@ async function exercisePluginMarket(page: Page, harnessHome: string, platform: N
     path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-market-${platform}.png`),
   })
 
+  // Keep ordinary rendering completely clean. The two mutations below
+  // intentionally produce a rejected HTTP status and a Host hot-refresh,
+  // whose cancelled old streams Chromium reports as resource errors.
+  expect(consoleErrors).toEqual([])
+  consoleErrors.length = 0
   const protectedUpdate = await postMarket(page, '/dsh-market/update', { name: 'dshmarket' })
   expect(protectedUpdate).toEqual({ status: 409, body: { ok: false, code: 'self-protected' } })
 
   const fixtureName = await seedOrdinaryMarketFixture(harnessHome)
   const ordinaryUninstall = await postMarket(page, '/dsh-market/uninstall', { name: fixtureName })
-  expect(ordinaryUninstall.status).toBe(200)
+  expect(ordinaryUninstall.status, JSON.stringify(ordinaryUninstall.body)).toBe(200)
   expect(ordinaryUninstall.body).toMatchObject({ ok: true, exitCode: 0 })
 
   await page.keyboard.press('Escape')
@@ -722,6 +735,9 @@ export async function runPackagedDesktopSmoke(
   await Promise.all([mkdir(harnessHome, { recursive: true }), mkdir(userData, { recursive: true })])
   const clipboardSeed = await seedWindowsClipboardSmokeState(harnessHome)
   const providerTripwire = await startProviderTripwire()
+  if (platform === 'darwin') {
+    await writeDesktopSmokeModelSettings(harnessHome, providerTripwire.url)
+  }
 
   let nativeApp: ElectronApplication | undefined
   let quitCompleted = false
@@ -781,15 +797,19 @@ export async function runPackagedDesktopSmoke(
     const credentialDialog = page.getByRole('dialog', {
       name: /^(?:Add an API key to get started|添加一个 API Key 开始使用)$/u,
     })
-    await credentialDialog.waitFor({ state: 'visible', timeout: 30_000 })
-    await credentialDialog.getByRole('button', {
-      name: /^(?:Configure later|稍后配置)$/u,
-    }).click()
-    await credentialDialog.waitFor({ state: 'detached', timeout: 30_000 })
-    expect(await page.locator('#root').evaluate((element: HTMLElement) => !element.inert)).toBe(true)
     if (platform === 'darwin') {
-      await writeDesktopSmokeModelSettings(harnessHome, providerTripwire.url)
+      // The native effort acceptance starts with an isolated, usable custom
+      // provider so the first Session captures that exact model selection.
+      // A usable non-DeepSeek route must also suppress the keyless onboarding.
+      await expect.poll(() => credentialDialog.count(), { timeout: 30_000 }).toBe(0)
+    } else {
+      await credentialDialog.waitFor({ state: 'visible', timeout: 30_000 })
+      await credentialDialog.getByRole('button', {
+        name: /^(?:Configure later|稍后配置)$/u,
+      }).click()
+      await credentialDialog.waitFor({ state: 'detached', timeout: 30_000 })
     }
+    expect(await page.locator('#root').evaluate((element: HTMLElement) => !element.inert)).toBe(true)
 
     try {
       await exerciseWindowsClipboard(page, nativeApp, clipboardSeed)
@@ -811,8 +831,11 @@ export async function runPackagedDesktopSmoke(
       path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-${platform}.png`),
     })
 
-    await exercisePluginMarket(page, harnessHome, platform)
-    expect(consoleErrors).toEqual([])
+    await exercisePluginMarket(page, harnessHome, platform, consoleErrors)
+    expect(consoleErrors.filter(message => (
+      !/^Failed to load resource: the server responded with a status of 409 \(Conflict\)$/u.test(message)
+      && message !== 'Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING'
+    ))).toEqual([])
     expect(providerTripwire.requests).toEqual([])
 
     const mainPid = nativeApp.process().pid
