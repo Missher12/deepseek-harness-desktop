@@ -9,7 +9,7 @@ export interface UsePopupPlacementInput {
   readonly preferred?: PopupSide
 }
 
-const LAYOUT_SHIFT_EPSILON = 0.5
+const MIN_LAYOUT_SENSOR_SIZE = 0.5
 const INTERSECTION_THRESHOLD = 0.999
 
 const samePlacement = (left: PopupPlacement | null, right: PopupPlacement): boolean => (
@@ -21,15 +21,15 @@ const samePlacement = (left: PopupPlacement | null, right: PopupPlacement): bool
   && left.maxWidth === right.maxWidth
 )
 
-const movedFrom = (current: DOMRect, baseline: DOMRect): boolean => (
-  Math.abs(current.top - baseline.top) > LAYOUT_SHIFT_EPSILON
-  || Math.abs(current.left - baseline.left) > LAYOUT_SHIFT_EPSILON
-  || Math.abs(current.right - baseline.right) > LAYOUT_SHIFT_EPSILON
-  || Math.abs(current.bottom - baseline.bottom) > LAYOUT_SHIFT_EPSILON
+const sameAnchorRect = (current: DOMRect, baseline: DOMRect): boolean => (
+  current.top === baseline.top
+  && current.left === baseline.left
+  && current.right === baseline.right
+  && current.bottom === baseline.bottom
 )
 
 const fullAnchorRootMargin = (rect: DOMRect): string | null => {
-  if (rect.width <= LAYOUT_SHIFT_EPSILON || rect.height <= LAYOUT_SHIFT_EPSILON) return null
+  if (rect.width <= MIN_LAYOUT_SENSOR_SIZE || rect.height <= MIN_LAYOUT_SENSOR_SIZE) return null
   return `${-rect.top}px ${-(window.innerWidth - rect.right)}px ${-(window.innerHeight - rect.bottom)}px ${-rect.left}px`
 }
 
@@ -37,8 +37,9 @@ const fullAnchorRootMargin = (rect: DOMRect): string | null => {
  * Measure an open popup from browser geometry events.
  *
  * The layout-shift sensor clips an IntersectionObserver root to the measured
- * anchor. Its 0.999 threshold notices same-size movement without polling;
- * differences up to half a CSS pixel are ignored to prevent subpixel loops.
+ * anchor. Each sensor ignores its one unchanged browser baseline callback,
+ * then treats every 0.999-threshold notification as movement without polling.
+ * Effectively zero anchors (at most half a CSS pixel) are not observed.
  * @param input - Actual popup nodes, open state, and optional side preference.
  * @returns The latest placement, or null while closed or awaiting measurement.
  */
@@ -86,9 +87,14 @@ export function usePopupPlacement(input: UsePopupPlacementInput): PopupPlacement
       if (rootMargin === null) return
 
       const baseline = anchorRect
+      let awaitingBaseline = true
       const observer = new IntersectionObserver(() => {
         if (!active || layoutObserver !== observer) return
-        if (movedFrom(anchor.getBoundingClientRect(), baseline)) scheduleMeasurement()
+        if (awaitingBaseline) {
+          awaitingBaseline = false
+          if (sameAnchorRect(anchor.getBoundingClientRect(), baseline)) return
+        }
+        scheduleMeasurement()
       }, { rootMargin, threshold: INTERSECTION_THRESHOLD })
       layoutObserver = observer
       observer.observe(anchor)
