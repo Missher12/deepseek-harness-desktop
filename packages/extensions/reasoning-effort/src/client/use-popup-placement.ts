@@ -10,7 +10,9 @@ export interface UsePopupPlacementInput {
 }
 
 const MIN_LAYOUT_SENSOR_SIZE = 0.5
-const INTERSECTION_THRESHOLD = 0.999
+const INITIAL_INTERSECTION_THRESHOLD = 1
+const MIN_INTERSECTION_THRESHOLD = 1e-7
+const INTERSECTION_RATIO_TOLERANCE = 1e-6
 
 const samePlacement = (left: PopupPlacement | null, right: PopupPlacement): boolean => (
   left !== null
@@ -33,12 +35,18 @@ const fullAnchorRootMargin = (rect: DOMRect): string | null => {
   return `${-rect.top}px ${-(window.innerWidth - rect.right)}px ${-(window.innerHeight - rect.bottom)}px ${-rect.left}px`
 }
 
+const calibratedThreshold = (ratio: number): number => {
+  if (!Number.isFinite(ratio)) return INITIAL_INTERSECTION_THRESHOLD
+  return Math.min(INITIAL_INTERSECTION_THRESHOLD, Math.max(MIN_INTERSECTION_THRESHOLD, ratio))
+}
+
 /**
  * Measure an open popup from browser geometry events.
  *
  * The layout-shift sensor clips an IntersectionObserver root to the measured
- * anchor. Each sensor ignores its one unchanged browser baseline callback,
- * then treats every 0.999-threshold notification as movement without polling.
+ * anchor. Each sensor settles one unchanged browser baseline callback, first
+ * calibrating to the browser's quantized intersection ratio when necessary,
+ * then treats every subsequent threshold notification as movement.
  * Effectively zero anchors (at most half a CSS pixel) are not observed.
  * @param input - Actual popup nodes, open state, and optional side preference.
  * @returns The latest placement, or null while closed or awaiting measurement.
@@ -79,7 +87,11 @@ export function usePopupPlacement(input: UsePopupPlacementInput): PopupPlacement
       if (!active || animationFrame !== null) return
       animationFrame = requestAnimationFrame(measure)
     }
-    function armLayoutShiftSensor(anchorRect: DOMRect): void {
+    function armLayoutShiftSensor(
+      anchorRect: DOMRect,
+      requestedThreshold = INITIAL_INTERSECTION_THRESHOLD,
+      calibrated = false,
+    ): void {
       layoutObserver?.disconnect()
       layoutObserver = null
       if (typeof IntersectionObserver === 'undefined' || anchor === null) return
@@ -87,15 +99,26 @@ export function usePopupPlacement(input: UsePopupPlacementInput): PopupPlacement
       if (rootMargin === null) return
 
       const baseline = anchorRect
+      const threshold = calibratedThreshold(requestedThreshold)
       let awaitingBaseline = true
-      const observer = new IntersectionObserver(() => {
+      const observer = new IntersectionObserver((entries) => {
         if (!active || layoutObserver !== observer) return
+        const entry = entries.at(-1)
+        if (entry === undefined) return
         if (awaitingBaseline) {
           awaitingBaseline = false
-          if (sameAnchorRect(anchor.getBoundingClientRect(), baseline)) return
+          if (!sameAnchorRect(anchor.getBoundingClientRect(), baseline)) {
+            scheduleMeasurement()
+            return
+          }
+          const actualThreshold = calibratedThreshold(entry.intersectionRatio)
+          if (!calibrated && Math.abs(actualThreshold - threshold) > INTERSECTION_RATIO_TOLERANCE) {
+            armLayoutShiftSensor(baseline, actualThreshold, true)
+          }
+          return
         }
         scheduleMeasurement()
-      }, { rootMargin, threshold: INTERSECTION_THRESHOLD })
+      }, { rootMargin, threshold })
       layoutObserver = observer
       observer.observe(anchor)
     }

@@ -234,8 +234,8 @@ function installBrowserHarness() {
   const notifyResize = (record = latestResizeObserver()): void => {
     record?.callback([], {} as ResizeObserver)
   }
-  const notifyLayoutShift = (record = latestIntersectionObserver()): void => {
-    record?.callback([], {} as IntersectionObserver)
+  const notifyLayoutShift = (record = latestIntersectionObserver(), intersectionRatio = 1): void => {
+    record?.callback([{ intersectionRatio } as IntersectionObserverEntry], {} as IntersectionObserver)
   }
 
   return {
@@ -281,7 +281,7 @@ describe('usePopupPlacement', () => {
     expect(browser.latestResizeObserver()?.observed).toEqual(new Set([anchor, popup]))
     const layoutObserver = browser.latestIntersectionObserver()
     expect(layoutObserver?.observed).toEqual(new Set([anchor]))
-    expect(layoutObserver?.options?.threshold).toBeCloseTo(0.999)
+    expect(layoutObserver?.options?.threshold).toBe(1)
     const stablePlacement = result.current
 
     act(() => { browser.notifyLayoutShift(layoutObserver) })
@@ -376,7 +376,7 @@ describe('usePopupPlacement', () => {
     unmount()
   })
 
-  it('rearms fractional layout shifts after one unchanged baseline callback', () => {
+  it('calibrates fractional baselines before rearming later layout shifts', () => {
     const browser = installBrowserHarness()
     const anchor = document.createElement('button')
     const popup = document.createElement('div')
@@ -387,43 +387,56 @@ describe('usePopupPlacement', () => {
 
     browser.flushNextFrame()
     const armedAtInitialRect = browser.latestIntersectionObserver()
+    expect(armedAtInitialRect?.options?.threshold).toBe(1)
     expect(browser.frames.size).toBe(0)
-    act(() => { browser.notifyLayoutShift(armedAtInitialRect) })
+    act(() => { browser.notifyLayoutShift(armedAtInitialRect, 1) })
     expect(browser.frames.size).toBe(0)
 
     anchorRect = rect(100.5, 100, 100, 40)
     act(() => {
-      browser.notifyLayoutShift(armedAtInitialRect)
-      browser.notifyLayoutShift(armedAtInitialRect)
+      browser.notifyLayoutShift(armedAtInitialRect, 0.995)
+      browser.notifyLayoutShift(armedAtInitialRect, 0.995)
     })
     expect(browser.frames.size).toBe(1)
     browser.flushNextFrame()
     expect(result.current).toMatchObject({ side: 'below', top: 148, left: 100.5 })
     expect(browser.frames.size).toBe(0)
     expect(armedAtInitialRect?.observed.size).toBe(0)
-    const armedAtHalfPixel = browser.latestIntersectionObserver()
-    expect(armedAtHalfPixel?.observed).toEqual(new Set([anchor]))
+    const quantizedAtHalfPixel = browser.latestIntersectionObserver()
+    expect(quantizedAtHalfPixel?.options?.threshold).toBe(1)
+    expect(quantizedAtHalfPixel?.observed).toEqual(new Set([anchor]))
 
     act(() => { browser.notifyLayoutShift(armedAtInitialRect) })
     expect(browser.frames.size).toBe(0)
-    act(() => { browser.notifyLayoutShift(armedAtHalfPixel) })
+    act(() => { browser.notifyLayoutShift(quantizedAtHalfPixel, 0.99) })
+    expect(browser.frames.size).toBe(0)
+    expect(quantizedAtHalfPixel?.observed.size).toBe(0)
+    const calibratedAtHalfPixel = browser.latestIntersectionObserver()
+    expect(calibratedAtHalfPixel).not.toBe(quantizedAtHalfPixel)
+    expect(calibratedAtHalfPixel?.options?.threshold).toBeCloseTo(0.99)
+    expect(calibratedAtHalfPixel?.observed).toEqual(new Set([anchor]))
+    act(() => { browser.notifyLayoutShift(calibratedAtHalfPixel, 0.99) })
     expect(browser.frames.size).toBe(0)
 
     anchorRect = rect(110.5, 100, 100, 40)
-    act(() => { browser.notifyLayoutShift(armedAtHalfPixel) })
+    act(() => { browser.notifyLayoutShift(calibratedAtHalfPixel, 0.9) })
     expect(browser.frames.size).toBe(1)
     browser.flushNextFrame()
     expect(result.current).toMatchObject({ side: 'below', top: 148, left: 110.5 })
     expect(browser.frames.size).toBe(0)
 
     const movedBeforeBaseline = browser.latestIntersectionObserver()
+    expect(movedBeforeBaseline?.options?.threshold).toBe(1)
     anchorRect = rect(120.5, 100, 100, 40)
-    act(() => { browser.notifyLayoutShift(movedBeforeBaseline) })
+    act(() => { browser.notifyLayoutShift(movedBeforeBaseline, 0.9) })
     expect(browser.frames.size).toBe(1)
     browser.flushNextFrame()
     expect(result.current).toMatchObject({ side: 'below', top: 148, left: 120.5 })
     expect(browser.frames.size).toBe(0)
-    act(() => { browser.notifyLayoutShift(armedAtHalfPixel) })
+    act(() => {
+      browser.notifyLayoutShift(quantizedAtHalfPixel, 0.9)
+      browser.notifyLayoutShift(calibratedAtHalfPixel, 0.9)
+    })
     expect(browser.frames.size).toBe(0)
     unmount()
   })
