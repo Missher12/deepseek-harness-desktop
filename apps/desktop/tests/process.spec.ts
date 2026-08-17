@@ -17,6 +17,30 @@ class FakeChild extends EventEmitter {
 }
 
 describe('HarnessProcess', () => {
+  it('prepares the Desktop-owned module fallback before spawning the CLI', async () => {
+    const order: string[] = []
+    const child = new FakeChild()
+    const prepare = vi.fn(() => { order.push('prepare') })
+    const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(() => {
+      order.push('spawn')
+      return child as unknown as ChildProcess
+    })
+    const owned = new HarnessProcess({
+      cli: '/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
+      prepare,
+      spawn,
+      waitForHarness: async () => undefined,
+      terminateTree: vi.fn(),
+    })
+
+    const pending = owned.start('/workspace')
+    await vi.waitFor(() => { expect(spawn).toHaveBeenCalledOnce() })
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+
+    await expect(pending).resolves.toBe('http://127.0.0.1:45678/')
+    expect(order).toEqual(['prepare', 'spawn'])
+  })
+
   it('starts the built CLI on loopback port zero and returns its ready URL', async () => {
     const child = new FakeChild()
     const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(
@@ -27,6 +51,7 @@ describe('HarnessProcess', () => {
       spawn,
       executable: '/Electron',
       cli: '/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
+      patch: '/app/desktop.cordis.patch.yml',
       waitForHarness,
       platform: 'darwin',
       terminateTree: vi.fn(),
@@ -41,8 +66,11 @@ describe('HarnessProcess', () => {
     const [executable, args, options] = spawn.mock.calls[0]!
     expect(executable).toBe('/Electron')
     expect(args).toEqual([
+      '--expose-internals',
       '/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
       'web',
+      '--patch',
+      '/app/desktop.cordis.patch.yml',
       '--host',
       '127.0.0.1',
       '--port',

@@ -124,13 +124,16 @@ export async function stageDesktop(
   const deploy = dependencies.pnpmInvocation(['--filter', DESKTOP_PACKAGE, 'deploy', '--legacy', stageDir])
   dependencies.run(deploy.command, deploy.args, root)
 
-  for (const entry of ['lib', 'renderer', 'assets', 'electron-builder.yml'] as const) {
+  for (const entry of ['lib', 'renderer', 'assets', 'electron-builder.yml', 'desktop.cordis.patch.yml'] as const) {
     await dependencies.copy(join(desktopDir, entry), join(stageDir, entry))
   }
+  await dependencies.copy(join(root, 'THIRD_PARTY_NOTICES.md'), join(stageDir, 'THIRD_PARTY_NOTICES.md'))
 
   const required = [
     'package.json',
     'electron-builder.yml',
+    'desktop.cordis.patch.yml',
+    'THIRD_PARTY_NOTICES.md',
     'lib/main.js',
     'lib/preload.cjs',
     'renderer/loading.html',
@@ -140,6 +143,10 @@ export async function stageDesktop(
     'assets/icon.ico',
     'node_modules/@deepseek-ai/dsh/lib/bin.js',
     'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
+    'node_modules/@deepseek-ai/dsh-host-desktop-plugin-runtime/lib/index.js',
+    'node_modules/dshmarket/lib/index.js',
+    'node_modules/dshmarket/client/client.js',
+    'node_modules/pnpm/bin/pnpm.mjs',
   ]
   for (const path of required) {
     if (!await dependencies.isFile(join(stageDir, path))) {

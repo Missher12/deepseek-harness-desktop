@@ -25,6 +25,43 @@ The Cordis framework and its foundation libraries are source-vendored into this 
 | `@deepseek-ai/cordis-plugin-hmr` | `@cordisjs/plugin-hmr` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
 | `@deepseek-ai/cordis-plugin-logger-console` | `@cordisjs/plugin-logger-console` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
 
+## Adapted source
+
+The built-in reasoning-effort animation adapts the three-pass WebGL renderer from [`dsh-effort-slider`](https://github.com/2768651338/dsh-effort-slider) 0.2.5. DeepSeek Harness changes its composition, colors, layout, accessibility, and selection ownership while preserving the upstream BSD 3-Clause notice:
+
+```text
+BSD 3-Clause License
+
+Copyright (c) 2026, dsh-web-ui-custom contributors
+Copyright (c) 2026, dsh-effort-slider contributors (standalone extraction)
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
 ## Runtime npm dependencies
 
 External packages that a workspace package resolves at runtime. The tier covers every plugin a user can mount from `cordis.yml` — not only what the `dsh` CLI, Web UI, and Python SDK runtime load by default.
@@ -55,6 +92,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`clsx`](https://github.com/lukeed/clsx) | MIT |
 | [`commander`](https://github.com/tj/commander.js) | MIT |
 | [`diff`](https://github.com/kpdecker/jsdiff) | BSD-3-Clause |
+| [`dshmarket`](https://github.com/dsh-market/dsh-market) | MIT |
 | [`e2b`](https://github.com/e2b-dev/e2b) | MIT |
 | [`eventsource-parser`](https://github.com/rexxars/eventsource-parser) | MIT |
 | [`fflate`](https://github.com/101arrowz/fflate) | MIT |
@@ -77,6 +115,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`node-addon-require-builtin`](https://www.npmjs.com/package/node-addon-require-builtin) | MIT |
 | [`node-pty`](https://github.com/microsoft/node-pty) | MIT |
 | [`picomatch`](https://github.com/micromatch/picomatch) | MIT |
+| [`pnpm`](https://github.com/pnpm/pnpm) | MIT |
 | [`react`](https://github.com/facebook/react) | MIT |
 | [`react-dom`](https://github.com/facebook/react) | MIT |
 | [`sharp`](https://github.com/lovell/sharp) | Apache-2.0 |

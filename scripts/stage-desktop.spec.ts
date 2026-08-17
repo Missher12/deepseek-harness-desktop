@@ -65,9 +65,17 @@ describe('stageDesktop', () => {
       ['/repo/apps/desktop/renderer', '/repo/apps/desktop/.stage/renderer'],
       ['/repo/apps/desktop/assets', '/repo/apps/desktop/.stage/assets'],
       ['/repo/apps/desktop/electron-builder.yml', '/repo/apps/desktop/.stage/electron-builder.yml'],
+      ['/repo/apps/desktop/desktop.cordis.patch.yml', '/repo/apps/desktop/.stage/desktop.cordis.patch.yml'],
+      ['/repo/THIRD_PARTY_NOTICES.md', '/repo/apps/desktop/.stage/THIRD_PARTY_NOTICES.md'],
     ])
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh/lib/bin.js')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html')
+    expect(result.validatedFiles).toContain('desktop.cordis.patch.yml')
+    expect(result.validatedFiles).toContain('THIRD_PARTY_NOTICES.md')
+    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-host-desktop-plugin-runtime/lib/index.js')
+    expect(result.validatedFiles).toContain('node_modules/dshmarket/lib/index.js')
+    expect(result.validatedFiles).toContain('node_modules/dshmarket/client/client.js')
+    expect(result.validatedFiles).toContain('node_modules/pnpm/bin/pnpm.mjs')
     expect(result.validatedFiles).toContain('lib/preload.cjs')
     expect(result.validatedFiles).not.toContain('lib/preload.js')
     expect(result.validatedFiles).toContain('assets/icon-source.png')

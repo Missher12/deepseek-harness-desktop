@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
+import { isAbsolute } from 'node:path'
 import { readHarnessUrl } from './startup-url.ts'
 import { waitForHarness as probeHarness } from './readiness.ts'
 import { terminateProcessTree, type TerminationMode } from './process-tree.ts'
@@ -18,6 +19,8 @@ type SpawnHarness = (executable: string, args: readonly string[], options: Spawn
 /** Dependencies required to own one Harness child process. */
 export interface HarnessProcessOptions {
   cli: string
+  patch?: string
+  prepare?: () => void
   executable?: string
   spawn?: SpawnHarness
   waitForHarness?: (url: string) => Promise<void>
@@ -54,7 +57,7 @@ function settledWithin(promise: Promise<unknown>, timeoutMs: number): Promise<bo
 export class HarnessProcess {
   private readonly options: Required<Pick<HarnessProcessOptions,
     'executable' | 'spawn' | 'waitForHarness' | 'platform' | 'terminateTree' | 'stopTimeoutMs'>>
-    & Pick<HarnessProcessOptions, 'cli' | 'onOutput' | 'onExit'>
+    & Pick<HarnessProcessOptions, 'cli' | 'patch' | 'prepare' | 'onOutput' | 'onExit'>
   private child: ChildProcess | undefined
   private exitPromise: Promise<ExitState> | undefined
   private detachOutput: (() => void) | undefined
@@ -64,6 +67,9 @@ export class HarnessProcess {
    * @param options - Executable, built CLI, and injected OS seams.
    */
   constructor(options: HarnessProcessOptions) {
+    if (options.patch !== undefined && (!isAbsolute(options.patch) || options.patch.includes('\0'))) {
+      throw new Error('Harness Desktop patch must be an absolute path without NUL.')
+    }
     this.options = {
       ...options,
       executable: options.executable ?? process.execPath,
@@ -88,9 +94,15 @@ export class HarnessProcess {
    */
   async start(workspace: string): Promise<string> {
     if (this.child !== undefined) throw new Error('Harness process is already running.')
+    this.options.prepare?.()
     const child = this.options.spawn(this.options.executable, [
+      // Electron's Node mode does not expose the internal ESM resolver through
+      // node-addon-require-builtin. Loader needs this flag so bare plugin names
+      // resolve from the active profile instead of the packaged app directory.
+      '--expose-internals',
       this.options.cli,
       'web',
+      ...this.options.patch === undefined ? [] : ['--patch', this.options.patch],
       '--host',
       '127.0.0.1',
       '--port',

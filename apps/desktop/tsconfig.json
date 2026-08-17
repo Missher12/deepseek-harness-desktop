@@ -9,6 +9,9 @@
   ],
   "references": [
     {
+      "path": "../../packages/boot/app-boot"
+    },
+    {
       "path": "../../packages/util/atomic-write"
     },
     {

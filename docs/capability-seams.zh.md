@@ -192,6 +192,10 @@ flowchart LR
   pkg_lsp_local["lsp-local"]
   pkg_tool_lsp["tool-lsp"]
   svc_apiProxy["ctx.apiProxy<br/>Host API dispatch"]
+  pkg_desktop_plugin_runtime["desktop-plugin-runtime"]
+  svc_desktopProfiles["ctx.desktopProfiles<br/>Desktop active-profile identity"]
+  pkg_dshmarket["dshmarket"]
+  svc_desktopPnpm["ctx.desktopPnpm<br/>Desktop packaged plugin operations"]
   pkg_cordis_host_runner["cordis-host-runner"]
   svc_dynamicCordisRunner["ctx.dynamicCordisRunner<br/>Dynamic Cordis package host runner"]
   svc_cordisInspect["ctx.cordisInspect<br/>Dynamic Cordis inspect registry"]
@@ -217,6 +221,8 @@ flowchart LR
   pkg_cordis_host_runner --> svc_dynamicCordisRunner
   pkg_credentials --> svc_credentials
   pkg_credentials_local --> svc_credentials
+  pkg_desktop_plugin_runtime --> svc_desktopPnpm
+  pkg_desktop_plugin_runtime --> svc_desktopProfiles
   pkg_directory_picker --> svc_directoryPicker
   pkg_directory_picker_browse --> svc_directoryPicker
   pkg_directory_picker_native --> svc_directoryPicker
@@ -314,6 +320,8 @@ flowchart LR
   svc_credentials --> pkg_apiproxy
   svc_credentials --> pkg_llm_deepseek
   svc_credentials --> pkg_llm_pi_ai
+  svc_desktopPnpm --> pkg_dshmarket
+  svc_desktopProfiles --> pkg_dshmarket
   svc_directoryPicker --> pkg_apiproxy
   svc_dynamicCordisRunner --> pkg_tool_cordis
   svc_e2b --> pkg_fs_e2b
@@ -467,6 +475,8 @@ flowchart LR
 | `ctx.workflowEngine` | `seam` | [`workflow`](../packages/workflow/workflow) | [`workflow-worker-thread`](../packages/workflow/workflow-worker-thread) | [`tool-workflow`](../packages/workflow/tool-workflow), [`tool-ralph`](../packages/workflow/tool-ralph) | - | 每个上下文使用一个引擎，与 bash 相同，且没有具名提供方注册表；通用工作流与固定 Ralph 消费方启动运行，其中的 agent() 调用通过 ctx.subagents 扇出。 |
 | `ctx.lsp` | `seam` | [`lsp`](../packages/lsp/lsp) | `lsp-local` | [`tool-lsp`](../packages/lsp/tool-lsp) | - | 提供方注册与选择，加上恰好四种操作的标准化查询执行；该 seam 不提供协议逃生口，后端必须转换为标准化请求和结果。 |
 | `ctx.apiProxy` | `core` | `apiproxy` | - | `connection` | - | 与传输无关的 Host 网关接口：它分派浏览器 API 调用，每条打开的 Host 流自行订阅转发事件，而不是由广播方法向其推送。 |
+| `ctx.desktopProfiles` | `core` | `desktop-plugin-runtime` | - | `dshmarket` | - | 向受信任的 Desktop 包管理器发布唯一且不可变的当前 web profile 身份，不授予切换 profile 的权限。 |
+| `ctx.desktopPnpm` | `core` | `desktop-plugin-runtime` | - | `dshmarket` | - | 通过内置 DSH CLI 与 pnpm 入口串行执行可取消的包操作，不向 renderer 提供通用 subprocess bridge。 |
 | `ctx.dynamicCordisRunner` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | 拥有内存定义注册表、Host 半的 vm 沙箱和 request-run 往返流程；浏览器页面通过其 Remote 命名空间在线访问同一服务。 |
 | `ctx.cordisInspect` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | 注册 Host inspect 提供方、镜像 Client 提供方 manifest，并通过动态 Cordis 传输路由 Client 查询。 |
 

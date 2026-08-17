@@ -1,154 +1,87 @@
-# DeepSeek Harness 思考滑块与插件市场设计
+# DeepSeek Harness 思考等级滑块与插件市场设计
 
 [English](2026-08-17-deepseek-harness-effort-slider-plugin-market-design.md) | 中文
 
 **日期：** 2026-08-17
 
-**状态：** 等待书面确认
+**状态：** 已确认；正在实现
 
-**目标平台：** Intel macOS 和 Windows x64 上的 DeepSeek Harness Desktop
+**目标平台：** Intel macOS 与 Windows x64 上的 DeepSeek Harness Desktop
 
 ## 目标
 
-DeepSeek Harness Desktop 将在输入框模型控件旁提供带粒子效果的精致思考等级滑块，并在设置中提供精选插件市场。滑块只能提交所选模型公开的思考等级标识。插件市场必须支持安装、停用、启用和移除经过审核的插件，用户无需安装 Node.js、pnpm，也无需打开终端或浏览器。
+DeepSeek Harness Desktop 将在现有输入区模型控件旁提供精致的粒子思考等级滑块，并在设置中接入经审计的 `dshmarket@1.10.1`。滑块只提交当前模型声明支持的思考等级标识。插件市场让用户无需安装 Node.js、pnpm，无需终端、外部浏览器、管理员权限或固定端口，即可安装、更新、启用、停用和删除经过整理的插件。
 
-本设计结合 [dsh-effort-slider](https://github.com/2768651338/dsh-effort-slider) 的视觉方向和 [dsh-reasoning-effort](https://github.com/HanaAyane/dsh-reasoning-effort) 的模型元数据约束。它不会把两个插件同时加载到同一输入框位置，也不会复制任一插件在 Host 侧补写 Provider 配置的逻辑。
+滑块结合 [dsh-effort-slider](https://github.com/2768651338/dsh-effort-slider) 的视觉方向与 [dsh-reasoning-effort](https://github.com/HanaAyane/dsh-reasoning-effort) 的模型元数据约束，但不会加载任一第三方 Host provider。插件市场复用成熟的 [dsh-market](https://github.com/dsh-market/dsh-market)，不重复实现其目录、回滚、诊断和热挂载逻辑。
 
-## 产品决定
+## 产品决策
 
-- 思考滑块是内置 Web Client 插件，桌面应用更新后即可使用。
-- Host 仍是 Provider、模型、思考等级标识、顺序、名称、描述和默认等级的唯一事实来源。
-- `max` 可以显示为 `ULTRACODE`，但提交值仍是模型公开的精确标识。
-- 只公开 `off`、`high` 和 `max` 的模型只显示三个可选档位，界面不会为它伪造 `low` 或 `medium`。
-- 插件市场采用精选模式。GitHub Topics 和任意仓库 URL 只供维护者发现候选插件，不会成为应用可直接执行的安装来源。
-- 市场修改操作只在桌面应用中提供。普通浏览器应用继续保留只读的已安装插件清单，但不获得包管理权限。
-- 第一版只安装精确且经过审核的版本，并禁用生命周期脚本。需要安装脚本的插件在出现更窄且经过审核的机制前不允许上架。
+- 思考等级滑块作为第一方 UI，放在现有 `ui-model-selection` 包内。
+- provider、模型、思考等级标识、顺序、名称、说明与默认值只以 Host 为准。
+- `max` 可显示为 `ULTRACODE`，实际提交值仍是原始标识。
+- 官方 DeepSeek 当前只声明 `off`、`high` 和 `max`；界面不会虚构 `low` 或 `medium`。
+- Desktop 锁定并重新分发 `dshmarket@1.10.1`；其精选 registry 与内置快照共同提供市场目录。
+- GitHub Topics 只用于发现，不是安装接口。Desktop 不暴露自由输入的包名、命令、文件路径、registry 或可执行文件字段。
+- Desktop 通过 `desktopProfiles` 与 `desktopPnpm` 提供不可变 profile 身份和内置包管理能力；Desktop 模式下市场不会安装系统 pnpm。
+- pnpm 默认拒绝构建脚本的策略仍然有效；被拦截的构建必须由用户按包明确批准后重试。
 
 ## 架构
 
 ```mermaid
 flowchart TD
-    M["Host model directory"] --> S["Effort slider presentation"]
+    M["Host model directory"] --> S["First-party effort slider"]
     S --> R["Existing session.selectModel RPC"]
-    C["Bundled curated catalog"] --> U["Marketplace settings tab"]
-    U --> B["Narrow preload plugin API"]
-    B --> D["Electron plugin-operation coordinator"]
-    D --> X["Stop owned Harness child"]
-    X --> P["Bundled package-manager runtime"]
-    P --> H["DSH web profile"]
-    H --> Y["Restart Harness and reload trusted URL"]
+    O["Desktop-only --patch overlay"] --> U["dshmarket settings client"]
+    U --> H["Same-origin market routes"]
+    H --> P["desktopPnpm service"]
+    P --> C["Packaged dsh plugin and pnpm"]
+    C --> A["Active DSH web profile"]
+    A --> L["Loader hot mount or restart-required state"]
 ```
 
-思考滑块的修改保留在现有 `ui-model-selection` 包中，因为该包拥有共享的会话级模型目录和输入框模型位置。独立的 `EffortSlider` 展示组件只接收当前模型的思考等级列表和选择回调；它不会直接访问 Cordis、Electron、Provider 配置或会话 RPC。
+思考组件只接收当前模型声明的等级与提交回调，不拥有 Cordis、provider、文件系统、Electron 或网络权限。模型选择继续走现有目录服务与 Host 校验。
 
-插件市场增加专用的 Web Client 设置插件和桌面主进程协调器。客户端贡献一个 `settings.plugins.tab` 页面，通过注册侧桥接取得普通的市场状态和操作回调。Electron preload 只公开带类型的市场操作。Electron 主进程会根据受信任主窗口、主 frame 和当前回环来源校验每个调用方，然后才接受操作。
+插件市场由传给内置 CLI 的 Desktop 专用 patch 挂载，并且位于 Web 参数之前。patch 先挂载一个很小的第一方 Host 适配器，发布当前 web profile 与按 generation 管理的包操作服务，再挂载锁定版本的 `dshmarket`。普通 Web 启动不会收到这个 patch。Electron preload 不新增市场、文件系统、shell、包管理或原始 IPC 方法。
 
-## 思考滑块
+## 思考等级滑块
 
-### 数据与选择
+当前模型的 `reasoning.efforts` 数组按顺序定义所有停靠点。选中值来自当前会话等级或模型默认等级。拖动、点击、方向键、Home 与 End 只会通过现有 `ModelDirectory.select()` 路径提交一个模型已声明的标识。忙碌状态阻止重复提交；提交失败则保留旧值，并走现有错误提示路径。
 
-当前模型的 `reasoning.efforts` 数组按顺序定义滑块档位。选中值来自当前会话思考等级或模型默认值。每次操作通过现有 `ModelDirectory.select()` 路径提交当前 Provider、模型和精确档位；Host 会在持久化前继续执行现有路由与思考等级校验。
-
-可见名称默认使用适配器提供的名称，仅把 `max` 作为展示别名显示为 `ULTRACODE`。无障碍文本会同时保留两层含义，例如 `ULTRACODE，最高思考等级`。未知标识仍可选择并显示适配器给出的名称；客户端不会把它们强行归并到硬编码的五档词表。
-
-### 交互与渲染
-
-- 根模型菜单保留现有 Model 和 Effort 两行，打开 Effort 后在同一锚定下拉菜单中显示滑块面板。
-- 指针拖动会预览最近档位，松开、点击、键盘方向键、Home 和 End 会提交一个已公开档位。
-- 提交期间锁定新的提交并保留当前值；提交被拒绝时保留原档位，并复用现有输入框 Toast。
-- WebGL 画布绘制克制的蓝紫色粒子流，粒子能量随所选档位变化；它不具备网络、存储、模型或包管理权限。
-- WebGL 初始化失败时使用 CSS 渐变轨道；`prefers-reduced-motion: reduce` 保留静态轨道和滑块，但关闭持续动画。
-- 控件沿用现有语义主题变量、键盘焦点样式、深浅主题、紧凑宽度和响应式溢出规则。
-
-如果从 BSD-3-Clause 的 `dsh-effort-slider` 仓库改编 shader 或粒子代码，`THIRD_PARTY_NOTICES.md` 会记录精确复用范围、上游 revision、版权声明和许可证。Host 配置补写、Provider 方言映射和模型元数据注入明确排除。
+控件仍位于当前模型菜单的 Effort 面板，仅在打开思考等级时扩宽这块原生表面。Claude Code 风格的宽幅能量景观采用 DeepSeek 蓝与青色，包含“更快 / 更智能”方向提示、细轨道和发光选中档位；低频 WebGL 能量云与稀疏粒子不会遮住文字。`prefers-reduced-motion: reduce` 会关闭持续动画；WebGL 或动画不可用时保留静态 CSS 渐变，不影响选择。未来出现的未知标识仍可选择，并使用 Host 提供的文字。
 
 ## 插件市场
 
-### 设置体验
+锁定版本的 `dshmarket` 会把已有的搜索目录、已安装列表、主题、进度、诊断、备份和包操作界面接入设置。现有第一方 Configuration 与只读 Plugin list 标签保持不变。
 
-现有插件设置包含三个标签页：
+市场写操作要求同源回环请求。`dshmarket` 会校验目录成员与命令目标，只允许一个操作并发，针对失败操作保存 manifest dependency 快照，检查可加载的 DSH 产物和重复 Loader id，并热挂载兼容插件。其 Desktop 适配器调用 `desktopPnpm.runPlugin()`，由内置 DSH CLI 继续负责 profile 初始化、相对来源锚定与 `dsh.profile.bundles` 对账。
 
-1. **插件市场**——可搜索的审核卡片，展示名称、简介、发布者、精确版本、许可证、兼容性、声明能力和安装状态。
-2. **已安装**——把当前 Loader 清单与包管理状态合并，提供启用、停用、移除和需要重启的状态。
-3. **配置**——保留现有 Host 插件配置卡片及其行为。
+`desktopPnpm` 自行解析内置 pnpm 入口，拒绝空参数、含 NUL 的参数和非绝对调用目录，过滤凭据形态的环境变量，管理有界输出流，串行化操作，并把取消和整棵进程树清理交给现有 subprocess 服务。Desktop 模式禁用脱离 Electron 的自重启。可热挂载插件立即生效；其他变化明确显示为待重启，直到应用按正常流程重新启动。
 
-内置插件标记为“内置”，不能移除。第三方条目每次只显示一个主要操作。安装或移除期间显示全局操作状态，防止并发启动多个包写入。
+## 安全与失败处理
 
-### 市场清单
+- Desktop patch 是应用资源，不是用户可写的 profile 覆盖层。
+- 一个 Cordis generation 内的 `desktopProfiles.current` 不可变。检测到 Desktop 后，市场不会回退到环境中的或猜测的 profile。
+- 浏览器代码不能提交任意包目标；市场路由在写入前重新解析精选目录条目。
+- pnpm 与 CLI 入口由受信任 Host 代码解析，不使用 renderer 输入。
+- 包操作子进程收到去除凭据的环境，只显式获得 CLI 所需的当前 `DSH_HOME`。
+- 缺少可加载 DSH 产物或 Loader id 与当前 profile 冲突的包，会在破坏下次启动前被移除。
+- Desktop 服务缺失时，市场适配器保持等待，不会改用系统 pnpm 写入。
+- WebGL 失败只影响表现。包操作失败、超时、取消或 manifest 部分写入，通过市场的有界结果与回滚保护报告。
+- 会话、凭据、工作区和 Electron 用户数据不会被复制、删除或写入包操作输出。
 
-第一版在应用成品中内置一份市场清单快照。每个条目包含稳定市场 id、npm 包名、展示信息、精确版本、DSH 版本范围、支持的桌面平台、许可证标识、源码仓库、声明能力、包完整性和审核发布状态。
+## 验证与验收
 
-应用不会在运行时抓取 `github.com/topics/dsh-plugin`。增加或更新市场条目属于经过源码审查的桌面应用发布修改。这样第一版能够直接提供市场，同时让发布者信任、包版本和完整性与应用代码一起接受审查。脱离桌面版本的远程市场更新和任意来源开发者模式不属于第一版范围。
+- 组件测试覆盖已声明停靠点、`ULTRACODE`、指针与键盘提交、忙碌状态、减少动态效果和 Canvas 回退。
+- 模型选择测试证明每个提交值都属于当前模型的已声明数组，官方 DeepSeek 不会产生虚构的 `low` 或 `medium`。
+- 适配器测试覆盖不可变 profile、内置 pnpm 解析、参数与路径拒绝、单操作锁、`dsh plugin` 调用、取消、整棵进程树清理和凭据过滤。
+- 集成测试证明只有 Desktop 挂载锁定版本的 `dshmarket`，普通 Web 不挂载，并且市场使用 Desktop 服务而非安装系统 pnpm。
+- 真实 Web 组合无需外部凭据即可打开滑块与 Marketplace。
+- macOS 与 Windows 打包验收在临时 `DSH_HOME` 下安装和删除预构建 fixture，验证 Loader 状态、数据哨兵与滑块。
 
-### 安装生命周期
+验收要求：现有输入区只出现一个精致的思考等级控件；提交值严格来自模型声明；市场可搜索并提供安装、更新、启用、停用和删除；不需要外部运行时；不新增 preload 权限；Harness 数据保持不变；发布前 Intel macOS 与原生 Windows 打包检查全部通过。
 
-桌面包内置 Profile 操作所需的包管理运行时。渲染进程只提交市场 id 和请求操作；它不能提交包 specifier、命令行参数、文件系统路径、Registry URL 或可执行文件名。
+## 备选方案与范围
 
-执行安装、更新、启用、停用或移除时，Electron 主进程按以下顺序工作：
+同时安装两个思考插件会争用同一输入区位置，而且其中一个会修改 provider 能力元数据，因此不采用。审计 `dshmarket@1.10.1` 后也不再重写第二套市场，因为重复其成熟能力会增加风险与维护成本。GitHub Topic 无法证明兼容性、作者身份、内容不可变性或生命周期脚本安全性，因此不允许任意仓库安装。
 
-1. 获取进程内操作锁，并从内置市场清单重新解析所选条目。
-2. 把 Web Profile 控制文件复制到 Electron 应用数据目录中的本次操作专属备份，不复制凭据或会话数据。
-3. 停止桌面应用精确持有的 Harness 子进程，并等待完整进程树退出。
-4. 通过 Electron Node 模式调用内置包管理器，使用固定参数模板、精确包版本、固定 Web Profile 目录，并禁用生命周期脚本。
-5. 协调 `dsh.profile.bundles`、校验生成的 manifest、解析每个启用 bundle，并运行有界的 `dsh --profile web --dump-config` 预检。
-6. 成功后删除备份，在新的随机回环端口重启 Harness，并且只加载经过校验的 URL。
-7. 失败时恢复 Profile 控制文件，必要时根据恢复后的 lockfile 执行恢复安装，重新启动原 Profile，并报告脱敏错误。
-
-协调器绝不会在它持有的 Harness 子进程运行期间修改 `~/.dsh`。它不会检查、复制、记录或移除凭据、工作区、会话或 Electron 用户数据。回滚后残留但没有引用的包存储文件不具备执行条件，因为恢复后的 manifest 和 bundle 列表不会引用它们；后续维护可以显式清理这些文件。
-
-## 桌面安全
-
-- Preload 在上下文隔离下只公开结构化市场方法；不会公开 IPC 原语、Shell 执行、文件系统访问或任意 URL。
-- Electron 主进程只接受受信任主 `webContents`、其主 frame 和精确当前 `http://127.0.0.1:<random-port>` 来源的请求。
-- 市场清单和操作值会在 Electron 主进程中再次校验，绝不信任渲染进程提交的展示数据。
-- 包安装使用精确版本、校验预期包完整性、禁用生命周期脚本，并拒绝安装 manifest 中没有 DSH bundle patch 的包。
-- 输出在到达日志或界面前会限制字节数并脱敏；环境值、凭据、Profile 文档和包管理命令行不会进入用户可见错误。
-- 符号链接和路径检查把备份、Profile 与包操作限制在各自精确解析根目录中；删除目标必须明确并经过校验。
-
-## 失败处理
-
-- 缺少桌面桥接时隐藏市场修改控件，同时保持已安装插件清单可读。
-- WebGL 或动画失败只影响展示，不会禁用模型选择。
-- 市场清单校验失败时禁用市场操作并指出无效条目，不会开始安装。
-- 包管理失败、DSH 版本不兼容、bundle 解析失败、配置预检失败、Harness 重启失败或操作超时都会先进入回滚，再向界面报告失败。
-- 如果请求后的 Profile 和恢复后的 Profile 都无法启动，现有桌面错误页会报告有界诊断，并保留备份与 Harness 数据供恢复。
-- 操作期间关闭应用会请求取消，等待有界协调器结束，必要时再执行现有的强制进程树清理。
-
-## 持久化与兼容性
-
-思考等级继续通过现有会话模型选择事件和设置持久化，视觉组件不增加新的持久化格式。市场状态从 Web Profile manifest、bundle 列表、Loader 清单和内置市场清单推导，不维护第二份已安装插件数据库。
-
-桌面包会升级版本，因为应用增加内置包管理依赖和新的原生生命周期行为。现有 `~/.dsh` Profile 保持有效。市场操作只通过 `dsh plugin` 使用的相同 manifest 格式修改所选 Profile 的依赖和 bundle 配置。
-
-## 验证
-
-- 组件测试覆盖公开档位渲染、`max` 展示、指针和键盘选择、提交被拒后的回滚、忙碌状态、减少动态效果和 WebGL 降级。
-- 模型选择测试证明每个提交档位都属于所选模型公开数组，而且 DeepSeek 的三档目录永远不会产生 `low` 或 `medium`。
-- 市场清单测试覆盖 schema 拒绝、重复 id、DSH 范围不兼容、不支持的平台、无效完整性、未审核条目和确定性的安装状态合并。
-- Desktop 测试覆盖受信调用方校验、操作锁、固定包管理参数、有界输出、精确根目录、备份与恢复、生命周期脚本禁用、预检失败、重启结束条件和错误脱敏。
-- 真实组合 Web 测试通过完整应用打开思考控件和市场标签页，不需要外部凭据。
-- macOS 成品验收使用临时 `DSH_HOME` 安装和移除 fixture 插件，验证在新的随机端口重启、确认 fixture Loader 条目、操作滑块，并证明临时会话和凭据标记保持不变。
-- 原生 Windows CI 对真实 Setup 成品执行相同的安装、重启、清单、移除、进程树、快捷方式、卸载和数据保留检查。
-
-## 验收标准
-
-- 输入框在现有模型控件区域显示精致的粒子思考滑块，不出现重复选择器。
-- 只能提交模型精确公开的思考等级标识；官方 DeepSeek 公开 `off`、`high` 和 `max`。
-- `max` 显示为 `ULTRACODE`，但线上请求值不变。
-- 设置提供可搜索的插件市场、已安装和配置视图，并支持键盘和屏幕阅读器。
-- 桌面用户可以通过按钮安装、启用、停用和移除审核插件，并自动重启 Harness，无需 Node.js、pnpm、终端、浏览器、管理员权限或固定端口。
-- 操作失败会恢复之前可运行的 Profile，并保留 Harness 会话、工作区、凭据和 Electron 用户数据。
-- 普通浏览器客户端不能请求包安装，也不能访问桌面桥接。
-- 发布成品前必须通过 macOS Intel 和原生 Windows 成品验收。
-
-## 未采用的方案
-
-不同时安装两个第三方思考等级插件，因为它们会争用同一输入框控件，而且其中一个会修改 Provider 能力元数据。不允许从 GitHub Topic 任意安装仓库，因为 Topic 无法证明兼容性、作者身份、包不可变性或生命周期脚本安全性。不把所有候选插件预装进应用，因为这会扩大安装包，也无法实现独立安装和移除。
-
-## 范围外事项
-
-- 安装任意 GitHub URL、文件系统路径、git 分支或包 specifier。
-- 未经审核就从 GitHub Topics 或 `awesome-dsh-plugin` 自动发现插件。
-- 脱离桌面应用发布的远程市场更新。
-- 需要生命周期脚本、原生编译、管理员权限或写入 DSH Web Profile 以外位置的插件。
-- 自动发布、代码签名、公证或市场发布者账号。
+任意包规格、从 GitHub Topics 自动安装、需要管理员权限的插件、写入当前 web profile 之外的位置、代码签名、公证、市场发布者账号和自动发布 Release 均不在本次范围内。

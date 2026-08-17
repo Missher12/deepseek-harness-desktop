@@ -757,6 +757,22 @@ export interface Config {
 
 来源：[`packages/host/apiproxy/src/index.ts:41`](../packages/host/apiproxy/src/index.ts)
 
+<a id="deepseek-aidsh-host-desktop-plugin-runtime"></a>
+
+## `@deepseek-ai/dsh-host-desktop-plugin-runtime`
+
+需要：`subprocess`
+
+```ts config-catalog
+/** Desktop plugin-runtime configuration supplied by the immutable patch. */
+export interface Config {
+  /** Harness profile exposed to package-management plugins. */
+  profile?: string
+}
+```
+
+来源：[`packages/host/desktop-plugin-runtime/src/index.ts:258`](../packages/host/desktop-plugin-runtime/src/index.ts)
+
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 
 ## `@deepseek-ai/dsh-host-directory-picker-browse`

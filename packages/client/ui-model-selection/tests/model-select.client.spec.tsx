@@ -48,6 +48,39 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
 afterEach(cleanup)
 
 describe('ModelSelect reasoning effort', () => {
+  it('renders one advertised-stop slider and never invents unsupported DeepSeek efforts', async () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state())
+    const select = vi.fn().mockResolvedValue(true)
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={select}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择模型，当前/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /推理等级/ }))
+
+    const slider = screen.getByRole('slider', { name: '推理等级' })
+    expect(slider.getAttribute('aria-valuetext')).toContain('High')
+    expect(screen.getByText('ULTRACODE')).toBeTruthy()
+    expect(screen.queryByText(/^Low$/)).toBeNull()
+    expect(screen.queryByText(/^Medium$/)).toBeNull()
+
+    fireEvent.keyDown(slider, { key: 'End' })
+    await waitFor(() => {
+      expect(select).toHaveBeenCalledWith({
+        provider: 'deepseek-official',
+        model: 'deepseek-v4-flash',
+        reasoningEffort: 'max',
+      })
+    })
+    expect(select).not.toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'low' }))
+    expect(select).not.toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'medium' }))
+  })
+
   it('renders adapter metadata and submits the effort as part of the session selection', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())
     const select = vi.fn(async (selection: ModelSelection) => {
@@ -69,16 +102,16 @@ describe('ModelSelect reasoning effort', () => {
     fireEvent.click(trigger)
     fireEvent.click(screen.getByRole('menuitem', { name: /推理等级/ }))
     expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
-      .toEqual(['Off', 'High', 'MaxLargest budget'])
+      .toEqual(['Off', 'High', 'ULTRACODE'])
 
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /Max/ }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /ULTRACODE/ }))
     await waitFor(() => {
       expect(select).toHaveBeenCalledWith({
         provider: 'deepseek-official',
         model: 'deepseek-v4-flash',
         reasoningEffort: 'max',
       })
-      expect(trigger.getAttribute('aria-label')).toBe('选择模型，当前 DeepSeek-V4-Flash，推理等级 Max')
+      expect(trigger.getAttribute('aria-label')).toBe('选择模型，当前 DeepSeek-V4-Flash，推理等级 ULTRACODE')
     })
   })
 

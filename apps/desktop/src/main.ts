@@ -12,6 +12,7 @@ import {
   type IpcMainEvent,
 } from 'electron'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { healProfilesModuleFallback } from '@deepseek-ai/dsh-app-boot'
 import {
   DesktopApplication,
   type AppFacade,
@@ -34,6 +35,8 @@ const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 const loadingPath = fileURLToPath(new URL('../renderer/loading.html', import.meta.url))
 const failurePath = fileURLToPath(new URL('../renderer/failure.html', import.meta.url))
 const iconPath = fileURLToPath(new URL('../assets/icon-source.png', import.meta.url))
+const desktopPatchPath = fileURLToPath(new URL('../desktop.cordis.patch.yml', import.meta.url))
+const desktopInstallAnchorPath = fileURLToPath(new URL('../package.json', import.meta.url))
 const platformBehavior = desktopPlatformBehavior(process.platform)
 
 function resolveCliPath(): string {
@@ -80,6 +83,8 @@ const lifecycle: { controller?: DesktopApplication } = {}
 
 const runtime = new HarnessProcess({
   cli: resolveCliPath(),
+  patch: desktopPatchPath,
+  prepare: () => { healProfilesModuleFallback(desktopInstallAnchorPath, dshHome) },
   onOutput: (source, output) => {
     record(`Harness ${source}: ${output}`)
   },
