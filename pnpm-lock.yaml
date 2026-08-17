@@ -740,6 +740,9 @@ importers:
       '@deepseek-ai/dsh-session-log-export':
         specifier: workspace:^
         version: link:../../packages/session-query/session-log-export
+      '@deepseek-ai/dsh-session-messenger':
+        specifier: workspace:^
+        version: link:../../packages/extensions/session-messenger
       '@deepseek-ai/dsh-session-persistence':
         specifier: workspace:^
         version: link:../../packages/session/session-persistence

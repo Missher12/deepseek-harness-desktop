@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 import {
   MAX_HOP,
@@ -32,6 +33,7 @@ describe('session messenger receipt boundary', () => {
       version: string
       exports: Record<string, unknown>
       dsh: { bundle: { patch: string }; client: { platform: string } }
+      files: string[]
     }
     expect(manifest.name).toBe('@deepseek-ai/dsh-session-messenger')
     expect(manifest.version).toBe('0.1.0-rc.5')
@@ -42,6 +44,26 @@ describe('session messenger receipt boundary', () => {
       bundle: { patch: './cordis.patch.yml' },
       client: { platform: 'web' },
     })
+    expect(manifest.files).toEqual([
+      'lib/index.js',
+      'lib/invariant.js',
+      'lib/client.js',
+      'cordis.patch.yml',
+      'lib/types/**/*.d.ts',
+    ])
+  })
+
+  it('publishes one canonical bundle patch row', async () => {
+    const patch = yaml.load(
+      await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8'),
+    )
+
+    expect(patch).toEqual([{
+      insert: [{
+        id: 'session-messenger',
+        name: '@deepseek-ai/dsh-session-messenger',
+      }],
+    }])
   })
 
   it('declares the one versioned receipt domain', () => {

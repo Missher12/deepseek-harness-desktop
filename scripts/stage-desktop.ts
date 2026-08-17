@@ -2,14 +2,18 @@ import { spawnSync } from 'node:child_process'
 import { cp, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import * as yaml from 'js-yaml'
 
 const DESKTOP_PACKAGE = '@deepseek-ai/dsh-desktop'
+const SESSION_MESSENGER_PACKAGE = '@deepseek-ai/dsh-session-messenger'
+const SESSION_MESSENGER_ROW_ID = 'session-messenger'
 
 /** OS seams injected by staging tests. */
 export interface StageDesktopDependencies {
-  remove(path: string): Promise<void>
   readText(path: string): Promise<string>
+  remove(path: string): Promise<void>
   pnpmInvocation(args: readonly string[]): { command: string; args: readonly string[] }
   run(command: string, args: readonly string[], cwd: string): void
   copy(source: string, target: string): Promise<void>
@@ -153,9 +157,11 @@ export function validateReasoningEffortPatch(source: string): void {
   }
   visit(document)
 
+  const candidate = matching[0]
   if (matching.length !== 1
-    || matching[0]?.id !== 'reasoning-effort'
-    || matching[0]?.name !== REASONING_EFFORT_PACKAGE) {
+    || candidate === undefined
+    || candidate.id !== 'reasoning-effort'
+    || candidate.name !== REASONING_EFFORT_PACKAGE) {
     throw new Error(
       'Desktop staging preflight requires exactly one reasoning-effort row for '
       + `${REASONING_EFFORT_PACKAGE}; the upstream original and attributed fork cannot be enabled together.`,
@@ -169,6 +175,46 @@ function stageRelative(stageDir: string, path: string): string {
     throw new Error(`Desktop staging found a file outside the stage directory: ${path}`)
   }
   return value.split(sep).join('/')
+}
+
+function assertCanonicalSessionMessengerRow(content: string): void {
+  let parsed: unknown
+  try {
+    parsed = yaml.load(content, { schema: entryListSchema })
+  } catch (error: unknown) {
+    throw new Error('Desktop staging requires exactly one canonical session-messenger row.', { cause: error })
+  }
+  if (!Array.isArray(parsed) || parsed.some(patch => (
+    typeof patch !== 'object' || patch === null || Array.isArray(patch)
+  ))) {
+    throw new Error('Desktop staging requires exactly one canonical session-messenger row.')
+  }
+  const patches = parsed as PatchOptions[]
+  if (patches.some(patch => (
+    patch.id === SESSION_MESSENGER_ROW_ID || patch.name === SESSION_MESSENGER_PACKAGE
+  ))) {
+    throw new Error('Desktop staging requires exactly one canonical session-messenger row.')
+  }
+  const entries = applyEntryPatches([], patches, () => {})
+  const rows: EntryOptions[] = []
+  const visit = (children: EntryOptions[]): void => {
+    for (const row of children) {
+      rows.push(row)
+      if (row.group && Array.isArray(row.config)) visit(row.config as EntryOptions[])
+    }
+  }
+  visit(entries)
+  const candidates = rows.filter(row => (
+    row.id === SESSION_MESSENGER_ROW_ID || row.name === SESSION_MESSENGER_PACKAGE
+  ))
+  const candidate = candidates[0]
+  if (candidates.length !== 1
+    || candidate === undefined
+    || candidate.id !== SESSION_MESSENGER_ROW_ID
+    || candidate.name !== SESSION_MESSENGER_PACKAGE
+    || Object.keys(candidate).sort().join(',') !== 'id,name') {
+    throw new Error('Desktop staging requires exactly one canonical session-messenger row.')
+  }
 }
 
 /**
@@ -192,9 +238,9 @@ export async function stageDesktop(
     throw new Error(`Desktop staging refused an unexpected deletion target: ${stageDir}`)
   }
 
-  validateReasoningEffortPatch(
-    await dependencies.readText(join(desktopDir, 'desktop.cordis.patch.yml')),
-  )
+  const desktopPatch = await dependencies.readText(join(desktopDir, 'desktop.cordis.patch.yml'))
+  validateReasoningEffortPatch(desktopPatch)
+  assertCanonicalSessionMessengerRow(desktopPatch)
   await dependencies.remove(stageDir)
   // pnpm 11's legacy deploy writes its dependency mode into the root workspace
   // state. Passing --prod there corrupts later root commands into production-
@@ -225,6 +271,10 @@ export async function stageDesktop(
     'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
     'node_modules/@deepseek-ai/dsh-host-desktop-plugin-runtime/lib/index.js',
     'node_modules/dshmarket/package.json',
+    'node_modules/@deepseek-ai/dsh-session-messenger/package.json',
+    'node_modules/@deepseek-ai/dsh-session-messenger/lib/index.js',
+    'node_modules/@deepseek-ai/dsh-session-messenger/lib/client.js',
+    'node_modules/@deepseek-ai/dsh-session-messenger/cordis.patch.yml',
     'node_modules/dshmarket/lib/index.js',
     'node_modules/dshmarket/lib/routes.js',
     'node_modules/dshmarket/src/client/MarketSection.tsx',

@@ -32,6 +32,10 @@ interface BuilderConfiguration {
   }
 }
 
+interface DesktopPatch {
+  insert?: Array<Record<string, unknown>>
+}
+
 describe('desktop package manifest', () => {
   it('uses one rounded icon source with native macOS and Windows containers', () => {
     const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
@@ -58,6 +62,7 @@ describe('desktop package manifest', () => {
     expect(manifest.dependencies['@deepseek-ai/dsh-home-paths']).toBe('workspace:^')
     expect(manifest.dependencies['@deepseek-ai/dsh-web-frontend']).toBe('workspace:^')
     expect(manifest.dependencies['@deepseek-ai/dsh-reasoning-effort']).toBe('workspace:^')
+    expect(manifest.dependencies['@deepseek-ai/dsh-session-messenger']).toBe('workspace:^')
     expect(manifest.devDependencies.electron).toBe('43.4.0')
     expect(manifest.devDependencies['electron-builder']).toBe('26.15.3')
     expect(manifest.devDependencies['@electron/rebuild']).toBe('4.2.0')
@@ -103,6 +108,22 @@ describe('desktop package manifest', () => {
     expect(boot).toContain('did not activate')
     expect(boot).toContain('await this.runPluginBoot(prefetching)\n      this.settled.set(true)')
     expect(boot).toContain('await loader.await()\n    this.assertEntriesActive()')
+  })
+
+  it('mounts one canonical session messenger row in the Desktop-only overlay', () => {
+    const patches = yaml.load(
+      readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8'),
+    ) as DesktopPatch[]
+    const rows = patches.flatMap(patch => patch.insert ?? [])
+
+    expect(rows.filter(row => row.id === 'session-messenger')).toEqual([{
+      id: 'session-messenger',
+      name: '@deepseek-ai/dsh-session-messenger',
+    }])
+    expect(rows.find(row => row.id === 'dsh-market')).toEqual({
+      id: 'dsh-market',
+      name: 'dshmarket',
+    })
   })
 
   it('builds one per-user Windows x64 Setup with shortcuts and launch-after-install', () => {
