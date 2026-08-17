@@ -11,8 +11,16 @@ Workspace 位置，可在管理器中原位恢复；永久删除只能从归档�
 提供同一操作，复制时不会恢复或删除会话。应用复制完整且稳定的原始 ID，
 并根据宿主剪贴板是否接受写入显示结果提示。
 
-输入框原有的模型控件保留 Harness 原生思考等级列表，只显示当前模型实际
-声明支持的档位，并继续通过现有受校验路径提交原始 effort id。
+可移除的 `@deepseek-ai/dsh-session-messenger` 插件提供同一 profile 内的有界
+跨会话通信。Native Function Calling 与 Code Mode 都可选择不唤醒发送、排入
+唤醒跟进、凭单次 receipt token 回复，或等待对应回复。紧凑的侧栏底部面板会
+显示待处理与未读 receipt，可把通知标为已读并复制当前 Session ID。它不会建立
+Agent 自动对聊循环，收到的文字始终按不可信内容处理。
+
+可移除的 `@deepseek-ai/dsh-reasoning-effort` 插件把普通思考等级行替换为支持
+键盘操作的滑块，并且只使用当前模型实际声明的档位。Harness 风格浮层在空间
+足够时默认向下、必要时自动翻到上方；保留标注来源的 HanaAyane Canvas 粒子，
+可选小人物默认关闭，确认后的 effort 继续通过现有模型选择路径持久化。
 
 Desktop 专属组合还固定接入 `dshmarket@1.10.1`，在设置中提供**插件市场**。
 搜索、安装、更新、卸载、分组和备份只作用于当前 `web` profile，并通过成品
@@ -60,15 +68,15 @@ pnpm run desktop:dmg
 pnpm run desktop:setup
 ```
 
-这个命令必须在原生 Windows x64 上运行，输出 `apps/desktop/release/DeepSeek-Harness-Setup-0.1.4-win-x64.exe`。Windows CI 使用独立的短暂存目录，避免原生 MSVC 重编译触发旧式路径长度限制；所有发布产物都写入 `apps/desktop/release`。
+这个命令必须在原生 Windows x64 上运行，输出 `apps/desktop/release/DeepSeek-Harness-Setup-0.1.5-win-x64.exe`。Windows CI 使用独立的短暂存目录，避免原生 MSVC 重编译触发旧式路径长度限制；所有发布产物都写入 `apps/desktop/release`。
 
 Windows Setup 是当前用户范围的一键 NSIS 安装器，不需要管理员权限，也不需要 Node.js、pnpm、终端、浏览器或固定端口；交互式安装完成后，它会创建桌面和开始菜单快捷方式并启动 DeepSeek Harness。卸载会删除应用和快捷方式，但保留 Harness 与 Electron 用户数据。
 
 应用使用操作系统分配的随机回环端口，不会占用固定的 65000 端口。
 
-当前已在本机验证的 Intel 成品为 `DeepSeek-Harness-0.1.4-mac-x64.dmg`，
-大小 160,692,416 字节，SHA-256：
-`a1b79014e040634c44b24dc4b91ff3f7c00374e92ab53a27dfb6705fabae5865`。
+当前已在本机验证的 Intel 成品为 `DeepSeek-Harness-0.1.5-mac-x64.dmg`，
+大小 163,335,534 字节，SHA-256：
+`a0097c21c909171e7d7158633f639bb8e61beb46a5a38039918f171ba0b74974`。
 
 ## 成品验证
 
@@ -82,9 +90,9 @@ Windows 在原生系统生成 Setup 后运行：
 
 ```powershell
 ./scripts/windows-desktop-setup-smoke.ps1 `
-  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.4-win-x64.exe
+  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.5-win-x64.exe
 ```
 
-成品测试使用仓库外的临时工作目录、临时 Electron 用户数据和临时 `DSH_HOME`，验证 preload、三栏工作台、归档管理器、紧凑插件市场的标签／搜索／分类／行操作、自更新保护、隔离 profile 内的一次普通包操作、随机监听端口，以及 macOS 原生退出或 Windows 关闭窗口后的完整进程回收。Desktop staging 还要求 staged 树中有且只有一个 `dshmarket@1.10.1`，其源码、Client bundle 与 source map 的紧凑布局标记一致，Host 自保护标记存在，并强制检查不可变 Desktop patch、插件运行时 provider 及内置 pnpm 入口确实进入成品。Windows 测试还会验证静默安装、快捷方式创建、真实剪贴板复制、卸载清理和数据保留。原生 Windows CI 会构建 Setup、运行这项测试、记录 SHA-256，并上传两个文件。
+成品测试使用仓库外的临时工作目录、临时 Electron 用户数据和临时 `DSH_HOME`。Intel macOS 测试会验证 preload、三栏工作台、普通与归档 Session ID 写入真实系统剪贴板且不打开／恢复／删除／发送／启动 Agent、会话通信通知／已读／复制、默认向下且可自适应翻转的思考滑块与 effort 持久化、Canvas 确实输出且小人物关闭、紧凑插件市场的标签／搜索／分类／行几何、自更新保护、隔离 profile 中真实卸载普通插件、随机监听端口，以及原生退出后的完整进程回收。Desktop staging 还要求 staged 树中有且只有一个 `dshmarket@1.10.1`，其源码、Client bundle 与 source map 的紧凑布局标记一致，Host 自保护标记存在，并强制检查不可变 Desktop patch、插件运行时 provider 及内置 pnpm 入口确实进入成品。Windows 测试还会验证静默安装、快捷方式创建、真实剪贴板复制、卸载清理和数据保留。原生 Windows CI 会构建 Setup、运行这项测试、记录 SHA-256，并上传两个文件。
 
 本地产物没有签名。macOS 可能要求从 Finder 右键菜单选择“打开”，Windows SmartScreen 可能要求确认未知发布者；只有受信任的平台签名凭据才能消除这些系统提示。
