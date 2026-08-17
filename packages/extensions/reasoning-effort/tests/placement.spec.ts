@@ -132,6 +132,27 @@ describe('placePopup', () => {
   })
 })
 
+interface ResizeObserverRecord {
+  readonly callback: ResizeObserverCallback
+  readonly observed: Set<Element>
+  readonly disconnect: ReturnType<typeof vi.fn>
+}
+
+interface IntersectionObserverRecord {
+  readonly callback: IntersectionObserverCallback
+  readonly observed: Set<Element>
+  readonly disconnect: ReturnType<typeof vi.fn>
+  readonly options: IntersectionObserverInit | undefined
+}
+
+const invokeListener = (
+  listener: EventListenerOrEventListenerObject | undefined,
+  event: Event,
+): void => {
+  if (typeof listener === 'function') listener(event)
+  else listener?.handleEvent(event)
+}
+
 function installBrowserHarness() {
   const visualListeners = new Map<string, Set<EventListenerOrEventListenerObject>>()
   const visualViewport = {
@@ -150,13 +171,37 @@ function installBrowserHarness() {
   }
   vi.stubGlobal('visualViewport', visualViewport)
 
-  const observed = new Set<Element>()
-  const disconnect = vi.fn(() => { observed.clear() })
-  let notifyResize: ResizeObserverCallback | undefined
+  const resizeObservers: ResizeObserverRecord[] = []
   vi.stubGlobal('ResizeObserver', class {
-    constructor(callback: ResizeObserverCallback) { notifyResize = callback }
-    observe(element: Element): void { observed.add(element) }
-    disconnect(): void { disconnect() }
+    readonly record: ResizeObserverRecord
+    constructor(callback: ResizeObserverCallback) {
+      const observed = new Set<Element>()
+      this.record = {
+        callback,
+        observed,
+        disconnect: vi.fn(() => { observed.clear() }),
+      }
+      resizeObservers.push(this.record)
+    }
+    observe(element: Element): void { this.record.observed.add(element) }
+    disconnect(): void { this.record.disconnect() }
+  })
+
+  const intersectionObservers: IntersectionObserverRecord[] = []
+  vi.stubGlobal('IntersectionObserver', class {
+    readonly record: IntersectionObserverRecord
+    constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+      const observed = new Set<Element>()
+      this.record = {
+        callback,
+        observed,
+        disconnect: vi.fn(() => { observed.clear() }),
+        options,
+      }
+      intersectionObservers.push(this.record)
+    }
+    observe(element: Element): void { this.record.observed.add(element) }
+    disconnect(): void { this.record.disconnect() }
   })
 
   let nextFrame = 1
@@ -182,52 +227,128 @@ function installBrowserHarness() {
   }
   const dispatchVisual = (type: string): void => {
     const listener = visualListeners.get(type)?.values().next().value
-    if (typeof listener === 'function') listener(new Event(type))
-    else listener?.handleEvent(new Event(type))
+    invokeListener(listener, new Event(type))
+  }
+  const latestResizeObserver = (): ResizeObserverRecord | undefined => resizeObservers.at(-1)
+  const latestIntersectionObserver = (): IntersectionObserverRecord | undefined => intersectionObservers.at(-1)
+  const notifyResize = (record = latestResizeObserver()): void => {
+    record?.callback([], {} as ResizeObserver)
+  }
+  const notifyLayoutShift = (record = latestIntersectionObserver()): void => {
+    record?.callback([], {} as IntersectionObserver)
   }
 
   return {
     addWindowListener,
     cancelFrame,
-    disconnect,
     dispatchVisual,
     flushNextFrame,
     frames,
-    notifyResize: (): void => { notifyResize?.([], {} as ResizeObserver) },
-    observed,
+    intersectionObservers,
+    latestIntersectionObserver,
+    latestResizeObserver,
+    notifyLayoutShift,
+    notifyResize,
     removeWindowListener,
     requestFrame,
+    resizeObservers,
     visualViewport,
+    visualListener: (type: string): EventListenerOrEventListenerObject | undefined => (
+      visualListeners.get(type)?.values().next().value
+    ),
   }
 }
 
 describe('usePopupPlacement', () => {
-  it('tracks same-size anchor movement on the next open-state frame', () => {
+  it('stays idle after initial measurement and coalesces a burst of geometry events', () => {
+    const browser = installBrowserHarness()
+    const anchor = document.createElement('button')
+    const popup = document.createElement('div')
+    vi.spyOn(anchor, 'getBoundingClientRect').mockReturnValue(rect(100, 100, 100, 40) as DOMRect)
+    vi.spyOn(popup, 'getBoundingClientRect').mockReturnValue(rect(0, 0, 240, 200) as DOMRect)
+    const { result, unmount } = renderHook(() => usePopupPlacement({ anchor, popup, open: true }))
+
+    expect(browser.requestFrame).toHaveBeenCalledTimes(1)
+    browser.flushNextFrame()
+    expect(result.current).toEqual({
+      side: 'below', top: 148, left: 100, maxHeight: 444, maxWidth: 784,
+    })
+    expect(browser.frames.size).toBe(0)
+    expect(browser.latestResizeObserver()?.observed).toEqual(new Set([anchor, popup]))
+    const layoutObserver = browser.latestIntersectionObserver()
+    expect(layoutObserver?.observed).toEqual(new Set([anchor]))
+    expect(layoutObserver?.options?.threshold).toBeCloseTo(0.999)
+    const stablePlacement = result.current
+
+    act(() => { browser.notifyLayoutShift(layoutObserver) })
+    expect(browser.frames.size).toBe(0)
+
+    act(() => {
+      window.dispatchEvent(new Event('resize'))
+      window.dispatchEvent(new Event('scroll'))
+      browser.notifyResize()
+      browser.dispatchVisual('resize')
+      browser.dispatchVisual('scroll')
+    })
+    expect(browser.requestFrame).toHaveBeenCalledTimes(2)
+    expect(browser.frames.size).toBe(1)
+    browser.flushNextFrame()
+    expect(result.current).toBe(stablePlacement)
+    expect(browser.frames.size).toBe(0)
+    unmount()
+  })
+
+  it('keeps required event tracking when IntersectionObserver is unavailable', () => {
+    const browser = installBrowserHarness()
+    vi.stubGlobal('IntersectionObserver', undefined)
+    const anchor = document.createElement('button')
+    const popup = document.createElement('div')
+    vi.spyOn(anchor, 'getBoundingClientRect').mockReturnValue(rect(100, 100, 100, 40) as DOMRect)
+    vi.spyOn(popup, 'getBoundingClientRect').mockReturnValue(rect(0, 0, 240, 200) as DOMRect)
+    const { result, unmount } = renderHook(() => usePopupPlacement({ anchor, popup, open: true }))
+
+    browser.flushNextFrame()
+    expect(result.current).toMatchObject({ top: 148, left: 100 })
+    expect(browser.intersectionObservers).toHaveLength(0)
+    expect(browser.frames.size).toBe(0)
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(browser.frames.size).toBe(1)
+    browser.flushNextFrame()
+    expect(browser.frames.size).toBe(0)
+    unmount()
+  })
+
+  it('updates same-size anchor movement from the event-driven layout sensor', () => {
     const browser = installBrowserHarness()
     const anchor = document.createElement('button')
     const popup = document.createElement('div')
     let anchorRect = rect(100, 100, 100, 40)
     vi.spyOn(anchor, 'getBoundingClientRect').mockImplementation(() => anchorRect as DOMRect)
     vi.spyOn(popup, 'getBoundingClientRect').mockReturnValue(rect(0, 0, 240, 200) as DOMRect)
-    const anchorRef = { current: anchor }
-    const popupRef = { current: popup }
-    const { result, unmount } = renderHook(() => usePopupPlacement({
-      anchorRef,
-      popupRef,
-      open: true,
-    }))
+    const { result, unmount } = renderHook(() => usePopupPlacement({ anchor, popup, open: true }))
 
     browser.flushNextFrame()
-    expect(result.current).toMatchObject({ side: 'below', top: 148, left: 100 })
+    const armedAtInitialRect = browser.latestIntersectionObserver()
+    expect(browser.frames.size).toBe(0)
 
     anchorRect = rect(240, 160, 100, 40)
+    act(() => {
+      browser.notifyLayoutShift(armedAtInitialRect)
+      browser.notifyLayoutShift(armedAtInitialRect)
+    })
+    expect(browser.frames.size).toBe(1)
     browser.flushNextFrame()
     expect(result.current).toMatchObject({ side: 'below', top: 208, left: 240 })
-    expect(browser.frames.size).toBe(1)
+    expect(browser.frames.size).toBe(0)
+    expect(armedAtInitialRect?.observed.size).toBe(0)
+    expect(browser.latestIntersectionObserver()?.observed).toEqual(new Set([anchor]))
+
+    act(() => { browser.notifyLayoutShift(armedAtInitialRect) })
+    expect(browser.frames.size).toBe(0)
     unmount()
   })
 
-  it('recovers from null refs and rebinds observation when current nodes are replaced', () => {
+  it('rebinds both observers when actual node inputs appear and are replaced', () => {
     const browser = installBrowserHarness()
     const firstAnchor = document.createElement('button')
     const firstPopup = document.createElement('div')
@@ -237,80 +358,101 @@ describe('usePopupPlacement', () => {
     vi.spyOn(firstPopup, 'getBoundingClientRect').mockReturnValue(rect(0, 0, 240, 200) as DOMRect)
     vi.spyOn(nextAnchor, 'getBoundingClientRect').mockReturnValue(rect(300, 260, 100, 40) as DOMRect)
     vi.spyOn(nextPopup, 'getBoundingClientRect').mockReturnValue(rect(0, 0, 180, 160) as DOMRect)
-    const anchorRef = { current: null as HTMLElement | null }
-    const popupRef = { current: null as HTMLElement | null }
-    const { result, unmount } = renderHook(() => usePopupPlacement({ anchorRef, popupRef, open: true }))
+    interface HookProps {
+      readonly anchor: HTMLElement | null
+      readonly popup: HTMLElement | null
+      readonly open: boolean
+    }
+    const { result, rerender, unmount } = renderHook(
+      (props: HookProps) => usePopupPlacement(props),
+      { initialProps: { anchor: null, popup: null, open: true } },
+    )
 
     browser.flushNextFrame()
     expect(result.current).toBeNull()
-    expect(browser.observed.size).toBe(0)
+    expect(browser.latestResizeObserver()?.observed.size).toBe(0)
+    expect(browser.latestIntersectionObserver()).toBeUndefined()
 
-    anchorRef.current = firstAnchor
-    popupRef.current = firstPopup
+    const nullResizeObserver = browser.latestResizeObserver()
+    rerender({ anchor: firstAnchor, popup: firstPopup, open: true })
+    expect(nullResizeObserver?.observed.size).toBe(0)
+    expect(browser.latestResizeObserver()?.observed).toEqual(new Set([firstAnchor, firstPopup]))
     browser.flushNextFrame()
-    expect(browser.observed).toEqual(new Set([firstAnchor, firstPopup]))
     expect(result.current).toMatchObject({ top: 148, left: 100 })
+    const firstResizeObserver = browser.latestResizeObserver()
+    const firstLayoutObserver = browser.latestIntersectionObserver()
+    expect(firstLayoutObserver?.observed).toEqual(new Set([firstAnchor]))
 
-    anchorRef.current = nextAnchor
-    popupRef.current = nextPopup
+    rerender({ anchor: nextAnchor, popup: nextPopup, open: true })
+    expect(firstResizeObserver?.observed.size).toBe(0)
+    expect(firstLayoutObserver?.observed.size).toBe(0)
+    expect(browser.latestResizeObserver()?.observed).toEqual(new Set([nextAnchor, nextPopup]))
     browser.flushNextFrame()
-    expect(browser.observed).toEqual(new Set([nextAnchor, nextPopup]))
-    expect(browser.observed.has(firstAnchor)).toBe(false)
-    expect(browser.observed.has(firstPopup)).toBe(false)
     expect(result.current).toMatchObject({ top: 308, left: 300 })
-    expect(browser.frames.size).toBe(1)
+    expect(browser.latestIntersectionObserver()?.observed).toEqual(new Set([nextAnchor]))
+    expect(browser.frames.size).toBe(0)
     unmount()
   })
 
-  it('coalesces geometry events and releases the single tracking frame and every browser resource', () => {
+  it('disconnects exactly on close and unmount, and stale callbacks stay inert', () => {
     const browser = installBrowserHarness()
     const anchor = document.createElement('button')
     const popup = document.createElement('div')
     vi.spyOn(anchor, 'getBoundingClientRect').mockReturnValue(rect(100, 100, 100, 40) as DOMRect)
     vi.spyOn(popup, 'getBoundingClientRect').mockReturnValue(rect(0, 0, 240, 200) as DOMRect)
-    const anchorRef = { current: anchor }
-    const popupRef = { current: popup }
-    const { result, unmount } = renderHook(() => usePopupPlacement({ anchorRef, popupRef, open: true }))
+    const { rerender, unmount } = renderHook(
+      ({ open }: { open: boolean }) => usePopupPlacement({ anchor, popup, open }),
+      { initialProps: { open: true } },
+    )
 
-    expect(browser.requestFrame).toHaveBeenCalledTimes(1)
-    expect(browser.addWindowListener).toHaveBeenCalledWith('resize', expect.any(Function))
-    expect(browser.addWindowListener).toHaveBeenCalledWith('scroll', expect.any(Function), true)
-    expect(browser.visualViewport.addEventListener).toHaveBeenCalledWith('resize', expect.any(Function))
-    expect(browser.visualViewport.addEventListener).toHaveBeenCalledWith('scroll', expect.any(Function))
     browser.flushNextFrame()
-    expect(result.current).toEqual({
-      side: 'below', top: 148, left: 100, maxHeight: 444, maxWidth: 784,
-    })
-    expect(browser.observed).toEqual(new Set([anchor, popup]))
-    expect(browser.frames.size).toBe(1)
-    const stablePlacement = result.current
-    browser.flushNextFrame()
-    expect(result.current).toBe(stablePlacement)
-    expect(browser.frames.size).toBe(1)
+    const closeResizeObserver = browser.latestResizeObserver()
+    const closeLayoutObserver = browser.latestIntersectionObserver()
+    const staleWindowResize = browser.addWindowListener.mock.calls.find(([type]) => type === 'resize')?.[1]
+    const staleWindowScroll = browser.addWindowListener.mock.calls.find(([type]) => type === 'scroll')?.[1]
+    const staleVisualResize = browser.visualListener('resize')
+    const staleVisualScroll = browser.visualListener('scroll')
+    const resizeDisconnectsBeforeClose = closeResizeObserver?.disconnect.mock.calls.length ?? 0
+    const layoutDisconnectsBeforeClose = closeLayoutObserver?.disconnect.mock.calls.length ?? 0
+    rerender({ open: false })
 
+    expect(closeResizeObserver?.disconnect).toHaveBeenCalledTimes(resizeDisconnectsBeforeClose + 1)
+    expect(closeLayoutObserver?.disconnect).toHaveBeenCalledTimes(layoutDisconnectsBeforeClose + 1)
+    expect(closeResizeObserver?.observed.size).toBe(0)
+    expect(closeLayoutObserver?.observed.size).toBe(0)
+    expect(browser.removeWindowListener).toHaveBeenCalledWith('resize', staleWindowResize)
+    expect(browser.removeWindowListener).toHaveBeenCalledWith('scroll', staleWindowScroll, true)
+    expect(browser.visualViewport.removeEventListener).toHaveBeenCalledWith('resize', staleVisualResize)
+    expect(browser.visualViewport.removeEventListener).toHaveBeenCalledWith('scroll', staleVisualScroll)
+    expect(browser.frames.size).toBe(0)
     act(() => {
-      window.dispatchEvent(new Event('resize'))
-      window.dispatchEvent(new Event('scroll'))
-      browser.notifyResize()
-      browser.dispatchVisual('resize')
-      browser.dispatchVisual('scroll')
+      browser.notifyResize(closeResizeObserver)
+      browser.notifyLayoutShift(closeLayoutObserver)
+      invokeListener(staleWindowResize, new Event('resize'))
+      invokeListener(staleVisualScroll, new Event('scroll'))
     })
-    expect(browser.requestFrame).toHaveBeenCalledTimes(3)
-    expect(browser.frames.size).toBe(1)
+    expect(browser.frames.size).toBe(0)
 
-    const windowResize = browser.addWindowListener.mock.calls.find(([type]) => type === 'resize')?.[1]
-    const windowScroll = browser.addWindowListener.mock.calls.find(([type]) => type === 'scroll')?.[1]
-    const viewportResize = browser.visualViewport.addEventListener.mock.calls.find(([type]) => type === 'resize')?.[1]
-    const viewportScroll = browser.visualViewport.addEventListener.mock.calls.find(([type]) => type === 'scroll')?.[1]
+    rerender({ open: true })
+    browser.flushNextFrame()
+    const unmountResizeObserver = browser.latestResizeObserver()
+    const unmountLayoutObserver = browser.latestIntersectionObserver()
+    const resizeDisconnectsBeforeUnmount = unmountResizeObserver?.disconnect.mock.calls.length ?? 0
+    const layoutDisconnectsBeforeUnmount = unmountLayoutObserver?.disconnect.mock.calls.length ?? 0
+    act(() => { window.dispatchEvent(new Event('resize')) })
     const pendingFrame = browser.frames.keys().next().value
     unmount()
 
-    expect(browser.removeWindowListener).toHaveBeenCalledWith('resize', windowResize)
-    expect(browser.removeWindowListener).toHaveBeenCalledWith('scroll', windowScroll, true)
-    expect(browser.visualViewport.removeEventListener).toHaveBeenCalledWith('resize', viewportResize)
-    expect(browser.visualViewport.removeEventListener).toHaveBeenCalledWith('scroll', viewportScroll)
-    expect(browser.disconnect).toHaveBeenCalled()
+    expect(unmountResizeObserver?.disconnect).toHaveBeenCalledTimes(resizeDisconnectsBeforeUnmount + 1)
+    expect(unmountLayoutObserver?.disconnect).toHaveBeenCalledTimes(layoutDisconnectsBeforeUnmount + 1)
+    expect(unmountResizeObserver?.observed.size).toBe(0)
+    expect(unmountLayoutObserver?.observed.size).toBe(0)
     expect(browser.cancelFrame).toHaveBeenCalledWith(pendingFrame)
+    expect(browser.frames.size).toBe(0)
+    act(() => {
+      browser.notifyResize(unmountResizeObserver)
+      browser.notifyLayoutShift(unmountLayoutObserver)
+    })
     expect(browser.frames.size).toBe(0)
   })
 })

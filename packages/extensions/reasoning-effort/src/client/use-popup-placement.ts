@@ -1,14 +1,16 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import type { RefObject } from 'react'
 import { placePopup, type PopupPlacement, type PopupSide } from './placement.ts'
 
 /** Reactive inputs for a portaled popup's browser measurements. */
 export interface UsePopupPlacementInput {
-  readonly anchorRef: RefObject<HTMLElement>
-  readonly popupRef: RefObject<HTMLElement>
+  readonly anchor: HTMLElement | null
+  readonly popup: HTMLElement | null
   readonly open: boolean
   readonly preferred?: PopupSide
 }
+
+const LAYOUT_SHIFT_EPSILON = 0.5
+const INTERSECTION_THRESHOLD = 0.999
 
 const samePlacement = (left: PopupPlacement | null, right: PopupPlacement): boolean => (
   left !== null
@@ -19,13 +21,35 @@ const samePlacement = (left: PopupPlacement | null, right: PopupPlacement): bool
   && left.maxWidth === right.maxWidth
 )
 
+const movedFrom = (current: DOMRect, baseline: DOMRect): boolean => (
+  Math.abs(current.top - baseline.top) > LAYOUT_SHIFT_EPSILON
+  || Math.abs(current.left - baseline.left) > LAYOUT_SHIFT_EPSILON
+  || Math.abs(current.right - baseline.right) > LAYOUT_SHIFT_EPSILON
+  || Math.abs(current.bottom - baseline.bottom) > LAYOUT_SHIFT_EPSILON
+)
+
+const clippedRootMargin = (rect: DOMRect): string | null => {
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const top = Math.min(Math.max(rect.top, 0), viewportHeight)
+  const left = Math.min(Math.max(rect.left, 0), viewportWidth)
+  const right = Math.min(Math.max(rect.right, 0), viewportWidth)
+  const bottom = Math.min(Math.max(rect.bottom, 0), viewportHeight)
+  if (right - left <= LAYOUT_SHIFT_EPSILON || bottom - top <= LAYOUT_SHIFT_EPSILON) return null
+  return `${-top}px ${-(viewportWidth - right)}px ${-(viewportHeight - bottom)}px ${-left}px`
+}
+
 /**
- * Measure an open popup in animation frames and track every geometry source.
- * @param input - Popup refs, open state, and optional initial side preference.
+ * Measure an open popup from browser geometry events.
+ *
+ * The layout-shift sensor clips an IntersectionObserver root to the measured
+ * anchor. Its 0.999 threshold notices same-size movement without polling;
+ * differences up to half a CSS pixel are ignored to prevent subpixel loops.
+ * @param input - Actual popup nodes, open state, and optional side preference.
  * @returns The latest placement, or null while closed or awaiting measurement.
  */
 export function usePopupPlacement(input: UsePopupPlacementInput): PopupPlacement | null {
-  const { anchorRef, popupRef, open, preferred = 'below' } = input
+  const { anchor, popup, open, preferred = 'below' } = input
   const [placement, setPlacement] = useState<PopupPlacement | null>(null)
   const placementRef = useRef<PopupPlacement | null>(null)
   const currentSideRef = useRef<PopupSide | undefined>(undefined)
@@ -42,24 +66,9 @@ export function usePopupPlacement(input: UsePopupPlacementInput): PopupPlacement
 
     let active = true
     let animationFrame: number | null = null
+    let layoutObserver: IntersectionObserver | null = null
     const visualViewport = window.visualViewport
-    let resizeObserver: ResizeObserver | null = null
-    let observedAnchor: HTMLElement | null = null
-    let observedPopup: HTMLElement | null = null
 
-    const syncObserverTargets = (
-      anchor: HTMLElement | null,
-      popup: HTMLElement | null,
-    ): void => {
-      if (anchor === observedAnchor && popup === observedPopup) return
-      resizeObserver?.disconnect()
-      if (resizeObserver !== null) {
-        if (anchor !== null) resizeObserver.observe(anchor)
-        if (popup !== null) resizeObserver.observe(popup)
-      }
-      observedAnchor = anchor
-      observedPopup = popup
-    }
     const publish = (next: PopupPlacement | null): void => {
       if (next === null) {
         if (placementRef.current === null) return
@@ -75,20 +84,33 @@ export function usePopupPlacement(input: UsePopupPlacementInput): PopupPlacement
       if (!active || animationFrame !== null) return
       animationFrame = requestAnimationFrame(measure)
     }
+    function armLayoutShiftSensor(anchorRect: DOMRect): void {
+      layoutObserver?.disconnect()
+      layoutObserver = null
+      if (typeof IntersectionObserver === 'undefined' || anchor === null) return
+      const rootMargin = clippedRootMargin(anchorRect)
+      if (rootMargin === null) return
+
+      const baseline = anchorRect
+      const observer = new IntersectionObserver(() => {
+        if (!active || layoutObserver !== observer) return
+        if (movedFrom(anchor.getBoundingClientRect(), baseline)) scheduleMeasurement()
+      }, { rootMargin, threshold: INTERSECTION_THRESHOLD })
+      layoutObserver = observer
+      observer.observe(anchor)
+    }
     function measure(): void {
       animationFrame = null
-      const anchor = anchorRef.current
-      const popup = popupRef.current
-      syncObserverTargets(anchor, popup)
+      if (!active) return
       if (anchor === null || popup === null) {
         publish(null)
-        scheduleMeasurement()
         return
       }
 
+      const anchorRect = anchor.getBoundingClientRect()
       const currentSide = currentSideRef.current
       const next = placePopup({
-        anchor: anchor.getBoundingClientRect(),
+        anchor: anchorRect,
         popup: popup.getBoundingClientRect(),
         viewport: {
           width: visualViewport?.width ?? window.innerWidth,
@@ -101,13 +123,16 @@ export function usePopupPlacement(input: UsePopupPlacementInput): PopupPlacement
       })
       currentSideRef.current = next.side
       publish(next)
-      scheduleMeasurement()
+      armLayoutShiftSensor(anchorRect)
     }
 
-    resizeObserver = typeof ResizeObserver === 'undefined'
+    const resizeObserver = typeof ResizeObserver === 'undefined'
       ? null
       : new ResizeObserver(scheduleMeasurement)
-    syncObserverTargets(anchorRef.current, popupRef.current)
+    if (resizeObserver !== null) {
+      if (anchor !== null) resizeObserver.observe(anchor)
+      if (popup !== null) resizeObserver.observe(popup)
+    }
     scheduleMeasurement()
     window.addEventListener('resize', scheduleMeasurement)
     window.addEventListener('scroll', scheduleMeasurement, true)
@@ -121,12 +146,13 @@ export function usePopupPlacement(input: UsePopupPlacementInput): PopupPlacement
       visualViewport?.removeEventListener('resize', scheduleMeasurement)
       visualViewport?.removeEventListener('scroll', scheduleMeasurement)
       resizeObserver?.disconnect()
+      layoutObserver?.disconnect()
       if (animationFrame !== null) {
         cancelAnimationFrame(animationFrame)
         animationFrame = null
       }
     }
-  }, [anchorRef, open, popupRef, preferred])
+  }, [anchor, open, popup, preferred])
 
   return placement
 }
