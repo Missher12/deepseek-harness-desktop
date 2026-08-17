@@ -1,7 +1,7 @@
 /** Four global model-facing adapters over the durable session messenger core. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { MessageId } from '@deepseek-ai/dsh-llm'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import {
   createSessionMessengerCoordinator,
   type DeliveryResult,
@@ -60,11 +60,16 @@ const WAIT_OUTPUT_SCHEMA = {
   },
 } as const
 
-/** Build all definitions without registering or opening durable storage. */
+/**
+ * Build all definitions without registering or opening durable storage.
+ * @param coordinator - lazy accessor for the activated delivery coordinator.
+ * @param waiter - lazy accessor for the activated reply waiter.
+ * @returns the four global session-messenger Tool definitions.
+ */
 export function createSessionMessengerToolDefinitions(
   coordinator: () => MessengerToolCoordinator,
   waiter: () => MessengerToolWaiter,
-) {
+): readonly [ToolDefinition, ToolDefinition, ToolDefinition, ToolDefinition] {
   return [
     defineTool({
       name: 'send_message_to_session',
@@ -176,7 +181,13 @@ export function createSessionMessengerToolDefinitions(
   ] as const
 }
 
-/** Register exactly four names, rolling back partial registration on collision. */
+/**
+ * Register exactly four names, rolling back partial registration on collision.
+ * @param ctx - Cordis context providing the global Tool registry.
+ * @param coordinator - lazy accessor for the activated delivery coordinator.
+ * @param waiter - lazy accessor for the activated reply waiter.
+ * @returns an idempotent disposer for every registered Tool definition.
+ */
 export function registerSessionMessengerTools(
   ctx: Context,
   coordinator: () => MessengerToolCoordinator,
@@ -199,7 +210,12 @@ export function registerSessionMessengerTools(
   }
 }
 
-/** Register names first, then open/recover storage so collisions have zero durable side effects. */
+/**
+ * Register names first, then open/recover storage so collisions have zero durable side effects.
+ * @param ctx - Cordis context providing Tools, storage, Agents, and lifecycle ownership.
+ * @param createCoordinator - injectable coordinator factory used by production and tests.
+ * @returns the activated, recovered session-messenger coordinator.
+ */
 export async function activateSessionMessenger(
   ctx: Context,
   createCoordinator: (ctx: Context) => Promise<SessionMessengerCoordinator> = createSessionMessengerCoordinator,

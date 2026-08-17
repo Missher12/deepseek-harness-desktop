@@ -49,7 +49,11 @@ export class ReceiptStore implements ReceiptRepository {
   }
 }
 
-/** Open the plugin's one storage domain; the caller owns the returned close. */
+/**
+ * Open the plugin's one storage domain; the caller owns the returned close.
+ * @param ctx - Cordis context providing the storage-domain service.
+ * @returns the serialized receipt store and an asynchronous domain disposer.
+ */
 export async function openReceiptStore(ctx: Context): Promise<{
   store: ReceiptStore
   close: () => Promise<void>

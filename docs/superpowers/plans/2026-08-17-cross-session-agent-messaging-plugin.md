@@ -22,7 +22,7 @@ English | [中文](2026-08-17-cross-session-agent-messaging-plugin.zh.md)
 - Create: `packages/extensions/session-messenger/src/invariant.ts`
 - Create: `packages/extensions/session-messenger/src/spec.ts`
 - Create: `packages/extensions/session-messenger/src/types.ts`
-- Create: `packages/extensions/session-messenger/tests/spec.spec.ts`
+- Create: `packages/extensions/session-messenger/tests/spec.client.spec.ts`
 - Modify: `tsconfig.host.json`
 - Modify: `tsconfig.client.json`
 
@@ -30,14 +30,14 @@ English | [中文](2026-08-17-cross-session-agent-messaging-plugin.zh.md)
 
 Test status discrimination, 16 KiB UTF-8 enforcement, 24-hour expiry, hop `0..8`, unresolved relay-envelope presence, and settled-record body removal.
 
-```ts
+```ts ignore-check
 expect(receiptSchema.safeParse({ ...prepared, envelope: undefined }).success).toBe(false)
 expect(receiptSchema.parse(delivered)).not.toHaveProperty('envelope')
 ```
 
 - [ ] **Step 2: Run the test and confirm RED**
 
-Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/spec.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/spec.client.spec.ts`
 
 Expected: FAIL because the package and schema do not exist.
 
@@ -45,7 +45,7 @@ Expected: FAIL because the package and schema do not exist.
 
 Declare `session_messenger` version `1`, table `receipts`, and a record union whose `prepared` and `delivery-recovery-pending` members require the bounded relay envelope. The package exports `.`, `./invariant`, `./client`, and `./cordis.patch.yml`, declares `dsh.bundle.patch` and `dsh.client.platform: web`, and uses `clientBundle()` for Host and Client artifacts.
 
-```ts
+```ts ignore-check
 export const sessionMessengerDomainSpec = defineDomain({
   name: 'session_messenger',
   version: 1,
@@ -55,7 +55,7 @@ export const sessionMessengerDomainSpec = defineDomain({
 
 - [ ] **Step 4: Run schema and workspace checks**
 
-Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/spec.spec.ts && pnpm run constraints`
+Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/spec.client.spec.ts && pnpm run constraints`
 
 Expected: PASS.
 
@@ -70,20 +70,20 @@ git commit -m "feat: define session messenger receipts"
 
 **Files:**
 - Create: `packages/extensions/session-messenger/src/target-resolver.ts`
-- Create: `packages/extensions/session-messenger/tests/target-resolver.spec.ts`
+- Create: `packages/extensions/session-messenger/tests/target-resolver.client.spec.ts`
 
 - [ ] **Step 1: Write the failing rejection matrix**
 
 Cover malformed, self, archived-before-lookup, missing, deleted, live subagent, cold subagent, and archived-after-lookup targets. Assert all rejection branches create no receipt, inbox event, wake, or model request. Cover a live ordinary Agent and a cold ordinary session restored with its recorded preset.
 
-```ts
+```ts ignore-check
 await expect(resolveOrdinaryTarget(ctx, caller, raw)).rejects.toMatchObject({ code: 'target-archived' })
 expect(agentLookup.resolve).not.toHaveBeenCalled()
 ```
 
 - [ ] **Step 2: Run the test and confirm RED**
 
-Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/target-resolver.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/target-resolver.client.spec.ts`
 
 Expected: FAIL because `resolveOrdinaryTarget` is missing.
 
@@ -91,7 +91,7 @@ Expected: FAIL because `resolveOrdinaryTarget` is missing.
 
 Validate non-empty printable Session IDs with a 256-byte cap, reject `caller.id`, check `workspaceRegistry.archivedSessionIds`, call `ctx.typert.lookups.get('agent')?.resolve(SessionId(raw))`, normalize `TypertLookupFailure`, and recheck the archive set immediately before returning the Agent. Never call `ctx.agents.resume()`.
 
-```ts
+```ts ignore-check
 const lookup = ctx.typert.lookups.get('agent')
 if (lookup === undefined) throw messengerError('target-lookup-unavailable')
 const target = await lookup.resolve(SessionId(raw)) as Agent | undefined
@@ -99,14 +99,14 @@ const target = await lookup.resolve(SessionId(raw)) as Agent | undefined
 
 - [ ] **Step 4: Run resolver tests**
 
-Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/target-resolver.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/target-resolver.client.spec.ts`
 
 Expected: PASS.
 
 - [ ] **Step 5: Commit target resolution**
 
 ```bash
-git add packages/extensions/session-messenger/src/target-resolver.ts packages/extensions/session-messenger/tests/target-resolver.spec.ts
+git add packages/extensions/session-messenger/src/target-resolver.ts packages/extensions/session-messenger/tests/target-resolver.client.spec.ts
 git commit -m "feat: resolve safe ordinary session targets"
 ```
 
@@ -116,14 +116,14 @@ git commit -m "feat: resolve safe ordinary session targets"
 - Create: `packages/extensions/session-messenger/src/envelope.ts`
 - Create: `packages/extensions/session-messenger/src/receipt-store.ts`
 - Create: `packages/extensions/session-messenger/src/coordinator.ts`
-- Create: `packages/extensions/session-messenger/tests/coordinator.spec.ts`
-- Create: `packages/extensions/session-messenger/tests/recovery.spec.ts`
+- Create: `packages/extensions/session-messenger/tests/coordinator.client.spec.ts`
+- Create: `packages/extensions/session-messenger/tests/recovery.client.spec.ts`
 
 - [ ] **Step 1: Write failing no-wake and wake delivery tests**
 
 Test `inject()` for live idle/running/cold targets, `followup()` for idle/running targets, FIFO, one driver, exact Message ID, `prepared -> delivered`, and handled enqueue rejection becoming terminal before return.
 
-```ts
+```ts ignore-check
 expect(target.inject).toHaveBeenCalledWith(expect.objectContaining({ id: receipt.messageId }))
 expect(target.followup).not.toHaveBeenCalled()
 expect(await store.get(receipt.id)).toMatchObject({ status: 'delivered' })
@@ -135,7 +135,7 @@ Simulate death after `prepared`, after enqueue, and during delivered-status writ
 
 - [ ] **Step 3: Run the tests and confirm RED**
 
-Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/coordinator.spec.ts packages/extensions/session-messenger/tests/recovery.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/coordinator.client.spec.ts packages/extensions/session-messenger/tests/recovery.client.spec.ts`
 
 Expected: FAIL because delivery coordination is missing.
 
@@ -143,7 +143,7 @@ Expected: FAIL because delivery coordination is missing.
 
 Open `sessionMessengerDomainSpec` through `ctx.storageDomain.open()`, and close the domain through the plugin effect disposer. Pre-create the exact message ID, persist its full unresolved envelope, perform a third archive check after the awaited `prepared` write and immediately before enqueue, synchronously enqueue with `inject` or `followup`, then replace the receipt with a delivered record that omits the body. If that third check fails, settle the prepared receipt as rejected rather than leaving recoverable work. If the post-enqueue store write is indeterminate, persist or return `delivery-recovery-pending`. Subscribe to exact inbox inserted, claimed, and discarded events plus Agent failure/cancellation boundaries to update non-reply status by Message ID. Rate-limit each source to 30 deliveries per rolling minute, cap unresolved receipts at 256, expire unresolved receipts after 24 hours, and compact settled metadata after seven days at startup and on one bounded timer.
 
-```ts
+```ts ignore-check
 await receipts.put(prepared)
 await assertTargetStillOrdinaryAndUnarchived(target.id)
 target[mode === 'send' ? 'inject' : 'followup'](message)
@@ -152,14 +152,14 @@ await receipts.put(toDelivered(prepared))
 
 - [ ] **Step 5: Run coordinator tests**
 
-Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/coordinator.spec.ts packages/extensions/session-messenger/tests/recovery.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/coordinator.client.spec.ts packages/extensions/session-messenger/tests/recovery.client.spec.ts`
 
 Expected: PASS.
 
 - [ ] **Step 6: Commit the delivery engine**
 
 ```bash
-git add packages/extensions/session-messenger/src/envelope.ts packages/extensions/session-messenger/src/receipt-store.ts packages/extensions/session-messenger/src/coordinator.ts packages/extensions/session-messenger/tests/coordinator.spec.ts packages/extensions/session-messenger/tests/recovery.spec.ts
+git add packages/extensions/session-messenger/src/envelope.ts packages/extensions/session-messenger/src/receipt-store.ts packages/extensions/session-messenger/src/coordinator.ts packages/extensions/session-messenger/tests/coordinator.client.spec.ts packages/extensions/session-messenger/tests/recovery.client.spec.ts
 git commit -m "feat: add durable cross-session delivery"
 ```
 
@@ -169,8 +169,8 @@ git commit -m "feat: add durable cross-session delivery"
 - Create: `packages/extensions/session-messenger/src/tools.ts`
 - Create: `packages/extensions/session-messenger/src/waits.ts`
 - Create: `packages/extensions/session-messenger/src/index.ts`
-- Create: `packages/extensions/session-messenger/tests/tools.spec.ts`
-- Create: `packages/extensions/session-messenger/tests/reply-wait.spec.ts`
+- Create: `packages/extensions/session-messenger/tests/tools.client.spec.ts`
+- Create: `packages/extensions/session-messenger/tests/reply-wait.client.spec.ts`
 
 - [ ] **Step 1: Write failing tool-registration and sender tests**
 
@@ -180,14 +180,14 @@ Assert exactly four global names, canonical output schemas, caller identity from
 
 Cover wrong caller, forged/expired/consumed tokens, hop 8, default non-waking reply, explicit waking reply, one-use token consumption, reply-arrival race, timeout `1_000..55_000`, default `30_000`, tool timeout `60_000`, forwarded `exec.signal`, dispose, and unrelated assistant output. Spy on `whenIdle()` and assert zero calls.
 
-```ts
+```ts ignore-check
 expect(waitTool.timeoutMs).toBe(60_000)
 expect(agent.whenIdle).not.toHaveBeenCalled()
 ```
 
 - [ ] **Step 3: Run the tests and confirm RED**
 
-Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/tools.spec.ts packages/extensions/session-messenger/tests/reply-wait.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/tools.client.spec.ts packages/extensions/session-messenger/tests/reply-wait.client.spec.ts`
 
 Expected: FAIL because the tools are not registered.
 
@@ -197,14 +197,14 @@ Register through `ctx.tools.register()`. Render concise text and return JSON-saf
 
 - [ ] **Step 5: Run tool tests**
 
-Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/tools.spec.ts packages/extensions/session-messenger/tests/reply-wait.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/tools.client.spec.ts packages/extensions/session-messenger/tests/reply-wait.client.spec.ts`
 
 Expected: PASS.
 
 - [ ] **Step 6: Commit the tools**
 
 ```bash
-git add packages/extensions/session-messenger/src/tools.ts packages/extensions/session-messenger/src/waits.ts packages/extensions/session-messenger/src/index.ts packages/extensions/session-messenger/tests/tools.spec.ts packages/extensions/session-messenger/tests/reply-wait.spec.ts
+git add packages/extensions/session-messenger/src/tools.ts packages/extensions/session-messenger/src/waits.ts packages/extensions/session-messenger/src/index.ts packages/extensions/session-messenger/tests/tools.client.spec.ts packages/extensions/session-messenger/tests/reply-wait.client.spec.ts
 git commit -m "feat: add cross-session messaging tools"
 ```
 
@@ -219,8 +219,8 @@ git commit -m "feat: add cross-session messaging tools"
 - Create: `packages/extensions/session-messenger/src/client/store.ts`
 - Create: `packages/extensions/session-messenger/src/client/locales.ts`
 - Create: `packages/extensions/session-messenger/src/client/css-modules.d.ts`
-- Create: `packages/extensions/session-messenger/tests/http.spec.ts`
-- Create: `packages/extensions/session-messenger/tests/client.spec.tsx`
+- Create: `packages/extensions/session-messenger/tests/http.client.spec.ts`
+- Create: `packages/extensions/session-messenger/tests/client.client.spec.tsx`
 
 - [ ] **Step 1: Write failing HTTP trust and reconnect tests**
 
@@ -232,7 +232,7 @@ Assert only `sidebar.footer.action` is registered; current Session ID copying us
 
 - [ ] **Step 3: Run the tests and confirm RED**
 
-Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/http.spec.ts packages/extensions/session-messenger/tests/client.spec.tsx`
+Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/http.client.spec.ts packages/extensions/session-messenger/tests/client.client.spec.tsx`
 
 Expected: FAIL because notification surfaces are missing.
 
@@ -246,14 +246,14 @@ Use Harness primitives and only `--dsw-*` variables. Show status, unread count, 
 
 - [ ] **Step 6: Run HTTP and Client tests**
 
-Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/http.spec.ts packages/extensions/session-messenger/tests/client.spec.tsx && pnpm run test:gui`
+Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/http.client.spec.ts packages/extensions/session-messenger/tests/client.client.spec.tsx && pnpm run test:gui`
 
 Expected: PASS.
 
 - [ ] **Step 7: Commit notifications**
 
 ```bash
-git add packages/extensions/session-messenger/src/http.ts packages/extensions/session-messenger/src/events.ts packages/extensions/session-messenger/src/client packages/extensions/session-messenger/tests/http.spec.ts packages/extensions/session-messenger/tests/client.spec.tsx
+git add packages/extensions/session-messenger/src/http.ts packages/extensions/session-messenger/src/events.ts packages/extensions/session-messenger/src/client packages/extensions/session-messenger/tests/http.client.spec.ts packages/extensions/session-messenger/tests/client.client.spec.tsx
 git commit -m "feat: add session message notifications"
 ```
 
@@ -278,7 +278,7 @@ Assert one Desktop Loader row, all Host/Client artifacts staged, all four tools 
 
 - [ ] **Step 2: Run the assembled tests and confirm RED**
 
-Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/loader-composition.spec.ts scripts/stage-desktop.spec.ts apps/desktop/tests/manifest.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/session-messenger/tests/loader-composition.client.spec.ts scripts/stage-desktop.spec.ts apps/desktop/tests/manifest.spec.ts`
 
 Expected: FAIL on missing Desktop integration.
 

@@ -104,29 +104,52 @@ export class SessionMessengerCoordinator {
     if (options.installLifecycle !== false) this.installLifecycle()
   }
 
-  /** Current immutable record, when retained. */
+  /**
+   * Read the current immutable record, when retained.
+   * @param id - durable delivery identity to inspect.
+   * @returns the retained receipt, or undefined after removal.
+   */
   receipt(id: DeliveryId): Receipt | undefined {
     return this.receipts.get(id)
   }
 
-  /** Snapshot all retained receipts. */
+  /**
+   * Snapshot all retained receipts.
+   * @returns delivery identities paired with their immutable receipts.
+   */
   receiptEntries(): Array<[DeliveryId, Receipt]> {
     return this.receipts.entries()
   }
 
-  /** Subscribe after the current snapshot; callers recheck around subscription for races. */
+  /**
+   * Subscribe after the current snapshot; callers recheck around subscription for races.
+   * @param listener - callback receiving each committed receipt transition.
+   * @returns a disposer that removes the callback.
+   */
   subscribe(listener: ReceiptListener): () => void {
     if (this.disposed) return () => {}
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
 
-  /** Deliver one bounded message after all zero-side-effect admission checks. */
+  /**
+   * Deliver one bounded message after all zero-side-effect admission checks.
+   * @param caller - ordinary source Agent whose identity authorizes the delivery.
+   * @param request - target, message body, and delivery mode.
+   * @param signal - optional cancellation signal honored before durable enqueue.
+   * @returns the durable delivery and message identities plus immediate status.
+   */
   deliver(caller: Agent, request: DeliveryRequest, signal?: AbortSignal): Promise<DeliveryResult> {
     return this.serialize(() => this.deliverNow(caller, request, signal))
   }
 
-  /** Consume one exact reply capability and deliver back to the recorded source. */
+  /**
+   * Consume one exact reply capability and deliver back to the recorded source.
+   * @param caller - ordinary target Agent presenting the reply capability.
+   * @param request - original delivery identity, reply token, body, and wake choice.
+   * @param signal - optional cancellation signal honored before token consumption.
+   * @returns the reverse delivery and message identities plus immediate status.
+   */
   reply(caller: Agent, request: ReplyRequest, signal?: AbortSignal): Promise<DeliveryResult> {
     return this.serialize(() => this.replyNow(caller, request, signal))
   }
@@ -541,7 +564,12 @@ export class SessionMessengerCoordinator {
   }
 }
 
-/** Open, recover, and lifecycle-bind the coordinator to one plugin Context. */
+/**
+ * Open, recover, and lifecycle-bind the coordinator to one plugin Context.
+ * @param ctx - Cordis context providing persistence, Agents, and lifecycle events.
+ * @param options - optional deterministic clocks, identities, and lifecycle switch.
+ * @returns the recovered coordinator owned by the context lifecycle.
+ */
 export async function createSessionMessengerCoordinator(
   ctx: Context,
   options: CoordinatorOptions = {},

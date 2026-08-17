@@ -12,7 +12,11 @@ export const MAX_SESSION_ID_BYTES = 256
 
 const PRINTABLE_SESSION_ID = /^[\x21-\x7e]+$/
 
-/** Validate and brand one externally copied ordinary Session ID. */
+/**
+ * Validate and brand one externally copied ordinary Session ID.
+ * @param raw - untrusted Session ID copied into a tool request.
+ * @returns the printable, byte-bounded branded Session ID.
+ */
 export function parseTargetSessionId(raw: string): SessionId {
   if (!PRINTABLE_SESSION_ID.test(raw)
     || new TextEncoder().encode(raw).byteLength > MAX_SESSION_ID_BYTES) {
@@ -24,6 +28,8 @@ export function parseTargetSessionId(raw: string): SessionId {
 /**
  * Final synchronous policy fence used both after lookup and directly before
  * enqueue. It deliberately performs no resolution or mutation.
+ * @param ctx - Cordis context exposing workspace and Agent ownership state.
+ * @param target - already resolved target to validate immediately before enqueue.
  */
 export function assertTargetStillOrdinaryAndUnarchived(ctx: Context, target: Agent): void {
   if (ctx.workspaceRegistry.archivedSessionIds.includes(target.id)) {
@@ -38,6 +44,10 @@ export function assertTargetStillOrdinaryAndUnarchived(ctx: Context, target: Age
  * Resolve a copied identity only through the ApiProxy-configured Typert Agent
  * lookup. This preserves cold-resume deduplication, recorded presets, and Host
  * ownership policy; the plugin never calls `ctx.agents.resume()`.
+ * @param ctx - Cordis context providing the Host-owned Typert lookup.
+ * @param caller - ordinary source Agent whose own identity is forbidden as target.
+ * @param raw - untrusted copied target Session ID.
+ * @returns the resolved ordinary, unarchived target Agent.
  */
 export async function resolveOrdinaryTarget(
   ctx: Context,
@@ -47,7 +57,13 @@ export async function resolveOrdinaryTarget(
   return resolveOrdinaryTargetForSource(ctx, caller.id, raw)
 }
 
-/** Resolve for durable recovery when only the original source identity exists. */
+/**
+ * Resolve for durable recovery when only the original source identity exists.
+ * @param ctx - Cordis context providing the Host-owned Typert lookup.
+ * @param sourceSessionId - durable source identity used for self-target rejection.
+ * @param raw - persisted target Session ID to validate and resolve.
+ * @returns the resolved ordinary, unarchived target Agent.
+ */
 export async function resolveOrdinaryTargetForSource(
   ctx: Context,
   sourceSessionId: SessionId,

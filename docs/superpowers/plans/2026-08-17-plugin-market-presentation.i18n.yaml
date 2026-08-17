@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-08-17-plugin-market-presentation.md
-2026-08-17-plugin-market-presentation.md: 85cd5a4320fbafed6181d708043d989d02616544
-2026-08-17-plugin-market-presentation.zh.md: fdd47ff236d8db29dee6d696a41ae0cce8043822
+2026-08-17-plugin-market-presentation.md: e2864eeb04dfc3d07427ce076b7a1a9ed2ceecf5
+2026-08-17-plugin-market-presentation.zh.md: dd464bf5641efa409cf30bb8c3f5c013ca8f461e

@@ -30,6 +30,13 @@
 创建 `packages/extensions/reasoning-effort/tests/package-shape.spec.ts`，断言包版本为 `0.1.0-rc.5`、导出 `./client`、`dsh.client.platform` 为 `web`、许可证包含 `Copyright (c) 2026 HanaAyane`，并且 sprite hash 与锁定的上游文件相同。
 
 ```ts
+import { expect } from 'vitest'
+
+declare const manifest: { dsh: { client: { platform: string } } }
+declare const license: string
+declare const spriteSha256: string
+declare const PINNED_SPRITE_SHA256: string
+
 expect(manifest.dsh.client.platform).toBe('web')
 expect(license).toContain('Copyright (c) 2026 HanaAyane')
 expect(spriteSha256).toBe(PINNED_SPRITE_SHA256)
@@ -45,7 +52,7 @@ expect(spriteSha256).toBe(PINNED_SPRITE_SHA256)
 
 使用上游提交 `f94622b46078ac8c064f91bdc10ab27e8cf32270`。保留 MIT 全文、作者声明、Canvas 绘制代码和 sprite。包名设为 `@deepseek-ai/dsh-reasoning-effort`，版本为 `0.1.0-rc.5`，声明 `react`、`react-dom` peer 与精确 rc.5 Harness workspace peer。声明 `dsh.bundle.patch: ./cordis.patch.yml`，让打包后的插件仍可独立安装。配置 `clientBundle()`，让普通双端构建生成 `lib/index.js`、`lib/invariant.js` 和 `lib/client.js`。
 
-```ts
+```ts ignore-check
 import { clientBundle } from '../../client/tsdown.client.ts'
 
 export default clientBundle(
@@ -80,6 +87,24 @@ git commit -m "feat: scaffold attributed reasoning effort plugin"
 覆盖向下可容纳、翻到上方、两侧都受限、横向钳制、非零 `visualViewport.offsetTop/offsetLeft`，以及拖动期间方向稳定。
 
 ```ts
+import { expect } from 'vitest'
+
+interface PopupPlacementResult {
+  side: 'below' | 'above'
+  top: number
+}
+
+declare const anchor: { bottom: number }
+declare const nearBottom: { bottom: number }
+declare const popup: unknown
+declare const viewport: unknown
+declare function placePopup(input: {
+  anchor: { bottom: number }
+  popup: unknown
+  viewport: unknown
+  preferred: 'below'
+}): PopupPlacementResult
+
 expect(placePopup({ anchor, popup, viewport, preferred: 'below' })).toMatchObject({
   side: 'below', top: anchor.bottom + 8,
 })
@@ -96,7 +121,7 @@ expect(placePopup({ anchor: nearBottom, popup, viewport, preferred: 'below' }).s
 
 返回 fixed `top`、`left`、`maxHeight` 与 `side`。使用 8 像素间距、8 像素 viewport 边距和实际矩形；当前侧仍保有至少 120 像素时用它作为滞回方向。
 
-```ts
+```ts ignore-check
 export interface PopupPlacement {
   side: 'below' | 'above'
   top: number
@@ -138,6 +163,11 @@ git commit -m "feat: add down-first effort popup placement"
 断言缺失或损坏的设置读取为 `false`；PUT 只接受 `{ "chibiThumb": boolean }`；错误 method、host、origin、capability、超大 body 和额外字段都拒绝；dispose 会移除精确路由和 index tap。
 
 ```ts
+import { expect } from 'vitest'
+
+declare function readPreference(value: unknown): { chibiThumb: boolean }
+declare function request(input: { origin: string }): Promise<{ status: number }>
+
 expect(readPreference(undefined)).toEqual({ chibiThumb: false })
 await expect(request({ origin: 'http://localhost:5000' })).resolves.toMatchObject({ status: 403 })
 ```
@@ -187,6 +217,13 @@ git commit -m "feat: persist effort character preference"
 覆盖打开时刷新、select 前使用最新 snapshot 校验、Host 拒绝后的回滚、少于两个 effort 时不显示滑块、addressed subagent 隐藏、键盘／触摸／指针输入、Escape 恢复焦点、外部点击，以及优先级 `-100` 注册。
 
 ```ts
+import { expect } from 'vitest'
+
+declare const register: (...args: unknown[]) => unknown
+declare const controller: {
+  select: (value: { provider: string, model: string, reasoningEffort: string }) => unknown
+}
+
 expect(register).toHaveBeenCalledWith(expect.objectContaining({
   name: 'conversation.input.model', priority: -100,
 }), expect.any(Function))

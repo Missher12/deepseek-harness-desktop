@@ -2,6 +2,7 @@
 
 export const NS = 'sessionMessenger' as const
 
+/** English copy keyed by the session messenger namespace. */
 export const en = {
   trigger: 'Session messages',
   triggerLabel: 'Session messages, {unread} unread, {pending} pending',
@@ -20,8 +21,10 @@ export const en = {
   close: 'Close session messages',
 } as const
 
+/** Stable translation key shared by every supported locale. */
 export type SessionMessengerKey = keyof typeof en
 
+/** Simplified Chinese copy matching every English translation key. */
 export const zh = {
   trigger: '会话通信',
   triggerLabel: '会话通信，{unread} 条未读，{pending} 条待处理',

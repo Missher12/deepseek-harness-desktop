@@ -2066,6 +2066,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'The browser HTTP carrier service. Activation listens immediately. Route registration order does not affect requests because configured named routes must be distinct, and the fallback handler answers anything not yet claimed during startup with 404 until its owner registers. A listen failure rejects initialization, and the boot process reports the failed fiber.',
     methods: [
       {
+        signature: 'generationValue<T>(key: string, initialize: () => T): T',
+        description: 'Memoize one value for this WebServer service generation and no longer.',
+        parameters: [{ name: 'key', description: 'service-generation-local identity for the shared value.' }, { name: 'initialize', description: 'initializer invoked only when the key is absent.' }],
+        returns: 'the existing or newly initialized generation value.',
+      },
+      {
         signature: 'register(route: WebRoute): () => void',
         description: 'Register a named route. Duplicate (kind, path) throws — route patterns are a composition-level contract, so a collision is a misconfiguration.',
         parameters: [{ name: 'route', description: 'kind, path, and the owning handler.' }],

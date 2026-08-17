@@ -14,7 +14,11 @@ import type {
 /** Terminal statuses that may be selected by delivery/lifecycle policy. */
 export type TerminalStatus = TerminalReceipt['status']
 
-/** Build the exact frozen UserMessage used by both first enqueue and recovery. */
+/**
+ * Build the exact frozen UserMessage used by both first enqueue and recovery.
+ * @param receipt - recoverable receipt containing the validated relay envelope.
+ * @returns the immutable plugin-sourced user message for the target inbox.
+ */
 export function createRelayMessage(receipt: RecoverableReceipt): UserMessage {
   return freezeMessage({
     id: receipt.messageId,
@@ -24,7 +28,12 @@ export function createRelayMessage(receipt: RecoverableReceipt): UserMessage {
   })
 }
 
-/** Model-visible relay text; durable identity fields remain authoritative in the receipt. */
+/**
+ * Render model-visible relay text; durable identity fields remain authoritative in the receipt.
+ * @param receipt - durable identity, source, capability, and delivery-mode metadata.
+ * @param envelope - validated untrusted message body.
+ * @returns the bounded relay preamble and body presented to the target model.
+ */
 export function relayText(receipt: RecoverableReceipt, envelope: RelayEnvelope): string {
   const behavior = receipt.mode === 'followup' ? 'follow-up (wake requested)' : 'injection (no wake)'
   return [
@@ -39,7 +48,11 @@ export function relayText(receipt: RecoverableReceipt, envelope: RelayEnvelope):
   ].join('\n')
 }
 
-/** Remove recovery-only fields while retaining one stable common snapshot. */
+/**
+ * Remove state-specific fields while retaining one stable common snapshot.
+ * @param receipt - receipt in any durable lifecycle state.
+ * @returns the common fields used to construct the next immutable state.
+ */
 export function receiptBase(receipt: Receipt): Omit<Receipt, 'status'> & Record<string, unknown> {
   const candidate = { ...receipt } as Record<string, unknown>
   delete candidate.status
@@ -54,7 +67,12 @@ export function receiptBase(receipt: Receipt): Omit<Receipt, 'status'> & Record<
   return candidate as Omit<Receipt, 'status'> & Record<string, unknown>
 }
 
-/** Prove a recoverable message was accepted by the target inbox. */
+/**
+ * Prove a recoverable message was accepted by the target inbox.
+ * @param receipt - recoverable receipt whose exact message was accepted.
+ * @param at - transition timestamp in milliseconds.
+ * @returns a bodyless delivered receipt retaining reply authority.
+ */
 export function toDelivered(receipt: RecoverableReceipt, at: number): DeliveredReceipt {
   return {
     ...receiptBase(receipt),
@@ -64,7 +82,13 @@ export function toDelivered(receipt: RecoverableReceipt, at: number): DeliveredR
   }
 }
 
-/** Retain recovery material after an indeterminate post-enqueue state write. */
+/**
+ * Retain recovery material after an indeterminate post-enqueue state write.
+ * @param receipt - recoverable receipt whose enqueue result is indeterminate.
+ * @param at - transition timestamp in milliseconds.
+ * @param recoveryReason - non-secret stable reason for later reconciliation.
+ * @returns a recoverable receipt preserving the exact relay body.
+ */
 export function toRecoveryPending(
   receipt: RecoverableReceipt,
   at: number,
@@ -79,7 +103,12 @@ export function toRecoveryPending(
   }
 }
 
-/** Mark one delivered message as claimed by a target turn. */
+/**
+ * Mark one delivered message as claimed by a target turn.
+ * @param receipt - delivered receipt selected by the target inbox.
+ * @param at - transition timestamp in milliseconds.
+ * @returns the claimed immutable receipt.
+ */
 export function toClaimed(receipt: DeliveredReceipt, at: number): ClaimedReceipt {
   return {
     ...receiptBase(receipt),
@@ -90,7 +119,13 @@ export function toClaimed(receipt: DeliveredReceipt, at: number): ClaimedReceipt
   }
 }
 
-/** Consume reply authority and bind the opposite-direction delivery. */
+/**
+ * Consume reply authority and bind the opposite-direction delivery.
+ * @param receipt - delivered or claimed receipt whose reply token is consumed.
+ * @param at - transition timestamp in milliseconds.
+ * @param replyDeliveryId - durable identity of the reverse delivery.
+ * @returns the replied receipt linked to the reverse delivery.
+ */
 export function toReplied(
   receipt: DeliveredReceipt | ClaimedReceipt,
   at: number,
@@ -106,7 +141,14 @@ export function toReplied(
   }
 }
 
-/** Settle any non-replied receipt without retaining its message body. */
+/**
+ * Settle any non-replied receipt without retaining its message body.
+ * @param receipt - receipt in any durable lifecycle state.
+ * @param status - terminal outcome selected by lifecycle policy.
+ * @param at - transition timestamp in milliseconds.
+ * @param errorCode - stable non-secret settlement reason.
+ * @returns the bodyless terminal receipt.
+ */
 export function toTerminal(
   receipt: Receipt,
   status: TerminalStatus,

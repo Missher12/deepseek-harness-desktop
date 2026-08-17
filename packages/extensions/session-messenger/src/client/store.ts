@@ -235,7 +235,10 @@ function checkedBootstrap(value: SessionMessengerBootstrap): SessionMessengerBoo
   return value
 }
 
-/** Read the immutable page-generation bootstrap, when the Host half is mounted. */
+/**
+ * Read the immutable page-generation bootstrap, when the Host half is mounted.
+ * @returns validated same-origin transport facts, or undefined outside a mounted browser generation.
+ */
 export function readSessionMessengerBootstrap(): SessionMessengerBootstrap | undefined {
   if (typeof window === 'undefined' || window.__DSH_SESSION_MESSENGER__ === undefined) return undefined
   return checkedBootstrap(window.__DSH_SESSION_MESSENGER__)
@@ -291,7 +294,12 @@ async function readEventStream(
   }
 }
 
-/** Build the POST-only same-origin transport; the capability never enters a URL. */
+/**
+ * Build the POST-only same-origin transport; the capability never enters a URL.
+ * @param rawBootstrap - index-injected route and capability facts to validate.
+ * @param fetcher - fetch implementation used for authenticated same-origin requests.
+ * @returns a transport for snapshots, event streams, and acknowledgements.
+ */
 export function createHttpMessengerTransport(
   rawBootstrap: SessionMessengerBootstrap,
   fetcher: typeof fetch = fetch,
@@ -373,15 +381,27 @@ export class MessengerStore {
 
   constructor(private readonly transport: MessengerTransport = unavailableTransport()) {}
 
+  /**
+   * Read the current external-store state without mutation.
+   * @returns the current immutable external-store snapshot.
+   */
   readonly getSnapshot = (): MessengerStoreSnapshot => this.state
 
+  /**
+   * Subscribe to immutable snapshot replacements.
+   * @param listener - callback invoked after each published state change.
+   * @returns a disposer that removes the callback.
+   */
   readonly subscribe = (listener: () => void): (() => void) => {
     if (this.disposed) return () => {}
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
 
-  /** Replace all metadata from one cursor-paired Host snapshot. */
+  /**
+   * Replace all metadata from one cursor-paired Host snapshot.
+   * @param snapshot - authoritative receipt metadata and matching event cursor.
+   */
   replaceSnapshot(snapshot: MessengerSnapshot): void {
     this.publish({
       phase: 'connected',
@@ -391,7 +411,10 @@ export class MessengerStore {
     })
   }
 
-  /** Apply only a newer monotonic stream event. */
+  /**
+   * Apply only a newer monotonic stream event.
+   * @param event - next contiguous event from the authenticated Host stream.
+   */
   accept(event: MessengerEvent): void {
     if (event.id <= this.state.lastEventId) return
     if (event.id !== this.state.lastEventId + 1) {
@@ -413,7 +436,12 @@ export class MessengerStore {
     this.publish({ ...this.state, phase: 'connected', lastEventId: event.id, receipts })
   }
 
-  /** Ack current reply notices after the Host accepts the request; keep metadata locally. */
+  /**
+   * Ack current reply notices after the Host accepts the request; keep metadata locally.
+   * @param sessionId - ordinary session whose addressed reply notices are being read.
+   * @param deliveryIds - exact delivery identities to acknowledge.
+   * @returns the number of notices acknowledged by the Host.
+   */
   acknowledge(sessionId: SessionId, deliveryIds: readonly string[]): Promise<number> {
     const task = this.acknowledgeNow(sessionId, deliveryIds)
     this.acknowledgementTasks.add(task)
@@ -445,7 +473,10 @@ export class MessengerStore {
     return total
   }
 
-  /** Start snapshot-first reconnect cycles after the previous generation reaches quiescence. */
+  /**
+   * Start snapshot-first reconnect cycles after the previous generation reaches quiescence.
+   * @returns an asynchronous disposer for this connection generation.
+   */
   async start(): Promise<() => Promise<void>> {
     if (this.hasBeenDisposed()) return () => Promise.resolve()
     await this.active?.stop()
@@ -513,7 +544,12 @@ export class MessengerStore {
   }
 }
 
-/** Current-session aggregate used by the compact footer entry. */
+/**
+ * Compute the current-session aggregate used by the compact footer entry.
+ * @param snapshot - immutable notification-store snapshot to summarize.
+ * @param sessionId - active ordinary session, when one is open.
+ * @returns pending and unread counts, unread identities, and the latest error code.
+ */
 export function summarizeMessenger(
   snapshot: MessengerStoreSnapshot,
   sessionId: SessionId | undefined,

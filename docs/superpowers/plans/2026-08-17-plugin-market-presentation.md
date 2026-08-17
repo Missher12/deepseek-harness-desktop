@@ -24,6 +24,11 @@ English | [中文](2026-08-17-plugin-market-presentation.zh.md)
 Resolve `dshmarket/package.json` from the Desktop importer and assert version `1.10.1`, read the npm integrity `sha512-8AWM8RT2tttJsozTBm6mAfI+cNpCIbeBdP9IoydJdHlH/+x72aNqmv3AWdbNfKDDwkkqM2Ce/XRDhha9HG0Q5Q==` from `pnpm-lock.yaml`, assert the recorded upstream git head `6970a6f801108c04234eb953ff0f707feffa621a`, and verify Loader name `dsh-market` plus Settings id `market` from source.
 
 ```ts
+import { expect } from 'vitest'
+
+declare const manifest: { name: string, version: string }
+declare const clientSource: string
+
 expect(manifest).toMatchObject({ name: 'dshmarket', version: '1.10.1' })
 expect(clientSource).toContain("export const name = 'dsh-market'")
 expect(clientSource).toContain("id: 'market'")
@@ -65,6 +70,11 @@ git commit -m "test: lock marketplace patch baseline"
 Assert the source contains `data-dshmarket-layout="compact"` and `data-dshmarket-plugin-row`, keeps the existing installation/update/confirmation callbacks, renders one primary action, and moves source/details/copy package into one overflow menu. Assert the CSS uses a one-column list, 40-pixel icon, two-line clamp, sticky toolbar, horizontal categories, and `--dsw-*` colors.
 
 ```ts
+import { expect } from 'vitest'
+
+declare const source: string
+declare const css: string
+
 expect(source).toContain('data-dshmarket-layout="compact"')
 expect(source).toContain('data-dshmarket-plugin-row')
 expect(css).toContain('grid-template-columns:1fr')
@@ -118,6 +128,11 @@ Do not commit edits under `node_modules`; Task 4 captures them in `patches/dshma
 Invoke the update route with `package: 'dshmarket'` and assert a stable 409-style rejection occurs before the runner is called. Re-run existing disable/remove self-protection cases and one ordinary package update success.
 
 ```ts
+import { expect } from 'vitest'
+
+declare function update(input: { package: string }): Promise<{ ok: boolean, code?: string }>
+declare const runPlugin: (...args: unknown[]) => unknown
+
 expect(await update({ package: 'dshmarket' })).toMatchObject({ ok: false, code: 'self-protected' })
 expect(runPlugin).not.toHaveBeenCalled()
 expect(await update({ package: 'dsh-reasoning-effort' })).toMatchObject({ ok: true })
@@ -164,6 +179,13 @@ Expected: `pnpm-workspace.yaml` gains `dshmarket@1.10.1: patches/dshmarket@1.10.
 Resolve the real Desktop package and assert source, `client.js`, and `client.js.map` `sourcesContent` all contain the compact layout marker. Assert `lib/routes.js` contains the self-protection marker. Do not inspect hashed class names.
 
 ```ts
+import { expect } from 'vitest'
+
+declare const source: string
+declare const bundle: string
+declare const sourceMap: string
+declare const hostBundle: string
+
 for (const text of [source, bundle, sourceMap]) {
   expect(text).toContain('data-dshmarket-layout')
 }

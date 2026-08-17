@@ -18,7 +18,9 @@ export { MAX_ACK_BODY_BYTES, MAX_ACK_DELIVERY_IDS } from './protocol.ts'
 
 /** Exact plugin route namespace. */
 export const SNAPSHOT_PATH = '/plugins/dsh-session-messenger/snapshot'
+/** Exact POST route for marking reply notifications as read. */
 export const ACK_PATH = '/plugins/dsh-session-messenger/ack'
+/** Exact POST route for bounded server-sent notification events. */
 export const EVENTS_PATH = '/plugins/dsh-session-messenger/events'
 /** Secret header injected into the same-origin browser generation. */
 export const MESSENGER_CAPABILITY_HEADER = 'x-dsh-session-messenger-capability'
@@ -63,7 +65,10 @@ interface StreamConnection {
   readonly close: () => void
 }
 
-/** Produce one 256-bit URL/header-safe capability per plugin generation. */
+/**
+ * Produce one 256-bit URL/header-safe capability per plugin generation.
+ * @returns a cryptographically random base64url capability.
+ */
 export function createSessionMessengerCapability(): string {
   return randomBytes(32).toString('base64url')
 }
@@ -189,6 +194,8 @@ function sseFrame(event: NotificationEvent): string {
 /**
  * Construct exact POST routes plus their metadata journal. The caller owns
  * disposal, which terminates every bounded stream and source subscription.
+ * @param options - bound port, generation capability, and receipt event source.
+ * @returns independently disposable routes, event hub, and index transformer.
  */
 export function createSessionMessengerHttpSurface(
   options: SessionMessengerHttpOptions,
@@ -325,7 +332,12 @@ export function createSessionMessengerHttpSurface(
   }
 }
 
-/** Inject escaped generation facts before the shell bundle executes. */
+/**
+ * Inject escaped generation facts before the shell bundle executes.
+ * @param html - index document served by the Host fallback.
+ * @param capability - generation-bound secret sent only through request headers.
+ * @returns the document containing one frozen messenger bootstrap script.
+ */
 export function injectSessionMessengerCapability(html: string, capability: string): string {
   const data = {
     snapshotPath: SNAPSHOT_PATH,
@@ -342,7 +354,11 @@ export function injectSessionMessengerCapability(html: string, capability: strin
     : `${html.slice(0, head + 6)}${script}${html.slice(head + 6)}`
 }
 
-/** Register all three exact routes and the index tap under one Cordis fiber. */
+/**
+ * Register all three exact routes and the index tap under one Cordis fiber.
+ * @param ctx - Cordis context providing the generation-bound WebServer service.
+ * @returns a reservation that can be bound exactly once to a receipt source.
+ */
 export function reserveSessionMessengerHttp(ctx: Context): SessionMessengerHttpReservation {
   const capability = ctx.webServer.generationValue(
     'dsh-session-messenger.capability',
@@ -390,7 +406,12 @@ export function reserveSessionMessengerHttp(ctx: Context): SessionMessengerHttpR
   }
 }
 
-/** Reserve the HTTP surface and optionally bind an already-created source. */
+/**
+ * Reserve the HTTP surface and optionally bind an already-created source.
+ * @param ctx - Cordis context providing the generation-bound WebServer service.
+ * @param source - optional coordinator projection to bind immediately.
+ * @returns the owned HTTP reservation.
+ */
 export function installSessionMessengerHttp(
   ctx: Context,
   source?: ReceiptEventSource,

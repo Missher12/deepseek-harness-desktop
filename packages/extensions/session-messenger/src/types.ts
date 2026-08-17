@@ -10,10 +10,18 @@ export type DeliveryId = string & { readonly [deliveryIdBrand]: true }
 /** One-use opaque authority bound to one delivered receipt. */
 export type ReplyToken = string & { readonly [replyTokenBrand]: true }
 
-/** Create a compile-time branded delivery identity. */
+/**
+ * Create a compile-time branded delivery identity.
+ * @param value - already validated durable identity string.
+ * @returns the branded delivery identity.
+ */
 export const DeliveryId = (value: string): DeliveryId => value as DeliveryId
 
-/** Create a compile-time branded reply token. */
+/**
+ * Create a compile-time branded reply token.
+ * @param value - already generated opaque capability string.
+ * @returns the branded one-use reply token.
+ */
 export const ReplyToken = (value: string): ReplyToken => value as ReplyToken
 
 /** Inbox behavior selected for one delivery. */
@@ -122,7 +130,13 @@ export class MessengerError extends Error {
   }
 }
 
-/** Construct one typed plugin rejection. */
+/**
+ * Construct one typed plugin rejection.
+ * @param code - stable non-secret error code exposed by Tool adapters.
+ * @param message - optional internal diagnostic message.
+ * @param options - optional standard Error cause metadata.
+ * @returns the typed messenger rejection.
+ */
 export const messengerError = (
   code: MessengerErrorCode,
   message?: string,

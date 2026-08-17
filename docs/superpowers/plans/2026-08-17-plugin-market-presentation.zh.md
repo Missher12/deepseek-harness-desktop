@@ -24,6 +24,11 @@
 从 Desktop importer 解析 `dshmarket/package.json` 并断言 version `1.10.1`，从 `pnpm-lock.yaml` 读取 npm integrity `sha512-8AWM8RT2tttJsozTBm6mAfI+cNpCIbeBdP9IoydJdHlH/+x72aNqmv3AWdbNfKDDwkkqM2Ce/XRDhha9HG0Q5Q==`，断言已记录的上游 git head `6970a6f801108c04234eb953ff0f707feffa621a`，并从源码验证 Loader name `dsh-market` 与 Settings id `market`。
 
 ```ts
+import { expect } from 'vitest'
+
+declare const manifest: { name: string, version: string }
+declare const clientSource: string
+
 expect(manifest).toMatchObject({ name: 'dshmarket', version: '1.10.1' })
 expect(clientSource).toContain("export const name = 'dsh-market'")
 expect(clientSource).toContain("id: 'market'")
@@ -65,6 +70,11 @@ git commit -m "test: lock marketplace patch baseline"
 断言源码包含 `data-dshmarket-layout="compact"` 和 `data-dshmarket-plugin-row`，保留现有安装／更新／确认 callback，只渲染一个主操作，并把源码／详情／复制包名移入一个更多菜单。断言 CSS 使用单列列表、40 像素图标、两行截断、sticky 工具栏、横向分类，以及 `--dsw-*` 颜色。
 
 ```ts
+import { expect } from 'vitest'
+
+declare const source: string
+declare const css: string
+
 expect(source).toContain('data-dshmarket-layout="compact"')
 expect(source).toContain('data-dshmarket-plugin-row')
 expect(css).toContain('grid-template-columns:1fr')
@@ -118,6 +128,11 @@ expect(css).toContain('-webkit-line-clamp:2')
 用 `package: 'dshmarket'` 调用更新路由，断言在 runner 调用前返回稳定的 409 类拒绝。重新运行现有停用／删除自身保护，并验证一个普通包更新成功。
 
 ```ts
+import { expect } from 'vitest'
+
+declare function update(input: { package: string }): Promise<{ ok: boolean, code?: string }>
+declare const runPlugin: (...args: unknown[]) => unknown
+
 expect(await update({ package: 'dshmarket' })).toMatchObject({ ok: false, code: 'self-protected' })
 expect(runPlugin).not.toHaveBeenCalled()
 expect(await update({ package: 'dsh-reasoning-effort' })).toMatchObject({ ok: true })
@@ -164,6 +179,13 @@ expect(await update({ package: 'dsh-reasoning-effort' })).toMatchObject({ ok: tr
 解析 Desktop 使用的真实包，断言 source、`client.js` 和 `client.js.map` 的 `sourcesContent` 都包含 compact layout marker。断言 `lib/routes.js` 包含 self-protection marker。不要检查 hash 类名。
 
 ```ts
+import { expect } from 'vitest'
+
+declare const source: string
+declare const bundle: string
+declare const sourceMap: string
+declare const hostBundle: string
+
 for (const text of [source, bundle, sourceMap]) {
   expect(text).toContain('data-dshmarket-layout')
 }

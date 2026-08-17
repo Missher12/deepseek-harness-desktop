@@ -86,7 +86,12 @@ export class WebServer extends Service {
     return this.config.host
   }
 
-  /** Memoize one value for this WebServer service generation and no longer. */
+  /**
+   * Memoize one value for this WebServer service generation and no longer.
+   * @param key - service-generation-local identity for the shared value.
+   * @param initialize - initializer invoked only when the key is absent.
+   * @returns the existing or newly initialized generation value.
+   */
   generationValue<T>(key: string, initialize: () => T): T {
     if (this.generationValues.has(key)) return this.generationValues.get(key) as T
     const value = initialize()

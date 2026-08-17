@@ -55,6 +55,8 @@ const ALWAYS_AVAILABLE: TargetAvailabilityPolicy = {
  * Build the production read-only policy. It reads current registries and the
  * persistence catalog only; no Typert lookup, Agent resume, inbox mutation,
  * or driver operation is reachable from this boundary.
+ * @param ctx - Cordis context exposing read-only workspace and persistence state.
+ * @returns the target-availability policy bound to this context generation.
  */
 export function createContextTargetAvailabilityPolicy(ctx: Context): TargetAvailabilityPolicy {
   let eventArchivedSessionIds: readonly SessionIdType[] | undefined
@@ -113,6 +115,14 @@ export class SessionReplyWaiter {
     private readonly availability: TargetAvailabilityPolicy = ALWAYS_AVAILABLE,
   ) {}
 
+  /**
+   * Wait for the reply bound to one source-owned delivery receipt.
+   * @param caller - ordinary source Agent authorized to observe the receipt.
+   * @param deliveryId - exact original delivery identity.
+   * @param timeoutMs - bounded explicit wait duration in milliseconds.
+   * @param signal - optional cancellation signal for the wait only.
+   * @returns a JSON-safe reply settlement without message contents or capabilities.
+   */
   wait(
     caller: Agent,
     deliveryId: DeliveryId,

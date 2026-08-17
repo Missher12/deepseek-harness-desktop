@@ -22,7 +22,7 @@
 - 新建：`packages/extensions/session-messenger/src/invariant.ts`
 - 新建：`packages/extensions/session-messenger/src/spec.ts`
 - 新建：`packages/extensions/session-messenger/src/types.ts`
-- 新建：`packages/extensions/session-messenger/tests/spec.spec.ts`
+- 新建：`packages/extensions/session-messenger/tests/spec.client.spec.ts`
 - 修改：`tsconfig.host.json`
 - 修改：`tsconfig.client.json`
 
@@ -30,14 +30,14 @@
 
 测试状态判别、16 KiB UTF-8 限制、24 小时过期、hop `0..8`、未解决 relay 信封必须存在，以及完成记录移除正文。
 
-```ts
+```ts ignore-check
 expect(receiptSchema.safeParse({ ...prepared, envelope: undefined }).success).toBe(false)
 expect(receiptSchema.parse(delivered)).not.toHaveProperty('envelope')
 ```
 
 - [ ] **步骤 2：运行测试并确认 RED**
 
-运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/spec.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/spec.client.spec.ts`
 
 预期：因为包和 schema 不存在而 FAIL。
 
@@ -45,7 +45,7 @@ expect(receiptSchema.parse(delivered)).not.toHaveProperty('envelope')
 
 声明 `session_messenger` version `1`、`receipts` 表，以及 `prepared` 和 `delivery-recovery-pending` 成员必须包含受限 relay 信封的记录 union。包导出 `.`、`./invariant`、`./client` 和 `./cordis.patch.yml`，声明 `dsh.bundle.patch` 与 `dsh.client.platform: web`，并用 `clientBundle()` 生成 Host 与 Client 产物。
 
-```ts
+```ts ignore-check
 export const sessionMessengerDomainSpec = defineDomain({
   name: 'session_messenger',
   version: 1,
@@ -55,7 +55,7 @@ export const sessionMessengerDomainSpec = defineDomain({
 
 - [ ] **步骤 4：运行 schema 与 workspace 检查**
 
-运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/spec.spec.ts && pnpm run constraints`
+运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/spec.client.spec.ts && pnpm run constraints`
 
 预期：PASS。
 
@@ -70,20 +70,20 @@ git commit -m "feat: define session messenger receipts"
 
 **文件：**
 - 新建：`packages/extensions/session-messenger/src/target-resolver.ts`
-- 新建：`packages/extensions/session-messenger/tests/target-resolver.spec.ts`
+- 新建：`packages/extensions/session-messenger/tests/target-resolver.client.spec.ts`
 
 - [ ] **步骤 1：编写失败的拒绝矩阵**
 
 覆盖格式错误、self、lookup 前已归档、缺失、已删除、live subagent、cold subagent 和 lookup 后归档目标。断言所有拒绝分支都不产生 receipt、inbox 事件、wake 或模型请求。覆盖 live ordinary Agent 和按记录 preset 恢复的 cold ordinary 会话。
 
-```ts
+```ts ignore-check
 await expect(resolveOrdinaryTarget(ctx, caller, raw)).rejects.toMatchObject({ code: 'target-archived' })
 expect(agentLookup.resolve).not.toHaveBeenCalled()
 ```
 
 - [ ] **步骤 2：运行测试并确认 RED**
 
-运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/target-resolver.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/target-resolver.client.spec.ts`
 
 预期：因为缺少 `resolveOrdinaryTarget` 而 FAIL。
 
@@ -91,7 +91,7 @@ expect(agentLookup.resolve).not.toHaveBeenCalled()
 
 校验非空、可打印且不超过 256 字节的 Session ID，拒绝 `caller.id`，检查 `workspaceRegistry.archivedSessionIds`，调用 `ctx.typert.lookups.get('agent')?.resolve(SessionId(raw))`，归一化 `TypertLookupFailure`，并在返回 Agent 前立即再次检查归档集合。绝不调用 `ctx.agents.resume()`。
 
-```ts
+```ts ignore-check
 const lookup = ctx.typert.lookups.get('agent')
 if (lookup === undefined) throw messengerError('target-lookup-unavailable')
 const target = await lookup.resolve(SessionId(raw)) as Agent | undefined
@@ -99,14 +99,14 @@ const target = await lookup.resolve(SessionId(raw)) as Agent | undefined
 
 - [ ] **步骤 4：运行解析器测试**
 
-运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/target-resolver.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/target-resolver.client.spec.ts`
 
 预期：PASS。
 
 - [ ] **步骤 5：提交目标解析**
 
 ```bash
-git add packages/extensions/session-messenger/src/target-resolver.ts packages/extensions/session-messenger/tests/target-resolver.spec.ts
+git add packages/extensions/session-messenger/src/target-resolver.ts packages/extensions/session-messenger/tests/target-resolver.client.spec.ts
 git commit -m "feat: resolve safe ordinary session targets"
 ```
 
@@ -116,14 +116,14 @@ git commit -m "feat: resolve safe ordinary session targets"
 - 新建：`packages/extensions/session-messenger/src/envelope.ts`
 - 新建：`packages/extensions/session-messenger/src/receipt-store.ts`
 - 新建：`packages/extensions/session-messenger/src/coordinator.ts`
-- 新建：`packages/extensions/session-messenger/tests/coordinator.spec.ts`
-- 新建：`packages/extensions/session-messenger/tests/recovery.spec.ts`
+- 新建：`packages/extensions/session-messenger/tests/coordinator.client.spec.ts`
+- 新建：`packages/extensions/session-messenger/tests/recovery.client.spec.ts`
 
 - [ ] **步骤 1：编写失败的 no-wake 与 wake 投递测试**
 
 测试 live idle／running／cold 目标的 `inject()`、idle／running 目标的 `followup()`、FIFO、单一 driver、精确 Message ID、`prepared -> delivered`，以及已处理入队拒绝在返回前变为 terminal。
 
-```ts
+```ts ignore-check
 expect(target.inject).toHaveBeenCalledWith(expect.objectContaining({ id: receipt.messageId }))
 expect(target.followup).not.toHaveBeenCalled()
 expect(await store.get(receipt.id)).toMatchObject({ status: 'delivered' })
@@ -135,7 +135,7 @@ expect(await store.get(receipt.id)).toMatchObject({ status: 'delivered' })
 
 - [ ] **步骤 3：运行测试并确认 RED**
 
-运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/coordinator.spec.ts packages/extensions/session-messenger/tests/recovery.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/coordinator.client.spec.ts packages/extensions/session-messenger/tests/recovery.client.spec.ts`
 
 预期：因为投递协调器缺失而 FAIL。
 
@@ -143,7 +143,7 @@ expect(await store.get(receipt.id)).toMatchObject({ status: 'delivered' })
 
 通过 `ctx.storageDomain.open()` 打开 `sessionMessengerDomainSpec`，并通过插件 effect disposer 关闭 domain。预先创建精确 Message ID 并持久化包含完整未解决信封的 receipt；在等待 `prepared` 写入后、真正入队前执行第三次归档检查，再通过 `inject` 或 `followup` 同步入队，随后用不含正文的 delivered 记录替换 receipt。第三次检查失败时必须把 prepared receipt 结算为 rejected，不能留下可恢复投递。若入队后的存储写入结果不确定，持久化或返回 `delivery-recovery-pending`。订阅精确的 inbox inserted／claimed／discarded 事件和 Agent 失败／取消边界，按 Message ID 更新非回复状态。每个来源在滚动一分钟内最多 30 次投递，未解决 receipt 最多 256 个；在启动时和一个有界定时器中让未解决 receipt 于 24 小时后过期，并在七天后压缩已完成元数据。
 
-```ts
+```ts ignore-check
 await receipts.put(prepared)
 await assertTargetStillOrdinaryAndUnarchived(target.id)
 target[mode === 'send' ? 'inject' : 'followup'](message)
@@ -152,14 +152,14 @@ await receipts.put(toDelivered(prepared))
 
 - [ ] **步骤 5：运行协调器测试**
 
-运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/coordinator.spec.ts packages/extensions/session-messenger/tests/recovery.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/coordinator.client.spec.ts packages/extensions/session-messenger/tests/recovery.client.spec.ts`
 
 预期：PASS。
 
 - [ ] **步骤 6：提交投递引擎**
 
 ```bash
-git add packages/extensions/session-messenger/src/envelope.ts packages/extensions/session-messenger/src/receipt-store.ts packages/extensions/session-messenger/src/coordinator.ts packages/extensions/session-messenger/tests/coordinator.spec.ts packages/extensions/session-messenger/tests/recovery.spec.ts
+git add packages/extensions/session-messenger/src/envelope.ts packages/extensions/session-messenger/src/receipt-store.ts packages/extensions/session-messenger/src/coordinator.ts packages/extensions/session-messenger/tests/coordinator.client.spec.ts packages/extensions/session-messenger/tests/recovery.client.spec.ts
 git commit -m "feat: add durable cross-session delivery"
 ```
 
@@ -169,8 +169,8 @@ git commit -m "feat: add durable cross-session delivery"
 - 新建：`packages/extensions/session-messenger/src/tools.ts`
 - 新建：`packages/extensions/session-messenger/src/waits.ts`
 - 新建：`packages/extensions/session-messenger/src/index.ts`
-- 新建：`packages/extensions/session-messenger/tests/tools.spec.ts`
-- 新建：`packages/extensions/session-messenger/tests/reply-wait.spec.ts`
+- 新建：`packages/extensions/session-messenger/tests/tools.client.spec.ts`
+- 新建：`packages/extensions/session-messenger/tests/reply-wait.client.spec.ts`
 
 - [ ] **步骤 1：编写失败的工具注册与发送方测试**
 
@@ -180,14 +180,14 @@ git commit -m "feat: add durable cross-session delivery"
 
 覆盖错误调用方、伪造／过期／已消费 token、hop 8、默认不唤醒回复、显式唤醒回复、token 单次消费、回复到达竞态、timeout `1_000..55_000`、默认 `30_000`、工具 timeout `60_000`、转发 `exec.signal`、dispose 和无关 assistant 输出。spy `whenIdle()` 并断言零调用。
 
-```ts
+```ts ignore-check
 expect(waitTool.timeoutMs).toBe(60_000)
 expect(agent.whenIdle).not.toHaveBeenCalled()
 ```
 
 - [ ] **步骤 3：运行测试并确认 RED**
 
-运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/tools.spec.ts packages/extensions/session-messenger/tests/reply-wait.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/tools.client.spec.ts packages/extensions/session-messenger/tests/reply-wait.client.spec.ts`
 
 预期：因为工具未注册而 FAIL。
 
@@ -197,14 +197,14 @@ expect(agent.whenIdle).not.toHaveBeenCalled()
 
 - [ ] **步骤 5：运行工具测试**
 
-运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/tools.spec.ts packages/extensions/session-messenger/tests/reply-wait.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/tools.client.spec.ts packages/extensions/session-messenger/tests/reply-wait.client.spec.ts`
 
 预期：PASS。
 
 - [ ] **步骤 6：提交工具**
 
 ```bash
-git add packages/extensions/session-messenger/src/tools.ts packages/extensions/session-messenger/src/waits.ts packages/extensions/session-messenger/src/index.ts packages/extensions/session-messenger/tests/tools.spec.ts packages/extensions/session-messenger/tests/reply-wait.spec.ts
+git add packages/extensions/session-messenger/src/tools.ts packages/extensions/session-messenger/src/waits.ts packages/extensions/session-messenger/src/index.ts packages/extensions/session-messenger/tests/tools.client.spec.ts packages/extensions/session-messenger/tests/reply-wait.client.spec.ts
 git commit -m "feat: add cross-session messaging tools"
 ```
 
@@ -219,8 +219,8 @@ git commit -m "feat: add cross-session messaging tools"
 - 新建：`packages/extensions/session-messenger/src/client/store.ts`
 - 新建：`packages/extensions/session-messenger/src/client/locales.ts`
 - 新建：`packages/extensions/session-messenger/src/client/css-modules.d.ts`
-- 新建：`packages/extensions/session-messenger/tests/http.spec.ts`
-- 新建：`packages/extensions/session-messenger/tests/client.spec.tsx`
+- 新建：`packages/extensions/session-messenger/tests/http.client.spec.ts`
+- 新建：`packages/extensions/session-messenger/tests/client.client.spec.tsx`
 
 - [ ] **步骤 1：编写失败的 HTTP 信任与重连测试**
 
@@ -232,7 +232,7 @@ git commit -m "feat: add cross-session messaging tools"
 
 - [ ] **步骤 3：运行测试并确认 RED**
 
-运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/http.spec.ts packages/extensions/session-messenger/tests/client.spec.tsx`
+运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/http.client.spec.ts packages/extensions/session-messenger/tests/client.client.spec.tsx`
 
 预期：因为通知界面缺失而 FAIL。
 
@@ -246,14 +246,14 @@ git commit -m "feat: add cross-session messaging tools"
 
 - [ ] **步骤 6：运行 HTTP 与 Client 测试**
 
-运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/http.spec.ts packages/extensions/session-messenger/tests/client.spec.tsx && pnpm run test:gui`
+运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/http.client.spec.ts packages/extensions/session-messenger/tests/client.client.spec.tsx && pnpm run test:gui`
 
 预期：PASS。
 
 - [ ] **步骤 7：提交通知**
 
 ```bash
-git add packages/extensions/session-messenger/src/http.ts packages/extensions/session-messenger/src/events.ts packages/extensions/session-messenger/src/client packages/extensions/session-messenger/tests/http.spec.ts packages/extensions/session-messenger/tests/client.spec.tsx
+git add packages/extensions/session-messenger/src/http.ts packages/extensions/session-messenger/src/events.ts packages/extensions/session-messenger/src/client packages/extensions/session-messenger/tests/http.client.spec.ts packages/extensions/session-messenger/tests/client.client.spec.tsx
 git commit -m "feat: add session message notifications"
 ```
 
@@ -278,7 +278,7 @@ git commit -m "feat: add session message notifications"
 
 - [ ] **步骤 2：运行组装测试并确认 RED**
 
-运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/loader-composition.spec.ts scripts/stage-desktop.spec.ts apps/desktop/tests/manifest.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/session-messenger/tests/loader-composition.client.spec.ts scripts/stage-desktop.spec.ts apps/desktop/tests/manifest.spec.ts`
 
 预期：因缺少 Desktop 集成而 FAIL。
 

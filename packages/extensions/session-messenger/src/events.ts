@@ -57,7 +57,12 @@ export interface NotificationSnapshot {
   readonly receipts: readonly NotificationReceipt[]
 }
 
-/** Convert a durable receipt into the deliberately narrow browser shape. */
+/**
+ * Convert a durable receipt into the deliberately narrow browser shape.
+ * @param receipt - authoritative durable receipt to project.
+ * @param acknowledged - whether the addressed browser notice was marked read.
+ * @returns metadata safe to expose to the same-origin Client surface.
+ */
 export function notificationReceiptOf(
   receipt: Receipt,
   acknowledged: boolean,
@@ -98,7 +103,10 @@ export class SessionMessengerEventHub {
     this.unsubscribe = source.subscribe((transition) => { this.recordTransition(transition) })
   }
 
-  /** Current complete metadata view paired with the journal cursor. */
+  /**
+   * Read the complete metadata view paired with the journal cursor.
+   * @returns a sorted authoritative projection and its latest event identity.
+   */
   snapshot(): NotificationSnapshot {
     const receipts = [...this.receipts.values()]
       .sort((left, right) => left.updatedAt - right.updatedAt
@@ -106,7 +114,11 @@ export class SessionMessengerEventHub {
     return { lastEventId: this.lastEventId, receipts }
   }
 
-  /** Whether the bounded ring still covers every event newer than this cursor. */
+  /**
+   * Test whether the bounded ring still covers every event newer than a cursor.
+   * @param lastSeenId - last event identity accepted by the reconnecting Client.
+   * @returns true when gap-free replay is still possible.
+   */
   canReplayAfter(lastSeenId: number): boolean {
     const oldest = this.ring[0]
     return oldest === undefined || lastSeenId >= oldest.id - 1
@@ -115,6 +127,9 @@ export class SessionMessengerEventHub {
   /**
    * Mark only receipt-bound replies addressed to the claimed session as read.
    * Returns the number newly acknowledged; receipt storage remains untouched.
+   * @param sessionId - ordinary target session claiming these notices.
+   * @param deliveryIds - exact delivery identities requested by the Client.
+   * @returns the number of newly acknowledged reply notices.
    */
   acknowledge(sessionId: SessionId, deliveryIds: readonly DeliveryId[]): number {
     if (this.disposed) return 0
@@ -139,7 +154,12 @@ export class SessionMessengerEventHub {
     return accepted.length
   }
 
-  /** Replay newer journal entries, then subscribe to live transitions without a gap. */
+  /**
+   * Replay newer journal entries, then subscribe to live transitions without a gap.
+   * @param lastSeenId - last event identity already accepted by the Client.
+   * @param listener - callback receiving replayed and subsequent live events.
+   * @returns a disposer that removes the live callback.
+   */
   subscribeAfter(
     lastSeenId: number,
     listener: (event: NotificationEvent) => void,
