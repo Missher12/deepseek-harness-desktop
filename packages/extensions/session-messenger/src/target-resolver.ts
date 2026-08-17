@@ -44,8 +44,17 @@ export async function resolveOrdinaryTarget(
   caller: Agent,
   raw: string,
 ): Promise<Agent> {
+  return resolveOrdinaryTargetForSource(ctx, caller.id, raw)
+}
+
+/** Resolve for durable recovery when only the original source identity exists. */
+export async function resolveOrdinaryTargetForSource(
+  ctx: Context,
+  sourceSessionId: SessionId,
+  raw: string,
+): Promise<Agent> {
   const requestedId = parseTargetSessionId(raw)
-  if (requestedId === caller.id) throw messengerError('self-target', 'cannot message the calling session')
+  if (requestedId === sourceSessionId) throw messengerError('self-target', 'cannot message the calling session')
   if (ctx.workspaceRegistry.archivedSessionIds.includes(requestedId)) {
     throw messengerError('target-archived', 'target session is archived')
   }
@@ -62,7 +71,7 @@ export async function resolveOrdinaryTarget(
     throw normalizeLookupError(error)
   }
   if (target === undefined) throw messengerError('target-not-found', 'target session was not found')
-  if (target.id === caller.id) throw messengerError('self-target', 'cannot message the calling session')
+  if (target.id === sourceSessionId) throw messengerError('self-target', 'cannot message the calling session')
   assertTargetStillOrdinaryAndUnarchived(ctx, target)
   return target
 }
@@ -79,7 +88,7 @@ function normalizeLookupError(error: unknown): Error {
   if (!(error instanceof TypertLookupFailure)) {
     return messengerError('target-lookup-failed', 'target lookup failed', { cause: error })
   }
-  const failure = error.failure
+  const failure: unknown = error.failure
   if (typeof failure === 'object' && failure !== null && 'code' in failure) {
     const code = (failure as { code?: unknown }).code
     if (code === 'session-not-found') {

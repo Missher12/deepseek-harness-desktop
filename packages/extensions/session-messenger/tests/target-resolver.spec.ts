@@ -181,9 +181,9 @@ describe('assertTargetStillOrdinaryAndUnarchived', () => {
   it('is the final synchronous archive and ordinary-session fence', () => {
     const target = agent('target')
     const h = harness(() => target)
-    expect(() => assertTargetStillOrdinaryAndUnarchived(h.ctx as never, target)).not.toThrow()
+    expect(() => { assertTargetStillOrdinaryAndUnarchived(h.ctx as never, target) }).not.toThrow()
     h.ctx.workspaceRegistry.archivedSessionIds.push(target.id)
-    expect(() => assertTargetStillOrdinaryAndUnarchived(h.ctx as never, target))
+    expect(() => { assertTargetStillOrdinaryAndUnarchived(h.ctx as never, target) })
       .toThrow(expect.objectContaining({ code: 'target-archived' }))
   })
 })
