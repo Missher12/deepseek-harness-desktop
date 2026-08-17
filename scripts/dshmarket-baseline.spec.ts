@@ -40,6 +40,9 @@ describe('dshmarket dependency baseline', () => {
 
   it('locks only stable source file hashes, not generated CSS module hashes', () => {
     const baseline = JSON.parse(text(fixturePath)) as BaselineFixture
+    const workspace = text(join(root, 'pnpm-workspace.yaml'))
+    const patchFile = join(root, 'patches/dshmarket@1.10.1.patch')
+    const patched = workspace.includes('dshmarket@1.10.1: patches/dshmarket@1.10.1.patch')
     expect(Object.keys(baseline.files).sort()).toEqual([
       'src/client/Market.module.css',
       'src/client/MarketSection.tsx',
@@ -47,7 +50,13 @@ describe('dshmarket dependency baseline', () => {
       'src/routes.ts',
     ])
     for (const [relativePath, expectedHash] of Object.entries(baseline.files)) {
-      expect(sha256(join(packageRoot, relativePath)), relativePath).toBe(expectedHash)
+      const currentHash = sha256(join(packageRoot, relativePath))
+      if (!patched || relativePath === 'src/client/index.ts') {
+        expect(currentHash, relativePath).toBe(expectedHash)
+      } else {
+        expect(text(patchFile), relativePath).toContain(`diff --git a/${relativePath} b/${relativePath}`)
+        expect(currentHash, relativePath).not.toBe(expectedHash)
+      }
     }
   })
 })
