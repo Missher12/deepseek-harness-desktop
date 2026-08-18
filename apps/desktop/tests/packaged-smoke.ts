@@ -515,7 +515,17 @@ async function waitForDesktopSurface(page: Page, userData: string): Promise<void
     if (page.isClosed()) {
       throw new Error(`Packaged smoke: desktop window closed during startup.\n${await desktopStartupDiagnostic(page, userData)}`)
     }
-    if (await page.locator('body[data-dsh-surface="desktop"]').count() === 1) return
+    if (await page.locator('body[data-dsh-surface="desktop"]').count() === 1) {
+      const requiredSurfaceCounts = await Promise.all([
+        page.locator('[class*="sidebarCol"]').count(),
+        page.locator('[class*="centerCol"]').count(),
+        page.locator('[class*="detailsCol"]').count(),
+        page.locator('[data-dsh-desktop-command="new-session"]').count(),
+        page.locator('[data-dsh-desktop-command="open-command-menu"]').count(),
+        page.locator('[data-dsh-desktop-command="open-settings"]').count(),
+      ])
+      if (requiredSurfaceCounts.every(count => count === 1)) return
+    }
     try {
       const url = new URL(page.url())
       if (url.protocol === 'file:' && url.pathname.endsWith('/failure.html')) {
