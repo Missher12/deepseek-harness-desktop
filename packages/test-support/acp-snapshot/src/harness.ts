@@ -523,6 +523,10 @@ async function waitForPersistedTurnStart(
   minimumTurn?: number,
 ): Promise<void> {
   let invalidRecord: { error: unknown } | undefined
+  const detail = minimumTurn === undefined ? 'turn/start' : `turn/start at or beyond turn ${minimumTurn}`
+  const timeoutError = new Error(
+    `snapshot-harness: session "${sessionId}" did not persist ${detail} within ${timeoutMs}ms`,
+  )
   await vi.waitFor(async () => {
     const log = (await harvestSessionLogs(root)).find(candidate => candidate.id === sessionId)
     let openTurn: number | undefined
@@ -536,10 +540,17 @@ async function waitForPersistedTurnStart(
       return
     }
     if (openTurn === undefined || (minimumTurn !== undefined && openTurn < minimumTurn)) {
-      const detail = minimumTurn === undefined ? 'turn/start' : `turn/start at or beyond turn ${minimumTurn}`
-      throw new Error(`snapshot-harness: session "${sessionId}" did not persist ${detail} within ${timeoutMs}ms`)
+      throw timeoutError
     }
-  }, { interval: WAIT_POLL_INTERVAL_MS, timeout: timeoutMs })
+  }, { interval: WAIT_POLL_INTERVAL_MS, timeout: timeoutMs }).catch((error: unknown) => {
+    // `vi.waitFor` starts its timeout after invoking an async callback. Under
+    // a heavily loaded Windows runner, the timeout can fire before the first
+    // filesystem probe settles, so Vitest has no `lastError` and substitutes
+    // its generic `Timed out in waitFor!`. Preserve the harness contract even
+    // at that boundary; callback errors that did settle remain untouched.
+    if ((error as Error).message === 'Timed out in waitFor!') throw timeoutError
+    throw error
+  })
   if (invalidRecord !== undefined) throw invalidRecord.error
 }
 

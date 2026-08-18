@@ -684,8 +684,26 @@ describe('runScenario', () => {
     expect(result.sessionLogs[0]?.content).toContain('"turn":3')
   })
 
+  it('waitForTurnStart preserves its domain timeout when the first async probe outlives the timer', async () => {
+    const missing = await scenario({})
+    const waitFor = vi.spyOn(vi, 'waitFor').mockRejectedValueOnce(new Error('Timed out in waitFor!'))
+    try {
+      await expect(runScenario(
+        { steps: [...boot, { op: 'waitForTurnStart', minimumTurn: 3, timeoutMs: 20 }] },
+        { agent: AGENT, mode: 'replay', fixtureFile: missing.fixtureFile },
+      )).rejects.toThrow(/turn\/start at or beyond turn 3 within 20ms/)
+    } finally {
+      waitFor.mockRestore()
+    }
+  })
+
   it('waitForTurnStart rejects missing, earlier, and malformed durable turns', { timeout: 20_000 }, async () => {
     const missing = await scenario({})
+    await expect(runScenario(
+      { steps: [...boot, { op: 'waitForTurnStart', timeoutMs: 0 }] },
+      { agent: AGENT, mode: 'replay', fixtureFile: missing.fixtureFile },
+    )).rejects.toThrow(/did not persist turn\/start within 0ms/)
+
     await expect(runScenario(
       { steps: [...boot, { op: 'waitForTurnStart', timeoutMs: 20 }] },
       { agent: AGENT, mode: 'replay', fixtureFile: missing.fixtureFile },
