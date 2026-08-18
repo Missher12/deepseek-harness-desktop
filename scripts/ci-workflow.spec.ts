@@ -131,7 +131,18 @@ describe('CI workflow', () => {
       expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
       expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
       expect(job['runs-on']).toContain('vm-backup')
+      expect(job['runs-on'], `${jobName} must have a portable public-repository default`).toContain('ubuntu-latest')
+      expect(job['runs-on'], `${jobName} must not require an external enterprise pool`).not.toContain('dsh-ubuntu-24-04-16core')
     }
+    expect(node24.env).toMatchObject({ DSH_GATE_CONCURRENCY: '2' })
+    expect(node24Coverage.env).toMatchObject({ DSH_GATE_CONCURRENCY: '2' })
+    expect(node24Coverage.env?.DSH_COVERAGE_MAX_WORKERS).toContain("&& '8' || '2'")
+    expect(node24Consumers.env).toMatchObject({
+      DSH_GATE_CONCURRENCY: '2',
+      DSH_OXLINT_THREADS: '2',
+      DSH_PUBLINT_CONCURRENCY: '2',
+    })
+    expect(node24Consumers.env?.DSH_SNAPSHOT_MAX_CONCURRENCY).toContain("&& '12' || '4'")
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')
