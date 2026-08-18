@@ -246,12 +246,9 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     const path = await this.findLog(id)
     if (path === undefined) return false
     await this.readPrefix(path, id)
-    try {
-      await rm(dirname(path), { recursive: true })
-    } catch (error: unknown) {
-      if (isENOENT(error)) return false
-      throw error
-    }
+    // The exact log was observed above; force makes a cross-process deletion
+    // race idempotent instead of surfacing a spurious ENOENT.
+    await rm(dirname(path), { recursive: true, force: true })
     /* v8 ignore next -- Windows namespace durability is owned by rm; POSIX
        coverage exercises the directory fsync. */
     if (process.platform !== 'win32') await this.syncDirPosix(dirname(dirname(path)))

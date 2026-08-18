@@ -49,6 +49,17 @@ describe('usage chart projections', () => {
     expect(withPriorHistory[0]?.every(particle => particle.tokens === 10_028)).toBe(true)
     expect(withPriorHistory.flat().at(-1)?.tokens).toBe(10_000 + source.reduce((sum, day) => sum + day.tokens, 0))
   })
+
+  it('keeps empty and zero-only projections empty or idle', () => {
+    expect(buildDailyGrid([])).toEqual([])
+    expect(buildParticleGrid([], 'daily')).toEqual([])
+    expect(buildParticleGrid([], 'weekly')).toEqual([])
+    expect(buildParticleGrid([], 'cumulative', -10)).toEqual([])
+
+    const zero = activity(7).map(day => ({ ...day, tokens: 0, level: 0 as const }))
+    expect(buildParticleGrid(zero, 'weekly').flat().every(day => day.level === 0)).toBe(true)
+    expect(buildParticleGrid(zero, 'cumulative').flat().every(day => day.level === 0)).toBe(true)
+  })
 })
 
 describe('usage formatters', () => {
@@ -57,5 +68,9 @@ describe('usage formatters', () => {
     expect(formatCompactNumber(96_500, 'zh-CN')).toContain('万')
     expect(formatDuration(6 * 3_600_000 + 22 * 60_000, 'zh-CN')).toBe('6 小时 22 分')
     expect(formatDuration(6 * 3_600_000 + 22 * 60_000, 'en')).toBe('6h 22m')
+    expect(formatDuration(26 * 3_600_000, 'zh-CN')).toBe('1 天 2 小时')
+    expect(formatDuration(22 * 60_000, 'zh-CN')).toBe('22 分')
+    expect(formatDuration(26 * 3_600_000, 'en')).toBe('1d 2h')
+    expect(formatDuration(-1, 'en')).toBe('0m')
   })
 })

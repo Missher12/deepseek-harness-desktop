@@ -93,7 +93,7 @@ function skillNameFromArguments(argumentsJson: string): string | undefined {
 /** Add two non-negative safe integers, or decline an unsafe aggregate. */
 function safeSum(left: number, right: number): number | undefined {
   const sum = left + right
-  return Number.isSafeInteger(sum) && sum >= 0 ? sum : undefined
+  return Number.isSafeInteger(sum) ? sum : undefined
 }
 
 /**
@@ -144,9 +144,11 @@ export function foldSessionUsage(
       const startedAt = openTurns.get(item.data.turn)
       openTurns.delete(item.data.turn)
       if (startedAt !== undefined && item.time >= startedAt) {
-        completedTurnDurationMs = safeSum(completedTurnDurationMs, item.time - startedAt)
-          ?? completedTurnDurationMs
-        completedTurnCount += 1
+        const duration = safeSum(completedTurnDurationMs, item.time - startedAt)
+        if (duration !== undefined) {
+          completedTurnDurationMs = duration
+          completedTurnCount += 1
+        }
       }
     }
 
@@ -190,6 +192,7 @@ export function foldSessionUsage(
   }
 
   const tokens = zeroTokens()
+  let totalTokens = 0
   let validUsageSamples = 0
   for (const sample of samples.values()) {
     const nextUncached = safeSum(tokens.uncachedInput, sample.buckets.uncachedInput)
@@ -202,7 +205,8 @@ export function foldSessionUsage(
       sample.buckets.cacheRead,
       sample.buckets.cacheWrite,
     ].reduce<number | undefined>((sum, value) => sum === undefined ? undefined : safeSum(sum, value), 0)
-    if ([nextUncached, nextOutput, nextRead, nextWrite, sampleTotal].some(value => value === undefined)) {
+    const nextTotal = sampleTotal === undefined ? undefined : safeSum(totalTokens, sampleTotal)
+    if ([nextUncached, nextOutput, nextRead, nextWrite, sampleTotal, nextTotal].some(value => value === undefined)) {
       incompleteUsageSamples += 1
       continue
     }
@@ -210,8 +214,9 @@ export function foldSessionUsage(
     tokens.output = nextOutput as number
     tokens.cacheRead = nextRead as number
     tokens.cacheWrite = nextWrite as number
+    totalTokens = nextTotal as number
     const day = dayOf(days, sample.date)
-    day.tokens = safeSum(day.tokens, sampleTotal as number) ?? day.tokens
+    day.tokens += sampleTotal as number
     validUsageSamples += 1
   }
 
@@ -220,8 +225,6 @@ export function foldSessionUsage(
     if (route.reasoningEffort !== undefined) increment(reasoningEfforts, route.reasoningEffort)
   }
 
-  const totalTokens = [tokens.uncachedInput, tokens.output, tokens.cacheRead, tokens.cacheWrite]
-    .reduce((sum, value) => sum + value, 0)
   const daily: UsageDay[] = [...days]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([date, day]) => ({ date, ...day }))

@@ -14,6 +14,6 @@ export function usageDateKey(time: number, timeZone: string): string {
     day: '2-digit',
   }).formatToParts(new Date(time))
   const value = (type: Intl.DateTimeFormatPartTypes): string =>
-    parts.find(part => part.type === type)?.value ?? ''
+    (parts.find(part => part.type === type) as Intl.DateTimeFormatPart).value
   return `${value('year')}-${value('month')}-${value('day')}`
 }

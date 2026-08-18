@@ -269,6 +269,26 @@ describe('healProfilesModuleFallback', () => {
       .toBe(unpackedPackage)
   })
 
+  it('keeps the archive target when no asar-unpacked copy exists', () => {
+    const root = tmp()
+    const archive = join(root, 'DeepSeek Harness.app', 'Contents', 'Resources', 'app.asar')
+    const archivedPackage = join(archive, 'node_modules', 'packaged-dep')
+    mkdirSync(archivedPackage, { recursive: true })
+    writeFileSync(join(archive, 'package.json'), JSON.stringify({
+      name: 'dsh-app',
+      dependencies: { 'packaged-dep': '0.0.0' },
+    }))
+    writeFileSync(join(archivedPackage, 'package.json'), JSON.stringify({
+      name: 'packaged-dep', version: '0.0.0',
+    }))
+
+    const home = tmp()
+    healProfilesModuleFallback(join(archive, 'package.json'), home)
+
+    expect(readlinkSync(join(home, 'profiles', 'node_modules', 'packaged-dep')))
+      .toBe(archivedPackage)
+  })
+
   it('throws when a fallback entry is a real directory', () => {
     const anchor = stageInstallation({})
     const home = tmp()

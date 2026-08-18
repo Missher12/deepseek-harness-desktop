@@ -22,7 +22,12 @@ export interface UsageParticle {
 }
 
 /** One seven-day chronological column. */
-export type UsageWeek<T> = readonly T[]
+export type UsageWeek<T> = readonly [T, ...T[]]
+
+/** Map a proven non-empty week while preserving that fact in its result type. */
+function mapWeek<T, R>(week: UsageWeek<T>, visit: (value: T, index: number) => R): UsageWeek<R> {
+  return week.map(visit) as [R, ...R[]]
+}
 
 /**
  * Split the fixed 371-day range into 53 chronological seven-day columns.
@@ -30,9 +35,10 @@ export type UsageWeek<T> = readonly T[]
  * @returns Chronological seven-day columns without reordering any value.
  */
 export function buildDailyGrid<T>(activity: readonly T[]): UsageWeek<T>[] {
-  const weeks: T[][] = []
+  const weeks: UsageWeek<T>[] = []
   for (let index = 0; index < activity.length; index += 7) {
-    weeks.push(activity.slice(index, index + 7))
+    // The loop guard proves every slice has at least its first item.
+    weeks.push(activity.slice(index, index + 7) as [T, ...T[]])
   }
   return weeks
 }
@@ -83,14 +89,16 @@ export function buildParticleGrid(
 
   if (mode === 'weekly') {
     const sourceWeeks = buildDailyGrid(activity)
-    const totals = sourceWeeks.map(week => week.reduce((sum, day) => sum + day.tokens, 0))
-    const maximum = Math.max(0, ...totals)
-    return sourceWeeks.map((week, index) => {
-      const tokens = totals[index] ?? 0
-      const periodStart = week[0]?.date ?? ''
-      const periodEnd = week.at(-1)?.date ?? periodStart
+    const totals = sourceWeeks.map(week => ({
+      tokens: week.reduce((sum, day) => sum + day.tokens, 0),
+      week,
+    }))
+    const maximum = Math.max(0, ...totals.map(item => item.tokens))
+    return totals.map(({ tokens, week }) => {
+      const periodStart = week[0].date
+      const periodEnd = (week[week.length - 1] as UsageActivityDay).date
       const filledRows = logarithmicRows(tokens, maximum)
-      return week.map((day, row) => ({
+      return mapWeek(week, (day, row) => ({
         date: day.date,
         tokens,
         level: stackLevel(row, filledRows),
@@ -102,20 +110,20 @@ export function buildParticleGrid(
   }
 
   const sourceWeeks = buildDailyGrid(activity)
-  const cumulativeTotals: number[] = []
+  if (sourceWeeks.length === 0) return []
+  const cumulative: Array<{ tokens: number; week: UsageWeek<UsageActivityDay> }> = []
   let running = Math.max(0, baselineTokens)
   for (const week of sourceWeeks) {
     running += week.reduce((sum, day) => sum + day.tokens, 0)
-    cumulativeTotals.push(running)
+    cumulative.push({ tokens: running, week })
   }
-  const maximum = cumulativeTotals.at(-1) ?? 0
-  const rangeStart = activity[0]?.date ?? ''
-  return sourceWeeks.map((week, index) => {
-    const tokens = cumulativeTotals[index] ?? 0
-    const labelDate = week[0]?.date ?? rangeStart
-    const periodEnd = week.at(-1)?.date ?? labelDate
+  const maximum = running
+  const rangeStart = (activity[0] as UsageActivityDay).date
+  return cumulative.map(({ tokens, week }) => {
+    const labelDate = week[0].date
+    const periodEnd = (week[week.length - 1] as UsageActivityDay).date
     const filledRows = cumulativeRows(tokens, maximum)
-    return week.map((day, row) => ({
+    return mapWeek(week, (day, row) => ({
       date: day.date,
       tokens,
       level: stackLevel(row, filledRows),

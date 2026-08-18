@@ -119,4 +119,31 @@ describe('aggregateUsageRows', () => {
     expect(snapshot.insights.cacheHitRate).toBeNull()
     expect(snapshot.incompleteUsageSamples).toBe(2)
   })
+
+  it('uses deterministic tie breaks, activity-only intensity, and option defaults', () => {
+    const snapshot = aggregateUsageRows([row({
+      daily: [
+        { date: '2026-08-17', humanMessages: 0, tokens: 0, toolCalls: 0 },
+        { date: '2026-08-18', humanMessages: 0, tokens: 0, toolCalls: 1 },
+      ],
+      models: { zeta: 2, alpha: 2 },
+      reasoningEfforts: { low: 1, high: 1 },
+      skills: { same: 1 },
+      tools: { same: 1, zeta: 1, alpha: 1 },
+    })], {
+      now: Date.parse('2026-08-18T04:00:00.000Z'),
+      timeZone: 'Asia/Shanghai',
+    })
+
+    expect(snapshot.omittedSessions).toBe(0)
+    expect(snapshot.insights.mostUsedModel).toBe('alpha')
+    expect(snapshot.insights.mostUsedReasoningEffort).toBe('high')
+    expect(snapshot.activity.find(day => day.date === '2026-08-18')?.level).toBe(4)
+    expect(snapshot.features.slice(0, 4)).toEqual([
+      { kind: 'skill', name: 'same', count: 1 },
+      { kind: 'tool', name: 'alpha', count: 1 },
+      { kind: 'tool', name: 'same', count: 1 },
+      { kind: 'tool', name: 'zeta', count: 1 },
+    ])
+  })
 })

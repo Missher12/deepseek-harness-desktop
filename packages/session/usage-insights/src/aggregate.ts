@@ -23,8 +23,8 @@ interface DayTotals {
 
 /** Parse a canonical date key onto the UTC calendar arithmetic plane. */
 function dayNumber(date: string): number {
-  const [year, month, day] = date.split('-').map(Number)
-  return Math.floor(Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1) / 86_400_000)
+  const [year, month, day] = date.split('-').map(Number) as [number, number, number]
+  return Math.floor(Date.UTC(year, month - 1, day) / 86_400_000)
 }
 
 /** Format a UTC calendar day number as a canonical date key. */

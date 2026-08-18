@@ -435,6 +435,10 @@ describe('workspace domain round trip', () => {
     if (created.result.ok) expect(created.result.value.created).toBe(true)
     const archivedResponse = await c.workspace.archiveSession({ sessionId: 's-arch' as never })
     expect(archivedResponse.result).toEqual({ ok: true, value: { archivedSessionIds: ['s-arch'] } })
+    const restoredResponse = await c.workspace.restoreSession({ sessionId: 's-arch' as never })
+    expect(restoredResponse.result).toEqual({ ok: true, value: { archivedSessionIds: [] } })
+    const deletedResponse = await c.sessions.delete({ sessionId: 's-arch' as never })
+    expect(deletedResponse.result).toEqual({ ok: true, value: { deleted: true } })
   })
 
   it('rejects a pathless create payload at the handler schema', async () => {

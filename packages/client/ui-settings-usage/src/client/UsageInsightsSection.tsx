@@ -30,19 +30,19 @@ type ChartMode = ParticleChartMode
 
 /** Month label in the active UI locale. */
 function monthLabel(date: string, locale: string): string {
-  const [year, month] = date.split('-').map(Number)
-  return new Intl.DateTimeFormat(locale, { month: 'short' }).format(new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, 1)))
+  const [year, month] = date.split('-').map(Number) as [number, number]
+  return new Intl.DateTimeFormat(locale, { month: 'short' }).format(new Date(Date.UTC(year, month - 1, 1)))
 }
 
 /** Scope date used by the visible particle tooltip. */
 function particleDateLabel(date: string, locale: string, includeYear: boolean): string {
-  const [year, month, day] = date.split('-').map(Number)
+  const [year, month, day] = date.split('-').map(Number) as [number, number, number]
   return new Intl.DateTimeFormat(locale, {
     ...(includeYear ? { year: 'numeric' as const } : {}),
     month: 'long',
     day: 'numeric',
     timeZone: 'UTC',
-  }).format(new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1)))
+  }).format(new Date(Date.UTC(year, month - 1, day)))
 }
 
 /** Fill the two bounded placeholders used by particle tooltip copy. */
@@ -134,7 +134,7 @@ function ActivityChart({ snapshot, mode, locale, t }: {
         )}
         <div className={css.heatmap} aria-hidden="true">
           {weeks.map((week, index) => (
-            <div className={css.heatmapWeek} key={week[0]?.date ?? index}>
+            <div className={css.heatmapWeek} key={week[0].date}>
               {week.map(particle => (
                 <span
                   className={css.day}
