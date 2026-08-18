@@ -22,6 +22,7 @@ describe('findConflictingHarness', () => {
 
   it('ignores unrelated commands, its own PID, and a separate Harness home', async () => {
     const conflict = await findConflictingHarness('/Users/test/.dsh', {
+      platform: 'darwin',
       listProcesses: async () => [
         { pid: 10, command: 'dsh web' },
         { pid: 91, command: 'node server.js' },
