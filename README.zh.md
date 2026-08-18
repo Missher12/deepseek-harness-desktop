@@ -12,7 +12,7 @@ DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的�
 
 请从本仓库的 [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases) 下载 DMG。当前本机构建未签名、未公证；首次启动时，macOS 可能要求在 Finder 右键菜单中选择“打开”。
 
-Desktop 0.1.5 已在原生 Intel Mac 上完成本地构建与验证；Windows 0.1.5 的打包及原生验收仍延后进行。
+Desktop 0.1.8 已在原生 Intel Mac 和 Windows x64 上完成构建与原生验证。两个平台的安装包及其 SHA-256 校验文件会一并发布在对应的 Desktop Release 下。
 
 ## 开发者预览
 
