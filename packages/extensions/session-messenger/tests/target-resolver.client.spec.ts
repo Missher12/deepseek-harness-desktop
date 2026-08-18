@@ -4,10 +4,16 @@ import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
 import { describe, expect, it, vi } from 'vitest'
 import {
   assertTargetStillOrdinaryAndUnarchived,
+  resolveOrdinaryOperatorSource,
   resolveOrdinaryTarget,
 } from '../src/target-resolver.ts'
 
-function agent(id: string, options: { origin?: 'subagent'; parentSession?: string; preset?: string } = {}) {
+function agent(id: string, options: {
+  origin?: 'subagent'
+  parentSession?: string
+  preset?: string
+  events?: unknown[]
+} = {}) {
   return {
     id: SessionId(id),
     status: 'idle',
@@ -21,7 +27,7 @@ function agent(id: string, options: { origin?: 'subagent'; parentSession?: strin
         ...(options.parentSession === undefined ? {} : { parentSession: SessionId(options.parentSession) }),
         ...(options.preset === undefined ? {} : { agentPreset: options.preset }),
       },
-      events: [],
+      events: options.events ?? [],
     },
     inbox: { nextTurn: [], nextStep: [] },
     ctx: {},
@@ -185,5 +191,55 @@ describe('assertTargetStillOrdinaryAndUnarchived', () => {
     h.ctx.workspaceRegistry.archivedSessionIds.push(target.id)
     expect(() => { assertTargetStillOrdinaryAndUnarchived(h.ctx as never, target) })
       .toThrow(expect.objectContaining({ code: 'target-archived' }))
+  })
+})
+
+describe('resolveOrdinaryOperatorSource', () => {
+  it('accepts only the exact live ordinary source with an established turn', () => {
+    const source = agent('source', { events: [{ type: 'turn/start', data: { turn: 1 } }] })
+    const h = harness(() => undefined)
+    h.ctx.agents.get.mockImplementation(id => id === source.id ? source : undefined)
+
+    expect(resolveOrdinaryOperatorSource(h.ctx as never, 'source')).toBe(source)
+    expect(h.resolve).not.toHaveBeenCalled()
+    expect(h.resume).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['missing', undefined, 'source-not-found'],
+    ['blank', agent('blank'), 'source-blank'],
+    ['child', agent('child', { origin: 'subagent', events: [{ type: 'turn/start' }] }), 'source-subagent'],
+  ])('rejects %s sources without lookup or mutation', (_label, source, code) => {
+    const h = harness(() => undefined)
+    h.ctx.agents.get.mockReturnValue(source)
+
+    expect(() => resolveOrdinaryOperatorSource(h.ctx as never, source?.id ?? 'missing'))
+      .toThrow(expect.objectContaining({ code }))
+    expect(h.resolve).not.toHaveBeenCalled()
+    expect(h.resume).not.toHaveBeenCalled()
+  })
+
+  it('rejects archived and legacy-owned sources using current Host state', () => {
+    const parent = agent('parent', { events: [{ type: 'turn/start' }] })
+    const archived = agent('archived', { events: [{ type: 'turn/start' }] })
+    const child = agent('legacy-child', {
+      parentSession: 'parent',
+      events: [{ type: 'turn/start' }],
+    })
+    const h = harness(() => undefined, [archived.id])
+    h.ctx.agents.get.mockImplementation((id) => {
+      if (id === parent.id) return parent
+      if (id === archived.id) return archived
+      if (id === child.id) return child
+      return undefined
+    })
+    h.isOwnedBy.mockImplementation(id => id === child.id)
+
+    expect(() => resolveOrdinaryOperatorSource(h.ctx as never, 'archived'))
+      .toThrow(expect.objectContaining({ code: 'source-archived' }))
+    expect(() => resolveOrdinaryOperatorSource(h.ctx as never, 'legacy-child'))
+      .toThrow(expect.objectContaining({ code: 'source-subagent' }))
+    expect(h.resolve).not.toHaveBeenCalled()
+    expect(h.resume).not.toHaveBeenCalled()
   })
 })

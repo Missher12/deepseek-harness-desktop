@@ -69,10 +69,11 @@ describe('write-ahead recovery', () => {
     expect(target.inject).toHaveBeenCalledTimes(1)
     const message = target.inject.mock.calls[0]![0] as UserMessage
     expect(message.id).toBe(MessageId('fixed-message'))
-    const text = message.content[0]
-    expect(text?.type).toBe('text')
-    if (text?.type !== 'text') throw new Error('expected recovered relay text block')
-    expect(text.text).toContain('recover me')
+    const metadata = message.content[0]
+    const body = message.content[1]
+    expect(metadata?.type).toBe('text')
+    expect(body).toEqual({ type: 'text', text: 'recover me' })
+    expect(JSON.stringify(message)).not.toContain('reply-token')
     expect(Object.isFrozen(message)).toBe(true)
     expect(store.get(DeliveryId('delivery-1'))).toMatchObject({ status: 'delivered' })
     expect(store.get(DeliveryId('delivery-1'))).not.toHaveProperty('envelope')
