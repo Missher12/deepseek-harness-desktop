@@ -518,6 +518,14 @@ async function exerciseReasoningEffort(
   await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 15_000 }).toMatch(
     /^(?:Select model, current Native Smoke Thinker, reasoning effort Max|选择模型，当前 Native Smoke Thinker，推理等级 Max)$/u,
   )
+  expect(await slider.evaluate((element) => {
+    const track = element.parentElement
+    const thumb = track?.querySelector('span[aria-hidden="true"]')
+    if (!(track instanceof HTMLElement) || !(thumb instanceof HTMLElement)) return false
+    const trackBounds = track.getBoundingClientRect()
+    const thumbBounds = thumb.getBoundingClientRect()
+    return thumbBounds.left >= trackBounds.left && thumbBounds.right <= trackBounds.right
+  })).toBe(true)
   await expect.poll(() => readFile(join(harnessHome, 'settings.yaml'), 'utf8'), { timeout: 15_000 })
     .toContain('reasoningEffort: max')
   await page.screenshot({
@@ -656,10 +664,21 @@ async function exercisePluginMarket(
       return overflow === 'auto' || overflow === 'scroll'
     })
   ))).toBe(true)
+  expect(await categories.locator('[data-chip="1"]').evaluateAll(chips => chips.every((chip) => {
+    const style = getComputedStyle(chip)
+    return style.flexShrink === '0' && style.whiteSpace === 'nowrap'
+  }))).toBe(true)
 
   const firstRow = market.locator('[data-dshmarket-plugin-row]').first()
   await firstRow.waitFor({ state: 'visible', timeout: 30_000 })
-  expect(await firstRow.locator('[data-dshmarket-primary-action]').count()).toBe(1)
+  const primaryAction = firstRow.locator('[data-dshmarket-primary-action]')
+  expect(await primaryAction.count()).toBe(1)
+  expect(await firstRow.evaluate((row) => {
+    const copy = row.children.item(1)
+    const action = row.querySelector('[data-dshmarket-primary-action]')
+    if (!(copy instanceof HTMLElement) || !(action instanceof HTMLElement)) return false
+    return action.getBoundingClientRect().top >= copy.getBoundingClientRect().bottom
+  })).toBe(true)
   const packageName = await firstRow.getAttribute('data-package')
   expect(packageName).toBeTruthy()
   const search = toolbar.getByRole('textbox').first()

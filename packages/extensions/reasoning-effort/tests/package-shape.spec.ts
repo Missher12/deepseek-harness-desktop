@@ -185,6 +185,21 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
     expect(bundle).toContain("loader: { ...config.loader, '.png': 'dataurl' }")
   })
 
+  test('keeps the ordinary circular thumb inside both track endpoints', async () => {
+    const css = await readFile(new URL('src/client/EffortControl.module.css', PACKAGE_ROOT), 'utf8')
+
+    expect(css).toMatch(
+      /\.knob\s*\{[^}]*left:\s*clamp\(14px,\s*var\(--reasoning-effort-progress\),\s*calc\(100%\s*-\s*14px\)\)/s,
+    )
+  })
+
+  test('resolves the attributed sprite from source during the parallel Client build', async () => {
+    const bundle = await readFile(new URL('tsdown.config.ts', PACKAGE_ROOT), 'utf8')
+
+    expect(bundle).toContain("source === '../../assets/chibi-runner-strip.png'")
+    expect(bundle).toContain("new URL('./assets/chibi-runner-strip.png', import.meta.url)")
+  })
+
   test('describes the invariant companion without denying implemented Host behavior', async () => {
     const invariant = await readFile(new URL('src/invariant.ts', PACKAGE_ROOT), 'utf8')
 

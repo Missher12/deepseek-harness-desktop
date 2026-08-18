@@ -27,7 +27,17 @@ describe('Harness-native dshmarket presentation', () => {
     expect(source).toContain('data-dshmarket-categories')
     expect(css).toMatch(/\.marketToolbar\{[^}]*position:sticky/)
     expect(css).toMatch(/\.catsWrap\{[^}]*flex-wrap:nowrap[^}]*overflow-x:auto/)
+    expect(css).toMatch(/\.catsWrap>\*\{[^}]*flex:0 0 auto[^}]*white-space:nowrap/)
+    expect(css).toMatch(/\.tabSearch\{[^}]*width:100%/)
     expect(css).toContain('var(--dsw-')
+  })
+
+  it('reflows crowded plugin actions from the market container width', () => {
+    expect(css).toMatch(/\.root\{[^}]*container-type:inline-size/)
+    expect(css).toMatch(
+      /@container\s*\(max-width:620px\)\{[^@]*\.pluginRow\{[^}]*grid-template-columns:40px minmax\(0,1fr\) auto/s,
+    )
+    expect(css).toMatch(/@container\s*\(max-width:620px\)\{[^@]*\.pluginAction\{[^}]*grid-column:2/s)
   })
 
   it('exposes Discover, Installed, Updates, and Activity without removing legacy flows', () => {

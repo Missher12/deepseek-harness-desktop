@@ -162,7 +162,7 @@
   position: absolute;
   z-index: 2;
   top: 50%;
-  left: var(--reasoning-effort-progress);
+  left: clamp(14px, var(--reasoning-effort-progress), calc(100% - 14px));
   width: 24px;
   height: 24px;
   border: 2px solid var(--dsw-static-blue-400);
