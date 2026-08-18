@@ -15,14 +15,13 @@ import {
 import {
   DeliveryId,
   MessengerError,
-  ReplyToken,
   type MessengerErrorCode,
 } from './types.ts'
 
 /** Tool-facing coordinator seam used by unit tests and activation ordering. */
 export interface MessengerToolCoordinator {
   deliver: SessionMessengerCoordinator['deliver']
-  reply: SessionMessengerCoordinator['reply']
+  replyToDelivery: SessionMessengerCoordinator['replyToDelivery']
 }
 
 /** Tool-facing wait seam. */
@@ -117,10 +116,9 @@ export function createSessionMessengerToolDefinitions(
     }),
     defineTool({
       name: 'reply_to_session',
-      description: 'Reply once to a cross-session delivery using its exact delivery id and private reply token. The destination is derived from the receipt.',
+      description: 'Reply once to a cross-session delivery using its exact delivery id. The destination and one-use authority are derived from the Host receipt.',
       parameters: {
         delivery_id: { type: 'string', required: true, description: 'Delivery id shown in the received relay.' },
-        reply_token: { type: 'string', required: true, description: 'Private one-use reply token shown in the received relay.' },
         message: { type: 'string', required: true, description: 'Reply body, up to 16 KiB UTF-8.' },
         wake: { type: 'boolean', description: 'Wake the original session. Defaults to false.' },
       },
@@ -130,9 +128,8 @@ export function createSessionMessengerToolDefinitions(
         const wake = args.wake ?? false
         if (caller === undefined) return failure('caller-required', wake)
         try {
-          return success(await coordinator().reply(caller, {
+          return success(await coordinator().replyToDelivery(caller, {
             deliveryId: DeliveryId(args.delivery_id),
-            replyToken: ReplyToken(args.reply_token),
             message: args.message,
             wake,
           }, exec.signal))

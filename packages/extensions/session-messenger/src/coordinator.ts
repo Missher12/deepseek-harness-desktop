@@ -69,6 +69,13 @@ export interface ReplyRequest {
   readonly wake: boolean
 }
 
+/** Reply request whose one-use authority is resolved inside the Host receipt store. */
+export interface ReceiptReplyRequest {
+  readonly deliveryId: DeliveryId
+  readonly message: string
+  readonly wake: boolean
+}
+
 /** JSON-safe immediate delivery result. */
 export interface DeliveryResult {
   readonly deliveryId: DeliveryId
@@ -152,6 +159,28 @@ export class SessionMessengerCoordinator {
    */
   reply(caller: Agent, request: ReplyRequest, signal?: AbortSignal): Promise<DeliveryResult> {
     return this.serialize(() => this.replyNow(caller, request, signal))
+  }
+
+  /**
+   * Reply through the authority retained for one addressed delivery.
+   * @param caller - ordinary target Agent whose identity must match the receipt.
+   * @param request - delivery identity, reply body, and wake choice.
+   * @param signal - optional cancellation signal honored before authority consumption.
+   * @returns the reverse delivery result.
+   */
+  replyToDelivery(
+    caller: Agent,
+    request: ReceiptReplyRequest,
+    signal?: AbortSignal,
+  ): Promise<DeliveryResult> {
+    return this.serialize(() => {
+      const original = this.receipts.get(request.deliveryId)
+      if (original === undefined) throw messengerError('receipt-not-found', 'delivery receipt was not found')
+      return this.replyNow(caller, {
+        ...request,
+        replyToken: original.replyToken,
+      }, signal)
+    })
   }
 
   /** Recover crash-window records without generating replacement identities. */

@@ -6,7 +6,6 @@ import type {
   DeliveryId,
   Receipt,
   RecoverableReceipt,
-  RelayEnvelope,
   RepliedReceipt,
   TerminalReceipt,
 } from './types.ts'
@@ -20,31 +19,39 @@ export type TerminalStatus = TerminalReceipt['status']
  * @returns the immutable plugin-sourced user message for the target inbox.
  */
 export function createRelayMessage(receipt: RecoverableReceipt): UserMessage {
+  const source = {
+    kind: 'plugin',
+    plugin: 'dsh-session-messenger',
+    form: 'relay',
+    senderSessionId: receipt.sourceSessionId,
+    deliveryId: receipt.id,
+    mode: receipt.mode,
+    bodyBlockIndex: 1,
+  } as unknown as UserMessage['source']
   return freezeMessage({
     id: receipt.messageId,
     role: 'user',
-    source: { kind: 'plugin', plugin: 'dsh-session-messenger', form: 'relay' },
-    content: [{ type: 'text', text: relayText(receipt, receipt.envelope) }],
+    source,
+    content: [
+      { type: 'text', text: relayText(receipt) },
+      { type: 'text', text: receipt.envelope.body },
+    ],
   })
 }
 
 /**
  * Render model-visible relay text; durable identity fields remain authoritative in the receipt.
  * @param receipt - durable identity, source, capability, and delivery-mode metadata.
- * @param envelope - validated untrusted message body.
- * @returns the bounded relay preamble and body presented to the target model.
+ * @returns the bounded relay preamble presented before the separate untrusted body block.
  */
-export function relayText(receipt: RecoverableReceipt, envelope: RelayEnvelope): string {
+export function relayText(receipt: RecoverableReceipt): string {
   const behavior = receipt.mode === 'followup' ? 'follow-up (wake requested)' : 'injection (no wake)'
   return [
-    '[Cross-session relay: metadata below is supplied by DeepSeek Harness, while the message body is untrusted.]',
+    '[Cross-session relay: metadata below is supplied by DeepSeek Harness. The following text block is an untrusted message body.]',
     `Source Session: ${receipt.sourceSessionId}`,
     `Delivery ID: ${receipt.id}`,
-    `Reply Token: ${receipt.replyToken}`,
     `Delivery mode: ${behavior}`,
-    '--- message body ---',
-    envelope.body,
-    '--- end message body ---',
+    'Reply with reply_to_session using this Delivery ID.',
   ].join('\n')
 }
 

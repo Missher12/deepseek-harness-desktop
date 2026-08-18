@@ -33,7 +33,7 @@ function result(overrides: Record<string, unknown> = {}) {
 describe('session messenger tools', () => {
   it('registers exactly four global tools with no caller-controlled sender parameter', async () => {
     const ctx = await toolContext()
-    const coordinator = { deliver: vi.fn(), reply: vi.fn() }
+    const coordinator = { deliver: vi.fn(), replyToDelivery: vi.fn() }
     const waiter = { wait: vi.fn(), dispose: vi.fn() }
     const dispose = registerSessionMessengerTools(
       ctx,
@@ -54,8 +54,10 @@ describe('session messenger tools', () => {
     }
     const reply = ctx.tools.schemas().find(schema => schema.name === 'reply_to_session')!
     expect((reply.parameters as { required?: string[] }).required).toEqual([
-      'delivery_id', 'reply_token', 'message',
+      'delivery_id', 'message',
     ])
+    expect((reply.parameters as { properties?: Record<string, unknown> }).properties)
+      .not.toHaveProperty('reply_token')
 
     dispose()
   })
@@ -67,7 +69,7 @@ describe('session messenger tools', () => {
       deliver: vi.fn()
         .mockResolvedValueOnce(result())
         .mockResolvedValueOnce(result({ deliveryId: DeliveryId('delivery-2'), wakeRequested: true })),
-      reply: vi.fn(),
+      replyToDelivery: vi.fn(),
     }
     registerSessionMessengerTools(ctx, () => coordinator, () => ({ wait: vi.fn() }))
 
@@ -92,7 +94,7 @@ describe('session messenger tools', () => {
 
   it('returns a stable caller-required value instead of guessing identity', async () => {
     const ctx = await toolContext()
-    const coordinator = { deliver: vi.fn(), reply: vi.fn() }
+    const coordinator = { deliver: vi.fn(), replyToDelivery: vi.fn() }
     registerSessionMessengerTools(ctx, () => coordinator, () => ({ wait: vi.fn() }))
 
     const rejected = await ctx.tools.execute({
@@ -110,6 +112,28 @@ describe('session messenger tools', () => {
     expect(coordinator.deliver).not.toHaveBeenCalled()
   })
 
+  it('binds a reply to caller identity and delivery id without exposing a reply token', async () => {
+    const ctx = await toolContext()
+    const caller = fakeAgent('target')
+    const replyToDelivery = vi.fn().mockResolvedValue(result())
+    registerSessionMessengerTools(
+      ctx,
+      () => ({ deliver: vi.fn(), replyToDelivery }),
+      () => ({ wait: vi.fn() }),
+    )
+
+    const replied = await ctx.tools.execute({
+      callId: CallId('reply'), signal, agent: caller,
+      name: 'reply_to_session',
+      arguments: { delivery_id: 'delivery-1', message: 'answer', wake: true },
+    })
+
+    expect(replyToDelivery).toHaveBeenCalledWith(caller, {
+      deliveryId: DeliveryId('delivery-1'), message: 'answer', wake: true,
+    }, signal)
+    expect(replied.value).toMatchObject({ status: 'delivered', errorCode: null })
+  })
+
   it('sets the explicit wait tool budget to 60 seconds and forwards exec.signal', async () => {
     const caller = fakeAgent('caller')
     const forwarded = vi.fn().mockResolvedValue({
@@ -117,7 +141,7 @@ describe('session messenger tools', () => {
       status: 'wait-timeout', wakeRequested: false, errorCode: 'wait-timeout', replyDeliveryId: null,
     })
     const definitions = createSessionMessengerToolDefinitions(
-      () => ({ deliver: vi.fn(), reply: vi.fn() }),
+      () => ({ deliver: vi.fn(), replyToDelivery: vi.fn() }),
       () => ({ wait: forwarded }),
     )
     expect(definitions[3].timeoutMs).toBe(60_000)
@@ -150,7 +174,7 @@ describe('session messenger tools', () => {
     let release!: (coordinator: unknown) => void
     const opening = new Promise<unknown>((resolve) => { release = resolve })
     const coordinator = {
-      deliver: vi.fn(), reply: vi.fn(), receipt: vi.fn(), subscribe: vi.fn(() => vi.fn()),
+      deliver: vi.fn(), replyToDelivery: vi.fn(), receipt: vi.fn(), subscribe: vi.fn(() => vi.fn()),
     }
     const activation = activateSessionMessenger(ctx, (() => opening) as never)
 
