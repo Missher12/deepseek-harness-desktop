@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, {
@@ -99,7 +100,25 @@ function completeTurn(createdAt: number): SessionEvent[] {
       time: createdAt + 1,
       data: { turn: 1, reason: { kind: 'completed' } },
     },
-    { type: 'session/end-seed', seq: 2, time: createdAt + 2, data: {} },
+    {
+      type: 'permission/preset',
+      seq: 2,
+      time: createdAt + 2,
+      data: { preset: 'workspace-write' },
+    },
+    {
+      type: 'sandbox/mode',
+      seq: 3,
+      time: createdAt + 3,
+      data: { mode: 'workspace-write' },
+    },
+    {
+      type: 'approval/policy',
+      seq: 4,
+      time: createdAt + 4,
+      data: { policy: 'ask' },
+    },
+    { type: 'session/end-seed', seq: 5, time: createdAt + 5, data: {} },
   ]
 }
 
@@ -365,6 +384,41 @@ async function protectedFileSnapshot(paths: readonly string[]): Promise<Record<s
   return snapshot
 }
 
+interface StableProtectedFileSnapshotOptions {
+  readonly stableForMs?: number
+  readonly timeoutMs?: number
+  readonly readSnapshot?: (paths: readonly string[]) => Promise<Record<string, string>>
+  readonly wait?: (delayMs: number) => Promise<void>
+  readonly now?: () => number
+}
+
+/**
+ * Wait until session-restore writes have remained unchanged for one complete
+ * persistence window before using protected files as a side-effect baseline.
+ * @param paths - exact files whose bytes must settle together.
+ * @param options - bounded timing and deterministic test seams.
+ * @returns the first snapshot unchanged for the requested stable interval.
+ */
+export async function waitForStableProtectedFileSnapshot(
+  paths: readonly string[],
+  options: StableProtectedFileSnapshotOptions = {},
+): Promise<Record<string, string>> {
+  const stableForMs = options.stableForMs ?? 500
+  const timeoutMs = options.timeoutMs ?? 15_000
+  const readSnapshot = options.readSnapshot ?? protectedFileSnapshot
+  const wait = options.wait ?? (async (delayMs: number) => { await delay(delayMs) })
+  const now = options.now ?? Date.now
+  const deadline = now() + timeoutMs
+  let previous = await readSnapshot(paths)
+  while (now() < deadline) {
+    await wait(Math.min(stableForMs, Math.max(1, deadline - now())))
+    const current = await readSnapshot(paths)
+    if (paths.every(path => current[path] === previous[path])) return current
+    previous = current
+  }
+  throw new Error('Packaged smoke: protected session files did not reach a stable baseline.')
+}
+
 async function desktopStartupDiagnostic(page: Page, userData: string): Promise<string> {
   const url = page.isClosed() ? '[window closed]' : page.url()
   const body = page.isClosed()
@@ -402,7 +456,7 @@ async function exerciseWindowsClipboard(
   application: ElectronApplication,
   seeded: WindowsClipboardSmokeState,
 ): Promise<void> {
-  const beforeFiles = await protectedFileSnapshot(seeded.protectedPaths)
+  const beforeFiles = await waitForStableProtectedFileSnapshot(seeded.protectedPaths)
   const selectedBefore = await page.locator('[role="treeitem"][aria-selected="true"]').allTextContents()
   const previousClipboard = await application.evaluate(({ clipboard }) => clipboard.readText())
 
@@ -456,7 +510,7 @@ async function exerciseWindowsClipboard(
     expect(await archiveDialog.getByRole('button', { name: /^(?:Delete|删除)/u }).count()).toBe(1)
 
     await page.waitForTimeout(500)
-    expect(await protectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
+    expect(await waitForStableProtectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
     expect(await page.locator('[role="treeitem"][aria-selected="true"]').allTextContents()).toEqual(selectedBefore)
     await page.keyboard.press('Escape')
     await archiveDialog.waitFor({ state: 'detached', timeout: 15_000 })
@@ -561,7 +615,7 @@ async function exerciseSessionMessenger(
   await expect.poll(() => pending.innerText(), { timeout: 15_000 }).toMatch(/^(?:0 pending|0 条待处理)$/u)
   await expect.poll(() => unread.innerText(), { timeout: 15_000 }).toMatch(/^(?:1 unread|1 条未读)$/u)
 
-  const beforeFiles = await protectedFileSnapshot(seeded.protectedPaths)
+  const beforeFiles = await waitForStableProtectedFileSnapshot(seeded.protectedPaths)
   const previousClipboard = await application.evaluate(({ clipboard }) => clipboard.readText())
   try {
     await application.evaluate(({ clipboard }, text) => { clipboard.writeText(text) }, 'desktop-smoke-before-messenger-copy')
@@ -580,7 +634,7 @@ async function exerciseSessionMessenger(
       hasText: /^(?:Notifications marked read|通知已标为已读)$/u,
     }).waitFor({ state: 'visible', timeout: 10_000 })
     await expect.poll(() => unread.innerText(), { timeout: 10_000 }).toMatch(/^(?:0 unread|0 条未读)$/u)
-    expect(await protectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
+    expect(await waitForStableProtectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
     expect(await activeRow.getAttribute('aria-selected')).toBe('true')
     await page.screenshot({
       path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-messenger-${platform}.png`),

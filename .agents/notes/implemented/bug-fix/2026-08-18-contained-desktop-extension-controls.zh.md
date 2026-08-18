@@ -22,7 +22,7 @@ Status: implemented
 
 包结构测试固定滑块两端的计算与源资产解析。市场布局测试固定容器查询、不压缩的单行分类、全宽搜索框和操作换行；产物测试要求补丁源码、生成的 bundle、source map、完整性与 Host 自保护保持一致。
 
-Intel macOS 成品应用还会在真实的 564 像素设置宽度下接受验证。普通 Max 滑块保持在轨道内，所有分类标签都保留 `flex-shrink: 0` 与 `white-space: nowrap`，分类带发生横向溢出，主操作从插件说明下方开始。完整成品冒烟测试目前会在更早位置停止，因为把会话通知标为已读会向选中会话日志追加内容；这项无关写入继续作为独立失败的验收路径保留，不会被这些聚焦布局检查隐藏。
+Intel macOS 成品应用还会在真实的 564 像素设置宽度下接受验证。普通 Max 滑块保持在轨道内，所有分类标签都保留 `flex-shrink: 0` 与 `white-space: nowrap`，分类带发生横向溢出，主操作从插件说明下方开始。最初观察到的完整冒烟失败并不是 acknowledgement 写入：保留的失败产物只包含选中 Session 延迟恢复的 `permission/preset`、`sandbox/mode` 与 `approval/policy` 记录。夹具现在会在最终 `session/end-seed` 之前预置这些当前策略记录，而冒烟测试会在复制与 acknowledgement 操作前后都等待受保护文件稳定。随后连续 3 轮成品运行均通过，所有 Session 日志、workspace 记录与 messenger receipt 文件在这些操作前后保持逐字节相同。
 
 ## 备选方案
 
