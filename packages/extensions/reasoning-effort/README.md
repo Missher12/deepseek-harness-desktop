@@ -10,6 +10,7 @@ A removable Harness-native replacement for the single model-selection seat. It k
 - The popup uses a portal, prefers an eight-pixel gap below the trigger, flips above near the lower edge, and constrains itself to the visible viewport when neither side fully fits.
 - Canvas streaks, pixel radiation, waves, and glow retain the upstream drawing algorithm; reduced-motion mode stops continuous animation without removing the control.
 - The optional character thumb is off for absent or corrupt settings and becomes profile-persistent only after an explicit opt-in.
+- With the character off, the ordinary 28-pixel thumb reserves its radius at both endpoints, so the minimum and maximum selections stay inside the track.
 - Keyboard, pointer, touch, Escape focus return, outside-click close, theme switching, zoom, and live Host directory refresh remain supported.
 - Addressed subagent sessions stay hidden, and models with fewer than two Host-advertised efforts keep ordinary model selection without a meaningless slider.
 

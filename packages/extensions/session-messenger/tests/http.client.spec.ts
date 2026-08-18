@@ -14,6 +14,7 @@ import {
   SNAPSHOT_PATH,
   createSessionMessengerCapability,
   createSessionMessengerHttpSurface,
+  createSessionMessengerOperator,
   injectSessionMessengerCapability,
   installSessionMessengerHttp,
 } from '../src/http.ts'
@@ -25,6 +26,10 @@ import {
 } from '../src/events.ts'
 import { DeliveryId, ReplyToken, type Receipt, type ReceiptTransition } from '../src/types.ts'
 import { apply as applyMessenger, inject as messengerInject } from '../src/index.ts'
+import { fakeAgent, fakeContext } from './helpers.client.ts'
+
+const SEND_PATH = '/plugins/dsh-session-messenger/send'
+const REPLY_PATH = '/plugins/dsh-session-messenger/reply'
 
 const PORT = 50_288
 const AUTHORITY = `127.0.0.1:${String(PORT)}`
@@ -200,17 +205,23 @@ describe('session messenger HTTP trust fence', () => {
   it('requires exact loopback Host, Origin, and per-generation capability on every POST', async () => {
     const source = new FakeSource()
     const surface = createSessionMessengerHttpSurface({ port: PORT, capability: CAPABILITY, source })
-    const paths = [SNAPSHOT_PATH, ACK_PATH, EVENTS_PATH]
+    const paths = [SNAPSHOT_PATH, ACK_PATH, EVENTS_PATH, SEND_PATH, REPLY_PATH]
     for (const path of paths) {
       const candidate = route(surface, path)
-      const body = path === ACK_PATH ? JSON.stringify({ sessionId: 'target-session', deliveryIds: [] }) : undefined
+      const body = path === ACK_PATH
+        ? JSON.stringify({ sessionId: 'target-session', deliveryIds: [] })
+        : path === SEND_PATH
+          ? JSON.stringify({ sourceSessionId: 'source-session', targetSessionId: 'target-session', message: 'hello', wake: false })
+          : path === REPLY_PATH
+            ? JSON.stringify({ sourceSessionId: 'target-session', deliveryId: 'delivery-1', message: 'answer', wake: false })
+            : undefined
       for (const headers of [
-        { ...validHeaders(path === ACK_PATH), host: 'localhost:50288' },
-        { ...validHeaders(path === ACK_PATH), host: '127.0.0.1:50289' },
-        { ...validHeaders(path === ACK_PATH), origin: 'http://localhost:50288' },
-        Object.fromEntries(Object.entries(validHeaders(path === ACK_PATH)).filter(([key]) => key !== 'origin')),
-        { ...validHeaders(path === ACK_PATH), [MESSENGER_CAPABILITY_HEADER]: 'wrong' },
-        Object.fromEntries(Object.entries(validHeaders(path === ACK_PATH))
+        { ...validHeaders(body !== undefined), host: 'localhost:50288' },
+        { ...validHeaders(body !== undefined), host: '127.0.0.1:50289' },
+        { ...validHeaders(body !== undefined), origin: 'http://localhost:50288' },
+        Object.fromEntries(Object.entries(validHeaders(body !== undefined)).filter(([key]) => key !== 'origin')),
+        { ...validHeaders(body !== undefined), [MESSENGER_CAPABILITY_HEADER]: 'wrong' },
+        Object.fromEntries(Object.entries(validHeaders(body !== undefined))
           .filter(([key]) => key !== MESSENGER_CAPABILITY_HEADER)),
       ]) {
         const state = await invoke(candidate, headers, body)
@@ -246,12 +257,16 @@ describe('session messenger HTTP trust fence', () => {
       [],
     ]
 
-    for (const path of [SNAPSHOT_PATH, ACK_PATH, EVENTS_PATH]) {
+    for (const path of [SNAPSHOT_PATH, ACK_PATH, EVENTS_PATH, SEND_PATH, REPLY_PATH]) {
       for (const rawHeaders of ambiguous) {
         const output = response()
         const body = path === ACK_PATH
           ? JSON.stringify({ sessionId: 'target-session', deliveryIds: [] })
-          : undefined
+          : path === SEND_PATH
+            ? JSON.stringify({ sourceSessionId: 'source-session', targetSessionId: 'target-session', message: 'hello', wake: false })
+            : path === REPLY_PATH
+              ? JSON.stringify({ sourceSessionId: 'target-session', deliveryId: 'delivery-1', message: 'answer', wake: false })
+              : undefined
         await route(surface, path).handler(
           request(path, 'POST', headers, body, rawHeaders),
           output.res,
@@ -287,6 +302,102 @@ describe('session messenger HTTP trust fence', () => {
     expect(surface.hub.snapshot().receipts[0]?.acknowledged).toBe(true)
     expect(source.records.get(DeliveryId('reply'))).toBe(incoming)
     expect(source.records.size).toBe(1)
+    surface.dispose()
+  })
+
+  it('accepts bounded send and receipt-bound reply requests without exposing reply authority', async () => {
+    const source = new FakeSource()
+    const send = vi.fn(async () => ({
+      deliveryId: DeliveryId('outgoing'),
+      messageId: 'outgoing-message' as MessageId,
+      status: 'delivered' as const,
+      wakeRequested: true,
+    }))
+    const reply = vi.fn(async () => ({
+      deliveryId: DeliveryId('reverse'),
+      messageId: 'reverse-message' as MessageId,
+      status: 'delivered' as const,
+      wakeRequested: false,
+    }))
+    const surface = createSessionMessengerHttpSurface({
+      port: PORT,
+      capability: CAPABILITY,
+      source,
+      operator: { send, reply },
+    })
+
+    const sent = await invoke(
+      route(surface, SEND_PATH),
+      validHeaders(true),
+      JSON.stringify({
+        sourceSessionId: 'source-session',
+        targetSessionId: 'target-session',
+        message: 'hello',
+        wake: true,
+      }),
+    )
+    expect(sent.status).toBe(200)
+    expect(send).toHaveBeenCalledWith({
+      sourceSessionId: 'source-session',
+      targetSessionId: 'target-session',
+      message: 'hello',
+      wake: true,
+    }, expect.any(AbortSignal))
+    expect(JSON.parse(sent.body)).toEqual({
+      deliveryId: 'outgoing',
+      messageId: 'outgoing-message',
+      status: 'delivered',
+      wakeRequested: true,
+    })
+    expect(sent.body).not.toContain('replyToken')
+
+    const replied = await invoke(
+      route(surface, REPLY_PATH),
+      validHeaders(true),
+      JSON.stringify({
+        sourceSessionId: 'target-session',
+        deliveryId: 'delivery-1',
+        message: 'answer',
+        wake: false,
+      }),
+    )
+    expect(replied.status).toBe(200)
+    expect(reply).toHaveBeenCalledWith({
+      sourceSessionId: 'target-session',
+      deliveryId: DeliveryId('delivery-1'),
+      message: 'answer',
+      wake: false,
+    }, expect.any(AbortSignal))
+    expect(replied.body).not.toContain('replyToken')
+    surface.dispose()
+  })
+
+  it('rejects malformed, non-JSON, and oversized operator bodies before calling the coordinator', async () => {
+    const send = vi.fn()
+    const reply = vi.fn()
+    const surface = createSessionMessengerHttpSurface({
+      port: PORT,
+      capability: CAPABILITY,
+      source: new FakeSource(),
+      operator: { send, reply },
+    })
+    const candidate = route(surface, SEND_PATH)
+
+    expect((await invoke(candidate, validHeaders(), '{}')).status).toBe(415)
+    expect((await invoke(candidate, validHeaders(true), '{')).status).toBe(400)
+    expect((await invoke(candidate, validHeaders(true), JSON.stringify({
+      sourceSessionId: 'source-session',
+      targetSessionId: 'target-session',
+      message: 'hello',
+      wake: false,
+      replyToken: 'must-not-be-accepted',
+    }))).status).toBe(400)
+    expect((await invoke(candidate, {
+      ...validHeaders(true),
+      'content-length': String(18 * 1024 + 1),
+    }, Buffer.alloc(18 * 1024 + 1, 0x20))).status).toBe(413)
+    expect(send).not.toHaveBeenCalled()
+    expect(reply).not.toHaveBeenCalled()
     surface.dispose()
   })
 })
@@ -428,10 +539,46 @@ describe('session messenger metadata event stream', () => {
   })
 })
 
+describe('session messenger Host operator', () => {
+  it('rejects a blank displayed source before any coordinator or session mutation', async () => {
+    const source = fakeAgent('source')
+    const target = fakeAgent('target', { events: [{ type: 'turn/start' }] })
+    const h = fakeContext([source, target])
+    const deliver = vi.fn()
+    const replyToDelivery = vi.fn()
+    const operator = createSessionMessengerOperator(h.ctx as never, {
+      deliver,
+      replyToDelivery,
+    })
+    const before = {
+      sourceEvents: source.session.events.length,
+      targetEvents: target.session.events.length,
+      sourceInbox: source.inbox.nextStep.length,
+      targetInbox: target.inbox.nextStep.length,
+    }
+
+    await expect(operator.send({
+      sourceSessionId: 'source',
+      targetSessionId: 'target',
+      message: 'must not deliver',
+      wake: false,
+    }, new AbortController().signal)).rejects.toMatchObject({ code: 'source-blank' })
+    expect(deliver).not.toHaveBeenCalled()
+    expect(replyToDelivery).not.toHaveBeenCalled()
+    expect({
+      sourceEvents: source.session.events.length,
+      targetEvents: target.session.events.length,
+      sourceInbox: source.inbox.nextStep.length,
+      targetInbox: target.inbox.nextStep.length,
+    }).toEqual(before)
+  })
+})
+
 describe('session messenger Host registration', () => {
   it('requires the WebServer alongside the already-reviewed core services', () => {
     expect(messengerInject).toEqual([
       'tools',
+      'systemPrompt',
       'storageDomain',
       'workspaceRegistry',
       'typert',
@@ -453,6 +600,8 @@ describe('session messenger Host registration', () => {
     expect(html).toContain(SNAPSHOT_PATH)
     expect(html).toContain(ACK_PATH)
     expect(html).toContain(EVENTS_PATH)
+    expect(html).toContain(SEND_PATH)
+    expect(html).toContain(REPLY_PATH)
   })
 
   it('reserves every HTTP and index seat before opening receipts and rolls partial registration back', async () => {
@@ -539,7 +688,7 @@ describe('session messenger Host registration', () => {
     }
   })
 
-  it('registers exactly three routes plus one index tap and disposes only its own surfaces', async () => {
+  it('registers exactly five routes plus one index tap and disposes only its own surfaces', async () => {
     const source = new FakeSource()
     const ctx = new Context()
     const routes: WebRoute[] = []
@@ -574,6 +723,8 @@ describe('session messenger Host registration', () => {
       SNAPSHOT_PATH,
       ACK_PATH,
       EVENTS_PATH,
+      SEND_PATH,
+      REPLY_PATH,
     ])
     expect(taps).toHaveLength(1)
     expect(source.listenerCount()).toBe(1)

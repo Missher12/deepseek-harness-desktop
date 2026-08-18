@@ -11,11 +11,16 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
+    "lib/invariant.js",
     "lib/types/**/*.d.ts",
     "README.md",
     "README.zh.md"
@@ -28,12 +33,14 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-app-boot": "workspace:^",
     "@deepseek-ai/dsh-home-paths": "workspace:^",
+    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-subprocess": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-app-boot": "workspace:^",
     "@deepseek-ai/dsh-home-paths": "workspace:^",
+    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-subprocess": "workspace:^"
   }
 }

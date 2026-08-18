@@ -54,15 +54,24 @@ describe('SessionMessengerCoordinator delivery', () => {
     expect(deliveredMessage).toMatchObject({
       id: MessageId('message-1'),
       role: 'user',
-      source: { kind: 'plugin', plugin: 'dsh-session-messenger', form: 'relay' },
+      source: {
+        kind: 'plugin',
+        plugin: 'dsh-session-messenger',
+        form: 'relay',
+        senderSessionId: SessionId('caller'),
+        deliveryId: DeliveryId('delivery-1'),
+        mode,
+        bodyBlockIndex: 1,
+      },
     })
-    const text = deliveredMessage.content[0]
-    expect(text?.type).toBe('text')
-    if (text?.type !== 'text') throw new Error('expected relay text block')
-    expect(text.text).toContain('Source Session: caller')
-    expect(text.text).toContain('Delivery ID: delivery-1')
-    expect(text.text).toContain('Reply Token: token-1')
-    expect(text.text).toContain('hello')
+    const metadata = deliveredMessage.content[0]
+    expect(metadata?.type).toBe('text')
+    if (metadata?.type !== 'text') throw new Error('expected relay metadata text block')
+    expect(metadata.text).toContain('Source Session: caller')
+    expect(metadata.text).toContain('Delivery ID: delivery-1')
+    expect(metadata.text).not.toContain('Reply Token')
+    expect(deliveredMessage.content[1]).toEqual({ type: 'text', text: 'hello' })
+    expect(JSON.stringify(deliveredMessage)).not.toContain('token-1')
     expect(Object.isFrozen(deliveredMessage)).toBe(true)
     expect(store.writes.map(receipt => receipt.status)).toEqual(['prepared', 'delivered'])
     expect(store.get(DeliveryId('delivery-1'))).not.toHaveProperty('envelope')

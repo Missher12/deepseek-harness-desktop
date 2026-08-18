@@ -696,6 +696,63 @@ describe('MessageItem arms', () => {
     expect(view.container.querySelector('[data-context-text]')?.textContent).toBe('child report body')
   })
 
+  it('keeps a structured session collaboration relay in the standard context disclosure', () => {
+    const view = render(
+      <MessageItem t={t} node={{
+        kind: 'context',
+        seq: 4,
+        time: Date.now(),
+        content: [
+          { type: 'text', text: 'bounded relay metadata' },
+          { type: 'text', text: 'hello from another session' },
+        ],
+        source: {
+          kind: 'plugin',
+          plugin: 'dsh-session-messenger',
+          form: 'relay',
+          senderSessionId: 'source-session-7',
+          deliveryId: 'delivery-7',
+          mode: 'inject',
+          bodyBlockIndex: 1,
+        },
+        provenance: { role: 'inject', label: 'dsh-session-messenger' },
+        form: 'relay',
+      } as never}
+      />,
+    )
+
+    expect(view.container.querySelector('[data-session-relay-card]')).toBeNull()
+    const disclosure = view.getByRole('button', { name: /^上下文注入\s*dsh-session-messenger$/ })
+    expect(disclosure).toBeTruthy()
+    fireEvent.click(disclosure)
+    expect(view.container.querySelector('[data-context-text]')?.textContent)
+      .toContain('hello from another session')
+  })
+
+  it.each([
+    ['old messenger relay', {
+      kind: 'plugin', plugin: 'dsh-session-messenger', form: 'relay',
+      senderSessionId: 'source', deliveryId: 'delivery', mode: 'inject',
+    }],
+    ['foreign relay', {
+      kind: 'plugin', plugin: 'foreign-messenger', form: 'relay',
+      senderSessionId: 'source', deliveryId: 'delivery', mode: 'inject', bodyBlockIndex: 1,
+    }],
+  ])('keeps %s on the existing context disclosure fallback', (_label, source) => {
+    const view = render(
+      <MessageItem t={t} node={{
+        kind: 'context', seq: 5, time: 1_000,
+        content: [{ type: 'text', text: 'metadata' }, { type: 'text', text: 'fallback body' }],
+        source,
+        provenance: { role: 'inject', label: source.plugin },
+        form: 'relay',
+      } as never}
+      />,
+    )
+    expect(view.container.querySelector('[data-session-relay-card]')).toBeNull()
+    expect(view.getByRole('button', { name: new RegExp(`^上下文注入\\s*${source.plugin}`) })).toBeTruthy()
+  })
+
   it('a recall reports how much of each source session survived the read', () => {
     // Recalled context is bounded on the way in, so hiding the omitted count
     // would overstate what the model received.

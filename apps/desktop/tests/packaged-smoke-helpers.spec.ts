@@ -2,15 +2,17 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { describe, expect, it } from 'vitest'
-import {
+import * as packagedSmoke from './packaged-smoke.ts'
+
+const {
   descendantProcessTree,
   isCommandNoMatch,
   parseWindowsProcessRows,
   seedWindowsClipboardSmokeState,
-} from './packaged-smoke.ts'
+} = packagedSmoke
 
 describe('packaged desktop process inspection', () => {
   it('parses both PowerShell single-object and array JSON', () => {
@@ -39,13 +41,53 @@ describe('packaged desktop process inspection', () => {
     expect(isCommandNoMatch(new Error('missing exit code'))).toBe(false)
   })
 
-  it('seeds isolated ordinary and archived sessions for the real clipboard smoke', async () => {
+  it('waits for selected-session restore writes to settle before taking the mutation baseline', async () => {
+    type Stabilize = (
+      paths: readonly string[],
+      options: {
+        stableForMs: number
+        timeoutMs: number
+        readSnapshot: (paths: readonly string[]) => Promise<Record<string, string>>
+        wait: (delayMs: number) => Promise<void>
+        now: () => number
+      },
+    ) => Promise<Record<string, string>>
+    const stabilize = (packagedSmoke as unknown as {
+      waitForStableProtectedFileSnapshot?: Stabilize
+    }).waitForStableProtectedFileSnapshot
+    expect(stabilize).toBeTypeOf('function')
+    if (stabilize === undefined) return
+
+    const restored = { session: 'restored-policy-state' }
+    const snapshots = [
+      { session: 'seeded' },
+      restored,
+      restored,
+    ]
+    const waits: number[] = []
+    let now = 0
+    const result = await stabilize(['session'], {
+      stableForMs: 200,
+      timeoutMs: 1_000,
+      readSnapshot: async () => snapshots.shift() ?? restored,
+      wait: async (delayMs) => {
+        waits.push(delayMs)
+        now += delayMs
+      },
+      now: () => now,
+    })
+
+    expect(result).toEqual(restored)
+    expect(waits).toEqual([200, 200])
+  })
+
+  it('seeds isolated ordinary, archived, and subagent sessions for native desktop smoke', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-clipboard-seed-'))
     try {
       const seeded = await seedWindowsClipboardSmokeState(root)
       expect(seeded.activeSessionId).not.toBe(seeded.archivedSessionId)
-      expect(seeded.protectedPaths).toHaveLength(5)
-      await expect(Promise.all(seeded.protectedPaths.map(path => readFile(path)))).resolves.toHaveLength(5)
+      expect(seeded.protectedPaths).toHaveLength(6)
+      await expect(Promise.all(seeded.protectedPaths.map(path => readFile(path)))).resolves.toHaveLength(6)
 
       const reader = new Context()
       try {
@@ -55,10 +97,23 @@ describe('packaged desktop process inspection', () => {
         expect(headers.map(header => header.id).sort()).toEqual([
           seeded.activeSessionId,
           seeded.archivedSessionId,
-          'desktop-smoke-messenger-source-session-id',
+          seeded.messengerSourceSessionId,
+          seeded.messengerSubagentSessionId,
         ].sort())
         expect(headers.every(header => header.cwd !== undefined)).toBe(true)
-        expect(new Set(headers.map(header => header.cwd)).size).toBe(3)
+        expect(new Set(headers.map(header => header.cwd)).size).toBe(4)
+        expect(headers.find(header => header.id === seeded.messengerSubagentSessionId)).toMatchObject({
+          origin: 'subagent',
+          parentSession: seeded.activeSessionId,
+          delegationDepth: 1,
+        })
+        const active = await reader.sessionPersistence.load(SessionId(seeded.activeSessionId))
+        expect(active.events.slice(-4).map(event => ({ type: event.type, data: event.data }))).toEqual([
+          { type: 'permission/preset', data: { preset: 'workspace-write' } },
+          { type: 'sandbox/mode', data: { mode: 'workspace-write' } },
+          { type: 'approval/policy', data: { policy: 'ask' } },
+          { type: 'session/end-seed', data: {} },
+        ])
       } finally {
         await reader.fiber.dispose()
       }

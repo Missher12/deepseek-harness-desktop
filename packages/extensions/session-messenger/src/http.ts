@@ -5,16 +5,19 @@ import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:
 import type { Context } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { DeliveryResult, SessionMessengerCoordinator } from './coordinator.ts'
 import {
   MAX_EVENT_CLIENTS,
   SessionMessengerEventHub,
   type NotificationEvent,
   type ReceiptEventSource,
 } from './events.ts'
-import { MAX_ACK_BODY_BYTES, MAX_ACK_DELIVERY_IDS } from './protocol.ts'
-import { DeliveryId } from './types.ts'
+import { MAX_ACK_BODY_BYTES, MAX_ACK_DELIVERY_IDS, MAX_OPERATOR_BODY_BYTES } from './protocol.ts'
+import { MAX_MESSAGE_BYTES } from './spec.ts'
+import { resolveOrdinaryOperatorSource } from './target-resolver.ts'
+import { DeliveryId, MessengerError } from './types.ts'
 
-export { MAX_ACK_BODY_BYTES, MAX_ACK_DELIVERY_IDS } from './protocol.ts'
+export { MAX_ACK_BODY_BYTES, MAX_ACK_DELIVERY_IDS, MAX_OPERATOR_BODY_BYTES } from './protocol.ts'
 
 /** Exact plugin route namespace. */
 export const SNAPSHOT_PATH = '/plugins/dsh-session-messenger/snapshot'
@@ -22,6 +25,10 @@ export const SNAPSHOT_PATH = '/plugins/dsh-session-messenger/snapshot'
 export const ACK_PATH = '/plugins/dsh-session-messenger/ack'
 /** Exact POST route for bounded server-sent notification events. */
 export const EVENTS_PATH = '/plugins/dsh-session-messenger/events'
+/** Exact POST route for an operator-authored cross-session delivery. */
+export const SEND_PATH = '/plugins/dsh-session-messenger/send'
+/** Exact POST route for a receipt-bound operator reply. */
+export const REPLY_PATH = '/plugins/dsh-session-messenger/reply'
 /** Secret header injected into the same-origin browser generation. */
 export const MESSENGER_CAPABILITY_HEADER = 'x-dsh-session-messenger-capability'
 /** Inline bootstrap variable read by the Client half. */
@@ -35,6 +42,29 @@ interface SessionMessengerHttpOptions {
   readonly port: number
   readonly capability: string
   readonly source: ReceiptEventSource
+  readonly operator?: SessionMessengerOperator
+}
+
+/** Exact parsed browser request for a new delivery. */
+export interface SessionMessengerSendBody {
+  readonly sourceSessionId: string
+  readonly targetSessionId: string
+  readonly message: string
+  readonly wake: boolean
+}
+
+/** Exact parsed browser request for a receipt-bound reply. */
+export interface SessionMessengerReplyBody {
+  readonly sourceSessionId: string
+  readonly deliveryId: DeliveryId
+  readonly message: string
+  readonly wake: boolean
+}
+
+/** Host-owned mutation boundary exposed to the HTTP parser. */
+export interface SessionMessengerOperator {
+  send(body: SessionMessengerSendBody, signal: AbortSignal): Promise<DeliveryResult>
+  reply(body: SessionMessengerReplyBody, signal: AbortSignal): Promise<DeliveryResult>
 }
 
 /** Complete independently disposable Host notification surface. */
@@ -47,7 +77,7 @@ export interface SessionMessengerHttpSurface {
 
 /** Routes and bootstrap claimed before durable activation, then bound exactly once. */
 export interface SessionMessengerHttpReservation {
-  bind(source: ReceiptEventSource): SessionMessengerHttpSurface
+  bind(source: ReceiptEventSource, coordinator?: SessionMessengerCoordinator): SessionMessengerHttpSurface
   dispose(): Promise<void>
 }
 
@@ -127,12 +157,13 @@ function text(
 }
 
 /** Read the only body-bearing route with a hard byte limit. */
-async function boundedAckBody(
+async function boundedBody(
   req: IncomingMessage,
   res: ServerResponse,
+  maximum: number,
 ): Promise<Buffer | undefined> {
   const declared = header(req.headers, 'content-length')
-  if (declared !== undefined && Number(declared) > MAX_ACK_BODY_BYTES) {
+  if (declared !== undefined && Number(declared) > maximum) {
     text(res, 413, 'payload too large', { connection: 'close' })
     req.destroy()
     return undefined
@@ -142,7 +173,7 @@ async function boundedAckBody(
   for await (const chunk of req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string | Uint8Array)
     received += buffer.byteLength
-    if (received > MAX_ACK_BODY_BYTES) {
+    if (received > maximum) {
       text(res, 413, 'payload too large', { connection: 'close' })
       req.destroy()
       return undefined
@@ -150,6 +181,55 @@ async function boundedAckBody(
     chunks.push(buffer)
   }
   return Buffer.concat(chunks)
+}
+
+function isExactRecord(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const actual = Object.keys(value).sort()
+  const expected = [...keys].sort()
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index])
+}
+
+function parseJson(raw: Buffer): unknown {
+  try {
+    return JSON.parse(raw.toString('utf8')) as unknown
+  } catch {
+    return undefined
+  }
+}
+
+function safeMessage(value: unknown): value is string {
+  return typeof value === 'string' && Buffer.byteLength(value) <= MAX_MESSAGE_BYTES
+}
+
+function parseSendBody(raw: Buffer): SessionMessengerSendBody | undefined {
+  const value = parseJson(raw)
+  if (!isExactRecord(value, ['sourceSessionId', 'targetSessionId', 'message', 'wake'])
+    || !safeOpaqueId(value.sourceSessionId)
+    || !safeOpaqueId(value.targetSessionId)
+    || !safeMessage(value.message)
+    || typeof value.wake !== 'boolean') return undefined
+  return {
+    sourceSessionId: value.sourceSessionId,
+    targetSessionId: value.targetSessionId,
+    message: value.message,
+    wake: value.wake,
+  }
+}
+
+function parseReplyBody(raw: Buffer): SessionMessengerReplyBody | undefined {
+  const value = parseJson(raw)
+  if (!isExactRecord(value, ['sourceSessionId', 'deliveryId', 'message', 'wake'])
+    || !safeOpaqueId(value.sourceSessionId)
+    || !safeOpaqueId(value.deliveryId)
+    || !safeMessage(value.message)
+    || typeof value.wake !== 'boolean') return undefined
+  return {
+    sourceSessionId: value.sourceSessionId,
+    deliveryId: DeliveryId(value.deliveryId),
+    message: value.message,
+    wake: value.wake,
+  }
 }
 
 function safeOpaqueId(value: unknown): value is string {
@@ -249,7 +329,7 @@ export function createSessionMessengerHttpSurface(
         text(res, 415, 'content type must be application/json')
         return
       }
-      const raw = await boundedAckBody(req, res)
+      const raw = await boundedBody(req, res, MAX_ACK_BODY_BYTES)
       if (raw === undefined) return
       const body = parseAckBody(raw)
       if (body === undefined) {
@@ -259,6 +339,56 @@ export function createSessionMessengerHttpSurface(
       json(res, 200, { acknowledged: hub.acknowledge(body.sessionId, body.deliveryIds) })
     },
   }
+
+  const operatorRoute = <T extends SessionMessengerSendBody | SessionMessengerReplyBody>(
+    path: string,
+    parse: (raw: Buffer) => T | undefined,
+    invoke: (operator: SessionMessengerOperator, body: T, signal: AbortSignal) => Promise<DeliveryResult>,
+  ): WebRoute => ({
+    kind: 'exact',
+    path,
+    async handler(req, res) {
+      if (!preflight(req, res)) return
+      const mediaType = header(req.headers, 'content-type')?.split(';', 1)[0]?.trim().toLowerCase()
+      if (mediaType !== 'application/json') {
+        text(res, 415, 'content type must be application/json')
+        return
+      }
+      const raw = await boundedBody(req, res, MAX_OPERATOR_BODY_BYTES)
+      if (raw === undefined) return
+      const body = parse(raw)
+      if (body === undefined) {
+        text(res, 400, 'invalid operator request')
+        return
+      }
+      if (options.operator === undefined) {
+        text(res, 503, 'unavailable')
+        return
+      }
+      const controller = new AbortController()
+      const abort = (): void => { controller.abort() }
+      req.once('aborted', abort)
+      try {
+        json(res, 200, await invoke(options.operator, body, controller.signal))
+      } catch (error: unknown) {
+        if (error instanceof MessengerError) json(res, 409, { errorCode: error.code })
+        else text(res, 500, 'operator request failed')
+      } finally {
+        req.off('aborted', abort)
+      }
+    },
+  })
+
+  const send = operatorRoute(
+    SEND_PATH,
+    parseSendBody,
+    (operator, body, signal) => operator.send(body, signal),
+  )
+  const reply = operatorRoute(
+    REPLY_PATH,
+    parseReplyBody,
+    (operator, body, signal) => operator.reply(body, signal),
+  )
 
   const events: WebRoute = {
     kind: 'exact',
@@ -320,7 +450,7 @@ export function createSessionMessengerHttpSurface(
     injectSessionMessengerCapability(html, options.capability)
 
   return {
-    routes: [snapshot, acknowledge, events],
+    routes: [snapshot, acknowledge, events, send, reply],
     hub,
     injectIndex,
     dispose() {
@@ -343,6 +473,8 @@ export function injectSessionMessengerCapability(html: string, capability: strin
     snapshotPath: SNAPSHOT_PATH,
     ackPath: ACK_PATH,
     eventsPath: EVENTS_PATH,
+    sendPath: SEND_PATH,
+    replyPath: REPLY_PATH,
     capabilityHeader: MESSENGER_CAPABILITY_HEADER,
     capability,
   }
@@ -355,7 +487,7 @@ export function injectSessionMessengerCapability(html: string, capability: strin
 }
 
 /**
- * Register all three exact routes and the index tap under one Cordis fiber.
+ * Register all five exact routes and the index tap under one Cordis fiber.
  * @param ctx - Cordis context providing the generation-bound WebServer service.
  * @returns a reservation that can be bound exactly once to a receipt source.
  */
@@ -366,7 +498,7 @@ export function reserveSessionMessengerHttp(ctx: Context): SessionMessengerHttpR
   )
   let surface: SessionMessengerHttpSurface | undefined
   let disposed = false
-  const paths = [SNAPSHOT_PATH, ACK_PATH, EVENTS_PATH] as const
+  const paths = [SNAPSHOT_PATH, ACK_PATH, EVENTS_PATH, SEND_PATH, REPLY_PATH] as const
   const proxies: WebRoute[] = paths.map((path, index) => ({
     kind: 'exact',
     path,
@@ -391,13 +523,16 @@ export function reserveSessionMessengerHttp(ctx: Context): SessionMessengerHttpR
   }, 'session-messenger: reserved HTTP surface')
 
   return {
-    bind(source) {
+    bind(source, coordinator) {
       if (disposed) throw new Error('session messenger HTTP reservation is disposed')
       if (surface !== undefined) throw new Error('session messenger HTTP reservation is already bound')
       const next = createSessionMessengerHttpSurface({
         port: ctx.webServer.port,
         capability,
         source,
+        ...(coordinator === undefined
+          ? {}
+          : { operator: createSessionMessengerOperator(ctx, coordinator) }),
       })
       surface = next
       return next
@@ -410,13 +545,45 @@ export function reserveSessionMessengerHttp(ctx: Context): SessionMessengerHttpR
  * Reserve the HTTP surface and optionally bind an already-created source.
  * @param ctx - Cordis context providing the generation-bound WebServer service.
  * @param source - optional coordinator projection to bind immediately.
+ * @param coordinator - optional mutation authority paired with the receipt source.
  * @returns the owned HTTP reservation.
  */
 export function installSessionMessengerHttp(
   ctx: Context,
   source?: ReceiptEventSource,
+  coordinator?: SessionMessengerCoordinator,
 ): SessionMessengerHttpReservation {
   const reservation = reserveSessionMessengerHttp(ctx)
-  if (source !== undefined) reservation.bind(source)
+  if (source !== undefined) reservation.bind(source, coordinator)
   return reservation
+}
+
+/**
+ * Bind browser inputs to an exact live source before entering coordinator mutation paths.
+ * @param ctx - Cordis context used to resolve the exact live ordinary source.
+ * @param coordinator - bounded delivery and receipt-reply mutation authority.
+ * @returns an operator that resolves source identity before each coordinator call.
+ */
+export function createSessionMessengerOperator(
+  ctx: Context,
+  coordinator: Pick<SessionMessengerCoordinator, 'deliver' | 'replyToDelivery'>,
+): SessionMessengerOperator {
+  return {
+    async send(body, signal) {
+      const source = resolveOrdinaryOperatorSource(ctx, body.sourceSessionId)
+      return await coordinator.deliver(source, {
+        targetSessionId: body.targetSessionId,
+        message: body.message,
+        mode: body.wake ? 'followup' : 'inject',
+      }, signal)
+    },
+    async reply(body, signal) {
+      const source = resolveOrdinaryOperatorSource(ctx, body.sourceSessionId)
+      return await coordinator.replyToDelivery(source, {
+        deliveryId: body.deliveryId,
+        message: body.message,
+        wake: body.wake,
+      }, signal)
+    },
+  }
 }

@@ -72,7 +72,7 @@ describe('reply authority', () => {
   })
 
   it.each([[false, 'inject'], [true, 'followup']] as const)(
-    'consumes a valid token once and uses wake=%s through %s', async (wake, method) => {
+    'consumes Host-owned reply authority once and uses wake=%s through %s', async (wake, method) => {
       const source = fakeAgent('source')
       const target = fakeAgent('target')
       const h = fakeContext([source, target])
@@ -80,8 +80,8 @@ describe('reply authority', () => {
       store.records.set(DeliveryId('original'), delivered())
       const coordinator = new SessionMessengerCoordinator(h.ctx as never, store, options(() => 2_000))
 
-      const result = await coordinator.reply(target, {
-        deliveryId: DeliveryId('original'), replyToken: ReplyToken('secret-token'), message: 'answer', wake,
+      const result = await coordinator.replyToDelivery(target, {
+        deliveryId: DeliveryId('original'), message: 'answer', wake,
       })
 
       expect(result).toMatchObject({
@@ -98,8 +98,8 @@ describe('reply authority', () => {
       expect(store.get(DeliveryId('reply-delivery-1'))).toMatchObject({
         sourceSessionId: SessionId('target'), targetSessionId: SessionId('source'), hop: 1,
       })
-      await expect(coordinator.reply(target, {
-        deliveryId: DeliveryId('original'), replyToken: ReplyToken('secret-token'), message: 'again', wake,
+      await expect(coordinator.replyToDelivery(target, {
+        deliveryId: DeliveryId('original'), message: 'again', wake,
       })).rejects.toMatchObject({ code: 'reply-consumed' })
       expect(source[method]).toHaveBeenCalledTimes(1)
     },

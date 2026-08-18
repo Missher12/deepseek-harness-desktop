@@ -99,6 +99,11 @@ export type ReceiptTransition =
 export type MessengerErrorCode =
   | 'caller-required'
   | 'invalid-target-id'
+  | 'invalid-source-id'
+  | 'source-not-found'
+  | 'source-archived'
+  | 'source-subagent'
+  | 'source-blank'
   | 'self-target'
   | 'target-archived'
   | 'target-not-found'

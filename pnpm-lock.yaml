@@ -9,7 +9,7 @@ overrides:
   '@deepseek-ai/schemastery': link:vendor/schemastery
 
 patchedDependencies:
-  dshmarket@1.10.1: 6714fcb93eb31b3ff40cd9cd4532f47e854da606484e5e71de82d19586f41548
+  dshmarket@1.10.1: e9f0960f8efa27f20bbf2625a2d10864e6b22911f5ddd93bc12335764b0b0f9b
   node-pty@1.1.0: 7a0c04f1f49d798a9ffe2f7f414c01064a44ca2489772d0c3e1235ab336755e6
 
 importers:
@@ -976,7 +976,7 @@ importers:
         version: link:../../vendor/schemastery
       dshmarket:
         specifier: 1.10.1
-        version: 1.10.1(patch_hash=6714fcb93eb31b3ff40cd9cd4532f47e854da606484e5e71de82d19586f41548)(@deepseek-ai/cordis@vendor+cordis)
+        version: 1.10.1(patch_hash=e9f0960f8efa27f20bbf2625a2d10864e6b22911f5ddd93bc12335764b0b0f9b)(@deepseek-ai/cordis@vendor+cordis)
       pnpm:
         specifier: 11.7.0
         version: 11.7.0
@@ -4737,6 +4737,12 @@ importers:
       '@deepseek-ai/dsh-client-runtime':
         specifier: workspace:^
         version: link:../../client/runtime
+      '@deepseek-ai/dsh-client-ui-conversation':
+        specifier: workspace:^
+        version: link:../../client/ui-conversation
+      '@deepseek-ai/dsh-client-ui-layout':
+        specifier: workspace:^
+        version: link:../../client/ui-layout
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: workspace:^
         version: link:../../client/ui-primitives
@@ -5607,6 +5613,9 @@ importers:
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:^
         version: link:../../util/home-paths
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
         version: link:../../subprocess/subprocess
@@ -9584,6 +9593,9 @@ importers:
       vitepress-plugin-mermaid:
         specifier: ^2.0.17
         version: 2.0.17(mermaid@11.16.0)(vitepress@1.6.4(@algolia/client-search@5.55.2)(@types/node@25.9.3)(@types/react@18.3.31)(lightningcss@1.32.0)(postcss@8.5.15)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(search-insights@2.17.3)(typescript@6.0.3))
+      vue:
+        specifier: 3.5.39
+        version: 3.5.39(typescript@6.0.3)
 
 packages:
 
@@ -19071,7 +19083,7 @@ snapshots:
 
   dotenv@16.6.1: {}
 
-  dshmarket@1.10.1(patch_hash=6714fcb93eb31b3ff40cd9cd4532f47e854da606484e5e71de82d19586f41548)(@deepseek-ai/cordis@vendor+cordis):
+  dshmarket@1.10.1(patch_hash=e9f0960f8efa27f20bbf2625a2d10864e6b22911f5ddd93bc12335764b0b0f9b)(@deepseek-ai/cordis@vendor+cordis):
     dependencies:
       '@deepseek-ai/cordis': link:vendor/cordis
 

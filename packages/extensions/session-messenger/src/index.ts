@@ -6,6 +6,7 @@ import { activateSessionMessenger } from './tools.ts'
 export const name = 'session-messenger'
 export const inject = [
   'tools',
+  'systemPrompt',
   'storageDomain',
   'workspaceRegistry',
   'typert',
@@ -17,7 +18,7 @@ export const inject = [
 export async function apply(ctx: Context): Promise<void> {
   const http = installSessionMessengerHttp(ctx)
   const coordinator = await activateSessionMessenger(ctx)
-  http.bind(coordinator)
+  http.bind(coordinator, coordinator)
 }
 
 export * from './coordinator.ts'

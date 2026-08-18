@@ -182,17 +182,24 @@ describe('desktop package manifest', () => {
     expect(smoke).toContain('data-dshmarket-layout="compact"')
     expect(smoke).toContain('data-dshmarket-plugin-row')
     expect(smoke).toContain('data-dshmarket-primary-action')
+    expect(smoke).toContain('[data-category]')
+    expect(smoke).toContain('scrollLeft')
     expect(smoke).toContain("'/dsh-market/update'")
     expect(smoke).toContain("'/dsh-market/uninstall'")
     expect(smoke).toContain("code: 'self-protected'")
   })
 
-  it('exercises the native reasoning slider and session-messenger footer', () => {
+  it('exercises the native reasoning slider and visible session-message drawer', () => {
     const smoke = readFileSync(new URL('./packaged-smoke.ts', import.meta.url), 'utf8')
 
     expect(smoke).toContain('desktop-smoke-reasoning-${platform}.png')
+    expect(smoke).toContain('data-messenger-trigger')
     expect(smoke).toContain('data-messenger-state="pending"')
     expect(smoke).toContain('Copy current Session ID')
+    expect(smoke).toContain("locator('[data-session-relay-card]').count()")
+    expect(smoke).toContain('desktop-smoke-visible-message')
+    expect(smoke).not.toContain('desktop-smoke-visible-reply')
+    expect(smoke).toContain('Resize session messages')
     expect(smoke).toContain('desktop-smoke-messenger-${platform}.png')
     expect(smoke).not.toContain("platform === 'win32'\n    ? await seedWindowsClipboardSmokeState")
   })

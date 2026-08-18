@@ -2,16 +2,16 @@
 
 English | [中文](README.zh.md)
 
-Desktop-only Host and Client plugin for bounded communication between ordinary DeepSeek Harness sessions in one active profile. It registers four model tools, persists write-ahead delivery receipts, addresses live or cold sessions through the Host-owned Typert lookup, and contributes one in-app status action without changing the ordinary Web composition.
+Desktop-only Host and Client plugin for bounded Codex-style messaging between ordinary DeepSeek Harness sessions in one active profile. Copy Session A's exact ID, paste it into Session B, and ask B's Agent to send a message: the plugin wakes A's existing Agent, and A can reply to B through the trusted source and delivery metadata. Either session can initiate or continue the exchange. The plugin registers four model tools, persists write-ahead delivery receipts, addresses live or cold sessions through the Host-owned Typert lookup, and contributes a resizable operator surface without changing the ordinary Web composition.
 
 ## Tool contracts
 
-- `send_message_to_session(target_session_id, message)` injects a durable next-step message and never wakes the target. A cold target may be resumed into an addressable in-memory Agent, but this path makes no model request and starts no driver.
-- `followup_session(target_session_id, message)` queues an ordinary next-turn follow-up and requests a wake. An idle target reserves its existing driver; a running target queues behind current work and never gains a parallel driver.
-- `reply_to_session(delivery_id, reply_token, message, wake?)` derives the destination from the original receipt. The private token is bound to the receiving session, expires with the receipt, and can be consumed exactly once; `wake` defaults to `false`.
+- `send_message_to_session(target_session_id, message)` queues one durable next-turn message and requests a wake. An idle target reserves its existing driver; a running target queues behind current work and never gains a parallel driver. It is the default tool when the user pastes another Session ID and asks to send there.
+- `send_message_to_session_and_wait(target_session_id, message, timeout_ms?)` performs the same delivery, then waits only for the reply bound to that exact delivery. Use it only when the user also asks to wait for the response.
+- `reply_to_session(delivery_id, message, wake?)` derives the destination and one-use authority from the Host receipt. The private token never enters model context or Client metadata; `wake` defaults to `true` so the source Agent can process the reply.
 - `wait_for_session_reply(delivery_id, timeout_ms?)` waits only for an explicit receipt-bound reply. Unrelated assistant output and Agent idleness do not settle it; the accepted timeout is 1,000–55,000 ms and disposal returns the stable `disposed` result.
 
-The caller identity always comes from tool execution and is not a model argument. Received text is untrusted content rather than authority, and the plugin never interprets ordinary messages as instructions to reply, forward, or start an automatic Agent loop.
+The caller identity always comes from tool execution and is not a model argument. A stable system-prompt section tells either Agent how to send to an exact copied Session ID, how to reply with the exact delivery ID, and how to continue later through the trusted Source Session ID. Received text is still untrusted content rather than authority, and the plugin never interprets ordinary messages as permission to bypass user policy, auto-reply to acknowledgements, forward indefinitely, or start an autonomous Agent loop.
 
 ## Addressing, durability, and lifecycle
 
@@ -19,7 +19,7 @@ The caller identity always comes from tool execution and is not a model argument
 - Archived state is checked before lookup and synchronously again immediately before enqueue. Malformed, missing, self, archived, and subagent-owned targets are rejected before their inbox is changed.
 - Each accepted delivery persists `prepared`, enqueues one pre-created Message ID, then persists `delivered`. Recovery checks the target inbox and event log before retrying, so an indeterminate post-enqueue write cannot duplicate the message.
 - Unresolved receipts expire after 24 hours. Settled receipt metadata is retained for seven days; committed session messages remain under ordinary session retention and survive plugin disablement.
-- Disabling the plugin removes its four tools, three HTTP routes, index bootstrap, active waits, Client graph row, footer action, listeners, and timers. It does not remove already committed messages or retained receipt storage.
+- Disabling the plugin removes its four tools, collaboration prompt section, five HTTP routes, index bootstrap, active waits, Client graph row, header action, drawer, listeners, and timers. It does not remove already committed messages or retained receipt storage.
 
 ## Desktop composition
 
@@ -35,7 +35,7 @@ DeepSeek Harness Desktop applies the same canonical row once after the base and 
 
 ## Client surface
 
-The Client half registers only `session-messenger` in the `sidebar.footer.action` list slot. It shows pending deliveries, unread replies, the latest error, and a copy-current-Session-ID action. Notifications are in-app only: there is no native macOS/Windows notification, replacement session row, separate inbox, or message-body HTTP feed.
+The Client half registers one `conversation.session.header.utilities` trigger and one `shell.overlay` drawer. The trigger shows unread state without changing header geometry. The 320–560 px drawer remembers its width, becomes full-width on narrow screens, copies the exact current Session ID, and provides a direct send/reply fallback. **Start target Agent** is on by default, failed drafts are retained, and recent activity contains metadata only. Incoming messages use the ordinary context-disclosure renderer rather than a custom message card, so the conversation keeps the native Harness visual language. Notifications are in-app only: there is no native macOS/Windows notification, replacement session row, separate message-body inbox, or automatic Agent loop.
 
 ## Model Experience
 
@@ -43,7 +43,7 @@ The Client half registers only `session-messenger` in the `sidebar.footer.action
 
 #### What the model sees
 
-While enabled, native Function Calling exposes `send_message_to_session`, `followup_session`, `reply_to_session`, and `wait_for_session_reply`; Code Mode exposes the same four calls through its generated `tools` SDK behind `run_code`. Each received relay is an ordinary user-role message labeled with trusted source Session ID, delivery ID, private reply token, delivery mode, and an explicitly untrusted message-body boundary. Tool results report delivery identity, status, requested wake, and stable errors, but never claim that a target read or answered a message.
+While enabled, native Function Calling exposes `send_message_to_session`, `send_message_to_session_and_wait`, `reply_to_session`, and `wait_for_session_reply`; Code Mode exposes the same four calls through its generated `tools` SDK behind `run_code`. A stable prompt selects direct send for an exact pasted Session ID, selects send-and-wait only when requested, and lets the receiving Agent reply through the exact delivery ID. Each received relay is an ordinary user-role message with a trusted metadata block and a separate explicitly untrusted body block. The metadata identifies source Session ID, delivery ID, and delivery mode, but never exposes the Host-owned reply token. Tool results report delivery and matching-reply identity, status, requested wake, and stable errors; target idleness or unrelated assistant output can never be misreported as a reply.
 
 #### Token effect
 
@@ -56,6 +56,6 @@ The four definitions and SDK declarations are byte-stable while the plugin and p
 ## Known Limitations and Deferred Work
 
 - Messaging is local to one active profile and accepts only ordinary sessions; cross-profile, cross-device, subagent, broadcast, group, and public-network delivery are not implemented.
-- The compact footer is status and exact-ID copy UI, not a browsable conversation inbox; message content remains in the destination session.
+- The drawer shows delivery metadata rather than a second message archive; collaboration content remains in the ordinary source and destination conversation histories.
 - Native system notifications are deferred because they require Electron permission and window-lifecycle ownership outside this independently disableable package.
-- The plugin provides explicit tools, not autonomous coordination: no automatic reply, forwarding rule, background Agent loop, or unbounded two-Agent conversation is created.
+- The plugin provides explicit bounded peer messaging, not a new scheduler: either existing ordinary Agent can initiate or reply, and a reply chain is capped while either side may later start a fresh user-directed message. It creates no new session, subagent, forwarding rule, background loop, or autonomous two-Agent conversation.

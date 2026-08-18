@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, {
@@ -20,6 +21,7 @@ const repositoryRoot = resolve(import.meta.dirname, '../../..')
 const ACTIVE_CLIPBOARD_SESSION_ID = 'desktop-smoke-active-session-id'
 const ARCHIVED_CLIPBOARD_SESSION_ID = 'desktop-smoke-archived-session-id'
 const MESSENGER_SOURCE_SESSION_ID = 'desktop-smoke-messenger-source-session-id'
+const MESSENGER_SUBAGENT_SESSION_ID = 'desktop-smoke-messenger-subagent-session-id'
 const RECEIPT_TTL_MS = 24 * 60 * 60 * 1_000
 
 interface ProviderTripwire {
@@ -87,6 +89,9 @@ export interface WindowsClipboardSmokeState {
   activeSessionTitle: string
   archivedSessionId: string
   archivedSessionTitle: string
+  messengerSourceSessionId: string
+  messengerSourceSessionTitle: string
+  messengerSubagentSessionId: string
   protectedPaths: readonly string[]
 }
 
@@ -99,7 +104,25 @@ function completeTurn(createdAt: number): SessionEvent[] {
       time: createdAt + 1,
       data: { turn: 1, reason: { kind: 'completed' } },
     },
-    { type: 'session/end-seed', seq: 2, time: createdAt + 2, data: {} },
+    {
+      type: 'permission/preset',
+      seq: 2,
+      time: createdAt + 2,
+      data: { preset: 'workspace-write' },
+    },
+    {
+      type: 'sandbox/mode',
+      seq: 3,
+      time: createdAt + 3,
+      data: { mode: 'workspace-write' },
+    },
+    {
+      type: 'approval/policy',
+      seq: 4,
+      time: createdAt + 4,
+      data: { policy: 'ask' },
+    },
+    { type: 'session/end-seed', seq: 5, time: createdAt + 5, data: {} },
   ]
 }
 
@@ -117,13 +140,16 @@ export async function seedWindowsClipboardSmokeState(
   const activeSessionTitle = 'desktop-smoke-active-workspace'
   const archivedSessionTitle = 'desktop-smoke-archived-workspace'
   const messengerSourceTitle = 'desktop-smoke-messenger-source-workspace'
+  const messengerSubagentTitle = 'desktop-smoke-messenger-subagent-workspace'
   const activeSessionCwd = join(harnessHome, activeSessionTitle)
   const archivedSessionCwd = join(harnessHome, archivedSessionTitle)
   const messengerSourceCwd = join(harnessHome, messengerSourceTitle)
+  const messengerSubagentCwd = join(harnessHome, messengerSubagentTitle)
   await Promise.all([
     mkdir(activeSessionCwd, { recursive: true }),
     mkdir(archivedSessionCwd, { recursive: true }),
     mkdir(messengerSourceCwd, { recursive: true }),
+    mkdir(messengerSubagentCwd, { recursive: true }),
   ])
   const headers: SessionHeader[] = [
     {
@@ -146,6 +172,15 @@ export async function seedWindowsClipboardSmokeState(
       createdAt: createdAt + 2,
       delegationDepth: 0,
       cwd: messengerSourceCwd,
+    },
+    {
+      version: SESSION_FORMAT_VERSION,
+      id: SessionId(MESSENGER_SUBAGENT_SESSION_ID),
+      createdAt: createdAt + 3,
+      delegationDepth: 1,
+      cwd: messengerSubagentCwd,
+      parentSession: SessionId(ACTIVE_CLIPBOARD_SESSION_ID),
+      origin: 'subagent',
     },
   ]
 
@@ -230,6 +265,9 @@ export async function seedWindowsClipboardSmokeState(
     activeSessionTitle,
     archivedSessionId: ARCHIVED_CLIPBOARD_SESSION_ID,
     archivedSessionTitle,
+    messengerSourceSessionId: MESSENGER_SOURCE_SESSION_ID,
+    messengerSourceSessionTitle: messengerSourceTitle,
+    messengerSubagentSessionId: MESSENGER_SUBAGENT_SESSION_ID,
     protectedPaths: [...sessionPaths, workspacePath, messengerPath],
   }
 }
@@ -365,6 +403,41 @@ async function protectedFileSnapshot(paths: readonly string[]): Promise<Record<s
   return snapshot
 }
 
+interface StableProtectedFileSnapshotOptions {
+  readonly stableForMs?: number
+  readonly timeoutMs?: number
+  readonly readSnapshot?: (paths: readonly string[]) => Promise<Record<string, string>>
+  readonly wait?: (delayMs: number) => Promise<void>
+  readonly now?: () => number
+}
+
+/**
+ * Wait until session-restore writes have remained unchanged for one complete
+ * persistence window before using protected files as a side-effect baseline.
+ * @param paths - exact files whose bytes must settle together.
+ * @param options - bounded timing and deterministic test seams.
+ * @returns the first snapshot unchanged for the requested stable interval.
+ */
+export async function waitForStableProtectedFileSnapshot(
+  paths: readonly string[],
+  options: StableProtectedFileSnapshotOptions = {},
+): Promise<Record<string, string>> {
+  const stableForMs = options.stableForMs ?? 500
+  const timeoutMs = options.timeoutMs ?? 15_000
+  const readSnapshot = options.readSnapshot ?? protectedFileSnapshot
+  const wait = options.wait ?? (async (delayMs: number) => { await delay(delayMs) })
+  const now = options.now ?? Date.now
+  const deadline = now() + timeoutMs
+  let previous = await readSnapshot(paths)
+  while (now() < deadline) {
+    await wait(Math.min(stableForMs, Math.max(1, deadline - now())))
+    const current = await readSnapshot(paths)
+    if (paths.every(path => current[path] === previous[path])) return current
+    previous = current
+  }
+  throw new Error('Packaged smoke: protected session files did not reach a stable baseline.')
+}
+
 async function desktopStartupDiagnostic(page: Page, userData: string): Promise<string> {
   const url = page.isClosed() ? '[window closed]' : page.url()
   const body = page.isClosed()
@@ -402,7 +475,7 @@ async function exerciseWindowsClipboard(
   application: ElectronApplication,
   seeded: WindowsClipboardSmokeState,
 ): Promise<void> {
-  const beforeFiles = await protectedFileSnapshot(seeded.protectedPaths)
+  const beforeFiles = await waitForStableProtectedFileSnapshot(seeded.protectedPaths)
   const selectedBefore = await page.locator('[role="treeitem"][aria-selected="true"]').allTextContents()
   const previousClipboard = await application.evaluate(({ clipboard }) => clipboard.readText())
 
@@ -456,7 +529,7 @@ async function exerciseWindowsClipboard(
     expect(await archiveDialog.getByRole('button', { name: /^(?:Delete|删除)/u }).count()).toBe(1)
 
     await page.waitForTimeout(500)
-    expect(await protectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
+    expect(await waitForStableProtectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
     expect(await page.locator('[role="treeitem"][aria-selected="true"]').allTextContents()).toEqual(selectedBefore)
     await page.keyboard.press('Escape')
     await archiveDialog.waitFor({ state: 'detached', timeout: 15_000 })
@@ -518,6 +591,14 @@ async function exerciseReasoningEffort(
   await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 15_000 }).toMatch(
     /^(?:Select model, current Native Smoke Thinker, reasoning effort Max|选择模型，当前 Native Smoke Thinker，推理等级 Max)$/u,
   )
+  expect(await slider.evaluate((element) => {
+    const track = element.parentElement
+    const thumb = track?.querySelector('span[aria-hidden="true"]')
+    if (!(track instanceof HTMLElement) || !(thumb instanceof HTMLElement)) return false
+    const trackBounds = track.getBoundingClientRect()
+    const thumbBounds = thumb.getBoundingClientRect()
+    return thumbBounds.left >= trackBounds.left && thumbBounds.right <= trackBounds.right
+  })).toBe(true)
   await expect.poll(() => readFile(join(harnessHome, 'settings.yaml'), 'utf8'), { timeout: 15_000 })
     .toContain('reasoningEffort: max')
   await page.screenshot({
@@ -537,9 +618,9 @@ async function exerciseSessionMessenger(
   await activeRow.click()
   await expect.poll(() => activeRow.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
 
-  const trigger = page.getByRole('button', {
-    name: /^(?:Session messages|会话通信)[,，]/u,
-  })
+  const trigger = page.locator(
+    `[data-messenger-trigger][data-session-id="${seeded.activeSessionId}"]`,
+  ).first()
   await trigger.waitFor({ state: 'visible', timeout: 30_000 })
   await trigger.click()
   const panel = page.getByRole('dialog', {
@@ -553,12 +634,12 @@ async function exerciseSessionMessenger(
   await expect.poll(() => pending.innerText(), { timeout: 15_000 }).toMatch(/^(?:0 pending|0 条待处理)$/u)
   await expect.poll(() => unread.innerText(), { timeout: 15_000 }).toMatch(/^(?:1 unread|1 条未读)$/u)
 
-  const beforeFiles = await protectedFileSnapshot(seeded.protectedPaths)
+  const beforeFiles = await waitForStableProtectedFileSnapshot(seeded.protectedPaths)
   const previousClipboard = await application.evaluate(({ clipboard }) => clipboard.readText())
   try {
     await application.evaluate(({ clipboard }, text) => { clipboard.writeText(text) }, 'desktop-smoke-before-messenger-copy')
     await panel.getByRole('button', {
-      name: /^(?:Copy current Session ID|复制当前会话 ID)$/u,
+      name: /^(?:Copy|Copy current Session ID|复制|复制当前会话 ID)$/u,
     }).click()
     await expect.poll(
       () => application.evaluate(({ clipboard }) => clipboard.readText()),
@@ -572,14 +653,69 @@ async function exerciseSessionMessenger(
       hasText: /^(?:Notifications marked read|通知已标为已读)$/u,
     }).waitFor({ state: 'visible', timeout: 10_000 })
     await expect.poll(() => unread.innerText(), { timeout: 10_000 }).toMatch(/^(?:0 unread|0 条未读)$/u)
-    expect(await protectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
+    expect(await waitForStableProtectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
     expect(await activeRow.getAttribute('aria-selected')).toBe('true')
+
+    const resize = panel.getByRole('separator', {
+      name: /^(?:Resize session messages|调整会话通信宽度)$/u,
+    })
+    await resize.waitFor({ state: 'visible', timeout: 10_000 })
+    for (let index = 0; index < 20; index += 1) await resize.press('ArrowLeft')
+    expect(await panel.evaluate(element => getComputedStyle(element).getPropertyValue('--messenger-drawer-width')))
+      .toBe('560px')
+    expect(await panel.evaluate(element => Math.round(element.getBoundingClientRect().width)))
+      .toBeLessThanOrEqual(562)
+    for (let index = 0; index < 30; index += 1) await resize.press('ArrowRight')
+    expect(await panel.evaluate(element => getComputedStyle(element).getPropertyValue('--messenger-drawer-width')))
+      .toBe('320px')
+    expect(await panel.evaluate(element => Math.round(element.getBoundingClientRect().width)))
+      .toBeGreaterThanOrEqual(320)
+    for (let index = 0; index < 8; index += 1) await resize.press('ArrowLeft')
+    expect(await panel.evaluate(element => getComputedStyle(element).getPropertyValue('--messenger-drawer-width')))
+      .toBe('448px')
+    expect(await page.evaluate(() => localStorage.getItem('dsh.session-messenger.drawer-width'))).toBe('448')
+
+    const target = panel.getByRole('textbox', {
+      name: /^(?:Target Session ID|目标会话 ID)$/u,
+    })
+    const message = panel.getByRole('textbox', { name: /^(?:Message|消息)$/u })
+    const send = panel.getByRole('button', { name: /^(?:Send message|发送消息)$/u })
+    const rejectedMessage = 'desktop-smoke-rejected-message'
+    await target.fill(seeded.archivedSessionId)
+    await message.fill(rejectedMessage)
+    await send.click()
+    await panel.getByRole('status').filter({ hasText: 'target-archived' })
+      .waitFor({ state: 'visible', timeout: 15_000 })
+    expect(await message.inputValue()).toBe(rejectedMessage)
+    expect(await waitForStableProtectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
+
+    await target.fill(seeded.messengerSubagentSessionId)
+    await send.click()
+    await panel.getByRole('status').filter({ hasText: 'target-subagent' })
+      .waitFor({ state: 'visible', timeout: 15_000 })
+    expect(await message.inputValue()).toBe(rejectedMessage)
+    expect(await waitForStableProtectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
+
+    await target.fill(seeded.messengerSourceSessionId)
+    const wakeTarget = panel.getByRole('checkbox', {
+      name: /^(?:Start target Agent|启动目标 Agent)$/u,
+    })
+    expect(await wakeTarget.isChecked()).toBe(true)
+    await wakeTarget.uncheck()
+    await message.fill('desktop-smoke-visible-message')
+    await send.click()
+    await panel.getByRole('status').filter({
+      hasText: /^(?:Message sent|消息已发送)$/u,
+    }).waitFor({ state: 'visible', timeout: 15_000 })
+    expect(await message.inputValue()).toBe('')
+    expect(await wakeTarget.isChecked()).toBe(false)
+    expect(await page.locator('[data-session-relay-card]').count()).toBe(0)
     await page.screenshot({
       path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-messenger-${platform}.png`),
     })
   } finally {
     await application.evaluate(({ clipboard }, text) => { clipboard.writeText(text) }, previousClipboard)
-    await page.keyboard.press('Escape')
+    if (await panel.isVisible().catch(() => false)) await page.keyboard.press('Escape')
     await panel.waitFor({ state: 'detached', timeout: 15_000 }).catch(() => undefined)
   }
 }
@@ -630,7 +766,10 @@ async function exercisePluginMarket(
   platform: NodeJS.Platform,
   consoleErrors: string[],
 ): Promise<void> {
-  await page.locator('[data-dsh-desktop-command="open-settings"]').click()
+  const settingsTrigger = page.locator('[data-dsh-desktop-command="open-settings"]')
+  await expect.poll(() => settingsTrigger.getAttribute('aria-expanded'), { timeout: 15_000 })
+    .not.toBe('true')
+  await settingsTrigger.click()
   const settingsDialog = page.getByRole('dialog').last()
   await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
   await settingsDialog.getByRole('button', { name: /^(?:Plugin Market|插件市场)$/u }).click()
@@ -656,10 +795,42 @@ async function exercisePluginMarket(
       return overflow === 'auto' || overflow === 'scroll'
     })
   ))).toBe(true)
+  expect(await categories.locator('[data-chip="1"]').evaluateAll(chips => chips.every((chip) => {
+    const style = getComputedStyle(chip)
+    return style.flexShrink === '0' && style.whiteSpace === 'nowrap'
+  }))).toBe(true)
+  const initialCategoryIds = await categories.locator('[data-category]')
+    .evaluateAll(chips => chips.map(chip => (chip as HTMLElement).dataset.category ?? ''))
+  expect(initialCategoryIds[0]).toBe('all')
+  expect(initialCategoryIds.length).toBeGreaterThan(6)
+  expect(new Set(initialCategoryIds).size).toBe(initialCategoryIds.length)
+  const categoryRail = categories.locator('[data-category]').first().locator('..')
+  await categoryRail.evaluate((element) => { element.scrollLeft = element.scrollWidth })
+  await expect.poll(() => categoryRail.evaluate(element => element.scrollLeft), { timeout: 5_000 })
+    .toBeGreaterThan(0)
+  const selectedCategory = initialCategoryIds.at(-1)
+  expect(selectedCategory).toBeTruthy()
+  await categories.locator(`[data-category="${selectedCategory ?? ''}"]`).click()
+  expect(await categories.locator('[data-category]')
+    .evaluateAll(chips => chips.map(chip => (chip as HTMLElement).dataset.category ?? '')))
+    .toEqual(initialCategoryIds)
+  await categoryRail.evaluate((element) => { element.scrollLeft = 0 })
+  await expect.poll(() => categoryRail.evaluate(element => element.scrollLeft), { timeout: 5_000 }).toBe(0)
+  await categories.locator('[data-category="all"]').click()
+  expect(await categories.locator('[data-category]')
+    .evaluateAll(chips => chips.map(chip => (chip as HTMLElement).dataset.category ?? '')))
+    .toEqual(initialCategoryIds)
 
   const firstRow = market.locator('[data-dshmarket-plugin-row]').first()
   await firstRow.waitFor({ state: 'visible', timeout: 30_000 })
-  expect(await firstRow.locator('[data-dshmarket-primary-action]').count()).toBe(1)
+  const primaryAction = firstRow.locator('[data-dshmarket-primary-action]')
+  expect(await primaryAction.count()).toBe(1)
+  expect(await firstRow.evaluate((row) => {
+    const copy = row.children.item(1)
+    const action = row.querySelector('[data-dshmarket-primary-action]')
+    if (!(copy instanceof HTMLElement) || !(action instanceof HTMLElement)) return false
+    return action.getBoundingClientRect().top >= copy.getBoundingClientRect().bottom
+  })).toBe(true)
   const packageName = await firstRow.getAttribute('data-package')
   expect(packageName).toBeTruthy()
   const search = toolbar.getByRole('textbox').first()
@@ -813,8 +984,8 @@ export async function runPackagedDesktopSmoke(
 
     try {
       await exerciseWindowsClipboard(page, nativeApp, clipboardSeed)
+      await exerciseSessionMessenger(page, nativeApp, clipboardSeed, platform)
       if (platform === 'darwin') {
-        await exerciseSessionMessenger(page, nativeApp, clipboardSeed, platform)
         await exerciseReasoningEffort(page, harnessHome, platform)
       }
     } catch (error) {
@@ -823,6 +994,15 @@ export async function runPackagedDesktopSmoke(
         { cause: error },
       )
     }
+
+    // Archived and subagent sends deliberately return HTTP 409. Their
+    // rejected request streams may also be cancelled while the Host refreshes
+    // the receipt snapshot; keep every other renderer error release-blocking.
+    expect(consoleErrors.filter(message => (
+      !/^Failed to load resource: the server responded with a status of 409 \(Conflict\)$/u.test(message)
+      && message !== 'Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING'
+    ))).toEqual([])
+    consoleErrors.length = 0
 
     await page.waitForTimeout(15_000)
     expect(await page.locator('body').innerText()).not.toContain('Failed to load plugins')
