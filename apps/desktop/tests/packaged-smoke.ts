@@ -97,32 +97,81 @@ export interface WindowsClipboardSmokeState {
 
 function completeTurn(createdAt: number): SessionEvent[] {
   return [
-    { type: 'turn/start', seq: 0, time: createdAt, data: { turn: 1 } },
     {
-      type: 'turn/end',
+      type: 'user/message',
+      seq: 0,
+      time: createdAt,
+      data: {
+        id: `desktop-smoke-user-${createdAt}` as never,
+        role: 'user',
+        source: { kind: 'user' },
+        content: [],
+      },
+      surfaceOp: 'append',
+    },
+    {
+      type: 'request/header',
       seq: 1,
       time: createdAt + 1,
+      data: {
+        reason: 'initial',
+        header: {
+          config: {
+            provider: 'desktop-smoke',
+            model: 'native-thinker',
+            reasoningEffort: 'high' as never,
+          },
+        },
+      },
+    },
+    { type: 'turn/start', seq: 2, time: createdAt + 2, data: { turn: 1 } },
+    {
+      type: 'assistant/message',
+      seq: 3,
+      time: createdAt + 3,
+      data: {
+        turn: 1,
+        step: 0,
+        usage: {
+          inputTokens: 1_200,
+          outputTokens: 300,
+          cacheReadTokens: 500,
+          cacheWriteTokens: 0,
+        },
+        message: {
+          id: `desktop-smoke-assistant-${createdAt}` as never,
+          role: 'assistant',
+          source: { kind: 'model', provider: 'desktop-smoke', model: 'native-thinker' },
+          content: [],
+        },
+      },
+      surfaceOp: 'append',
+    },
+    {
+      type: 'turn/end',
+      seq: 4,
+      time: createdAt + 4,
       data: { turn: 1, reason: { kind: 'completed' } },
     },
     {
       type: 'permission/preset',
-      seq: 2,
-      time: createdAt + 2,
+      seq: 5,
+      time: createdAt + 5,
       data: { preset: 'workspace-write' },
     },
     {
       type: 'sandbox/mode',
-      seq: 3,
-      time: createdAt + 3,
+      seq: 6,
+      time: createdAt + 6,
       data: { mode: 'workspace-write' },
     },
     {
       type: 'approval/policy',
-      seq: 4,
-      time: createdAt + 4,
+      seq: 7,
+      time: createdAt + 7,
       data: { policy: 'ask' },
     },
-    { type: 'session/end-seed', seq: 5, time: createdAt + 5, data: {} },
+    { type: 'session/end-seed', seq: 8, time: createdAt + 8, data: {} },
   ]
 }
 
@@ -859,6 +908,44 @@ async function exercisePluginMarket(
   await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
 }
 
+async function exerciseUsageInsights(
+  page: Page,
+  platform: NodeJS.Platform,
+): Promise<void> {
+  await page.locator('[data-dsh-desktop-command="open-settings"]').click()
+  const settingsDialog = page.getByRole('dialog').last()
+  await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
+  await settingsDialog.getByRole('button', { name: /^(?:Usage|使用统计)$/u }).click()
+
+  const usage = settingsDialog.locator('section[aria-label="Usage"], section[aria-label="使用统计"]')
+  await usage.waitFor({ state: 'visible', timeout: 30_000 })
+  const dailyParticles = usage.locator('[data-particle-mode="daily"]')
+  await expect.poll(() => dailyParticles.count(), { timeout: 30_000 }).toBe(53 * 7)
+  const activeDaily = usage.locator('[data-particle-mode="daily"]:not([data-level="0"])').last()
+  expect(await activeDaily.getAttribute('data-display-tokens')).toBe('6000')
+  await activeDaily.hover()
+  await usage.getByRole('tooltip').waitFor({ state: 'visible', timeout: 15_000 })
+  expect(await usage.getByRole('tooltip').innerText()).toMatch(/(?:used|使用了).*(?:Token|tokens)/iu)
+
+  await usage.getByRole('tab', { name: /^(?:Weekly|每周)$/u }).click()
+  const weeklyParticles = usage.locator('[data-particle-mode="weekly"]')
+  await expect.poll(() => weeklyParticles.count(), { timeout: 15_000 }).toBe(53 * 7)
+  await usage.locator('[data-particle-mode="weekly"]:not([data-level="0"])').last().hover()
+  expect(await usage.getByRole('tooltip').innerText()).toMatch(/(?:Week of|当周使用了)/u)
+
+  await usage.getByRole('tab', { name: /^(?:Cumulative|累计)$/u }).click()
+  const cumulativeParticles = usage.locator('[data-particle-mode="cumulative"]')
+  await expect.poll(() => cumulativeParticles.count(), { timeout: 15_000 }).toBe(53 * 7)
+  await usage.locator('[data-particle-mode="cumulative"]:not([data-level="0"])').last().hover()
+  expect(await usage.getByRole('tooltip').innerText()).toMatch(/(?:Through|截至)/u)
+  await page.screenshot({
+    path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-usage-${platform}.png`),
+  })
+
+  await page.keyboard.press('Escape')
+  await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
+}
+
 async function quitAfterSmokeFailure(application: ElectronApplication): Promise<void> {
   try {
     const closed = application.waitForEvent('close', { timeout: 15_000 })
@@ -1011,6 +1098,7 @@ export async function runPackagedDesktopSmoke(
       path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-${platform}.png`),
     })
 
+    await exerciseUsageInsights(page, platform)
     await exercisePluginMarket(page, harnessHome, platform, consoleErrors)
     expect(consoleErrors.filter(message => (
       !/^Failed to load resource: the server responded with a status of 409 \(Conflict\)$/u.test(message)

@@ -54,7 +54,6 @@ English | [中文](2026-08-18-deepseek-harness-usage-insights.zh.md)
 - Create: `packages/session/usage-insights/tests/loader-composition.spec.ts`
 - Create: `packages/session/usage-insights/package.json`
 - Create: `packages/session/usage-insights/tsconfig.json`
-- Create: `packages/session/usage-insights/tsdown.config.ts`
 
 **Steps:**
 
@@ -96,7 +95,7 @@ English | [中文](2026-08-18-deepseek-harness-usage-insights.zh.md)
 **Steps:**
 
 - [ ] Assert locale-aware compact token and duration formatting without converting unavailable data to zero.
-- [ ] Assert 53-by-7 daily cells, 52 weekly columns, twelve cumulative points, stable five-level intensity, and month labels derived from the Host-provided local date range.
+- [ ] Assert that daily, weekly, and cumulative scopes all retain the full 53-by-7 particle field, with stable intensity, scope-correct hover totals, and month labels derived from the Host-provided local date range.
 - [ ] Assert loading, empty, partial, error/retry, tab keyboard behavior, top-feature badges, and accessible metric/chart summaries.
 - [ ] Assert no page-level horizontal overflow at an 800px window, the normal approximately 564px content column, and 200% zoom/narrow layout.
 - [ ] Run the focused Client tests and confirm they fail before the implementation exists.
@@ -123,7 +122,7 @@ English | [中文](2026-08-18-deepseek-harness-usage-insights.zh.md)
 **Steps:**
 
 - [ ] Register `settings.section` id `usage` at order 12 so it appears between Models and Plugins, with localized label `使用统计` / `Usage`.
-- [ ] Render five equal KPI cells, daily/weekly/cumulative activity tabs, activity insights, and “Most-used features” with truthful Skill/Tool badges.
+- [ ] Render five equal KPI cells, daily/weekly/cumulative particle tabs, activity insights, and “Most-used features” with truthful Skill/Tool badges. Daily remains a 53-by-7 calendar heatmap; weekly and cumulative scopes fill each Sunday-aligned column from bottom to top and expose scope-specific Chinese/English tooltip copy.
 - [ ] Use existing `--dsw-alias-*` tokens, tabular numerals, semantic controls, dark-mode-safe color mixing, reduced-motion behavior, and responsive wrapping without changing the global Settings shell width.
 - [ ] Add a distinct native nav icon using the existing primitive vocabulary, with gear fallback preserved for unknown sections.
 - [ ] Run the focused Client tests and commit `feat(settings): add usage insights dashboard`.

@@ -750,6 +750,22 @@ Types: [CreateSessionOptions](persistence.md) · [PrepareSessionOptions](persist
 
 Source: [`packages/core/session/src/index.ts:792`](../../packages/core/session/src/index.ts)
 
+<a id="ctxusageinsights--usageinsightsgateway"></a>
+
+### `ctx.usageInsights` — `UsageInsightsGateway`
+
+Remote-only service exposing an immutable bounded usage snapshot.
+
+```ts cordis-catalog
+/**
+ * Read one current all-history snapshot, sharing concurrent refresh work.
+ * @returns The locally derived usage snapshot after any required cache refresh.
+ */
+@Remote('snapshot') snapshot(): Promise<UsageInsightsSnapshot>
+```
+
+Source: [`packages/session/usage-insights/src/index.ts:86`](../../packages/session/usage-insights/src/index.ts)
+
 <a id="session-events"></a>
 
 ### `session/*` events

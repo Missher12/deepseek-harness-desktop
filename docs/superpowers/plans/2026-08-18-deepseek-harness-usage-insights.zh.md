@@ -54,7 +54,6 @@
 - 新建：`packages/session/usage-insights/tests/loader-composition.spec.ts`
 - 新建：`packages/session/usage-insights/package.json`
 - 新建：`packages/session/usage-insights/tsconfig.json`
-- 新建：`packages/session/usage-insights/tsdown.config.ts`
 
 **步骤：**
 
@@ -96,7 +95,7 @@
 **步骤：**
 
 - [ ] 断言符合 locale 的紧凑 token/时长格式，且不会把“不可用”转成零。
-- [ ] 断言 53×7 日活动单元、52 个周列、12 个累计点、稳定五级强度以及由 Host 本地日期范围导出的月份标签。
+- [ ] 断言每日、每周与累计口径都保留完整 53×7 颗粒场，并具有稳定强度、符合当前口径的悬停总数，以及由 Host 本地日期范围导出的月份标签。
 - [ ] 断言加载、空状态、部分数据、错误/重试、tab 键盘行为、顶级功能徽标和可访问的指标/图表摘要。
 - [ ] 断言 800px 窗口、常规约 564px 内容列和 200% 缩放/窄布局均无页面级水平溢出。
 - [ ] 运行 Client 聚焦测试，确认实现不存在时失败。
@@ -123,7 +122,7 @@
 **步骤：**
 
 - [ ] 以 order 12 注册 `settings.section` id `usage`，使其位于 Models 与 Plugins 之间；局部化标签为 `使用统计` / `Usage`。
-- [ ] 渲染五个等宽 KPI、每日/每周/累计活动 tab、活动洞察，以及带真实 Skill/Tool 徽标的“最常用的功能”。
+- [ ] 渲染五个等宽 KPI、每日/每周/累计颗粒 tab、活动洞察，以及带真实 Skill/Tool 徽标的“最常用的功能”。每日保持 53×7 日历热力图；每周与累计按周日对齐并从下向上填充每列，同时提供对应口径的中英文浮层文案。
 - [ ] 使用已有 `--dsw-alias-*` token、表格数字、语义控件、暗色模式安全 color mixing、减少动画行为和响应式换行，且不改变全局设置面板宽度。
 - [ ] 通过已有 primitive vocabulary 加入独立原生导航图标，同时保留未知分区的齿轮 fallback。
 - [ ] 运行 Client 聚焦测试并提交 `feat(settings): add usage insights dashboard`。

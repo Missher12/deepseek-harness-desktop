@@ -497,12 +497,12 @@ jobs:
         shell: pwsh
         run: >-
           ./scripts/windows-desktop-setup-smoke.ps1
-          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe
+          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe
 
       - name: Record the Windows Setup checksum
         shell: pwsh
         run: |
-          $artifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe'
+          $artifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe'
           $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
           $checksum = "$hash  $(Split-Path -Leaf $artifact)`n"
           [System.IO.File]::WriteAllText("$artifact.sha256", $checksum, [System.Text.Encoding]::ASCII)
@@ -511,8 +511,8 @@ jobs:
         with:
           name: DeepSeek-Harness-Setup-win-x64-${{ github.sha }}
           path: |
-            apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe
-            apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe.sha256
+            apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe
+            apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe.sha256
           if-no-files-found: error
           retention-days: 7
 
@@ -731,7 +731,7 @@ jobs:
         shell: pwsh
         run: >-
           ./scripts/windows-desktop-setup-smoke.ps1
-          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe
+          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe
 
   # Manual, bounded comparison of the actual critical Linux and Windows lanes.
   # The named pools are restricted at the organization level to this repository.

@@ -53,8 +53,8 @@ jobs:
           $env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'
           pnpm run desktop:stage
           pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR" --config "$env:DSH_DESKTOP_STAGE_DIR\electron-builder.yml" --win nsis --x64
-          $builtArtifact = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) 'release\DeepSeek-Harness-Setup-0.1.6-win-x64.exe'
-          $workspaceArtifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe'
+          $builtArtifact = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) 'release\DeepSeek-Harness-Setup-0.1.7-win-x64.exe'
+          $workspaceArtifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe'
           New-Item -ItemType Directory -Force -Path (Split-Path -Parent $workspaceArtifact) | Out-Null
           Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact
 
@@ -62,12 +62,12 @@ jobs:
         shell: pwsh
         run: >-
           ./scripts/windows-desktop-setup-smoke.ps1
-          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe
+          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe
 
       - name: Record SHA-256
         shell: pwsh
         run: |
-          $artifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe'
+          $artifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe'
           $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
           $checksum = "$hash  $(Split-Path -Leaf $artifact)`n"
           [System.IO.File]::WriteAllText("$artifact.sha256", $checksum, [System.Text.Encoding]::ASCII)
@@ -76,7 +76,7 @@ jobs:
         with:
           name: DeepSeek-Harness-Setup-win-x64-${{ github.sha }}
           path: |
-            s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe
-            s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe.sha256
+            s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe
+            s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe.sha256
           if-no-files-found: error
           retention-days: 14

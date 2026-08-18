@@ -2010,6 +2010,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'usageInsights',
+    summary: 'Remote-only service exposing an immutable bounded usage snapshot.',
+    description: 'Remote-only service exposing an immutable bounded usage snapshot.',
+    methods: [
+      {
+        signature: '@Remote(\'snapshot\') snapshot(): Promise<UsageInsightsSnapshot>',
+        description: 'Read one current all-history snapshot, sharing concurrent refresh work.',
+        parameters: [],
+        returns: 'The locally derived usage snapshot after any required cache refresh.',
+      },
+    ],
+  },
+  {
     key: 'userQuestions',
     summary: '`ctx.userQuestions`: one active UI provider plus an `ask()` API.',
     description: '`ctx.userQuestions`: one active UI provider plus an `ask()` API.',
@@ -4544,6 +4557,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TypertTypeModel',
     declaration: 'export interface TypertTypeModel {\n    readonly name: string;\n    readonly declaration: string;\n}',
+  },
+  {
+    name: 'UsageActivityDay',
+    declaration: 'export interface UsageActivityDay extends UsageDay {\n    level: 0 | 1 | 2 | 3 | 4;\n}',
+  },
+  {
+    name: 'UsageDay',
+    declaration: 'export interface UsageDay {\n    date: string;\n    humanMessages: number;\n    tokens: number;\n    toolCalls: number;\n}',
+  },
+  {
+    name: 'UsageFeature',
+    declaration: 'export interface UsageFeature {\n    kind: UsageFeatureKind;\n    name: string;\n    count: number;\n}',
+  },
+  {
+    name: 'UsageFeatureKind',
+    declaration: 'export type UsageFeatureKind = \'skill\' | \'tool\';',
+  },
+  {
+    name: 'UsageInsightsSnapshot',
+    declaration: 'export interface UsageInsightsSnapshot {\n    generatedAt: number;\n    timeZone: string;\n    sessionCount: number;\n    omittedSessions: number;\n    incompleteUsageSamples: number;\n    summary: {\n        totalTokens: number | null;\n        peakDailyTokens: number | null;\n        longestSessionMs: number | null;\n        currentStreakDays: number;\n        longestStreakDays: number;\n    };\n    insights: {\n        cacheHitRate: number | null;\n        mostUsedModel: string | null;\n        mostUsedReasoningEffort: string | null;\n        uniqueSkills: number;\n        totalToolCalls: number;\n        chatDays: number;\n    };\n    activity: UsageActivityDay[];\n    features: UsageFeature[];\n}',
   },
   {
     name: 'UserMessage',

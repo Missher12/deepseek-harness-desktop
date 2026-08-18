@@ -12,7 +12,7 @@ English | [中文](2026-08-18-deepseek-harness-usage-insights-design.zh.md)
 
 DeepSeek Harness Desktop adds a Usage section to Settings that mirrors the compact activity dashboard supplied by the user. It reports real local history across every durable Session, including archived Sessions and subagent Sessions, without uploading analytics or retaining message content in the derived index.
 
-The page contains five headline metrics, a 12-month token activity visualization with daily, weekly, and cumulative views, activity insights, and a ranked list of the most-used Skills and Tools. The existing Settings shell, Session logs, and application lifecycle remain authoritative.
+The page contains five headline metrics, one 12-month particle visualization with daily, weekly, and cumulative hover scopes, activity insights, and a ranked list of the most-used Skills and Tools. The existing Settings shell, Session logs, and application lifecycle remain authoritative.
 
 ## Product decisions
 
@@ -34,11 +34,11 @@ The headline row contains these five values:
 4. **Current streak:** consecutive local calendar days ending today, or yesterday when today has not started yet, that contain at least one human-authored message.
 5. **Longest streak:** the longest consecutive run of those activity days.
 
-The activity visualization shows the most recent 12 months through three tabs:
+The activity visualization shows 53 Sunday-aligned calendar weeks through three tabs. Every tab retains the same 53-column by 7-row particle field, including gray particles for zero-use and future days in the current week:
 
 - **Daily:** a 53-column by 7-row calendar heatmap. Color intensity uses per-day token totals and a stable five-level scale derived from non-zero days in the visible range.
-- **Weekly:** 52 compact weekly bars using the same token definition.
-- **Cumulative:** a 12-month cumulative line whose final point matches the visible-range total; the all-time total remains in the headline row.
+- **Weekly:** each column is a weekly aggregate rendered as one to seven blue particles filled from bottom to top over the complete gray field. Hover names the week's Sunday and reports that week's Token total.
+- **Cumulative:** each column is the all-history running total through that week, rendered as a bottom-up progressive particle stack. Tokens before the visible 53-week range form the first column's baseline, so the final column agrees with the all-time headline total.
 
 Activity insights show cache-hit rate, most-used model, most-used reasoning effort, unique invoked Skills, total Tool calls, and chat days. Counts include native Tool calls and nested Code Mode dispatches. Skill counts combine explicit Skill invocations with successfully parsed `skill` Tool requests and never retain their raw argument JSON.
 
@@ -61,10 +61,10 @@ The Client requests one immutable aggregate snapshot when the section mounts. Th
 The page follows the supplied white-space-heavy composition rather than adding dashboard chrome:
 
 - Five equal headline cells sit inside one subtle rounded outline.
-- The chart title and three text tabs share one row; month labels align below the daily heatmap.
+- The chart title and three text tabs share one row; month labels stay aligned below the stable particle field in every scope.
 - Activity insights and Most-used features form two balanced columns below the chart.
 - Feature rows use a small type badge, exact Skill or Tool name, and a right-aligned run count.
-- Values use locale-aware compact formatting, while hover and accessible labels expose the exact number.
+- Values use locale-aware compact formatting. Hover opens a rounded visible tooltip with scope-specific copy: the daily date, the weekly Sunday, or the cumulative cutoff week.
 
 The existing approximately 564-pixel Settings content column remains unchanged. Calendar cells compress to fit without horizontal page scrolling. Narrow layouts stack the headline cells and lower columns; 200% zoom retains a single readable column. Light and dark themes use Harness tokens, and meaning never depends on color alone. Charts have keyboard-accessible summaries, visible focus, reduced-motion behavior, and text alternatives.
 
@@ -88,7 +88,7 @@ The existing approximately 564-pixel Settings content column remains unchanged. 
 - Pure fold tests cover token buckets, duplicate usage replacement, daily boundaries, DST and time-zone rebuilds, turn duration, current and longest streaks, explicit and model-loaded Skills, native and nested Tools, missing usage, and inherited seed exclusion.
 - Service tests cover full backfill, unchanged-revision reuse, changed and removed Sessions, corrupt-cache recovery, concurrent refresh sharing, cancellation, live-event races, and partial errors.
 - Real Loader coverage mounts the Host provider, Remote service, Client package, Settings slot, persistence backend, and storage domain without an API key.
-- Client tests cover exact formatting, tabs, heat levels, empty/loading/partial/error states, narrow reflow, keyboard summaries, and light/dark token usage.
+- Client tests cover exact formatting, 371-particle preservation and hover totals across all tabs, heat levels, empty/loading/partial/error states, narrow reflow, keyboard summaries, and light/dark token usage.
 - Browser acceptance opens the assembled Settings panel at the real 800-pixel window, verifies the approximately 564-pixel content width, normal and 200% zoom, no horizontal overflow, and no console errors.
 - Packaged Intel macOS acceptance uses an isolated `DSH_HOME` with deterministic historical fixtures, proves that existing Session artifacts remain byte-identical, and checks application exit plus listener cleanup.
 - Live acceptance against the user's `~/.dsh` is read-only for Session artifacts and compares the visible totals with an independent fold before the application is replaced or published.
