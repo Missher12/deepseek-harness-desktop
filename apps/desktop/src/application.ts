@@ -157,19 +157,32 @@ export class DesktopApplication {
 
   private async launchOnce(): Promise<void> {
     this.state = 'starting'
-    const window = await this.ensureWindow()
+    const windowPromise = this.ensureWindow()
+    let runtimeStarted = false
     try {
       const conflict = await this.options.findConflict()
       if (conflict !== undefined) {
+        const window = await windowPromise
         this.state = 'failure'
         await this.options.log?.(`runtime conflict pid=${String(conflict.pid)}`)
         await window.loadFailure('runtime-conflict')
         return
       }
-      const root = await this.options.runtime.start(this.options.workspace)
+      runtimeStarted = true
+      const [window, root] = await Promise.all([
+        windowPromise,
+        this.options.runtime.start(this.options.workspace),
+      ])
       await window.loadHarness(desktopUrl(root))
       this.state = 'running'
     } catch (error) {
+      let window: DesktopWindow
+      try {
+        window = await windowPromise
+      } catch (windowError) {
+        if (runtimeStarted) await this.options.runtime.stop()
+        throw windowError
+      }
       this.state = 'failure'
       const message = error instanceof Error ? error.message : String(error)
       await this.options.log?.(`startup failed: ${message}`)

@@ -86,6 +86,39 @@ describe('DesktopApplication', () => {
     expect(window.loadHarness).toHaveBeenCalledWith('http://127.0.0.1:45678/?surface=desktop')
   })
 
+  it('overlaps the loading surface with conflict detection and safe runtime startup', async () => {
+    const app = new FakeApp()
+    const window = createWindow()
+    const loading = deferred<undefined>()
+    window.loadLoading.mockReturnValueOnce(loading.promise)
+    const conflict = deferred<undefined>()
+    const findConflict = vi.fn(() => conflict.promise)
+    const runtime = createRuntime()
+    const controller = new DesktopApplication({
+      app,
+      createWindow: async () => window,
+      runtime,
+      findConflict,
+      workspace: '/workspace',
+    })
+
+    const running = controller.run()
+    await vi.waitFor(() => { expect(window.loadLoading).toHaveBeenCalledOnce() })
+    const conflictStartedBeforeLoading = findConflict.mock.calls.length === 1
+    let runtimeStartedBeforeLoading = false
+    try {
+      conflict.resolve(undefined)
+      await vi.waitFor(() => { expect(runtime.start).toHaveBeenCalledOnce() })
+      runtimeStartedBeforeLoading = true
+    } finally {
+      loading.resolve(undefined)
+      await running
+    }
+
+    expect(conflictStartedBeforeLoading).toBe(true)
+    expect(runtimeStartedBeforeLoading).toBe(true)
+  })
+
   it('renders a conflict without starting another writer', async () => {
     const app = new FakeApp()
     const window = createWindow()
