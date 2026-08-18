@@ -436,22 +436,39 @@ describe('Windows desktop Setup workflow', () => {
   })
 })
 
-describe('Issue lifecycle workflow', () => {
-  it('uses explicit review handoff events without rerunning when a draft becomes ready', () => {
+describe('Upstream-only workflows', () => {
+  it('skips issue automation in mirrors while preserving explicit review handoff events', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
     const lifecyclePullRequest = workflowEvent(lifecycle, 'pull_request')
     const lifecycleReview = workflowEvent(lifecycle, 'pull_request_review')
     const lifecycleJob = workflowJob(lifecycle, 'lifecycle')
     const policy = loadWorkflow('.github/workflows/issue-policy.yml')
     const policyPullRequest = workflowEvent(policy, 'pull_request')
+    const policyJob = workflowJob(policy, 'policy')
 
     expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
     expect(lifecycleJob.if).toBe(
-      "${{ github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested') }}",
+      "${{ github.repository == 'deepseek-harness/deepseek-harness' && (github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested')) }}",
     )
     expect(policyPullRequest.types).toContain('ready_for_review')
+    expect(policyJob.if).toBe("${{ github.repository == 'deepseek-harness/deepseek-harness' }}")
+  })
+
+  it('skips real-API e2e in mirrors but still hard-fails a missing upstream key', () => {
+    const workflow = loadWorkflow('.github/workflows/e2e.yml')
+    const job = workflowJob(workflow, 'e2e')
+    if (!Array.isArray(job.steps)) throw new TypeError('e2e job must define steps')
+    const preflight = job.steps.filter(isRecord).find(step => step.name === 'Preflight (require DEEPSEEK_API_KEY)')
+
+    expect(job.if).toContain("github.repository == 'deepseek-harness/deepseek-harness'")
+    expect(job.if).toContain("github.event_name != 'pull_request'")
+    expect(preflight).toMatchObject({
+      env: { DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}' },
+    })
+    expect(preflight?.run).toContain('exit 1')
+    expect(preflight?.['continue-on-error']).not.toBe(true)
   })
 })
 

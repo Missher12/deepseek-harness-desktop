@@ -87,6 +87,7 @@ describe('packaged desktop process inspection', () => {
       const seeded = await seedWindowsClipboardSmokeState(root)
       expect(seeded.activeSessionId).not.toBe(seeded.archivedSessionId)
       expect(seeded.protectedPaths).toHaveLength(6)
+      expect(seeded.expectedDailyTokens).toBe(8_000)
       await expect(Promise.all(seeded.protectedPaths.map(path => readFile(path)))).resolves.toHaveLength(6)
 
       const reader = new Context()

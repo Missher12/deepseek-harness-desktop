@@ -92,8 +92,16 @@ export interface WindowsClipboardSmokeState {
   messengerSourceSessionId: string
   messengerSourceSessionTitle: string
   messengerSubagentSessionId: string
+  expectedDailyTokens: number
   protectedPaths: readonly string[]
 }
+
+const SEEDED_SESSION_USAGE = {
+  inputTokens: 1_200,
+  outputTokens: 300,
+  cacheReadTokens: 500,
+  cacheWriteTokens: 0,
+} as const
 
 function completeTurn(createdAt: number): SessionEvent[] {
   return [
@@ -132,12 +140,7 @@ function completeTurn(createdAt: number): SessionEvent[] {
       data: {
         turn: 1,
         step: 0,
-        usage: {
-          inputTokens: 1_200,
-          outputTokens: 300,
-          cacheReadTokens: 500,
-          cacheWriteTokens: 0,
-        },
+        usage: SEEDED_SESSION_USAGE,
         message: {
           id: `desktop-smoke-assistant-${createdAt}` as never,
           role: 'assistant',
@@ -317,6 +320,8 @@ export async function seedWindowsClipboardSmokeState(
     messengerSourceSessionId: MESSENGER_SOURCE_SESSION_ID,
     messengerSourceSessionTitle: messengerSourceTitle,
     messengerSubagentSessionId: MESSENGER_SUBAGENT_SESSION_ID,
+    expectedDailyTokens: headers.length * Object.values(SEEDED_SESSION_USAGE)
+      .reduce<number>((total, tokens) => total + tokens, 0),
     protectedPaths: [...sessionPaths, workspacePath, messengerPath],
   }
 }
@@ -911,6 +916,7 @@ async function exercisePluginMarket(
 async function exerciseUsageInsights(
   page: Page,
   platform: NodeJS.Platform,
+  expectedDailyTokens: number,
 ): Promise<void> {
   await page.locator('[data-dsh-desktop-command="open-settings"]').click()
   const settingsDialog = page.getByRole('dialog').last()
@@ -922,7 +928,7 @@ async function exerciseUsageInsights(
   const dailyParticles = usage.locator('[data-particle-mode="daily"]')
   await expect.poll(() => dailyParticles.count(), { timeout: 30_000 }).toBe(53 * 7)
   const activeDaily = usage.locator('[data-particle-mode="daily"]:not([data-level="0"])').last()
-  expect(await activeDaily.getAttribute('data-display-tokens')).toBe('6000')
+  expect(await activeDaily.getAttribute('data-display-tokens')).toBe(String(expectedDailyTokens))
   await activeDaily.hover()
   await usage.getByRole('tooltip').waitFor({ state: 'visible', timeout: 15_000 })
   expect(await usage.getByRole('tooltip').innerText()).toMatch(/(?:used|使用了).*(?:Token|tokens)/iu)
@@ -1098,7 +1104,7 @@ export async function runPackagedDesktopSmoke(
       path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-${platform}.png`),
     })
 
-    await exerciseUsageInsights(page, platform)
+    await exerciseUsageInsights(page, platform, clipboardSeed.expectedDailyTokens)
     await exercisePluginMarket(page, harnessHome, platform, consoleErrors)
     expect(consoleErrors.filter(message => (
       !/^Failed to load resource: the server responded with a status of 409 \(Conflict\)$/u.test(message)
