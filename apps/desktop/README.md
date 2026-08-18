@@ -90,15 +90,15 @@ Both commands target Intel (`x86_64`) macOS. `desktop:pack` produces a directly 
 pnpm run desktop:setup
 ```
 
-Run this command on native Windows x64. It produces `apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe`. Production staging uses a dedicated short directory on Windows CI to keep native MSVC rebuilds below legacy path limits; all release output is written to `apps/desktop/release`.
+Run this command on native Windows x64. It produces `apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe`. Production staging uses a dedicated short directory on Windows CI to keep native MSVC rebuilds below legacy path limits; all release output is written to `apps/desktop/release`.
 
 The Windows Setup is a one-click, per-user NSIS installer. It needs no administrator elevation, Node.js, pnpm, terminal, browser, or fixed port; it creates desktop and Start menu shortcuts and launches DeepSeek Harness after an interactive install. Uninstall removes the application and shortcuts while preserving Harness and Electron user data.
 
 The application uses an operating-system-assigned loopback port and does not reserve port 65000.
 
 The current locally verified Intel artifact is
-`DeepSeek-Harness-0.1.6-mac-x64.dmg`, 163,329,569 bytes, SHA-256
-`5085c25e85b0eb650941d8b7915c1035090c52ce968b457b03bafc8971f4fe34`.
+`DeepSeek-Harness-0.1.7-mac-x64.dmg`, 163,343,340 bytes, SHA-256
+`d9aaf227ebc24f7b1bca0e4b884745665691b92272c25380c226874df5f1c32d`.
 
 ## Packaged verification
 
@@ -112,9 +112,9 @@ For Windows, build the Setup on native Windows and run:
 
 ```powershell
 ./scripts/windows-desktop-setup-smoke.ps1 `
-  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe
+  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe
 ```
 
-The packaged smokes use an external temporary working directory, temporary Electron data, and temporary `DSH_HOME`. The Intel macOS smoke verifies the preload bridge, three-column workspace, exact ordinary and archived Session IDs in the real system clipboard without opening, restoring, deleting, sending, or starting an Agent, peer-session send/reply metadata, default wake control, ordinary no-card rendering, drawer-width persistence, and rejection side effects, the down-first adaptive reasoning slider and persisted effort, visible Canvas output with the optional character off, stable Plugin Market category order plus separated search/filter/category geometry, protected self-update, a real ordinary isolated-profile uninstall, random listener, and complete process cleanup after native Quit. Tool-level acceptance separately proves bidirectional Agent wake/reply behavior, optional exact receipt-bound waiting, and matching-reply refusal without making an external model request. Desktop staging additionally requires exactly one `dshmarket@1.10.1`, coherent compact and category-rail markers in its source, Client bundle, and source map, the Host self-protection marker, immutable Desktop patches, plugin-runtime providers, and packaged pnpm bin. The Windows smoke proves the same feature behavior alongside silent install, shortcut creation, real clipboard copy, uninstall cleanup, and data preservation. Native Windows CI builds the Setup, runs this smoke, records SHA-256, and uploads both files.
+The packaged smokes use an external temporary working directory, temporary Electron data, and temporary `DSH_HOME`. The Intel macOS smoke verifies the preload bridge, three-column workspace, exact ordinary and archived Session IDs in the real system clipboard without opening, restoring, deleting, sending, or starting an Agent, peer-session send/reply metadata, default wake control, ordinary no-card rendering, drawer-width persistence, and rejection side effects, the down-first adaptive reasoning slider and persisted effort, visible Canvas output with the optional character off, all 371 Usage particles plus daily/weekly/cumulative hover semantics, stable Plugin Market category order plus separated search/filter/category geometry, protected self-update, a real ordinary isolated-profile uninstall, random listener, and complete process cleanup after native Quit. Tool-level acceptance separately proves bidirectional Agent wake/reply behavior, optional exact receipt-bound waiting, and matching-reply refusal without making an external model request. Desktop staging additionally requires exactly one `dshmarket@1.10.1`, coherent compact and category-rail markers in its source, Client bundle, and source map, the Host self-protection marker, immutable Desktop patches, plugin-runtime providers, and packaged pnpm bin. The Windows smoke proves the same feature behavior alongside silent install, shortcut creation, real clipboard copy, uninstall cleanup, and data preservation. Native Windows CI builds the Setup, runs this smoke, records SHA-256, and uploads both files.
 
 Local artifacts are unsigned. macOS may require **Open** from Finder's context menu; Windows SmartScreen may require confirmation of the unknown publisher. Removing those prompts requires trusted platform signing credentials.

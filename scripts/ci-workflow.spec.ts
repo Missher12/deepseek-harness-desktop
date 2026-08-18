@@ -87,8 +87,8 @@ describe('CI workflow', () => {
       && step.uses === 'actions/upload-artifact@v7'
       && isRecord(step.with)
       && typeof step.with.path === 'string'
-      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe\n')
-      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe.sha256')
+      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe\n')
+      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe.sha256')
     ))).toBe(true)
 
     // wine-apt-cache: master-only, seeds the Wine apt cache.
@@ -429,29 +429,46 @@ describe('Windows desktop Setup workflow', () => {
     expect(build.run).toContain('pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"')
     expect(build.run).toContain('Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact')
     expect(build.run).not.toContain('pnpm run desktop:setup\n')
-    expect(smoke.run).toContain('./scripts/windows-desktop-setup-smoke.ps1 -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe')
+    expect(smoke.run).toContain('./scripts/windows-desktop-setup-smoke.ps1 -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe')
     expect(smoke.run).not.toContain('Set-Location S:\\')
     expect(checksum.run).not.toContain('Set-Location S:\\')
-    expect(upload.with.path).toContain('s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe')
+    expect(upload.with.path).toContain('s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe')
   })
 })
 
-describe('Issue lifecycle workflow', () => {
-  it('uses explicit review handoff events without rerunning when a draft becomes ready', () => {
+describe('Upstream-only workflows', () => {
+  it('skips issue automation in mirrors while preserving explicit review handoff events', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
     const lifecyclePullRequest = workflowEvent(lifecycle, 'pull_request')
     const lifecycleReview = workflowEvent(lifecycle, 'pull_request_review')
     const lifecycleJob = workflowJob(lifecycle, 'lifecycle')
     const policy = loadWorkflow('.github/workflows/issue-policy.yml')
     const policyPullRequest = workflowEvent(policy, 'pull_request')
+    const policyJob = workflowJob(policy, 'policy')
 
     expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
     expect(lifecycleJob.if).toBe(
-      "${{ github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested') }}",
+      "${{ github.repository == 'deepseek-harness/deepseek-harness' && (github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested')) }}",
     )
     expect(policyPullRequest.types).toContain('ready_for_review')
+    expect(policyJob.if).toBe("${{ github.repository == 'deepseek-harness/deepseek-harness' }}")
+  })
+
+  it('skips real-API e2e in mirrors but still hard-fails a missing upstream key', () => {
+    const workflow = loadWorkflow('.github/workflows/e2e.yml')
+    const job = workflowJob(workflow, 'e2e')
+    if (!Array.isArray(job.steps)) throw new TypeError('e2e job must define steps')
+    const preflight = job.steps.filter(isRecord).find(step => step.name === 'Preflight (require DEEPSEEK_API_KEY)')
+
+    expect(job.if).toContain("github.repository == 'deepseek-harness/deepseek-harness'")
+    expect(job.if).toContain("github.event_name != 'pull_request'")
+    expect(preflight).toMatchObject({
+      env: { DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}' },
+    })
+    expect(preflight?.run).toContain('exit 1')
+    expect(preflight?.['continue-on-error']).not.toBe(true)
   })
 })
 

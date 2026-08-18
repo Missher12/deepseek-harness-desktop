@@ -48,6 +48,10 @@ The repository is based on the pinned official source and adds the desktop appli
 
 - `apps/desktop/`: Electron main process, preload, lifecycle, packaging, and tests.
 - `apps/web/` and `packages/client/`: reused renderer with narrow desktop presentation and command hooks.
+- `packages/session/usage-insights/`: privacy-minimal, revision-aware all-history
+  usage index and Settings Remote.
+- `packages/client/ui-settings-usage/`: localized KPI, activity-chart, insight,
+  and feature-ranking presentation for the usage snapshot.
 - `scripts/stage-desktop.ts`: creates and validates a self-contained package staging tree.
 - `scripts/windows-desktop-setup-smoke.ps1`: verifies isolated Setup install, shortcuts, packaged launch, window close, process cleanup, uninstall, and data preservation on native Windows.
 - `docs/superpowers/specs/`: product, architecture, and implementation plans.
@@ -63,6 +67,18 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- The 2026-08-18 Usage section is implemented between Models and Plugins. It
+  summarizes all durable root, archived, and subagent Sessions with five KPIs,
+  one stable Sunday-aligned 53×7 particle field with a daily calendar heatmap,
+  bottom-up weekly/cumulative particle stacks, scope-specific rounded hover
+  copy, an all-history baseline that keeps the final cumulative column equal to
+  the headline total, activity insights, and a truthful
+  Skill/Tool feature ranking. The Host keeps only derived identifiers and
+  counters in a revision-aware cache; prompts, replies, tool payloads, titles,
+  paths, attachments, and credentials never enter that cache. Host, Client,
+  Settings, Remote, and bundle-focused tests pass. Packaged Intel macOS
+  acceptance also passes against isolated data, including all 371 particles
+  and the daily, weekly, and cumulative hover semantics.
 - Read-only local runtime audit complete.
 - Official source and architecture audit complete.
 - Electron x64 application shell, native menu, loading/failure surfaces, random-port runtime ownership, window-state persistence, and the accepted cross-platform icon master complete.
@@ -80,6 +96,7 @@ The repository is based on the pinned official source and adds the desktop appli
 - Isolated source and staged-artifact acceptance passed for the plugin market: random loopback Hosts returned `/dsh-market/status` with `pnpm=true`, `restart=false`, `active=false`, and the curated registry was available. The staged application validated the Desktop patch, provider, dshmarket Host/Client artifacts, packaged pnpm bin, native modules, and third-party notices; temporary listeners closed cleanly.
 - Native Intel macOS 0.1.6 packaged UI acceptance passed without an API key or model request: exact ordinary and archived clipboard IDs, no-side-effect rejection paths, Codex-style session collaboration controls and ordinary no-card rendering, reasoning slider/Canvas/persistence, stable horizontally scrolling Plugin Market categories plus separated search/filter geometry, self-protection/ordinary uninstall, random-port ownership, and full process cleanup all passed.
 - Version 0.1.6 passed lint, documentation sync, 234 focused tests across 19 files, the isolated 19-test packaged smoke, and the two post-build TypeScript checks. A resource-saturated full-repository run completed 13,735 tests with 21 failures: two current-branch contract gaps were fixed and passed their 34-test serial rerun, while all other failed files passed a 197-test single-worker rerun. Staging validated 62 required files including the new Desktop plugin-runtime invariant. The final peer-messaging correction passed an additional 128-test focused rerun. The unsigned Intel DMG is 163,329,569 bytes with SHA-256 `5085c25e85b0eb650941d8b7915c1035090c52ce968b457b03bafc8971f4fe34`; `hdiutil verify` passed, the app executable reports `x86_64`, and the bundle reports `0.1.6`. Native Windows 0.1.6 packaging and acceptance remain pending and must come from the Windows workflow; filenames alone are not release evidence.
+- Version 0.1.7 adds the local Usage dashboard and passes 77 focused source tests plus the isolated packaged macOS smoke. Desktop staging validates 62 required files. The unsigned Intel DMG is 163,343,340 bytes with SHA-256 `d9aaf227ebc24f7b1bca0e4b884745665691b92272c25380c226874df5f1c32d`; `hdiutil verify` passes, the bundle reports `0.1.7`, and the app executable plus packaged `node-pty` module report `x86_64`. It has not been installed over the existing application and no Windows build was run from macOS.
 - Version 0.1.4 removes the rejected effort-slider experiment and restores the pre-experiment model-control implementation byte-for-byte. Focused behavior, notice, staging, CI, release, and manifest tests passed 77/77; full lint and production builds passed; Desktop staging validated 49 required files; the isolated packaged smoke passed. Playwright acceptance against the packaged Host reported `slider=0`, `canvas=0`, `ULTRACODE=false`, exact `Off / High / Max` rows, and a working Plugin Market.
 - The verified unsigned Intel 0.1.4 DMG is 160,692,416 bytes with SHA-256 `a1b79014e040634c44b24dc4b91ff3f7c00374e92ab53a27dfb6705fabae5865`; `hdiutil verify` passed and the bundle plus executable report `0.1.4` / `x86_64`. It is installed at `/Applications/DeepSeek Harness.app`; the prior 0.1.3 application is recoverably retained at `~/Library/Application Support/DeepSeek Harness Backups/DeepSeek Harness-0.1.3-pre-0.1.4-20260817-183558.app`.
 - The 0.1.4 installation itself preserved the exact 16-file `~/.dsh` aggregate SHA-256 `753ae9dab43cdea768ab0470fb68eef780233fb3d7f70855157e86859a5f3953`. First launch then completed on random loopback port 60999 with HTTP 200 and performed ordinary runtime bookkeeping in workspace, project-cache, profile, and one session archive; the resulting JSON, YAML, and Zstandard records all passed structural integrity checks, and no effort-slider profile reference remains.
@@ -103,6 +120,9 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Known Risks
 
+- A first Usage read with no derived cache must inspect all durable Session
+  logs; partial inspection failures are surfaced as omitted-session counts, and
+  unsupported or invalid provider token fields are not estimated.
 - Upstream is still a release candidate and may change quickly.
 - The installed package does not ship a ready-made Electron shell.
 - The desktop source baseline is `0.1.0-rc.5`, while the previous npm runtime reported `0.1.0-rc.6`; the pre-migration backup is retained until longer-term use confirms compatibility.

@@ -189,6 +189,20 @@ describe('desktop package manifest', () => {
     expect(smoke).toContain("code: 'self-protected'")
   })
 
+  it('keeps the desktop-only market patch isolated in release and Wine dependency layouts', () => {
+    const singleExeBuild = readFileSync(
+      new URL('../../../scripts/build-exe-for-python-sdk.ts', import.meta.url),
+      'utf8',
+    )
+    const wineGate = readFileSync(
+      new URL('../../../scripts/wine-windows-gates.sh', import.meta.url),
+      'utf8',
+    )
+
+    expect(singleExeBuild).toContain("'--config.allow-unused-patches=true'")
+    expect(wineGate).toContain('ln -s ../../../node_modules/dshmarket apps/desktop/node_modules/dshmarket')
+  })
+
   it('exercises the native reasoning slider and visible session-message drawer', () => {
     const smoke = readFileSync(new URL('./packaged-smoke.ts', import.meta.url), 'utf8')
 

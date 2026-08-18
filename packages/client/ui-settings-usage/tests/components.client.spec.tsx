@@ -1,0 +1,158 @@
+// @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { UsageInsightsSnapshot } from '@deepseek-ai/dsh-api-remotes/client'
+import { UsageInsightsSection } from '../src/client/UsageInsightsSection.tsx'
+import type { UsageInsightsSectionInjected, UsageInsightsSectionProps } from '../src/client/UsageInsightsSection.tsx'
+import { en, zh, type UsageInsightsLocaleKey } from '../src/client/locales.ts'
+
+afterEach(cleanup)
+
+const t = ((key: UsageInsightsLocaleKey): string => en[key]) as UsageInsightsSectionProps['t']
+const activity: UsageInsightsSnapshot['activity'] = Array.from({ length: 371 }, (_, index) => ({
+  date: new Date(Date.UTC(2025, 7, 17 + index)).toISOString().slice(0, 10),
+  humanMessages: index === 365 ? 1 : 0,
+  tokens: index === 365 ? 1_000 : 0,
+  toolCalls: 0,
+  level: index === 365 ? 4 : 0,
+}))
+const SNAPSHOT: UsageInsightsSnapshot = {
+  generatedAt: Date.parse('2026-08-18T00:00:00.000Z'),
+  timeZone: 'Asia/Shanghai',
+  sessionCount: 8,
+  omittedSessions: 1,
+  incompleteUsageSamples: 2,
+  summary: {
+    totalTokens: 96_500,
+    peakDailyTokens: 15_700,
+    longestSessionMs: 6 * 3_600_000 + 22 * 60_000,
+    currentStreakDays: 22,
+    longestStreakDays: 22,
+  },
+  insights: {
+    cacheHitRate: 0.58,
+    mostUsedModel: 'deepseek/deepseek-v4-flash',
+    mostUsedReasoningEffort: 'max',
+    uniqueSkills: 51,
+    totalToolCalls: 959,
+    chatDays: 373,
+  },
+  activity,
+  features: [
+    { kind: 'skill', name: 'preview', count: 110 },
+    { kind: 'tool', name: 'bash', count: 86 },
+  ],
+}
+
+function props(
+  load: UsageInsightsSectionInjected['load'],
+  locale = 'en',
+  translate: UsageInsightsSectionProps['t'] = t,
+): UsageInsightsSectionProps {
+  return { t: translate, locale, load } as UsageInsightsSectionProps
+}
+
+describe('UsageInsightsSection', () => {
+  it('renders the five KPIs, partial notice, charts, insights, and ranked features', async () => {
+    const deferred = Promise.withResolvers<UsageInsightsSnapshot>()
+    const view = render(<UsageInsightsSection {...props(() => deferred.promise)} />)
+    expect(screen.getByText(en.loading)).toBeTruthy()
+
+    await act(async () => { deferred.resolve(SNAPSHOT) })
+
+    expect(screen.getByText('96.5K')).toBeTruthy()
+    expect(screen.getByText('15.7K')).toBeTruthy()
+    expect(screen.getByText('6h 22m')).toBeTruthy()
+    expect(screen.getAllByText('22')).toHaveLength(2)
+    expect(screen.getByRole('status').textContent).toContain('1')
+    expect(view.container.querySelectorAll('[data-activity-day]')).toHaveLength(371)
+    expect(screen.getByText('58%')).toBeTruthy()
+    expect(screen.getByText('deepseek/deepseek-v4-flash')).toBeTruthy()
+    expect(screen.getByText('preview')).toBeTruthy()
+    expect(screen.getByText(en.skillBadge)).toBeTruthy()
+    expect(screen.getByText(en.toolBadge)).toBeTruthy()
+  })
+
+  it('switches chart views with click and keyboard navigation', async () => {
+    const view = render(<UsageInsightsSection {...props(async () => SNAPSHOT)} />)
+    const daily = await screen.findByRole('tab', { name: en.daily })
+    const weekly = screen.getByRole('tab', { name: en.weekly })
+    const cumulative = screen.getByRole('tab', { name: en.cumulative })
+    expect(daily.getAttribute('aria-selected')).toBe('true')
+
+    fireEvent.click(weekly)
+    expect(weekly.getAttribute('aria-selected')).toBe('true')
+    const weeklyParticles = view.container.querySelectorAll('[data-particle-mode="weekly"]')
+    expect(weeklyParticles).toHaveLength(371)
+    expect(weeklyParticles[365]?.getAttribute('data-display-tokens')).toBe('1000')
+
+    fireEvent.keyDown(weekly, { key: 'ArrowRight' })
+    expect(cumulative.getAttribute('aria-selected')).toBe('true')
+    const cumulativeParticles = view.container.querySelectorAll('[data-particle-mode="cumulative"]')
+    expect(cumulativeParticles).toHaveLength(371)
+    expect(cumulativeParticles[365]?.getAttribute('data-display-tokens')).toBe('96500')
+    expect(view.container.querySelector('[data-cumulative-chart]')).toBeNull()
+
+    fireEvent.keyDown(cumulative, { key: 'Home' })
+    expect(daily.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('shows scope-specific Chinese copy in the visible particle tooltip', async () => {
+    const translate = ((key: UsageInsightsLocaleKey): string => zh[key]) as UsageInsightsSectionProps['t']
+    const tooltipSnapshot = { ...SNAPSHOT, summary: { ...SNAPSHOT.summary, totalTokens: 1_000 } }
+    const view = render(<UsageInsightsSection {...props(async () => tooltipSnapshot, 'zh-CN', translate)} />)
+    await screen.findByRole('tab', { name: zh.daily })
+    const particle = (): Element => {
+      const found = view.container.querySelector('[data-activity-day="2026-08-17"]')
+      if (found === null) throw new Error('missing 2026-08-17 particle')
+      return found
+    }
+
+    fireEvent.mouseEnter(particle())
+    expect(screen.getByRole('tooltip').textContent).toBe('8月17日 使用了 1000 个 Token')
+
+    fireEvent.click(screen.getByRole('tab', { name: zh.weekly }))
+    fireEvent.mouseEnter(particle())
+    expect(screen.getByRole('tooltip').textContent).toBe('2026年8月16日 当周使用了 1000 个 Token')
+
+    fireEvent.click(screen.getByRole('tab', { name: zh.cumulative }))
+    fireEvent.mouseEnter(particle())
+    expect(screen.getByRole('tooltip').textContent).toBe('截至 2026年8月16日 当周累计使用 1000 个 Token')
+  })
+
+  it('shows unavailable values honestly and retries a generic failure', async () => {
+    const empty: UsageInsightsSnapshot = {
+      ...SNAPSHOT,
+      sessionCount: 0,
+      omittedSessions: 0,
+      incompleteUsageSamples: 0,
+      summary: {
+        totalTokens: null,
+        peakDailyTokens: null,
+        longestSessionMs: null,
+        currentStreakDays: 0,
+        longestStreakDays: 0,
+      },
+      insights: {
+        cacheHitRate: null,
+        mostUsedModel: null,
+        mostUsedReasoningEffort: null,
+        uniqueSkills: 0,
+        totalToolCalls: 0,
+        chatDays: 0,
+      },
+      features: [],
+    }
+    const load = vi.fn<UsageInsightsSectionInjected['load']>()
+      .mockRejectedValueOnce(new Error('private transport detail'))
+      .mockResolvedValueOnce(empty)
+    render(<UsageInsightsSection {...props(load)} />)
+
+    expect((await screen.findByRole('alert')).textContent).toBe(en.error)
+    expect(screen.queryByText('private transport detail')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    await waitFor(() => { expect(load).toHaveBeenCalledTimes(2) })
+    expect(await screen.findByText(en.empty)).toBeTruthy()
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3)
+  })
+})
