@@ -36,7 +36,9 @@ describe('createLifecycleLogger', () => {
     expect(await readFile(logPath, 'utf8')).toBe(
       '2026-08-13T00:00:00.000Z pid=42\\nDEEPSEEK_API_KEY=[REDACTED_SECRET]\n',
     )
-    expect((await stat(join(root, 'nested'))).mode & 0o777).toBe(0o700)
-    expect((await stat(logPath)).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') {
+      expect((await stat(join(root, 'nested'))).mode & 0o777).toBe(0o700)
+      expect((await stat(logPath)).mode & 0o777).toBe(0o600)
+    }
   })
 })

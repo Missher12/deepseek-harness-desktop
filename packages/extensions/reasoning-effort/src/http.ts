@@ -41,6 +41,7 @@ export function createPreferenceCapability(): string {
   return randomBytes(32).toString('base64url')
 }
 
+/* jscpd:ignore-start -- removable plugins intentionally own independent HTTP security fences. */
 /** Read a singleton Node header without accepting ambiguous duplicate values. */
 function header(headers: IncomingHttpHeaders, name: string): string | undefined {
   const value = headers[name]
@@ -104,6 +105,7 @@ async function boundedBody(req: IncomingMessage, res: ServerResponse): Promise<B
   }
   return Buffer.concat(chunks)
 }
+/* jscpd:ignore-end */
 
 /** Accept only the exact one-key JSON wire shape. */
 function parsePutBody(body: Buffer): ReasoningEffortPreference | undefined {

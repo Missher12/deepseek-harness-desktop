@@ -9,6 +9,7 @@ export const name = 'session-messenger-invariant'
 /** Required invariant registry. */
 export const inject = ['invariants']
 
+/** No runtime invariant: route, receipt, and session ownership are covered by package tests. */
 const install: InvariantInstaller = () => {}
 
 /** Reserve package invariant ownership for this plugin. */

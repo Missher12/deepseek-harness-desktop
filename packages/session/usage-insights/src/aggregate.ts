@@ -6,6 +6,7 @@ import type {
   UsageFeature,
   UsageInsightsSnapshot,
 } from './types.ts'
+import { usageDateKey } from './calendar.ts'
 
 /** Inputs that date one immutable aggregate cut. */
 export interface AggregateUsageOptions {
@@ -20,23 +21,10 @@ interface DayTotals {
   toolCalls: number
 }
 
-/** Local date key at one epoch millisecond. */
-function localDateKey(time: number, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat('en', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(time))
-  const value = (type: Intl.DateTimeFormatPartTypes): string =>
-    parts.find(part => part.type === type)?.value ?? ''
-  return `${value('year')}-${value('month')}-${value('day')}`
-}
-
 /** Parse a canonical date key onto the UTC calendar arithmetic plane. */
 function dayNumber(date: string): number {
-  const [year, month, day] = date.split('-').map(Number)
-  return Math.floor(Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1) / 86_400_000)
+  const [year, month, day] = date.split('-').map(Number) as [number, number, number]
+  return Math.floor(Date.UTC(year, month - 1, day) / 86_400_000)
 }
 
 /** Format a UTC calendar day number as a canonical date key. */
@@ -92,13 +80,18 @@ function intensity(value: number, maximum: number): 0 | 1 | 2 | 3 | 4 {
   return Math.max(1, Math.min(4, level)) as 1 | 2 | 3 | 4
 }
 
-/** Aggregate all durable session rows into one bounded Settings snapshot. */
+/**
+ * Aggregate all durable session rows into one bounded Settings snapshot.
+ * @param rows - Privacy-minimal rows derived from durable sessions.
+ * @param options - Time-zone, clock, and omission facts for this immutable cut.
+ * @returns One bounded all-history usage snapshot for the Settings UI.
+ */
 export function aggregateUsageRows(
   rows: readonly SessionUsageRow[],
   options: AggregateUsageOptions,
 ): UsageInsightsSnapshot {
   // Validate once even when there are no rows.
-  const today = localDateKey(options.now, options.timeZone)
+  const today = usageDateKey(options.now, options.timeZone)
   const days = new Map<string, DayTotals>()
   const models = new Map<string, number>()
   const efforts = new Map<string, number>()

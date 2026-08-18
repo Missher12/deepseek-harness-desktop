@@ -12,7 +12,7 @@ This community repository preserves the official source and adds an unofficial I
 
 Download the DMG from this repository's [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases). The current local build is unsigned and unnotarized; on first launch, macOS may require **Open** from Finder's context menu.
 
-Desktop 0.1.5 has been built and verified locally on native Intel macOS. Windows 0.1.5 packaging and native acceptance remain deferred.
+Desktop 0.1.8 has been built and natively verified on Intel macOS and Windows x64. Both platform installers and their SHA-256 checksum files are published together under the matching Desktop release.
 
 ## Developer preview
 

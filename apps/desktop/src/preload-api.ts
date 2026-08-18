@@ -1,11 +1,11 @@
 /** Commands the native menu may send to the Harness renderer. */
-export const DESKTOP_COMMANDS = ['new-session', 'open-command-menu', 'open-settings'] as const
+const DESKTOP_COMMANDS = ['new-session', 'open-command-menu', 'open-settings'] as const
 
 /** One validated native menu command. */
 export type DesktopCommand = typeof DESKTOP_COMMANDS[number]
 
 /** Actions exposed only for the closed startup failure surface. */
-export const RECOVERY_ACTIONS = ['retry', 'open-logs', 'quit'] as const
+const RECOVERY_ACTIONS = ['retry', 'open-logs', 'quit'] as const
 
 /** One validated failure recovery action. */
 export type RecoveryAction = typeof RECOVERY_ACTIONS[number]

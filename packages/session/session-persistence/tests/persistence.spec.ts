@@ -260,6 +260,11 @@ runPersistenceContract('memory', async () => {
   }
 })
 
+it('rejects deletion through the abstract compatibility default', async () => {
+  await expect(SessionPersistence.prototype.delete.call({} as SessionPersistence, SessionId('unsupported-delete')))
+    .rejects.toThrow(/does not support deletion/)
+})
+
 describe('the inherited readRaw default', () => {
   it('rejects unsupported reads distinctly from absence and honors an aborted signal', async () => {
     const ctx = new Context()

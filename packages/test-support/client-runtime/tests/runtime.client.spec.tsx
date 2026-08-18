@@ -120,6 +120,17 @@ describe('sessions', () => {
     await runtime.dispose()
   })
 
+  it('deletes a fixture session through the production action face', async () => {
+    const runtime = await runtimeWithFrame()
+    await runtime.sessions.add({ id: 'delete-me' })
+
+    await runtime.sessions.delete('delete-me' as SessionId)
+
+    expect(runtime.sessions.list.getSnapshot().ids).toEqual([])
+    expect(runtime.sessions.calls).toContainEqual({ method: 'delete', args: ['delete-me'] })
+    await runtime.dispose()
+  })
+
   it('mints REAL-tag scopes lazily and resolves them through the production scopeOf; bindings expose the behavior face', async () => {
     const runtime = await runtimeWithFrame()
     const prompt = vi.fn()

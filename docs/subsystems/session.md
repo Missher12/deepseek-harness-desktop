@@ -762,7 +762,7 @@ Remote-only service exposing an immutable bounded usage snapshot.
 @Remote('snapshot') snapshot(): Promise<UsageInsightsSnapshot>
 ```
 
-Source: [`packages/session/usage-insights/src/index.ts:86`](../../packages/session/usage-insights/src/index.ts)
+Source: [`packages/session/usage-insights/src/index.ts:87`](../../packages/session/usage-insights/src/index.ts)
 
 <a id="session-events"></a>
 

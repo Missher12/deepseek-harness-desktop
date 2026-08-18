@@ -52,6 +52,9 @@ describe('CI workflow', () => {
     if (!Array.isArray(windows.steps) || !Array.isArray(aggregate.needs)) {
       throw new TypeError('Windows job must define steps and the aggregate must define needs')
     }
+    if (!isRecord(node24.env) || !isRecord(node24Coverage.env) || !isRecord(node24Consumers.env)) {
+      throw new TypeError('Required Linux jobs must define bounded concurrency environments')
+    }
     const commandSteps = windows.steps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
@@ -76,8 +79,14 @@ describe('CI workflow', () => {
     const nativeCommandSteps = (windowsNative.steps as unknown[]).filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
+    const nativeBuild = nativeCommandSteps.find(step => step.name === 'Build the one-click Windows desktop Setup')
+    if (nativeBuild === undefined) throw new TypeError('windows-native must define the Setup build command')
     expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
-    expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run desktop:setup:built')
+    expect(nativeBuild.run).toContain("$env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'")
+    expect(nativeBuild.run).toContain('pnpm run desktop:stage:built')
+    expect(nativeBuild.run).toContain('electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"')
+    expect(nativeBuild.run).toContain('Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact')
+    expect(nativeBuild.run).not.toContain('pnpm run desktop:setup:built')
     expect(nativeCommandSteps.some(step => step.run.includes('windows-desktop-setup-smoke.ps1'))).toBe(true)
     expect(nativeCommandSteps.some(step => (
       step.run.includes('Get-FileHash') && step.run.includes('.sha256')
@@ -87,8 +96,8 @@ describe('CI workflow', () => {
       && step.uses === 'actions/upload-artifact@v7'
       && isRecord(step.with)
       && typeof step.with.path === 'string'
-      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe\n')
-      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe.sha256')
+      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.8-win-x64.exe\n')
+      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.8-win-x64.exe.sha256')
     ))).toBe(true)
 
     // wine-apt-cache: master-only, seeds the Wine apt cache.
@@ -103,7 +112,13 @@ describe('CI workflow', () => {
     const serialWindowsCommands = serialWindows.steps.filter(
       (step): step is Record<string, unknown> & { run: string } => isRecord(step) && typeof step.run === 'string',
     )
-    expect(serialWindowsCommands.map(step => step.run)).toContain('pnpm run desktop:setup:built')
+    const serialWindowsBuild = serialWindowsCommands.find(step => step.name === 'Build the one-click Windows desktop Setup')
+    if (serialWindowsBuild === undefined) throw new TypeError('serial-windows must define the Setup build command')
+    expect(serialWindowsBuild.run).toContain("$env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'")
+    expect(serialWindowsBuild.run).toContain('pnpm run desktop:stage:built')
+    expect(serialWindowsBuild.run).toContain('electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"')
+    expect(serialWindowsBuild.run).toContain('Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact')
+    expect(serialWindowsBuild.run).not.toContain('pnpm run desktop:setup:built')
     expect(serialWindowsCommands.some(step => step.run.includes('windows-desktop-setup-smoke.ps1'))).toBe(true)
 
     // Aggregate: Wine `windows` required, native `windows-native` excluded.
@@ -119,7 +134,18 @@ describe('CI workflow', () => {
       expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
       expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
       expect(job['runs-on']).toContain('vm-backup')
+      expect(job['runs-on'], `${jobName} must have a portable public-repository default`).toContain('ubuntu-latest')
+      expect(job['runs-on'], `${jobName} must not require an external enterprise pool`).not.toContain('dsh-ubuntu-24-04-16core')
     }
+    expect(node24.env).toMatchObject({ DSH_GATE_CONCURRENCY: '2' })
+    expect(node24Coverage.env).toMatchObject({ DSH_GATE_CONCURRENCY: '2' })
+    expect(node24Coverage.env?.DSH_COVERAGE_MAX_WORKERS).toContain("&& '8' || '2'")
+    expect(node24Consumers.env).toMatchObject({
+      DSH_GATE_CONCURRENCY: '2',
+      DSH_OXLINT_THREADS: '2',
+      DSH_PUBLINT_CONCURRENCY: '2',
+    })
+    expect(node24Consumers.env?.DSH_SNAPSHOT_MAX_CONCURRENCY).toContain("&& '12' || '4'")
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')
@@ -429,10 +455,10 @@ describe('Windows desktop Setup workflow', () => {
     expect(build.run).toContain('pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"')
     expect(build.run).toContain('Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact')
     expect(build.run).not.toContain('pnpm run desktop:setup\n')
-    expect(smoke.run).toContain('./scripts/windows-desktop-setup-smoke.ps1 -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe')
+    expect(smoke.run).toContain('./scripts/windows-desktop-setup-smoke.ps1 -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.8-win-x64.exe')
     expect(smoke.run).not.toContain('Set-Location S:\\')
     expect(checksum.run).not.toContain('Set-Location S:\\')
-    expect(upload.with.path).toContain('s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.7-win-x64.exe')
+    expect(upload.with.path).toContain('s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.8-win-x64.exe')
   })
 })
 

@@ -684,8 +684,55 @@ describe('runScenario', () => {
     expect(result.sessionLogs[0]?.content).toContain('"turn":3')
   })
 
+  it.each([
+    {
+      step: { op: 'waitForTurnStart', minimumTurn: 3, timeoutMs: 20 } as InputStep,
+      expected: /turn\/start at or beyond turn 3 within 20ms/,
+    },
+    {
+      step: { op: 'waitForTurnEnd', timeoutMs: 20 } as InputStep,
+      expected: /did not persist turn\/end within 20ms/,
+    },
+    {
+      step: { op: 'waitForSubagentTurnEnd', timeoutMs: 20 } as InputStep,
+      expected: /subagent child #1 did not persist closed turn 1 within 20ms/,
+    },
+    {
+      step: { op: 'waitForGoalPhase', phase: 'active', timeoutMs: 20 } as InputStep,
+      expected: /did not persist goal phase "active" within 20ms/,
+    },
+    {
+      step: { op: 'waitForInboxMessage', text: 'missing', timeoutMs: 20 } as InputStep,
+      expected: /did not persist expected inbox message within 20ms/,
+    },
+    {
+      step: { op: 'waitForTitleAfterTurnEnd', timeoutMs: 20 } as InputStep,
+      expected: /did not persist session\/title after turn\/end within 20ms/,
+    },
+    {
+      step: { op: 'waitForEventAfterTurnEnd', type: 'user/message', timeoutMs: 20 } as InputStep,
+      expected: /did not persist user\/message after turn\/end within 20ms/,
+    },
+  ])('$step.op preserves its domain timeout when the first async probe outlives the timer', async ({ step, expected }) => {
+    const missing = await scenario({})
+    const waitFor = vi.spyOn(vi, 'waitFor').mockRejectedValueOnce(new Error('Timed out in waitFor!'))
+    try {
+      await expect(runScenario(
+        { steps: [...boot, step] },
+        { agent: AGENT, mode: 'replay', fixtureFile: missing.fixtureFile },
+      )).rejects.toThrow(expected)
+    } finally {
+      waitFor.mockRestore()
+    }
+  })
+
   it('waitForTurnStart rejects missing, earlier, and malformed durable turns', { timeout: 20_000 }, async () => {
     const missing = await scenario({})
+    await expect(runScenario(
+      { steps: [...boot, { op: 'waitForTurnStart', timeoutMs: 0 }] },
+      { agent: AGENT, mode: 'replay', fixtureFile: missing.fixtureFile },
+    )).rejects.toThrow(/did not persist turn\/start within 0ms/)
+
     await expect(runScenario(
       { steps: [...boot, { op: 'waitForTurnStart', timeoutMs: 20 }] },
       { agent: AGENT, mode: 'replay', fixtureFile: missing.fixtureFile },
@@ -911,6 +958,9 @@ describe('runScenario', () => {
   })
 
   it('waitForTitleAfterTurnEnd times out when the title precedes the boundary', { timeout: 20_000 }, async () => {
+    // Leave enough time for the first asynchronous log harvest to settle under
+    // instrumented Windows CI so the harness can report its domain timeout.
+    const timeoutMs = 250
     const { fixtureFile } = await scenario({
       prompt: 'hang-until-cancel',
       persistLogsOnCancel: true,
@@ -928,11 +978,11 @@ describe('runScenario', () => {
         steps: [
           ...boot,
           { op: 'promptAndCancel', text: 'hang' },
-          { op: 'waitForTitleAfterTurnEnd', timeoutMs: 20 },
+          { op: 'waitForTitleAfterTurnEnd', timeoutMs },
         ],
       },
       { agent: AGENT, mode: 'replay', fixtureFile },
-    )).rejects.toThrow(/did not persist session\/title after turn\/end within 20ms/)
+    )).rejects.toThrow(new RegExp(`did not persist session/title after turn/end within ${timeoutMs}ms`))
   })
 
   it('waitForEventAfterTurnEnd holds the app for a typed post-boundary record and times out otherwise', { timeout: 20_000 }, async () => {

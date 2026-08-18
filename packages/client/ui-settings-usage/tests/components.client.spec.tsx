@@ -95,6 +95,13 @@ describe('UsageInsightsSection', () => {
 
     fireEvent.keyDown(cumulative, { key: 'Home' })
     expect(daily.getAttribute('aria-selected')).toBe('true')
+
+    fireEvent.keyDown(daily, { key: 'ArrowLeft' })
+    expect(cumulative.getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(cumulative, { key: 'End' })
+    expect(cumulative.getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(cumulative, { key: 'Space' })
+    expect(cumulative.getAttribute('aria-selected')).toBe('true')
   })
 
   it('shows scope-specific Chinese copy in the visible particle tooltip', async () => {
@@ -118,6 +125,24 @@ describe('UsageInsightsSection', () => {
     fireEvent.click(screen.getByRole('tab', { name: zh.cumulative }))
     fireEvent.mouseEnter(particle())
     expect(screen.getByRole('tooltip').textContent).toBe('截至 2026年8月16日 当周累计使用 1000 个 Token')
+  })
+
+  it('positions particle tooltips at each edge and clears them on exit', async () => {
+    const view = render(<UsageInsightsSection {...props(async () => SNAPSHOT)} />)
+    await screen.findByRole('tab', { name: en.daily })
+    const particles = view.container.querySelectorAll('[data-activity-day]')
+
+    fireEvent.mouseEnter(particles[0] as Element)
+    expect(screen.getByRole('tooltip').getAttribute('data-edge')).toBe('left')
+    fireEvent.mouseEnter(particles[180] as Element)
+    expect(screen.getByRole('tooltip').getAttribute('data-edge')).toBe('middle')
+    fireEvent.mouseEnter(particles[370] as Element)
+    expect(screen.getByRole('tooltip').getAttribute('data-edge')).toBe('right')
+
+    const stage = screen.getByRole('img').firstElementChild
+    if (stage === null) throw new Error('missing heatmap stage')
+    fireEvent.mouseLeave(stage)
+    expect(screen.queryByRole('tooltip')).toBeNull()
   })
 
   it('shows unavailable values honestly and retries a generic failure', async () => {
@@ -154,5 +179,34 @@ describe('UsageInsightsSection', () => {
     await waitFor(() => { expect(load).toHaveBeenCalledTimes(2) })
     expect(await screen.findByText(en.empty)).toBeTruthy()
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('does not update state after either pending load outcome is unmounted', async () => {
+    const resolved = Promise.withResolvers<UsageInsightsSnapshot>()
+    const first = render(<UsageInsightsSection {...props(() => resolved.promise)} />)
+    first.unmount()
+    await act(async () => { resolved.resolve(SNAPSHOT) })
+
+    const rejected = Promise.withResolvers<UsageInsightsSnapshot>()
+    const second = render(<UsageInsightsSection {...props(() => rejected.promise)} />)
+    second.unmount()
+    await act(async () => { rejected.reject(new Error('late failure')) })
+  })
+
+  it('shows a partial notice for either omission source independently', async () => {
+    const omittedOnly = {
+      ...SNAPSHOT,
+      incompleteUsageSamples: 0,
+    }
+    const first = render(<UsageInsightsSection {...props(async () => omittedOnly)} />)
+    expect(await screen.findByRole('status')).toBeTruthy()
+    first.unmount()
+
+    const incompleteOnly = {
+      ...SNAPSHOT,
+      omittedSessions: 0,
+    }
+    render(<UsageInsightsSection {...props(async () => incompleteOnly)} />)
+    expect(await screen.findByRole('status')).toBeTruthy()
   })
 })

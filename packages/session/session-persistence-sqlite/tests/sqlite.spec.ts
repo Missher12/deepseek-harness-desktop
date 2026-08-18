@@ -1,5 +1,5 @@
 import { createUserMessage, createMessage } from '@deepseek-ai/dsh-llm'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { existsSync } from 'node:fs'
 import { chmod, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises'
@@ -675,6 +675,24 @@ describe('SqliteSessionPersistence: durability and crash semantics', () => {
 })
 
 describe('SqliteSessionPersistence: edge cases', () => {
+  it('rolls back and rethrows when a durable delete statement fails', async () => {
+    const b = await backend()
+    const persistence = b.ctx.sessionPersistence as SqliteSessionPersistence
+    const db = (persistence as unknown as { db: DatabaseSync }).db
+    const prepare = vi.spyOn(db, 'prepare').mockImplementationOnce(() => {
+      throw new Error('scripted delete failure')
+    })
+
+    await expect(persistence.deleteStored(SessionId('delete-failure')))
+      .rejects.toThrow(/scripted delete failure/)
+    expect(() => {
+      db.exec('BEGIN')
+    }).not.toThrow()
+    db.exec('ROLLBACK')
+    prepare.mockRestore()
+    await b.dispose()
+  })
+
   it('resolves the preparation-cache default without schema normalization', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

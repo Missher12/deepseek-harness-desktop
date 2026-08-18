@@ -110,12 +110,12 @@ function validateArgs(args: readonly string[]): string[] {
 /**
  * Resolve pnpm's JavaScript bin without trusting PATH or a renderer value.
  *
+ * @param manifestPath - Resolved pnpm manifest path; injectable for isolated validation tests.
  * @returns Absolute JavaScript entry path for the packaged pnpm binary.
  */
-export function resolvePackagedPnpmEntry(): string {
+export function resolvePackagedPnpmEntry(manifestPath = require.resolve('pnpm')): string {
   // pnpm exports its manifest as the package root (`pnpm`), while deliberately
   // rejecting the `pnpm/package.json` subpath. Resolve only the supported root.
-  const manifestPath = require.resolve('pnpm')
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
     bin?: string | Record<string, string>
   }

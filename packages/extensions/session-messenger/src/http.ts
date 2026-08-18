@@ -103,6 +103,7 @@ export function createSessionMessengerCapability(): string {
   return randomBytes(32).toString('base64url')
 }
 
+/* jscpd:ignore-start -- removable plugins intentionally own independent HTTP security fences. */
 /** Read a singleton Node header without accepting ambiguous duplicates. */
 function header(headers: IncomingHttpHeaders, name: string): string | undefined {
   const value = headers[name]
@@ -181,6 +182,27 @@ async function boundedBody(
     chunks.push(buffer)
   }
   return Buffer.concat(chunks)
+}
+/* jscpd:ignore-end */
+
+/** Validate JSON media type, body bound, and exact parser through one response path. */
+async function parsedJsonBody<T>(
+  req: IncomingMessage,
+  res: ServerResponse,
+  maximum: number,
+  parse: (raw: Buffer) => T | undefined,
+  invalidMessage: string,
+): Promise<T | undefined> {
+  const mediaType = header(req.headers, 'content-type')?.split(';', 1)[0]?.trim().toLowerCase()
+  if (mediaType !== 'application/json') {
+    text(res, 415, 'content type must be application/json')
+    return undefined
+  }
+  const raw = await boundedBody(req, res, maximum)
+  if (raw === undefined) return undefined
+  const body = parse(raw)
+  if (body === undefined) text(res, 400, invalidMessage)
+  return body
 }
 
 function isExactRecord(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
@@ -324,18 +346,14 @@ export function createSessionMessengerHttpSurface(
     path: ACK_PATH,
     async handler(req, res) {
       if (!preflight(req, res)) return
-      const mediaType = header(req.headers, 'content-type')?.split(';', 1)[0]?.trim().toLowerCase()
-      if (mediaType !== 'application/json') {
-        text(res, 415, 'content type must be application/json')
-        return
-      }
-      const raw = await boundedBody(req, res, MAX_ACK_BODY_BYTES)
-      if (raw === undefined) return
-      const body = parseAckBody(raw)
-      if (body === undefined) {
-        text(res, 400, 'invalid acknowledgement')
-        return
-      }
+      const body = await parsedJsonBody(
+        req,
+        res,
+        MAX_ACK_BODY_BYTES,
+        parseAckBody,
+        'invalid acknowledgement',
+      )
+      if (body === undefined) return
       json(res, 200, { acknowledged: hub.acknowledge(body.sessionId, body.deliveryIds) })
     },
   }
@@ -349,18 +367,14 @@ export function createSessionMessengerHttpSurface(
     path,
     async handler(req, res) {
       if (!preflight(req, res)) return
-      const mediaType = header(req.headers, 'content-type')?.split(';', 1)[0]?.trim().toLowerCase()
-      if (mediaType !== 'application/json') {
-        text(res, 415, 'content type must be application/json')
-        return
-      }
-      const raw = await boundedBody(req, res, MAX_OPERATOR_BODY_BYTES)
-      if (raw === undefined) return
-      const body = parse(raw)
-      if (body === undefined) {
-        text(res, 400, 'invalid operator request')
-        return
-      }
+      const body = await parsedJsonBody(
+        req,
+        res,
+        MAX_OPERATOR_BODY_BYTES,
+        parse,
+        'invalid operator request',
+      )
+      if (body === undefined) return
       if (options.operator === undefined) {
         text(res, 503, 'unavailable')
         return

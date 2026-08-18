@@ -26,6 +26,7 @@ declare module '@deepseek-ai/cordis' {
 
 /** Optional deterministic date-zone override; production follows the system zone. */
 export interface Config {
+  /** IANA zone used for calendar aggregation; defaults to the system zone. */
   timeZone?: string
 }
 
@@ -119,9 +120,8 @@ export class UsageInsightsGateway extends TypertRemoteService {
     if (this.refreshInFlight !== undefined) return this.refreshInFlight
     const refresh = this.refresh()
     this.refreshInFlight = refresh
-    void refresh.finally(() => {
-      if (this.refreshInFlight === refresh) this.refreshInFlight = undefined
-    }).catch(() => {})
+    const clearRefresh = (): void => { this.refreshInFlight = undefined }
+    void refresh.then(clearRefresh, clearRefresh)
     return refresh
   }
 

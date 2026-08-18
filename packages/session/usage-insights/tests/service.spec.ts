@@ -45,7 +45,11 @@ function stored(id: string, revision: string, events: SessionEvent[]): StoredLog
   }
 }
 
-async function harness(initial: StoredLog[], pool = new MemoryMediaPool()) {
+async function harness(
+  initial: StoredLog[],
+  pool = new MemoryMediaPool(),
+  config: { timeZone?: string } = { timeZone: 'UTC' },
+) {
   const logs = new Map(initial.map(log => [String(log.header.id), log]))
   const persistence = {
     listSnapshots: vi.fn(async () => [...logs.values()].map(log => ({
@@ -67,7 +71,7 @@ async function harness(initial: StoredLog[], pool = new MemoryMediaPool()) {
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
   ctx.provide('sessionPersistence', persistence as never)
-  await ctx.plugin(UsageInsightsGateway, { timeZone: 'UTC' })
+  await ctx.plugin(UsageInsightsGateway, config)
   const gateway = ctx.get('usageInsights') as UsageInsightsGateway
   return { ctx, gateway, logs, persistence, pool }
 }
@@ -145,5 +149,36 @@ describe('UsageInsightsGateway', () => {
     expect(persistence.inspect).toHaveBeenCalledTimes(1)
     const rebuilt = pool.media.get('usage_insights')?.tables.get('sessions')?.get('one')
     expect(rebuilt).not.toHaveProperty('secretPrompt')
+  })
+
+  it('uses the system zone by default and clears a rejected refresh for retry', async () => {
+    const systemZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    const { gateway } = await harness([], new MemoryMediaPool(), {})
+    expect((await gateway.snapshot()).timeZone).toBe(systemZone)
+
+    const invalid = await harness([], new MemoryMediaPool(), { timeZone: 'Not/A-Time-Zone' })
+    await expect(invalid.gateway.snapshot()).rejects.toThrow()
+    await expect(invalid.gateway.snapshot()).rejects.toThrow()
+    expect(invalid.persistence.listSnapshots).not.toHaveBeenCalled()
+  })
+
+  it('keeps snapshots available when cache writes and stale deletes fail', async () => {
+    const firstLog = stored('one', 'r1', [userEvent(0, '2026-08-17T12:00:00.000Z')])
+    const fixture = await harness([firstLog])
+    const table = (fixture.gateway as unknown as {
+      table: { put: (id: SessionId, value: unknown) => Promise<void>; delete: (id: SessionId) => Promise<void> }
+    }).table
+    const put = vi.spyOn(table, 'put').mockRejectedValueOnce(new Error('cache unavailable'))
+
+    expect((await fixture.gateway.snapshot()).sessionCount).toBe(1)
+    expect(put).toHaveBeenCalled()
+
+    put.mockRestore()
+    await fixture.gateway.snapshot()
+    fixture.logs.delete('one')
+    const remove = vi.spyOn(table, 'delete').mockRejectedValueOnce(new Error('delete unavailable'))
+
+    expect((await fixture.gateway.snapshot()).sessionCount).toBe(0)
+    expect(remove).toHaveBeenCalledWith('one')
   })
 })

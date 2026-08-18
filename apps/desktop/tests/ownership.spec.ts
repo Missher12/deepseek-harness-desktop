@@ -8,6 +8,7 @@ import {
 describe('findConflictingHarness', () => {
   it('reports another dsh web process holding a file below the same DSH_HOME', async () => {
     const conflict = await findConflictingHarness('/Users/test/.dsh', {
+      platform: 'darwin',
       listProcesses: async () => [
         { pid: 91, command: 'node /cache/node_modules/.bin/dsh web --port 65000' },
       ],
@@ -21,6 +22,7 @@ describe('findConflictingHarness', () => {
 
   it('ignores unrelated commands, its own PID, and a separate Harness home', async () => {
     const conflict = await findConflictingHarness('/Users/test/.dsh', {
+      platform: 'darwin',
       listProcesses: async () => [
         { pid: 10, command: 'dsh web' },
         { pid: 91, command: 'node server.js' },

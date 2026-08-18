@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   desktopStagePnpmInvocation,
@@ -18,9 +18,11 @@ const VALID_DESKTOP_PATCH = `
     - id: dsh-market
       name: 'dshmarket'
 `
-const DEFAULT_NATIVE_BINARIES = ['/repo/apps/desktop/.stage/node_modules/node-pty/prebuilds/darwin-x64/pty.node'] as const
+const REPO_ROOT = resolve('/repo')
+const DEFAULT_STAGE = join(REPO_ROOT, 'apps/desktop/.stage')
+const DEFAULT_NATIVE_BINARIES = [join(DEFAULT_STAGE, 'node_modules/node-pty/prebuilds/darwin-x64/pty.node')] as const
 const DEFAULT_MARKET_PACKAGE_DIRECTORIES = [
-  '/repo/apps/desktop/.stage/node_modules/.pnpm/dshmarket/node_modules/dshmarket',
+  join(DEFAULT_STAGE, 'node_modules/.pnpm/dshmarket/node_modules/dshmarket'),
 ] as const
 
 function fakeDependencies(
@@ -68,11 +70,12 @@ function fakeDependencies(
     },
     readText: async (path) => {
       read.push(path)
-      if (path.endsWith('apps/desktop/desktop.cordis.patch.yml')) {
+      const portablePath = path.replaceAll('\\', '/')
+      if (portablePath.endsWith('apps/desktop/desktop.cordis.patch.yml')) {
         events.push(`read:${path}`)
         return desktopPatch
       }
-      const entry = Object.entries(semanticFiles).find(([suffix]) => path.endsWith(suffix))
+      const entry = Object.entries(semanticFiles).find(([suffix]) => portablePath.endsWith(suffix))
       if (entry === undefined) throw new Error(`Unexpected semantic read: ${path}`)
       return entry[1]
     },
@@ -100,18 +103,18 @@ describe('stageDesktop', () => {
   it('deploys production dependencies and validates the complete app closure', async () => {
     const dependencies = fakeDependencies()
 
-    const result = await stageDesktop('/repo', dependencies)
+    const result = await stageDesktop(REPO_ROOT, dependencies)
 
     expect(dependencies.commands).toEqual([
-      ['pnpm', ['--filter', '@deepseek-ai/dsh-desktop', 'deploy', '--legacy', '/repo/apps/desktop/.stage']],
+      ['pnpm', ['--filter', '@deepseek-ai/dsh-desktop', 'deploy', '--legacy', DEFAULT_STAGE]],
     ])
     expect(dependencies.copies).toEqual([
-      ['/repo/apps/desktop/lib', '/repo/apps/desktop/.stage/lib'],
-      ['/repo/apps/desktop/renderer', '/repo/apps/desktop/.stage/renderer'],
-      ['/repo/apps/desktop/assets', '/repo/apps/desktop/.stage/assets'],
-      ['/repo/apps/desktop/electron-builder.yml', '/repo/apps/desktop/.stage/electron-builder.yml'],
-      ['/repo/apps/desktop/desktop.cordis.patch.yml', '/repo/apps/desktop/.stage/desktop.cordis.patch.yml'],
-      ['/repo/THIRD_PARTY_NOTICES.md', '/repo/apps/desktop/.stage/THIRD_PARTY_NOTICES.md'],
+      [join(REPO_ROOT, 'apps/desktop/lib'), join(DEFAULT_STAGE, 'lib')],
+      [join(REPO_ROOT, 'apps/desktop/renderer'), join(DEFAULT_STAGE, 'renderer')],
+      [join(REPO_ROOT, 'apps/desktop/assets'), join(DEFAULT_STAGE, 'assets')],
+      [join(REPO_ROOT, 'apps/desktop/electron-builder.yml'), join(DEFAULT_STAGE, 'electron-builder.yml')],
+      [join(REPO_ROOT, 'apps/desktop/desktop.cordis.patch.yml'), join(DEFAULT_STAGE, 'desktop.cordis.patch.yml')],
+      [join(REPO_ROOT, 'THIRD_PARTY_NOTICES.md'), join(DEFAULT_STAGE, 'THIRD_PARTY_NOTICES.md')],
     ])
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh/lib/bin.js')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html')
@@ -146,11 +149,11 @@ describe('stageDesktop', () => {
   it('preflights the canonical messenger row before deleting or deploying', async () => {
     const dependencies = fakeDependencies()
 
-    await stageDesktop('/repo', dependencies)
+    await stageDesktop(REPO_ROOT, dependencies)
 
     expect(dependencies.events.slice(0, 3)).toEqual([
-      'read:/repo/apps/desktop/desktop.cordis.patch.yml',
-      'remove:/repo/apps/desktop/.stage',
+      `read:${join(REPO_ROOT, 'apps/desktop/desktop.cordis.patch.yml')}`,
+      `remove:${DEFAULT_STAGE}`,
       'run:pnpm',
     ])
   })
@@ -168,7 +171,7 @@ describe('stageDesktop', () => {
       '',
     ].join('\n'))
 
-    await expect(stageDesktop('/repo', dependencies)).rejects.toThrow(/exactly one canonical session-messenger row/i)
+    await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(/exactly one canonical session-messenger row/i)
     expect(dependencies.removed).toEqual([])
     expect(dependencies.commands).toEqual([])
   })
@@ -185,14 +188,14 @@ describe('stageDesktop', () => {
       '',
     ].join('\n'))
 
-    await expect(stageDesktop('/repo', dependencies)).rejects.toThrow(/exactly one canonical session-messenger row/i)
+    await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(/exactly one canonical session-messenger row/i)
     expect(dependencies.removed).toEqual([])
     expect(dependencies.commands).toEqual([])
   })
 
   it('fails closed when a required file or native module is absent', async () => {
-    await expect(stageDesktop('/repo', fakeDependencies(false))).rejects.toThrow(/missing required file/i)
-    await expect(stageDesktop('/repo', fakeDependencies(true, []))).rejects.toThrow(/native.*\.node/i)
+    await expect(stageDesktop(REPO_ROOT, fakeDependencies(false))).rejects.toThrow(/missing required file/i)
+    await expect(stageDesktop(REPO_ROOT, fakeDependencies(true, []))).rejects.toThrow(/native.*\.node/i)
   })
 
   it('fails closed when either reasoning-effort runtime half or attributed asset is absent', async () => {
@@ -204,8 +207,8 @@ describe('stageDesktop', () => {
       'node_modules/@deepseek-ai/dsh-reasoning-effort/lib/assets/chibi-runner-strip.png',
     ]) {
       const dependencies = fakeDependencies()
-      dependencies.isFile = async path => !path.endsWith(missing)
-      await expect(stageDesktop('/repo', dependencies)).rejects.toThrow(`missing required file: ${missing}`)
+      dependencies.isFile = async path => !path.replaceAll('\\', '/').endsWith(missing)
+      await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(`missing required file: ${missing}`)
     }
   })
 
@@ -221,48 +224,48 @@ describe('stageDesktop', () => {
 
     const dependencies = fakeDependencies()
     dependencies.readText = async () => duplicate
-    await expect(stageDesktop('/repo', dependencies)).rejects.toThrow(/exactly one.*reasoning-effort/i)
+    await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(/exactly one.*reasoning-effort/i)
     expect(dependencies.removed).toEqual([])
     expect(dependencies.commands).toEqual([])
   })
 
   it('fails closed when the staged market is unpatched, incoherent, or duplicated', async () => {
-    await expect(stageDesktop('/repo', fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {
+    await expect(stageDesktop(REPO_ROOT, fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {
       'node_modules/dshmarket/package.json': JSON.stringify({ name: 'dshmarket', version: '1.10.0' }),
     }))).rejects.toThrow(/dshmarket@1\.10\.1/i)
-    await expect(stageDesktop('/repo', fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {
+    await expect(stageDesktop(REPO_ROOT, fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {
       'node_modules/dshmarket/client/client.js': 'unpatched client bundle',
     }))).rejects.toThrow(/compact.*client/i)
-    await expect(stageDesktop('/repo', fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {
+    await expect(stageDesktop(REPO_ROOT, fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {
       'node_modules/dshmarket/client/client.js.map': 'stale source map',
     }))).rejects.toThrow(/compact.*source map/i)
-    await expect(stageDesktop('/repo', fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {
+    await expect(stageDesktop(REPO_ROOT, fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {
       'node_modules/dshmarket/lib/routes.js': 'unprotected host bundle',
     }))).rejects.toThrow(/self-protection/i)
-    await expect(stageDesktop('/repo', fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {}, [
-      '/repo/apps/desktop/.stage/node_modules/.pnpm/one/node_modules/dshmarket',
-      '/repo/apps/desktop/.stage/node_modules/.pnpm/two/node_modules/dshmarket',
+    await expect(stageDesktop(REPO_ROOT, fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {}, [
+      join(DEFAULT_STAGE, 'node_modules/.pnpm/one/node_modules/dshmarket'),
+      join(DEFAULT_STAGE, 'node_modules/.pnpm/two/node_modules/dshmarket'),
     ]))).rejects.toThrow(/exactly one dshmarket/i)
   })
 
   it('removes only the exact desktop stage directory', async () => {
     const dependencies = fakeDependencies()
-    await stageDesktop('/repo', dependencies)
+    await stageDesktop(REPO_ROOT, dependencies)
 
-    expect(dependencies.removed).toEqual([join('/repo', 'apps/desktop/.stage')])
+    expect(dependencies.removed).toEqual([DEFAULT_STAGE])
   })
 
   it('allows only a dedicated external short stage directory', async () => {
-    const externalStage = '/runner-temp/dsh-desktop-stage'
+    const externalStage = resolve('/runner-temp/dsh-desktop-stage')
     const dependencies = fakeDependencies(true, [
-      `${externalStage}/node_modules/node-pty/prebuilds/win32-x64/pty.node`,
+      join(externalStage, 'node_modules/node-pty/prebuilds/win32-x64/pty.node'),
     ])
 
-    const result = await stageDesktop('/repo', dependencies, externalStage)
+    const result = await stageDesktop(REPO_ROOT, dependencies, externalStage)
 
     expect(dependencies.removed).toEqual([externalStage])
     expect(dependencies.commands[0]?.[1]).toContain(externalStage)
     expect(result.stageDir).toBe(externalStage)
-    await expect(stageDesktop('/repo', fakeDependencies(), '/runner-temp/other')).rejects.toThrow(/unexpected deletion target/i)
+    await expect(stageDesktop(REPO_ROOT, fakeDependencies(), resolve('/runner-temp/other'))).rejects.toThrow(/unexpected deletion target/i)
   })
 })

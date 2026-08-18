@@ -41,7 +41,13 @@ async function pathIsFile(path: string): Promise<boolean> {
   }
 }
 
-async function findNativeBinaries(root: string): Promise<string[]> {
+type WalkDecision = 'collect' | 'descend' | 'skip'
+
+/** Traverse one tree with explicit collection and descent decisions. */
+async function findTreePaths(
+  root: string,
+  classify: (path: string, name: string, isDirectory: boolean) => Promise<WalkDecision> | WalkDecision,
+): Promise<string[]> {
   const found: string[] = []
   const pending = [root]
   while (pending.length > 0) {
@@ -56,37 +62,27 @@ async function findNativeBinaries(root: string): Promise<string[]> {
     }
     for (const entry of entries) {
       const path = join(directory, entry.name)
-      if (entry.isDirectory()) pending.push(path)
-      else if (entry.isFile() && entry.name.endsWith('.node')) found.push(path)
+      const decision = await classify(path, entry.name, entry.isDirectory())
+      if (decision === 'collect') found.push(path)
+      else if (decision === 'descend' && entry.isDirectory()) pending.push(path)
     }
   }
   return found.sort()
 }
 
+async function findNativeBinaries(root: string): Promise<string[]> {
+  return findTreePaths(root, (_path, name, isDirectory) => {
+    if (isDirectory) return 'descend'
+    return name.endsWith('.node') ? 'collect' : 'skip'
+  })
+}
+
 async function findPackageDirectories(root: string, packageDirectoryName: string): Promise<string[]> {
-  const found: string[] = []
-  const pending = [root]
-  while (pending.length > 0) {
-    const directory = pending.pop()
-    if (directory === undefined) break
-    let entries
-    try {
-      entries = await readdir(directory, { withFileTypes: true })
-    } catch (error) {
-      if (isMissing(error)) continue
-      throw error
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue
-      const path = join(directory, entry.name)
-      if (entry.name === packageDirectoryName && await pathIsFile(join(path, 'package.json'))) {
-        found.push(path)
-        continue
-      }
-      pending.push(path)
-    }
-  }
-  return found.sort()
+  return findTreePaths(root, async (path, name, isDirectory) => {
+    if (!isDirectory) return 'skip'
+    if (name === packageDirectoryName && await pathIsFile(join(path, 'package.json'))) return 'collect'
+    return 'descend'
+  })
 }
 
 function run(command: string, args: readonly string[], cwd: string): void {

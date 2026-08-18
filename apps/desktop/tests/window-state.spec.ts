@@ -35,7 +35,9 @@ describe('window state persistence', () => {
     await writeWindowBounds(filename, bounds)
 
     expect(JSON.parse(await readFile(filename, 'utf8'))).toEqual(bounds)
-    expect((await stat(filename)).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') {
+      expect((await stat(filename)).mode & 0o777).toBe(0o600)
+    }
     await expect(readWindowBounds(filename, displays)).resolves.toEqual(bounds)
   })
 

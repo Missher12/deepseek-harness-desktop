@@ -214,4 +214,116 @@ describe('foldSessionUsage', () => {
       toolCalls: 0,
     }])
   })
+
+  it('rejects malformed usage and unsafe aggregate totals without retaining payloads', () => {
+    const malformed = (seq: number, turn: number, usage: unknown): SessionEvent => event(
+      seq,
+      '2026-03-01T12:00:00.000Z',
+      'assistant/message',
+      {
+        turn,
+        step: 0,
+        usage,
+        message: {
+          id: `malformed-${turn}`,
+          role: 'assistant',
+          source: { kind: 'model', provider: 'deepseek', model: 'deepseek-chat' },
+          content: [],
+        },
+      } as never,
+    )
+    const events = [
+      malformed(0, 0, null),
+      malformed(1, 1, 5),
+      malformed(2, 2, { inputTokens: Number.MAX_SAFE_INTEGER, outputTokens: 1 }),
+      malformed(3, 3, { inputTokens: Number.MAX_SAFE_INTEGER, outputTokens: 0 }),
+      malformed(4, 4, { inputTokens: 0, outputTokens: 1 }),
+    ]
+
+    const row = foldSessionUsage(header(), events, 'UTC')
+
+    expect(row.totalTokens).toBe(Number.MAX_SAFE_INTEGER)
+    expect(row.validUsageSamples).toBe(1)
+    expect(row.incompleteUsageSamples).toBe(4)
+    expect(row.daily[0]?.tokens).toBe(Number.MAX_SAFE_INTEGER)
+  })
+
+  it('ignores empty names, malformed skill arguments, and incomplete turn pairs', () => {
+    const events = [
+      event(0, '2026-03-01T10:00:00.000Z', 'user/message', {
+        id: 'empty-skill',
+        role: 'user',
+        source: { kind: 'skill-invocation', name: '', form: 'instructions' },
+        content: [],
+      } as never),
+      ...['null', '5', '{"name":""}', '{"name":5}'].map((argumentsJson, index) => event(
+        index + 1,
+        '2026-03-01T10:00:01.000Z',
+        'tool/call',
+        { turn: 1, step: index, callId: `call-${index}`, name: 'skill', arguments: argumentsJson } as never,
+      )),
+      event(5, '2026-03-01T10:00:02.000Z', 'tool/call', {
+        turn: 1, step: 5, callId: 'empty-tool', name: '', arguments: '{}',
+      } as never),
+      event(6, '2026-03-01T10:00:03.000Z', 'turn/end', { turn: 7, reason: { kind: 'completed' } }),
+      event(7, '2026-03-01T10:00:05.000Z', 'turn/start', { turn: 8 }),
+      event(8, '2026-03-01T10:00:04.000Z', 'turn/end', { turn: 8, reason: { kind: 'completed' } }),
+      event(9, '2026-03-01T10:00:06.000Z', 'assistant/message', {
+        turn: 9,
+        step: 0,
+        message: {
+          id: 'assistant-no-usage',
+          role: 'assistant',
+          source: { kind: 'model', provider: 'deepseek', model: 'deepseek-chat' },
+          content: [],
+        },
+      } as never),
+      event(10, '2026-03-01T10:00:07.000Z', 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high' } },
+      } as never),
+      event(11, '2026-03-01T10:00:08.000Z', 'assistant/message', {
+        turn: 10,
+        step: 0,
+        message: {
+          id: 'assistant-routed-no-usage',
+          role: 'assistant',
+          source: { kind: 'model', provider: 'deepseek', model: 'deepseek-chat' },
+          content: [],
+        },
+      } as never),
+    ]
+
+    const row = foldSessionUsage(header(), events, 'UTC')
+
+    expect(row.skills).toEqual({})
+    expect(row.tools).toEqual({ skill: 4 })
+    expect(row.completedTurnCount).toBe(0)
+    expect(row.models).toEqual({ 'deepseek/deepseek-chat': 1 })
+    expect(row.reasoningEfforts).toEqual({ high: 1 })
+  })
+
+  it('handles an empty durable event suffix', () => {
+    const row = foldSessionUsage(header(), [], 'UTC')
+
+    expect(row.lastSeq).toBe(-1)
+    expect(row.daily).toEqual([])
+    expect(row.totalTokens).toBe(0)
+  })
+
+  it('does not publish a completed duration after safe-integer overflow', () => {
+    const firstStart = { ...event(0, '2026-03-01T00:00:00.000Z', 'turn/start', { turn: 1 }), time: -4_000_000_000_000_000 }
+    const firstEnd = { ...event(1, '2026-03-01T00:00:00.000Z', 'turn/end', {
+      turn: 1, reason: { kind: 'completed' },
+    }), time: 4_000_000_000_000_000 }
+    const secondStart = { ...event(2, '2026-03-01T00:00:00.000Z', 'turn/start', { turn: 2 }), time: -4_000_000_000_000_000 }
+    const secondEnd = { ...event(3, '2026-03-01T00:00:00.000Z', 'turn/end', {
+      turn: 2, reason: { kind: 'completed' },
+    }), time: 4_000_000_000_000_000 }
+
+    const row = foldSessionUsage(header(), [firstStart, firstEnd, secondStart, secondEnd], 'UTC')
+
+    expect(row.completedTurnDurationMs).toBe(8_000_000_000_000_000)
+    expect(row.completedTurnCount).toBe(1)
+  })
 })
