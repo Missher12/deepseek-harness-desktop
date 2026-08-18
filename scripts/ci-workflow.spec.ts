@@ -76,8 +76,14 @@ describe('CI workflow', () => {
     const nativeCommandSteps = (windowsNative.steps as unknown[]).filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
+    const nativeBuild = nativeCommandSteps.find(step => step.name === 'Build the one-click Windows desktop Setup')
+    if (nativeBuild === undefined) throw new TypeError('windows-native must define the Setup build command')
     expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
-    expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run desktop:setup:built')
+    expect(nativeBuild.run).toContain("$env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'")
+    expect(nativeBuild.run).toContain('pnpm run desktop:stage:built')
+    expect(nativeBuild.run).toContain('electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"')
+    expect(nativeBuild.run).toContain('Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact')
+    expect(nativeBuild.run).not.toContain('pnpm run desktop:setup:built')
     expect(nativeCommandSteps.some(step => step.run.includes('windows-desktop-setup-smoke.ps1'))).toBe(true)
     expect(nativeCommandSteps.some(step => (
       step.run.includes('Get-FileHash') && step.run.includes('.sha256')
@@ -103,7 +109,13 @@ describe('CI workflow', () => {
     const serialWindowsCommands = serialWindows.steps.filter(
       (step): step is Record<string, unknown> & { run: string } => isRecord(step) && typeof step.run === 'string',
     )
-    expect(serialWindowsCommands.map(step => step.run)).toContain('pnpm run desktop:setup:built')
+    const serialWindowsBuild = serialWindowsCommands.find(step => step.name === 'Build the one-click Windows desktop Setup')
+    if (serialWindowsBuild === undefined) throw new TypeError('serial-windows must define the Setup build command')
+    expect(serialWindowsBuild.run).toContain("$env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'")
+    expect(serialWindowsBuild.run).toContain('pnpm run desktop:stage:built')
+    expect(serialWindowsBuild.run).toContain('electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"')
+    expect(serialWindowsBuild.run).toContain('Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact')
+    expect(serialWindowsBuild.run).not.toContain('pnpm run desktop:setup:built')
     expect(serialWindowsCommands.some(step => step.run.includes('windows-desktop-setup-smoke.ps1'))).toBe(true)
 
     // Aggregate: Wine `windows` required, native `windows-native` excluded.

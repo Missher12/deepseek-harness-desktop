@@ -491,7 +491,14 @@ jobs:
 
       - name: Build the one-click Windows desktop Setup
         shell: pwsh
-        run: pnpm run desktop:setup:built
+        run: |
+          $env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'
+          pnpm run desktop:stage:built
+          pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR" --config "$env:DSH_DESKTOP_STAGE_DIR\electron-builder.yml" --win nsis --x64
+          $builtArtifact = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) 'release\DeepSeek-Harness-Setup-0.1.8-win-x64.exe'
+          $workspaceArtifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.8-win-x64.exe'
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $workspaceArtifact) | Out-Null
+          Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact
 
       - name: Smoke the installed Windows desktop lifecycle
         shell: pwsh
@@ -725,7 +732,14 @@ jobs:
 
       - name: Build the one-click Windows desktop Setup
         shell: pwsh
-        run: pnpm run desktop:setup:built
+        run: |
+          $env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'
+          pnpm run desktop:stage:built
+          pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR" --config "$env:DSH_DESKTOP_STAGE_DIR\electron-builder.yml" --win nsis --x64
+          $builtArtifact = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) 'release\DeepSeek-Harness-Setup-0.1.8-win-x64.exe'
+          $workspaceArtifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.8-win-x64.exe'
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $workspaceArtifact) | Out-Null
+          Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact
 
       - name: Smoke the installed Windows desktop lifecycle
         shell: pwsh

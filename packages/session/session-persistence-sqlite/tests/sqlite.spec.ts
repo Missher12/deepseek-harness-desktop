@@ -685,7 +685,9 @@ describe('SqliteSessionPersistence: edge cases', () => {
 
     await expect(persistence.deleteStored(SessionId('delete-failure')))
       .rejects.toThrow(/scripted delete failure/)
-    expect(() => db.exec('BEGIN')).not.toThrow()
+    expect(() => {
+      db.exec('BEGIN')
+    }).not.toThrow()
     db.exec('ROLLBACK')
     prepare.mockRestore()
     await b.dispose()
