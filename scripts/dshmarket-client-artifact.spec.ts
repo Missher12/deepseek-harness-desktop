@@ -28,6 +28,8 @@ describe('patched dshmarket artifacts', () => {
       expect(artifact).toContain('data-dshmarket-layout')
       expect(artifact).toContain('data-dshmarket-plugin-row')
       expect(artifact).toContain('data-dshmarket-tab')
+      expect(artifact).toContain('data-scroll-right')
+      expect(artifact).toContain('categoriesNext')
     }
   })
 
@@ -53,7 +55,7 @@ describe('patched dshmarket artifacts', () => {
 
   it('retains the exact npm integrity while applying a locked pnpm patch hash', () => {
     const lockfile = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8')
-    expect(lockfile).toContain('dshmarket@1.10.1: 489b495b7f36dfc15189dafd3f4e12df642c85d8ae100d5cf9b14a28f0f4d642')
+    expect(lockfile).toContain('dshmarket@1.10.1: 7b5cebf67ea81336536fb3a562ef0fd945faf13bf89c59dcb0cc5e6a7954b01c')
     expect(lockfile).toContain('integrity: sha512-8AWM8RT2tttJsozTBm6mAfI+cNpCIbeBdP9IoydJdHlH/+x72aNqmv3AWdbNfKDDwkkqM2Ce/XRDhha9HG0Q5Q==')
   })
 })

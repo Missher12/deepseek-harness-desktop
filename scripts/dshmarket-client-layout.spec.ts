@@ -28,8 +28,28 @@ describe('Harness-native dshmarket presentation', () => {
     expect(css).toMatch(/\.marketToolbar\{[^}]*position:sticky/)
     expect(css).toMatch(/\.catsWrap\{[^}]*flex-wrap:nowrap[^}]*overflow-x:auto/)
     expect(css).toMatch(/\.catsWrap>\*\{[^}]*flex:0 0 auto[^}]*white-space:nowrap/)
+    expect(source).toContain('disabled={!categoryEdges.left}')
+    expect(source).toContain('disabled={!categoryEdges.right}')
+    expect(source).toContain('scrollIntoView({')
+    expect(source).toMatch(/inline: 'nearest'/)
+    expect(source).toMatch(/matchMedia\('\(prefers-reduced-motion: reduce\)'\)/)
+    expect(css).toContain('.catsViewport[data-scroll-left="true"]::before')
+    expect(css).toMatch(/@media \(prefers-reduced-motion:reduce\)/)
     expect(css).toMatch(/\.tabSearch\{[^}]*width:100%/)
     expect(css).toContain('var(--dsw-')
+  })
+
+  it('keeps every registry category in stable order when selection changes', async () => {
+    const marketDataUrl = pathToFileURL(join(packageRoot, 'src/client/market-data.ts')).href
+    const marketData = await import(marketDataUrl) as Record<string, unknown>
+    const orderedCategories = marketData.orderedCategories as (categories: readonly string[]) => string[]
+    const registryOrder = ['agents', 'tools', 'themes', 'memory']
+
+    const visible = orderedCategories(registryOrder)
+
+    expect(visible).toEqual(registryOrder)
+    expect(visible).not.toBe(registryOrder)
+    expect(source).toContain('orderedCategories(categories).map')
   })
 
   it('reflows crowded plugin actions from the market container width', () => {

@@ -9,7 +9,7 @@ overrides:
   '@deepseek-ai/schemastery': link:vendor/schemastery
 
 patchedDependencies:
-  dshmarket@1.10.1: 489b495b7f36dfc15189dafd3f4e12df642c85d8ae100d5cf9b14a28f0f4d642
+  dshmarket@1.10.1: 7b5cebf67ea81336536fb3a562ef0fd945faf13bf89c59dcb0cc5e6a7954b01c
   node-pty@1.1.0: 7a0c04f1f49d798a9ffe2f7f414c01064a44ca2489772d0c3e1235ab336755e6
 
 importers:
@@ -976,7 +976,7 @@ importers:
         version: link:../../vendor/schemastery
       dshmarket:
         specifier: 1.10.1
-        version: 1.10.1(patch_hash=489b495b7f36dfc15189dafd3f4e12df642c85d8ae100d5cf9b14a28f0f4d642)(@deepseek-ai/cordis@vendor+cordis)
+        version: 1.10.1(patch_hash=7b5cebf67ea81336536fb3a562ef0fd945faf13bf89c59dcb0cc5e6a7954b01c)(@deepseek-ai/cordis@vendor+cordis)
       pnpm:
         specifier: 11.7.0
         version: 11.7.0
@@ -19077,7 +19077,7 @@ snapshots:
 
   dotenv@16.6.1: {}
 
-  dshmarket@1.10.1(patch_hash=489b495b7f36dfc15189dafd3f4e12df642c85d8ae100d5cf9b14a28f0f4d642)(@deepseek-ai/cordis@vendor+cordis):
+  dshmarket@1.10.1(patch_hash=7b5cebf67ea81336536fb3a562ef0fd945faf13bf89c59dcb0cc5e6a7954b01c)(@deepseek-ai/cordis@vendor+cordis):
     dependencies:
       '@deepseek-ai/cordis': link:vendor/cordis
 
