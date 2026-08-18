@@ -10,6 +10,7 @@ import * as packagedSmoke from './packaged-smoke.ts'
 const {
   descendantProcessTree,
   isCommandNoMatch,
+  isUsageTokenTooltip,
   parseWindowsProcessRows,
   seedWindowsClipboardSmokeState,
 } = packagedSmoke
@@ -39,6 +40,12 @@ describe('packaged desktop process inspection', () => {
     expect(isCommandNoMatch(Object.assign(new Error('no listener'), { code: 1 }))).toBe(true)
     expect(isCommandNoMatch(Object.assign(new Error('access denied'), { code: 5 }))).toBe(false)
     expect(isCommandNoMatch(new Error('missing exit code'))).toBe(false)
+  })
+
+  it('accepts the localized token tooltip word order used by the packaged UI', () => {
+    expect(isUsageTokenTooltip('August 18: 8K tokens used')).toBe(true)
+    expect(isUsageTokenTooltip('8月17日 使用了 9.8亿 个 Token')).toBe(true)
+    expect(isUsageTokenTooltip('August 18: 8K tokens')).toBe(false)
   })
 
   it('waits for selected-session restore writes to settle before taking the mutation baseline', async () => {

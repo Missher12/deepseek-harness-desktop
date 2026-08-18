@@ -103,6 +103,11 @@ const SEEDED_SESSION_USAGE = {
   cacheWriteTokens: 0,
 } as const
 
+/** Whether a visible Usage tooltip describes consumed tokens in either locale. */
+export function isUsageTokenTooltip(text: string): boolean {
+  return /(?:used.*tokens?|tokens?.*used|使用了.*Token)/iu.test(text)
+}
+
 function completeTurn(createdAt: number): SessionEvent[] {
   return [
     {
@@ -931,7 +936,7 @@ async function exerciseUsageInsights(
   expect(await activeDaily.getAttribute('data-display-tokens')).toBe(String(expectedDailyTokens))
   await activeDaily.hover()
   await usage.getByRole('tooltip').waitFor({ state: 'visible', timeout: 15_000 })
-  expect(await usage.getByRole('tooltip').innerText()).toMatch(/(?:used|使用了).*(?:Token|tokens)/iu)
+  expect(isUsageTokenTooltip(await usage.getByRole('tooltip').innerText())).toBe(true)
 
   await usage.getByRole('tab', { name: /^(?:Weekly|每周)$/u }).click()
   const weeklyParticles = usage.locator('[data-particle-mode="weekly"]')
