@@ -760,13 +760,13 @@ describe('MessageItem arms', () => {
         kind: 'context', seq: 5, time: 1_000,
         content: [{ type: 'text', text: 'metadata' }, { type: 'text', text: 'fallback body' }],
         source,
-        provenance: { role: 'inject', label: String(source.plugin) },
+        provenance: { role: 'inject', label: source.plugin },
         form: 'relay',
       } as never}
       />,
     )
     expect(view.container.querySelector('[data-session-relay-card]')).toBeNull()
-    expect(view.getByRole('button', { name: new RegExp(`^上下文注入\\s*${String(source.plugin)}`) })).toBeTruthy()
+    expect(view.getByRole('button', { name: new RegExp(`^上下文注入\\s*${source.plugin}`) })).toBeTruthy()
   })
 
   it('a recall reports how much of each source session survived the read', () => {

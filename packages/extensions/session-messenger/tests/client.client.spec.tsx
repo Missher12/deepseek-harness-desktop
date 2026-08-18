@@ -16,8 +16,8 @@ import {
   apply,
   inject,
 } from '../src/client/index.tsx'
-import { MessengerDrawer } from '../src/client/MessengerDrawer.tsx'
-import { MessengerHeaderButton } from '../src/client/MessengerHeaderButton.tsx'
+import { MessengerDrawer, type MessengerDrawerProps } from '../src/client/MessengerDrawer.tsx'
+import { MessengerHeaderButton, type MessengerHeaderButtonProps } from '../src/client/MessengerHeaderButton.tsx'
 import { MessengerUiController } from '../src/client/MessengerUiController.ts'
 import { en } from '../src/client/locales.ts'
 import {
@@ -146,7 +146,7 @@ describe('session messenger Client registration', () => {
       },
       locale: { register: vi.fn(() => localeDispose) },
       slots: {
-        inject(name: string, register: () => (() => void) | undefined) {
+        inject(_name: string, register: () => (() => void) | undefined) {
           const dispose = register()
           if (typeof dispose === 'function') disposers.push(dispose)
         },
@@ -242,9 +242,14 @@ describe('Messenger header drawer', () => {
       acknowledge: vi.fn(async () => 0),
       t,
     }
+    const headerProps = { ...common, sessionId: CURRENT } as unknown as MessengerHeaderButtonProps
+    const drawerProps = {
+      ...common,
+      useSessions: useSessionsOf(sessionState()),
+    } as unknown as MessengerDrawerProps
     render(<>
-      <MessengerHeaderButton {...common as never} sessionId={CURRENT} />
-      <MessengerDrawer {...common as never} useSessions={useSessionsOf(sessionState())} />
+      <MessengerHeaderButton {...headerProps} />
+      <MessengerDrawer {...drawerProps} />
     </>)
 
     const trigger = screen.getByRole('button', { name: /Session messages/ })
@@ -271,22 +276,21 @@ describe('Messenger header drawer', () => {
       detail: { deliveryId: 'delivery-2', senderSessionId: 'sender-2' },
     }))
     const store = new MessengerStore({ snapshot: vi.fn(), events: vi.fn(), acknowledge: vi.fn(async () => 0) })
-    render(<MessengerDrawer
-      {...{
-        useMessenger: selectorHook(store),
-        useMessengerUi: selectorHook(controller),
-        useSessions: useSessionsOf(sessionState()),
-        selectSession: (id: SessionId) => { controller.selectSession(id) },
-        toggle: (id: SessionId) => { controller.toggle(id) },
-        close: () => { controller.close() },
-        setWidth: (width: number) => { controller.setWidth(width) },
-        clearReply: () => { controller.clearReply() },
-        send: vi.fn(),
-        reply: vi.fn(),
-        acknowledge: vi.fn(),
-        t,
-      } as never}
-    />)
+    const drawerProps = {
+      useMessenger: selectorHook(store),
+      useMessengerUi: selectorHook(controller),
+      useSessions: useSessionsOf(sessionState()),
+      selectSession: (id: SessionId) => { controller.selectSession(id) },
+      toggle: (id: SessionId) => { controller.toggle(id) },
+      close: () => { controller.close() },
+      setWidth: (width: number) => { controller.setWidth(width) },
+      clearReply: () => { controller.clearReply() },
+      send: vi.fn(),
+      reply: vi.fn(),
+      acknowledge: vi.fn(),
+      t,
+    } as unknown as MessengerDrawerProps
+    render(<MessengerDrawer {...drawerProps} />)
     expect(screen.getByRole('dialog', { name: 'Session messages' })).toBeTruthy()
     expect(screen.getByText('sender-2')).toBeTruthy()
     expect(screen.getByText('delivery-2')).toBeTruthy()
@@ -496,6 +500,9 @@ describe('session messenger streaming-fetch transport', () => {
       return response
     })
     const transport = createHttpMessengerTransport(window.__DSH_SESSION_MESSENGER__, fetcher)
+    if (transport.send === undefined || transport.reply === undefined) {
+      throw new Error('operator transport unavailable')
+    }
 
     const signal = new AbortController().signal
     expect(await transport.snapshot(signal)).toEqual(snapshot([], 7))

@@ -546,7 +546,14 @@ export class MessengerStore {
     return total
   }
 
-  /** Send from the currently displayed ordinary session through the Host authority boundary. */
+  /**
+   * Send from the currently displayed ordinary session through the Host authority boundary.
+   * @param sourceSessionId - displayed ordinary session authorizing the request.
+   * @param targetSessionId - exact copied ordinary target Session ID.
+   * @param message - operator-authored bounded message body.
+   * @param wake - whether the delivery should begin the target's next turn.
+   * @returns the durable delivery identity and immediate enqueue status.
+   */
   send(sourceSessionId: SessionId, targetSessionId: SessionId, message: string, wake: boolean): Promise<MessengerDeliveryResult> {
     if (this.transport.send === undefined) return Promise.reject(new Error('session messenger Host bridge is unavailable'))
     return this.trackOperator(this.transport.send(
@@ -554,7 +561,14 @@ export class MessengerStore {
     ))
   }
 
-  /** Reply once to a durable delivery without exposing its retained reply token. */
+  /**
+   * Reply once to a durable delivery without exposing its retained reply token.
+   * @param sourceSessionId - displayed ordinary session authorizing the reply.
+   * @param deliveryId - exact durable delivery identity being answered.
+   * @param message - operator-authored bounded reply body.
+   * @param wake - whether the reverse delivery should wake its target.
+   * @returns the reverse delivery identity and immediate enqueue status.
+   */
   reply(sourceSessionId: SessionId, deliveryId: string, message: string, wake: boolean): Promise<MessengerDeliveryResult> {
     if (this.transport.reply === undefined) return Promise.reject(new Error('session messenger Host bridge is unavailable'))
     return this.trackOperator(this.transport.reply(

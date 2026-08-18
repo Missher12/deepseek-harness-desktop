@@ -16,10 +16,13 @@ the host clipboard accepted the write.
 The removable `@deepseek-ai/dsh-session-messenger` plugin adds bounded,
 same-profile session communication. Native Function Calling and Code Mode can
 send without waking, queue a wake-up follow-up, reply through a single-use
-receipt token, or wait for the matching reply. The compact sidebar-footer
-panel reports pending and unread receipts, marks notifications read, and
-copies the current Session ID. It never creates automatic Agent-to-Agent
-loops, and received text remains untrusted content.
+Host-owned receipt, or wait for the matching reply. Received relays appear as
+visible conversation cards with source Session ID, delivery ID, body, copy,
+and reply actions. A Session-header trigger opens a remembered 320–560 px
+drawer for exact-ID copy, send/reply composition, pending/unread state, and
+metadata-only activity; it becomes full-width on narrow windows. It never
+creates automatic Agent-to-Agent loops, and received text remains untrusted
+content.
 
 The removable `@deepseek-ai/dsh-reasoning-effort` plugin replaces the plain
 effort rows with a keyboard-accessible slider that uses only values advertised
@@ -42,7 +45,9 @@ The market presentation uses a compact, single-column Harness list with
 40-pixel icons, two-line descriptions, a sticky search/category toolbar, and
 stable **Discover / Installed / Updates / Activity** tabs. Each discovery row
 keeps one primary action; details, source, and package-name copy live in its
-overflow menu. The active market package cannot disable, uninstall, or update
+overflow menu. Every registry category remains in source order on one
+horizontally scrollable rail; selection never reorders chips, and edge controls
+reflect the actual scroll bounds. The active market package cannot disable, uninstall, or update
 itself (`dshmarket` and `dsh-market` are both rejected before the package
 runner), while ordinary plugin operations retain the upstream route behavior.
 
@@ -106,6 +111,6 @@ For Windows, build the Setup on native Windows and run:
   -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.5-win-x64.exe
 ```
 
-The packaged smokes use an external temporary working directory, temporary Electron data, and temporary `DSH_HOME`. The Intel macOS smoke verifies the preload bridge, three-column workspace, exact ordinary and archived Session IDs in the real system clipboard without opening, restoring, deleting, sending, or starting an Agent, session-messenger notification/read/copy behavior, the down-first adaptive reasoning slider and persisted effort, visible Canvas output with the optional character off, compact Plugin Market tabs/search/categories/row geometry, protected self-update, a real ordinary isolated-profile uninstall, random listener, and complete process cleanup after native Quit. Desktop staging additionally requires exactly one `dshmarket@1.10.1`, coherent compact markers in its source, Client bundle, and source map, the Host self-protection marker, immutable Desktop patches, plugin-runtime providers, and packaged pnpm bin. The Windows smoke additionally proves silent install, shortcut creation, real clipboard copy, uninstall cleanup, and data preservation. Native Windows CI builds the Setup, runs this smoke, records SHA-256, and uploads both files.
+The packaged smokes use an external temporary working directory, temporary Electron data, and temporary `DSH_HOME`. The Intel macOS smoke verifies the preload bridge, three-column workspace, exact ordinary and archived Session IDs in the real system clipboard without opening, restoring, deleting, sending, or starting an Agent, session-messenger send/card/reply plus drawer-width persistence and rejection side effects, the down-first adaptive reasoning slider and persisted effort, visible Canvas output with the optional character off, stable Plugin Market category order plus tabs/search/row geometry, protected self-update, a real ordinary isolated-profile uninstall, random listener, and complete process cleanup after native Quit. Desktop staging additionally requires exactly one `dshmarket@1.10.1`, coherent compact and category-rail markers in its source, Client bundle, and source map, the Host self-protection marker, immutable Desktop patches, plugin-runtime providers, and packaged pnpm bin. The Windows smoke proves the same feature behavior alongside silent install, shortcut creation, real clipboard copy, uninstall cleanup, and data preservation. Native Windows CI builds the Setup, runs this smoke, records SHA-256, and uploads both files.
 
 Local artifacts are unsigned. macOS may require **Open** from Finder's context menu; Windows SmartScreen may require confirmation of the unknown publisher. Removing those prompts requires trusted platform signing credentials.

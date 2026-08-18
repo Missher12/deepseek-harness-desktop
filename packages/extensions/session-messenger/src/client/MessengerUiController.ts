@@ -10,11 +10,13 @@ export const MESSENGER_DRAWER_DEFAULT_WIDTH = 400
 /** Browser-local numeric width preference. */
 export const MESSENGER_DRAWER_WIDTH_KEY = 'dsh.session-messenger.drawer-width'
 
+/** Receipt-bound reply target selected from a visible relay card. */
 export interface MessengerReplyTarget {
   readonly deliveryId: string
   readonly senderSessionId: string
 }
 
+/** Immutable drawer visibility, geometry, and active-reply state. */
 export interface MessengerUiSnapshot {
   readonly open: boolean
   readonly width: number
@@ -89,13 +91,26 @@ export class MessengerUiController {
     this.state = { open: false, width: initialWidth(storage), reply: null }
   }
 
+  /**
+   * Read the current drawer state without mutation.
+   * @returns the immutable UI-controller snapshot.
+   */
   readonly getSnapshot = (): MessengerUiSnapshot => this.state
 
+  /**
+   * Subscribe to drawer state replacements.
+   * @param listener - callback invoked after each published state change.
+   * @returns a disposer that removes the callback.
+   */
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
 
+  /**
+   * Track the displayed ordinary session and close stale drawer state on change.
+   * @param sessionId - currently displayed ordinary session, when present.
+   */
   selectSession(sessionId: SessionId | undefined): void {
     if (this.selectedSession === undefined) {
       this.selectedSession = sessionId
@@ -106,26 +121,40 @@ export class MessengerUiController {
     this.publish({ ...this.state, open: false, reply: null })
   }
 
+  /**
+   * Open the drawer for the displayed ordinary session.
+   * @param sessionId - session that owns the drawer interaction.
+   */
   open(sessionId: SessionId): void {
     this.selectSession(sessionId)
     this.publish({ ...this.state, open: true })
   }
 
+  /**
+   * Toggle the drawer for the displayed ordinary session.
+   * @param sessionId - session that owns the drawer interaction.
+   */
   toggle(sessionId: SessionId): void {
     this.selectSession(sessionId)
     this.publish({ ...this.state, open: !this.state.open })
   }
 
+  /** Close the drawer and clear any receipt-bound reply selection. */
   close(): void {
     if (!this.state.open && this.state.reply === null) return
     this.publish({ ...this.state, open: false, reply: null })
   }
 
+  /** Clear the receipt-bound reply selection without closing the drawer. */
   clearReply(): void {
     if (this.state.reply === null) return
     this.publish({ ...this.state, reply: null })
   }
 
+  /**
+   * Clamp, publish, and best-effort persist the drawer width.
+   * @param width - requested width in CSS pixels.
+   */
   setWidth(width: number): void {
     const clamped = clampWidth(width)
     if (clamped === this.state.width) return
@@ -137,11 +166,18 @@ export class MessengerUiController {
     }
   }
 
+  /**
+   * Open the drawer with one validated receipt-bound reply target.
+   * @param reply - delivery and source identities selected from the relay card.
+   */
   openReply(reply: MessengerReplyTarget): void {
     this.publish({ ...this.state, open: true, reply })
   }
 
-  /** Listen once per Client plugin lifetime for visible relay-card reply actions. */
+  /**
+   * Listen once per Client plugin lifetime for visible relay-card reply actions.
+   * @returns a disposer that removes the browser event listener.
+   */
   listen(): () => void {
     if (typeof window === 'undefined') return () => {}
     const receive = (event: Event): void => {

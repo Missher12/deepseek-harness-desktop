@@ -18,6 +18,8 @@ Chat 业务行是彼此独立的注册表贡献，不是封闭的内建联合。
 
 已记录的非用户消息渲染为默认折叠的展开项，标题栏先给出运行时为该消息投影出的角色——注入为 `上下文注入`，召回为 `跨会话召回`——其后是该投影从持久来源读出的生产者名称，因此读者无需展开即可区分 skill（技能）目录、工作区指令文件与被召回的会话。来源未提供生产者名称时只显示角色。共享的 `DisclosureRow` 原子组件让该上下文界面与消息流中的其他紧凑行保持相同几何，同时保留上下文语义：展开内容区的高度会随内容自适应，最大为 141px，超出后滚动，且不会合成工具状态或摘要（[历史展开项决策](../../../.agents/notes/archived/feature/2026-07-30-web-context-injection-disclosure.md)、[生产者标签决策](../../../.agents/notes/implemented/feature/2026-08-04-web-context-source-and-steer-marks.md)）。该内容区按生产方在持久来源上声明的形态渲染：`instructions` 在正文之上列出它对账过的文件，`catalog` 列出来源记录的条目而非面向模型的正文，其余取值——未声明、本版本不认识、或字段不可用——一律渲染 opaque 内容区，即按真实换行展示面向模型的文本，并把剩余来源字段列出。opaque 不是兜底剩余物而是有文档的默认：恢复的、fork 的、外部写入的日志，无论其生产方是否挂载在此处，都必须渲染得出来。持久或待处理的 steering（中途引导）气泡沿用用户气泡的呈现，不加任何装饰；transcript 中唯一的 steering 信号是它出现在轮次中途的位置。
 
+唯一的严格例外是可移除 session-messenger 的 relay 形态。只有 user-role 节点的持久 source 同时声明 `kind: plugin`、`plugin: dsh-session-messenger`、`form: relay`、有效来源 Session ID 与 delivery ID、`bodyBlockIndex: 1`，并且内容恰好为两个 text block 时，才渲染为可见 relay 卡片。卡片把可信的来源／投递元数据与不可信正文分开，在 transcript 中持续显示两者，并提供复制与基于 receipt 的回复事件；它既不读取也不保存回复权限，该能力由 Host 持有。任何旧格式、畸形、部分加载或外部记录都会封闭式回退到普通 context renderer，不会被误判或隐藏。
+
 Think 行默认保持折叠，并在不展开思维链的情况下暴露实时推理（reasoning）吞吐：当推理块是流式输出尾部时，摘要从结算后的首行切换到最新的非空行，其单行滚动区会随每个 delta 追到行内末端。展开该行会移除移动摘要，让完整推理进入普通页面流，因此页面阅读不会与内部跟随器争夺滚动；结算后恢复左对齐的稳定首行摘要（[决策](../../../.agents/notes/implemented/feature/2026-08-02-web-thinking-tail-scroll.md)）。
 
 聊天视图保留工具的消息流位置，但委托其展示。每个已排序的 `tool-call` Conversation Node 都通过 `conversation.chat.node` 的同名 key 分发；详情壳层则通过 `conversation.details.tool` 传递当前选中的调用。组装后的 Web bundle 为该 Chat Node key 注册 [`ui-tool`](../ui-tool/README.md)，由后者渲染运行时已投影的递归 root/child 树，并负责按名称分发、通用展示和 render-intent 卡片；只有详情席位会在该 renderer 缺席时保留 raw-result fallback。

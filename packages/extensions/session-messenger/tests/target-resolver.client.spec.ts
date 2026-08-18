@@ -43,7 +43,7 @@ function harness(
 ) {
   const resolve = vi.fn(resolver)
   const resume = vi.fn()
-  const isOwnedBy = vi.fn(() => false)
+  const isOwnedBy = vi.fn((_id: ReturnType<typeof SessionId>, _owner: Agent) => false)
   const ctx = {
     typert: { lookups: { get: vi.fn((key: string) => key === 'agent' ? { resolve } : undefined) } },
     workspaceRegistry: { archivedSessionIds },

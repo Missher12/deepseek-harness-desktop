@@ -545,6 +545,7 @@ export function reserveSessionMessengerHttp(ctx: Context): SessionMessengerHttpR
  * Reserve the HTTP surface and optionally bind an already-created source.
  * @param ctx - Cordis context providing the generation-bound WebServer service.
  * @param source - optional coordinator projection to bind immediately.
+ * @param coordinator - optional mutation authority paired with the receipt source.
  * @returns the owned HTTP reservation.
  */
 export function installSessionMessengerHttp(
@@ -557,7 +558,12 @@ export function installSessionMessengerHttp(
   return reservation
 }
 
-/** Bind browser inputs to an exact live source before entering coordinator mutation paths. */
+/**
+ * Bind browser inputs to an exact live source before entering coordinator mutation paths.
+ * @param ctx - Cordis context used to resolve the exact live ordinary source.
+ * @param coordinator - bounded delivery and receipt-reply mutation authority.
+ * @returns an operator that resolves source identity before each coordinator call.
+ */
 export function createSessionMessengerOperator(
   ctx: Context,
   coordinator: Pick<SessionMessengerCoordinator, 'deliver' | 'replyToDelivery'>,
