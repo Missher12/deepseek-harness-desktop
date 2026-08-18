@@ -696,6 +696,79 @@ describe('MessageItem arms', () => {
     expect(view.container.querySelector('[data-context-text]')?.textContent).toBe('child report body')
   })
 
+  it('shows a structured session-messenger relay as one visible card with copy and reply actions', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const replies: unknown[] = []
+    const onReply = (event: Event): void => {
+      replies.push((event as CustomEvent<unknown>).detail)
+    }
+    window.addEventListener('dsh-session-messenger:reply', onReply)
+    const view = render(
+      <MessageItem t={t} node={{
+        kind: 'context',
+        seq: 4,
+        time: Date.now(),
+        content: [
+          { type: 'text', text: 'bounded relay metadata' },
+          { type: 'text', text: 'hello from another session' },
+        ],
+        source: {
+          kind: 'plugin',
+          plugin: 'dsh-session-messenger',
+          form: 'relay',
+          senderSessionId: 'source-session-7',
+          deliveryId: 'delivery-7',
+          mode: 'inject',
+          bodyBlockIndex: 1,
+        },
+        provenance: { role: 'inject', label: 'dsh-session-messenger' },
+        form: 'relay',
+      } as never}
+      />,
+    )
+
+    expect(view.container.querySelector('[data-session-relay-card]')).not.toBeNull()
+    expect(screen.getByText('hello from another session')).toBeTruthy()
+    expect(screen.getByText('source-session-7')).toBeTruthy()
+    expect(view.queryByRole('button', { name: /^上下文注入/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '复制来源会话 ID' }))
+    expect(writeText).toHaveBeenCalledWith('source-session-7')
+    fireEvent.click(screen.getByRole('button', { name: '回复' }))
+    expect(replies).toEqual([{
+      deliveryId: 'delivery-7',
+      senderSessionId: 'source-session-7',
+    }])
+    window.removeEventListener('dsh-session-messenger:reply', onReply)
+  })
+
+  it.each([
+    ['old messenger relay', {
+      kind: 'plugin', plugin: 'dsh-session-messenger', form: 'relay',
+      senderSessionId: 'source', deliveryId: 'delivery', mode: 'inject',
+    }],
+    ['foreign relay', {
+      kind: 'plugin', plugin: 'foreign-messenger', form: 'relay',
+      senderSessionId: 'source', deliveryId: 'delivery', mode: 'inject', bodyBlockIndex: 1,
+    }],
+  ])('keeps %s on the existing context disclosure fallback', (_label, source) => {
+    const view = render(
+      <MessageItem t={t} node={{
+        kind: 'context', seq: 5, time: 1_000,
+        content: [{ type: 'text', text: 'metadata' }, { type: 'text', text: 'fallback body' }],
+        source,
+        provenance: { role: 'inject', label: String(source.plugin) },
+        form: 'relay',
+      } as never}
+      />,
+    )
+    expect(view.container.querySelector('[data-session-relay-card]')).toBeNull()
+    expect(view.getByRole('button', { name: new RegExp(`^上下文注入\\s*${String(source.plugin)}`) })).toBeTruthy()
+  })
+
   it('a recall reports how much of each source session survived the read', () => {
     // Recalled context is bounded on the way in, so hiding the omitted count
     // would overstate what the model received.
