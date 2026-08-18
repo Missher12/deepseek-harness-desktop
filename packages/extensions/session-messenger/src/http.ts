@@ -530,7 +530,9 @@ export function reserveSessionMessengerHttp(ctx: Context): SessionMessengerHttpR
         port: ctx.webServer.port,
         capability,
         source,
-        operator: coordinator === undefined ? undefined : createSessionMessengerOperator(ctx, coordinator),
+        ...(coordinator === undefined
+          ? {}
+          : { operator: createSessionMessengerOperator(ctx, coordinator) }),
       })
       surface = next
       return next

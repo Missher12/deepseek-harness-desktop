@@ -324,7 +324,7 @@ describe('session messenger HTTP trust fence', () => {
       capability: CAPABILITY,
       source,
       operator: { send, reply },
-    } as never)
+    })
 
     const sent = await invoke(
       route(surface, SEND_PATH),
@@ -380,7 +380,7 @@ describe('session messenger HTTP trust fence', () => {
       capability: CAPABILITY,
       source: new FakeSource(),
       operator: { send, reply },
-    } as never)
+    })
     const candidate = route(surface, SEND_PATH)
 
     expect((await invoke(candidate, validHeaders(), '{}')).status).toBe(415)
@@ -549,7 +549,7 @@ describe('session messenger Host operator', () => {
     const operator = createSessionMessengerOperator(h.ctx as never, {
       deliver,
       replyToDelivery,
-    } as never)
+    })
     const before = {
       sourceEvents: source.session.events.length,
       targetEvents: target.session.events.length,

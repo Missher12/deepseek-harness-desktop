@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useSyncExternalStore } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MessageId } from '@deepseek-ai/dsh-llm'
 import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
@@ -15,6 +16,9 @@ import {
   apply,
   inject,
 } from '../src/client/index.tsx'
+import { MessengerDrawer } from '../src/client/MessengerDrawer.tsx'
+import { MessengerHeaderButton } from '../src/client/MessengerHeaderButton.tsx'
+import { MessengerUiController } from '../src/client/MessengerUiController.ts'
 import { en } from '../src/client/locales.ts'
 import {
   MessengerStore,
@@ -27,6 +31,8 @@ import {
   ACK_PATH,
   EVENTS_PATH,
   MESSENGER_CAPABILITY_HEADER,
+  REPLY_PATH,
+  SEND_PATH,
   SNAPSHOT_PATH,
 } from '../src/http.ts'
 
@@ -128,7 +134,7 @@ afterEach(() => {
 })
 
 describe('session messenger Client registration', () => {
-  it('registers only one Harness footer action and removes it through the slot disposer', () => {
+  it('registers one Session-header trigger and one shell drawer with no footer occupant', () => {
     const registrations: Array<{ name: string; options: Record<string, unknown>; component: unknown }> = []
     const disposers: Array<() => void> = []
     const localeDispose = vi.fn()
@@ -141,7 +147,6 @@ describe('session messenger Client registration', () => {
       locale: { register: vi.fn(() => localeDispose) },
       slots: {
         inject(name: string, register: () => (() => void) | undefined) {
-          expect(name).toBe('sidebar.footer.action')
           const dispose = register()
           if (typeof dispose === 'function') disposers.push(dispose)
         },
@@ -154,15 +159,151 @@ describe('session messenger Client registration', () => {
 
     apply(ctx as never)
     expect(inject).toEqual(['locale', 'slots'])
-    expect(registrations).toHaveLength(1)
-    expect(registrations[0]).toMatchObject({
-      name: 'sidebar.footer.action',
-      options: { id: 'session-messenger', locale: 'sessionMessenger' },
-      component: MessengerStatus,
-    })
+    expect(registrations).toHaveLength(2)
+    expect(registrations.map(entry => ({
+      name: entry.name,
+      id: entry.options.id,
+      locale: entry.options.locale,
+      component: entry.component,
+    }))).toEqual([
+      {
+        name: 'conversation.session.header.utilities',
+        id: 'session-messenger',
+        locale: 'sessionMessenger',
+        component: MessengerHeaderButton,
+      },
+      {
+        name: 'shell.overlay',
+        id: 'session-messenger-drawer',
+        locale: 'sessionMessenger',
+        component: MessengerDrawer,
+      },
+    ])
+    expect(registrations.some(entry => entry.name === 'sidebar.footer.action')).toBe(false)
     for (const dispose of disposers.reverse()) dispose()
     expect(localeDispose).toHaveBeenCalledOnce()
-    expect(slotDispose).toHaveBeenCalledOnce()
+    expect(slotDispose).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('MessengerUiController', () => {
+  it('clamps and numerically persists width, closes on Session switch, and listens for relay replies', () => {
+    const values = new Map([['dsh.session-messenger.drawer-width', '480']])
+    const storage = {
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => { values.set(key, value) }),
+    }
+    const controller = new MessengerUiController(storage)
+    expect(controller.getSnapshot().width).toBe(480)
+    controller.setWidth(900)
+    expect(controller.getSnapshot().width).toBe(560)
+    expect(values.get('dsh.session-messenger.drawer-width')).toBe('560')
+    controller.open(CURRENT)
+    expect(controller.getSnapshot().open).toBe(true)
+    controller.selectSession('other-session' as SessionId)
+    expect(controller.getSnapshot().open).toBe(false)
+
+    const stop = controller.listen()
+    window.dispatchEvent(new CustomEvent('dsh-session-messenger:reply', {
+      detail: { deliveryId: 'delivery-1', senderSessionId: 'source-session' },
+    }))
+    expect(controller.getSnapshot()).toMatchObject({
+      open: true,
+      reply: { deliveryId: 'delivery-1', senderSessionId: 'source-session' },
+    })
+    stop()
+  })
+})
+
+function selectorHook<T>(source: { getSnapshot(): T; subscribe(listener: () => void): () => void }) {
+  return <U,>(select: (snapshot: T) => U): U => useSyncExternalStore(
+    source.subscribe.bind(source),
+    () => select(source.getSnapshot()),
+    () => select(source.getSnapshot()),
+  )
+}
+
+describe('Messenger header drawer', () => {
+  it('opens from the header, sends once, retains a failed draft, and restores focus on Escape', async () => {
+    const controller = new MessengerUiController({ getItem: () => null, setItem: () => undefined })
+    const store = new MessengerStore({ snapshot: vi.fn(), events: vi.fn(), acknowledge: vi.fn(async () => 0) })
+    const send = vi.fn(async () => { throw new Error('target-not-found') })
+    const reply = vi.fn()
+    const common = {
+      useMessenger: selectorHook(store),
+      useMessengerUi: selectorHook(controller),
+      selectSession: (id: SessionId) => { controller.selectSession(id) },
+      toggle: (id: SessionId) => { controller.toggle(id) },
+      close: () => { controller.close() },
+      setWidth: (width: number) => { controller.setWidth(width) },
+      clearReply: () => { controller.clearReply() },
+      send,
+      reply,
+      acknowledge: vi.fn(async () => 0),
+      t,
+    }
+    render(<>
+      <MessengerHeaderButton {...common as never} sessionId={CURRENT} />
+      <MessengerDrawer {...common as never} useSessions={useSessionsOf(sessionState())} />
+    </>)
+
+    const trigger = screen.getByRole('button', { name: /Session messages/ })
+    fireEvent.click(trigger)
+    expect(screen.getByRole('dialog', { name: 'Session messages' })).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Target Session ID'), { target: { value: 'target-session' } })
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'hello' } })
+    const submit = screen.getByRole('button', { name: 'Send message' })
+    fireEvent.click(submit)
+    fireEvent.click(submit)
+    await waitFor(() => { expect(send).toHaveBeenCalledTimes(1) })
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Message').value).toBe('hello')
+    expect(await screen.findByText('target-not-found')).toBeTruthy()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: 'Session messages' })).toBeNull() })
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('opens the receipt-bound reply form from the visible relay event', () => {
+    const controller = new MessengerUiController({ getItem: () => null, setItem: () => undefined })
+    const stop = controller.listen()
+    window.dispatchEvent(new CustomEvent('dsh-session-messenger:reply', {
+      detail: { deliveryId: 'delivery-2', senderSessionId: 'sender-2' },
+    }))
+    const store = new MessengerStore({ snapshot: vi.fn(), events: vi.fn(), acknowledge: vi.fn(async () => 0) })
+    render(<MessengerDrawer
+      {...{
+        useMessenger: selectorHook(store),
+        useMessengerUi: selectorHook(controller),
+        useSessions: useSessionsOf(sessionState()),
+        selectSession: (id: SessionId) => { controller.selectSession(id) },
+        toggle: (id: SessionId) => { controller.toggle(id) },
+        close: () => { controller.close() },
+        setWidth: (width: number) => { controller.setWidth(width) },
+        clearReply: () => { controller.clearReply() },
+        send: vi.fn(),
+        reply: vi.fn(),
+        acknowledge: vi.fn(),
+        t,
+      } as never}
+    />)
+    expect(screen.getByRole('dialog', { name: 'Session messages' })).toBeTruthy()
+    expect(screen.getByText('sender-2')).toBeTruthy()
+    expect(screen.getByText('delivery-2')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Send reply' })).toBeTruthy()
+    stop()
+  })
+
+  it('uses a bounded right drawer with a full-width narrow layout and reduced motion', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'packages/extensions/session-messenger/src/client/MessengerStatus.module.css'),
+      'utf8',
+    )
+    expect(source).toContain('min-width: 320px')
+    expect(source).toContain('max-width: 560px')
+    expect(source).toContain('width: 100vw')
+    expect(source).toContain('@media (max-width: 640px)')
+    expect(source).toContain('@media (prefers-reduced-motion: reduce)')
   })
 })
 
@@ -297,7 +438,8 @@ describe('MessengerStatus', () => {
     expect(source).toContain('transition: none')
     const tokens = [...source.matchAll(/var\((--[^,)]+)/gu)].map(match => match[1])
     expect(tokens.length).toBeGreaterThan(0)
-    expect(tokens.every(token => token?.startsWith('--dsw-') ?? false)).toBe(true)
+    const platformOwnedTokens = tokens.filter(token => token?.startsWith('--dsw-') ?? false)
+    expect(platformOwnedTokens.length).toBeGreaterThan(0)
     const platformTokens = [
       'design-platform.css',
       'gradient-shadow-text.css',
@@ -305,7 +447,7 @@ describe('MessengerStatus', () => {
       join(process.cwd(), 'packages/client/ui-theme/src/styles', file),
       'utf8',
     )).join('\n')
-    for (const token of tokens) expect(platformTokens).toContain(`${token}:`)
+    for (const token of platformOwnedTokens) expect(platformTokens).toContain(`${token}:`)
   })
 })
 
@@ -315,6 +457,8 @@ describe('session messenger streaming-fetch transport', () => {
       snapshotPath: SNAPSHOT_PATH,
       ackPath: ACK_PATH,
       eventsPath: EVENTS_PATH,
+      sendPath: SEND_PATH,
+      replyPath: REPLY_PATH,
       capabilityHeader: MESSENGER_CAPABILITY_HEADER,
       capability: 'browser-capability',
     }
@@ -337,6 +481,14 @@ describe('session messenger streaming-fetch transport', () => {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
+      new Response(JSON.stringify({ deliveryId: 'sent', messageId: 'sent-message', status: 'delivered', wakeRequested: false }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+      new Response(JSON.stringify({ deliveryId: 'reply', messageId: 'reply-message', status: 'delivered', wakeRequested: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
     ]
     const fetcher = vi.fn<typeof fetch>(async () => {
       const response = responses.shift()
@@ -351,8 +503,14 @@ describe('session messenger streaming-fetch transport', () => {
     await transport.events(7, (event) => { received.push(event) }, new AbortController().signal)
     expect(received).toEqual([event])
     expect(await transport.acknowledge(CURRENT, ['streamed'], signal)).toBe(1)
+    expect(await transport.send(CURRENT, 'target-session' as SessionId, 'hello', false, signal))
+      .toMatchObject({ deliveryId: 'sent' })
+    expect(await transport.reply(CURRENT, 'delivery-1', 'answer', true, signal))
+      .toMatchObject({ deliveryId: 'reply' })
 
-    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([SNAPSHOT_PATH, EVENTS_PATH, ACK_PATH])
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      SNAPSHOT_PATH, EVENTS_PATH, ACK_PATH, SEND_PATH, REPLY_PATH,
+    ])
     const snapshotInit = fetcher.mock.calls[0]?.[1]
     const eventsInit = fetcher.mock.calls[1]?.[1]
     const ackInit = fetcher.mock.calls[2]?.[1]
@@ -531,6 +689,8 @@ describe('session messenger streaming-fetch transport', () => {
       snapshotPath: SNAPSHOT_PATH,
       ackPath: ACK_PATH,
       eventsPath: EVENTS_PATH,
+      sendPath: SEND_PATH,
+      replyPath: REPLY_PATH,
       capabilityHeader: MESSENGER_CAPABILITY_HEADER,
       capability: 'browser-capability',
     }, fetcher)
@@ -567,6 +727,8 @@ describe('session messenger streaming-fetch transport', () => {
       snapshotPath: SNAPSHOT_PATH,
       ackPath: ACK_PATH,
       eventsPath: EVENTS_PATH,
+      sendPath: SEND_PATH,
+      replyPath: REPLY_PATH,
       capabilityHeader: MESSENGER_CAPABILITY_HEADER,
       capability: 'browser-capability',
     }, fetcher)

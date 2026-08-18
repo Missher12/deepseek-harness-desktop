@@ -27,12 +27,15 @@ import { createScope } from '@deepseek-ai/dsh-scope'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
-import { MessengerStatus } from '../src/client/MessengerStatus.tsx'
+import { MessengerDrawer } from '../src/client/MessengerDrawer.tsx'
+import { MessengerHeaderButton } from '../src/client/MessengerHeaderButton.tsx'
 import * as SessionMessengerClient from '../src/client/index.tsx'
 import {
   ACK_PATH,
   EVENTS_PATH,
   MESSENGER_BOOTSTRAP_GLOBAL,
+  REPLY_PATH,
+  SEND_PATH,
   SNAPSHOT_PATH,
 } from '../src/http.ts'
 import * as SessionMessenger from '../src/index.ts'
@@ -226,7 +229,7 @@ describe('real Host Loader composition', () => {
     for (const name of TOOL_NAMES) expect(sdk).toContain(name)
     await codeOwner.dispose()
 
-    for (const path of [SNAPSHOT_PATH, ACK_PATH, EVENTS_PATH]) {
+    for (const path of [SNAPSHOT_PATH, ACK_PATH, EVENTS_PATH, SEND_PATH, REPLY_PATH]) {
       expect((await fetch(`http://127.0.0.1:${String(ctx.webServer.port)}${path}`)).status).toBe(403)
     }
     expect((await fetch(`http://127.0.0.1:${String(ctx.webServer.port)}/plugins/dsh-session-messenger/other`)).status).toBe(404)
@@ -257,7 +260,7 @@ describe('real Host Loader composition', () => {
 
     await messengerEntry(ctx).update({ disabled: true })
     expect(ctx.tools.schemas().map(schema => schema.name).filter(name => TOOL_NAMES.includes(name as never))).toEqual([])
-    for (const path of [SNAPSHOT_PATH, ACK_PATH, EVENTS_PATH]) {
+    for (const path of [SNAPSHOT_PATH, ACK_PATH, EVENTS_PATH, SEND_PATH, REPLY_PATH]) {
       expect((await fetch(`http://127.0.0.1:${String(ctx.webServer.port)}${path}`)).status).toBe(404)
     }
     const untapped = ctx.webServer.applyIndexTaps('<html><head></head></html>')
@@ -271,50 +274,67 @@ describe('real Host Loader composition', () => {
 })
 
 describe('real Client Loader composition', () => {
-  it('owns only one footer action and removes it with its client fiber', async () => {
+  it('owns only one header trigger and one shell drawer, then removes both with its client fiber', async () => {
     const LocaleProvider = {
       name: 'fixture-locale',
       apply(ctx: Context) { ctx.provide('locale', new LocaleRuntime(ctx)) },
     }
-    const SidebarOwner = {
-      name: 'fixture-sidebar-owner',
+    const SurfaceOwner = {
+      name: 'fixture-surface-owner',
       inject: ['slots'],
       apply(ctx: Context) {
         ctx.slots.register({
           name: 'root',
-          children: { 'sidebar.footer.action': { kind: 'list', scope: 'root' } },
+          children: {
+            'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
+            'shell.overlay': { kind: 'list', scope: 'root' },
+          },
         } as never, () => null)
       },
     }
     const { ctx } = await bootLoader([
       "- name: '@deepseek-ai/dsh-client-runtime/client'",
       "- name: '@fixture/locale'",
-      "- name: '@fixture/sidebar-owner'",
+      "- name: '@fixture/surface-owner'",
       `- name: '${CLIENT_SPECIFIER}'`,
     ], new Map<string, unknown>([
       ['@deepseek-ai/dsh-client-runtime/client', SlotRegistry],
       ['@fixture/locale', LocaleProvider],
-      ['@fixture/sidebar-owner', SidebarOwner],
+      ['@fixture/surface-owner', SurfaceOwner],
       [CLIENT_SPECIFIER, SessionMessengerClient],
     ]))
 
-    const footer = ctx.slots.entries('sidebar.footer.action')
-    expect(footer).toHaveLength(1)
-    expect(footer[0]).toMatchObject({
+    const header = ctx.slots.entries('conversation.session.header.utilities')
+    const overlay = ctx.slots.entries('shell.overlay')
+    expect(header).toHaveLength(1)
+    expect(overlay).toHaveLength(1)
+    expect(header[0]).toMatchObject({
       options: { id: 'session-messenger', order: 80 },
       locale: 'sessionMessenger',
     })
-    expect(footer[0]?.component).toBe(MessengerStatus)
+    expect(header[0]?.component).toBe(MessengerHeaderButton)
+    expect(overlay[0]).toMatchObject({
+      options: { id: 'session-messenger-drawer', order: 80 },
+      locale: 'sessionMessenger',
+    })
+    expect(overlay[0]?.component).toBe(MessengerDrawer)
     const messengerOccupants = ctx.slots.snapshot().flatMap(function visit(node): string[] {
       return [
-        ...node.occupants.filter(occupant => occupant.id === 'session-messenger').map(() => node.name),
+        ...node.occupants
+          .filter(occupant => occupant.id === 'session-messenger' || occupant.id === 'session-messenger-drawer')
+          .map(() => node.name),
         ...node.children.flatMap(visit),
       ]
     })
-    expect(messengerOccupants).toEqual(['sidebar.footer.action'])
+    expect(messengerOccupants).toEqual([
+      'conversation.session.header.utilities',
+      'shell.overlay',
+    ])
 
     await messengerEntry(ctx, CLIENT_SPECIFIER).update({ disabled: true })
-    expect(ctx.slots.entries('sidebar.footer.action')).toEqual([])
-    expect(ctx.slots.snapshot().flatMap(node => node.occupants).some(row => row.id === 'session-messenger')).toBe(false)
+    expect(ctx.slots.entries('conversation.session.header.utilities')).toEqual([])
+    expect(ctx.slots.entries('shell.overlay')).toEqual([])
+    expect(ctx.slots.snapshot().flatMap(node => node.occupants)
+      .some(row => row.id === 'session-messenger' || row.id === 'session-messenger-drawer')).toBe(false)
   })
 })

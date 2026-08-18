@@ -49,6 +49,8 @@ export interface SessionMessengerBootstrap {
   readonly snapshotPath: string
   readonly ackPath: string
   readonly eventsPath: string
+  readonly sendPath: string
+  readonly replyPath: string
   readonly capabilityHeader: string
   readonly capability: string
 }
@@ -72,6 +74,28 @@ export interface MessengerTransport {
     deliveryIds: readonly string[],
     signal: AbortSignal,
   ): Promise<number>
+  send?(
+    sourceSessionId: SessionId,
+    targetSessionId: SessionId,
+    message: string,
+    wake: boolean,
+    signal: AbortSignal,
+  ): Promise<MessengerDeliveryResult>
+  reply?(
+    sourceSessionId: SessionId,
+    deliveryId: string,
+    message: string,
+    wake: boolean,
+    signal: AbortSignal,
+  ): Promise<MessengerDeliveryResult>
+}
+
+/** Browser-safe result returned by both operator routes. */
+export interface MessengerDeliveryResult {
+  readonly deliveryId: string
+  readonly messageId: string
+  readonly status: 'delivered' | 'delivery-recovery-pending'
+  readonly wakeRequested: boolean
 }
 
 /** Immutable external-store snapshot. */
@@ -227,6 +251,8 @@ function checkedBootstrap(value: SessionMessengerBootstrap): SessionMessengerBoo
     value.snapshotPath,
     value.ackPath,
     value.eventsPath,
+    value.sendPath,
+    value.replyPath,
     value.capabilityHeader,
     value.capability,
   ]) {
@@ -247,6 +273,30 @@ export function readSessionMessengerBootstrap(): SessionMessengerBootstrap | und
 async function responseJson(response: Response, label: string): Promise<unknown> {
   if (!response.ok) throw new Error(`${label} failed (${String(response.status)})`)
   return response.json() as Promise<unknown>
+}
+
+async function deliveryResponse(response: Response, label: string): Promise<MessengerDeliveryResult> {
+  let value: unknown
+  try {
+    value = await response.json() as unknown
+  } catch {
+    throw new Error(`${label} failed (${String(response.status)})`)
+  }
+  if (!response.ok) {
+    if (isRecord(value) && safeString(value.errorCode, 128)) throw new Error(value.errorCode)
+    throw new Error(`${label} failed (${String(response.status)})`)
+  }
+  if (!isRecord(value)
+    || !safeString(value.deliveryId)
+    || !safeString(value.messageId)
+    || (value.status !== 'delivered' && value.status !== 'delivery-recovery-pending')
+    || typeof value.wakeRequested !== 'boolean') throw new Error(`invalid ${label} response`)
+  return {
+    deliveryId: value.deliveryId,
+    messageId: value.messageId,
+    status: value.status,
+    wakeRequested: value.wakeRequested,
+  }
 }
 
 /** Parse metadata SSE frames from a bounded streaming-fetch body. */
@@ -348,6 +398,28 @@ export function createHttpMessengerTransport(
       }
       return Number(value.acknowledged)
     },
+    async send(sourceSessionId, targetSessionId, message, wake, signal) {
+      const response = await fetcher(bootstrap.sendPath, {
+        method: 'POST',
+        headers: { ...capabilityHeaders, 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store',
+        body: JSON.stringify({ sourceSessionId, targetSessionId, message, wake }),
+        signal,
+      })
+      return deliveryResponse(response, 'session messenger send')
+    },
+    async reply(sourceSessionId, deliveryId, message, wake, signal) {
+      const response = await fetcher(bootstrap.replyPath, {
+        method: 'POST',
+        headers: { ...capabilityHeaders, 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store',
+        body: JSON.stringify({ sourceSessionId, deliveryId, message, wake }),
+        signal,
+      })
+      return deliveryResponse(response, 'session messenger reply')
+    },
   }
 }
 
@@ -371,6 +443,7 @@ export class MessengerStore {
   private readonly listeners = new Set<() => void>()
   private readonly lifetimeController = new AbortController()
   private readonly acknowledgementTasks = new Set<Promise<number>>()
+  private readonly operatorTasks = new Set<Promise<MessengerDeliveryResult>>()
   private active: {
     readonly controller: AbortController
     readonly done: Promise<void>
@@ -473,6 +546,29 @@ export class MessengerStore {
     return total
   }
 
+  /** Send from the currently displayed ordinary session through the Host authority boundary. */
+  send(sourceSessionId: SessionId, targetSessionId: SessionId, message: string, wake: boolean): Promise<MessengerDeliveryResult> {
+    if (this.transport.send === undefined) return Promise.reject(new Error('session messenger Host bridge is unavailable'))
+    return this.trackOperator(this.transport.send(
+      sourceSessionId, targetSessionId, message, wake, this.lifetimeController.signal,
+    ))
+  }
+
+  /** Reply once to a durable delivery without exposing its retained reply token. */
+  reply(sourceSessionId: SessionId, deliveryId: string, message: string, wake: boolean): Promise<MessengerDeliveryResult> {
+    if (this.transport.reply === undefined) return Promise.reject(new Error('session messenger Host bridge is unavailable'))
+    return this.trackOperator(this.transport.reply(
+      sourceSessionId, deliveryId, message, wake, this.lifetimeController.signal,
+    ))
+  }
+
+  private trackOperator(task: Promise<MessengerDeliveryResult>): Promise<MessengerDeliveryResult> {
+    this.operatorTasks.add(task)
+    const forget = (): void => { this.operatorTasks.delete(task) }
+    void task.then(forget, forget)
+    return task
+  }
+
   /**
    * Start snapshot-first reconnect cycles after the previous generation reaches quiescence.
    * @returns an asynchronous disposer for this connection generation.
@@ -529,7 +625,7 @@ export class MessengerStore {
     const active = this.active
     return this.disposalTask = (async () => {
       await active?.stop()
-      await Promise.allSettled([...this.acknowledgementTasks])
+      await Promise.allSettled([...this.acknowledgementTasks, ...this.operatorTasks])
     })()
   }
 
