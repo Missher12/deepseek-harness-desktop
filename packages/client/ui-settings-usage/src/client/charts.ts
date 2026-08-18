@@ -24,7 +24,11 @@ export interface UsageParticle {
 /** One seven-day chronological column. */
 export type UsageWeek<T> = readonly T[]
 
-/** Split the fixed 371-day range into 53 chronological seven-day columns. */
+/**
+ * Split the fixed 371-day range into 53 chronological seven-day columns.
+ * @param activity - Chronological daily values in the fixed activity range.
+ * @returns Chronological seven-day columns without reordering any value.
+ */
 export function buildDailyGrid<T>(activity: readonly T[]): UsageWeek<T>[] {
   const weeks: T[][] = []
   for (let index = 0; index < activity.length; index += 7) {
@@ -56,6 +60,10 @@ function stackLevel(row: number, filledRows: number): UsageActivityDay['level'] 
  * value, hover period, and intensity. Weekly mode repeats one weekly total
  * across that week's seven particles; cumulative mode advances the running
  * all-range total one day at a time.
+ * @param activity - Chronological fixed-range daily activity from the Host.
+ * @param mode - Aggregate scope projected over the stable particle positions.
+ * @param baselineTokens - Tokens preceding the visible range for cumulative mode.
+ * @returns Stable seven-day columns with scope-specific hover and intensity data.
  */
 export function buildParticleGrid(
   activity: readonly UsageActivityDay[],

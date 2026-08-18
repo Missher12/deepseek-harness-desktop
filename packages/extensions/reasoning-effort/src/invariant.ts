@@ -15,7 +15,7 @@ export const name = 'reasoning-effort-invariant'
 export const inject = ['invariants']
 
 /**
- * No additional runtime invariant: route and settings ownership is covered by composition tests.
+ * No runtime invariant: route and settings ownership is covered by composition tests.
  */
 const install: InvariantInstaller = () => {}
 

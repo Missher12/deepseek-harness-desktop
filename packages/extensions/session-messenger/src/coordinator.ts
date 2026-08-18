@@ -31,6 +31,7 @@ import {
   ReplyToken,
   type DeliveryMode,
   type Receipt,
+  type RelayEnvelope,
   type ReceiptTransition,
   type RecoverableReceipt,
 } from './types.ts'
@@ -82,6 +83,13 @@ export interface DeliveryResult {
   readonly messageId: ReturnType<typeof MessageId>
   readonly status: 'delivered' | 'delivery-recovery-pending'
   readonly wakeRequested: boolean
+}
+
+interface PreparedReceiptOptions {
+  readonly mode: DeliveryMode
+  readonly hop: number
+  readonly wakeRequested: boolean
+  readonly replyToDeliveryId?: DeliveryId
 }
 
 /** Receipt transition subscriber used by notifications and explicit waits. */
@@ -234,34 +242,17 @@ export class SessionMessengerCoordinator {
   ): Promise<DeliveryResult> {
     this.assertActive()
     signal?.throwIfAborted()
-    const envelope = relayEnvelopeSchema.safeParse({ body: request.message })
-    if (!envelope.success) {
-      throw messengerError(
-        'message-too-large',
-        `message must not exceed ${MAX_MESSAGE_BYTES} UTF-8 bytes`,
-        { cause: envelope.error },
-      )
-    }
+    const envelope = this.parseEnvelope(request.message)
     this.assertAdmission(caller.id)
     const target = await resolveOrdinaryTarget(this.ctx, caller, request.targetSessionId)
     signal?.throwIfAborted()
 
     const at = this.now()
-    const prepared: RecoverableReceipt = {
-      id: this.nextDeliveryId(),
-      sourceSessionId: caller.id,
-      targetSessionId: target.id,
-      messageId: this.nextMessageId(),
+    const prepared = this.prepareReceipt(caller, target, envelope, at, {
       mode: request.mode,
-      status: 'prepared',
-      createdAt: at,
-      updatedAt: at,
-      expiresAt: at + RECEIPT_TTL_MS,
-      replyToken: this.nextReplyToken(),
       hop: request.hop ?? 0,
       wakeRequested: request.mode === 'followup',
-      envelope: envelope.data,
-    }
+    })
     await this.commit(prepared)
 
     return this.enqueuePrepared(target, prepared, signal)
@@ -290,34 +281,17 @@ export class SessionMessengerCoordinator {
     if (original.expiresAt <= at) throw messengerError('reply-expired', 'reply token expired')
     if (original.replyToken !== request.replyToken) throw messengerError('reply-forbidden', 'invalid reply token')
     if (original.hop >= MAX_HOP) throw messengerError('hop-limit', 'maximum reply chain depth reached')
-    const envelope = relayEnvelopeSchema.safeParse({ body: request.message })
-    if (!envelope.success) {
-      throw messengerError(
-        'message-too-large',
-        `message must not exceed ${MAX_MESSAGE_BYTES} UTF-8 bytes`,
-        { cause: envelope.error },
-      )
-    }
+    const envelope = this.parseEnvelope(request.message)
     this.assertAdmission(caller.id)
     const target = await resolveOrdinaryTarget(this.ctx, caller, original.sourceSessionId)
     signal?.throwIfAborted()
 
-    const prepared: RecoverableReceipt = {
-      id: this.nextDeliveryId(),
-      sourceSessionId: caller.id,
-      targetSessionId: target.id,
-      messageId: this.nextMessageId(),
+    const prepared = this.prepareReceipt(caller, target, envelope, at, {
       mode: request.wake ? 'followup' : 'inject',
-      status: 'prepared',
-      createdAt: at,
-      updatedAt: at,
-      expiresAt: at + RECEIPT_TTL_MS,
-      replyToken: this.nextReplyToken(),
       hop: original.hop + 1,
       wakeRequested: request.wake,
       replyToDeliveryId: original.id,
-      envelope: envelope.data,
-    }
+    })
     await this.commit(prepared)
     try {
       await this.commit(toReplied(original, this.now(), prepared.id))
@@ -333,6 +307,43 @@ export class SessionMessengerCoordinator {
     // The original one-use token is now durably consumed. From this commit
     // point the reverse delivery must finish even if the calling tool aborts.
     return this.enqueuePrepared(target, prepared)
+  }
+
+  private prepareReceipt(
+    caller: Agent,
+    target: Agent,
+    envelope: RelayEnvelope,
+    at: number,
+    options: PreparedReceiptOptions,
+  ): RecoverableReceipt {
+    return {
+      id: this.nextDeliveryId(),
+      sourceSessionId: caller.id,
+      targetSessionId: target.id,
+      messageId: this.nextMessageId(),
+      mode: options.mode,
+      status: 'prepared',
+      createdAt: at,
+      updatedAt: at,
+      expiresAt: at + RECEIPT_TTL_MS,
+      replyToken: this.nextReplyToken(),
+      hop: options.hop,
+      wakeRequested: options.wakeRequested,
+      ...(options.replyToDeliveryId === undefined
+        ? {}
+        : { replyToDeliveryId: options.replyToDeliveryId }),
+      envelope,
+    }
+  }
+
+  private parseEnvelope(message: string): RelayEnvelope {
+    const envelope = relayEnvelopeSchema.safeParse({ body: message })
+    if (envelope.success) return envelope.data
+    throw messengerError(
+      'message-too-large',
+      `message must not exceed ${MAX_MESSAGE_BYTES} UTF-8 bytes`,
+      { cause: envelope.error },
+    )
   }
 
   private async enqueuePrepared(

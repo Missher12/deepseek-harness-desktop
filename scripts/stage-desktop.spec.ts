@@ -68,11 +68,12 @@ function fakeDependencies(
     },
     readText: async (path) => {
       read.push(path)
-      if (path.endsWith('apps/desktop/desktop.cordis.patch.yml')) {
+      const portablePath = path.replaceAll('\\', '/')
+      if (portablePath.endsWith('apps/desktop/desktop.cordis.patch.yml')) {
         events.push(`read:${path}`)
         return desktopPatch
       }
-      const entry = Object.entries(semanticFiles).find(([suffix]) => path.endsWith(suffix))
+      const entry = Object.entries(semanticFiles).find(([suffix]) => portablePath.endsWith(suffix))
       if (entry === undefined) throw new Error(`Unexpected semantic read: ${path}`)
       return entry[1]
     },

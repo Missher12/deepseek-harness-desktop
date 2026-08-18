@@ -198,6 +198,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'The seam captures, redacts, and hands session records to one backend; nothing else consumes the service — its output leaves the process.',
   },
   {
+    key: 'usageInsights',
+    pkg: 'usage-insights',
+    title: 'Local all-history usage insights',
+    mode: 'core',
+    consumers: ['ui-settings-usage'],
+    note: 'Folds durable session history into privacy-minimal cached rows and exposes one bounded read-only snapshot to the Settings dashboard.',
+  },
+  {
     key: 'storage',
     pkg: 'storage',
     title: 'Non-session storage hub',

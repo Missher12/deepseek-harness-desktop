@@ -2,6 +2,7 @@
 
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session/types'
 import type { SessionUsageRow, UsageDay, UsageTokenBuckets } from './types.ts'
+import { usageDateKey } from './calendar.ts'
 
 interface UsageSample {
   readonly buckets: UsageTokenBuckets
@@ -22,19 +23,6 @@ const zeroTokens = (): UsageTokenBuckets => ({
   cacheRead: 0,
   cacheWrite: 0,
 })
-
-/** Local calendar-key formatter whose output is independent of locale punctuation. */
-function dateKey(time: number, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat('en', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(time))
-  const value = (type: Intl.DateTimeFormatPartTypes): string =>
-    parts.find(part => part.type === type)?.value ?? ''
-  return `${value('year')}-${value('month')}-${value('day')}`
-}
 
 /** Whether a provider count is exact enough to join persisted aggregates. */
 function validCount(value: unknown): value is number {
@@ -108,14 +96,20 @@ function safeSum(left: number, right: number): number | undefined {
   return Number.isSafeInteger(sum) && sum >= 0 ? sum : undefined
 }
 
-/** Fold one session's owned event suffix into a derived usage row. */
+/**
+ * Fold one session's owned event suffix into a derived usage row.
+ * @param header - Immutable session identity and persisted prefix facts.
+ * @param events - Ordered durable events belonging to the session.
+ * @param timeZone - IANA zone used for local calendar aggregation.
+ * @returns Privacy-minimal usage facts for this session revision.
+ */
 export function foldSessionUsage(
   header: SessionHeader,
   events: readonly SessionEvent[],
   timeZone: string,
 ): SessionUsageRow {
   // Constructing the formatter validates the time zone even for an empty log.
-  void dateKey(header.createdAt, timeZone)
+  void usageDateKey(header.createdAt, timeZone)
   const days = new Map<string, DayAccumulator>()
   const models = new Map<string, number>()
   const reasoningEfforts = new Map<string, number>()
@@ -134,7 +128,7 @@ export function foldSessionUsage(
     if (item.seq < (header.seedLength ?? 0)) continue
     const type = item.type as string
     const data = item.data as unknown as Record<string, unknown>
-    const date = dateKey(item.time, timeZone)
+    const date = usageDateKey(item.time, timeZone)
 
     if (item.type === 'user/message') {
       const source = item.data.source as { kind?: string; name?: string }

@@ -63,7 +63,7 @@ describe('Desktop plugin runtime services', () => {
   })
 
   it('resolves the packaged pnpm bin through its supported package root export', () => {
-    expect(resolvePackagedPnpmEntry()).toMatch(/\/pnpm\/bin\/pnpm\.mjs$/u)
+    expect(resolvePackagedPnpmEntry()).toMatch(/[\\/]pnpm[\\/]bin[\\/]pnpm\.mjs$/u)
   })
 
   it('publishes an immutable active profile and runs packaged dsh plugin with packaged pnpm', async () => {
