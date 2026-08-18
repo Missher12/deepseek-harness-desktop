@@ -52,6 +52,9 @@ describe('CI workflow', () => {
     if (!Array.isArray(windows.steps) || !Array.isArray(aggregate.needs)) {
       throw new TypeError('Windows job must define steps and the aggregate must define needs')
     }
+    if (!isRecord(node24.env) || !isRecord(node24Coverage.env) || !isRecord(node24Consumers.env)) {
+      throw new TypeError('Required Linux jobs must define bounded concurrency environments')
+    }
     const commandSteps = windows.steps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
