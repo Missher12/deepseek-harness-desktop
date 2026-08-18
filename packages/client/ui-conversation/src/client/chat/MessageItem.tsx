@@ -15,7 +15,6 @@ import { messageImageLabels } from '../image-labels.ts'
 import { CompactionItem } from './CompactionItem.tsx'
 import { ContextInjectionRow } from './ContextInjectionRow.tsx'
 import { MessageIconActions } from './MessageIconActions.tsx'
-import { readRelayMessage, RelayMessageCard } from './RelayMessageCard.tsx'
 import css from './MessageItem.module.css'
 
 type UserImage = Extract<UserMessageNode['content'][number], { type: 'image' }>
@@ -261,8 +260,6 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
 /** Injected-context keyed Chat renderer. */
 export const ContextMessageNodeView = memo(function ContextMessageNodeView({ node, t }: ChatNodeViewProps<'context'>) {
   const data = node.data
-  const relay = readRelayMessage(data.source, data.content)
-  if (relay !== null) return <RelayMessageCard relay={relay} time={data.time} t={t} />
   return (
     <ContextInjectionRow
       content={data.content}

@@ -55,7 +55,7 @@ describe('patched dshmarket artifacts', () => {
 
   it('retains the exact npm integrity while applying a locked pnpm patch hash', () => {
     const lockfile = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8')
-    expect(lockfile).toContain('dshmarket@1.10.1: 7b5cebf67ea81336536fb3a562ef0fd945faf13bf89c59dcb0cc5e6a7954b01c')
+    expect(lockfile).toContain('dshmarket@1.10.1: e9f0960f8efa27f20bbf2625a2d10864e6b22911f5ddd93bc12335764b0b0f9b')
     expect(lockfile).toContain('integrity: sha512-8AWM8RT2tttJsozTBm6mAfI+cNpCIbeBdP9IoydJdHlH/+x72aNqmv3AWdbNfKDDwkkqM2Ce/XRDhha9HG0Q5Q==')
   })
 })

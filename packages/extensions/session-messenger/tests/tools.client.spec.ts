@@ -43,7 +43,7 @@ describe('session messenger tools', () => {
 
     expect(ctx.tools.schemas().map(schema => schema.name)).toEqual([
       'send_message_to_session',
-      'followup_session',
+      'send_message_to_session_and_wait',
       'reply_to_session',
       'wait_for_session_reply',
     ])
@@ -62,34 +62,61 @@ describe('session messenger tools', () => {
     dispose()
   })
 
-  it('derives caller identity only from exec.agent and preserves send versus follow-up mode', async () => {
+  it('wakes the target for sends and performs one receipt-bound collaboration wait', async () => {
     const ctx = await toolContext()
     const caller = fakeAgent('caller')
+    const waitResult = {
+      deliveryId: DeliveryId('delivery-2'), messageId: MessageId('reply-message'),
+      status: 'replied', wakeRequested: true, errorCode: null, replyDeliveryId: DeliveryId('reply-2'),
+    }
+    const wait = vi.fn().mockResolvedValue(waitResult)
     const coordinator = {
       deliver: vi.fn()
-        .mockResolvedValueOnce(result())
+        .mockResolvedValueOnce(result({ wakeRequested: true }))
         .mockResolvedValueOnce(result({ deliveryId: DeliveryId('delivery-2'), wakeRequested: true })),
       replyToDelivery: vi.fn(),
     }
-    registerSessionMessengerTools(ctx, () => coordinator, () => ({ wait: vi.fn() }))
+    registerSessionMessengerTools(ctx, () => coordinator, () => ({ wait }))
 
     const sent = await ctx.tools.execute({
       callId: CallId('send'), signal, agent: caller,
-      name: 'send_message_to_session', arguments: { target_session_id: 'target', message: 'quiet' },
+      name: 'send_message_to_session', arguments: { target_session_id: 'target', message: 'wake' },
     })
-    const followed = await ctx.tools.execute({
-      callId: CallId('follow'), signal, agent: caller,
-      name: 'followup_session', arguments: { target_session_id: 'target', message: 'wake' },
+    const collaborated = await ctx.tools.execute({
+      callId: CallId('collaborate'), signal, agent: caller,
+      name: 'send_message_to_session_and_wait',
+      arguments: { target_session_id: 'target', message: 'solve this', timeout_ms: 4_000 },
     })
 
     expect(coordinator.deliver).toHaveBeenNthCalledWith(1, caller, {
-      targetSessionId: 'target', message: 'quiet', mode: 'inject',
-    }, signal)
-    expect(coordinator.deliver).toHaveBeenNthCalledWith(2, caller, {
       targetSessionId: 'target', message: 'wake', mode: 'followup',
     }, signal)
-    expect(sent.value).toMatchObject({ status: 'delivered', errorCode: null, wakeRequested: false })
-    expect(followed.value).toMatchObject({ status: 'delivered', errorCode: null, wakeRequested: true })
+    expect(coordinator.deliver).toHaveBeenNthCalledWith(2, caller, {
+      targetSessionId: 'target', message: 'solve this', mode: 'followup',
+    }, signal)
+    expect(wait).toHaveBeenCalledWith(caller, DeliveryId('delivery-2'), 4_000, signal)
+    expect(sent.value).toMatchObject({ status: 'delivered', errorCode: null, wakeRequested: true })
+    expect(collaborated.value).toEqual(waitResult)
+  })
+
+  it('publishes one Codex-style collaboration protocol section while enabled', async () => {
+    const ctx = await toolContext()
+    const dispose = registerSessionMessengerTools(
+      ctx,
+      () => ({ deliver: vi.fn(), replyToDelivery: vi.fn() }),
+      () => ({ wait: vi.fn() }),
+    )
+
+    const section = (await ctx.systemPrompt.assemble()).sections
+      .find(candidate => candidate.name === 'tool:session-collaboration')
+    expect(section?.text).toContain('send_message_to_session_and_wait')
+    expect(section?.text).toContain('reply_to_session')
+    expect(section?.text).toContain('Delivery ID')
+    expect(section?.text).toContain('Either ordinary session may initiate')
+
+    dispose()
+    expect((await ctx.systemPrompt.assemble()).sections
+      .some(candidate => candidate.name === 'tool:session-collaboration')).toBe(false)
   })
 
   it('returns a stable caller-required value instead of guessing identity', async () => {
@@ -106,7 +133,7 @@ describe('session messenger tools', () => {
       deliveryId: null,
       messageId: null,
       status: 'rejected',
-      wakeRequested: false,
+      wakeRequested: true,
       errorCode: 'caller-required',
     })
     expect(coordinator.deliver).not.toHaveBeenCalled()
@@ -125,7 +152,7 @@ describe('session messenger tools', () => {
     const replied = await ctx.tools.execute({
       callId: CallId('reply'), signal, agent: caller,
       name: 'reply_to_session',
-      arguments: { delivery_id: 'delivery-1', message: 'answer', wake: true },
+      arguments: { delivery_id: 'delivery-1', message: 'answer' },
     })
 
     expect(replyToDelivery).toHaveBeenCalledWith(caller, {

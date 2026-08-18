@@ -6,6 +6,7 @@ import { activateSessionMessenger } from './tools.ts'
 export const name = 'session-messenger'
 export const inject = [
   'tools',
+  'systemPrompt',
   'storageDomain',
   'workspaceRegistry',
   'typert',

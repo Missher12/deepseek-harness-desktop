@@ -486,6 +486,10 @@
 .field textarea {
   min-height: 104px;
   resize: vertical;
+  /* The textarea uses the elevated input surface in dark mode and becomes its
+     own scrollport for longer tasks. Keep its thumb on the matching l2 pair. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .field input:focus,

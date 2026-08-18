@@ -256,6 +256,7 @@ describe('Messenger header drawer', () => {
     fireEvent.click(trigger)
     expect(screen.getByRole('dialog', { name: 'Session messages' })).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Target Session ID'), { target: { value: 'target-session' } })
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'Start target Agent' }).checked).toBe(true)
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'hello' } })
     const submit = screen.getByRole('button', { name: 'Send message' })
     fireEvent.click(submit)

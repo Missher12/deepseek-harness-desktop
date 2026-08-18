@@ -43,7 +43,7 @@ export function MessengerDrawer({
   const summary = summarizeMessenger(snapshot, sessionId)
   const [targetId, setTargetId] = useState('')
   const [message, setMessage] = useState('')
-  const [wake, setWake] = useState(false)
+  const [wake, setWake] = useState(true)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
@@ -171,8 +171,8 @@ export function MessengerDrawer({
           </div>
           <code>{sessionId ?? t('noSession')}</code>
           <div className={css.metrics}>
-            <span><IconLoadingOutline16 size={14} />{t('pending', { count: summary.pending })}</span>
-            <span><IconSendOutline16 size={14} />{t('unread', { count: summary.unread })}</span>
+            <span data-messenger-state="pending"><IconLoadingOutline16 size={14} />{t('pending', { count: summary.pending })}</span>
+            <span data-messenger-state="unread"><IconSendOutline16 size={14} />{t('unread', { count: summary.unread })}</span>
             <button type="button" disabled={summary.unread === 0} onClick={() => { void markRead() }}>
               <IconCheckOutline16 size={14} />{t('markRead')}
             </button>

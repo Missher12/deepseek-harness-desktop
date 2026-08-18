@@ -35,7 +35,9 @@ describe('Harness-native dshmarket presentation', () => {
     expect(source).toMatch(/matchMedia\('\(prefers-reduced-motion: reduce\)'\)/)
     expect(css).toContain('.catsViewport[data-scroll-left="true"]::before')
     expect(css).toMatch(/@media \(prefers-reduced-motion:reduce\)/)
-    expect(css).toMatch(/\.tabSearch\{[^}]*width:100%/)
+    expect(css).toMatch(/\.tabSearch\{[^}]*flex:1[^}]*min-width:0[^}]*width:auto/)
+    expect(source.indexOf('className={css.tabSearchRow}')).toBeLessThan(source.indexOf('data-dshmarket-categories'))
+    expect(source.indexOf("t('filter')")).toBeLessThan(source.indexOf('data-dshmarket-categories'))
     expect(css).toContain('var(--dsw-')
   })
 

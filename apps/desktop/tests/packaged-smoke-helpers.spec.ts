@@ -81,13 +81,13 @@ describe('packaged desktop process inspection', () => {
     expect(waits).toEqual([200, 200])
   })
 
-  it('seeds isolated ordinary and archived sessions for the real clipboard smoke', async () => {
+  it('seeds isolated ordinary, archived, and subagent sessions for native desktop smoke', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-clipboard-seed-'))
     try {
       const seeded = await seedWindowsClipboardSmokeState(root)
       expect(seeded.activeSessionId).not.toBe(seeded.archivedSessionId)
-      expect(seeded.protectedPaths).toHaveLength(5)
-      await expect(Promise.all(seeded.protectedPaths.map(path => readFile(path)))).resolves.toHaveLength(5)
+      expect(seeded.protectedPaths).toHaveLength(6)
+      await expect(Promise.all(seeded.protectedPaths.map(path => readFile(path)))).resolves.toHaveLength(6)
 
       const reader = new Context()
       try {
@@ -97,10 +97,16 @@ describe('packaged desktop process inspection', () => {
         expect(headers.map(header => header.id).sort()).toEqual([
           seeded.activeSessionId,
           seeded.archivedSessionId,
-          'desktop-smoke-messenger-source-session-id',
+          seeded.messengerSourceSessionId,
+          seeded.messengerSubagentSessionId,
         ].sort())
         expect(headers.every(header => header.cwd !== undefined)).toBe(true)
-        expect(new Set(headers.map(header => header.cwd)).size).toBe(3)
+        expect(new Set(headers.map(header => header.cwd)).size).toBe(4)
+        expect(headers.find(header => header.id === seeded.messengerSubagentSessionId)).toMatchObject({
+          origin: 'subagent',
+          parentSession: seeded.activeSessionId,
+          delegationDepth: 1,
+        })
         const active = await reader.sessionPersistence.load(SessionId(seeded.activeSessionId))
         expect(active.events.slice(-4).map(event => ({ type: event.type, data: event.data }))).toEqual([
           { type: 'permission/preset', data: { preset: 'workspace-write' } },

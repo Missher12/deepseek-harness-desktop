@@ -10,7 +10,7 @@ export const MESSENGER_DRAWER_DEFAULT_WIDTH = 400
 /** Browser-local numeric width preference. */
 export const MESSENGER_DRAWER_WIDTH_KEY = 'dsh.session-messenger.drawer-width'
 
-/** Receipt-bound reply target selected from a visible relay card. */
+/** Receipt-bound reply target selected from a visible relay disclosure. */
 export interface MessengerReplyTarget {
   readonly deliveryId: string
   readonly senderSessionId: string
@@ -168,7 +168,7 @@ export class MessengerUiController {
 
   /**
    * Open the drawer with one validated receipt-bound reply target.
-   * @param reply - delivery and source identities selected from the relay card.
+   * @param reply - delivery and source identities selected from the relay disclosure.
    */
   openReply(reply: MessengerReplyTarget): void {
     this.publish({ ...this.state, open: true, reply })

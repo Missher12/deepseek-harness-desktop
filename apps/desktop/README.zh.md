@@ -11,13 +11,15 @@ Workspace 位置，可在管理器中原位恢复；永久删除只能从归档�
 提供同一操作，复制时不会恢复或删除会话。应用复制完整且稳定的原始 ID，
 并根据宿主剪贴板是否接受写入显示结果提示。
 
-可移除的 `@deepseek-ai/dsh-session-messenger` 插件提供同一 profile 内的有界
-跨会话通信。Native Function Calling 与 Code Mode 都可选择不唤醒发送、排入
-唤醒跟进、通过 Host 持有的一次性 receipt 回复，或等待对应回复。收到的 relay
-会显示为可见会话卡片，包含来源 Session ID、delivery ID、正文、复制与回复操作。
-会话标题栏入口会打开记忆宽度的 320–560 px 抽屉，用于精确 ID 复制、发送／回复、
-待处理／未读状态和只含元数据的活动记录；窄窗口下会占满宽度。它不会建立 Agent
-自动对聊循环，收到的文字始终按不可信内容处理。
+可移除的 `@deepseek-ai/dsh-session-messenger` 插件提供同一 profile 内有界的 Agent
+通信。复制会话 A 的准确 ID，粘贴到会话 B，再让 B 的 Agent 发送：Native Function
+Calling 或 Code Mode 会启动 A 的已有 Agent，A 可通过 receipt 绑定元数据回复 B；任意
+一方之后也能使用对方 ID 发起另一条消息。四个工具覆盖直接发送、可选的发送并等待、
+一次性 Host 授权回复和显式匹配回复等待。收到的消息使用 Harness 原生上下文折叠行，
+不再显示自定义消息卡片。会话标题栏入口会打开记忆宽度的 320–560 px 操作抽屉，用于
+精确 ID 复制、发送／回复、待处理／未读状态和只含元数据的活动记录；“启动目标 Agent”
+默认开启，窄窗口下会占满宽度。它不会创建新会话、subagent 或自主 Agent 对聊循环，
+收到的文字始终按不可信内容处理。
 
 可移除的 `@deepseek-ai/dsh-reasoning-effort` 插件把普通思考等级行替换为支持
 键盘操作的滑块，并且只使用当前模型实际声明的档位。Harness 风格浮层在空间
@@ -31,8 +33,8 @@ Desktop 专属组合还固定接入 `dshmarket@1.10.1`，在设置中提供**插
 Desktop patch 的普通浏览器 profile 不受影响。插件属于第三方代码，安装前
 仍应查看源码，并审阅其请求的构建脚本授权。
 
-市场界面采用紧凑的 Harness 单列列表：40 像素图标、两行简介、固定的搜索／
-分类工具栏，以及稳定的“发现／已安装／更新／活动”标签。每个发现项只保留一个
+市场界面采用紧凑的 Harness 单列列表：40 像素图标、两行简介、固定且独立的
+搜索／筛选行和分类轨道，以及稳定的“发现／已安装／更新／活动”标签。每个发现项只保留一个
 主操作，详情、源码和复制包名统一放入更多菜单。所有 registry 分类都按来源顺序
 保留在同一条横向滚动轨道上；切换选择不会重排 chip，边缘控件会反映真实滚动边界。
 当前市场包不能停用、卸载或
@@ -72,15 +74,15 @@ pnpm run desktop:dmg
 pnpm run desktop:setup
 ```
 
-这个命令必须在原生 Windows x64 上运行，输出 `apps/desktop/release/DeepSeek-Harness-Setup-0.1.5-win-x64.exe`。Windows CI 使用独立的短暂存目录，避免原生 MSVC 重编译触发旧式路径长度限制；所有发布产物都写入 `apps/desktop/release`。
+这个命令必须在原生 Windows x64 上运行，输出 `apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe`。Windows CI 使用独立的短暂存目录，避免原生 MSVC 重编译触发旧式路径长度限制；所有发布产物都写入 `apps/desktop/release`。
 
 Windows Setup 是当前用户范围的一键 NSIS 安装器，不需要管理员权限，也不需要 Node.js、pnpm、终端、浏览器或固定端口；交互式安装完成后，它会创建桌面和开始菜单快捷方式并启动 DeepSeek Harness。卸载会删除应用和快捷方式，但保留 Harness 与 Electron 用户数据。
 
 应用使用操作系统分配的随机回环端口，不会占用固定的 65000 端口。
 
-当前已在本机验证的 Intel 成品为 `DeepSeek-Harness-0.1.5-mac-x64.dmg`，
-大小 163,338,960 字节，SHA-256：
-`f04df6f48f868384edd1cd855429a2c5f43a059c7e63bd181e09297f38532422`。
+当前已在本机验证的 Intel 成品为 `DeepSeek-Harness-0.1.6-mac-x64.dmg`，
+大小 163,329,569 字节，SHA-256：
+`5085c25e85b0eb650941d8b7915c1035090c52ce968b457b03bafc8971f4fe34`。
 
 ## 成品验证
 
@@ -94,9 +96,9 @@ Windows 在原生系统生成 Setup 后运行：
 
 ```powershell
 ./scripts/windows-desktop-setup-smoke.ps1 `
-  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.5-win-x64.exe
+  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.6-win-x64.exe
 ```
 
-成品测试使用仓库外的临时工作目录、临时 Electron 用户数据和临时 `DSH_HOME`。Intel macOS 测试会验证 preload、三栏工作台、普通与归档 Session ID 写入真实系统剪贴板且不打开／恢复／删除／发送／启动 Agent、会话通信的发送／卡片／回复、抽屉宽度持久化与拒绝分支无副作用、默认向下且可自适应翻转的思考滑块与 effort 持久化、Canvas 确实输出且小人物关闭、插件市场分类顺序稳定及标签／搜索／行几何、自更新保护、隔离 profile 中真实卸载普通插件、随机监听端口，以及原生退出后的完整进程回收。Desktop staging 还要求 staged 树中有且只有一个 `dshmarket@1.10.1`，其源码、Client bundle 与 source map 的紧凑布局和分类轨道标记一致，Host 自保护标记存在，并强制检查不可变 Desktop patch、插件运行时 provider 及内置 pnpm 入口确实进入成品。Windows 测试会验证相同功能行为，以及静默安装、快捷方式创建、真实剪贴板复制、卸载清理和数据保留。原生 Windows CI 会构建 Setup、运行这项测试、记录 SHA-256，并上传两个文件。
+成品测试使用仓库外的临时工作目录、临时 Electron 用户数据和临时 `DSH_HOME`。Intel macOS 测试会验证 preload、三栏工作台、普通与归档 Session ID 写入真实系统剪贴板且不打开／恢复／删除／发送／启动 Agent、对等会话发送／回复元数据、默认启动开关、原生无卡片渲染、抽屉宽度持久化与拒绝分支无副作用、默认向下且可自适应翻转的思考滑块与 effort 持久化、Canvas 确实输出且小人物关闭、插件市场分类顺序稳定及分离后的搜索／筛选／分类几何、自更新保护、隔离 profile 中真实卸载普通插件、随机监听端口，以及原生退出后的完整进程回收。工具级验收会另行证明双向 Agent 启动／回复行为、可选的精确 receipt 绑定等待与匹配回复拒绝；它不发起外部模型请求。Desktop staging 还要求 staged 树中有且只有一个 `dshmarket@1.10.1`，其源码、Client bundle 与 source map 的紧凑布局和分类轨道标记一致，Host 自保护标记存在，并强制检查不可变 Desktop patch、插件运行时 provider 及内置 pnpm 入口确实进入成品。Windows 测试会验证相同功能行为，以及静默安装、快捷方式创建、真实剪贴板复制、卸载清理和数据保留。原生 Windows CI 会构建 Setup、运行这项测试、记录 SHA-256，并上传两个文件。
 
 本地产物没有签名。macOS 可能要求从 Finder 右键菜单选择“打开”，Windows SmartScreen 可能要求确认未知发布者；只有受信任的平台签名凭据才能消除这些系统提示。

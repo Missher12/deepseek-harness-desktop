@@ -696,17 +696,7 @@ describe('MessageItem arms', () => {
     expect(view.container.querySelector('[data-context-text]')?.textContent).toBe('child report body')
   })
 
-  it('shows a structured session-messenger relay as one visible card with copy and reply actions', () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText },
-    })
-    const replies: unknown[] = []
-    const onReply = (event: Event): void => {
-      replies.push((event as CustomEvent<unknown>).detail)
-    }
-    window.addEventListener('dsh-session-messenger:reply', onReply)
+  it('keeps a structured session collaboration relay in the standard context disclosure', () => {
     const view = render(
       <MessageItem t={t} node={{
         kind: 'context',
@@ -731,18 +721,12 @@ describe('MessageItem arms', () => {
       />,
     )
 
-    expect(view.container.querySelector('[data-session-relay-card]')).not.toBeNull()
-    expect(screen.getByText('hello from another session')).toBeTruthy()
-    expect(screen.getByText('source-session-7')).toBeTruthy()
-    expect(view.queryByRole('button', { name: /^上下文注入/ })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '复制来源会话 ID' }))
-    expect(writeText).toHaveBeenCalledWith('source-session-7')
-    fireEvent.click(screen.getByRole('button', { name: '回复' }))
-    expect(replies).toEqual([{
-      deliveryId: 'delivery-7',
-      senderSessionId: 'source-session-7',
-    }])
-    window.removeEventListener('dsh-session-messenger:reply', onReply)
+    expect(view.container.querySelector('[data-session-relay-card]')).toBeNull()
+    const disclosure = view.getByRole('button', { name: /^上下文注入\s*dsh-session-messenger$/ })
+    expect(disclosure).toBeTruthy()
+    fireEvent.click(disclosure)
+    expect(view.container.querySelector('[data-context-text]')?.textContent)
+      .toContain('hello from another session')
   })
 
   it.each([

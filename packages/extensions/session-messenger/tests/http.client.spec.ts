@@ -578,6 +578,7 @@ describe('session messenger Host registration', () => {
   it('requires the WebServer alongside the already-reviewed core services', () => {
     expect(messengerInject).toEqual([
       'tools',
+      'systemPrompt',
       'storageDomain',
       'workspaceRegistry',
       'typert',
