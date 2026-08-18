@@ -97,8 +97,8 @@ The Windows Setup is a one-click, per-user NSIS installer. It needs no administr
 The application uses an operating-system-assigned loopback port and does not reserve port 65000.
 
 The current locally verified Intel artifact is
-`DeepSeek-Harness-0.1.7-mac-x64.dmg`, 163,343,340 bytes, SHA-256
-`d9aaf227ebc24f7b1bca0e4b884745665691b92272c25380c226874df5f1c32d`.
+`DeepSeek-Harness-0.1.8-mac-x64.dmg`, 163,361,101 bytes, SHA-256
+`8759888ec25c65b8cf71bf6c7d1641adee45f7a4d0fa1a9820cf8f2b084f3a68`.
 
 ## Packaged verification
 

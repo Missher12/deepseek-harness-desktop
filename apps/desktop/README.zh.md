@@ -80,9 +80,9 @@ Windows Setup 是当前用户范围的一键 NSIS 安装器，不需要管理员
 
 应用使用操作系统分配的随机回环端口，不会占用固定的 65000 端口。
 
-当前已在本机验证的 Intel 成品为 `DeepSeek-Harness-0.1.7-mac-x64.dmg`，
-大小 163,343,340 字节，SHA-256：
-`d9aaf227ebc24f7b1bca0e4b884745665691b92272c25380c226874df5f1c32d`。
+当前已在本机验证的 Intel 成品为 `DeepSeek-Harness-0.1.8-mac-x64.dmg`，
+大小 163,361,101 字节，SHA-256：
+`8759888ec25c65b8cf71bf6c7d1641adee45f7a4d0fa1a9820cf8f2b084f3a68`。
 
 ## 成品验证
 
