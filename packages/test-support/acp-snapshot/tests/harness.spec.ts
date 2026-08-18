@@ -911,6 +911,9 @@ describe('runScenario', () => {
   })
 
   it('waitForTitleAfterTurnEnd times out when the title precedes the boundary', { timeout: 20_000 }, async () => {
+    // Leave enough time for the first asynchronous log harvest to settle under
+    // instrumented Windows CI so the harness can report its domain timeout.
+    const timeoutMs = 250
     const { fixtureFile } = await scenario({
       prompt: 'hang-until-cancel',
       persistLogsOnCancel: true,
@@ -928,11 +931,11 @@ describe('runScenario', () => {
         steps: [
           ...boot,
           { op: 'promptAndCancel', text: 'hang' },
-          { op: 'waitForTitleAfterTurnEnd', timeoutMs: 20 },
+          { op: 'waitForTitleAfterTurnEnd', timeoutMs },
         ],
       },
       { agent: AGENT, mode: 'replay', fixtureFile },
-    )).rejects.toThrow(/did not persist session\/title after turn\/end within 20ms/)
+    )).rejects.toThrow(new RegExp(`did not persist session/title after turn/end within ${timeoutMs}ms`))
   })
 
   it('waitForEventAfterTurnEnd holds the app for a typed post-boundary record and times out otherwise', { timeout: 20_000 }, async () => {
