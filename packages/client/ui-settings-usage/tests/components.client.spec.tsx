@@ -5,8 +5,12 @@ import type { UsageInsightsSnapshot } from '@deepseek-ai/dsh-api-remotes/client'
 import { UsageInsightsSection } from '../src/client/UsageInsightsSection.tsx'
 import type { UsageInsightsSectionInjected, UsageInsightsSectionProps } from '../src/client/UsageInsightsSection.tsx'
 import { en, zh, type UsageInsightsLocaleKey } from '../src/client/locales.ts'
+import { resetUsageSnapshotForTest } from '../src/client/snapshot-cache.ts'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  resetUsageSnapshotForTest()
+})
 
 const t = ((key: UsageInsightsLocaleKey): string => en[key]) as UsageInsightsSectionProps['t']
 const activity: UsageInsightsSnapshot['activity'] = Array.from({ length: 371 }, (_, index) => ({
@@ -56,7 +60,8 @@ describe('UsageInsightsSection', () => {
   it('renders the five KPIs, partial notice, charts, insights, and ranked features', async () => {
     const deferred = Promise.withResolvers<UsageInsightsSnapshot>()
     const view = render(<UsageInsightsSection {...props(() => deferred.promise)} />)
-    expect(screen.getByText(en.loading)).toBeTruthy()
+    expect(view.container.querySelector('[data-usage-skeleton]')).not.toBeNull()
+    expect(screen.queryByText(en.loading)).toBeNull()
 
     await act(async () => { deferred.resolve(SNAPSHOT) })
 
@@ -71,6 +76,33 @@ describe('UsageInsightsSection', () => {
     expect(screen.getByText('preview')).toBeTruthy()
     expect(screen.getByText(en.skillBadge)).toBeTruthy()
     expect(screen.getByText(en.toolBadge)).toBeTruthy()
+  })
+
+  it('reuses the last process-memory snapshot while a background refresh settles', async () => {
+    const first = render(<UsageInsightsSection {...props(async () => SNAPSHOT)} />)
+    await screen.findByText('96.5K')
+    first.unmount()
+
+    const refresh = Promise.withResolvers<UsageInsightsSnapshot>()
+    const load = vi.fn(() => refresh.promise)
+    const second = render(<UsageInsightsSection {...props(load)} />)
+    expect(screen.getByText('96.5K')).toBeTruthy()
+    expect(second.container.querySelector('section')?.getAttribute('aria-busy')).toBe('true')
+    expect(second.container.querySelector('[data-usage-skeleton]')).toBeNull()
+
+    await act(async () => { refresh.reject(new Error('private refresh detail')) })
+
+    expect(screen.getByText('96.5K')).toBeTruthy()
+    expect(second.container.querySelector('[data-usage-refresh-stale]')?.textContent).toContain(en.refreshFailed)
+    expect(screen.queryByText('private refresh detail')).toBeNull()
+
+    load.mockResolvedValueOnce({
+      ...SNAPSHOT,
+      summary: { ...SNAPSHOT.summary, totalTokens: 100_000 },
+    })
+    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    expect(await screen.findByText('100K')).toBeTruthy()
+    expect(load).toHaveBeenCalledTimes(2)
   })
 
   it('switches chart views with click and keyboard navigation', async () => {

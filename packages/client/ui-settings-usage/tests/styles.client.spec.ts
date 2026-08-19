@@ -8,6 +8,12 @@ const styles = readFileSync(
 )
 
 describe('usage heatmap styles', () => {
+  it('uses a structural skeleton with a reduced-motion fallback', () => {
+    expect(styles).toMatch(/\.skeletonSummary\s*\{[^}]*grid-template-columns:\s*repeat\(5,/s)
+    expect(styles).toMatch(/\.skeletonBlock,\s*\.skeletonParticles i\s*\{[^}]*animation:\s*skeleton-pulse/s)
+    expect(styles).toMatch(/prefers-reduced-motion:\s*reduce/s)
+  })
+
   it('gives the dashboard a settings-native vertical rhythm', () => {
     expect(styles).toMatch(/\.section\s*\{[^}]*padding:\s*28px\s+0\s+36px/s)
     expect(styles).toMatch(/\.activityHeader\s*\{[^}]*margin-top:\s*32px/s)
