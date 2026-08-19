@@ -255,7 +255,9 @@ describe('the shipped Web composition', () => {
         if (FULL_EXECUTION_ROLES.has(id)) {
           expect(tools).toEqual(expect.arrayContaining(['job_list', 'subagent', 'workflow']))
         } else {
-          expect(tools).not.toEqual(expect.arrayContaining(['job_list', 'subagent', 'workflow']))
+          for (const tool of ['job_list', 'subagent', 'workflow']) {
+            expect(tools).not.toContain(tool)
+          }
         }
       } finally {
         await handle.dispose()
