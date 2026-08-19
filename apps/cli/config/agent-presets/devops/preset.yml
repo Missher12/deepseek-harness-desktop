@@ -1,0 +1,3 @@
+name: DevOps 与发布
+description: 负责构建、打包、CI、部署预检、回滚规划和产物验证。
+order: 11

@@ -26,7 +26,9 @@ chip 以部署默认值打开，其选择是**暂存**的——该界面先于�
 
 本地创作的 preset 的权限恰好等于它所引用的插件，因此列表会标注 `user` 行，而不是把每个 preset 都呈现为随附且已审核的。
 
-preset 文件提供一套未国际化的 `name` 与 `description`，Web 将其用于所有 `user` 行和未知的 `system` 行。对于四个随附 id（`standard`、`code`、`minimal` 与 `cordis`），只有名单将该行标记为 `system` 时，Web 才会从当前 locale 解析这两个字段；同名的 `user` preset 仍使用其文件元数据。
+preset 文件提供一套未国际化的 `name` 与 `description`，Web 将其用于所有 `user` 行和未知的 `system` 行。对于十二个随附 id（`standard`、`code`、`minimal`、`cordis`、`planner`、`frontend`、`backend`、`debugger`、`reviewer`、`qa`、`devops` 与 `research`），只有名单将该行标记为 `system` 时，Web 才会从当前 locale 解析这两个字段；同名的 `user` preset 仍使用其文件元数据。
+
+新增八个角色预设是在现有四个基础上扩展，而不是替换它们。它们覆盖方案规划、前端/UI、后端/API、故障排查、代码审查、测试/QA、DevOps/发布和文档/研究。选择继续由用户在新会话表层明确完成：没有需求分类器或自动路由，而且会话保持开始时的组装。角色指令塑造 Agent 行为，但不是权限边界；文件系统修改、Shell 执行、生产访问与审批仍由组装工具、沙箱策略、权限预设和用户授权控制。
 
 本行在自身命名空间的 `settings/changed` 以及 `connection/reset` 时重新读取：名单是一个活动目录，默认值是一项设置，外部编辑与重新连接都可能改变它。
 

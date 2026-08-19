@@ -26,7 +26,9 @@ Options and the current default both come from one `agentPreset.list` call. The 
 
 A locally authored preset is exactly as privileged as the plugins it names, so the list marks `user` rows rather than presenting every preset as shipped and vetted.
 
-Preset files publish one unlocalized `name` and `description`, which Web uses for every `user` row and unknown `system` row. For the four shipped ids (`standard`, `code`, `minimal`, and `cordis`), Web resolves both fields from its active locale only when the roster marks the row `system`; an identically named `user` preset keeps its file metadata.
+Preset files publish one unlocalized `name` and `description`, which Web uses for every `user` row and unknown `system` row. For the twelve shipped ids (`standard`, `code`, `minimal`, `cordis`, `planner`, `frontend`, `backend`, `debugger`, `reviewer`, `qa`, `devops`, and `research`), Web resolves both fields from its active locale only when the roster marks the row `system`; an identically named `user` preset keeps its file metadata.
+
+The eight role presets extend the existing four rather than replacing them. They cover planning, frontend/UI, backend/API, troubleshooting, code review, testing/QA, DevOps/release, and documentation/research. Selection remains explicit on the new-session surface: there is no prompt classifier or automatic router, and a session keeps the composition it started with. Role instructions shape Agent behavior but are not a permission boundary; filesystem mutation, shell execution, production access, and approvals remain governed by the composed tools, sandbox policy, permission preset, and user authorization.
 
 The row re-reads on `settings/changed` for its own namespace and on `connection/reset`: the roster is a live directory and the default is a settings field, so an external edit or a reconnect can both move it.
 
