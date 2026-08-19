@@ -75,6 +75,12 @@ async function invoke(route: RegisteredRoute, req: IncomingMessage) {
   return recorder.result
 }
 
+function nonErrorFailure(message: string): Error {
+  const failure = new Error(message)
+  Reflect.setPrototypeOf(failure, { toString: () => message })
+  return failure
+}
+
 beforeEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -240,23 +246,26 @@ describe('DeepSeek balance HTTP bridge', () => {
   )
 
   it('reports provider transport and JSON failures without caching them', async () => {
+    const providerStringFailure = nonErrorFailure('provider string failure')
+    const jsonStringFailure = nonErrorFailure('json string failure')
     const providerFetch = vi.fn()
       .mockRejectedValueOnce(new Error('provider offline'))
-      .mockRejectedValueOnce('provider string failure')
+      .mockRejectedValueOnce(providerStringFailure)
       .mockResolvedValueOnce({
         ok: true,
         json: () => Promise.reject(new Error('json unavailable')),
-      } as Response)
+      })
       .mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.reject('json string failure'),
-      } as Response)
+        json: () => Promise.reject(jsonStringFailure),
+      })
     vi.stubGlobal('fetch', providerFetch)
 
     for (const expected of ['provider offline', 'provider string failure', 'json unavailable', 'json string failure']) {
       const bridge = installed()
       const result = await invoke(bridge.route, request('GET', bridge.capability))
-      expect(JSON.parse(result.body) as { error: string }).toMatchObject({ error: expect.stringContaining(expected) })
+      const snapshot = JSON.parse(result.body) as { error: string }
+      expect(snapshot.error).toContain(expected)
     }
     expect(providerFetch).toHaveBeenCalledTimes(4)
   })
@@ -269,7 +278,7 @@ describe('DeepSeek balance HTTP bridge', () => {
       .toMatchObject({ error: 'options unavailable' })
 
     const rejected = installed('https://api.deepseek.com', {
-      resolveApiKey: () => Promise.reject('credential unavailable'),
+      resolveApiKey: () => Promise.reject(nonErrorFailure('credential unavailable')),
     })
     expect(JSON.parse((await invoke(rejected.route, request('GET', rejected.capability))).body) as unknown)
       .toMatchObject({ error: 'credential unavailable' })

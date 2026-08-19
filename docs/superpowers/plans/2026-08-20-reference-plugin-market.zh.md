@@ -65,7 +65,7 @@ git commit -m "feat(settings): widen the plugin market surface"
 
 导入已 patch 的 `market-data.ts` 并断言以下契约：
 
-```ts
+```ts ignore-check
 catalogSections(registry, visible, 6)
 // Featured first; stable registry category order; no duplicate Featured entry;
 // each preview <= 6; remainder is exact.

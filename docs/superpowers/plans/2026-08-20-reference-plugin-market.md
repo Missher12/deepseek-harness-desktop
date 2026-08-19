@@ -65,7 +65,7 @@ git commit -m "feat(settings): widen the plugin market surface"
 
 Import the patched `market-data.ts` and assert these contracts:
 
-```ts
+```ts ignore-check
 catalogSections(registry, visible, 6)
 // Featured first; stable registry category order; no duplicate Featured entry;
 // each preview <= 6; remainder is exact.
