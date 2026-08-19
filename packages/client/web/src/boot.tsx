@@ -43,6 +43,7 @@ import {
 import * as AppShell from './app-shell.ts'
 import { APP_SHELL_ID } from './app-shell.ts'
 import { AppRoot } from './AppRoot.tsx'
+import { isMacDesktopSurface } from './DesktopBootSurface.tsx'
 import { getStaticModules } from './seed.ts'
 import { STATE_LABELS, createLoaderStatusStore, createSignal } from './loader-status.ts'
 import './base.css'
@@ -117,6 +118,10 @@ export class AppWebEntry {
         settled={this.settled}
         status={this.status}
         error={this.error}
+        macDesktop={isMacDesktopSurface(
+          globalThis.location?.search ?? '',
+          globalThis.navigator?.userAgent ?? '',
+        )}
         renderApp={() => {
           const shell = this.ctx.get('appShell')
           // Unreachable after a clean settle (the app-shell entry is in every graph).

@@ -11,6 +11,7 @@
 import { useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import type { KernelSignal, LoaderStatus } from './loader-status.ts'
+import { DesktopBootSurface } from './DesktopBootSurface.tsx'
 import css from './AppRoot.module.css'
 
 /** AppRoot props: settled signal, fiber-state projection feed, boot failure report, deferred real-UI factory. */
@@ -23,6 +24,8 @@ export interface AppRootProps {
   error: KernelSignal<string | undefined>
   /** Builds the real UI; called only after settled. */
   renderApp: () => ReactNode
+  /** Keep the macOS native intro continuous while the web kernel settles. */
+  macDesktop?: boolean
 }
 
 /** Boot gate: loading page until the boot settles; failures stay here. */
@@ -32,9 +35,18 @@ export function AppRoot(props: AppRootProps) {
   const error = useSyncExternalStore(props.error.subscribe, props.error.getSnapshot)
   const failed = Object.entries(status).filter(([, s]) => s === 'failed')
 
-  if (settled) return <>{props.renderApp()}</>
-
   const loud = error !== undefined || failed.length > 0
+
+  if (props.macDesktop === true) {
+    return (
+      <div className={css.desktopRoot}>
+        {settled ? props.renderApp() : null}
+        <DesktopBootSurface phase={settled ? 'exit' : 'hold'} failed={failed} error={error} />
+      </div>
+    )
+  }
+
+  if (settled) return <>{props.renderApp()}</>
 
   return (
     <div className={css.boot}>
