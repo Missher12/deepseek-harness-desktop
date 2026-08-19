@@ -12,14 +12,20 @@ const css = readFileSync(join(packageRoot, 'src/client/Market.module.css'), 'utf
 const locales = readFileSync(join(packageRoot, 'src/client/locales.ts'), 'utf8')
 
 describe('Harness-native dshmarket presentation', () => {
-  it('renders a compact one-column plugin list with stable semantic hooks', () => {
-    expect(source).toContain('data-dshmarket-layout="compact"')
+  it('renders the B2 high-density plugin list with stable semantic hooks', () => {
+    expect(source).toContain('data-dshmarket-layout="b2"')
     expect(source).toContain('data-dshmarket-plugin-row')
+    expect(source).toContain('data-dshmarket-plugin-category')
+    expect(source).toContain('data-dshmarket-plugin-description')
     expect(source).toContain('data-dshmarket-primary-action')
     expect(source).toContain('data-dshmarket-overflow-menu')
+    expect(source).toContain('IconEllipsisOutline16')
+    expect(source).toContain("aria-label={`${t('moreActions')}: ${p.name}`}")
     expect(css).toMatch(/\.grid\{[^}]*grid-template-columns:1fr/)
-    expect(css).toMatch(/\.av\{[^}]*(?:width:40px[^}]*height:40px|height:40px[^}]*width:40px)/)
-    expect(css).toContain('-webkit-line-clamp:2')
+    expect(css).toMatch(/\.av\{[^}]*(?:width:42px[^}]*height:42px|height:42px[^}]*width:42px)/)
+    expect(css).toMatch(/\.pluginTitleRow\{[^}]*display:flex[^}]*align-items:center/)
+    expect(css).toMatch(/\.desc\{[^}]*-webkit-line-clamp:1/)
+    expect(css).toMatch(/\.primaryAction\{[^}]*height:28px[^}]*--dsw-alias-brand-primary/)
   })
 
   it('keeps the high-frequency controls sticky and horizontally scrollable', () => {
@@ -57,7 +63,7 @@ describe('Harness-native dshmarket presentation', () => {
   it('reflows crowded plugin actions from the market container width', () => {
     expect(css).toMatch(/\.root\{[^}]*container-type:inline-size/)
     expect(css).toMatch(
-      /@container\s*\(max-width:620px\)\{[^@]*\.pluginRow\{[^}]*grid-template-columns:40px minmax\(0,1fr\) auto/s,
+      /@container\s*\(max-width:620px\)\{[^@]*\.pluginRow\{[^}]*grid-template-columns:42px minmax\(0,1fr\) auto/s,
     )
     expect(css).toMatch(/@container\s*\(max-width:620px\)\{[^@]*\.pluginAction\{[^}]*grid-column:2/s)
   })
