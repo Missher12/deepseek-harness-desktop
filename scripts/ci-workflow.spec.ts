@@ -465,6 +465,40 @@ describe('Windows desktop Setup workflow', () => {
   })
 })
 
+describe('Desktop release workflow', () => {
+  it('builds, verifies, and publishes both native desktop installers inside GitHub', () => {
+    const workflow = loadWorkflow('.github/workflows/desktop-release.yml')
+    const dispatch = workflowEvent(workflow, 'workflow_dispatch')
+    const mac = workflowJob(workflow, 'mac')
+    const windows = workflowJob(workflow, 'windows')
+    const publish = workflowJob(workflow, 'publish')
+    const macSteps = Array.isArray(mac.steps) ? mac.steps.filter(isRecord) : []
+    const windowsSteps = Array.isArray(windows.steps) ? windows.steps.filter(isRecord) : []
+    const publishSteps = Array.isArray(publish.steps) ? publish.steps.filter(isRecord) : []
+    const macCommands = macSteps.flatMap(step => typeof step.run === 'string' ? [step.run] : [])
+    const windowsCommands = windowsSteps.flatMap(step => typeof step.run === 'string' ? [step.run] : [])
+    const publishCommands = publishSteps.flatMap(step => typeof step.run === 'string' ? [step.run] : [])
+
+    expect(dispatch).toMatchObject({ inputs: { tag: { required: true } } })
+    expect(workflow.permissions).toEqual({ contents: 'write' })
+    expect(workflow.concurrency).toMatchObject({ 'cancel-in-progress': false })
+    expect(mac['runs-on']).toBe('macos-15-intel')
+    expect(macCommands.some(command => command.includes('pnpm run desktop:dmg'))).toBe(true)
+    expect(macCommands.some(command => command.includes('packaged-smoke.spec.ts'))).toBe(true)
+    expect(macCommands.some(command => command.includes('hdiutil verify'))).toBe(true)
+    expect(macSteps.some(step => step.uses === 'actions/upload-artifact@v7')).toBe(true)
+    expect(windows['runs-on']).toBe('windows-2025')
+    expect(windowsCommands.some(command => command.includes('pnpm run desktop:stage'))).toBe(true)
+    expect(windowsCommands.some(command => command.includes('windows-desktop-setup-smoke.ps1'))).toBe(true)
+    expect(windowsSteps.some(step => step.uses === 'actions/upload-artifact@v7')).toBe(true)
+    expect(publish.needs).toEqual(['mac', 'windows'])
+    expect(publishSteps.some(step => step.uses === 'actions/download-artifact@v8')).toBe(true)
+    expect(publishCommands.some(command => command.includes('shasum -a 256 -c'))).toBe(true)
+    expect(publishCommands.some(command => command.includes('gh release upload'))).toBe(true)
+    expect(publishCommands.some(command => command.includes('gh release edit') && command.includes('--draft=false'))).toBe(true)
+  })
+})
+
 describe('Upstream-only workflows', () => {
   it('skips issue automation in mirrors while preserving explicit review handoff events', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
