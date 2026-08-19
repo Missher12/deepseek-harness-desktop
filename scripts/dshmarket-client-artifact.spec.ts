@@ -26,14 +26,17 @@ describe('patched dshmarket artifacts', () => {
 
     for (const artifact of [source, bundle, mappedSources]) {
       expect(artifact).toContain('data-dshmarket-layout')
-      expect(artifact).toContain('b2')
+      expect(artifact).toContain('reference')
+      expect(artifact).toContain('data-dshmarket-search')
+      expect(artifact).toContain('data-dshmarket-installed-rail')
+      expect(artifact).toContain('data-dshmarket-management-trigger')
+      expect(artifact).toContain('data-dshmarket-mode')
+      expect(artifact).toContain('data-dshmarket-section')
       expect(artifact).toContain('data-dshmarket-plugin-row')
-      expect(artifact).toContain('data-dshmarket-plugin-category')
       expect(artifact).toContain('data-dshmarket-plugin-description')
       expect(artifact).toContain('IconEllipsisOutline16')
-      expect(artifact).toContain('data-dshmarket-tab')
-      expect(artifact).toContain('data-scroll-right')
-      expect(artifact).toContain('categoriesNext')
+      expect(artifact).toContain('personalPluginNames')
+      expect(artifact).toContain('catalogSections')
     }
   })
 
@@ -59,7 +62,7 @@ describe('patched dshmarket artifacts', () => {
 
   it('retains the exact npm integrity while applying a locked pnpm patch hash', () => {
     const lockfile = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8')
-    expect(lockfile).toContain('dshmarket@1.10.1: 2434f2579e8c12deeaaf035cce0ef7bd15d69fc97e047616157256fee6342126')
+    expect(lockfile).toContain('dshmarket@1.10.1: bbf70e07988de4ce7cb4f21208628552b5f96d89e392330af2a40551abef2246')
     expect(lockfile).toContain('integrity: sha512-8AWM8RT2tttJsozTBm6mAfI+cNpCIbeBdP9IoydJdHlH/+x72aNqmv3AWdbNfKDDwkkqM2Ce/XRDhha9HG0Q5Q==')
   })
 })

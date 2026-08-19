@@ -6,7 +6,9 @@ import { z } from 'zod'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
-import type { ContextPressureProjection, TokenUsageProjection } from './projection.ts'
+import type {
+  ContextPressureProjection, TokenBillingModelProjection, TokenUsageProjection,
+} from './projection.ts'
 import { foldSurfaceProjection } from './surface-projection.ts'
 import type { ShadowPriceClaim } from './surface-projection.ts'
 
@@ -136,6 +138,90 @@ ProjectionDefinition<'tokenUsage', TokenUsageState> = {
     }
   },
   view: state => state.totals,
+  stateVersion: 1,
+}
+
+const billingModelSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('none') }).strict(),
+  z.object({ kind: z.literal('single'), provider: z.string().min(1), model: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal('mixed') }).strict(),
+]) as z.ZodType<TokenBillingModelProjection>
+
+interface BillingRoute {
+  provider: string
+  model: string
+}
+
+interface BillingModelState {
+  current?: BillingRoute
+  billing: TokenBillingModelProjection
+  last?: {
+    turn: number
+    step: number
+    route?: BillingRoute
+    before: TokenBillingModelProjection
+  }
+}
+
+const sameBillingRoute = (left: BillingRoute | undefined, right: BillingRoute | undefined): boolean =>
+  left?.provider === right?.provider && left?.model === right?.model
+
+const mergeBillingRoute = (
+  state: TokenBillingModelProjection,
+  route: BillingRoute | undefined,
+): TokenBillingModelProjection => {
+  if (route === undefined || state.kind === 'mixed') return { kind: 'mixed' }
+  if (state.kind === 'none') return { kind: 'single', ...route }
+  return state.provider === route.provider && state.model === route.model
+    ? state
+    : { kind: 'mixed' }
+}
+
+/**
+ * Durable billing-route projection. It waits for a finalized usage-bearing
+ * assistant message so the provider/model identity comes from the exact
+ * completed result rather than the currently visible or pending request.
+ */
+export const tokenBillingModelProjectionDefinition:
+ProjectionDefinition<'tokenBillingModel', BillingModelState> = {
+  key: 'tokenBillingModel',
+  schema: billingModelSchema,
+  init: () => ({ billing: { kind: 'none' } }),
+  apply: (state, event) => {
+    if (event.type === 'request/header') {
+      const next = event.data.header.config
+      if (sameBillingRoute(state.current, next)) return state
+      return { ...state, current: { provider: next.provider, model: next.model } }
+    }
+
+    let turn: number
+    let step: number
+    let route: BillingRoute | undefined
+    if (event.type === 'assistant/chunk' && event.data.chunk.type === 'usage') {
+      ;({ turn, step } = event.data)
+      route = state.current
+    } else if (event.type === 'assistant/message' && event.data.usage !== undefined) {
+      ;({ turn, step } = event.data)
+      const source = event.data.message.source
+      route = { provider: source.provider, model: source.model }
+    } else {
+      return state
+    }
+
+    const sameStep = state.last !== undefined
+      && state.last.turn === turn
+      && state.last.step === step
+      ? state.last
+      : undefined
+    if (sameStep !== undefined && sameBillingRoute(sameStep.route, route)) return state
+    const before = sameStep?.before ?? state.billing
+    return {
+      ...state,
+      billing: mergeBillingRoute(before, route),
+      last: { turn, step, ...route === undefined ? {} : { route }, before },
+    }
+  },
+  view: state => state.billing,
   stateVersion: 1,
 }
 

@@ -65,16 +65,17 @@
 }
 
 /* Panel (figma Settings 501:29947): r24, white, lv3 shadow (figma effects
-   match --dsw-shadow-lv3 exactly); figma's 1080x700 is shrunk to 800 wide.
+   match --dsw-shadow-lv3 exactly); every section shares one 1040px width.
    One height for every section, taken from the viewport rather than the
    content: sections differ by hundreds of pixels (a settings list against the
-   composition editor), and a content-sized panel would resize under the
-   pointer on every nav click. Whatever does not fit scrolls in `.options`. */
+   composition editor), and a section-sized panel would resize under the
+   pointer on every nav click. Small viewports still contract to 48px gutters;
+   whatever does not fit scrolls in `.options`. */
 .panel {
   position: relative;
   z-index: 1;
   display: flex;
-  width: 800px;
+  width: min(1040px, calc(100vw - 48px));
   height: min(800px, calc(100vh - 48px));
   max-width: calc(100vw - 48px);
   border-radius: 24px;
@@ -88,13 +89,6 @@
      styles/scrollbar.css for the rebinding contract). */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-}
-
-/* The reference-style market needs a readable two-column catalog. Keep the
-   wider geometry scoped to its section so ordinary Settings pages retain the
-   stable 800px panel users already know. */
-.panel[data-settings-section="market"] {
-  width: min(1040px, calc(100vw - 48px));
 }
 
 /* Nav rail (figma .Setting-nav 501:29958): 188 wide, pad (12,22,12,0),

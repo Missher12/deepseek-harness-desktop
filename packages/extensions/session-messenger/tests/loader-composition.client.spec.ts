@@ -27,8 +27,6 @@ import { createScope } from '@deepseek-ai/dsh-scope'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
-import { MessengerDrawer } from '../src/client/MessengerDrawer.tsx'
-import { MessengerHeaderButton } from '../src/client/MessengerHeaderButton.tsx'
 import * as SessionMessengerClient from '../src/client/index.tsx'
 import {
   ACK_PATH,
@@ -274,7 +272,7 @@ describe('real Host Loader composition', () => {
 })
 
 describe('real Client Loader composition', () => {
-  it('owns only one header trigger and one shell drawer, then removes both with its client fiber', async () => {
+  it('owns no header or drawer surface because relays render in the chat timeline', async () => {
     const LocaleProvider = {
       name: 'fixture-locale',
       apply(ctx: Context) { ctx.provide('locale', new LocaleRuntime(ctx)) },
@@ -306,18 +304,8 @@ describe('real Client Loader composition', () => {
 
     const header = ctx.slots.entries('conversation.session.header.utilities')
     const overlay = ctx.slots.entries('shell.overlay')
-    expect(header).toHaveLength(1)
-    expect(overlay).toHaveLength(1)
-    expect(header[0]).toMatchObject({
-      options: { id: 'session-messenger', order: 80 },
-      locale: 'sessionMessenger',
-    })
-    expect(header[0]?.component).toBe(MessengerHeaderButton)
-    expect(overlay[0]).toMatchObject({
-      options: { id: 'session-messenger-drawer', order: 80 },
-      locale: 'sessionMessenger',
-    })
-    expect(overlay[0]?.component).toBe(MessengerDrawer)
+    expect(header).toEqual([])
+    expect(overlay).toEqual([])
     const messengerOccupants = ctx.slots.snapshot().flatMap(function visit(node): string[] {
       return [
         ...node.occupants
@@ -326,10 +314,7 @@ describe('real Client Loader composition', () => {
         ...node.children.flatMap(visit),
       ]
     })
-    expect(messengerOccupants).toEqual([
-      'conversation.session.header.utilities',
-      'shell.overlay',
-    ])
+    expect(messengerOccupants).toEqual([])
 
     await messengerEntry(ctx, CLIENT_SPECIFIER).update({ disabled: true })
     expect(ctx.slots.entries('conversation.session.header.utilities')).toEqual([])

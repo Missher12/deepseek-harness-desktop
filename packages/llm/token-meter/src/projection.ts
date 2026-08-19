@@ -17,6 +17,12 @@ export interface TokenUsageProjection {
   cacheWriteTokens: number
 }
 
+/** Durable model identity for pricing aggregate token usage safely. */
+export type TokenBillingModelProjection =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'single'; readonly provider: string; readonly model: string }
+  | { readonly kind: 'mixed' }
+
 /**
  * Approximate context occupancy for a status display.
  *
@@ -69,6 +75,8 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     /** Provider-reported usage accumulated across the complete durable log. */
     tokenUsage: TokenUsageProjection
+    /** Single settled billed route, or a conservative mixed/none marker. */
+    tokenBillingModel: TokenBillingModelProjection
     /** Newest request pressure paired with the newest known route capacity. */
     contextPressure: ContextPressureProjection
     /** Heuristic system/tools/message composition of the next request. */

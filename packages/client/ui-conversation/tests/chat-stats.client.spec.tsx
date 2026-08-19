@@ -3,7 +3,7 @@
 // acceptance — zero renders during streaming.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import type {
   AssistantMessageNode, ConversationSnapshot, SessionId, ToolResultNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -12,7 +12,9 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import { StatsLine, contextOccupancy, deriveStats, formatDuration, formatTokens, type StatsLineProps } from '../src/client/chat/StatsLine.tsx'
+import {
+  StatsLine, contextOccupancy, deriveStats, formatDuration, formatTokens, type StatsLineProps,
+} from '../src/client/chat/StatsLine.tsx'
 import { en, zh } from '../src/client/locales.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 
@@ -203,6 +205,56 @@ describe('StatsLine', () => {
       contextPressure: {},
     })} />)
     expect(emptyView.container.textContent).toBe('')
+  })
+
+  it('shows an estimated official-price cost only for a single supported DeepSeek model', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T04:00:00.000Z'))
+    const usage = {
+      uncachedInputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      cacheWriteTokens: 1_000_000,
+      outputTokens: 1_000_000,
+    }
+    const single = makeSource()
+    const view = render(<StatsLine {...props(single.source, {
+      tokenUsage: usage,
+      tokenBillingModel: { kind: 'single', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    })} />)
+    expect(view.container.textContent).toContain('Session est. ≈ ¥7.55')
+
+    const mixed = makeSource()
+    const mixedView = render(<StatsLine {...props(mixed.source, {
+      tokenUsage: usage,
+      tokenBillingModel: { kind: 'mixed' },
+    })} />)
+    expect(mixedView.container.textContent).not.toContain('¥')
+    vi.useRealTimers()
+  })
+
+  it('shows a validated account balance from the same-origin Host bridge', async () => {
+    vi.stubGlobal('__DSH_DEEPSEEK_BALANCE__', {
+      path: '/plugins/llm-deepseek/balance',
+      capabilityHeader: 'x-dsh-llm-deepseek-capability',
+      capability: 'test-capability',
+    })
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      fetchedAt: 100,
+      currency: 'CNY',
+      totalBalance: 8.5,
+      grantedBalance: 0,
+      toppedUpBalance: 8.5,
+      error: null,
+    }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { source } = makeSource()
+    const view = render(<StatsLine {...props(source)} />)
+
+    await waitFor(() => { expect(view.container.textContent).toContain('Balance ¥8.50') })
+    expect(fetchMock).toHaveBeenCalledWith('/plugins/llm-deepseek/balance', expect.objectContaining({
+      method: 'GET',
+      headers: { 'x-dsh-llm-deepseek-capability': 'test-capability' },
+    }))
   })
 
   it('reveals the full line in a delayed hover tooltip only while the row is clipped', () => {

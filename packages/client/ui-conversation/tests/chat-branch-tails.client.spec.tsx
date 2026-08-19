@@ -11,8 +11,9 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type {
-  ChatConversationViewNode, ConversationNode,
+  ChatConversationViewNode, ConversationNode, SessionId, SessionListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ChatNodeViewProps } from '../src/client/contract/slots.ts'
 import {
   formatMessageClock, msUntilNextLocalMidnight, startOfLocalDay,
@@ -43,6 +44,16 @@ afterEach(() => {
 // Mirrors the real lookup chain (conversation namespace, then common).
 const t: ChatNodeViewProps['t'] = makeTranslate(zh, commonZh)
 const RETRY_ID = 'retry-fixture' as Extract<ConversationNode, { kind: 'model-retry' }>['retryId']
+const SOURCE_SESSION_ID = 'source-session-7' as SessionId
+const useSessions = bindSnapshotSelector(createSnapshotStore<SessionListState>({
+  ids: [SOURCE_SESSION_ID],
+  byId: { [SOURCE_SESSION_ID]: { id: SOURCE_SESSION_ID, title: 'Codex' } as never },
+  current: undefined,
+  phase: 'ready',
+  subagentsByParent: {},
+  jobsBySession: {},
+  currentAddress: undefined,
+}))
 
 interface MessageItemProps {
   readonly node: ConversationNode
@@ -62,7 +73,7 @@ function MessageItem({ node, t: translate }: MessageItemProps) {
     visibility: 'visible',
     data: node.kind === 'model-retry' ? { attempts: [node], current: node } : node,
   }
-  const props = { node: viewNode, t: translate } as ChatNodeViewProps
+  const props = { node: viewNode, useSessions, t: translate } as ChatNodeViewProps
   switch (node.kind) {
     case 'user':
     case 'steering':
@@ -696,7 +707,7 @@ describe('MessageItem arms', () => {
     expect(view.container.querySelector('[data-context-text]')?.textContent).toBe('child report body')
   })
 
-  it('keeps a structured session collaboration relay in the standard context disclosure', () => {
+  it('renders a structured session collaboration relay as a visible chat card', () => {
     const view = render(
       <MessageItem t={t} node={{
         kind: 'context',
@@ -721,24 +732,35 @@ describe('MessageItem arms', () => {
       />,
     )
 
-    expect(view.container.querySelector('[data-session-relay-card]')).toBeNull()
-    const disclosure = view.getByRole('button', { name: /^上下文注入\s*dsh-session-messenger$/ })
-    expect(disclosure).toBeTruthy()
-    fireEvent.click(disclosure)
-    expect(view.container.querySelector('[data-context-text]')?.textContent)
-      .toContain('hello from another session')
+    expect(view.container.querySelector('[data-relay-card]')).not.toBeNull()
+    expect(view.getByText('由 Codex 从另一个聊天发来')).toBeTruthy()
+    expect(view.getByText('hello from another session')).toBeTruthy()
+    expect(view.queryByRole('button', { name: /^上下文注入\s*dsh-session-messenger$/ })).toBeNull()
   })
 
-  it.each([
-    ['old messenger relay', {
-      kind: 'plugin', plugin: 'dsh-session-messenger', form: 'relay',
-      senderSessionId: 'source', deliveryId: 'delivery', mode: 'inject',
-    }],
-    ['foreign relay', {
+  it('keeps an older messenger relay visible using its sender id and last text block', () => {
+    const view = render(
+      <MessageItem t={t} node={{
+        kind: 'context', seq: 5, time: 1_000,
+        content: [{ type: 'text', text: 'metadata' }, { type: 'text', text: 'fallback body' }],
+        source: {
+          kind: 'plugin', plugin: 'dsh-session-messenger', form: 'relay',
+          senderSessionId: 'source', deliveryId: 'delivery', mode: 'inject',
+        },
+        provenance: { role: 'inject', label: 'dsh-session-messenger' },
+        form: 'relay',
+      } as never}
+      />,
+    )
+    expect(view.getByText('由 source 从另一个聊天发来')).toBeTruthy()
+    expect(view.getByText('fallback body')).toBeTruthy()
+  })
+
+  it('keeps a foreign relay on the existing context disclosure fallback', () => {
+    const source = {
       kind: 'plugin', plugin: 'foreign-messenger', form: 'relay',
       senderSessionId: 'source', deliveryId: 'delivery', mode: 'inject', bodyBlockIndex: 1,
-    }],
-  ])('keeps %s on the existing context disclosure fallback', (_label, source) => {
+    }
     const view = render(
       <MessageItem t={t} node={{
         kind: 'context', seq: 5, time: 1_000,
@@ -749,7 +771,7 @@ describe('MessageItem arms', () => {
       } as never}
       />,
     )
-    expect(view.container.querySelector('[data-session-relay-card]')).toBeNull()
+    expect(view.container.querySelector('[data-relay-card]')).toBeNull()
     expect(view.getByRole('button', { name: new RegExp(`^上下文注入\\s*${source.plugin}`) })).toBeTruthy()
   })
 

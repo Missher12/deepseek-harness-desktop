@@ -53,6 +53,8 @@ Expected: FAIL because the Darwin page, Desktop boot component, and direct-revea
 Select `loading-macos.html` only when `process.platform === 'darwin'`; retain `loading.html` for every other platform. Build the intro from inline SVG/text and local CSS: near-black background, `#4d6bfe` primary blue, cold cyan highlight, white type, one scan, and a 900-millisecond assembly followed by an indefinite hold. Hide decorative layers from accessibility, keep truthful local-runtime text, and make reduced motion show the hold frame immediately.
 
 ```ts
+import { fileURLToPath } from 'node:url'
+
 const loadingPath = fileURLToPath(new URL(
   process.platform === 'darwin' ? '../renderer/loading-macos.html' : '../renderer/loading.html',
   import.meta.url,
@@ -121,6 +123,8 @@ Expected: FAIL because the component still renders `loading` text and discards t
 Implement a module-private `UsageInsightsSnapshot | undefined` with internal read, write, and test-reset functions. Initialize `ViewState` from that cache. Every mount still calls `load()` once; successful reads atomically update state and the cache. Failed reads use a functional state update: retain a ready snapshot with `refresh: 'failed'`, or enter the existing first-load error state when no snapshot exists. Retry changes only refresh state when a snapshot is visible.
 
 ```ts
+type UsageInsightsSnapshot = Readonly<Record<string, unknown>>
+
 let lastSnapshot: UsageInsightsSnapshot | undefined
 
 export function readUsageSnapshot(): UsageInsightsSnapshot | undefined { return lastSnapshot }
@@ -164,9 +168,9 @@ Commit: `git add packages/client/ui-settings-usage && git commit -m "feat(usage)
 
 - [ ] **Step 1: Write failing B2 source and artifact tests**
 
-Require a 42-pixel image, inline category chip beside the name, one-line description, separate metadata line, DeepSeek-primary compact action region, icon-only `IconEllipsisOutline16` overflow control with a plugin-specific accessible label, narrow reflow, and the same semantic markers in source, bundle, and source map.
+Require a 42-pixel image, inline category chip beside the name, one-line description, separate metadata line, DeepSeek-primary compact action region, icon-only `IconEllipsisOutline16` overflow control with a plugin-specific accessible label, first-row alignment for title/category/action/overflow at narrow widths, and the same semantic markers in source, bundle, and source map.
 
-```ts
+```ts ignore-check
 for (const artifact of [source, bundle, sourceMap]) {
   expect(artifact).toContain('data-dshmarket-layout="b2"')
   expect(artifact).toContain('data-dshmarket-plugin-category')
@@ -184,7 +188,7 @@ Expected: FAIL because the current row uses a 40-pixel image, a two-line descrip
 
 - [ ] **Step 3: Edit the exact pinned upstream source and rebuild Client artifacts**
 
-Use an exact upstream `dshmarket@1.10.1` checkout or pnpm patch edit directory. Preserve Host routes and operation semantics. Import `IconEllipsisOutline16`, place the category chip in the title row, keep owner/stars/date in the metadata row, clamp the description to one line, use a 42-pixel rounded image with deterministic fallback, and give the icon-only overflow trigger `aria-label={`${t('moreActions')}: ${p.name}`}`. Use existing `--dsw-alias-*` tokens for DeepSeek primary and dark mode.
+Use an exact upstream `dshmarket@1.10.1` checkout or pnpm patch edit directory. Preserve Host routes and operation semantics. Import `IconEllipsisOutline16`, place the category chip in the title row, keep owner/stars/date in the metadata row, clamp the description to one line, keep Install and overflow aligned with that title row at narrow widths, use a 42-pixel rounded image with deterministic fallback, and give the icon-only overflow trigger `aria-label={`${t('moreActions')}: ${p.name}`}`. Use existing `--dsw-alias-*` tokens for DeepSeek primary and dark mode.
 
 ```tsx
 <div className={css.pluginTitleRow}>
@@ -225,12 +229,12 @@ Commit: `git add patches/dshmarket@1.10.1.patch pnpm-lock.yaml scripts && git co
 
 - [ ] **Step 1: Write failing official-price and mixed-model tests**
 
-Assert current official CNY prices with no time-of-day tier, cache writes billed as cache misses, compact formatting, and no estimate for unknown or mixed models. Require a helper that returns one model only when all billed settled assistant nodes agree.
+Assert current official CNY prices with no time-of-day tier, cache writes billed as cache misses, compact formatting, and no estimate for unknown or mixed models. Require a durable billing-route projection that returns one model only when all billed usage records across the complete log agree.
 
-```ts
+```ts ignore-check
 expect(priceOfModel('deepseek-v4-flash')).toEqual({ cacheHit: 0.02, cacheMiss: 1, output: 2 })
 expect(priceOfModel('deepseek-v4-pro')).toEqual({ cacheHit: 0.025, cacheMiss: 3, output: 6 })
-expect(singleBilledModel([flashNode, proNode])).toBeUndefined()
+expect(projectedBillingModel([flashUsage, proUsage])).toEqual({ kind: 'mixed' })
 expect(sessionCostCny(usage, undefined)).toBeNull()
 ```
 
@@ -242,7 +246,7 @@ Expected: FAIL because the current draft still uses obsolete peak/off-peak price
 
 - [ ] **Step 3: Implement the minimal truthful Client projection**
 
-Replace the tier table with one immutable official-price table. Remove clock inputs and peak-hour helpers. Scan settled assistant nodes for billed model IDs; return one ID only when every observed billed model agrees. Append localized `This session est. ≈ ¥{cost}` only for non-zero billable usage and a known single model. Fetch balance through the optional bridge once on mount and every 60 seconds; show the exact returned currency/total only on success, while missing bridges and failures remain silent.
+Replace the tier table with one immutable official-price table. Remove clock inputs and peak-hour helpers. Fold billed provider/model route metadata into the durable `tokenBillingModel` whole-log projection; return one route only when every observed billed record agrees. Append localized `This session est. ≈ ¥{cost}` only for non-zero billable usage and a known single model. Fetch balance through the optional bridge once on mount and every 60 seconds; show the exact returned currency/total only on success, while missing bridges and failures remain silent.
 
 ```ts
 const V4_PRICES = {
@@ -255,7 +259,7 @@ const V4_PRICES = {
 
 Cover CNY preference, USD fallback, malformed and unavailable payloads, GET/HEAD behavior, 403 for absent or wrong capability, 405 for mutations, 60-second success cache, concurrent request coalescing, 10-second timeout, disposal, HTML injection escaping, and no mount when `webServer` is absent. Tests must use placeholder credentials and never print a real value.
 
-```ts
+```ts ignore-check
 expect(parseDeepSeekBalance(providerBody, 100)).toMatchObject({ currency: 'CNY', totalBalance: 110 })
 expect(await requestWithoutCapability()).toMatchObject({ status: 403 })
 expect(providerFetch).toHaveBeenCalledTimes(1)
@@ -301,7 +305,7 @@ Expected: all three pairs are structurally consistent and current.
 
 - [ ] **Step 4: Commit documentation**
 
-Commit: `git add .agents/notes/implemented/feature/2026-08-19-macos-startup-and-settings-polish.* apps/desktop/README* packages/client/ui-settings-usage/README* PROJECT_CONTEXT.md && git commit -m "docs: record macOS UI polish"`
+Commit: `git add .agents/notes/implemented/feature/2026-08-19-macos-startup-and-settings-polish.md .agents/notes/implemented/feature/2026-08-19-macos-startup-and-settings-polish.zh.md .agents/notes/implemented/feature/2026-08-19-macos-startup-and-settings-polish.i18n.yaml apps/desktop/README.md apps/desktop/README.zh.md apps/desktop/README.i18n.yaml packages/client/ui-settings-usage/README.md packages/client/ui-settings-usage/README.zh.md packages/client/ui-settings-usage/README.i18n.yaml PROJECT_CONTEXT.md && git commit -m "docs: record macOS UI polish"`
 
 ### Task 6: Run macOS release-shaped verification
 

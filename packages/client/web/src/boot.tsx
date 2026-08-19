@@ -119,8 +119,8 @@ export class AppWebEntry {
         status={this.status}
         error={this.error}
         macDesktop={isMacDesktopSurface(
-          globalThis.location?.search ?? '',
-          globalThis.navigator?.userAgent ?? '',
+          globalThis.location.search,
+          globalThis.navigator.userAgent,
         )}
         renderApp={() => {
           const shell = this.ctx.get('appShell')

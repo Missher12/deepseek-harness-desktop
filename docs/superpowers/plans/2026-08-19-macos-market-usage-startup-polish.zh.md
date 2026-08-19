@@ -53,6 +53,8 @@ expect(bed.container.querySelector('[data-desktop-boot-phase="exit"]')).not.toBe
 只在 `process.platform === 'darwin'` 时选择 `loading-macos.html`；其他平台继续使用 `loading.html`。通过内联 SVG／文字与本地 CSS 构建动画：接近黑色的背景、`#4d6bfe` 主蓝、冷青色高光、白色字阶、一次扫描，以及 900 毫秒组装后无限停留。装饰层不进入无障碍树，文字只描述真实本地运行时，减少动态效果模式立即显示停留画面。
 
 ```ts
+import { fileURLToPath } from 'node:url'
+
 const loadingPath = fileURLToPath(new URL(
   process.platform === 'darwin' ? '../renderer/loading-macos.html' : '../renderer/loading.html',
   import.meta.url,
@@ -121,6 +123,8 @@ expect(screen.getByRole('status').textContent).toBe(en.refreshFailed)
 实现模块私有的 `UsageInsightsSnapshot | undefined` 以及内部读取、写入和测试重置函数。从该缓存初始化 `ViewState`。每次挂载仍调用一次 `load()`；成功读取会原子更新状态和缓存。失败读取使用函数式状态更新：存在 ready 快照时保留它并设置 `refresh: 'failed'`，不存在快照时进入现有首次加载错误状态。快照可见时，重试只改变刷新状态。
 
 ```ts
+type UsageInsightsSnapshot = Readonly<Record<string, unknown>>
+
 let lastSnapshot: UsageInsightsSnapshot | undefined
 
 export function readUsageSnapshot(): UsageInsightsSnapshot | undefined { return lastSnapshot }
@@ -164,9 +168,9 @@ if (state.status === 'loading') return <UsageSkeleton />
 
 - [ ] **步骤 1：编写失败的 B2 source 和 artifact 测试**
 
-要求 42 像素图片、名称旁的内联分类标签、单行描述、独立元数据行、DeepSeek 主色紧凑操作区、仅图标的 `IconEllipsisOutline16` 溢出控件及包含插件名的无障碍标签、窄宽度重排，并要求 source、bundle 和 source map 具有相同语义标记。
+要求 42 像素图片、名称旁的内联分类标签、单行描述、独立元数据行、DeepSeek 主色紧凑操作区、仅图标的 `IconEllipsisOutline16` 溢出控件及包含插件名的无障碍标签、窄宽度下标题／分类／操作／溢出菜单仍在第一行对齐，并要求 source、bundle 和 source map 具有相同语义标记。
 
-```ts
+```ts ignore-check
 for (const artifact of [source, bundle, sourceMap]) {
   expect(artifact).toContain('data-dshmarket-layout="b2"')
   expect(artifact).toContain('data-dshmarket-plugin-category')
@@ -184,7 +188,7 @@ expect(source).toContain('IconEllipsisOutline16')
 
 - [ ] **步骤 3：编辑精确锁定的上游 source 并重新构建 Client artifact**
 
-使用精确的上游 `dshmarket@1.10.1` checkout 或 pnpm patch 编辑目录。保留后端路由与操作语义。导入 `IconEllipsisOutline16`，把分类标签放在标题行，所有者／星标／日期留在元数据行，把描述限制为一行，使用 42 像素圆角图片及确定性回退，并为仅图标的溢出触发器提供 `aria-label={`${t('moreActions')}: ${p.name}`}`。使用现有 `--dsw-alias-*` token 处理 DeepSeek 主色和深色模式。
+使用精确的上游 `dshmarket@1.10.1` checkout 或 pnpm patch 编辑目录。保留后端路由与操作语义。导入 `IconEllipsisOutline16`，把分类标签放在标题行，所有者／星标／日期留在元数据行，把描述限制为一行，让安装与溢出菜单在窄宽度下仍与标题行对齐，使用 42 像素圆角图片及确定性回退，并为仅图标的溢出触发器提供 `aria-label={`${t('moreActions')}: ${p.name}`}`。使用现有 `--dsw-alias-*` token 处理 DeepSeek 主色和深色模式。
 
 ```tsx
 <div className={css.pluginTitleRow}>
@@ -225,12 +229,12 @@ expect(source).toContain('IconEllipsisOutline16')
 
 - [ ] **步骤 1：编写失败的官方计价和混用模型测试**
 
-断言当前官方人民币价格且不存在分时计价，缓存写入按缓存未命中计价，金额紧凑格式正确，未知模型或混用模型不提供估算。要求辅助函数仅在全部已计费 assistant 节点模型一致时返回模型。
+断言当前官方人民币价格且不存在分时计价，缓存写入按缓存未命中计价，金额紧凑格式正确，未知模型或混用模型不提供估算。要求持久计费路由投影仅在整段日志中全部已计费 usage 记录一致时返回单一模型。
 
-```ts
+```ts ignore-check
 expect(priceOfModel('deepseek-v4-flash')).toEqual({ cacheHit: 0.02, cacheMiss: 1, output: 2 })
 expect(priceOfModel('deepseek-v4-pro')).toEqual({ cacheHit: 0.025, cacheMiss: 3, output: 6 })
-expect(singleBilledModel([flashNode, proNode])).toBeUndefined()
+expect(projectedBillingModel([flashUsage, proUsage])).toEqual({ kind: 'mixed' })
 expect(sessionCostCny(usage, undefined)).toBeNull()
 ```
 
@@ -242,7 +246,7 @@ expect(sessionCostCny(usage, undefined)).toBeNull()
 
 - [ ] **步骤 3：实现最小且可信的 Client 投影**
 
-用一个不可变的官方价目表替换分时价目表，删除时钟参数和高峰辅助函数。扫描已结算 assistant 节点中的计费模型 ID；只有全部已观察模型一致时才返回一个 ID。仅在存在非零计费用量且模型已知时追加本地化“本会话估算 ≈ ¥{cost}”。挂载时并每 60 秒通过可选桥读取一次余额；仅成功时显示返回的精确币种／总额，缺少桥或失败时保持安静。
+用一个不可变的官方价目表替换分时价目表，删除时钟参数和高峰辅助函数。把计费 provider／model 路由元数据折叠进持久的整段日志 `tokenBillingModel` 投影；只有全部已观察的计费记录一致时才返回一个路由。仅在存在非零计费用量且模型已知时追加本地化“本会话估算 ≈ ¥{cost}”。挂载时并每 60 秒通过可选桥读取一次余额；仅成功时显示返回的精确币种／总额，缺少桥或失败时保持安静。
 
 ```ts
 const V4_PRICES = {
@@ -255,7 +259,7 @@ const V4_PRICES = {
 
 覆盖人民币优先、美元回退、无效／不可用响应、GET／HEAD、缺失或错误能力令牌返回 403、修改请求返回 405、60 秒成功缓存、并发请求合并、10 秒超时、销毁、HTML 注入转义，以及缺少 `webServer` 时不挂载。测试只用占位凭据，绝不打印真实值。
 
-```ts
+```ts ignore-check
 expect(parseDeepSeekBalance(providerBody, 100)).toMatchObject({ currency: 'CNY', totalBalance: 110 })
 expect(await requestWithoutCapability()).toMatchObject({ status: 403 })
 expect(providerFetch).toHaveBeenCalledTimes(1)
@@ -301,7 +305,7 @@ expect(providerFetch).toHaveBeenCalledTimes(1)
 
 - [ ] **步骤 4：提交文档**
 
-提交：`git add .agents/notes/implemented/feature/2026-08-19-macos-startup-and-settings-polish.* apps/desktop/README* packages/client/ui-settings-usage/README* PROJECT_CONTEXT.md && git commit -m "docs: record macOS UI polish"`
+提交：`git add .agents/notes/implemented/feature/2026-08-19-macos-startup-and-settings-polish.md .agents/notes/implemented/feature/2026-08-19-macos-startup-and-settings-polish.zh.md .agents/notes/implemented/feature/2026-08-19-macos-startup-and-settings-polish.i18n.yaml apps/desktop/README.md apps/desktop/README.zh.md apps/desktop/README.i18n.yaml packages/client/ui-settings-usage/README.md packages/client/ui-settings-usage/README.zh.md packages/client/ui-settings-usage/README.i18n.yaml PROJECT_CONTEXT.md && git commit -m "docs: record macOS UI polish"`
 
 ### 任务 6：运行接近发布形态的 macOS 验证
 

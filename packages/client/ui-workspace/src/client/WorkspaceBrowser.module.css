@@ -491,11 +491,17 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* The archived-sessions dialog is wider and taller than the default modal:
+   the row actions (copy ID / restore / delete) need room side by side. */
+.archiveModal {
+  width: min(600px, 100%);
+}
+
 .archiveList {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: min(440px, 55vh);
+  max-height: min(640px, 72vh);
   overflow-y: auto;
 }
 

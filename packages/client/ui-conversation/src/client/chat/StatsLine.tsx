@@ -2,7 +2,7 @@
 // Mounted on 'conversation.composer.dock' so it sticks with the composer in the
 // active conversation scrollport (see ConversationRoot data-conversation-scroll).
 
-import { Fragment, memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationSnapshot, UseProjection } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
@@ -12,6 +12,10 @@ import type { ContextPressureProjection, TokenUsageProjection } from '@deepseek-
 import type { ComposerBarProps } from '../contract/slots.ts'
 import { formatTokensPerSecond } from './message-chrome.ts'
 import { assistantStepReading } from './turn-metrics.ts'
+import {
+  fetchBalanceSnapshot, formatBalance, formatCny, readBalanceBootstrap, sessionCostCny,
+  type BalanceSnapshot,
+} from './usage-money.ts'
 import css from './StatsLine.module.css'
 
 interface WindowStats {
@@ -169,6 +173,28 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
   // while no projection value is served.
   const projected = useProjection('sessionStats')
   const stats = useMemo(() => projected ?? deriveStats(settledNodes), [projected, settledNodes])
+  const billingModel = useProjection('tokenBillingModel')
+  const model = billingModel?.kind === 'single' && billingModel.provider === 'deepseek-official'
+    ? billingModel.model
+    : undefined
+  // Account balance: fetched once on mount and re-read on a one-minute cycle
+  // through the Host bridge; absent bridge or failed read hides the group.
+  const [balance, setBalance] = useState<BalanceSnapshot | null>(null)
+  useEffect(() => {
+    const bootstrap = readBalanceBootstrap()
+    if (bootstrap === null) return
+    let disposed = false
+    const refresh = async (): Promise<void> => {
+      const snapshot = await fetchBalanceSnapshot(bootstrap)
+      if (!disposed) setBalance(snapshot)
+    }
+    void refresh()
+    const timer = window.setInterval(() => { void refresh() }, 60_000)
+    return () => {
+      disposed = true
+      window.clearInterval(timer)
+    }
+  }, [])
   // Pipe-separated groups (figma stats strip); a group with no data drops out whole.
   const groups: string[] = []
   if (stats.steps > 0) {
@@ -202,6 +228,16 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
       input: formatTokens(billedInputTokens(usage)),
       output: formatTokens(usage.outputTokens),
     }))
+    // Money figures ride the same durable token projection; the cost is an
+    // estimate only when every observed billed step used one supported model.
+    const cost = sessionCostCny(usage, model)
+    if (cost !== null && cost > 0) {
+      groups.push(t('stats.cost', { cost: formatCny(cost) }))
+    }
+  }
+  if (balance?.totalBalance !== null && balance?.totalBalance !== undefined) {
+    const formatted = formatBalance(balance.totalBalance, balance.currency)
+    if (formatted !== null) groups.push(t('stats.balance', { balance: formatted }))
   }
   const line = groups.join(' | ')
   // The row elides with ellipsis when overlong; a delayed hover tooltip carries

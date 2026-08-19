@@ -41,7 +41,11 @@ export function AppRoot(props: AppRootProps) {
     return (
       <div className={css.desktopRoot}>
         {settled ? props.renderApp() : null}
-        <DesktopBootSurface phase={settled ? 'exit' : 'hold'} failed={failed} error={error} />
+        <DesktopBootSurface
+          phase={settled ? 'exit' : 'hold'}
+          failed={failed}
+          {...error === undefined ? {} : { error }}
+        />
       </div>
     )
   }

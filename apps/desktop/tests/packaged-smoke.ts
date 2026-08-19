@@ -249,6 +249,32 @@ export async function seedWindowsClipboardSmokeState(
     for (const header of headers) {
       await seeder.sessionPersistence.create(header)
       await seeder.sessionPersistence.append(header.id, completeTurn(header.createdAt))
+      if (header.id === ACTIVE_CLIPBOARD_SESSION_ID) {
+        const relayEvent: SessionEvent<'user/message'> = {
+          type: 'user/message',
+          seq: 9,
+          time: header.createdAt + 9,
+          data: {
+            id: 'desktop-smoke-relay-message-id' as SessionEvent<'user/message'>['data']['id'],
+            role: 'user',
+            source: ({
+              kind: 'plugin',
+              plugin: 'dsh-session-messenger',
+              form: 'relay',
+              senderSessionId: MESSENGER_SOURCE_SESSION_ID,
+              deliveryId: 'desktop-smoke-visible-delivery-id',
+              mode: 'inject',
+              bodyBlockIndex: 1,
+            }) as unknown as SessionEvent<'user/message'>['data']['source'],
+            content: [
+              { type: 'text', text: 'bounded desktop smoke relay metadata' },
+              { type: 'text', text: 'desktop-smoke-visible-message' },
+            ],
+          },
+          surfaceOp: 'append',
+        }
+        await seeder.sessionPersistence.append(header.id, [relayEvent])
+      }
       const location = seeder.sessionPersistence.locate(header)
       if (location === undefined || location.kind !== 'jsonl') {
         throw new Error(`Packaged smoke: seeded Session ${header.id} has no JSONL location.`)
@@ -679,7 +705,6 @@ async function exerciseReasoningEffort(
 
 async function exerciseSessionMessenger(
   page: Page,
-  application: ElectronApplication,
   seeded: WindowsClipboardSmokeState,
   platform: NodeJS.Platform,
 ): Promise<void> {
@@ -687,106 +712,20 @@ async function exerciseSessionMessenger(
   await activeRow.click()
   await expect.poll(() => activeRow.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
 
-  const trigger = page.locator(
-    `[data-messenger-trigger][data-session-id="${seeded.activeSessionId}"]`,
-  ).first()
-  await trigger.waitFor({ state: 'visible', timeout: 30_000 })
-  await trigger.click()
-  const panel = page.getByRole('dialog', {
-    name: /^(?:Session messages|会话通信)$/u,
-  })
-  await panel.waitFor({ state: 'visible', timeout: 15_000 })
-  const pending = panel.locator('[data-messenger-state="pending"]')
-  const unread = panel.locator('[data-messenger-state="unread"]')
-  expect(await pending.count()).toBe(1)
-  expect(await unread.count()).toBe(1)
-  await expect.poll(() => pending.innerText(), { timeout: 15_000 }).toMatch(/^(?:0 pending|0 条待处理)$/u)
-  await expect.poll(() => unread.innerText(), { timeout: 15_000 }).toMatch(/^(?:1 unread|1 条未读)$/u)
-
   const beforeFiles = await waitForStableProtectedFileSnapshot(seeded.protectedPaths)
-  const previousClipboard = await application.evaluate(({ clipboard }) => clipboard.readText())
-  try {
-    await application.evaluate(({ clipboard }, text) => { clipboard.writeText(text) }, 'desktop-smoke-before-messenger-copy')
-    await panel.getByRole('button', {
-      name: /^(?:Copy|Copy current Session ID|复制|复制当前会话 ID)$/u,
-    }).click()
-    await expect.poll(
-      () => application.evaluate(({ clipboard }) => clipboard.readText()),
-      { timeout: 10_000 },
-    ).toBe(seeded.activeSessionId)
-    await panel.getByRole('status').filter({
-      hasText: /^(?:Session ID copied|会话 ID 已复制)$/u,
-    }).waitFor({ state: 'visible', timeout: 10_000 })
-    await panel.getByRole('button', { name: /^(?:Mark read|标为已读)$/u }).click()
-    await panel.getByRole('status').filter({
-      hasText: /^(?:Notifications marked read|通知已标为已读)$/u,
-    }).waitFor({ state: 'visible', timeout: 10_000 })
-    await expect.poll(() => unread.innerText(), { timeout: 10_000 }).toMatch(/^(?:0 unread|0 条未读)$/u)
-    expect(await waitForStableProtectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
-    expect(await activeRow.getAttribute('aria-selected')).toBe('true')
+  expect(await page.locator('[data-messenger-trigger]').count()).toBe(0)
+  expect(await page.getByRole('dialog', { name: /^(?:Session messages|会话通信)$/u }).count()).toBe(0)
 
-    const resize = panel.getByRole('separator', {
-      name: /^(?:Resize session messages|调整会话通信宽度)$/u,
-    })
-    await resize.waitFor({ state: 'visible', timeout: 10_000 })
-    for (let index = 0; index < 20; index += 1) await resize.press('ArrowLeft')
-    expect(await panel.evaluate(element => getComputedStyle(element).getPropertyValue('--messenger-drawer-width')))
-      .toBe('560px')
-    expect(await panel.evaluate(element => Math.round(element.getBoundingClientRect().width)))
-      .toBeLessThanOrEqual(562)
-    for (let index = 0; index < 30; index += 1) await resize.press('ArrowRight')
-    expect(await panel.evaluate(element => getComputedStyle(element).getPropertyValue('--messenger-drawer-width')))
-      .toBe('320px')
-    expect(await panel.evaluate(element => Math.round(element.getBoundingClientRect().width)))
-      .toBeGreaterThanOrEqual(320)
-    for (let index = 0; index < 8; index += 1) await resize.press('ArrowLeft')
-    expect(await panel.evaluate(element => getComputedStyle(element).getPropertyValue('--messenger-drawer-width')))
-      .toBe('448px')
-    expect(await page.evaluate(() => localStorage.getItem('dsh.session-messenger.drawer-width'))).toBe('448')
-
-    const target = panel.getByRole('textbox', {
-      name: /^(?:Target Session ID|目标会话 ID)$/u,
-    })
-    const message = panel.getByRole('textbox', { name: /^(?:Message|消息)$/u })
-    const send = panel.getByRole('button', { name: /^(?:Send message|发送消息)$/u })
-    const rejectedMessage = 'desktop-smoke-rejected-message'
-    await target.fill(seeded.archivedSessionId)
-    await message.fill(rejectedMessage)
-    await send.click()
-    await panel.getByRole('status').filter({ hasText: 'target-archived' })
-      .waitFor({ state: 'visible', timeout: 15_000 })
-    expect(await message.inputValue()).toBe(rejectedMessage)
-    expect(await waitForStableProtectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
-
-    await target.fill(seeded.messengerSubagentSessionId)
-    await send.click()
-    await panel.getByRole('status').filter({ hasText: 'target-subagent' })
-      .waitFor({ state: 'visible', timeout: 15_000 })
-    expect(await message.inputValue()).toBe(rejectedMessage)
-    expect(await waitForStableProtectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
-
-    await target.fill(seeded.messengerSourceSessionId)
-    const wakeTarget = panel.getByRole('checkbox', {
-      name: /^(?:Start target Agent|启动目标 Agent)$/u,
-    })
-    expect(await wakeTarget.isChecked()).toBe(true)
-    await wakeTarget.uncheck()
-    await message.fill('desktop-smoke-visible-message')
-    await send.click()
-    await panel.getByRole('status').filter({
-      hasText: /^(?:Message sent|消息已发送)$/u,
-    }).waitFor({ state: 'visible', timeout: 15_000 })
-    expect(await message.inputValue()).toBe('')
-    expect(await wakeTarget.isChecked()).toBe(false)
-    expect(await page.locator('[data-session-relay-card]').count()).toBe(0)
-    await page.screenshot({
-      path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-messenger-${platform}.png`),
-    })
-  } finally {
-    await application.evaluate(({ clipboard }, text) => { clipboard.writeText(text) }, previousClipboard)
-    if (await panel.isVisible().catch(() => false)) await page.keyboard.press('Escape')
-    await panel.waitFor({ state: 'detached', timeout: 15_000 }).catch(() => undefined)
-  }
+  const relay = page.locator('[data-relay-card]').filter({ hasText: 'desktop-smoke-visible-message' })
+  await relay.waitFor({ state: 'visible', timeout: 30_000 })
+  const relayText = await relay.innerText()
+  expect(relayText).toContain(seeded.messengerSourceSessionTitle)
+  expect(relayText).toMatch(/(?:Sent by .* from another chat|由 .* 从另一个聊天发来)/u)
+  expect(await activeRow.getAttribute('aria-selected')).toBe('true')
+  expect(await waitForStableProtectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
+  await page.screenshot({
+    path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-messenger-${platform}.png`),
+  })
 }
 
 interface MarketRouteResult {
@@ -835,6 +774,7 @@ async function exercisePluginMarket(
   platform: NodeJS.Platform,
   consoleErrors: string[],
 ): Promise<void> {
+  const fixtureName = await seedOrdinaryMarketFixture(harnessHome)
   const settingsTrigger = page.locator('[data-dsh-desktop-command="open-settings"]')
   await expect.poll(() => settingsTrigger.getAttribute('aria-expanded'), { timeout: 15_000 })
     .not.toBe('true')
@@ -843,69 +783,58 @@ async function exercisePluginMarket(
   await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
   await settingsDialog.getByRole('button', { name: /^(?:Plugin Market|插件市场)$/u }).click()
 
-  const market = settingsDialog.locator('[data-dshmarket-layout="compact"]')
+  const market = settingsDialog.locator('[data-dshmarket-layout="reference"]')
   await market.waitFor({ state: 'visible', timeout: 30_000 })
-  const tabs = ['discover', 'installed', 'updates', 'activity'] as const
-  for (const tab of tabs) {
-    const button = market.locator(`[data-dshmarket-tab="${tab}"]`)
-    expect(await button.count()).toBe(1)
-    await button.click()
-    expect(await market.isVisible()).toBe(true)
+  const search = market.locator('[data-dshmarket-search]')
+  const installedRail = market.locator('[data-dshmarket-installed-rail]')
+  const publicMode = market.locator('[data-dshmarket-mode="public"]')
+  const personalMode = market.locator('[data-dshmarket-mode="personal"]')
+  const management = market.locator('[data-dshmarket-management-trigger]')
+  for (const control of [search, installedRail, publicMode, personalMode, management]) {
+    await control.waitFor({ state: 'visible', timeout: 30_000 })
   }
-  await market.locator('[data-dshmarket-tab="discover"]').click()
+  expect(await installedRail.evaluate(element => getComputedStyle(element).overflowX)).toBe('auto')
+  // The shell and its controls mount before the same-origin registry request
+  // resolves. Wait for the categorized content, not merely the outer shell.
+  await expect.poll(
+    () => market.locator('[data-dshmarket-section]').count(),
+    { timeout: 30_000 },
+  ).toBeGreaterThan(2)
+  const firstSectionGrid = market.locator('[data-dshmarket-section]').first().locator('[data-dshmarket-plugin-row]').first().locator('..')
+  expect(await firstSectionGrid.evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2)
 
-  const toolbar = market.locator('[data-dshmarket-toolbar]')
-  const categories = market.locator('[data-dshmarket-categories]')
-  await toolbar.waitFor({ state: 'visible', timeout: 30_000 })
-  await categories.waitFor({ state: 'visible', timeout: 30_000 })
-  expect(await categories.evaluate(element => (
-    [...element.querySelectorAll('div')].some((child) => {
-      const overflow = getComputedStyle(child).overflowX
-      return overflow === 'auto' || overflow === 'scroll'
-    })
-  ))).toBe(true)
-  expect(await categories.locator('[data-chip="1"]').evaluateAll(chips => chips.every((chip) => {
-    const style = getComputedStyle(chip)
-    return style.flexShrink === '0' && style.whiteSpace === 'nowrap'
-  }))).toBe(true)
-  const initialCategoryIds = await categories.locator('[data-category]')
-    .evaluateAll(chips => chips.map(chip => (chip as HTMLElement).dataset.category ?? ''))
-  expect(initialCategoryIds[0]).toBe('all')
-  expect(initialCategoryIds.length).toBeGreaterThan(6)
-  expect(new Set(initialCategoryIds).size).toBe(initialCategoryIds.length)
-  const categoryRail = categories.locator('[data-category]').first().locator('..')
-  await categoryRail.evaluate((element) => { element.scrollLeft = element.scrollWidth })
-  await expect.poll(() => categoryRail.evaluate(element => element.scrollLeft), { timeout: 5_000 })
-    .toBeGreaterThan(0)
-  const selectedCategory = initialCategoryIds.at(-1)
-  expect(selectedCategory).toBeTruthy()
-  await categories.locator(`[data-category="${selectedCategory ?? ''}"]`).click()
-  expect(await categories.locator('[data-category]')
-    .evaluateAll(chips => chips.map(chip => (chip as HTMLElement).dataset.category ?? '')))
-    .toEqual(initialCategoryIds)
-  await categoryRail.evaluate((element) => { element.scrollLeft = 0 })
-  await expect.poll(() => categoryRail.evaluate(element => element.scrollLeft), { timeout: 5_000 }).toBe(0)
-  await categories.locator('[data-category="all"]').click()
-  expect(await categories.locator('[data-category]')
-    .evaluateAll(chips => chips.map(chip => (chip as HTMLElement).dataset.category ?? '')))
-    .toEqual(initialCategoryIds)
+  await personalMode.click()
+  await expect.poll(() => market.locator('[data-dshmarket-personal] [data-package]').count(), { timeout: 15_000 }).toBeGreaterThan(0)
+  expect(await market.locator(`[data-package="${fixtureName}"]`).isVisible()).toBe(true)
+  await publicMode.click()
+
+  await management.click()
+  await page.getByRole('menuitem', { name: /^(?:Activity|活动)$/u }).click()
+  await market.locator('[data-dshmarket-activity]').waitFor({ state: 'visible', timeout: 15_000 })
+  await publicMode.click()
 
   const firstRow = market.locator('[data-dshmarket-plugin-row]').first()
   await firstRow.waitFor({ state: 'visible', timeout: 30_000 })
-  const primaryAction = firstRow.locator('[data-dshmarket-primary-action]')
-  expect(await primaryAction.count()).toBe(1)
+  expect(await firstRow.locator('[data-dshmarket-primary-action], [data-dshmarket-overflow-menu]').count()).toBe(1)
   expect(await firstRow.evaluate((row) => {
-    const copy = row.children.item(1)
-    const action = row.querySelector('[data-dshmarket-primary-action]')
-    if (!(copy instanceof HTMLElement) || !(action instanceof HTMLElement)) return false
-    return action.getBoundingClientRect().top >= copy.getBoundingClientRect().bottom
+    const description = row.querySelector('[data-dshmarket-plugin-description]')
+    const action = row.querySelector('[data-dshmarket-primary-action], [data-dshmarket-overflow-menu]')
+    if (!(description instanceof HTMLElement) || !(action instanceof HTMLElement)) return false
+    const rowBounds = row.getBoundingClientRect()
+    const actionBounds = action.getBoundingClientRect()
+    return actionBounds.left > rowBounds.left + 80
+      && Math.abs((actionBounds.top + actionBounds.height / 2) - (rowBounds.top + rowBounds.height / 2)) <= 2
   })).toBe(true)
   const packageName = await firstRow.getAttribute('data-package')
   expect(packageName).toBeTruthy()
-  const search = toolbar.getByRole('textbox').first()
   await search.fill(packageName ?? '')
-  expect(await market.locator('[data-dshmarket-plugin-row]').first().isVisible()).toBe(true)
+  await expect.poll(() => market.locator('[data-dshmarket-plugin-row]').count(), { timeout: 15_000 }).toBeGreaterThan(0)
+  expect(await market.locator(`[data-package="${packageName ?? ''}"]`).first().isVisible()).toBe(true)
   await search.fill('')
+  await expect.poll(
+    () => market.locator('[data-dshmarket-section]').count(),
+    { timeout: 15_000 },
+  ).toBeGreaterThan(2)
 
   await page.screenshot({
     path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-market-${platform}.png`),
@@ -919,7 +848,6 @@ async function exercisePluginMarket(
   const protectedUpdate = await postMarket(page, '/dsh-market/update', { name: 'dshmarket' })
   expect(protectedUpdate).toEqual({ status: 409, body: { ok: false, code: 'self-protected' } })
 
-  const fixtureName = await seedOrdinaryMarketFixture(harnessHome)
   const ordinaryUninstall = await postMarket(page, '/dsh-market/uninstall', { name: fixtureName })
   expect(ordinaryUninstall.status, JSON.stringify(ordinaryUninstall.body)).toBe(200)
   expect(ordinaryUninstall.body).toMatchObject({ ok: true, exitCode: 0 })
@@ -933,7 +861,13 @@ async function exerciseUsageInsights(
   platform: NodeJS.Platform,
   expectedDailyTokens: number,
 ): Promise<void> {
-  await page.locator('[data-dsh-desktop-command="open-settings"]').click()
+  const settingsTrigger = page.locator('[data-dsh-desktop-command="open-settings"]')
+  // The native click can synchronously mount the overlay before Playwright's
+  // pointer sequence settles. Treat opening Settings as an idempotent state
+  // transition instead of clicking a trigger that already reports open.
+  if (await settingsTrigger.getAttribute('aria-expanded') !== 'true') {
+    await settingsTrigger.click()
+  }
   const settingsDialog = page.getByRole('dialog').last()
   await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
   await settingsDialog.getByRole('button', { name: /^(?:Usage|使用统计)$/u }).click()
@@ -1092,7 +1026,7 @@ export async function runPackagedDesktopSmoke(
 
     try {
       await exerciseWindowsClipboard(page, nativeApp, clipboardSeed)
-      await exerciseSessionMessenger(page, nativeApp, clipboardSeed, platform)
+      await exerciseSessionMessenger(page, clipboardSeed, platform)
       if (platform === 'darwin') {
         await exerciseReasoningEffort(page, harnessHome, platform)
       }
@@ -1103,13 +1037,9 @@ export async function runPackagedDesktopSmoke(
       )
     }
 
-    // Archived and subagent sends deliberately return HTTP 409. Their
-    // rejected request streams may also be cancelled while the Host refreshes
-    // the receipt snapshot; keep every other renderer error release-blocking.
-    expect(consoleErrors.filter(message => (
-      !/^Failed to load resource: the server responded with a status of 409 \(Conflict\)$/u.test(message)
-      && message !== 'Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING'
-    ))).toEqual([])
+    // Keep renderer errors release-blocking; the legacy drawer no longer
+    // issues archived or subagent send requests during this acceptance.
+    expect(consoleErrors).toEqual([])
     consoleErrors.length = 0
 
     await page.waitForTimeout(15_000)

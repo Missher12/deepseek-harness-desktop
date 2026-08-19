@@ -67,6 +67,54 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- Version 0.1.9 consolidates the current macOS/Desktop work: the separate
+  session-communication trigger and drawer are removed, session-messenger
+  relays render directly in the ordinary chat timeline with source
+  attribution, Settings uses one stable 1040px responsive width, the archive
+  manager has room for its three row actions, and the reference-style Plugin
+  Market, Usage skeleton/cache, macOS startup reveal, and eight additional
+  built-in role presets are included. The composer stats strip estimates cost
+  only for a single identified official DeepSeek V4 route using the current
+  Beijing-time peak/off-peak prices; the optional account balance uses a
+  read-only, capability-gated same-origin bridge restricted to the official
+  DeepSeek endpoint. The focused 208-test suite, 31-test preset E2E, 6-test
+  built-Web E2E, 28-test release-workflow gate, full Host/Client/Web production
+  build, lint, 62-file Desktop staging, isolated packaged Electron smoke, and
+  `hdiutil verify` pass. The unsigned Intel DMG is 163,392,392 bytes with
+  SHA-256 `c6b360e08c221ee7afa452b84e0f7ab2e6670b042cfafd4d382dcd35fdf4af0f`;
+  the packaged application reports `0.1.9` and `x86_64`. Native Windows Setup
+  acceptance and public Release publication still require the final committed
+  source.
+- The 2026-08-20 internal macOS build replaces the Plugin Market's legacy
+  card/category rail with the accepted reference-style surface: full-width
+  functional search, installed-plugin icon rail, Public and Personal modes,
+  grouped Featured/category sections, and flat two-column rows with exactly
+  one trailing Install or overflow action. Personal is deliberately limited
+  to installed dependencies whose durable spec starts with `file:` or
+  `link:`; the gear menu retains installed/update/activity/theme/group and
+  backup/recovery management. Every Settings section now uses the same 1040px
+  responsive panel width, so navigating between General, Models, Usage,
+  Plugins, Agent presets, and Plugin Market no longer resizes the dialog. The
+  focused layout/artifact/manifest/Settings suite passed 52/52, the isolated
+  packaged Electron smoke passed, and the verified x86_64 0.1.8 bundle was
+  installed at `/Applications/DeepSeek Harness.app`. The replaced bundle is
+  recoverably retained at `/Applications/DeepSeek Harness.app.backup-20260820-025949`;
+  no GitHub upload or public release was performed.
+- The 2026-08-20 internal macOS candidate keeps the original Standard, Code,
+  Minimal, and Creator presets and adds Planning, Frontend and UI, Backend and
+  API, Troubleshooting, Code review, Testing and QA, DevOps and release, and
+  Documentation and research. All 12 presets remain manually selected through
+  the existing composer and Settings controls; no automatic classifier or
+  router was added. Execution-oriented roles retain the normal tool surface,
+  while focused planning, review, and research roles omit background-job,
+  delegation, and workflow tools. These prompt/tool presets guide behavior but
+  are not treated as a security boundary. The x86_64 `0.1.8` candidate passed
+  configuration, localization, Host behavior, browser-selection, typecheck,
+  lint, translation-pairing, packaging, and isolated packaged-app smoke gates;
+  it was installed to `/Applications/DeepSeek Harness.app` after moving the
+  previous application bundle to a timestamped per-user backup. The installed
+  bundle contains all 12 preset snapshots and starts its owned loopback Host.
+- The 2026-08-19 internal macOS candidate adds a Darwin-only Endfield-inspired DeepSeek-blue startup reveal that overlaps the first real application render and exits directly into the page; it does not add a second window or delay Host readiness. Usage Settings now paints a dimensionally stable structural skeleton on first read, keeps the last immutable in-process snapshot on revisit, and refreshes it in the background. The pinned `dshmarket@1.10.1` patch uses the accepted B2 single-row hierarchy, keeps plugin name/category/Install/icon-only More aligned on the first row even at narrow Settings widths, and paints an immediately visible blue initial tile underneath asynchronously decoded owner images. The composer strip now prices the complete durable token ledger only when the durable billing-route projection identifies one supported official DeepSeek V4 model, and exposes the exact account balance only through the optional official-endpoint, read-only, capability-gated same-origin bridge. This is local tuning only: no GitHub upload, public release, application replacement, or live `~/.dsh` acceptance is authorized.
 - The 2026-08-18 Usage section is implemented between Models and Plugins. It
   summarizes all durable root, archived, and subagent Sessions with five KPIs,
   one stable Sunday-aligned 53×7 particle field with a daily calendar heatmap,
@@ -84,7 +132,7 @@ The repository is based on the pinned official source and adds the desktop appli
 - Electron x64 application shell, native menu, loading/failure surfaces, random-port runtime ownership, window-state persistence, and the accepted cross-platform icon master complete.
 - macOS and Windows share the exact 1254×1254 RGBA icon master (SHA-256 `1fe0c2a3b6475c451f86dc999e97de33e4aabace244e35a284d1c5e162b0672a`); the generated macOS `.icns` and Windows `.ico` have SHA-256 values `d453a58a11cb5247f83f3b220bca2c6f0f216f07a6c7dfbb4998bb9f9f72c54e` and `2331df774341ce7796c1c0d06e708ae37bbde84a53e4edd2741659bbe8d4e4ae`.
 - Desktop renderer styling and command hooks complete.
-- The 2026-08-18 source candidate keeps the default-off ordinary reasoning thumb fully inside both track endpoints and reflows the embedded Plugin Market from its real Settings container width. Every registry category stays in stable source order on one horizontally scrollable rail; selection never moves chips, edge controls and fades reflect the true scroll bounds, search and filter use a separate row above the category rail, and narrow plugin actions occupy a second row. The pinned market Client artifacts were rebuilt from upstream `v1.10.1`; final 0.1.8 staging and the isolated native packaged smoke refreshed the geometry evidence after the collaboration changes.
+- The 2026-08-18 source candidate keeps the default-off ordinary reasoning thumb fully inside both track endpoints and reflows the embedded Plugin Market from its real Settings container width. Every registry category stays in stable source order on one horizontally scrollable rail; selection never moves chips, edge controls and fades reflect the true scroll bounds, search and filter use a separate row above the category rail, and narrow plugin actions stay aligned with the title row. The pinned market Client artifacts were rebuilt from upstream `v1.10.1`; final 0.1.8 staging and the isolated native packaged smoke refreshed the geometry evidence after the collaboration changes.
 - The 2026-08-18 Desktop startup path now overlaps the local loading surface with the read-only ownership check, then starts Harness as soon as that check clears while the loading surface finishes. The same-home writer gate, complete Harness readiness probe, failure surface, and owned-process cleanup remain mandatory. A lifecycle regression test and the complete isolated packaged macOS smoke passed. Comparative live timing was not accepted on the installation host because unrelated processes saturated CPU during the run.
 - The apparent session-messenger mark-read mutation was a smoke-fixture race, not an acknowledgement write: preserved failed logs contained only delayed selected-Session policy restoration. The fixture now seeds the current permission, sandbox, and approval records before its final end-seed and waits for protected storage to settle on both sides of copy and acknowledgement actions. Three consecutive complete packaged smokes passed with exact protected-file equality, and the final 0.1.8 packaged candidate repeated the complete isolated smoke before installation or publication.
 - The model-control visual experiment was removed on 2026-08-17 after user acceptance rejected it. The original simple Host-advertised effort rows are restored, with no canvas, particle renderer, aliases, or invented effort ids.
@@ -92,7 +140,7 @@ The repository is based on the pinned official source and adds the desktop appli
 - Desktop plugin market integration complete on 2026-08-17: the immutable Desktop patch mounts a dedicated active-profile/packaged-pnpm provider and pinned `dshmarket@1.10.1`; ordinary Web composition remains unchanged. Desktop package operations are serialized, cancellable, tree-terminated, credential-scrubbed, and confined to the fixed `web` profile, with self-restart disabled.
 - Harness-native marketplace presentation work is source-locked to the published `dshmarket@1.10.1` tarball integrity and upstream commit `6970a6f801108c04234eb953ff0f707feffa621a`; only an audited pnpm dependency patch may alter its Client presentation or self-protection routes.
 - The audited marketplace patch provides a compact Harness-native Discover list and stable Discover/Installed/Updates/Activity tabs, rejects disable/uninstall/update against both active-market aliases before package execution, and is guarded by source/bundle/source-map/Host coherence plus exactly-one-package staging checks. Native packaged acceptance proves the compact tab/search/category/action geometry, clean ordinary rendering, protected self-update, and a real ordinary-plugin uninstall; separate light/dark/200%-zoom visual sweeps remain future evidence.
-- Desktop integration for `@deepseek-ai/dsh-session-messenger` now follows the requested Codex-style peer-session model: copy Session A's exact ordinary ID, paste it into Session B, and ask B's Agent to send; A's existing Agent wakes and can reply to B, while either side may later initiate another message with the other's ID. The immutable Desktop overlay mounts one canonical row while ordinary Web remains unchanged. A stable system-prompt section owns four tools: direct wake-and-send, optional wake-send-and-wait, one-use receipt-bound reply that wakes the source by default, and explicit matching-reply wait. Plugin relays retain trusted Source Session and delivery metadata plus a separate untrusted body but use the ordinary Harness context-disclosure renderer; the rejected custom conversation cards are removed. The 320–560 px remembered operator drawer defaults to starting the target Agent, preserves failed drafts, copies the exact Session ID, and exposes metadata-only activity. Existing archive, self, missing, subagent, hop, rate, and unresolved-receipt boundaries plus write-ahead durability remain intact; no new session, subagent, parallel driver, or autonomous Agent loop is created.
+- Desktop integration for `@deepseek-ai/dsh-session-messenger` follows the requested peer-session model: copy Session A's exact ordinary ID, paste it into Session B's chat request, and let B's Agent send to A; A's existing Agent can wake and reply while both durable relays remain visible in their ordinary chat timelines. Relay cards explicitly attribute the text as sent by Codex from another chat, retain the untrusted-body boundary and trusted source metadata, and fall back to the source Session ID when no title is available. The separate session-communication header button, operator drawer, activity panel, duplicate composer, and client notification surface are absent; the Client plugin intentionally mounts nothing. Existing Host tools, write-ahead receipts, exact-once recovery, archive/self/missing/subagent/hop/rate boundaries, and ordinary Session-ID copy actions remain intact; no new Session, subagent, parallel driver, or autonomous Agent loop is created.
 - Isolated source and staged-artifact acceptance passed for the plugin market: random loopback Hosts returned `/dsh-market/status` with `pnpm=true`, `restart=false`, `active=false`, and the curated registry was available. The staged application validated the Desktop patch, provider, dshmarket Host/Client artifacts, packaged pnpm bin, native modules, and third-party notices; temporary listeners closed cleanly.
 - Native Intel macOS 0.1.6 packaged UI acceptance passed without an API key or model request: exact ordinary and archived clipboard IDs, no-side-effect rejection paths, Codex-style session collaboration controls and ordinary no-card rendering, reasoning slider/Canvas/persistence, stable horizontally scrolling Plugin Market categories plus separated search/filter geometry, self-protection/ordinary uninstall, random-port ownership, and full process cleanup all passed.
 - Version 0.1.6 passed lint, documentation sync, 234 focused tests across 19 files, the isolated 19-test packaged smoke, and the two post-build TypeScript checks. A resource-saturated full-repository run completed 13,735 tests with 21 failures: two current-branch contract gaps were fixed and passed their 34-test serial rerun, while all other failed files passed a 197-test single-worker rerun. Staging validated 62 required files including the new Desktop plugin-runtime invariant. The final peer-messaging correction passed an additional 128-test focused rerun. The unsigned Intel DMG is 163,329,569 bytes with SHA-256 `5085c25e85b0eb650941d8b7915c1035090c52ce968b457b03bafc8971f4fe34`; `hdiutil verify` passed, the app executable reports `x86_64`, and the bundle reports `0.1.6`. Native Windows 0.1.6 packaging and acceptance remain pending and must come from the Windows workflow; filenames alone are not release evidence.

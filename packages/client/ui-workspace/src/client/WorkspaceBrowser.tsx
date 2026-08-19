@@ -1357,6 +1357,7 @@ export function WorkspaceBrowser({
         onClose={closeArchive}
         closeLabel={t('close')}
         title={t('archive.title')}
+        className={clsx(css.archiveModal)}
         footer={<Button variant="outline" disabled={archiveBusyId !== null} onClick={closeArchive}>{t('close')}</Button>}
       >
         {archivedRows.length === 0

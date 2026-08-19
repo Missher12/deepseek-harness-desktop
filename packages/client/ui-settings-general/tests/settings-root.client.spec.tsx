@@ -209,7 +209,7 @@ describe('SettingsPanel navigation', () => {
     expect(screen.queryByTestId('section-general')).toBeNull()
   })
 
-  it('exposes the active section so only the plugin market can use the wide geometry', () => {
+  it('keeps one wide settings geometry while exposing the active section', () => {
     mount({
       rows: [
         { id: 'general', order: 0, label: 'General' },
@@ -224,8 +224,9 @@ describe('SettingsPanel navigation', () => {
 
     expect(dialog.getAttribute('data-settings-section')).toBe('market')
     expect(settingsCss).toMatch(
-      /\.panel\[data-settings-section="market"\]\s*\{[^}]*width:\s*min\(1040px, calc\(100vw - 48px\)\)/,
+      /\.panel\s*\{[^}]*width:\s*min\(1040px, calc\(100vw - 48px\)\)/,
     )
+    expect(settingsCss).not.toContain('.panel[data-settings-section="market"]')
   })
 
   it('mounts onboarding steps in order and transfers ownership only on completion', () => {
