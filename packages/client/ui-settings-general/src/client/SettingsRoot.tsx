@@ -62,7 +62,13 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
   return (
     <div className={css.overlay} role="presentation">
       <div className={css.mask} aria-hidden="true" onClick={onClose} />
-      <div className={css.panel} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div
+        className={css.panel}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        data-settings-section={active}
+      >
         <nav className={css.nav}>
           <div className={css.navTitle} id={titleId}>{renderSlot('settings.header', {})}</div>
           <div className={css.navList}>

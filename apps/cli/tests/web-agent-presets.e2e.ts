@@ -30,6 +30,24 @@ const WEB_PATCH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 const EXAMPLES_INSTALL_ANCHOR = join(REPO_ROOT, 'examples/package.json')
 const MINIMAL_PROMPT = 'You are a helpful software engineer assistant.'
+const SHIPPED_PRESET_IDS = [
+  'standard', 'code', 'minimal', 'cordis',
+  'planner', 'frontend', 'backend', 'debugger',
+  'reviewer', 'qa', 'devops', 'research',
+] as const
+const ROLE_MARKERS = {
+  planner: 'Role: planning',
+  frontend: 'Role: frontend and UI',
+  backend: 'Role: backend and API',
+  debugger: 'Role: troubleshooting',
+  reviewer: 'Role: code review',
+  qa: 'Role: testing and QA',
+  devops: 'Role: DevOps and release',
+  research: 'Role: documentation and research',
+} as const
+const FULL_EXECUTION_ROLES = new Set<keyof typeof ROLE_MARKERS>([
+  'frontend', 'backend', 'debugger', 'qa', 'devops',
+])
 const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
 * You don't have access to the internet via this tool.
@@ -184,10 +202,10 @@ describe('the shipped Web composition', () => {
     }
   })
 
-  it('supplies both shipped presets, and only those, from the system root', async () => {
+  it('supplies the twelve shipped presets, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual([...SHIPPED_PRESET_IDS].sort())
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })
@@ -211,6 +229,39 @@ describe('the shipped Web composition', () => {
       ])
     } finally {
       await handle.dispose()
+    }
+  })
+
+  it('composes every shipped role with its own contract and bounded tool surface', async () => {
+    for (const [id, marker] of Object.entries(ROLE_MARKERS) as Array<[
+      keyof typeof ROLE_MARKERS,
+      string,
+    ]>) {
+      const handle = await ctx.agents.create({
+        sessionId: SessionId(`preset-role-${id}`),
+        setup: agentCtx => ctx.agentPresets.mount(agentCtx, id).then(() => undefined),
+      })
+      try {
+        const assembly = await ctx.systemPrompt.assemble({ scope: handle.agent })
+        const prompt = assembly.sections.map(section => section.text).join('\n')
+        const tools = toolNames(ctx, handle.agent)
+
+        expect(prompt).toContain('Codex-style operating contract')
+        expect(prompt).toContain(marker)
+        expect(tools).toEqual(expect.arrayContaining([
+          'ask_user_question', 'bash', 'edit', 'exit_plan_mode',
+          'read', 'skill', 'todo_write', 'web_search', 'write',
+        ]))
+        if (FULL_EXECUTION_ROLES.has(id)) {
+          expect(tools).toEqual(expect.arrayContaining(['job_list', 'subagent', 'workflow']))
+        } else {
+          for (const tool of ['job_list', 'subagent', 'workflow']) {
+            expect(tools).not.toContain(tool)
+          }
+        }
+      } finally {
+        await handle.dispose()
+      }
     }
   })
 

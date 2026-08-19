@@ -5,6 +5,7 @@ import type { UsageInsightsSnapshot } from '@deepseek-ai/dsh-api-remotes/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { buildParticleGrid, type ParticleChartMode } from './charts.ts'
 import { formatCompactNumber, formatDuration, formatModel } from './format.ts'
+import { readUsageSnapshot, writeUsageSnapshot } from './snapshot-cache.ts'
 import css from './UsageInsightsSection.module.css'
 
 /** Registration-side Remote and locale face used by the section. */
@@ -24,7 +25,12 @@ export type UsageInsightsSectionProps =
 type ViewState =
   | { readonly status: 'loading' }
   | { readonly status: 'error' }
-  | { readonly status: 'ready'; readonly snapshot: UsageInsightsSnapshot }
+  | {
+    readonly status: 'ready'
+    readonly snapshot: UsageInsightsSnapshot
+    readonly refreshing: boolean
+    readonly stale: boolean
+  }
 
 type ChartMode = ParticleChartMode
 
@@ -57,6 +63,37 @@ function partialText(
   samples: number,
 ): string {
   return template.replace('{sessions}', String(sessions)).replace('{samples}', String(samples))
+}
+
+/** Geometry-first placeholder used before the first local snapshot is available. */
+function UsageSkeleton({ label }: { label: string }): ReactNode {
+  return (
+    <section
+      className={`${css.section} ${css.skeleton}`}
+      data-usage-skeleton
+      aria-label={label}
+      aria-busy="true"
+    >
+      <div className={css.skeletonSummary} aria-hidden="true">
+        {Array.from({ length: 5 }, (_, index) => (
+          <div className={css.skeletonMetric} key={index}>
+            <span className={css.skeletonBlock} />
+            <span className={css.skeletonBlock} />
+          </div>
+        ))}
+      </div>
+      <div className={css.skeletonActivity} aria-hidden="true">
+        <span className={css.skeletonBlock} />
+        <div className={css.skeletonParticles}>
+          {Array.from({ length: 70 }, (_, index) => <i key={index} />)}
+        </div>
+      </div>
+      <div className={css.skeletonDetails} aria-hidden="true">
+        <div>{Array.from({ length: 5 }, (_, index) => <span className={css.skeletonBlock} key={index} />)}</div>
+        <div>{Array.from({ length: 5 }, (_, index) => <span className={css.skeletonBlock} key={index} />)}</div>
+      </div>
+    </section>
+  )
 }
 
 /** Five equal summary cells at the top of the page. */
@@ -163,7 +200,12 @@ function ActivityChart({ snapshot, mode, locale, t }: {
 export function UsageInsightsSection({ load, locale, t }: UsageInsightsSectionProps): ReactNode {
   const [request, setRequest] = useState(0)
   const [mode, setMode] = useState<ChartMode>('daily')
-  const [state, setState] = useState<ViewState>({ status: 'loading' })
+  const [state, setState] = useState<ViewState>(() => {
+    const cached = readUsageSnapshot()
+    return cached === undefined
+      ? { status: 'loading' }
+      : { status: 'ready', snapshot: cached, refreshing: true, stale: false }
+  })
   const panelId = useId()
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const modes: ChartMode[] = ['daily', 'weekly', 'cumulative']
@@ -171,14 +213,25 @@ export function UsageInsightsSection({ load, locale, t }: UsageInsightsSectionPr
   useEffect(() => {
     let current = true
     void Promise.resolve().then(() => load()).then(
-      (snapshot) => { if (current) setState({ status: 'ready', snapshot }) },
-      () => { if (current) setState({ status: 'error' }) },
+      (snapshot) => {
+        if (!current) return
+        writeUsageSnapshot(snapshot)
+        setState({ status: 'ready', snapshot, refreshing: false, stale: false })
+      },
+      () => {
+        if (!current) return
+        setState(previous => previous.status === 'ready'
+          ? { ...previous, refreshing: false, stale: true }
+          : { status: 'error' })
+      },
     )
     return () => { current = false }
   }, [load, request])
 
   const retry = (): void => {
-    setState({ status: 'loading' })
+    setState(previous => previous.status === 'ready'
+      ? { ...previous, refreshing: true, stale: false }
+      : { status: 'loading' })
     setRequest(value => value + 1)
   }
 
@@ -194,7 +247,7 @@ export function UsageInsightsSection({ load, locale, t }: UsageInsightsSectionPr
     tabRefs.current[next]?.focus()
   }
 
-  if (state.status === 'loading') return <p className={css.status} aria-busy="true">{t('loading')}</p>
+  if (state.status === 'loading') return <UsageSkeleton label={t('section')} />
   if (state.status === 'error') {
     return (
       <div className={css.failure}>
@@ -213,8 +266,14 @@ export function UsageInsightsSection({ load, locale, t }: UsageInsightsSectionPr
     [t('chatDays'), formatCompactNumber(snapshot.insights.chatDays, locale)],
   ]
   return (
-    <section className={css.section} aria-label={t('section')}>
+    <section className={css.section} aria-label={t('section')} aria-busy={state.refreshing}>
       <Summary snapshot={snapshot} locale={locale} t={t} />
+      {state.stale ? (
+        <div className={css.refreshNotice} data-usage-refresh-stale role="status">
+          <span>{t('refreshFailed')}</span>
+          <button type="button" onClick={retry}>{t('retry')}</button>
+        </div>
+      ) : null}
       {snapshot.omittedSessions > 0 || snapshot.incompleteUsageSamples > 0 ? (
         <p className={css.partial} role="status">
           {partialText(t('partial'), snapshot.omittedSessions, snapshot.incompleteUsageSamples)}

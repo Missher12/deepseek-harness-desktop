@@ -96,8 +96,8 @@ describe('CI workflow', () => {
       && step.uses === 'actions/upload-artifact@v7'
       && isRecord(step.with)
       && typeof step.with.path === 'string'
-      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.8-win-x64.exe\n')
-      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.8-win-x64.exe.sha256')
+      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe\n')
+      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe.sha256')
     ))).toBe(true)
 
     // wine-apt-cache: master-only, seeds the Wine apt cache.
@@ -370,6 +370,7 @@ describe('Python release workflows', () => {
     }
 
     const buildSteps: unknown[] = build.steps
+    const setupNode = buildSteps.find(step => isRecord(step) && step.uses === 'actions/setup-node@v6')
     const manylinuxAddon = buildSteps.find(step => isRecord(step) && step.name === 'Rebuild Linux node-pty against manylinux 2.28')
     const macosCheck = buildSteps.find(step => isRecord(step) && step.name === 'Check macOS deployment target')
     const manylinuxSmoke = buildSteps.find(step => isRecord(step) && step.name === 'Run wheel in a manylinux 2.28 container')
@@ -385,6 +386,8 @@ describe('Python release workflows', () => {
     expect(plan.if).toContain('inputs.release')
     expect(JSON.stringify(plan.steps)).toContain('pep440_version')
     expect(JSON.stringify(workflow)).toContain('macosx_14_0_arm64')
+    expect(setupNode).toMatchObject({ with: { 'node-version': 24 } })
+    expect(isRecord(setupNode) && isRecord(setupNode.with) ? setupNode.with : {}).not.toHaveProperty('cache')
     expect(manylinuxAddon).toMatchObject({ if: "runner.os == 'Linux'" })
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_x86_64')
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_aarch64')
@@ -455,10 +458,10 @@ describe('Windows desktop Setup workflow', () => {
     expect(build.run).toContain('pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"')
     expect(build.run).toContain('Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact')
     expect(build.run).not.toContain('pnpm run desktop:setup\n')
-    expect(smoke.run).toContain('./scripts/windows-desktop-setup-smoke.ps1 -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.8-win-x64.exe')
+    expect(smoke.run).toContain('./scripts/windows-desktop-setup-smoke.ps1 -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe')
     expect(smoke.run).not.toContain('Set-Location S:\\')
     expect(checksum.run).not.toContain('Set-Location S:\\')
-    expect(upload.with.path).toContain('s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.8-win-x64.exe')
+    expect(upload.with.path).toContain('s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe')
   })
 })
 

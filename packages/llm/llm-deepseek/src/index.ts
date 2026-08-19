@@ -27,6 +27,7 @@ import {
   DeepSeekAdapter,
 } from './adapter.ts'
 import type { DeepSeekCatalogModel, DeepSeekConnectionOptions } from './adapter.ts'
+import { installDeepSeekBalanceHttp } from './balance.ts'
 
 export {
   DEFAULT_CONTEXT_WINDOW,
@@ -34,6 +35,17 @@ export {
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   DeepSeekAdapter,
 } from './adapter.ts'
+export {
+  BALANCE_BOOTSTRAP_GLOBAL,
+  BALANCE_CAPABILITY_HEADER,
+  BALANCE_PATH,
+  BALANCE_TIMEOUT_MS,
+  BALANCE_TTL_MS,
+  injectDeepSeekBalanceBootstrap,
+  installDeepSeekBalanceHttp,
+  parseDeepSeekBalance,
+} from './balance.ts'
+export type { DeepSeekBalanceFacts, DeepSeekBalanceSnapshot } from './balance.ts'
 export type { DeepSeekAdapterOptions, DeepSeekCatalogModel, DeepSeekConnectionOptions } from './adapter.ts'
 export type { RequestDefaults } from './serialize.ts'
 export type * from './types.ts'
@@ -273,4 +285,11 @@ export function apply(ctx: Context, config: Config): void {
     },
     onChange: ensureRegistrationFacts,
   })
+
+  // Read-only account-balance bridge: mounted only in Web compositions that
+  // carry the WebServer service; other compositions skip it entirely.
+  const disposeBalance = installDeepSeekBalanceHttp(ctx, { options, resolveApiKey })
+  if (disposeBalance !== undefined) {
+    ctx.effect(() => disposeBalance, 'llm-deepseek: account balance HTTP bridge')
+  }
 }

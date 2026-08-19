@@ -7,6 +7,117 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.skeleton {
+  gap: 0;
+}
+
+.skeletonSummary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+.skeletonMetric {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 13px 8px 12px;
+}
+
+.skeletonMetric + .skeletonMetric {
+  border-left: 1px solid var(--dsw-alias-border-l2);
+}
+
+.skeletonBlock,
+.skeletonParticles i {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-skeleton);
+  animation: skeleton-pulse 1.35s ease-in-out infinite;
+}
+
+.skeletonBlock::after,
+.skeletonParticles i::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgb(255 255 255 / 13%) 48%, transparent 76%);
+  content: '';
+  transform: translateX(-110%);
+  animation: skeleton-sheen 1.6s ease-in-out infinite;
+}
+
+.skeletonMetric .skeletonBlock:first-child {
+  width: 44%;
+  height: 17px;
+}
+
+.skeletonMetric .skeletonBlock:last-child {
+  width: 68%;
+  height: 10px;
+}
+
+.skeletonActivity {
+  display: grid;
+  gap: 18px;
+  margin-top: 32px;
+}
+
+.skeletonActivity > .skeletonBlock {
+  width: 94px;
+  height: 14px;
+}
+
+.skeletonParticles {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  grid-template-rows: repeat(5, 8px);
+  grid-auto-flow: column;
+  gap: 3px;
+  min-height: 52px;
+}
+
+.skeletonParticles i {
+  width: 100%;
+  height: 8px;
+  animation-delay: calc(var(--usage-skeleton-index, 0) * 12ms);
+}
+
+.skeletonDetails {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 36px;
+  margin-top: 44px;
+}
+
+.skeletonDetails > div {
+  display: grid;
+  gap: 10px;
+}
+
+.skeletonDetails .skeletonBlock {
+  width: 100%;
+  height: 12px;
+}
+
+.skeletonDetails .skeletonBlock:first-child {
+  width: 38%;
+  height: 14px;
+  margin-bottom: 3px;
+}
+
+@keyframes skeleton-pulse {
+  50% { opacity: .58; }
+}
+
+@keyframes skeleton-sheen {
+  55%, 100% { transform: translateX(110%); }
+}
+
 .summary {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -48,7 +159,6 @@
   line-height: 18px;
 }
 
-.status,
 .empty,
 .noFeatures,
 .partial,
@@ -84,6 +194,32 @@
   background: transparent;
   color: var(--dsw-alias-label-primary);
   font: inherit;
+  cursor: pointer;
+}
+
+.refreshNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 22%, var(--dsw-alias-border-l2));
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 6%, transparent);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.refreshNotice button {
+  flex: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--dsw-alias-state-business-primary);
+  font: inherit;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -125,7 +261,8 @@
 }
 
 .tabs button:focus-visible,
-.failure button:focus-visible {
+.failure button:focus-visible,
+.refreshNotice button:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 1px;
 }
@@ -325,7 +462,8 @@
 }
 
 @media (max-width: 620px) {
-  .summary {
+  .summary,
+  .skeletonSummary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -333,7 +471,15 @@
     border-left: 0;
   }
 
+  .skeletonMetric + .skeletonMetric {
+    border-left: 0;
+  }
+
   .metric:nth-child(even) {
+    border-left: 1px solid var(--dsw-alias-border-l2);
+  }
+
+  .skeletonMetric:nth-child(even) {
     border-left: 1px solid var(--dsw-alias-border-l2);
   }
 
@@ -341,9 +487,23 @@
     border-top: 1px solid var(--dsw-alias-border-l2);
   }
 
-  .detailsGrid {
+  .skeletonMetric:nth-child(n + 3) {
+    border-top: 1px solid var(--dsw-alias-border-l2);
+  }
+
+  .detailsGrid,
+  .skeletonDetails {
     grid-template-columns: minmax(0, 1fr);
     gap: 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeletonBlock,
+  .skeletonParticles i,
+  .skeletonBlock::after,
+  .skeletonParticles i::after {
+    animation: none;
   }
 }
 

@@ -3,6 +3,13 @@
    them, so this file uses tokens with neutral fallbacks (the one sanctioned
    fallback site — plugin packages must not do this). */
 
+.desktopRoot {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
 .boot {
   height: 100%;
   display: grid;

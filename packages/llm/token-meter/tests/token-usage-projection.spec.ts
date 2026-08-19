@@ -51,6 +51,8 @@ function finalUsage(
   turn: number,
   step: number,
   sourceSeqs: number[],
+  provider = 'mock',
+  model = 'mock',
 ): void {
   session.append('assistant/message', {
     turn,
@@ -58,7 +60,7 @@ function finalUsage(
     message: createMessage({
       role: 'assistant',
       content: [],
-      source: { kind: 'model', provider: 'mock', model: 'mock' },
+      source: { kind: 'model', provider, model },
     }),
     usage,
   }, { surfaceOp: 'append', sourceEventSeqs: sourceSeqs })
@@ -70,6 +72,9 @@ const projected = (ctx: Context, session: Session): TokenUsageProjection => {
   if (value === undefined) throw new Error('tokenUsage projection is not registered')
   return value
 }
+
+const billingModel = (ctx: Context, session: Session): unknown =>
+  ctx.sessionProjections.snapshot(session).values['tokenBillingModel' as never]
 
 /**
  * Meter one upcoming replacement the way compaction-basic does: price the
@@ -221,6 +226,42 @@ describe('tokenUsage session projection', () => {
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
     })
+  })
+
+  it('projects one durable billing model and marks a model switch as mixed', async () => {
+    const { ctx, session } = await harness()
+    startStep(session, 1, 1)
+    const first = usageChunk(session, { inputTokens: 10, outputTokens: 2 }, 1, 1)
+    finalUsage(session, { inputTokens: 10, outputTokens: 2 }, 1, 1, [first], 'deepseek-official', 'deepseek-v4-flash')
+    expect(billingModel(ctx, session)).toEqual({
+      kind: 'single', provider: 'deepseek-official', model: 'deepseek-v4-flash',
+    })
+
+    startStep(session, 2, 1)
+    const second = usageChunk(session, { inputTokens: 20, outputTokens: 3 }, 2, 1)
+    finalUsage(session, { inputTokens: 20, outputTokens: 3 }, 2, 1, [second], 'deepseek-official', 'deepseek-v4-pro')
+    expect(billingModel(ctx, session)).toEqual({ kind: 'mixed' })
+  })
+
+  it('accounts for a usage-only failed step under its recorded request header', async () => {
+    const { ctx, session } = await harness()
+    session.append('request/header', {
+      header: { config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } },
+      reason: 'initial',
+    })
+    startStep(session, 1, 1)
+    const first = usageChunk(session, { inputTokens: 10, outputTokens: 2 }, 1, 1)
+    finalUsage(session, { inputTokens: 10, outputTokens: 2 }, 1, 1, [first], 'deepseek-official', 'deepseek-v4-flash')
+
+    session.append('request/header', {
+      header: { config: { provider: 'deepseek-official', model: 'deepseek-v4-pro' } },
+      reason: 'change',
+    })
+    startStep(session, 2, 1)
+    usageChunk(session, { inputTokens: 20, outputTokens: 0 }, 2, 1)
+    session.append('step/end', { turn: 2, step: 1 })
+
+    expect(billingModel(ctx, session)).toEqual({ kind: 'mixed' })
   })
 
   it('unregisters with the token-meter fiber and restores from a JSON checkpoint', async () => {

@@ -32,7 +32,10 @@ import { readWindowBounds, writeWindowBounds } from './window/state.ts'
 const PRODUCT_NAME = 'DeepSeek Harness'
 const require = createRequire(import.meta.url)
 const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url))
-const loadingPath = fileURLToPath(new URL('../renderer/loading.html', import.meta.url))
+const loadingPath = fileURLToPath(new URL(
+  process.platform === 'darwin' ? '../renderer/loading-macos.html' : '../renderer/loading.html',
+  import.meta.url,
+))
 const failurePath = fileURLToPath(new URL('../renderer/failure.html', import.meta.url))
 const iconPath = fileURLToPath(new URL('../assets/icon-source.png', import.meta.url))
 const desktopPatchPath = fileURLToPath(new URL('../desktop.cordis.patch.yml', import.meta.url))

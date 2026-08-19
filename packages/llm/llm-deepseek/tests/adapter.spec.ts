@@ -758,6 +758,22 @@ describe('plugin registration and config', () => {
     ])
   })
 
+  it('owns the optional account-balance bridge through the plugin fiber', async () => {
+    const disposeRoute = vi.fn()
+    const disposeTap = vi.fn()
+    const ctx = new Context()
+    ctx.provide('webServer', {
+      register: vi.fn(() => disposeRoute),
+      tapIndex: vi.fn(() => disposeTap),
+    } as never)
+    await ctx.plugin(LlmRuntime)
+    const fiber = ctx.plugin(LlmDeepSeek, { baseURL: 'https://api.deepseek.com' })
+    await fiber.await()
+    await fiber.dispose()
+    expect(disposeTap).toHaveBeenCalledOnce()
+    expect(disposeRoute).toHaveBeenCalledOnce()
+  })
+
   it('advertises configured models without restricting arbitrary request ids', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)

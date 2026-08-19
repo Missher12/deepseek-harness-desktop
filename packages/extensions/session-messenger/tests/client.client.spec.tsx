@@ -134,7 +134,7 @@ afterEach(() => {
 })
 
 describe('session messenger Client registration', () => {
-  it('registers one Session-header trigger and one shell drawer with no footer occupant', () => {
+  it('mounts no header, drawer, or footer surface because relays render in chat', () => {
     const registrations: Array<{ name: string; options: Record<string, unknown>; component: unknown }> = []
     const disposers: Array<() => void> = []
     const localeDispose = vi.fn()
@@ -159,30 +159,11 @@ describe('session messenger Client registration', () => {
 
     apply(ctx as never)
     expect(inject).toEqual(['locale', 'slots'])
-    expect(registrations).toHaveLength(2)
-    expect(registrations.map(entry => ({
-      name: entry.name,
-      id: entry.options.id,
-      locale: entry.options.locale,
-      component: entry.component,
-    }))).toEqual([
-      {
-        name: 'conversation.session.header.utilities',
-        id: 'session-messenger',
-        locale: 'sessionMessenger',
-        component: MessengerHeaderButton,
-      },
-      {
-        name: 'shell.overlay',
-        id: 'session-messenger-drawer',
-        locale: 'sessionMessenger',
-        component: MessengerDrawer,
-      },
-    ])
-    expect(registrations.some(entry => entry.name === 'sidebar.footer.action')).toBe(false)
+    expect(registrations).toEqual([])
+    expect(disposers).toEqual([])
     for (const dispose of disposers.reverse()) dispose()
-    expect(localeDispose).toHaveBeenCalledOnce()
-    expect(slotDispose).toHaveBeenCalledTimes(2)
+    expect(localeDispose).not.toHaveBeenCalled()
+    expect(slotDispose).not.toHaveBeenCalled()
   })
 })
 

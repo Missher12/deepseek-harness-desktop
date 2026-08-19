@@ -116,12 +116,27 @@ describe('packaged desktop process inspection', () => {
           delegationDepth: 1,
         })
         const active = await reader.sessionPersistence.load(SessionId(seeded.activeSessionId))
-        expect(active.events.slice(-4).map(event => ({ type: event.type, data: event.data }))).toEqual([
+        expect(active.events.slice(-5, -1).map(event => ({ type: event.type, data: event.data }))).toEqual([
           { type: 'permission/preset', data: { preset: 'workspace-write' } },
           { type: 'sandbox/mode', data: { mode: 'workspace-write' } },
           { type: 'approval/policy', data: { policy: 'ask' } },
           { type: 'session/end-seed', data: {} },
         ])
+        expect(active.events.at(-1)).toMatchObject({
+          type: 'user/message',
+          data: {
+            source: {
+              kind: 'plugin',
+              plugin: 'dsh-session-messenger',
+              form: 'relay',
+              senderSessionId: seeded.messengerSourceSessionId,
+            },
+            content: [
+              { type: 'text', text: 'bounded desktop smoke relay metadata' },
+              { type: 'text', text: 'desktop-smoke-visible-message' },
+            ],
+          },
+        })
       } finally {
         await reader.fiber.dispose()
       }

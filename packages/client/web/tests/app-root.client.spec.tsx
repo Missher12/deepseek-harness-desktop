@@ -14,7 +14,7 @@ afterEach(cleanup)
 import { AppRoot } from '@deepseek-ai/dsh-client-web/src/AppRoot.tsx'
 import { createLoaderStatusStore, createSignal } from '@deepseek-ai/dsh-client-web/src/loader-status.ts'
 
-function mount() {
+function mount(macDesktop = false) {
   const settled = createSignal(false)
   const error = createSignal<string | undefined>(undefined)
   const status = createLoaderStatusStore()
@@ -24,6 +24,7 @@ function mount() {
       settled={settled}
       status={status}
       error={error}
+      macDesktop={macDesktop}
       renderApp={() => { renders += 1; return <div data-testid="real-ui" /> }}
     />,
   )
@@ -72,5 +73,18 @@ describe('AppRoot', () => {
     expect(getByTestId('real-ui')).toBeTruthy()
     expect(queryByText('HARNESS')).toBeNull()
     expect(counts()).toBe(1)
+  })
+
+  it('holds a macOS Desktop intro and reveals the real UI beneath its exit phase', () => {
+    const bed = mount(true)
+    expect(bed.container.querySelector('[data-desktop-boot-phase="hold"]')).not.toBeNull()
+    expect(bed.queryByTestId('real-ui')).toBeNull()
+    expect(bed.counts()).toBe(0)
+
+    act(() => { bed.settled.set(true) })
+
+    expect(bed.getByTestId('real-ui')).toBeTruthy()
+    expect(bed.container.querySelector('[data-desktop-boot-phase="exit"]')).not.toBeNull()
+    expect(bed.counts()).toBe(1)
   })
 })

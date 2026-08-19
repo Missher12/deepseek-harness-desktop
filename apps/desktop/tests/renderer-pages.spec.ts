@@ -13,6 +13,16 @@ describe('local renderer pages', () => {
     expect(html).not.toMatch(/https?:\/\//u)
   })
 
+  it('ships a self-contained DeepSeek-colored macOS startup intro', async () => {
+    const html = await rendererPage('loading-macos.html')
+    expect(html).toContain("default-src 'none'")
+    expect(html).toContain('data-macos-startup')
+    expect(html).toContain('#4d6bfe')
+    expect(html).toContain('prefers-reduced-motion: reduce')
+    expect(html).not.toContain('role="progressbar"')
+    expect(html).not.toMatch(/https?:\/\//u)
+  })
+
   it('renders only closed failure reasons and recovery actions', async () => {
     const html = await rendererPage('failure.html')
     expect(html).toContain('runtime-conflict')

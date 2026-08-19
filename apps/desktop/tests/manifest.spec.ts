@@ -179,11 +179,12 @@ describe('desktop package manifest', () => {
   it('exercises the patched marketplace and both protected and ordinary package routes', () => {
     const smoke = readFileSync(new URL('./packaged-smoke.ts', import.meta.url), 'utf8')
 
-    expect(smoke).toContain('data-dshmarket-layout="compact"')
+    expect(smoke).toContain('data-dshmarket-layout="reference"')
+    expect(smoke).toContain('data-dshmarket-installed-rail')
+    expect(smoke).toContain('data-dshmarket-mode="personal"')
     expect(smoke).toContain('data-dshmarket-plugin-row')
     expect(smoke).toContain('data-dshmarket-primary-action')
-    expect(smoke).toContain('[data-category]')
-    expect(smoke).toContain('scrollLeft')
+    expect(smoke).toContain('data-dshmarket-overflow-menu')
     expect(smoke).toContain("'/dsh-market/update'")
     expect(smoke).toContain("'/dsh-market/uninstall'")
     expect(smoke).toContain("code: 'self-protected'")
@@ -203,17 +204,14 @@ describe('desktop package manifest', () => {
     expect(wineGate).toContain('ln -s ../../../node_modules/dshmarket apps/desktop/node_modules/dshmarket')
   })
 
-  it('exercises the native reasoning slider and visible session-message drawer', () => {
+  it('exercises the native reasoning slider and visible in-chat session relay', () => {
     const smoke = readFileSync(new URL('./packaged-smoke.ts', import.meta.url), 'utf8')
 
     expect(smoke).toContain('desktop-smoke-reasoning-${platform}.png')
-    expect(smoke).toContain('data-messenger-trigger')
-    expect(smoke).toContain('data-messenger-state="pending"')
-    expect(smoke).toContain('Copy current Session ID')
-    expect(smoke).toContain("locator('[data-session-relay-card]').count()")
+    expect(smoke).toContain("locator('[data-messenger-trigger]').count()).toBe(0)")
+    expect(smoke).toContain("locator('[data-relay-card]')")
     expect(smoke).toContain('desktop-smoke-visible-message')
     expect(smoke).not.toContain('desktop-smoke-visible-reply')
-    expect(smoke).toContain('Resize session messages')
     expect(smoke).toContain('desktop-smoke-messenger-${platform}.png')
     expect(smoke).not.toContain("platform === 'win32'\n    ? await seedWindowsClipboardSmokeState")
   })
