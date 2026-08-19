@@ -1,9 +1,16 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useState } from 'react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
+
+const settingsCss = readFileSync(resolve(
+  process.cwd(),
+  'packages/client/ui-settings-general/src/client/SettingsRoot.module.css',
+), 'utf8')
 
 afterEach(cleanup)
 
@@ -200,6 +207,25 @@ describe('SettingsPanel navigation', () => {
     expect(screen.getByRole('button', { name: 'Models' }).getAttribute('aria-current')).toBe('true')
     expect(screen.getByTestId('section-models')).toBeTruthy()
     expect(screen.queryByTestId('section-general')).toBeNull()
+  })
+
+  it('exposes the active section so only the plugin market can use the wide geometry', () => {
+    mount({
+      rows: [
+        { id: 'general', order: 0, label: 'General' },
+        { id: 'market', order: 40, label: 'Plugin Market' },
+      ],
+    })
+    openPanel()
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.getAttribute('data-settings-section')).toBe('general')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Plugin Market' }))
+
+    expect(dialog.getAttribute('data-settings-section')).toBe('market')
+    expect(settingsCss).toMatch(
+      /\.panel\[data-settings-section="market"\]\s*\{[^}]*width:\s*min\(1040px, calc\(100vw - 48px\)\)/,
+    )
   })
 
   it('mounts onboarding steps in order and transfers ownership only on completion', () => {

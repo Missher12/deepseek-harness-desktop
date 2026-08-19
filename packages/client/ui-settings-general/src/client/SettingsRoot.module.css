@@ -90,6 +90,13 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
+/* The reference-style market needs a readable two-column catalog. Keep the
+   wider geometry scoped to its section so ordinary Settings pages retain the
+   stable 800px panel users already know. */
+.panel[data-settings-section="market"] {
+  width: min(1040px, calc(100vw - 48px));
+}
+
 /* Nav rail (figma .Setting-nav 501:29958): 188 wide, pad (12,22,12,0),
    gap 18, no own fill — the panel white shows through. */
 .nav {
