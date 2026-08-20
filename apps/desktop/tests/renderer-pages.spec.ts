@@ -13,15 +13,21 @@ describe('local renderer pages', () => {
     expect(html).not.toMatch(/https?:\/\//u)
   })
 
-  it('ships a self-contained DeepSeek-colored macOS startup intro', async () => {
+  it('ships the self-contained minimal macOS startup progress surface', async () => {
     const html = await rendererPage('loading-macos.html')
     expect(html).toContain("default-src 'none'")
+    expect(html).toContain("img-src 'self'")
     expect(html).toContain('data-macos-startup')
+    expect(html).toContain('data-macos-local-progress')
+    expect(html).toContain('../assets/icon-source.png')
+    expect(html).toContain('正在准备你的工作区')
+    expect(html).toContain('启动本地服务')
+    expect(html).toContain('aria-valuetext="正在启动本地服务"')
+    expect(html).toContain('height: 5px')
     expect(html).toContain('#4d6bfe')
     expect(html).toContain('prefers-reduced-motion: reduce')
-    expect(html).toContain('role="progressbar"')
-    expect(html).toContain('aria-label="正在启动"')
-    expect(html).toContain('aria-valuetext="正在初始化桌面运行时"')
+    expect(html).not.toContain('class="grid"')
+    expect(html).not.toContain('class="rail"')
     expect(html).not.toMatch(/https?:\/\//u)
   })
 
