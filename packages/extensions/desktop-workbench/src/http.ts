@@ -5,11 +5,15 @@ import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { listWorkspace, readWorkspaceFile } from './files.ts'
 import { gitDiff, gitStatus } from './review.ts'
+import { WorkbenchTerminalRegistry } from './terminal.ts'
 
 export const LIST_PATH = '/plugins/dsh-desktop-workbench/files/list'
 export const READ_PATH = '/plugins/dsh-desktop-workbench/files/read'
 export const REVIEW_PATH = '/plugins/dsh-desktop-workbench/review/status'
 export const DIFF_PATH = '/plugins/dsh-desktop-workbench/review/diff'
+export const TERMINAL_OPEN_PATH = '/plugins/dsh-desktop-workbench/terminal/open'
+export const TERMINAL_ACTION_PATH = '/plugins/dsh-desktop-workbench/terminal/action'
+export const TERMINAL_SNAPSHOT_PATH = '/plugins/dsh-desktop-workbench/terminal/snapshot'
 export const WORKBENCH_CAPABILITY_HEADER = 'x-dsh-desktop-workbench-capability'
 const BODY_LIMIT = 4096
 
@@ -74,6 +78,25 @@ export function installWorkbenchHttp(ctx: Context): void {
   )
   const authority = `127.0.0.1:${String(ctx.webServer.port)}`
   const origin = `http://${authority}`
+  const terminals = new WorkbenchTerminalRegistry(spec => ctx.subprocess.spawnTerminal(spec))
+  const authenticated = (
+    path: string,
+    action: (body: Record<string, unknown>) => Promise<unknown> | unknown,
+  ): WebRoute => ({
+    kind: 'exact', path,
+    async handler(req, res) {
+      if (req.method !== 'POST'
+        || exactHeader(req, 'host') !== authority
+        || exactHeader(req, 'origin') !== origin
+        || !matches(exactHeader(req, WORKBENCH_CAPABILITY_HEADER), capability)) {
+        respond(res, 403, { error: 'forbidden' })
+        return
+      }
+      try { respond(res, 200, await action(await readBody(req))) } catch (error: unknown) {
+        respond(res, 400, { error: error instanceof Error ? error.message : 'request failed' })
+      }
+    },
+  })
   const route = (
     path: string,
     action: (root: string, child: string | undefined) => Promise<unknown>,
@@ -97,6 +120,7 @@ export function installWorkbenchHttp(ctx: Context): void {
     },
   })
   ctx.effect(function* () {
+    yield async () => { await terminals.closeAll() }
     yield ctx.webServer.register(route(LIST_PATH, (root, child) => listWorkspace(root, child)))
     yield ctx.webServer.register(route(READ_PATH, (root, child) => {
       if (child === undefined || child === '') throw new Error('file path required')
@@ -104,6 +128,24 @@ export function installWorkbenchHttp(ctx: Context): void {
     }))
     yield ctx.webServer.register(route(REVIEW_PATH, root => gitStatus(root)))
     yield ctx.webServer.register(route(DIFF_PATH, (root, child) => gitDiff(root, child)))
+    yield ctx.webServer.register(authenticated(TERMINAL_OPEN_PATH, async (body) => {
+      if (!safeId(body.sessionId)) throw new Error('invalid request')
+      return await terminals.open(capability, workspaceOf(ctx, body.sessionId), numberValue(body.rows), numberValue(body.cols))
+    }))
+    yield ctx.webServer.register(authenticated(TERMINAL_SNAPSHOT_PATH, (body) => {
+      if (!safeId(body.sessionId)) throw new Error('invalid request')
+      workspaceOf(ctx, body.sessionId)
+      return { terminals: terminals.list(capability) }
+    }))
+    yield ctx.webServer.register(authenticated(TERMINAL_ACTION_PATH, async (body) => {
+      if (!safeId(body.sessionId) || !safeId(body.id) || typeof body.action !== 'string') throw new Error('invalid request')
+      workspaceOf(ctx, body.sessionId)
+      if (body.action === 'write' && typeof body.value === 'string') await terminals.write(capability, body.id, body.value)
+      else if (body.action === 'signal' && typeof body.value === 'string') await terminals.signal(capability, body.id, body.value)
+      else if (body.action === 'close') await terminals.close(capability, body.id)
+      else throw new Error('invalid terminal action')
+      return { ok: true }
+    }))
     yield ctx.webServer.tapIndex(html => injectWorkbenchBootstrap(html, capability))
   }, 'desktop-workbench: read-only HTTP bridge')
 }
@@ -111,10 +153,16 @@ export function installWorkbenchHttp(ctx: Context): void {
 export function injectWorkbenchBootstrap(html: string, capability: string): string {
   const data = {
     listPath: LIST_PATH, readPath: READ_PATH, reviewPath: REVIEW_PATH, diffPath: DIFF_PATH,
+    terminalOpenPath: TERMINAL_OPEN_PATH, terminalActionPath: TERMINAL_ACTION_PATH,
+    terminalSnapshotPath: TERMINAL_SNAPSHOT_PATH,
     capabilityHeader: WORKBENCH_CAPABILITY_HEADER, capability,
   }
   const value = JSON.stringify(data).replaceAll('<', '\\u003c')
   const script = `<script data-dsh-desktop-workbench-bootstrap>window.__DSH_DESKTOP_WORKBENCH__=Object.freeze(${value})</script>`
   const head = html.indexOf('<head>')
   return head === -1 ? `${script}${html}` : `${html.slice(0, head + 6)}${script}${html.slice(head + 6)}`
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }

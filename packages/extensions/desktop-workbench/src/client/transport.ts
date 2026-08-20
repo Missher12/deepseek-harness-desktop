@@ -1,5 +1,7 @@
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { FileListing, FilePreview, ReviewDiff, ReviewStatus, WorkbenchBootstrap } from '../protocol.ts'
+import type {
+  FileListing, FilePreview, ReviewDiff, ReviewStatus, WorkbenchBootstrap, WorkbenchTerminalSnapshot,
+} from '../protocol.ts'
 
 function bootstrap(): WorkbenchBootstrap {
   const value = window.__DSH_DESKTOP_WORKBENCH__
@@ -7,12 +9,15 @@ function bootstrap(): WorkbenchBootstrap {
   return value
 }
 
-async function request<T>(path: keyof Pick<WorkbenchBootstrap, 'listPath' | 'readPath' | 'reviewPath' | 'diffPath'>, sessionId: SessionId, child?: string): Promise<T> {
+type RequestPath = keyof Pick<WorkbenchBootstrap,
+  'listPath' | 'readPath' | 'reviewPath' | 'diffPath' | 'terminalOpenPath' | 'terminalActionPath' | 'terminalSnapshotPath'>
+
+async function request<T>(path: RequestPath, sessionId: SessionId, extra: Record<string, unknown> = {}): Promise<T> {
   const config = bootstrap()
   const response = await fetch(config[path], {
     method: 'POST', credentials: 'same-origin', cache: 'no-store',
     headers: { 'content-type': 'application/json', [config.capabilityHeader]: config.capability },
-    body: JSON.stringify({ sessionId, ...(child === undefined ? {} : { path: child }) }),
+    body: JSON.stringify({ sessionId, ...extra }),
   })
   const value = await response.json() as unknown
   if (!response.ok) {
@@ -23,8 +28,12 @@ async function request<T>(path: keyof Pick<WorkbenchBootstrap, 'listPath' | 'rea
 }
 
 export const workbenchTransport = {
-  list: (sessionId: SessionId, path = '') => request<FileListing>('listPath', sessionId, path),
-  read: (sessionId: SessionId, path: string) => request<FilePreview>('readPath', sessionId, path),
+  list: (sessionId: SessionId, path = '') => request<FileListing>('listPath', sessionId, { path }),
+  read: (sessionId: SessionId, path: string) => request<FilePreview>('readPath', sessionId, { path }),
   status: (sessionId: SessionId) => request<ReviewStatus>('reviewPath', sessionId),
-  diff: (sessionId: SessionId, path?: string) => request<ReviewDiff>('diffPath', sessionId, path),
+  diff: (sessionId: SessionId, path?: string) => request<ReviewDiff>('diffPath', sessionId, path === undefined ? {} : { path }),
+  openTerminal: (sessionId: SessionId) => request<WorkbenchTerminalSnapshot>('terminalOpenPath', sessionId),
+  terminalSnapshots: (sessionId: SessionId) => request<{ terminals: WorkbenchTerminalSnapshot[] }>('terminalSnapshotPath', sessionId),
+  terminalAction: (sessionId: SessionId, id: string, action: 'write' | 'signal' | 'close', value?: string) =>
+    request<{ ok: true }>('terminalActionPath', sessionId, { id, action, ...(value === undefined ? {} : { value }) }),
 }

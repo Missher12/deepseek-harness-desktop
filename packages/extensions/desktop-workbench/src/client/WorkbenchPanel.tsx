@@ -7,6 +7,7 @@ import css from './WorkbenchPanel.module.css'
 import { SideChatMode } from './SideChatMode.tsx'
 import { FilesMode } from './FilesMode.tsx'
 import { ReviewMode } from './ReviewMode.tsx'
+import { TerminalMode } from './TerminalMode.tsx'
 
 const MODES: UtilityMode[] = ['terminal', 'browser', 'files', 'side-chat', 'review']
 export type WorkbenchPanelProps = PropsRuntime<'layout.utility'> & PropsLocale<typeof NS> & InjectFace<WorkbenchInjected>
@@ -37,10 +38,11 @@ export function WorkbenchPanel(props: WorkbenchPanelProps) {
         <button type="button" className={css.close} aria-label={t('close')} onClick={close}>×</button>
       </header>
       <div className={css.body} role="tabpanel">
-        {mode === 'side-chat' ? <SideChatMode {...props} />
-          : mode === 'files' ? <FilesMode {...props} />
-            : mode === 'review' ? <ReviewMode {...props} />
-              : <p>{t(`placeholder.${mode}`)}</p>}
+        {mode === 'terminal' ? <TerminalMode {...props} />
+          : mode === 'side-chat' ? <SideChatMode {...props} />
+            : mode === 'files' ? <FilesMode {...props} />
+              : mode === 'review' ? <ReviewMode {...props} />
+                : <p>{t(`placeholder.${mode}`)}</p>}
       </div>
     </section>
   )

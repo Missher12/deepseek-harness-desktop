@@ -1,12 +1,17 @@
 export const MAX_DIRECTORY_ENTRIES = 200
 export const MAX_PREVIEW_BYTES = 256 * 1024
 export const MAX_DIFF_BYTES = 256 * 1024
+export const MAX_TERMINAL_OUTPUT_BYTES = 1024 * 1024
+export const MAX_TERMINAL_INPUT_BYTES = 16 * 1024
 
 export interface WorkbenchBootstrap {
   listPath: string
   readPath: string
   reviewPath: string
   diffPath: string
+  terminalOpenPath: string
+  terminalActionPath: string
+  terminalSnapshotPath: string
   capabilityHeader: string
   capability: string
 }
@@ -17,5 +22,15 @@ export interface FilePreview { path: string; size: number; binary: boolean; text
 export interface ReviewEntry { path: string; status: string }
 export interface ReviewStatus { entries: ReviewEntry[]; truncated: boolean }
 export interface ReviewDiff { path?: string; text: string; truncated: boolean }
+export type WorkbenchTerminalStatus = 'running' | 'exited'
+export interface WorkbenchTerminalSnapshot {
+  id: string
+  cwd: string
+  pid: number
+  output: string
+  revision: number
+  status: WorkbenchTerminalStatus
+  exitCode?: number | null
+}
 
 declare global { interface Window { __DSH_DESKTOP_WORKBENCH__?: WorkbenchBootstrap } }

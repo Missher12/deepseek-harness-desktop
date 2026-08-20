@@ -14,6 +14,7 @@
     { "path": "../../runtime-diagnostics/invariants" },
     { "path": "../session-messenger" },
     { "path": "../../host/webserver" },
-    { "path": "../../core/session" }
+    { "path": "../../core/session" },
+    { "path": "../../subprocess/subprocess" }
   ]
 }

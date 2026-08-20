@@ -13,6 +13,7 @@ export const zh = {
   filterFiles: '筛选文件', selectFile: '选择文件以预览', binaryFile: '二进制文件不提供文本预览', truncated: '内容过长，已截断', mention: '加入输入框',
   changes: '变更', refresh: '刷新', noChanges: '没有待审阅的变更', selectChange: '选择变更以查看差异', noDiff: '该文件暂无可显示的差异',
   reviewInChat: '在聊天中审阅', reviewDraft: '请审阅当前工作区中的 {path}，重点检查正确性、稳定性和潜在回归。',
+  terminalTab: '终端 {index}', clearView: '清屏', terminalReady: '终端已就绪', terminalPlaceholder: '输入命令并按回车',
 } as const
 export const en: Record<keyof typeof zh, string> = {
   open: 'Open workbench', close: 'Close workbench', terminal: 'Terminal', browser: 'Browser', files: 'Files',
@@ -28,5 +29,6 @@ export const en: Record<keyof typeof zh, string> = {
   filterFiles: 'Filter files', selectFile: 'Select a file to preview', binaryFile: 'Binary preview is unavailable', truncated: 'Content truncated', mention: 'Add to composer',
   changes: 'Changes', refresh: 'Refresh', noChanges: 'No changes to review', selectChange: 'Select a change to view its diff', noDiff: 'No displayable diff for this file',
   reviewInChat: 'Review in chat', reviewDraft: 'Review {path} in the current workspace for correctness, stability, and regressions.',
+  terminalTab: 'Terminal {index}', clearView: 'Clear', terminalReady: 'Terminal ready', terminalPlaceholder: 'Type a command and press Return',
 }
 export type DesktopWorkbenchKey = keyof typeof zh
