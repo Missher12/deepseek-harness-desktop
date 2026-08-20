@@ -660,6 +660,17 @@ async function exerciseWindowsDirectoryPicker(
 
   await page.getByText(basename(selectedDirectory), { exact: true })
     .waitFor({ state: 'visible', timeout: 30_000 })
+  const nativeBlankSession = page.getByRole('treeitem').filter({
+    has: page.getByText(/^(?:New Session|新会话)$/u, { exact: true }),
+  }).first()
+  await nativeBlankSession.waitFor({ state: 'visible', timeout: 30_000 })
+  await expect.poll(
+    () => nativeBlankSession.getAttribute('aria-selected'),
+    { timeout: 30_000 },
+  ).toBe('true')
+  await page.locator('[class*="centerCol"]')
+    .getByText(basename(selectedDirectory), { exact: true })
+    .waitFor({ state: 'visible', timeout: 30_000 })
   const lifecycle = await readFile(join(userData, 'logs', 'lifecycle.log'), 'utf8')
   expect(lifecycle).not.toContain('FATAL ERROR')
   expect(await page.locator('body[data-dsh-surface="desktop"]').count()).toBe(1)
