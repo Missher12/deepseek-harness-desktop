@@ -88,6 +88,7 @@ class LocalSendOperation implements TerminalSendOperation {
   constructor(
     maxBytes: number,
     readonly startedAt: number,
+    readonly allowInferredIdle: boolean,
     private readonly onCancel: () => void,
   ) {
     this.output = new BoundedTextBuffer(maxBytes)
@@ -180,6 +181,7 @@ export class LocalPtySession implements TerminalBackendSession {
   private polling = false
   private promptSeen = false
   private promptTextSeen = false
+  private controlledPromptEstablished = false
   private promptTail = ''
   private shellPgid: number | undefined
   private initializing = false
@@ -242,6 +244,7 @@ export class LocalPtySession implements TerminalBackendSession {
     const operation = new LocalSendOperation(
       this.config.maxReadBytes,
       Date.now(),
+      request.allowInferredIdle === true,
       () => { this.interrupt(operation) },
     )
     this.active = operation
@@ -433,6 +436,7 @@ export class LocalPtySession implements TerminalBackendSession {
       this.promptTail += sanitized.promptTail.slice(0, remaining)
       if (sanitized.promptTail.length > remaining) this.promptTail = `${CONTROLLED_PROMPT}\0`
       this.promptTextSeen = this.promptTail === CONTROLLED_PROMPT
+      this.controlledPromptEstablished ||= this.promptTextSeen
     }
   }
 
@@ -505,7 +509,17 @@ export class LocalPtySession implements TerminalBackendSession {
       // on waiting for shell ownership instead of letting a child marker suppress
       // readiness until the absolute timeout.
       const handoffGrace = this.promptSeen ? this.config.handoffGraceMs : 0
-      if (startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace) {
+      // Once pwsh's private prompt has been established, it can remain silent
+      // long enough to cross the generic idle bound before a later submitted
+      // command has even produced its first byte. The provider also has an
+      // exact stdin-wait probe, so treating silence alone as readiness can
+      // release the send slot early and let a successor overtake the command.
+      // Keep the bounded fallback while the startup loop is still trying to
+      // establish that first private prompt. A serialized caller with its own
+      // independent completion marker may opt in explicitly; settlement alone
+      // must not authorize that caller to start another command.
+      if ((this.config.shellDialect !== 'pwsh' || !this.controlledPromptEstablished || operation.allowInferredIdle)
+        && startupHasOutput && idleFor >= this.config.idleSilenceMs + handoffGrace) {
         this.settleActive('inferred_idle')
       }
     } catch (error: unknown) {

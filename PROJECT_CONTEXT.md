@@ -92,10 +92,18 @@ The repository is based on the pinned official source and adds the desktop appli
   release authority for this commit. The final hosted-CI repair also makes the
   persistent PowerShell terminal answer cursor-position device queries, waits
   for the private OSC prompt instead of matching its echoed `dsh> ` source,
-  and defers Linux exact-wait fallback until output is quiet. A portable pwsh
-  7.6.5 run passes the real persistent-state, UTF-8, large-output, exit/restart,
-  and ACP snapshot scenarios. Browser steering snapshots now anchor on the
-  open question composer instead of runner-dependent intermediate timing. The
+  and defers Linux exact-wait fallback until output is quiet. Once that private
+  prompt is established, PowerShell silence alone can no longer release a send
+  slot before delayed output; startup retains the bounded fallback needed to
+  establish the first prompt. The serialized persistent PowerShell tool may
+  also opt into that fallback because its independent random completion marker,
+  rather than terminal settlement, is authoritative for command completion.
+  A portable pwsh 7.6.5 run passes the real persistent-state, UTF-8,
+  large-output, exit/restart, and ACP snapshot scenarios. Browser steering
+  snapshots now anchor on the open question
+  composer instead of runner-dependent intermediate timing, and the HMR
+  browser gate gives only its cold watch build bounded hosted-runner headroom
+  while retaining the existing source-update deadline. The
   four-core Windows hosted lane now uses a bounded 3-partition/2-gate budget so
   subprocess and worker timing tests are not starved by the coverage
   coordinator.

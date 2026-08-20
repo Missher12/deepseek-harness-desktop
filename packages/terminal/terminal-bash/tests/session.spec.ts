@@ -342,6 +342,69 @@ describe('LocalPtySession readiness and output', () => {
     })
   })
 
+  it('does not infer pwsh readiness before delayed command output and its prompt', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({
+      shellDialect: 'pwsh',
+      shellPath: 'pwsh',
+      idleSilenceMs: 50,
+      timeoutMs: 200,
+    }))
+    await initialize(session, terminal)
+
+    const operation = session.startSend({ text: 'Write-Output late', submit: true })
+    let settled = false
+    void operation.done.then(() => { settled = true })
+    await vi.advanceTimersByTimeAsync(100)
+    expect(settled).toBe(false)
+
+    terminal.emitData('late result\r\n\x1b]133;D;0\x07dsh> ')
+    await vi.advanceTimersByTimeAsync(10)
+    const result = await operation.done
+    expect(result.waitReason).toBe('stdin_read')
+    expect(result.viewport).toContain('late result\n')
+  })
+
+  it('allows marker-owned pwsh callers to opt into bounded idle settlement', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({
+      shellDialect: 'pwsh',
+      shellPath: 'pwsh',
+      idleSilenceMs: 50,
+      timeoutMs: 200,
+    }))
+    await initialize(session, terminal)
+
+    const operation = session.startSend({
+      text: 'marker-owned command',
+      submit: true,
+      allowInferredIdle: true,
+    })
+    await vi.advanceTimersByTimeAsync(50)
+    expect((await operation.done).waitReason).toBe('inferred_idle')
+  })
+
+  it('retains bounded pwsh idle fallback until the first controlled prompt is established', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({
+      shellDialect: 'pwsh',
+      shellPath: 'pwsh',
+      idleSilenceMs: 50,
+      timeoutMs: 200,
+    }))
+
+    const startup = session.startSend({ text: 'install prompt', submit: true })
+    terminal.emitData('PowerShell banner\r\n')
+    await vi.advanceTimersByTimeAsync(50)
+    expect((await startup.done).waitReason).toBe('inferred_idle')
+  })
+
   it('distinguishes inferred idle, timeout, exit signal, and operation reads', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()
