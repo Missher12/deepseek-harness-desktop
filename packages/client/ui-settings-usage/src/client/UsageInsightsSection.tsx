@@ -74,23 +74,49 @@ function UsageSkeleton({ label }: { label: string }): ReactNode {
       aria-label={label}
       aria-busy="true"
     >
-      <div className={css.skeletonSummary} aria-hidden="true">
+      <div className={`${css.summary} ${css.skeletonSummary}`} aria-hidden="true">
         {Array.from({ length: 5 }, (_, index) => (
-          <div className={css.skeletonMetric} key={index}>
+          <div className={`${css.metric} ${css.skeletonMetric}`} data-usage-skeleton-metric key={index}>
             <span className={css.skeletonBlock} />
             <span className={css.skeletonBlock} />
           </div>
         ))}
       </div>
-      <div className={css.skeletonActivity} aria-hidden="true">
-        <span className={css.skeletonBlock} />
-        <div className={css.skeletonParticles}>
-          {Array.from({ length: 70 }, (_, index) => <i key={index} />)}
+      <div className={css.activityHeader} aria-hidden="true">
+        <span className={`${css.skeletonBlock} ${css.skeletonHeading}`} />
+        <div className={`${css.tabs} ${css.skeletonTabs}`}>
+          {Array.from({ length: 3 }, (_, index) => (
+            <span className={css.skeletonBlock} data-usage-skeleton-tab key={index} />
+          ))}
         </div>
       </div>
-      <div className={css.skeletonDetails} aria-hidden="true">
-        <div>{Array.from({ length: 5 }, (_, index) => <span className={css.skeletonBlock} key={index} />)}</div>
-        <div>{Array.from({ length: 5 }, (_, index) => <span className={css.skeletonBlock} key={index} />)}</div>
+      <div className={css.chartPanel} aria-hidden="true">
+        <div className={css.chartFrame}>
+          <div className={css.heatmapStage}>
+            <div className={`${css.heatmap} ${css.skeletonParticles}`}>
+              {Array.from({ length: 371 }, (_, index) => (
+                <i
+                  data-usage-skeleton-day
+                  key={index}
+                  style={{ '--usage-skeleton-index': index } as CSSProperties}
+                />
+              ))}
+            </div>
+          </div>
+          <div className={`${css.months} ${css.skeletonMonths}`}>
+            {Array.from({ length: 12 }, (_, index) => (
+              <span className={css.skeletonBlock} data-usage-skeleton-month key={index} />
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className={`${css.detailsGrid} ${css.skeletonDetails}`} aria-hidden="true">
+        <div data-usage-skeleton-detail>
+          {Array.from({ length: 7 }, (_, index) => <span className={css.skeletonBlock} key={index} />)}
+        </div>
+        <div data-usage-skeleton-detail>
+          {Array.from({ length: 7 }, (_, index) => <span className={css.skeletonBlock} key={index} />)}
+        </div>
       </div>
     </section>
   )

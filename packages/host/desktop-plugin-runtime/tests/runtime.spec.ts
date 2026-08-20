@@ -1,7 +1,8 @@
 import { PassThrough } from 'node:stream'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -114,7 +115,15 @@ describe('Desktop plugin runtime services', () => {
     await expect(services.profiles.select('other')).rejects.toThrow(/switching is not available/)
 
     const operation = services.pnpm.runPlugin(['add', 'fixture-plugin'], '/Users/example/project')
-    expect(spawn).toHaveBeenCalledWith({
+    expect(spawn).toHaveBeenCalledOnce()
+    const spawnOptions = spawn.mock.calls[0]?.[0] as {
+      argv: string[]
+      cwd: string
+      stdio: { stdin: string; stdout: string; stderr: string }
+      graceMs: number
+      env: Record<string, string>
+    } | undefined
+    expect(spawnOptions).toMatchObject({
       argv: [
         facts.executable,
         facts.cliEntry,
@@ -130,15 +139,48 @@ describe('Desktop plugin runtime services', () => {
       env: {
         CI: 'true',
         DSH_HOME: facts.homeDir,
+        DSH_DESKTOP_NODE_EXECUTABLE: facts.executable,
         DSH_DESKTOP_PNPM_ENTRY: facts.pnpmEntry,
         ELECTRON_RUN_AS_NODE: '1',
       },
     })
+    expect(typeof spawnOptions?.env.PATH).toBe('string')
     expect(operation.stdout).toBeDefined()
     expect(operation.stderr).toBeDefined()
     settle({ exitCode: 0, signal: null })
     await expect(operation.done).resolves.toEqual({ exitCode: 0, signal: null })
     expect(waitForExit).toHaveBeenCalledOnce()
+  })
+
+  it('prepends a private node shim for pnpm lifecycle scripts and removes it on teardown', async () => {
+    const fixture = harness()
+    const operation = fixture.services.pnpm.runPlugin(['add', 'fixture-plugin'], '/tmp')
+    const options = fixture.spawn.mock.calls[0]?.[0] as { env: Record<string, string> }
+    const childPath = options.env.PATH
+    if (childPath === undefined) throw new Error('missing child PATH')
+    const shimDir = childPath.split(delimiter)[0]
+    if (shimDir === undefined) throw new Error('missing node shim directory')
+    const shim = join(shimDir, process.platform === 'win32' ? 'node.cmd' : 'node')
+
+    expect(existsSync(shim)).toBe(true)
+    expect(readFileSync(shim, 'utf8')).toContain('DSH_DESKTOP_NODE_EXECUTABLE')
+    if (process.platform !== 'win32') {
+      const smoke = spawnSync('node', ['-e', 'process.stdout.write("shim-ok")'], {
+        encoding: 'utf8',
+        env: {
+          PATH: shimDir,
+          DSH_DESKTOP_NODE_EXECUTABLE: process.execPath,
+          ELECTRON_RUN_AS_NODE: '1',
+        },
+      })
+      expect(smoke.status).toBe(0)
+      expect(smoke.stdout).toBe('shim-ok')
+    }
+
+    fixture.settle({ exitCode: 0, signal: null })
+    await operation.done
+    await fixture.ctx.fiber.dispose()
+    expect(existsSync(shimDir)).toBe(false)
   })
 
   it('rejects unsafe inputs and serializes one operation for the generation', async () => {

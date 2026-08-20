@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -6,12 +6,12 @@ import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PluginCommandRuntime } from '../apps/desktop/node_modules/dshmarket/lib/types/dsh-cli.d.ts'
 
-type MountMarketRoutes = typeof import('../apps/desktop/node_modules/dshmarket/lib/types/routes.d.ts').mountMarketRoutes
+type MountMarketRoutes = typeof import('../apps/desktop/node_modules/dshmarket/src/routes.ts').mountMarketRoutes
 
 const root = resolve(import.meta.dirname, '..')
 const desktopRequire = createRequire(join(root, 'apps/desktop/package.json'))
 const packageRoot = dirname(desktopRequire.resolve('dshmarket/package.json'))
-const routesUrl = pathToFileURL(join(packageRoot, 'lib/routes.js')).href
+const routesUrl = pathToFileURL(join(packageRoot, 'src/routes.ts')).href
 const { mountMarketRoutes } = await import(routesUrl) as { mountMarketRoutes: MountMarketRoutes }
 
 type Handler = (request: never, response: never) => void | Promise<void>
@@ -27,6 +27,7 @@ function makeProfile(): string {
   mkdirSync(join(directory, 'node_modules/dshmarket'), { recursive: true })
   writeFileSync(join(directory, 'package.json'), JSON.stringify({
     dependencies: { 'dsh-loop': '^1.0.0', dshmarket: '1.10.1' },
+    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-loop'] } },
   }))
   writeFileSync(join(directory, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
   writeFileSync(join(directory, 'node_modules/dsh-loop/package.json'), JSON.stringify({ name: 'dsh-loop', version: '1.0.0', dsh: {} }))
@@ -125,6 +126,46 @@ describe('active marketplace self-protection', () => {
     expect(result.status).toBe(200)
     expect(result.json).toMatchObject({ ok: true })
     expect(runPlugin).toHaveBeenCalledWith('web', ['add', 'dsh-loop@latest'])
+  })
+
+  it('rolls back both manifest fields when a plugin update is cancelled', async () => {
+    const before = readFileSync(join(profileDirectory, 'package.json'), 'utf8')
+    runPlugin.mockImplementationOnce(async () => {
+      const file = join(profileDirectory, 'package.json')
+      const manifest = JSON.parse(readFileSync(file, 'utf8')) as {
+        dependencies: Record<string, string>
+        dsh: { profile: { bundles: string[] } }
+      }
+      manifest.dependencies['dsh-ghost'] = '0.2.1'
+      manifest.dsh.profile.bundles.push('dsh-ghost')
+      writeFileSync(file, JSON.stringify(manifest))
+      return { exitCode: 130, timedOut: false, stdout: '', stderr: '', cancelled: true }
+    })
+
+    const result = await bed.dispatch('/dsh-market/update', { name: 'dsh-loop' })
+    expect(result.status).toBe(200)
+    expect(result.json).toMatchObject({ ok: false, cancelled: true })
+    expect(JSON.parse(readFileSync(join(profileDirectory, 'package.json'), 'utf8')))
+      .toEqual(JSON.parse(before))
+  })
+
+  it('repairs only a proven-missing bundle residue after creating a backup', async () => {
+    const file = join(profileDirectory, 'package.json')
+    const manifest = JSON.parse(readFileSync(file, 'utf8')) as {
+      dsh: { profile: { bundles: string[] } }
+    }
+    manifest.dsh.profile.bundles.push('@example/missing-carrier')
+    writeFileSync(file, JSON.stringify(manifest))
+
+    const result = await bed.dispatch('/dsh-market/repair-bundle-residue', { name: '@example/missing-carrier' })
+    expect(result).toMatchObject({
+      status: 200,
+      json: { ok: true, removed: '@example/missing-carrier', restartRequired: true },
+    })
+    const repaired = JSON.parse(readFileSync(file, 'utf8')) as typeof manifest
+    expect(repaired.dsh.profile.bundles).not.toContain('@example/missing-carrier')
+    expect(readFileSync(join(profileDirectory, '.dsh-market-backups', readdirSync(join(profileDirectory, '.dsh-market-backups'))[0]), 'utf8'))
+      .toContain('@example/missing-carrier')
   })
 
   it('keeps self-update and self-uninstall stable while an ordinary operation is busy', async () => {

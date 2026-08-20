@@ -246,7 +246,16 @@ export async function stageDesktop(
   const deploy = dependencies.pnpmInvocation(['--filter', DESKTOP_PACKAGE, 'deploy', '--legacy', stageDir])
   dependencies.run(deploy.command, deploy.args, root)
 
-  for (const entry of ['lib', 'renderer', 'assets', 'build', 'electron-builder.yml', 'desktop.cordis.patch.yml'] as const) {
+  const desktopEntries = [
+    'lib',
+    'renderer',
+    'assets',
+    'build',
+    'electron-builder.yml',
+    'desktop.cordis.patch.yml',
+    'update-metadata.json',
+  ] as const
+  for (const entry of desktopEntries) {
     await dependencies.copy(join(desktopDir, entry), join(stageDir, entry))
   }
   await dependencies.copy(join(root, 'THIRD_PARTY_NOTICES.md'), join(stageDir, 'THIRD_PARTY_NOTICES.md'))
@@ -259,6 +268,8 @@ export async function stageDesktop(
     'THIRD_PARTY_NOTICES.md',
     'lib/main.js',
     'lib/preload.cjs',
+    'lib/update-helper.js',
+    'update-metadata.json',
     'renderer/loading.html',
     'renderer/failure.html',
     'assets/icon-source.png',
@@ -272,6 +283,8 @@ export async function stageDesktop(
     'node_modules/@deepseek-ai/dsh-session-messenger/lib/index.js',
     'node_modules/@deepseek-ai/dsh-session-messenger/lib/client.js',
     'node_modules/@deepseek-ai/dsh-session-messenger/cordis.patch.yml',
+    'node_modules/@deepseek-ai/dsh-client-ui-settings-system-update/lib/index.js',
+    'node_modules/@deepseek-ai/dsh-client-ui-settings-system-update/lib/client.js',
     'node_modules/dshmarket/lib/index.js',
     'node_modules/dshmarket/lib/routes.js',
     'node_modules/dshmarket/src/client/MarketSection.tsx',
@@ -331,6 +344,9 @@ export async function stageDesktop(
   const hostBundle = await dependencies.readText(join(marketRoot, 'lib/routes.js'))
   if (!hostBundle.includes('self-protected')) {
     throw new Error('Desktop staging dshmarket Host self-protection marker is missing.')
+  }
+  if (!hostBundle.includes('restoreProfileManifestSnapshot')) {
+    throw new Error('Desktop staging dshmarket manifest-transaction marker is missing.')
   }
 
   const nativeBinaries = await dependencies.findNativeBinaries(join(stageDir, 'node_modules'))

@@ -79,6 +79,17 @@ The repository is based on the pinned official source and adds the desktop appli
   63-file Desktop staging closure pass locally. Native Windows UI, clipboard,
   install lifecycle, public artifact, and SHA-256 acceptance remain required
   on the final committed source.
+- The pending macOS rc8 integration adds a Desktop-only **System Update**
+  section backed by fixed GitHub endpoints, a 24-hour cache, ETag revalidation,
+  strict release manifests, bounded downloads, SHA-256 checks, x86_64 bundle and
+  packaged-metadata verification, and a detached same-parent installer with
+  backup and rollback. Official Harness tags remain informational; only a
+  compatible Desktop DMG can authorize installation. Marketplace install and
+  update also snapshot `dependencies` and `dsh.profile.bundles` together and
+  restore both on failed, cancelled, timed-out, stale, or rejected operations.
+  The original macOS 0.1.9 implementation passed 212 focused tests before this
+  transplant; rc8-native build, package, and public-release evidence still has
+  to be produced from the integrated source.
 - Version 0.1.9 consolidated the earlier macOS/Desktop work: the separate
   session-communication trigger and drawer are removed, session-messenger
   relays render directly in the ordinary chat timeline with source

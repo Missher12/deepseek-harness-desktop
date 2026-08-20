@@ -712,7 +712,13 @@ async function exerciseSessionMessenger(
   await activeRow.click()
   await expect.poll(() => activeRow.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
 
-  const beforeFiles = await waitForStableProtectedFileSnapshot(seeded.protectedPaths)
+  // Selecting a cold root can finish its Agent-policy replay a few seconds
+  // after the row itself becomes selected. Wait through that complete restore
+  // window before declaring subsequent relay rendering side-effect-free.
+  const beforeFiles = await waitForStableProtectedFileSnapshot(seeded.protectedPaths, {
+    stableForMs: 4_000,
+    timeoutMs: 20_000,
+  })
   expect(await page.locator('[data-messenger-trigger]').count()).toBe(0)
   expect(await page.getByRole('dialog', { name: /^(?:Session messages|会话通信)$/u }).count()).toBe(0)
 
@@ -901,6 +907,43 @@ async function exerciseUsageInsights(
   await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
 }
 
+async function exerciseSystemUpdate(page: Page, platform: NodeJS.Platform): Promise<void> {
+  if (platform !== 'darwin') return
+  const bridgeShape = await page.evaluate(() => ({
+    getUpdateStatus: typeof window.dshDesktop?.getUpdateStatus,
+    checkForUpdates: typeof window.dshDesktop?.checkForUpdates,
+    downloadUpdate: typeof window.dshDesktop?.downloadUpdate,
+    installUpdate: typeof window.dshDesktop?.installUpdate,
+    onUpdateStatus: typeof window.dshDesktop?.onUpdateStatus,
+  }))
+  expect(bridgeShape).toEqual({
+    getUpdateStatus: 'function',
+    checkForUpdates: 'function',
+    downloadUpdate: 'function',
+    installUpdate: 'function',
+    onUpdateStatus: 'function',
+  })
+
+  const settingsTrigger = page.locator('[data-dsh-desktop-command="open-settings"]')
+  if (await settingsTrigger.getAttribute('aria-expanded') !== 'true') {
+    await settingsTrigger.click()
+  }
+  const settingsDialog = page.getByRole('dialog').last()
+  await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
+  await settingsDialog.getByRole('button', { name: /^(?:System Update|系统更新)$/u }).click()
+
+  const section = settingsDialog.locator('[data-system-update-section]')
+  await section.waitFor({ state: 'visible', timeout: 15_000 })
+  expect(await section.locator(':scope > [class*="rows"] > [class*="row"]').count()).toBe(2)
+  await expect.poll(() => section.innerText(), { timeout: 15_000 }).toMatch(/0\.1\.9/u)
+  await page.screenshot({
+    path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-system-update-${platform}.png`),
+  })
+
+  await page.keyboard.press('Escape')
+  await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
+}
+
 async function quitAfterSmokeFailure(application: ElectronApplication): Promise<void> {
   try {
     const closed = application.waitForEvent('close', { timeout: 15_000 })
@@ -1050,6 +1093,7 @@ export async function runPackagedDesktopSmoke(
     })
 
     await exerciseUsageInsights(page, platform, clipboardSeed.expectedDailyTokens)
+    await exerciseSystemUpdate(page, platform)
     await exercisePluginMarket(page, harnessHome, platform, consoleErrors)
     expect(consoleErrors.filter(message => (
       !/^Failed to load resource: the server responded with a status of 409 \(Conflict\)$/u.test(message)

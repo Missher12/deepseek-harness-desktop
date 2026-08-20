@@ -21,6 +21,12 @@ export interface IWorkspaces {
    */
   connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>
   /**
+   * Connect a reusable or fresh blank session that is not accounted to any
+   * Workspace. The Host still supplies its safe default cwd.
+   * @returns the unaccounted blank session id.
+   */
+  connectNoProject(): Promise<SessionId>
+  /**
    * The New Session flow: connect the explicit, current-Session, or recent
    * Workspace and open the resulting session; failures surface on the session
    * list state.

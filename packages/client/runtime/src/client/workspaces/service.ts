@@ -55,6 +55,8 @@ export class WorkspaceRuntime implements IWorkspaces {
   private readonly manager: WorkspaceManager
   /** In-flight blank-session creates keyed by workspace (connectWorkspace coalescing). */
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
+  /** One in-flight unaccounted blank-session create. */
+  private connectingNoProject: Promise<SessionId> | undefined
   /** Guards the runtime-owned one-shot initial-selection subscription. */
   private initialSelectionStarted = false
 
@@ -112,6 +114,36 @@ export class WorkspaceRuntime implements IWorkspaces {
     const attempt = this.sessions.create({ workspaceId })
       .finally(() => { this.connecting.delete(workspaceId) })
     this.connecting.set(workspaceId, attempt)
+    return attempt
+  }
+
+  /**
+   * Resolve the blank session used by the explicit “No project” target.
+   * Reuse is based on the durable absence of Workspace accounting, not cwd:
+   * a no-project session still has the Host's safe default working directory.
+   * Concurrent misses share one Host create so repeated clicks cannot mint
+   * hidden blank sessions.
+   * @returns an unarchived, unaccounted blank session id.
+   */
+  async connectNoProject(): Promise<SessionId> {
+    const workspace = this.list.getSnapshot()
+    const accounted = new Set(workspace.items.flatMap(item => item.sessionIds))
+    const archived = new Set(workspace.archivedSessionIds)
+    const sessions = this.sessions.list.getSnapshot()
+    for (const id of sessions.ids) {
+      const summary = sessions.byId[id]
+      if (summary?.blank === true
+        && summary.parentId === undefined
+        && summary.origin !== 'subagent'
+        && !accounted.has(id)
+        && !archived.has(id)) return id
+    }
+    if (this.connectingNoProject !== undefined) return this.connectingNoProject
+    const attempt = this.sessions.create({})
+      .finally(() => {
+        if (this.connectingNoProject === attempt) this.connectingNoProject = undefined
+      })
+    this.connectingNoProject = attempt
     return attempt
   }
 

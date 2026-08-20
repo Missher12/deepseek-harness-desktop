@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentFactory } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
@@ -64,6 +64,7 @@ async function harness(
   extras: {
     openPath?: (path: string, signal: AbortSignal) => Promise<void>
     canOpenPath?: () => boolean
+    persistedSession?: SessionHeader
   } = {},
 ) {
   const ctx = new Context()
@@ -75,9 +76,18 @@ async function harness(
   const storageDomain = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', storageDomain)
   ctx.provide('storageDomain', storageDomain)
-  const deleteSession = vi.fn(async () => true)
+  let persistedSession = extras.persistedSession
+  const deleteSession = vi.fn(async (sessionId: SessionId) => {
+    const deleted = persistedSession?.id === sessionId
+    if (deleted) persistedSession = undefined
+    return deleted
+  })
   ctx.provide('sessionPersistence', {
-    list: () => Promise.resolve([]),
+    list: () => Promise.resolve(persistedSession === undefined ? [] : [persistedSession]),
+    inspect: (sessionId: SessionId) => {
+      if (persistedSession?.id !== sessionId) throw new Error(`missing persisted session "${sessionId}"`)
+      return Promise.resolve({ meta: persistedSession, events: [] })
+    },
     delete: deleteSession,
   } as never)
   await ctx.plugin(WorkspaceRegistry)
@@ -103,8 +113,30 @@ async function harness(
         },
       }
     },
-    async resume() {
-      throw new Error('test harness has no persisted sessions')
+    async resume(_ownerCtx, options) {
+      if (persistedSession?.id !== options.resumeSessionId) {
+        throw new Error(`test harness has no persisted session "${options.resumeSessionId}"`)
+      }
+      let session!: Session
+      let agent!: Agent
+      let unregister!: () => void
+      const sessionFiber = await ctx.plugin(Object.assign((inner: Context) => {
+        session = inner.sessions.create(options.resumeSessionId, {
+          meta: {
+            ...persistedSession?.cwd === undefined ? {} : { cwd: persistedSession.cwd },
+            ...persistedSession?.createdAt === undefined ? {} : { createdAt: persistedSession.createdAt },
+          },
+        })
+        agent = stubAgent(session)
+        unregister = ctx.agents.register(agent)
+      }, { inject: ['sessions'] }))
+      return {
+        agent,
+        dispose: async () => {
+          unregister()
+          await sessionFiber.dispose()
+        },
+      }
     },
   }
   ctx.agents.setFactory(factory)
@@ -612,5 +644,29 @@ describe('Host Workspace increments', () => {
     const listed = expectOk(await api.workspace.list(request({})))
     expect(listed.archivedSessionIds).toEqual([])
     expect(listed.items[0]?.sessionIds).toEqual([])
+  })
+
+  it('permanently deletes an ordinary cold session after the Host resumes it', async () => {
+    const sessionId = SessionId('cold-session-to-delete')
+    const persistedSession: SessionHeader = {
+      version: 0,
+      id: sessionId,
+      createdAt: 1,
+      cwd: '/proj',
+    }
+    const { api, ctx, deleteSession } = await harness(undefined, undefined, { persistedSession })
+    ctx.provide('llm', { listProviders: () => [] } as never)
+
+    expect((await api.sessions.models(request({ sessionId }))).result).toMatchObject({ ok: true })
+    expect(ctx.agents.get(sessionId)).toBeDefined()
+    expect(ctx.sessions.get(sessionId)).toBeDefined()
+
+    expectOk(await api.workspace.archiveSession(request({ sessionId })))
+    expect(expectOk(await api.sessions.delete(request({ sessionId }))).deleted).toBe(true)
+
+    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    expect(deleteSession).toHaveBeenCalledWith(sessionId)
+    expect(expectOk(await api.workspace.list(request({}))).archivedSessionIds).toEqual([])
   })
 })

@@ -10,6 +10,25 @@ const RECOVERY_ACTIONS = ['retry', 'open-logs', 'quit'] as const
 /** One validated failure recovery action. */
 export type RecoveryAction = typeof RECOVERY_ACTIONS[number]
 
+const UPDATE_PHASES = [
+  'idle', 'checking', 'current', 'upstream-available', 'desktop-available',
+  'downloading', 'verifying', 'ready', 'installing', 'error',
+] as const
+
+/** Closed update-state vocabulary emitted by the Electron main process. */
+export type DesktopUpdatePhase = typeof UPDATE_PHASES[number]
+
+export interface DesktopUpdateSnapshot {
+  phase: DesktopUpdatePhase
+  runningDesktop: string
+  includedHarness: string
+  latestOfficialHarness: string | null
+  latestDesktop: string | null
+  lastCheckedAt: number | null
+  downloadProgress: number | null
+  message: string | null
+}
+
 /**
  * Check an IPC payload against the desktop command vocabulary.
  * @param value - Untrusted IPC payload.
@@ -28,12 +47,39 @@ export function isRecoveryAction(value: unknown): value is RecoveryAction {
   return typeof value === 'string' && (RECOVERY_ACTIONS as readonly string[]).includes(value)
 }
 
+/** Validate an update snapshot before delivering IPC data to page code. */
+export function isDesktopUpdateSnapshot(value: unknown): value is DesktopUpdateSnapshot {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const candidate = value as Record<string, unknown>
+  const nullableString = (item: unknown): boolean => item === null || typeof item === 'string'
+  const nullableNumber = (item: unknown): boolean => item === null || typeof item === 'number' && Number.isFinite(item)
+  return typeof candidate.phase === 'string'
+    && (UPDATE_PHASES as readonly string[]).includes(candidate.phase)
+    && typeof candidate.runningDesktop === 'string'
+    && typeof candidate.includedHarness === 'string'
+    && nullableString(candidate.latestOfficialHarness)
+    && nullableString(candidate.latestDesktop)
+    && nullableNumber(candidate.lastCheckedAt)
+    && nullableNumber(candidate.downloadProgress)
+    && nullableString(candidate.message)
+}
+
 /** Narrow API exposed through context isolation. */
 export interface DesktopApi {
   /** Subscribe to validated native menu commands. */
   onCommand(listener: (command: DesktopCommand) => void): () => void
   /** Request one validated recovery action. */
   recover(action: RecoveryAction): void
+  /** Read the cached main-process update state. */
+  getUpdateStatus(): Promise<DesktopUpdateSnapshot>
+  /** Run a manual fixed-channel update check. */
+  checkForUpdates(): Promise<DesktopUpdateSnapshot>
+  /** Download and verify the accepted Desktop release. */
+  downloadUpdate(): Promise<DesktopUpdateSnapshot>
+  /** Open the verified native installation payload. */
+  installUpdate(): Promise<{ opened: boolean; message?: string }>
+  /** Subscribe to validated update-state transitions. */
+  onUpdateStatus(listener: (snapshot: DesktopUpdateSnapshot) => void): () => void
 }
 
 declare global {

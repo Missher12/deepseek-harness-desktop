@@ -19,7 +19,9 @@ describe('local renderer pages', () => {
     expect(html).toContain('data-macos-startup')
     expect(html).toContain('#4d6bfe')
     expect(html).toContain('prefers-reduced-motion: reduce')
-    expect(html).not.toContain('role="progressbar"')
+    expect(html).toContain('role="progressbar"')
+    expect(html).toContain('aria-label="正在启动"')
+    expect(html).toContain('aria-valuetext="正在初始化桌面运行时"')
     expect(html).not.toMatch(/https?:\/\//u)
   })
 

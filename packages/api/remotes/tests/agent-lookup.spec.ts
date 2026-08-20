@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import { createApiRemoteAgentResolver } from '@deepseek-ai/dsh-api-remotes'
@@ -72,6 +72,35 @@ describe('API Remote Agent resolver races', () => {
 
     expect(result).toMatchObject({ agent: { id: sessionId } })
     expect(resume).toHaveBeenCalledWith({ resumeSessionId: sessionId })
+    await ctx.fiber.dispose()
+  })
+
+  it('hands the exact cold-resume handle to the owning Host before returning its Agent', async () => {
+    const ctx = await createContext()
+    const sessionId = sid('ordinary-owned-cold-resume')
+    const meta = header(sessionId)
+    let published: Session | undefined
+    provideSession(ctx, meta, () => {
+      published = ctx.sessions.create(sessionId, { meta: { cwd: '/proj' } })
+      return Promise.resolve({ meta, events: [] })
+    })
+    const dispose = vi.fn(() => Promise.resolve())
+    const handle = {
+      get agent() {
+        if (published === undefined) throw new Error('Session was not published')
+        return stubAgent(ctx, published)
+      },
+      dispose,
+    }
+    vi.spyOn(ctx.agents, 'resume').mockResolvedValue(handle)
+    const retainHandle = vi.fn((_candidate: AgentHandle): void => {})
+
+    const result = await createApiRemoteAgentResolver(ctx, { retainHandle })(sessionId)
+
+    expect(result).toMatchObject({ agent: { id: sessionId } })
+    expect(retainHandle).toHaveBeenCalledOnce()
+    expect(retainHandle).toHaveBeenCalledWith(handle)
+    expect(dispose).not.toHaveBeenCalled()
     await ctx.fiber.dispose()
   })
 
