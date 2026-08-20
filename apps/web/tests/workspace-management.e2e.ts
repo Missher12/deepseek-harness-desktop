@@ -15,7 +15,7 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join, sep } from 'node:path'
 import type { Browser, Locator, Page } from 'playwright'
-import { chromium } from 'playwright'
+import { chromium, errors as playwrightErrors } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -109,12 +109,21 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
    * the row before its hover-only button becomes visible.
    */
   async function clickHoverAction(row: Locator, name: string): Promise<void> {
-    const button = row.getByRole('button', { name })
     await expect.poll(async () => {
       await row.hover()
-      return await button.isVisible()
+      // A wire projection can replace the row between hover and click. Resolve
+      // the button afresh on every attempt and retry only Playwright's bounded
+      // actionability timeout; successful clicks are still real pointer input.
+      const button = row.getByRole('button', { name })
+      if (!await button.isVisible()) return false
+      try {
+        await button.click({ timeout: 1_000 })
+        return true
+      } catch (error) {
+        if (!(error instanceof playwrightErrors.TimeoutError)) throw error
+        return false
+      }
     }, { timeout: 10_000 }).toBe(true)
-    await button.click()
   }
 
   beforeAll(async () => {
