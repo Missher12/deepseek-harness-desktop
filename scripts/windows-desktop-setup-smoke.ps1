@@ -81,6 +81,7 @@ $resolvedSetup = (Resolve-Path -LiteralPath $SetupPath).Path
 $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
 $smokeId = [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $temporaryRoot = Join-Path $localAppData "dsh-setup-smoke-$smokeId"
+$requestedInstallRoot = $temporaryRoot
 $installRoot = Join-Path $temporaryRoot 'DeepSeek Harness'
 $harnessHome = Join-Path $temporaryRoot 'dsh-home'
 $userData = Join-Path $temporaryRoot 'electron-data'
@@ -102,7 +103,9 @@ try {
   Set-Content -LiteralPath $harnessMarker -Value 'preserve Harness data'
   Set-Content -LiteralPath $userDataMarker -Value 'preserve Electron data'
 
-  Invoke-CheckedProcess -FilePath $resolvedSetup -ArgumentList @('/S', "/D=$installRoot")
+  # NSIS consumes the unquoted, final /D argument and electron-builder appends
+  # the product subdirectory before files are installed.
+  Invoke-CheckedProcess -FilePath $resolvedSetup -ArgumentList @('/S', "/D=$requestedInstallRoot")
   $installed = $true
 
   $executable = Join-Path $installRoot 'DeepSeek Harness.exe'

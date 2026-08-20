@@ -140,6 +140,7 @@ function Wait-PathRemoved {
 $resolvedSetup = (Resolve-Path -LiteralPath $SetupPath).Path
 $smokeId = [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $temporaryRoot = Join-Path $env:RUNNER_TEMP "dsh-installer-ui-$smokeId"
+$requestedInstallRoot = $temporaryRoot
 $installRoot = Join-Path $temporaryRoot 'DeepSeek Harness'
 $uninstallerLauncher = Join-Path $temporaryRoot 'DeepSeek-Harness-Uninstall-UI-Smoke.exe'
 $desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'DeepSeek Harness.lnk'
@@ -157,7 +158,10 @@ try {
   $startInfo = [System.Diagnostics.ProcessStartInfo]::new($resolvedSetup)
   $startInfo.UseShellExecute = $false
   [void]$startInfo.ArgumentList.Add('/currentuser')
-  [void]$startInfo.ArgumentList.Add("/D=$installRoot")
+  # electron-builder appends the product subdirectory on the progress page.
+  # Keep the /D value space-free because NSIS requires this last argument to
+  # remain unquoted; quoting it becomes a literal trailing double quote.
+  [void]$startInfo.ArgumentList.Add("/D=$requestedInstallRoot")
   $setup = [System.Diagnostics.Process]::Start($startInfo)
   if ($null -eq $setup) {
     throw 'Windows did not start the Setup executable.'
@@ -176,8 +180,8 @@ try {
   $directoryValue = $directoryField.GetCurrentPattern(
     [System.Windows.Automation.ValuePattern]::Pattern
   ).Current.Value
-  if ([IO.Path]::GetFullPath($directoryValue).TrimEnd('\') -ne [IO.Path]::GetFullPath($installRoot).TrimEnd('\')) {
-    throw "Destination page did not show the requested path. Expected '$installRoot', found '$directoryValue'."
+  if ([IO.Path]::GetFullPath($directoryValue).TrimEnd('\') -ne [IO.Path]::GetFullPath($requestedInstallRoot).TrimEnd('\')) {
+    throw "Destination page did not show the requested path. Expected '$requestedInstallRoot', found '$directoryValue'."
   }
   Invoke-InstallerButton -Window $destination -NamePattern '^Install$'
 

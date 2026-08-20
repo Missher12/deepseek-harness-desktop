@@ -19,6 +19,8 @@ describe('Windows Desktop assisted installer smoke', () => {
     expect(source).toContain('Invoke-IsolatedUninstall')
     expect(source).toContain("[Environment]::GetFolderPath('Desktop')")
     expect(source).toContain("[Environment]::GetFolderPath('Programs')")
+    expect(source).toContain('$requestedInstallRoot = $temporaryRoot')
+    expect(source).toContain('Add("/D=$requestedInstallRoot")')
     expect(source).toContain("Join-Path $temporaryRoot 'DeepSeek Harness'")
   })
 
