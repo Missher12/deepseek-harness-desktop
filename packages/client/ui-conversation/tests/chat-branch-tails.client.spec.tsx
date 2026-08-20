@@ -7,13 +7,12 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
+import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type {
-  ChatConversationViewNode, ConversationNode, SessionId, SessionListState,
+  ChatConversationViewNode, ConversationNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ChatNodeViewProps } from '../src/client/contract/slots.ts'
 import {
   formatMessageClock, msUntilNextLocalMidnight, startOfLocalDay,
@@ -22,7 +21,7 @@ import {
   CompactionNodeView, ContextMessageNodeView, RetryNodeView, UnknownNodeView,
   UserMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
-import { AssistantMarkdown } from '../src/client/chat/AssistantMarkdown.tsx'
+import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
 import { StatsLine, type StatsLineProps } from '../src/client/chat/StatsLine.tsx'
 import { zh } from '../src/client/locales.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
@@ -43,25 +42,17 @@ afterEach(() => {
 
 // Mirrors the real lookup chain (conversation namespace, then common).
 const t: ChatNodeViewProps['t'] = makeTranslate(zh, commonZh)
+const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
 const RETRY_ID = 'retry-fixture' as Extract<ConversationNode, { kind: 'model-retry' }>['retryId']
-const SOURCE_SESSION_ID = 'source-session-7' as SessionId
-const useSessions = bindSnapshotSelector(createSnapshotStore<SessionListState>({
-  ids: [SOURCE_SESSION_ID],
-  byId: { [SOURCE_SESSION_ID]: { id: SOURCE_SESSION_ID, title: 'Codex' } as never },
-  current: undefined,
-  phase: 'ready',
-  subagentsByParent: {},
-  jobsBySession: {},
-  currentAddress: undefined,
-}))
 
 interface MessageItemProps {
   readonly node: ConversationNode
   readonly t: ChatNodeViewProps['t']
+  readonly referenceLabels?: readonly string[]
 }
 
 /** Legacy-node fixture adapter for the independently registered renderers. */
-function MessageItem({ node, t: translate }: MessageItemProps) {
+function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) {
   const kind = node.kind === 'assistant' ? 'assistant-step' : node.kind
   const viewNode: ChatConversationViewNode = {
     key: `fixture:${node.kind}:${node.seq}`,
@@ -71,9 +62,13 @@ function MessageItem({ node, t: translate }: MessageItemProps) {
     anchorSeq: node.seq,
     location: { kind: 'session' },
     visibility: 'visible',
-    data: node.kind === 'model-retry' ? { attempts: [node], current: node } : node,
+    data: node.kind === 'model-retry'
+      ? { attempts: [node], current: node }
+      : (node.kind === 'user' || node.kind === 'steering') && referenceLabels !== undefined
+        ? { ...node, referenceLabels }
+        : node,
   }
-  const props = { node: viewNode, useSessions, t: translate } as ChatNodeViewProps
+  const props = { node: viewNode, t: translate, renderMessageImages } as ChatNodeViewProps
   switch (node.kind) {
     case 'user':
     case 'steering':
@@ -92,6 +87,61 @@ function MessageItem({ node, t: translate }: MessageItemProps) {
 }
 
 describe('MessageItem arms', () => {
+  it('renders an adjacent session mention as a chip even without trailing whitespace', () => {
+    const view = render(
+      <MessageItem
+        t={t}
+        referenceLabels={['你好']}
+        node={{
+          kind: 'user',
+          seq: 1,
+          time: 1_000,
+          content: [{ type: 'text', text: '@你好这个在讲啥' }] as never,
+          source: null,
+        }}
+      />,
+    )
+    expect(view.container.querySelector('[data-ref-chip="session"]')?.textContent).toBe('你好')
+    expect(view.container.querySelector('[data-ref-chip="session"] svg')).not.toBeNull()
+    expect(view.getByText('这个在讲啥')).toBeTruthy()
+    expect(view.getByText('引用会话 · 你好')).toBeTruthy()
+  })
+
+  it('renders the complete metadata-confirmed multi-word session label', () => {
+    const view = render(
+      <MessageItem
+        t={t}
+        referenceLabels={['Research notes']}
+        node={{
+          kind: 'user',
+          seq: 1,
+          time: 1_000,
+          content: [{ type: 'text', text: '@Research notes what changed?' }] as never,
+          source: null,
+        }}
+      />,
+    )
+    expect(view.container.querySelector('[data-ref-chip="session"]')?.textContent).toBe('Research notes')
+    expect(view.getByText('what changed?')).toBeTruthy()
+    expect(view.getByText('引用会话 · Research notes')).toBeTruthy()
+  })
+
+  it('renders no-extension paths as files and leaves sentence punctuation outside the reference', () => {
+    const view = render(
+      <MessageItem t={t} node={{
+        kind: 'user',
+        seq: 1,
+        time: 1_000,
+        content: [{ type: 'text', text: 'Read @Dockerfile and @src/README.md, please.' }] as never,
+        source: null,
+      }} />,
+    )
+    const files = [...view.container.querySelectorAll('[data-ref-chip="file"]')]
+    expect(files.map(file => file.textContent)).toEqual(['Dockerfile', 'README.md'])
+    expect(files.every(file => file.querySelector('svg') !== null)).toBe(true)
+    expect(view.container.textContent).toContain('README.md, please.')
+  })
+
   it('user bubbles expose clock / copy and neither branch nor edit; copy writes the text', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {
@@ -277,6 +327,7 @@ describe('MessageItem arms', () => {
     expect(disclosure.getAttribute('aria-expanded')).toBe('false')
     expect(ctxView.container.querySelector('[data-context-injection-body]')).toBeNull()
     expect(ctxView.container.querySelector('svg')).not.toBeNull()
+    expect(ctxView.container.querySelector('[data-context-recall-icon]')).toBeNull()
 
     fireEvent.click(disclosure)
     expect(disclosure.getAttribute('aria-expanded')).toBe('true')
@@ -707,74 +758,6 @@ describe('MessageItem arms', () => {
     expect(view.container.querySelector('[data-context-text]')?.textContent).toBe('child report body')
   })
 
-  it('renders a structured session collaboration relay as a visible chat card', () => {
-    const view = render(
-      <MessageItem t={t} node={{
-        kind: 'context',
-        seq: 4,
-        time: Date.now(),
-        content: [
-          { type: 'text', text: 'bounded relay metadata' },
-          { type: 'text', text: 'hello from another session' },
-        ],
-        source: {
-          kind: 'plugin',
-          plugin: 'dsh-session-messenger',
-          form: 'relay',
-          senderSessionId: 'source-session-7',
-          deliveryId: 'delivery-7',
-          mode: 'inject',
-          bodyBlockIndex: 1,
-        },
-        provenance: { role: 'inject', label: 'dsh-session-messenger' },
-        form: 'relay',
-      } as never}
-      />,
-    )
-
-    expect(view.container.querySelector('[data-relay-card]')).not.toBeNull()
-    expect(view.getByText('由 Codex 从另一个聊天发来')).toBeTruthy()
-    expect(view.getByText('hello from another session')).toBeTruthy()
-    expect(view.queryByRole('button', { name: /^上下文注入\s*dsh-session-messenger$/ })).toBeNull()
-  })
-
-  it('keeps an older messenger relay visible using its sender id and last text block', () => {
-    const view = render(
-      <MessageItem t={t} node={{
-        kind: 'context', seq: 5, time: 1_000,
-        content: [{ type: 'text', text: 'metadata' }, { type: 'text', text: 'fallback body' }],
-        source: {
-          kind: 'plugin', plugin: 'dsh-session-messenger', form: 'relay',
-          senderSessionId: 'source', deliveryId: 'delivery', mode: 'inject',
-        },
-        provenance: { role: 'inject', label: 'dsh-session-messenger' },
-        form: 'relay',
-      } as never}
-      />,
-    )
-    expect(view.getByText('由 source 从另一个聊天发来')).toBeTruthy()
-    expect(view.getByText('fallback body')).toBeTruthy()
-  })
-
-  it('keeps a foreign relay on the existing context disclosure fallback', () => {
-    const source = {
-      kind: 'plugin', plugin: 'foreign-messenger', form: 'relay',
-      senderSessionId: 'source', deliveryId: 'delivery', mode: 'inject', bodyBlockIndex: 1,
-    }
-    const view = render(
-      <MessageItem t={t} node={{
-        kind: 'context', seq: 5, time: 1_000,
-        content: [{ type: 'text', text: 'metadata' }, { type: 'text', text: 'fallback body' }],
-        source,
-        provenance: { role: 'inject', label: source.plugin },
-        form: 'relay',
-      } as never}
-      />,
-    )
-    expect(view.container.querySelector('[data-relay-card]')).toBeNull()
-    expect(view.getByRole('button', { name: new RegExp(`^上下文注入\\s*${source.plugin}`) })).toBeTruthy()
-  })
-
   it('a recall reports how much of each source session survived the read', () => {
     // Recalled context is bounded on the way in, so hiding the omitted count
     // would overstate what the model received.
@@ -797,6 +780,7 @@ describe('MessageItem arms', () => {
       } as never}
       />,
     )
+    expect(view.container.querySelector('[data-context-recall-icon]')).not.toBeNull()
     fireEvent.click(view.getByRole('button', { name: /^跨会话召回\s*重构 loader, 修 CI$/ }))
     const rows = [...view.container.querySelectorAll('[data-context-recalls] li')].map(node => node.textContent)
     expect(rows).toEqual(['重构 loader保留 18 条 · 省略 42 条已截断', '修 CI保留 3 条 · 省略 0 条'])
@@ -1028,7 +1012,12 @@ describe('useCalendarDay boundary refresh', () => {
 describe('small branch tails', () => {
   it('AssistantMarkdown single-line reasoning summary skips the newline cut', () => {
     const view = render(
-      <AssistantMarkdown t={t} blocks={[{ kind: 'reasoning', text: 'one-liner' }]} streaming={false} />,
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text: 'one-liner' }]}
+        streaming={false}
+        renderMessageImages={renderMessageImages}
+      />,
     )
     expect(view.getByText('one-liner')).toBeTruthy()
   })

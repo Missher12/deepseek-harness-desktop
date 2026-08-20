@@ -112,6 +112,7 @@ describe('stageDesktop', () => {
       [join(REPO_ROOT, 'apps/desktop/lib'), join(DEFAULT_STAGE, 'lib')],
       [join(REPO_ROOT, 'apps/desktop/renderer'), join(DEFAULT_STAGE, 'renderer')],
       [join(REPO_ROOT, 'apps/desktop/assets'), join(DEFAULT_STAGE, 'assets')],
+      [join(REPO_ROOT, 'apps/desktop/build'), join(DEFAULT_STAGE, 'build')],
       [join(REPO_ROOT, 'apps/desktop/electron-builder.yml'), join(DEFAULT_STAGE, 'electron-builder.yml')],
       [join(REPO_ROOT, 'apps/desktop/desktop.cordis.patch.yml'), join(DEFAULT_STAGE, 'desktop.cordis.patch.yml')],
       [join(REPO_ROOT, 'THIRD_PARTY_NOTICES.md'), join(DEFAULT_STAGE, 'THIRD_PARTY_NOTICES.md')],
@@ -119,6 +120,7 @@ describe('stageDesktop', () => {
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh/lib/bin.js')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html')
     expect(result.validatedFiles).toContain('desktop.cordis.patch.yml')
+    expect(result.validatedFiles).toContain('build/installer.nsh')
     expect(result.validatedFiles).toContain('THIRD_PARTY_NOTICES.md')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-host-desktop-plugin-runtime/lib/index.js')
     expect(result.validatedFiles).toContain('node_modules/dshmarket/lib/index.js')

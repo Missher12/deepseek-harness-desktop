@@ -8,13 +8,13 @@ Turn the official DeepSeek Harness browser surface into standalone Intel macOS a
 
 - Target machine: Intel (`x86_64`) Mac running macOS 15.7.4.
 - Previously installed runtime: `@deepseek-ai/dsh@0.1.0-rc.6`.
-- Desktop source baseline: official repository version `0.1.0-rc.5` at upstream commit `47f943859bef60e4160492346772ded9b24f765a`.
+- Desktop source baseline: official repository version `0.1.0-rc.8` at upstream commit `141eb6fef83422698aef7a981029e843e8161534`.
 - Previous launch path: Hermes gateway → `npm exec @deepseek-ai/dsh web --port 65000` → Node web host.
 - Current launch path: `/Applications/DeepSeek Harness.app` → owned bundled CLI → random loopback listener.
 - Current UI: React/Vite application with workspaces, sessions, model and permission selection, tools, plans, jobs, settings, a details pane, a Codex-style archived-session manager, and exact session-ID copy actions for active and archived sessions.
 - User data root: `~/.dsh`.
 - Official source: <https://github.com/deepseek-ai/deepseek-harness>.
-- Inspected upstream head: `47f943859bef60e4160492346772ded9b24f765a` on 2026-08-13.
+- Inspected upstream head: `141eb6fef83422698aef7a981029e843e8161534` (`dsh-v0.1.0-rc.8`) on 2026-08-20.
 - Upstream currently contains `apps/cli` and `apps/web`; there is no implemented desktop application.
 
 ## Confirmed Product Decisions
@@ -27,7 +27,7 @@ Turn the official DeepSeek Harness browser surface into standalone Intel macOS a
 - Transport: the embedded Harness binds to `127.0.0.1` on an OS-assigned random port; users never interact with the port.
 - Startup: restore the last workspace and session.
 - Scope: reuse the official UI and capabilities; add desktop behavior and targeted Codex-style polish instead of rewriting the interface.
-- Installation: Windows uses one per-user, non-elevating NSIS Setup with desktop and Start menu shortcuts; macOS keeps the Intel app and DMG flow.
+- Installation: Windows uses a visible assisted, per-user, non-elevating NSIS Setup with Welcome, destination, expanded progress/details, and Finish pages plus desktop and Start menu shortcuts; macOS keeps the Intel app and DMG flow.
 
 ## Architecture Summary
 
@@ -54,6 +54,7 @@ The repository is based on the pinned official source and adds the desktop appli
   and feature-ranking presentation for the usage snapshot.
 - `scripts/stage-desktop.ts`: creates and validates a self-contained package staging tree.
 - `scripts/windows-desktop-setup-smoke.ps1`: verifies isolated Setup install, shortcuts, packaged launch, window close, process cleanup, uninstall, and data preservation on native Windows.
+- `scripts/windows-desktop-installer-ui-smoke.ps1`: drives and verifies every visible assisted-installer page on native Windows before cleaning up its isolated installation.
 - `docs/superpowers/specs/`: product, architecture, and implementation plans.
 
 ## Safety Boundaries
@@ -67,7 +68,18 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
-- Version 0.1.9 consolidates the current macOS/Desktop work: the separate
+- Version 0.2.0 rebases the Desktop product on official `dsh-v0.1.0-rc.8`
+  while retaining the current macOS/Desktop feature set. It adds a native
+  Windows assisted installer whose ordinary double-click flow exposes Welcome,
+  installation directory, expanded progress/details, and Finish pages while
+  remaining per-user and non-elevating. The root Harness version remains
+  `0.1.0-rc.8`; only the Desktop artifact version advances to `0.2.0`.
+  Host/Client typecheck, the complete Host/Client/Web production build,
+  85 SQLite persistence tests, 28 installer/staging contract tests, and a
+  63-file Desktop staging closure pass locally. Native Windows UI, clipboard,
+  install lifecycle, public artifact, and SHA-256 acceptance remain required
+  on the final committed source.
+- Version 0.1.9 consolidated the earlier macOS/Desktop work: the separate
   session-communication trigger and drawer are removed, session-messenger
   relays render directly in the ordinary chat timeline with source
   attribution, Settings uses one stable 1040px responsive width, the archive
@@ -174,7 +186,7 @@ The repository is based on the pinned official source and adds the desktop appli
   unsupported or invalid provider token fields are not estimated.
 - Upstream is still a release candidate and may change quickly.
 - The installed package does not ship a ready-made Electron shell.
-- The desktop source baseline is `0.1.0-rc.5`, while the previous npm runtime reported `0.1.0-rc.6`; the pre-migration backup is retained until longer-term use confirms compatibility.
+- The desktop source baseline is official `0.1.0-rc.8`; older installed macOS builds and their retained backups may still contain the earlier `rc.5`-derived Desktop graph.
 - Signed/notarized distribution and automatic updates require Apple Developer and Windows code-signing credentials and are outside version 1.
 - Unsigned local artifacts may require Finder's **Open** action or a Windows SmartScreen confirmation on first launch.
 - Windows release evidence must come from native Windows x64 because Electron native dependency rebuilding cannot safely cross-compile from macOS. The accepted Setup is unsigned, so SmartScreen may warn even though its published SHA-256 is verified.

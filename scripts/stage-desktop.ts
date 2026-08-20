@@ -246,7 +246,7 @@ export async function stageDesktop(
   const deploy = dependencies.pnpmInvocation(['--filter', DESKTOP_PACKAGE, 'deploy', '--legacy', stageDir])
   dependencies.run(deploy.command, deploy.args, root)
 
-  for (const entry of ['lib', 'renderer', 'assets', 'electron-builder.yml', 'desktop.cordis.patch.yml'] as const) {
+  for (const entry of ['lib', 'renderer', 'assets', 'build', 'electron-builder.yml', 'desktop.cordis.patch.yml'] as const) {
     await dependencies.copy(join(desktopDir, entry), join(stageDir, entry))
   }
   await dependencies.copy(join(root, 'THIRD_PARTY_NOTICES.md'), join(stageDir, 'THIRD_PARTY_NOTICES.md'))
@@ -254,6 +254,7 @@ export async function stageDesktop(
   const required = [
     'package.json',
     'electron-builder.yml',
+    'build/installer.nsh',
     'desktop.cordis.patch.yml',
     'THIRD_PARTY_NOTICES.md',
     'lib/main.js',

@@ -24,7 +24,7 @@ DeepSeek Harness Desktop 从不可变的 Desktop patch 挂载此 workspace 包�
 
 ## 兼容性与来源
 
-本分支面向 DeepSeek Harness `0.1.0-rc.5` workspace 约定。其 `workspace:^` peer 描述的是这条已验证源码边界，并不声称兼容原版插件的 `rc.6` 依赖集合。
+本分支面向 DeepSeek Harness `0.1.0-rc.8` workspace 约定。其 `workspace:^` peer 描述的是这条已验证源码边界，并不声称兼容原版插件的 `rc.6` 依赖集合。
 
 保留的 Canvas 实现和 `chibi-runner-strip.png` 来自 [`HanaAyane/dsh-reasoning-effort`](https://github.com/HanaAyane/dsh-reasoning-effort) `v0.6.0` 的提交 `f94622b46078ac8c064f91bdc10ab27e8cf32270`。完整 MIT 文本、`Copyright (c) 2026 HanaAyane`、源码 URL、提交和 sprite 归属均保留在 `LICENSE`、包内 `THIRD_PARTY_NOTICES.md`，以及 Desktop 成品根部的 `THIRD_PARTY_NOTICES.md` 中。
 
@@ -50,6 +50,6 @@ Host 半只拥有一个按 profile 保存的 `chibiThumb` 布尔值，以及一�
 
 ## 已知限制与欠账
 
-- 兼容性只针对仓库的 `0.1.0-rc.5` 约定完成验证；Harness 升级后必须重新检查 peer、服务、staged profile 和视觉表现。
+- 兼容性只针对仓库的 `0.1.0-rc.8` 约定完成验证；Harness 升级后必须重新检查 peer、服务、staged profile 和视觉表现。
 - 按 profile 保存的人物偏好刻意保持很小，但它不是卸载清理器；移除插件后，可能保留这个惰性布尔值供以后重装使用。
 - 原生席位回退覆盖已经进入槽位、随后崩溃的替换组件。注册前失败会让 Web 图保持未激活，必须修复报告中的模块、peer、服务或 `apply` 问题。

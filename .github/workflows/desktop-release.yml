@@ -7,7 +7,7 @@ on:
         description: Existing draft desktop release tag to publish
         required: true
         type: string
-        default: desktop-v0.1.9
+        default: desktop-v0.2.0
 
 permissions:
   contents: write
@@ -49,7 +49,7 @@ jobs:
 
       - name: Verify the disk image and record SHA-256
         run: |
-          artifact=DeepSeek-Harness-0.1.9-mac-x64.dmg
+          artifact=DeepSeek-Harness-0.2.0-mac-x64.dmg
           hdiutil verify "apps/desktop/release/$artifact"
           cd apps/desktop/release
           shasum -a 256 "$artifact" > "$artifact.sha256"
@@ -58,15 +58,15 @@ jobs:
         with:
           name: desktop-mac-x64
           path: |
-            apps/desktop/release/DeepSeek-Harness-0.1.9-mac-x64.dmg
-            apps/desktop/release/DeepSeek-Harness-0.1.9-mac-x64.dmg.sha256
+            apps/desktop/release/DeepSeek-Harness-0.2.0-mac-x64.dmg
+            apps/desktop/release/DeepSeek-Harness-0.2.0-mac-x64.dmg.sha256
           if-no-files-found: error
           retention-days: 1
 
   windows:
     name: Windows x64 Setup
     runs-on: windows-2025
-    timeout-minutes: 60
+    timeout-minutes: 75
     defaults:
       run:
         working-directory: s
@@ -95,27 +95,33 @@ jobs:
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
-      - name: Build the one-click Windows Setup
+      - name: Build the assisted Windows Setup
         shell: pwsh
         run: |
           $env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'
           pnpm run desktop:stage
           pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR" --config "$env:DSH_DESKTOP_STAGE_DIR\electron-builder.yml" --win nsis --x64
-          $builtArtifact = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) 'release\DeepSeek-Harness-Setup-0.1.9-win-x64.exe'
-          $workspaceArtifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe'
+          $builtArtifact = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) 'release\DeepSeek-Harness-Setup-0.2.0-win-x64.exe'
+          $workspaceArtifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.2.0-win-x64.exe'
           New-Item -ItemType Directory -Force -Path (Split-Path -Parent $workspaceArtifact) | Out-Null
           Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact
 
-      - name: Install and exercise the packaged application
+      - name: Exercise the visible installer pages
+        shell: pwsh
+        run: >-
+          ./scripts/windows-desktop-installer-ui-smoke.ps1
+          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.2.0-win-x64.exe
+
+      - name: Install and exercise the packaged application lifecycle
         shell: pwsh
         run: >-
           ./scripts/windows-desktop-setup-smoke.ps1
-          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe
+          -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.2.0-win-x64.exe
 
       - name: Record SHA-256
         shell: pwsh
         run: |
-          $artifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe'
+          $artifact = 'apps/desktop/release/DeepSeek-Harness-Setup-0.2.0-win-x64.exe'
           $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
           $checksum = "$hash  $(Split-Path -Leaf $artifact)`n"
           [System.IO.File]::WriteAllText("$artifact.sha256", $checksum, [System.Text.Encoding]::ASCII)
@@ -124,8 +130,8 @@ jobs:
         with:
           name: desktop-windows-x64
           path: |
-            s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe
-            s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe.sha256
+            s/apps/desktop/release/DeepSeek-Harness-Setup-0.2.0-win-x64.exe
+            s/apps/desktop/release/DeepSeek-Harness-Setup-0.2.0-win-x64.exe.sha256
           if-no-files-found: error
           retention-days: 1
 
@@ -144,8 +150,8 @@ jobs:
       - name: Verify release assets
         run: |
           cd release
-          shasum -a 256 -c DeepSeek-Harness-0.1.9-mac-x64.dmg.sha256
-          shasum -a 256 -c DeepSeek-Harness-Setup-0.1.9-win-x64.exe.sha256
+          shasum -a 256 -c DeepSeek-Harness-0.2.0-mac-x64.dmg.sha256
+          shasum -a 256 -c DeepSeek-Harness-Setup-0.2.0-win-x64.exe.sha256
 
       - name: Upload assets and publish the draft
         env:
@@ -153,9 +159,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           gh release upload "${{ inputs.tag }}" \
-            release/DeepSeek-Harness-0.1.9-mac-x64.dmg \
-            release/DeepSeek-Harness-0.1.9-mac-x64.dmg.sha256 \
-            release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe \
-            release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe.sha256 \
+            release/DeepSeek-Harness-0.2.0-mac-x64.dmg \
+            release/DeepSeek-Harness-0.2.0-mac-x64.dmg.sha256 \
+            release/DeepSeek-Harness-Setup-0.2.0-win-x64.exe \
+            release/DeepSeek-Harness-Setup-0.2.0-win-x64.exe.sha256 \
             --clobber
           gh release edit "${{ inputs.tag }}" --draft=false --target "$GITHUB_SHA"

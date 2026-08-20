@@ -38,9 +38,8 @@ peerDependencyRules:
 # default and only allow scripts we need. esbuild (native binary) and lefthook
 # (git hooks) genuinely need theirs.
 allowBuilds:
+  # Electron's platform binary is required for the native Desktop shell.
   electron: true
-  # Windows-only helper selected transitively by the packager; macOS builds do not need its 7-Zip selector.
-  electron-winstaller: false
   esbuild: true
   lefthook: true
   # Cross-platform boundary for the persistent PTY backend, including ConPTY on Windows.
@@ -56,6 +55,10 @@ allowBuilds:
   # The Python runtime deploy includes the reviewed workspace postinstall that
   # restores the executable bit on node-pty's macOS spawn helper.
   '@deepseek-ai/dsh-subprocess-local@file:packages/subprocess/subprocess-local': true
+  # Windows Squirrel support is an unused optional packager path; NSIS is the
+  # only Windows installer target and does not need this lifecycle script.
+  electron-winstaller: false
+
 minimumReleaseAgeExclude:
   # Fresh pi-ai releases carry the model catalog updates that are the whole
   # point of bumping it; waiting out the release age would defeat that.
@@ -69,8 +72,9 @@ minimumReleaseAgeExclude:
   - node-addon-require-builtin-win32-ia32-msvc@0.1.4
   - node-addon-require-builtin-win32-x64-msvc@0.1.4
   - node-addon-require-builtin@0.1.4
+  # The Desktop marketplace patch is reviewed against this exact release.
   - dshmarket@1.10.1
 
 patchedDependencies:
   dshmarket@1.10.1: patches/dshmarket@1.10.1.patch
-  node-pty@1.1.0: patches/node-pty@1.1.0.patch
+  node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch

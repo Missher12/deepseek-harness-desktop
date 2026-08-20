@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-session-messenger",
   "description": "Durable, bounded cross-session Agent messaging for DeepSeek Harness",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"
   },

@@ -20,10 +20,10 @@
 - 新建：`packages/client/web/src/DesktopBootSurface.module.css`
 - 修改：`apps/desktop/src/main.ts`
 - 修改：`apps/desktop/tests/renderer-pages.spec.ts`
-- 修改：`packages/client/web/src/AppRoot.tsx`
-- 修改：`packages/client/web/src/AppRoot.module.css`
-- 修改：`packages/client/web/src/boot.tsx`
-- 测试：`packages/client/web/tests/app-root.client.spec.tsx`
+- 修改：`packages/client/web/src/{AppRoot.tsx}`
+- 修改：`packages/client/web/src/{AppRoot.module.css}`
+- 修改：`packages/client/web/src/{boot.tsx}`
+- 测试：`packages/client/web/tests/{app-root.client.spec.tsx}`
 
 - [ ] **步骤 1：编写失败的 macOS renderer 和内核转场测试**
 
@@ -44,7 +44,7 @@ expect(bed.container.querySelector('[data-desktop-boot-phase="exit"]')).not.toBe
 
 - [ ] **步骤 2：运行聚焦测试并确认 RED**
 
-运行：`pnpm exec vitest run apps/desktop/tests/renderer-pages.spec.ts packages/client/web/tests/app-root.client.spec.tsx`
+运行：`pnpm exec vitest run apps/desktop/tests/renderer-pages.spec.ts packages/client/web/tests/{app-root.client.spec.tsx}`
 
 预期：FAIL，因为 Darwin 页面、Desktop 启动组件和直接揭示状态尚不存在。
 
@@ -78,7 +78,7 @@ if (props.macDesktop) {
 
 - [ ] **步骤 5：运行启动测试并提交**
 
-运行：`pnpm exec vitest run apps/desktop/tests/renderer-pages.spec.ts apps/desktop/tests/main-lifecycle.spec.ts packages/client/web/tests/app-root.client.spec.tsx apps/web/tests/settings-chrome.e2e.ts`
+运行：`pnpm exec vitest run apps/desktop/tests/renderer-pages.spec.ts apps/desktop/tests/main-lifecycle.spec.ts packages/client/web/tests/{app-root.client.spec.tsx} apps/web/tests/settings-chrome.e2e.ts`
 
 预期：PASS；现有生命周期仍让加载页与冲突检查及运行时启动重叠。
 
@@ -315,7 +315,7 @@ expect(providerFetch).toHaveBeenCalledTimes(1)
 
 - [ ] **步骤 1：一起运行全部聚焦 source 测试**
 
-运行：`pnpm exec vitest run apps/desktop/tests/renderer-pages.spec.ts apps/desktop/tests/main-lifecycle.spec.ts apps/desktop/tests/readiness.spec.ts packages/client/web/tests/app-root.client.spec.tsx packages/client/ui-settings-usage/tests scripts/dshmarket-baseline.spec.ts scripts/dshmarket-client-layout.spec.ts scripts/dshmarket-client-artifact.spec.ts scripts/dshmarket-self-protection.spec.ts scripts/stage-desktop.spec.ts packages/extensions/session-messenger/tests`
+运行：`pnpm exec vitest run apps/desktop/tests/renderer-pages.spec.ts apps/desktop/tests/main-lifecycle.spec.ts apps/desktop/tests/readiness.spec.ts packages/client/web/tests/{app-root.client.spec.tsx} packages/client/ui-settings-usage/tests scripts/dshmarket-baseline.spec.ts scripts/dshmarket-client-layout.spec.ts scripts/dshmarket-client-artifact.spec.ts scripts/dshmarket-self-protection.spec.ts scripts/stage-desktop.spec.ts packages/extensions/session-messenger/tests`
 
 预期：PASS，跨会话消息、启动所有权、使用统计聚合展示或插件市场保护均无回归。
 
