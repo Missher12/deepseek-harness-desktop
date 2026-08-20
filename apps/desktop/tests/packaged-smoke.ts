@@ -935,7 +935,11 @@ async function exerciseSystemUpdate(page: Page, platform: NodeJS.Platform): Prom
   const section = settingsDialog.locator('[data-system-update-section]')
   await section.waitFor({ state: 'visible', timeout: 15_000 })
   expect(await section.locator(':scope > [class*="rows"] > [class*="row"]').count()).toBe(2)
-  await expect.poll(() => section.innerText(), { timeout: 15_000 }).toMatch(/0\.1\.9/u)
+  const desktopManifest = JSON.parse(
+    await readFile(join(repositoryRoot, 'apps/desktop/package.json'), 'utf8'),
+  ) as { version?: unknown }
+  if (typeof desktopManifest.version !== 'string') throw new Error('Desktop package version is missing.')
+  await expect.poll(() => section.innerText(), { timeout: 15_000 }).toContain(`v${desktopManifest.version}`)
   await page.screenshot({
     path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-system-update-${platform}.png`),
   })
