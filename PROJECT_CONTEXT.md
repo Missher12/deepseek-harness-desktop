@@ -78,6 +78,10 @@ The repository is based on the pinned official source and adds the desktop appli
   through the installed application in addition to installer, clipboard,
   process, uninstall, and data-preservation checks. The root Harness version
   remains `0.1.0-rc.8`; only the Desktop artifact version advances to `0.2.1`.
+  This standalone public repository now defaults its required CI lanes to
+  GitHub-hosted `ubuntu-24.04` and `windows-2025` runners; the existing explicit
+  self-hosted failover selectors remain available. This prevents release
+  checks from waiting forever on upstream-only enterprise runner labels.
 - Version 0.2.0 rebased the Desktop product on official `dsh-v0.1.0-rc.8`
   while retaining the current macOS/Desktop feature set. It adds a native
   Windows assisted installer whose ordinary double-click flow exposes Welcome,
