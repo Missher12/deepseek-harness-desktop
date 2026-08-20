@@ -82,7 +82,7 @@ Restricted command runner that invokes the bundled DSH plugin command.
 runPlugin(args: readonly string[], invokingDir: string, signal?: AbortSignal): DesktopPnpmHandle
 ```
 
-Source: [`packages/host/desktop-plugin-runtime/src/index.ts:59`](../../packages/host/desktop-plugin-runtime/src/index.ts)
+Source: [`packages/host/desktop-plugin-runtime/src/index.ts:60`](../../packages/host/desktop-plugin-runtime/src/index.ts)
 
 <a id="ctxdesktopprofiles--desktopprofiles"></a>
 
@@ -107,7 +107,7 @@ list(): readonly DesktopCurrentProfile[]
 select(name: string): Promise<void>
 ```
 
-Source: [`packages/host/desktop-plugin-runtime/src/index.ts:33`](../../packages/host/desktop-plugin-runtime/src/index.ts)
+Source: [`packages/host/desktop-plugin-runtime/src/index.ts:34`](../../packages/host/desktop-plugin-runtime/src/index.ts)
 
 <a id="ctxdynamiccordisrunner--dynamiccordisrunnerservice"></a>
 

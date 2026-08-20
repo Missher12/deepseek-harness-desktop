@@ -8,7 +8,7 @@ const readUpdateMetadata = (): { desktopVersion?: unknown } =>
   JSON.parse(readFileSync('apps/desktop/update-metadata.json', 'utf8')) as { desktopVersion?: unknown }
 
 describe('rc.8 Desktop migration', () => {
-  it('keeps the official rc.8 root and advances the macOS updater release to Desktop 0.2.1', () => {
+  it('keeps the official rc.8 root and advances the cross-platform Desktop release to 0.2.1', () => {
     expect(readManifest('package.json').version).toBe('0.1.0-rc.8')
     expect(readManifest('apps/desktop/package.json').version).toBe('0.2.1')
     expect(readUpdateMetadata().desktopVersion).toBe('0.2.1')

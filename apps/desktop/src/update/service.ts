@@ -10,7 +10,7 @@ import {
   type DesktopUpdateManifest,
 } from './release.ts'
 
-export type DesktopUpdatePhase =
+type DesktopUpdatePhase =
   | 'idle'
   | 'checking'
   | 'current'

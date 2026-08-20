@@ -498,17 +498,21 @@ describe('SessionPersistenceSqlite schema ownership', () => {
   })
 
   it('paces repeated busy journal-mode attempts', async () => {
+    const path = await freshDbPath('dsh-sqlite-journal-paced-')
     let attempts = 0
     const BusyDatabase = databaseWithJournalFailure(() => {
       attempts += 1
       return Object.assign(new Error('database is locked'), { errcode: 5 })
     })
-    await expect(openDatabase(
-      BusyDatabase,
-      await freshDbPath('dsh-sqlite-journal-paced-'),
-      'wal',
-      50,
-    )).rejects.toThrow('database is locked')
+    vi.useFakeTimers()
+    try {
+      const opening = expect(openDatabase(BusyDatabase, path, 'wal', 50))
+        .rejects.toThrow('database is locked')
+      await vi.runAllTimersAsync()
+      await opening
+    } finally {
+      vi.useRealTimers()
+    }
     expect(attempts).toBeGreaterThan(1)
     expect(attempts).toBeLessThanOrEqual(6)
   })
@@ -568,6 +572,19 @@ describe('SessionPersistenceSqlite schema ownership', () => {
     expect(() => { validateSchemaForMutation(DatabaseSync, changedApplication, ':memory:') })
       .toThrow(/application id changed before mutation/)
     changedApplication.close()
+  })
+
+  it('rolls back a delete when schema ownership changes before mutation', async () => {
+    const path = await freshDbPath('dsh-sqlite-delete-rollback-')
+    const store = new SqliteStore({ path, journalMode: 'wal', busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS })
+    const header = meta('delete-rollback')
+    await store.appendBatch(header, [chunk(0)], false)
+    const changed = new DatabaseSync(path)
+    changed.exec(testSql('set-application-id-12345'))
+    changed.close()
+
+    await expect(store.deleteStored(header.id)).rejects.toThrow(/application id changed before mutation/)
+    await store.close()
   })
 
   it('validates creation time and restores every optional header field', () => {

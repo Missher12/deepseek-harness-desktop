@@ -8,25 +8,27 @@ const STARTUP_ERROR = 'Harness did not report one valid loopback startup URL.'
  */
 export function readHarnessUrl(output: string): string {
   const lines = output.split(/\r?\n/u).filter(line => line.startsWith(STARTUP_PREFIX))
-  const line = lines[0]
-  if (lines.length !== 1 || line === undefined) throw new Error(STARTUP_ERROR)
-
-  let candidate: URL
-  try {
-    candidate = new URL(line.slice(STARTUP_PREFIX.length))
-  } catch {
-    throw new Error(STARTUP_ERROR)
-  }
-  const port = Number(candidate.port)
-  if (
-    candidate.protocol !== 'http:'
-    || candidate.hostname !== '127.0.0.1'
-    || candidate.pathname !== '/'
-    || candidate.search !== ''
-    || candidate.hash !== ''
-    || !Number.isInteger(port)
-    || port < 1
-    || port > 65_535
-  ) throw new Error(STARTUP_ERROR)
-  return candidate.href
+  const candidates = lines.flatMap((line) => {
+    let candidate: URL
+    try {
+      candidate = new URL(line.slice(STARTUP_PREFIX.length))
+    } catch {
+      return []
+    }
+    const port = Number(candidate.port)
+    if (
+      candidate.protocol !== 'http:'
+      || candidate.hostname !== '127.0.0.1'
+      || candidate.pathname !== '/'
+      || candidate.search !== ''
+      || candidate.hash !== ''
+      || !Number.isInteger(port)
+      || port < 1
+      || port > 65_535
+    ) return []
+    return [candidate.href]
+  })
+  const candidate = candidates[0]
+  if (candidates.length !== 1 || candidate === undefined) throw new Error(STARTUP_ERROR)
+  return candidate
 }

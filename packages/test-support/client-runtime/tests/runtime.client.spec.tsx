@@ -284,6 +284,21 @@ describe('sessions', () => {
   })
 })
 
+describe('workspaces', () => {
+  it('records the default and stubbed no-project connection results', async () => {
+    const runtime = await SlotTestRuntime.create()
+
+    await expect(runtime.workspaces.connectNoProject()).resolves.toBe('session-without-project')
+    runtime.workspaces.stub('connectNoProject', () => Promise.resolve('custom-session' as SessionId))
+    await expect(runtime.workspaces.connectNoProject()).resolves.toBe('custom-session')
+    expect(runtime.workspaces.calls).toEqual([
+      { method: 'connectNoProject', args: [] },
+      { method: 'connectNoProject', args: [] },
+    ])
+    await runtime.dispose()
+  })
+})
+
 describe('stores', () => {
   const createSuiteStore = () => defineStore({
     init: () => ({ note: '' }),

@@ -135,9 +135,15 @@ describe('web e2e: queue row actions', () => {
     await editRow.getByRole('button', { name: 'Edit queued message' }).click()
     const editor = page.getByRole('textbox', { name: 'Edit queued message' })
     await editor.fill(EDITED)
+    // The golden intentionally includes the Save tooltip. Pin its real focus
+    // state and wait for the delayed tooltip instead of depending on whatever
+    // hover happened to survive the edit-row projection update.
+    const saveQueuedMessage = page.getByRole('button', { name: 'Save queued message' })
+    await saveQueuedMessage.focus()
+    await page.getByRole('tooltip', { name: 'Save queued message' }).waitFor({ timeout: 5_000 })
     const editingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(EDITING_EXPECTED, editingSnapshot, MODE)
-    await page.getByRole('button', { name: 'Save queued message' }).click()
+    await saveQueuedMessage.click()
     await page.getByText(EDITED, { exact: true }).waitFor()
 
     const removeRow = page.getByText(REMOVE, { exact: true }).locator('..')

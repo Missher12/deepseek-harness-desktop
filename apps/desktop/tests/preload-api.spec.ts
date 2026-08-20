@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { isDesktopCommand, isDesktopUpdateSnapshot, isRecoveryAction } from '../src/preload-api.ts'
+import {
+  isDesktopCommand,
+  isDesktopUpdateSnapshot,
+  isRecoveryAction,
+  supportsDesktopUpdates,
+} from '../src/preload-api.ts'
 
 describe('desktop preload vocabulary', () => {
   it.each(['new-session', 'open-command-menu', 'open-settings'])('accepts command %s', (value) => {
@@ -29,5 +34,11 @@ describe('desktop preload vocabulary', () => {
     expect(isDesktopUpdateSnapshot(snapshot)).toBe(true)
     expect(isDesktopUpdateSnapshot({ ...snapshot, phase: 'run-shell' })).toBe(false)
     expect(isDesktopUpdateSnapshot({ ...snapshot, downloadProgress: '100%' })).toBe(false)
+  })
+
+  it('offers the verified DMG updater only on macOS', () => {
+    expect(supportsDesktopUpdates('darwin')).toBe(true)
+    expect(supportsDesktopUpdates('win32')).toBe(false)
+    expect(supportsDesktopUpdates('linux')).toBe(false)
   })
 })

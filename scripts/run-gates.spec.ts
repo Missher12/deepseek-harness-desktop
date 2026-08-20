@@ -109,7 +109,12 @@ describe('gate graph validation', () => {
 
     expect(byId.get('coverage')?.allowFailure).not.toBe(true)
     expect(byId.get('coverage-exempt-heavy')?.allowFailure).not.toBe(true)
-    expect(byId.get('coverage-exempt-heavy')?.needs).toContain('build')
+    expect(byId.get('coverage')?.needs).toEqual(['build', 'windows-site'])
+    expect(byId.get('coverage-exempt-heavy')?.needs).toEqual([
+      'build',
+      'windows-site',
+      'coverage',
+    ])
     expect(observational).not.toHaveLength(0)
     for (const gate of observational) {
       const completeGate = byId.get(gate.id)
@@ -354,13 +359,24 @@ describe('Node 24 lane ownership', () => {
     expect(subject.find(item => item.id === 'lint-and-duplication')?.needs).toEqual(['built-package-invariants'])
     for (const id of [
       'snapshot',
-      'web-snapshot',
       'doc-typecheck',
       'node-next-types',
       'built-bin-smoke',
     ]) {
       expect(subject.find(item => item.id === id)?.needs).toEqual(['built-package-invariants'])
     }
+    expect(subject.find(item => item.id === 'web-snapshot')).toMatchObject({
+      needs: ['built-package-invariants'],
+      after: [
+        'node-compat',
+        'publint',
+        'lint-and-duplication',
+        'snapshot',
+        'doc-typecheck',
+        'node-next-types',
+        'built-bin-smoke',
+      ],
+    })
     expect(subject.find(item => item.id === 'snapshot')?.env).toEqual({ DSH_EXAMPLE_MODE: 'lib' })
     expect(subject.find(item => item.id === 'doc-typecheck')?.env).toEqual({
       DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1',

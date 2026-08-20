@@ -104,6 +104,32 @@ describe('API Remote Agent resolver races', () => {
     await ctx.fiber.dispose()
   })
 
+  it('disposes a cold-resume handle when its owner rejects retention', async () => {
+    const ctx = await createContext()
+    const sessionId = sid('rejected-cold-resume-handle')
+    const meta = header(sessionId)
+    let published: Session | undefined
+    provideSession(ctx, meta, () => {
+      published = ctx.sessions.create(sessionId, { meta: { cwd: '/proj' } })
+      return Promise.resolve({ meta, events: [] })
+    })
+    const dispose = vi.fn(() => Promise.resolve())
+    vi.spyOn(ctx.agents, 'resume').mockImplementation(async () => {
+      if (published === undefined) throw new Error('Session was not published')
+      return { agent: stubAgent(ctx, published), dispose }
+    })
+    const retainHandle = vi.fn(() => { throw new Error('owner stopped') })
+
+    const result = await createApiRemoteAgentResolver(ctx, { retainHandle })(sessionId)
+
+    expect(result).toMatchObject({ error: { code: 'internal' } })
+    const message: unknown = (result as { error?: { message?: unknown } }).error?.message
+    expect(typeof message).toBe('string')
+    if (typeof message === 'string') expect(message).toContain('owner stopped')
+    expect(dispose).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
   it('rejects a subagent Session published after durable inspection', async () => {
     const ctx = await createContext()
     const sessionId = sid('owned-attach-race')
