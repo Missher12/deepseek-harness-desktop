@@ -187,6 +187,8 @@ describe('desktop package manifest', () => {
     )
 
     expect(smoke).toContain("[Environment]::GetFolderPath('LocalApplicationData')")
+    expect(smoke).toContain('$startInfo.Arguments = "/S /D=$InstallRoot"')
+    expect(smoke).not.toContain('/D=$requestedInstallRoot')
     expect(smoke).not.toContain('[IO.Path]::GetTempPath()')
   })
 

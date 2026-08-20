@@ -20,6 +20,35 @@ function Invoke-CheckedProcess {
   }
 }
 
+function Invoke-CheckedNsisInstall {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$FilePath,
+    [Parameter(Mandatory = $true)]
+    [string]$InstallRoot
+  )
+
+  $startInfo = [System.Diagnostics.ProcessStartInfo]::new($FilePath)
+  $startInfo.UseShellExecute = $false
+  # NSIS requires /D to be the unquoted final parameter. Assigning the raw
+  # Arguments string prevents .NET from adding a literal trailing quote when
+  # the product directory contains a space.
+  $startInfo.Arguments = "/S /D=$InstallRoot"
+  $process = [System.Diagnostics.Process]::Start($startInfo)
+  if ($null -eq $process) {
+    throw 'Windows did not start the Setup executable.'
+  }
+  try {
+    $process.WaitForExit()
+    if ($process.ExitCode -ne 0) {
+      throw "Setup failed with exit code $($process.ExitCode): $FilePath"
+    }
+  }
+  finally {
+    $process.Dispose()
+  }
+}
+
 function Wait-PathRemoved {
   param(
     [Parameter(Mandatory = $true)]
@@ -81,7 +110,6 @@ $resolvedSetup = (Resolve-Path -LiteralPath $SetupPath).Path
 $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
 $smokeId = [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $temporaryRoot = Join-Path $localAppData "dsh-setup-smoke-$smokeId"
-$requestedInstallRoot = $temporaryRoot
 $installRoot = Join-Path $temporaryRoot 'DeepSeek Harness'
 $harnessHome = Join-Path $temporaryRoot 'dsh-home'
 $userData = Join-Path $temporaryRoot 'electron-data'
@@ -103,9 +131,7 @@ try {
   Set-Content -LiteralPath $harnessMarker -Value 'preserve Harness data'
   Set-Content -LiteralPath $userDataMarker -Value 'preserve Electron data'
 
-  # NSIS consumes the unquoted, final /D argument and electron-builder appends
-  # the product subdirectory before files are installed.
-  Invoke-CheckedProcess -FilePath $resolvedSetup -ArgumentList @('/S', "/D=$requestedInstallRoot")
+  Invoke-CheckedNsisInstall -FilePath $resolvedSetup -InstallRoot $installRoot
   $installed = $true
 
   $executable = Join-Path $installRoot 'DeepSeek Harness.exe'
