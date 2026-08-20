@@ -68,6 +68,28 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- Version 0.2.2 replaces the rejected macOS startup artwork with the approved
+  Codex-like A direction. The local Electron phase is a network-free centered
+  DeepSeek whale, title, status, and five-pixel indeterminate bar because Host
+  startup has no truthful denominator. The following Web phase is selected
+  only by `?surface=desktop` plus a macOS user agent and reports the existing
+  monotonic active-plugin count as a real percentage; ordinary Web and
+  non-macOS surfaces retain the generic circular loader, and plugin failure
+  still replaces progress with the kernel-owned report. Focused regression
+  passes 46 files / 378 tests, explicit Host, Client, Web, and Desktop-main
+  production builds pass, and browser visual acceptance passes at 736×480 and
+  360×480 without clipping or progress overflow. The final unsigned Intel DMG
+  is 163,541,739 bytes with SHA-256
+  `f6ec1b99261bc1e8e9494dcdd13eddeba24bc028aa14c1f13fa295aa7b09c96b`;
+  `hdiutil verify` and the isolated native packaged smoke pass. The exact final
+  candidate and installed `app.asar` share SHA-256
+  `22fc5a5200c3784d184974f1fdaa4a27982be20f77ba1bba10c93b6b11ce7f01`.
+  `/Applications/DeepSeek Harness.app` reports `0.2.2` and `x86_64`, launches
+  its owned `--no-open --host 127.0.0.1 --port 0` child, and returned HTTP 200
+  on the observed random port 63641. The exact 63-file `~/.dsh` aggregate hash
+  remained `6b1cda7016342b9de37c85e760c95802f2e1941e8c5d1456a9621ca089dcf76d`
+  across final installation. Recoverable application backups remain in
+  `/Applications`; no Windows build or public GitHub release was produced.
 - Version 0.2.0 rebases the Desktop product on official `dsh-v0.1.0-rc.8`
   while retaining the current macOS/Desktop feature set. It adds a native
   Windows assisted installer whose ordinary double-click flow exposes Welcome,
