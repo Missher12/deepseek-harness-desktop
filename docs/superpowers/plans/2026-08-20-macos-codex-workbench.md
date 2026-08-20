@@ -23,7 +23,7 @@ English | [中文](2026-08-20-macos-codex-workbench.zh.md)
 
 - [ ] **Step 1: Write failing fallback tests**
 
-```ts
+```text
 expect(document.title).toBe('DeepSeek Harness')
 expect(view.getByText('DeepSeek Harness')).toBeTruthy()
 expect(document.title).toBe('Session title — DeepSeek Harness')
@@ -39,7 +39,7 @@ Expected: the fallback assertions receive `DSH Local Build`.
 
 - [ ] **Step 3: Replace the three generic fallbacks**
 
-```ts
+```text
 const DEFAULT_CLIENT_TITLE = 'DeepSeek Harness'
 ```
 
@@ -72,7 +72,7 @@ git commit -m "fix(client): keep DeepSeek Harness branding"
 
 - [ ] **Step 1: Write failing controller and geometry tests**
 
-```ts
+```text
 expect(layout.snapshot()).toMatchObject({ utilityOpen: false, utilityMode: 'terminal', utilityWidth: 420 })
 layout.openUtility('browser')
 expect(layout.snapshot()).toMatchObject({ utilityOpen: true, utilityMode: 'browser', details: 0 })
@@ -90,7 +90,7 @@ pnpm exec vitest run packages/client/ui-layout/tests --config vitest.config.ts
 
 - [ ] **Step 3: Implement the closed API and store**
 
-```ts
+```text
 export const UTILITY_MODES = ['terminal', 'browser', 'files', 'side-chat', 'review'] as const
 export type UtilityMode = typeof UTILITY_MODES[number]
 ```
@@ -129,7 +129,7 @@ git commit -m "feat(layout): add optional utility panel"
 
 - [ ] **Step 1: Write the failing composition test**
 
-```ts
+```text
 expect(utilityIds).toEqual(['session-log-download', 'desktop-workbench'])
 expect(button).toHaveAttribute('aria-expanded', 'false')
 fireEvent.click(button)
@@ -147,7 +147,7 @@ pnpm exec vitest run packages/extensions/desktop-workbench/tests/client.client.s
 
 Follow `session-messenger` split-build conventions. Register an icon-only `desktop-workbench` entry after `session-log-download` and `WorkbenchPanel` in `layout.utility`. Persist a clamped width under `dsh.desktop-workbench.width.v1`, implement tablist arrow keys and Escape, and use continuous Harness surfaces without cards or perpetual animation.
 
-```ts
+```text
 export function loadWidth(storage: Storage): number {
   const value = Number(storage.getItem('dsh.desktop-workbench.width.v1'))
   return Number.isFinite(value) ? Math.min(720, Math.max(320, value)) : 420
@@ -187,7 +187,7 @@ git commit -m "feat(desktop): add Codex-style workbench shell"
 
 - [ ] **Step 1: Write failing durable visibility tests**
 
-```ts
+```text
 expect(source.events.at(-1)).toMatchObject({
   type: 'session-messenger/outgoing',
   ignorable: true,
@@ -206,7 +206,7 @@ pnpm exec vitest run packages/extensions/session-messenger/tests packages/extens
 
 - [ ] **Step 3: Add one UI-only event and renderer**
 
-```ts
+```text
 'session-messenger/outgoing': {
   deliveryId: DeliveryId
   targetSessionId: SessionId
@@ -243,13 +243,13 @@ git commit -m "feat(messenger): show cross-session conversation flow"
 - Create: `packages/extensions/desktop-workbench/src/client/FilesMode.tsx`
 - Create: `packages/extensions/desktop-workbench/src/client/ReviewMode.tsx`
 - Create: `packages/extensions/desktop-workbench/src/client/ReadOnlyModes.module.css`
-- Create: `packages/extensions/desktop-workbench/tests/workspace-path.spec.ts`
-- Create: `packages/extensions/desktop-workbench/tests/http.client.spec.ts`
-- Create: `packages/extensions/desktop-workbench/tests/read-only-modes.client.spec.tsx`
+- Create: `packages/extensions/desktop-workbench/tests/workspace-path.host.spec.ts`
+- Create: `packages/extensions/desktop-workbench/tests/read-only.host.spec.ts`
+- Create: `packages/extensions/desktop-workbench/tests/client.client.spec.tsx`
 
 - [ ] **Step 1: Write failing containment and bounds tests**
 
-```ts
+```text
 await expect(resolveWorkspacePath(root, '../secret')).rejects.toThrow(/outside workspace/)
 await expect(resolveWorkspacePath(root, 'linked-outside')).rejects.toThrow(/outside workspace/)
 expect((await readFilePreview(sessionId, 'large.txt')).truncated).toBe(true)
@@ -259,14 +259,14 @@ expect((await gitDiff(sessionId, 'changed.ts')).text.length).toBeLessThanOrEqual
 - [ ] **Step 2: Run the new suites and verify RED**
 
 ```bash
-pnpm exec vitest run packages/extensions/desktop-workbench/tests/workspace-path.spec.ts packages/extensions/desktop-workbench/tests/http.client.spec.ts packages/extensions/desktop-workbench/tests/read-only-modes.client.spec.tsx --config vitest.config.ts
+pnpm exec vitest run packages/extensions/desktop-workbench/tests/workspace-path.host.spec.ts packages/extensions/desktop-workbench/tests/read-only.host.spec.ts packages/extensions/desktop-workbench/tests/client.client.spec.tsx --config vitest.config.ts
 ```
 
 - [ ] **Step 3: Implement capability-bound read-only Host routes**
 
 Resolve the live session on Host, canonicalize `session.header.cwd`, canonicalize every requested child, and reject traversal/symlink escape. Cap directories at 200 entries and text previews at 256 KiB; return metadata for binary files. Invoke Git with argument arrays only:
 
-```ts
+```text
 ['git', '-C', workspaceRoot, 'status', '--porcelain=v2', '--branch', '-z']
 ['git', '-C', repositoryRoot, 'diff', '--no-ext-diff', '--unified=3', '--', relativePath]
 ```
@@ -288,17 +288,16 @@ git commit -m "feat(workbench): add files and review modes"
 
 **Files:**
 - Create: `packages/extensions/desktop-workbench/src/terminal.ts`
-- Create: `packages/extensions/desktop-workbench/src/terminal-events.ts`
 - Create: `packages/extensions/desktop-workbench/src/client/TerminalMode.tsx`
 - Create: `packages/extensions/desktop-workbench/src/client/TerminalMode.module.css`
-- Create: `packages/extensions/desktop-workbench/tests/terminal.spec.ts`
-- Create: `packages/extensions/desktop-workbench/tests/terminal-mode.client.spec.tsx`
+- Create: `packages/extensions/desktop-workbench/tests/terminal.host.spec.ts`
+- Modify: `packages/extensions/desktop-workbench/tests/client.client.spec.tsx`
 - Modify: `packages/extensions/desktop-workbench/src/http.ts`
 - Modify: `packages/extensions/desktop-workbench/src/client/transport.ts`
 
 - [ ] **Step 1: Write failing ownership and cleanup tests**
 
-```ts
+```text
 const opened = await terminals.open(clientA, sessionA.id, { rows: 24, cols: 80 })
 await expect(terminals.write(clientB, opened.id, 'pwd\n')).rejects.toThrow(/foreign terminal/)
 await terminals.disconnect(clientA)
@@ -311,14 +310,14 @@ Also pin a four-terminal cap, 16 KiB input cap, 1 MiB retained-output cap, resiz
 - [ ] **Step 2: Run Terminal tests and verify RED**
 
 ```bash
-pnpm exec vitest run packages/extensions/desktop-workbench/tests/terminal.spec.ts packages/extensions/desktop-workbench/tests/terminal-mode.client.spec.tsx --config vitest.config.ts
+pnpm exec vitest run packages/extensions/desktop-workbench/tests/terminal.host.spec.ts packages/extensions/desktop-workbench/tests/client.client.spec.tsx --config vitest.config.ts
 ```
 
 - [ ] **Step 3: Implement a separate user-terminal registry**
 
 Resolve cwd from `ctx.sessions`, choose `/bin/zsh` with `/bin/bash` fallback on macOS, and call `ctx.subprocess.spawnTerminal` directly:
 
-```ts
+```text
 const handle = await ctx.subprocess.spawnTerminal({
   argv: [shell, '-l'], cwd, rows, cols, graceMs: 1_500,
   env: { TERM: 'xterm-256color', DSH_UI_TERMINAL: '1' },
@@ -345,18 +344,18 @@ git commit -m "feat(workbench): add user terminal mode"
 **Files:**
 - Create: `apps/desktop/src/browser/controller.ts`
 - Create: `apps/desktop/src/browser/contracts.ts`
-- Create: `apps/desktop/tests/browser-controller.spec.ts`
+- Create: `apps/desktop/tests/browser-contracts.spec.ts`
 - Modify: `apps/desktop/src/preload-api.ts`
 - Modify: `apps/desktop/src/preload.ts`
 - Modify: `apps/desktop/src/main.ts`
 - Modify: `apps/desktop/tests/preload-api.spec.ts`
 - Create: `packages/extensions/desktop-workbench/src/client/BrowserMode.tsx`
 - Create: `packages/extensions/desktop-workbench/src/client/BrowserMode.module.css`
-- Create: `packages/extensions/desktop-workbench/tests/browser-mode.client.spec.tsx`
+- Modify: `packages/extensions/desktop-workbench/tests/client.client.spec.tsx`
 
 - [ ] **Step 1: Write failing validation and lifecycle tests**
 
-```ts
+```text
 expect(isWorkbenchBrowserRequest({ kind: 'navigate', value: 'https://example.com' })).toBe(true)
 expect(isWorkbenchBrowserRequest({ kind: 'navigate', value: 'file:///tmp/a' })).toBe(false)
 expect(isTrustedHarnessMainFrame(mainContents, mainFrame, activeOrigin)).toBe(true)
@@ -368,14 +367,14 @@ Also require finite clipped bounds, popup/download/permission denial, hide-befor
 - [ ] **Step 2: Run Browser tests and verify RED**
 
 ```bash
-pnpm exec vitest run apps/desktop/tests/browser-controller.spec.ts apps/desktop/tests/preload-api.spec.ts packages/extensions/desktop-workbench/tests/browser-mode.client.spec.tsx --config vitest.config.ts
+pnpm exec vitest run apps/desktop/tests/browser-contracts.spec.ts packages/extensions/desktop-workbench/tests/client.client.spec.tsx --config vitest.config.ts
 ```
 
 - [ ] **Step 3: Implement the controller and preload bridge**
 
 Create `WebContentsView` lazily with sandbox, context isolation, web security, no Node, and `persist:dsh-workbench-browser`. Accept only show/hide, HTTP(S) navigate/search, back, forward, reload, stop, and bounded state. Validate exact main `webContents`, main frame, and active random-loopback origin on every call. Expose only:
 
-```ts
+```text
 showWorkbenchBrowser(bounds: DesktopBrowserBounds): Promise<DesktopBrowserSnapshot>
 hideWorkbenchBrowser(): Promise<void>
 controlWorkbenchBrowser(request: DesktopBrowserRequest): Promise<DesktopBrowserSnapshot>
@@ -404,7 +403,7 @@ git commit -m "feat(desktop): add isolated workbench browser"
 
 - [ ] **Step 1: Write failing cadence and cleanup tests**
 
-```ts
+```text
 expect(summary.textContent).not.toBe('Newest reasoning tokens keep arriving')
 flushAnimationFrames(4)
 expect(summary.textContent?.length).toBeGreaterThan(0)
@@ -425,7 +424,7 @@ pnpm exec vitest run packages/client/ui-conversation/tests/reasoning-row.client.
 
 Reveal at least one grapheme per frame, accelerate above a 48-grapheme backlog, cap lag at 120 ms, and flush on settled, expanded, hidden document, or reduced motion. Cancel every scheduled frame. Replace the sweep pseudo-element with a quiet caret visible only during active running reveal.
 
-```ts
+```text
 const summary = running && !expanded ? displayed : running ? latestLine(text) : firstLine(text)
 ```
 
@@ -459,7 +458,7 @@ git commit -m "feat(conversation): smooth reasoning typewriter"
 
 - [ ] **Step 1: Extend packaged acceptance**
 
-```ts
+```text
 await expect(page.getByText('DeepSeek Harness', { exact: true })).toBeVisible()
 await expect(sessionLog.locator('xpath=following-sibling::*[1]')).toHaveAttribute('data-desktop-workbench-trigger', '')
 await expect(page.locator('[data-workbench-mode]')).toHaveCount(5)
@@ -471,7 +470,7 @@ Add width persistence, narrow layout, Side Chat visible flow, Files/Review non-m
 - [ ] **Step 2: Run focused regression**
 
 ```bash
-pnpm exec vitest run packages/client/ui-renderer/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx packages/client/ui-layout/tests packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx packages/extensions/session-messenger/tests packages/extensions/desktop-workbench/tests apps/desktop/tests/preload-api.spec.ts apps/desktop/tests/navigation.spec.ts apps/desktop/tests/browser-controller.spec.ts --config vitest.config.ts
+pnpm exec vitest run packages/client/ui-renderer/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx packages/client/ui-layout/tests packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx packages/extensions/session-messenger/tests packages/extensions/desktop-workbench/tests apps/desktop/tests/preload-api.spec.ts apps/desktop/tests/navigation.spec.ts apps/desktop/tests/browser-contracts.spec.ts --config vitest.config.ts
 ```
 
 - [ ] **Step 3: Run production gates**

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/superpowers/specs/2026-08-20-macos-two-stage-boot-progress-design.md
+2026-08-20-macos-two-stage-boot-progress-design.md: ccfe4f6603ce2160961105244e2533d466c01654
+2026-08-20-macos-two-stage-boot-progress-design.zh.md: 98b21fd4fdd1b8c41133a74b5e2775d67db2af7f

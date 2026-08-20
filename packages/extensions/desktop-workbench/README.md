@@ -13,3 +13,18 @@ Desktop-only Codex-style utility workbench for DeepSeek Harness. One compact con
 - The panel width is limited to 320–720 px and persisted locally. Terminal polling exists only while Terminal mode is mounted; Browser native resources are destroyed on unmount; no idle animation runs after reasoning text catches up.
 
 The Host HTTP bridge is bound to the active random loopback origin and a generation-scoped capability injected into the trusted Desktop document. It does not expose filesystem, Git, or terminal operations to other origins.
+
+## Model Experience
+
+None, as this browser-side Desktop utility surface registers nothing model-facing; Side Chat delegates to `@deepseek-ai/dsh-session-messenger`, while Files, Review, Browser, and the human-owned Terminal never enter model context automatically.
+
+#### KV Cache effect
+
+Opening, resizing, or switching workbench modes does not change the provider request prefix; content enters context only when the user explicitly copies it into the ordinary composer.
+
+## Known Limitations and Deferred Work
+
+- The embedded Browser is intentionally isolated from Harness login state and does not provide extensions, downloads, popups, permission prompts, or non-HTTP(S) protocols.
+- Files and Review are bounded previews rather than an editor or full Git client; binary files, oversized text, repository mutation, staging, and commit operations are out of scope.
+- Terminal tabs are local to the current renderer lifetime and do not restore after an application restart.
+- The workbench is currently an Intel macOS Desktop composition feature; ordinary Web does not mount it.

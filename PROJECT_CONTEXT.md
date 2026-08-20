@@ -82,7 +82,29 @@ The repository is based on the pinned official source and adds the desktop appli
   diff previews at 256 KiB. Reasoning uses a bounded typewriter reveal with no
   sweep effect and flushes for settled, expanded, hidden, or reduced-motion
   states. Only Desktop composition mounts the workbench; ordinary Web remains
-  unchanged.
+  unchanged. The final unsigned Intel DMG is 163,560,786 bytes with SHA-256
+  `e6d594e919393fe3208a56e028f6c136cef2587323bc9c13189c4b2fe91d53ce`;
+  `hdiutil verify` passes and the packaged application reports `0.3.0` / `x86_64`.
+  The 5-file focused regression passes 53 tests, all 28 documentation gates
+  pass, and the complete Host, Client, Web, and Desktop staging build passes.
+  The isolated native packaged smoke passes the ordinary and archived
+  clipboard paths, visible cross-session chat rows, a real workbench terminal
+  command and teardown, all five workbench modes, reasoning effort, Usage
+  Insights, System Update, Plugin Market, provider isolation, random-port
+  ownership, and final process cleanup. The application is installed and running at
+  `/Applications/DeepSeek Harness.app`; its owned Harness returned HTTP 200 on
+  the observed random port 60528, and its installed `app.asar` exactly matches
+  the final packaged application. The initial 0.2.2 replacement preserved the
+  95-file live `~/.dsh` aggregate at
+  `d1b9edf28b3612e923b2d0dd44f0d624e3c6c7d321924b7cce9086681f93475c`.
+  The final-layout replacement preserved the then-current 96-file aggregate at
+  `7bc223384a159a52b103ec851b6fe6ca82dfff7dc557723efe1c243c2f3f9292`
+  before launch. The previous 0.2.2 application is recoverably retained at
+  `~/Library/Application Support/DeepSeek Harness Backups/DeepSeek Harness-0.2.2-pre-0.3.0-20260821-020107.app`.
+  The pre-final-layout 0.3.0 application is retained beside it as
+  `DeepSeek Harness-0.3.0-pre-final-layout-20260821-022529.app`. Normal Harness
+  bookkeeping updated four live data paths after the first 0.3.0 launch. No
+  Windows build or public GitHub release was produced for this task.
 - Version 0.2.2 replaces the rejected macOS startup artwork with the approved
   Codex-like A direction. The local Electron phase is a network-free centered
   DeepSeek whale, title, status, and five-pixel indeterminate bar because Host

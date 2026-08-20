@@ -23,7 +23,7 @@
 
 - [ ] **步骤一：编写失败的回退值测试**
 
-```ts
+```text
 expect(document.title).toBe('DeepSeek Harness')
 expect(view.getByText('DeepSeek Harness')).toBeTruthy()
 expect(document.title).toBe('Session title — DeepSeek Harness')
@@ -39,7 +39,7 @@ pnpm exec vitest run packages/client/ui-renderer/tests/document-title.client.spe
 
 - [ ] **步骤三：替换三个通用回退值**
 
-```ts
+```text
 const DEFAULT_CLIENT_TITLE = 'DeepSeek Harness'
 ```
 
@@ -72,7 +72,7 @@ git commit -m "fix(client): keep DeepSeek Harness branding"
 
 - [ ] **步骤一：编写失败的控制器和几何测试**
 
-```ts
+```text
 expect(layout.snapshot()).toMatchObject({ utilityOpen: false, utilityMode: 'terminal', utilityWidth: 420 })
 layout.openUtility('browser')
 expect(layout.snapshot()).toMatchObject({ utilityOpen: true, utilityMode: 'browser', details: 0 })
@@ -90,7 +90,7 @@ pnpm exec vitest run packages/client/ui-layout/tests --config vitest.config.ts
 
 - [ ] **步骤三：实现封闭 API 和 store**
 
-```ts
+```text
 export const UTILITY_MODES = ['terminal', 'browser', 'files', 'side-chat', 'review'] as const
 export type UtilityMode = typeof UTILITY_MODES[number]
 ```
@@ -129,7 +129,7 @@ git commit -m "feat(layout): add optional utility panel"
 
 - [ ] **步骤一：编写失败的组合测试**
 
-```ts
+```text
 expect(utilityIds).toEqual(['session-log-download', 'desktop-workbench'])
 expect(button).toHaveAttribute('aria-expanded', 'false')
 fireEvent.click(button)
@@ -147,7 +147,7 @@ pnpm exec vitest run packages/extensions/desktop-workbench/tests/client.client.s
 
 遵循 `session-messenger` 的拆分构建约定。在 `session-log-download` 后注册只显示图标的 `desktop-workbench` 条目，并把 `WorkbenchPanel` 注册到 `layout.utility`。使用 `dsh.desktop-workbench.width.v1` 持久化受限制宽度，实现 tablist 方向键和 Escape，并采用连续的 Harness 表面，不使用卡片或永久动画。
 
-```ts
+```text
 export function loadWidth(storage: Storage): number {
   const value = Number(storage.getItem('dsh.desktop-workbench.width.v1'))
   return Number.isFinite(value) ? Math.min(720, Math.max(320, value)) : 420
@@ -187,7 +187,7 @@ git commit -m "feat(desktop): add Codex-style workbench shell"
 
 - [ ] **步骤一：编写失败的持久化可见性测试**
 
-```ts
+```text
 expect(source.events.at(-1)).toMatchObject({
   type: 'session-messenger/outgoing',
   ignorable: true,
@@ -206,7 +206,7 @@ pnpm exec vitest run packages/extensions/session-messenger/tests packages/extens
 
 - [ ] **步骤三：增加一个只供 UI 使用的事件及 renderer**
 
-```ts
+```text
 'session-messenger/outgoing': {
   deliveryId: DeliveryId
   targetSessionId: SessionId
@@ -243,13 +243,13 @@ git commit -m "feat(messenger): show cross-session conversation flow"
 - 创建：`packages/extensions/desktop-workbench/src/client/FilesMode.tsx`
 - 创建：`packages/extensions/desktop-workbench/src/client/ReviewMode.tsx`
 - 创建：`packages/extensions/desktop-workbench/src/client/ReadOnlyModes.module.css`
-- 创建：`packages/extensions/desktop-workbench/tests/workspace-path.spec.ts`
-- 创建：`packages/extensions/desktop-workbench/tests/http.client.spec.ts`
-- 创建：`packages/extensions/desktop-workbench/tests/read-only-modes.client.spec.tsx`
+- 创建：`packages/extensions/desktop-workbench/tests/workspace-path.host.spec.ts`
+- 创建：`packages/extensions/desktop-workbench/tests/read-only.host.spec.ts`
+- 创建：`packages/extensions/desktop-workbench/tests/client.client.spec.tsx`
 
 - [ ] **步骤一：编写失败的包含关系和边界测试**
 
-```ts
+```text
 await expect(resolveWorkspacePath(root, '../secret')).rejects.toThrow(/outside workspace/)
 await expect(resolveWorkspacePath(root, 'linked-outside')).rejects.toThrow(/outside workspace/)
 expect((await readFilePreview(sessionId, 'large.txt')).truncated).toBe(true)
@@ -259,14 +259,14 @@ expect((await gitDiff(sessionId, 'changed.ts')).text.length).toBeLessThanOrEqual
 - [ ] **步骤二：运行新测试并确认 RED**
 
 ```bash
-pnpm exec vitest run packages/extensions/desktop-workbench/tests/workspace-path.spec.ts packages/extensions/desktop-workbench/tests/http.client.spec.ts packages/extensions/desktop-workbench/tests/read-only-modes.client.spec.tsx --config vitest.config.ts
+pnpm exec vitest run packages/extensions/desktop-workbench/tests/workspace-path.host.spec.ts packages/extensions/desktop-workbench/tests/read-only.host.spec.ts packages/extensions/desktop-workbench/tests/client.client.spec.tsx --config vitest.config.ts
 ```
 
 - [ ] **步骤三：实现受能力凭据约束的只读 Host 路由**
 
 在 Host 解析实时会话，规范化 `session.header.cwd`，再规范化每个请求的子路径，并拒绝路径穿越／符号链接逃逸。目录上限为 200 个条目，文本预览上限为 256 KiB；二进制文件只返回元数据。只用参数数组调用 Git：
 
-```ts
+```text
 ['git', '-C', workspaceRoot, 'status', '--porcelain=v2', '--branch', '-z']
 ['git', '-C', repositoryRoot, 'diff', '--no-ext-diff', '--unified=3', '--', relativePath]
 ```
@@ -288,17 +288,16 @@ git commit -m "feat(workbench): add files and review modes"
 
 **文件：**
 - 创建：`packages/extensions/desktop-workbench/src/terminal.ts`
-- 创建：`packages/extensions/desktop-workbench/src/terminal-events.ts`
 - 创建：`packages/extensions/desktop-workbench/src/client/TerminalMode.tsx`
 - 创建：`packages/extensions/desktop-workbench/src/client/TerminalMode.module.css`
-- 创建：`packages/extensions/desktop-workbench/tests/terminal.spec.ts`
-- 创建：`packages/extensions/desktop-workbench/tests/terminal-mode.client.spec.tsx`
+- 创建：`packages/extensions/desktop-workbench/tests/terminal.host.spec.ts`
+- 修改：`packages/extensions/desktop-workbench/tests/client.client.spec.tsx`
 - 修改：`packages/extensions/desktop-workbench/src/http.ts`
 - 修改：`packages/extensions/desktop-workbench/src/client/transport.ts`
 
 - [ ] **步骤一：编写失败的所有权和清理测试**
 
-```ts
+```text
 const opened = await terminals.open(clientA, sessionA.id, { rows: 24, cols: 80 })
 await expect(terminals.write(clientB, opened.id, 'pwd\n')).rejects.toThrow(/foreign terminal/)
 await terminals.disconnect(clientA)
@@ -311,14 +310,14 @@ expect(opened.cwd).toBe(sessionA.header.cwd)
 - [ ] **步骤二：运行 Terminal 测试并确认 RED**
 
 ```bash
-pnpm exec vitest run packages/extensions/desktop-workbench/tests/terminal.spec.ts packages/extensions/desktop-workbench/tests/terminal-mode.client.spec.tsx --config vitest.config.ts
+pnpm exec vitest run packages/extensions/desktop-workbench/tests/terminal.host.spec.ts packages/extensions/desktop-workbench/tests/client.client.spec.tsx --config vitest.config.ts
 ```
 
 - [ ] **步骤三：实现独立的用户终端注册表**
 
 从 `ctx.sessions` 解析 cwd，在 macOS 优先选择 `/bin/zsh`，并以 `/bin/bash` 作为回退，然后直接调用 `ctx.subprocess.spawnTerminal`：
 
-```ts
+```text
 const handle = await ctx.subprocess.spawnTerminal({
   argv: [shell, '-l'], cwd, rows, cols, graceMs: 1_500,
   env: { TERM: 'xterm-256color', DSH_UI_TERMINAL: '1' },
@@ -345,18 +344,18 @@ git commit -m "feat(workbench): add user terminal mode"
 **文件：**
 - 创建：`apps/desktop/src/browser/controller.ts`
 - 创建：`apps/desktop/src/browser/contracts.ts`
-- 创建：`apps/desktop/tests/browser-controller.spec.ts`
+- 创建：`apps/desktop/tests/browser-contracts.spec.ts`
 - 修改：`apps/desktop/src/preload-api.ts`
 - 修改：`apps/desktop/src/preload.ts`
 - 修改：`apps/desktop/src/main.ts`
 - 修改：`apps/desktop/tests/preload-api.spec.ts`
 - 创建：`packages/extensions/desktop-workbench/src/client/BrowserMode.tsx`
 - 创建：`packages/extensions/desktop-workbench/src/client/BrowserMode.module.css`
-- 创建：`packages/extensions/desktop-workbench/tests/browser-mode.client.spec.tsx`
+- 修改：`packages/extensions/desktop-workbench/tests/client.client.spec.tsx`
 
 - [ ] **步骤一：编写失败的校验和生命周期测试**
 
-```ts
+```text
 expect(isWorkbenchBrowserRequest({ kind: 'navigate', value: 'https://example.com' })).toBe(true)
 expect(isWorkbenchBrowserRequest({ kind: 'navigate', value: 'file:///tmp/a' })).toBe(false)
 expect(isTrustedHarnessMainFrame(mainContents, mainFrame, activeOrigin)).toBe(true)
@@ -368,14 +367,14 @@ expect(isTrustedHarnessMainFrame(mainContents, childFrame, activeOrigin)).toBe(f
 - [ ] **步骤二：运行 Browser 测试并确认 RED**
 
 ```bash
-pnpm exec vitest run apps/desktop/tests/browser-controller.spec.ts apps/desktop/tests/preload-api.spec.ts packages/extensions/desktop-workbench/tests/browser-mode.client.spec.tsx --config vitest.config.ts
+pnpm exec vitest run apps/desktop/tests/browser-contracts.spec.ts packages/extensions/desktop-workbench/tests/client.client.spec.tsx --config vitest.config.ts
 ```
 
 - [ ] **步骤三：实现控制器与 preload 桥接**
 
 首次使用时才创建 `WebContentsView`，启用 sandbox、context isolation、web security、禁用 Node，并使用 `persist:dsh-workbench-browser`。只接受显示／隐藏、HTTP(S) 导航／搜索、后退、前进、重新加载、停止和有界状态。每次调用都校验准确 main `webContents`、main frame 以及活动随机回环 origin。只暴露：
 
-```ts
+```text
 showWorkbenchBrowser(bounds: DesktopBrowserBounds): Promise<DesktopBrowserSnapshot>
 hideWorkbenchBrowser(): Promise<void>
 controlWorkbenchBrowser(request: DesktopBrowserRequest): Promise<DesktopBrowserSnapshot>
@@ -404,7 +403,7 @@ git commit -m "feat(desktop): add isolated workbench browser"
 
 - [ ] **步骤一：编写失败的节奏和清理测试**
 
-```ts
+```text
 expect(summary.textContent).not.toBe('Newest reasoning tokens keep arriving')
 flushAnimationFrames(4)
 expect(summary.textContent?.length).toBeGreaterThan(0)
@@ -425,7 +424,7 @@ pnpm exec vitest run packages/client/ui-conversation/tests/reasoning-row.client.
 
 每帧至少显示一个字素，积压超过 48 个字素时加速，延迟上限为 120 ms；完成、展开、文档隐藏或 reduced motion 时立即刷新。取消每个已安排的帧。把扫光伪元素替换为仅在正在展示时出现的克制光标。
 
-```ts
+```text
 const summary = running && !expanded ? displayed : running ? latestLine(text) : firstLine(text)
 ```
 
@@ -459,7 +458,7 @@ git commit -m "feat(conversation): smooth reasoning typewriter"
 
 - [ ] **步骤一：扩展打包验收**
 
-```ts
+```text
 await expect(page.getByText('DeepSeek Harness', { exact: true })).toBeVisible()
 await expect(sessionLog.locator('xpath=following-sibling::*[1]')).toHaveAttribute('data-desktop-workbench-trigger', '')
 await expect(page.locator('[data-workbench-mode]')).toHaveCount(5)
@@ -471,7 +470,7 @@ expect(await processTreeGone(harnessPid)).toBe(true)
 - [ ] **步骤二：运行聚焦回归**
 
 ```bash
-pnpm exec vitest run packages/client/ui-renderer/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx packages/client/ui-layout/tests packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx packages/extensions/session-messenger/tests packages/extensions/desktop-workbench/tests apps/desktop/tests/preload-api.spec.ts apps/desktop/tests/navigation.spec.ts apps/desktop/tests/browser-controller.spec.ts --config vitest.config.ts
+pnpm exec vitest run packages/client/ui-renderer/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx packages/client/ui-layout/tests packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx packages/extensions/session-messenger/tests packages/extensions/desktop-workbench/tests apps/desktop/tests/preload-api.spec.ts apps/desktop/tests/navigation.spec.ts apps/desktop/tests/browser-contracts.spec.ts --config vitest.config.ts
 ```
 
 - [ ] **步骤三：运行生产门禁**

@@ -1,5 +1,7 @@
 # Intel Mac two-stage boot progress design
 
+English | [中文](2026-08-20-macos-two-stage-boot-progress-design.zh.md)
+
 ## Goal
 
 Make startup progress unmistakable without presenting invented percentages. Use the approved Codex-like minimal direction with the official DeepSeek whale icon, and keep the change isolated to the Intel Mac desktop surface.
