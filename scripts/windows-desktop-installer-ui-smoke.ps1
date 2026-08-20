@@ -9,6 +9,8 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
+$script:InstallerProcessId = 0
+
 function Get-InstallerWindow {
   $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
     [System.Windows.Automation.TreeScope]::Children,
@@ -16,7 +18,10 @@ function Get-InstallerWindow {
   )
   foreach ($window in $windows) {
     try {
-      if ($window.Current.Name -match '^DeepSeek Harness( Setup)?$') {
+      $matchesProcess = $script:InstallerProcessId -gt 0 -and `
+        $window.Current.ProcessId -eq $script:InstallerProcessId
+      $matchesProductName = $window.Current.Name -match '^DeepSeek Harness(?: Setup)?$'
+      if ($matchesProcess -or $matchesProductName) {
         return $window
       }
     }
@@ -135,7 +140,7 @@ function Wait-PathRemoved {
 $resolvedSetup = (Resolve-Path -LiteralPath $SetupPath).Path
 $smokeId = [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $temporaryRoot = Join-Path $env:RUNNER_TEMP "dsh-installer-ui-$smokeId"
-$installRoot = Join-Path $temporaryRoot 'application'
+$installRoot = Join-Path $temporaryRoot 'DeepSeek Harness'
 $uninstallerLauncher = Join-Path $temporaryRoot 'DeepSeek-Harness-Uninstall-UI-Smoke.exe'
 $desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'DeepSeek Harness.lnk'
 $startMenuShortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'DeepSeek Harness.lnk'
@@ -157,6 +162,7 @@ try {
   if ($null -eq $setup) {
     throw 'Windows did not start the Setup executable.'
   }
+  $script:InstallerProcessId = $setup.Id
 
   $welcome = Wait-InstallerPage -Pattern 'Welcome to DeepSeek Harness Setup'
   Invoke-InstallerButton -Window $welcome -NamePattern '^Next\s*>$'

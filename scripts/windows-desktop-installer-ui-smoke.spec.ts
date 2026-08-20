@@ -9,6 +9,7 @@ describe('Windows Desktop assisted installer smoke', () => {
     )
 
     expect(source).toContain('UIAutomationClient')
+    expect(source).toContain('$script:InstallerProcessId')
     expect(source).toContain('Welcome to DeepSeek Harness Setup')
     expect(source).toContain('Choose Install Location')
     expect(source).toContain('[System.Windows.Automation.ControlType]::ProgressBar')
@@ -18,6 +19,7 @@ describe('Windows Desktop assisted installer smoke', () => {
     expect(source).toContain('Invoke-IsolatedUninstall')
     expect(source).toContain("[Environment]::GetFolderPath('Desktop')")
     expect(source).toContain("[Environment]::GetFolderPath('Programs')")
+    expect(source).toContain("Join-Path $temporaryRoot 'DeepSeek Harness'")
   })
 
   it('is wired into native Windows CI before the packaged lifecycle smoke', () => {
