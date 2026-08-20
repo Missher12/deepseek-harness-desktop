@@ -5,6 +5,8 @@
  */
 import css from './DesktopBootSurface.module.css'
 
+export { isMacDesktopSurface } from './desktop-surface.ts'
+
 /** Visual phase for the macOS Desktop startup surface. */
 export type DesktopBootPhase = 'hold' | 'exit'
 
@@ -16,15 +18,6 @@ export interface DesktopBootSurfaceProps {
   failed: ReadonlyArray<readonly [string, string]>
   /** Kernel settlement failure, when the sweep could not activate every entry. */
   error?: string
-}
-
-/**
- * Decide whether the current renderer is the macOS native Desktop surface.
- * Ordinary browser and Windows Desktop surfaces retain the generic boot UI.
- */
-export function isMacDesktopSurface(search: string, userAgent: string): boolean {
-  return new URLSearchParams(search).get('surface') === 'desktop'
-    && /Macintosh|Mac OS X/u.test(userAgent)
 }
 
 /** Render the DeepSeek-colored startup hold and direct-entry wipe. */
