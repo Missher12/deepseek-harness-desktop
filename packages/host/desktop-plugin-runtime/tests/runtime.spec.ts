@@ -183,7 +183,7 @@ describe('Desktop plugin runtime services', () => {
     expect(existsSync(shimDir)).toBe(false)
   })
 
-  it('reuses its shim, supports an empty ambient PATH, and emits the Windows wrapper', async () => {
+  it('reuses its shim, supports an empty ambient PATH, and emits both platform wrappers', async () => {
     const originalPath = process.env.PATH
     delete process.env.PATH
     try {
@@ -201,13 +201,21 @@ describe('Desktop plugin runtime services', () => {
       else process.env.PATH = originalPath
     }
 
-    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    const windows = harness()
-    const windowsService = windows.services.pnpm as unknown as { ensureNodeShim(): string }
-    const windowsShimDir = windowsService.ensureNodeShim()
-    expect(readFileSync(join(windowsShimDir, 'node.cmd'), 'utf8')).toContain('@echo off\r\n')
-    await windows.ctx.fiber.dispose()
-    platform.mockRestore()
+    for (const [platformName, shimName, expectedBody] of [
+      ['win32', 'node.cmd', '@echo off\r\n'],
+      ['linux', 'node', '#!/bin/sh\n'],
+    ] as const) {
+      const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue(platformName)
+      const fixture = harness()
+      try {
+        const service = fixture.services.pnpm as unknown as { ensureNodeShim(): string }
+        const shimDir = service.ensureNodeShim()
+        expect(readFileSync(join(shimDir, shimName), 'utf8')).toContain(expectedBody)
+      } finally {
+        await fixture.ctx.fiber.dispose()
+        platform.mockRestore()
+      }
+    }
   })
 
   it('rejects unsafe inputs and serializes one operation for the generation', async () => {

@@ -411,6 +411,18 @@ function ciArtifactGates(): Gate[] {
 function ciConsumerGates(): Gate[] {
   const builtTree = ['build']
   const validatedBuild = ['built-package-invariants']
+  // The browser HMR suite temporarily rewrites source and built client files,
+  // then restores them. Keep every stable consumer ahead of that mutation so
+  // digest checks and type/lint readers never observe the transient contents.
+  const stableConsumers = [
+    'node-compat',
+    'publint',
+    'lint-and-duplication',
+    'snapshot',
+    'doc-typecheck',
+    'node-next-types',
+    'built-bin-smoke',
+  ]
   return [
     ciBuildGate(),
     pnpmScript('node-compat', 'check:node-compat', {
@@ -424,7 +436,7 @@ function ciConsumerGates(): Gate[] {
       needs: validatedBuild,
     }),
     snapshotGate(validatedBuild),
-    webSnapshotGate(validatedBuild),
+    webSnapshotGate(validatedBuild, stableConsumers),
     pnpmScript('doc-typecheck', 'doc-typecheck:contracts-ready', {
       needs: validatedBuild,
       env: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },
@@ -437,7 +449,7 @@ function ciConsumerGates(): Gate[] {
   ]
 }
 
-function webSnapshotGate(needs: string[]): Gate {
+function webSnapshotGate(needs: string[], after: string[] = []): Gate {
   const workerRaw = process.env.DSH_WEB_SNAPSHOT_WORKERS
   if (workerRaw !== undefined && workerRaw !== '') {
     const workers = Number.parseInt(workerRaw, 10)
@@ -449,6 +461,7 @@ function webSnapshotGate(needs: string[]): Gate {
       displayCommand: `DSH_SNAPSHOT=replay DSH_WEB_SNAPSHOT_WORKERS=${workers} pnpm run test:web:ci`,
       env: { DSH_SNAPSHOT: 'replay' },
       needs,
+      ...after.length === 0 ? {} : { after },
       streamOutput: true,
     })
   }
@@ -457,6 +470,7 @@ function webSnapshotGate(needs: string[]): Gate {
     displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
     env: { DSH_SNAPSHOT: 'replay' },
     needs,
+    ...after.length === 0 ? {} : { after },
   })
 }
 
