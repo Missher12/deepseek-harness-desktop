@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/superpowers/specs/2026-08-20-macos-codex-workbench-design.md
+2026-08-20-macos-codex-workbench-design.md: ebbb21d9bc372b15ff7a2f2c30534d4258e78eb0
+2026-08-20-macos-codex-workbench-design.zh.md: 38234edf74bf51e83f0e026e70a09a75c91d62b4
