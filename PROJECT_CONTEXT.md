@@ -83,29 +83,36 @@ The repository is based on the pinned official source and adds the desktop appli
   diff previews at 256 KiB. Reasoning uses a bounded typewriter reveal with no
   sweep effect and flushes for settled, expanded, hidden, or reduced-motion
   states. Only Desktop composition mounts the workbench; ordinary Web remains
-  unchanged. The final unsigned Intel DMG is 163,560,786 bytes with SHA-256
-  `e6d594e919393fe3208a56e028f6c136cef2587323bc9c13189c4b2fe91d53ce`;
+  unchanged. Public main baseline
+  `59058b0173b1f2b9447fef89f4312303eb2de200` is merged as the second parent,
+  retaining its no-browser-handoff startup parsing, macOS-only updater bridge,
+  packaging exclusions, and runtime hardening. The synchronized unsigned Intel
+  DMG is 163,561,475 bytes with SHA-256
+  `ab9ba892fff15287dfd43c6809119f57d51c98115b3d94e03293f4230655cd40`;
   `hdiutil verify` passes and the packaged application reports `0.3.0` / `x86_64`.
-  The 5-file focused regression passes 53 tests, all 28 documentation gates
-  pass, and the complete Host, Client, Web, and Desktop staging build passes.
+  The merge-focused regression passes 21 files / 130 tests, the Desktop unit
+  regression passes 21 files / 127 tests with one platform-only skip, all 28
+  documentation gates pass, and the complete Host, Client, Web, Desktop-main,
+  and 67-file Desktop staging builds pass.
   The isolated native packaged smoke passes the ordinary and archived
   clipboard paths, visible cross-session chat rows, a real workbench terminal
   command and teardown, all five workbench modes, reasoning effort, Usage
   Insights, System Update, Plugin Market, provider isolation, random-port
-  ownership, and final process cleanup. The application is installed and running at
-  `/Applications/DeepSeek Harness.app`; its owned Harness returned HTTP 200 on
-  the observed random port 60528, and its installed `app.asar` exactly matches
-  the final packaged application. The initial 0.2.2 replacement preserved the
-  95-file live `~/.dsh` aggregate at
-  `d1b9edf28b3612e923b2d0dd44f0d624e3c6c7d321924b7cce9086681f93475c`.
-  The final-layout replacement preserved the then-current 96-file aggregate at
-  `7bc223384a159a52b103ec851b6fe6ca82dfff7dc557723efe1c243c2f3f9292`
-  before launch. The previous 0.2.2 application is recoverably retained at
+  ownership, and final process cleanup. The synchronized application is
+  installed and running at `/Applications/DeepSeek Harness.app`; its owned
+  Harness returned HTTP 200 on random port 50137. The installed and final
+  packaged `app.asar` share SHA-256
+  `4240b61add6fa97ec22bc182f5d589896373c47f035d8a501ee01447d3727c86`.
+  The live 96-file `~/.dsh` aggregate remained
+  `bd2d707d6b01414c4403689515e5b419628ed10beff40e694688ef1ce6a86838`
+  before replacement, after replacement, and after launch. The previous 0.2.2
+  application is recoverably retained at
   `~/Library/Application Support/DeepSeek Harness Backups/DeepSeek Harness-0.2.2-pre-0.3.0-20260821-020107.app`.
   The pre-final-layout 0.3.0 application is retained beside it as
-  `DeepSeek Harness-0.3.0-pre-final-layout-20260821-022529.app`. Normal Harness
-  bookkeeping updated four live data paths after the first 0.3.0 launch. No
-  Windows build or public GitHub release was produced for this task.
+  `DeepSeek Harness-0.3.0-pre-final-layout-20260821-022529.app`; the immediately
+  preceding 0.3.0 application is retained as
+  `DeepSeek Harness-0.3.0-pre-main-59058b0-20260821-042841.app`. No Windows build
+  or public GitHub release was produced for this synchronization task.
 - Version 0.2.2 replaces the rejected macOS startup artwork with the approved
   Codex-like A direction. The local Electron phase is a network-free centered
   DeepSeek whale, title, status, and five-pixel indeterminate bar because Host
