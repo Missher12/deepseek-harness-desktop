@@ -229,6 +229,12 @@ describe('SettingsPanel navigation', () => {
     expect(settingsCss).not.toContain('.panel[data-settings-section="market"]')
   })
 
+  it('gives every contributed settings page the same content width', () => {
+    expect(settingsCss).toMatch(
+      /\.options\s*>\s*:global\(\[data-slot=['"]settings\.section['"]\]\)\s*>\s*\*\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*760px;/s,
+    )
+  })
+
   it('mounts onboarding steps in order and transfers ownership only on completion', () => {
     const { renderSlot } = mount()
     const first = renderSlot.mock.calls.find(call => call[0] === 'settings.onboarding')

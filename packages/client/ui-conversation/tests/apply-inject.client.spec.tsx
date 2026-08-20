@@ -279,6 +279,26 @@ describe('conversation slot inject API', () => {
     await b.runtime.dispose()
   })
 
+  it('routes no-project switching through the runtime owner and carries the draft', async () => {
+    const b = await bench()
+    const OTHER = 'loose-1' as SessionId
+    await b.runtime.sessions.add({ id: OTHER }, { current: false })
+    b.runtime.workspaces.stub('connectNoProject', () => Promise.resolve(OTHER))
+    const resident = b.residentApi(ROOT)
+    const { state, actions } = b.inputApi(ROOT)
+    actions.setDraft('carry outside projects')
+
+    void resident.selectNoProject()
+
+    await vi.waitFor(() => {
+      expect(b.runtime.sessions.calls).toContainEqual({ method: 'open', args: [OTHER] })
+    })
+    expect(b.runtime.workspaces.calls).toContainEqual({ method: 'connectNoProject', args: [] })
+    expect(state.getSnapshot().draft).toBe('')
+    expect(b.inputApi(OTHER).state.getSnapshot().draft).toBe('carry outside projects')
+    await b.runtime.dispose()
+  })
+
   it('selectWorkspace edge arms: no-session resident, empty-draft move, connect failure retryable', async () => {
     const b = await bench()
     // No-session resident (hero before any session): connect resolves and

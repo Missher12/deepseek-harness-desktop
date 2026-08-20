@@ -275,6 +275,47 @@ describe('WorkspaceRuntime', () => {
     await expect(workspaces.connectWorkspace(wid('alpha'))).resolves.toBe('s-fresh-2')
   })
 
+  it('connectNoProject reuses an unaccounted blank session and otherwise creates without a Workspace', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    api.onWorkspaceList = () => Promise.resolve(ok({
+      items: [workspace('alpha', [sid('accounted-blank')])] as never[],
+    }))
+    api.onList = () => Promise.resolve(ok({
+      items: [
+        { sessionId: sid('accounted-blank'), updatedAt: 1, running: false, blank: true, cwd: '/w/alpha' },
+        {
+          sessionId: sid('hidden-subagent-blank'),
+          updatedAt: 2,
+          running: false,
+          blank: true,
+          parentSessionId: sid('accounted-blank'),
+          origin: 'subagent',
+          cwd: '/w/alpha',
+        },
+        { sessionId: sid('loose-blank'), updatedAt: 2, running: false, blank: true, cwd: '/Users/example' },
+      ] as never[],
+    }))
+    await Promise.all([workspaces.refresh(), sessions.refresh()])
+    await Promise.resolve()
+
+    await expect(workspaces.connectNoProject()).resolves.toBe('loose-blank')
+    expect(api.callsOf('session.create')).toEqual([])
+
+    await workspaces.archiveSession(sid('loose-blank'))
+    api.onCreate = payload => Promise.resolve(ok({ sessionId: sid('fresh-loose'), payload } as never))
+    const [first, second] = await Promise.all([
+      workspaces.connectNoProject(),
+      workspaces.connectNoProject(),
+    ])
+    expect(first).toBe('fresh-loose')
+    expect(second).toBe('fresh-loose')
+    expect(api.callsOf('session.create')).toEqual([{}])
+    expect(sessions.binding(sid('fresh-loose'))).toBeDefined()
+  })
+
   it('a rejected first prompt keeps the blank session eligible for connectWorkspace reuse', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()

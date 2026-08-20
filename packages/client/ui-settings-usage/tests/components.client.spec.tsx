@@ -60,7 +60,13 @@ describe('UsageInsightsSection', () => {
   it('renders the five KPIs, partial notice, charts, insights, and ranked features', async () => {
     const deferred = Promise.withResolvers<UsageInsightsSnapshot>()
     const view = render(<UsageInsightsSection {...props(() => deferred.promise)} />)
-    expect(view.container.querySelector('[data-usage-skeleton]')).not.toBeNull()
+    const skeleton = view.container.querySelector('[data-usage-skeleton]')
+    expect(skeleton).not.toBeNull()
+    expect(skeleton?.querySelectorAll('[data-usage-skeleton-metric]')).toHaveLength(5)
+    expect(skeleton?.querySelectorAll('[data-usage-skeleton-tab]')).toHaveLength(3)
+    expect(skeleton?.querySelectorAll('[data-usage-skeleton-day]')).toHaveLength(371)
+    expect(skeleton?.querySelectorAll('[data-usage-skeleton-month]')).toHaveLength(12)
+    expect(skeleton?.querySelectorAll('[data-usage-skeleton-detail]')).toHaveLength(2)
     expect(screen.queryByText(en.loading)).toBeNull()
 
     await act(async () => { deferred.resolve(SNAPSHOT) })

@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app,
@@ -10,6 +10,7 @@ import {
   screen,
   shell,
   type IpcMainEvent,
+  type IpcMainInvokeEvent,
 } from 'electron'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { healProfilesModuleFallback } from '@deepseek-ai/dsh-app-boot'
@@ -23,6 +24,8 @@ import { HarnessProcess } from './harness/process.ts'
 import { findConflictingHarness } from './harness/ownership.ts'
 import { createLifecycleLogger } from './logging.ts'
 import { isRecoveryAction, type DesktopCommand } from './preload-api.ts'
+import { DesktopUpdateService } from './update/service.ts'
+import { launchDesktopInstaller } from './update/installer.ts'
 import { allowRendererPermission, classifyNavigation } from './window/navigation.ts'
 import { createMenuTemplate } from './window/menu.ts'
 import { createWindowOptions } from './window/options.ts'
@@ -40,7 +43,13 @@ const failurePath = fileURLToPath(new URL('../renderer/failure.html', import.met
 const iconPath = fileURLToPath(new URL('../assets/icon-source.png', import.meta.url))
 const desktopPatchPath = fileURLToPath(new URL('../desktop.cordis.patch.yml', import.meta.url))
 const desktopInstallAnchorPath = fileURLToPath(new URL('../package.json', import.meta.url))
+const updateHelperPath = fileURLToPath(new URL('./update-helper.js', import.meta.url))
 const platformBehavior = desktopPlatformBehavior(process.platform)
+
+function resolveHarnessVersion(): string {
+  const manifest = require('@deepseek-ai/dsh/package.json') as { version?: unknown }
+  return typeof manifest.version === 'string' ? manifest.version : 'unknown'
+}
 
 function resolveCliPath(): string {
   const packageJson = require.resolve('@deepseek-ai/dsh/package.json')
@@ -82,7 +91,13 @@ const appFacade: AppFacade = {
 }
 
 let nativeWindow: BrowserWindow | undefined
+let activeHarnessRoot: string | undefined
 const lifecycle: { controller?: DesktopApplication } = {}
+const updateService = new DesktopUpdateService({
+  runningDesktop: app.getVersion(),
+  includedHarness: resolveHarnessVersion(),
+  userData,
+})
 
 const runtime = new HarnessProcess({
   cli: resolveCliPath(),
@@ -181,14 +196,17 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
   const desktopWindow: DesktopWindow = {
     async loadLoading() {
       ownedRoot = undefined
+      activeHarnessRoot = undefined
       await window.loadFile(loadingPath)
     },
     async loadHarness(url) {
       ownedRoot = url
+      activeHarnessRoot = url
       await window.loadURL(url)
     },
     async loadFailure(reason: FailureReason) {
       ownedRoot = undefined
+      activeHarnessRoot = undefined
       await window.loadFile(failurePath, { query: { reason } })
     },
     show() {
@@ -221,9 +239,65 @@ function isFailureSender(event: IpcMainEvent): boolean {
   }
 }
 
+function isHarnessSender(event: IpcMainInvokeEvent): boolean {
+  if (nativeWindow === undefined || event.sender !== nativeWindow.webContents || activeHarnessRoot === undefined) return false
+  try {
+    return new URL(event.sender.getURL()).origin === new URL(activeHarnessRoot).origin
+  } catch {
+    return false
+  }
+}
+
 ipcMain.on('desktop:recovery', (event, value: unknown) => {
   if (isFailureSender(event) && isRecoveryAction(value)) controller.recover(value)
 })
+
+ipcMain.handle('desktop:update-status', (event) => {
+  if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
+  return updateService.getSnapshot()
+})
+
+ipcMain.handle('desktop:update-check', async (event) => {
+  if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
+  return await updateService.check(true)
+})
+
+ipcMain.handle('desktop:update-download', async (event) => {
+  if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
+  return await updateService.download()
+})
+
+ipcMain.handle('desktop:update-install', async (event) => {
+  if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
+  const descriptor = updateService.getInstallDescriptor()
+  if (descriptor === null) throw new Error('No verified Desktop update is ready.')
+  if (process.platform === 'darwin' && app.isPackaged) {
+    launchDesktopInstaller({
+      helperSource: updateHelperPath,
+      electronExecutable: process.execPath,
+      currentAppPath: resolve(dirname(process.execPath), '../..'),
+      dmgPath: descriptor.dmgPath,
+      expectedDesktopVersion: descriptor.desktopVersion,
+      expectedHarnessVersion: descriptor.harnessVersion,
+      expectedSha256: descriptor.sha256,
+    })
+    updateService.beginInstall()
+    setImmediate(() => { app.quit() })
+    return { opened: true }
+  }
+  const message = await shell.openPath(descriptor.dmgPath)
+  if (message !== '') return { opened: false, message: message.slice(0, 300) }
+  updateService.beginInstall()
+  return { opened: true }
+})
+
+updateService.subscribe((snapshot) => {
+  if (nativeWindow !== undefined && !nativeWindow.isDestroyed() && activeHarnessRoot !== undefined) {
+    nativeWindow.webContents.send('desktop:update-state', snapshot)
+  }
+})
+
+app.on('before-quit', () => { updateService.dispose() })
 
 Menu.setApplicationMenu(Menu.buildFromTemplate(
   createMenuTemplate(PRODUCT_NAME, (command) => { controller.sendCommand(command) }, process.platform),
@@ -232,6 +306,12 @@ Menu.setApplicationMenu(Menu.buildFromTemplate(
 void controller.run().then(() => {
   if (platformBehavior.setDockIcon) app.dock?.setIcon(iconPath)
   record('desktop application ready')
+  const timer = setTimeout(() => {
+    void updateService.check(false).catch((error: unknown) => {
+      record(`automatic update check failed: ${error instanceof Error ? error.message : String(error)}`)
+    })
+  }, 1_500)
+  timer.unref()
 }).catch((error: unknown) => {
   record(`desktop application failed: ${error instanceof Error ? error.message : String(error)}`)
   app.exit(1)

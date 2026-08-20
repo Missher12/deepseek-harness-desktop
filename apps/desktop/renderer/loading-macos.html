@@ -200,6 +200,30 @@
       animation: pulse 1.4s ease-in-out 720ms infinite;
     }
 
+    .progress {
+      position: relative;
+      width: min(300px, 100%);
+      height: 2px;
+      margin-top: 16px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgb(139 162 255 / 14%);
+      box-shadow: inset 0 0 0 1px rgb(139 162 255 / 6%);
+      opacity: 0;
+      animation: copy-in 420ms ease-out 470ms both;
+    }
+
+    .progress span {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 42%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, transparent, #4d6bfe 25%, #75e7ff 82%, transparent);
+      box-shadow: 0 0 14px rgb(77 107 254 / 82%);
+      transform: translateX(-110%);
+      animation: progress-sweep 1.28s cubic-bezier(.4, 0, .2, 1) 530ms infinite;
+    }
+
     .rail {
       position: absolute;
       z-index: 2;
@@ -229,6 +253,7 @@
     @keyframes title-in { to { opacity: 1; transform: translateX(0); } }
     @keyframes copy-in { to { opacity: 1; } }
     @keyframes pulse { 50% { opacity: .32; transform: scale(.7); } }
+    @keyframes progress-sweep { to { transform: translateX(350%); } }
 
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
@@ -236,6 +261,8 @@
         animation-delay: 0ms !important;
         animation-iteration-count: 1 !important;
       }
+
+      .progress span { transform: translateX(0); }
     }
 
     @media (max-width: 520px) {
@@ -261,6 +288,9 @@
         <div class="eyebrow">Local intelligence system</div>
         <h1>DeepSeek <span>Harness</span></h1>
         <p class="system-line"><span class="pulse" aria-hidden="true"></span>Desktop runtime initialization</p>
+        <div class="progress" role="progressbar" aria-label="正在启动" aria-valuetext="正在初始化桌面运行时">
+          <span aria-hidden="true"></span>
+        </div>
       </div>
     </section>
     <div class="rail" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>

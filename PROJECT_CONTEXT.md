@@ -89,6 +89,18 @@ The repository is based on the pinned official source and adds the desktop appli
   63-file Desktop staging closure pass locally. Native Windows UI, clipboard,
   install lifecycle, public artifact, and SHA-256 acceptance remain required
   on the final committed source.
+- Version 0.2.1 adds a Desktop-only **System Update** for macOS while leaving
+  the already-published Windows 0.2.0 release untouched. The updater is backed
+  by fixed GitHub endpoints, a 24-hour cache, ETag revalidation, strict release
+  manifests, bounded downloads, SHA-256 checks, x86_64 bundle and packaged-
+  metadata verification, and a detached same-parent installer with backup and
+  rollback. Official Harness tags remain informational; only a compatible
+  Desktop DMG can authorize installation. Marketplace install and update also
+  snapshot `dependencies` and `dsh.profile.bundles` together and restore both
+  on failed, cancelled, timed-out, stale, or rejected operations.
+  The integrated Intel Mac build, verified DMG, packaged smoke, native
+  replacement, random-port startup, and no-browser-handoff checks pass locally;
+  public Release download and updater-discovery evidence remains to be produced.
 - Version 0.1.9 consolidated the earlier macOS/Desktop work: the separate
   session-communication trigger and drawer are removed, session-messenger
   relays render directly in the ordinary chat timeline with source

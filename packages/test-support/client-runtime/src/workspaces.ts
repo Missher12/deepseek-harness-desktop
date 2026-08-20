@@ -61,6 +61,14 @@ export class TestWorkspaces implements IWorkspaces {
     return `session-of-${workspaceId}` as SessionId
   }
 
+  /** Connect an unaccounted blank session (recorded). */
+  async connectNoProject(): Promise<SessionId> {
+    this.calls.push({ method: 'connectNoProject', args: [] })
+    const stub = this.stubs.get('connectNoProject')
+    if (stub !== undefined) return await (stub() as Promise<SessionId>)
+    return 'session-without-project' as SessionId
+  }
+
   /**
    * New-session flow (recorded; stubbed behavior runs when installed).
    * @param workspaceId - optional explicit workspace target.

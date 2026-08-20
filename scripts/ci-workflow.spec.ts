@@ -27,6 +27,27 @@ describe('CI workflow', () => {
     }
   })
 
+  it('publishes the updater manifest generated from the same verified macOS DMG', () => {
+    const workflow = loadWorkflow('.github/workflows/desktop-release.yml')
+    const mac = workflowJob(workflow, 'mac')
+    const publish = workflowJob(workflow, 'publish')
+    if (!Array.isArray(mac.steps) || !Array.isArray(publish.steps)) {
+      throw new TypeError('Desktop release jobs must define steps')
+    }
+    const macSteps = mac.steps.filter(isRecord)
+    const publishSteps = publish.steps.filter(isRecord)
+    const generate = macSteps.find(step => step.name === 'Generate verified Desktop update manifest')
+    const macUpload = macSteps.find(step => (
+      typeof step.uses === 'string' && step.uses.startsWith('actions/upload-artifact@')
+    ))
+    const publishRelease = publishSteps.find(step => step.name === 'Upload assets and publish the draft')
+
+    expect(generate?.run).toContain('pnpm exec tsx scripts/create-desktop-update-manifest.ts')
+    expect(generate?.run).toContain('deepseek-harness-desktop-update.json')
+    expect(JSON.stringify(macUpload)).toContain('deepseek-harness-desktop-update.json')
+    expect(publishRelease?.run).toContain('release/deepseek-harness-desktop-update.json')
+  })
+
   it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')
     if (!isRecord(workflow.jobs)
