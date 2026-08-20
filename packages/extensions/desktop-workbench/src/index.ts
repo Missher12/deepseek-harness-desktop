@@ -1,3 +1,8 @@
-/** Desktop workbench Host half; capabilities are installed by later modules. */
+/** Desktop workbench Host half. */
+import type { Context } from '@deepseek-ai/cordis'
+import { installWorkbenchHttp } from './http.ts'
+
 export const name = 'desktop-workbench'
-export function apply(): void {}
+export const inject = ['sessions', 'webServer']
+export function apply(ctx: Context): void { installWorkbenchHttp(ctx) }
+export * from './protocol.ts'
