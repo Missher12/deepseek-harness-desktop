@@ -54,12 +54,22 @@ jobs:
           cd apps/desktop/release
           shasum -a 256 "$artifact" > "$artifact.sha256"
 
+      - name: Generate verified Desktop update manifest
+        run: >-
+          pnpm exec tsx scripts/create-desktop-update-manifest.ts
+          apps/desktop/release/DeepSeek-Harness-0.2.0-mac-x64.dmg
+          apps/desktop/release/deepseek-harness-desktop-update.json
+          0.2.0
+          0.1.0-rc.8
+          "${{ inputs.tag }}"
+
       - uses: actions/upload-artifact@v7
         with:
           name: desktop-mac-x64
           path: |
             apps/desktop/release/DeepSeek-Harness-0.2.0-mac-x64.dmg
             apps/desktop/release/DeepSeek-Harness-0.2.0-mac-x64.dmg.sha256
+            apps/desktop/release/deepseek-harness-desktop-update.json
           if-no-files-found: error
           retention-days: 1
 
@@ -161,6 +171,7 @@ jobs:
           gh release upload "${{ inputs.tag }}" \
             release/DeepSeek-Harness-0.2.0-mac-x64.dmg \
             release/DeepSeek-Harness-0.2.0-mac-x64.dmg.sha256 \
+            release/deepseek-harness-desktop-update.json \
             release/DeepSeek-Harness-Setup-0.2.0-win-x64.exe \
             release/DeepSeek-Harness-Setup-0.2.0-win-x64.exe.sha256 \
             --clobber

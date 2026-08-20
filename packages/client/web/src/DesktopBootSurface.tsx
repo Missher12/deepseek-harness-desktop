@@ -49,10 +49,20 @@ export function DesktopBootSurface(props: DesktopBootSurfaceProps) {
           <div className={css.title}>DeepSeek <span>Harness</span></div>
           {!loud
             ? (
-              <div className={css.systemLine}>
-                <span className={css.pulse} aria-hidden="true" />
-                Desktop runtime ready
-              </div>
+              <>
+                <div className={css.systemLine}>
+                  <span className={css.pulse} aria-hidden="true" />
+                  Desktop runtime ready
+                </div>
+                <div
+                  className={css.progress}
+                  role="progressbar"
+                  aria-label="正在启动"
+                  aria-valuetext="正在初始化桌面运行时"
+                >
+                  <span aria-hidden="true" />
+                </div>
+              </>
             )
             : (
               <div className={css.failed}>

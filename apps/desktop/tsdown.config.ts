@@ -32,4 +32,15 @@ export default defineConfig([
     clean: false,
     deps: { neverBundle: ['electron'] },
   },
+  {
+    // Detached, shell-free updater copied beside the verified DMG before quit.
+    entry: { 'update-helper': 'lib/types/update/update-helper.js' },
+    outDir: 'lib',
+    format: ['esm'],
+    platform: 'node',
+    target: 'es2024',
+    fixedExtension: false,
+    dts: false,
+    clean: false,
+  },
 ])

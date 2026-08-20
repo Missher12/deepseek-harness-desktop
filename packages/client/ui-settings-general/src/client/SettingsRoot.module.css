@@ -216,6 +216,15 @@
   overflow-y: auto;
 }
 
+/* Slot outlets are layout-neutral (`display: contents`), so normalize the
+   actual contributed section root here. This keeps General, Models, presets,
+   Usage, and Plugins on one 760px content measure regardless of package-local
+   legacy max-widths. */
+.options > :global([data-slot='settings.section']) > * {
+  width: 100%;
+  max-width: 760px;
+}
+
 /* Visually-hidden text seat (close button accessible name from slot content). */
 .hiddenLabel {
   position: absolute;

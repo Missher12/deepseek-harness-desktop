@@ -73,6 +73,27 @@ describe('desktop package manifest', () => {
     expect(manifest.scripts['pack:dmg']).toContain('--mac dmg --x64')
   })
 
+  it('keeps packaged update metadata aligned with the Desktop and Harness versions', () => {
+    const desktop = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { version: string }
+    const harness = JSON.parse(
+      readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
+    ) as { version: string }
+    const metadata = JSON.parse(
+      readFileSync(new URL('../update-metadata.json', import.meta.url), 'utf8'),
+    ) as Record<string, unknown>
+
+    expect(metadata).toEqual({
+      schema: 1,
+      desktopVersion: desktop.version,
+      harnessVersion: harness.version,
+      platform: 'darwin',
+      arch: 'x64',
+      channel: 'release',
+    })
+  })
+
   it('mounts exactly one attributed reasoning-effort fork in the Desktop patch', () => {
     const patch = yaml.load(
       readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8'),

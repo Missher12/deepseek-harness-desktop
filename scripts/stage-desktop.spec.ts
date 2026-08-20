@@ -17,6 +17,8 @@ const VALID_DESKTOP_PATCH = `
       name: '@deepseek-ai/dsh-session-messenger'
     - id: dsh-market
       name: 'dshmarket'
+    - id: desktop-system-update
+      name: '@deepseek-ai/dsh-client-ui-settings-system-update'
 `
 const REPO_ROOT = resolve('/repo')
 const DEFAULT_STAGE = join(REPO_ROOT, 'apps/desktop/.stage')
@@ -50,7 +52,7 @@ function fakeDependencies(
     'node_modules/dshmarket/src/client/MarketSection.tsx': 'data-dshmarket-layout="compact"',
     'node_modules/dshmarket/client/client.js': 'data-dshmarket-layout compact',
     'node_modules/dshmarket/client/client.js.map': 'data-dshmarket-layout compact sourcesContent',
-    'node_modules/dshmarket/lib/routes.js': "code: 'self-protected'",
+    'node_modules/dshmarket/lib/routes.js': "code: 'self-protected'; restoreProfileManifestSnapshot()",
     ...semanticOverrides,
   }
   return {
@@ -115,6 +117,7 @@ describe('stageDesktop', () => {
       [join(REPO_ROOT, 'apps/desktop/build'), join(DEFAULT_STAGE, 'build')],
       [join(REPO_ROOT, 'apps/desktop/electron-builder.yml'), join(DEFAULT_STAGE, 'electron-builder.yml')],
       [join(REPO_ROOT, 'apps/desktop/desktop.cordis.patch.yml'), join(DEFAULT_STAGE, 'desktop.cordis.patch.yml')],
+      [join(REPO_ROOT, 'apps/desktop/update-metadata.json'), join(DEFAULT_STAGE, 'update-metadata.json')],
       [join(REPO_ROOT, 'THIRD_PARTY_NOTICES.md'), join(DEFAULT_STAGE, 'THIRD_PARTY_NOTICES.md')],
     ])
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh/lib/bin.js')
@@ -140,6 +143,9 @@ describe('stageDesktop', () => {
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-session-messenger/cordis.patch.yml')
     expect(result.validatedFiles).toContain('node_modules/pnpm/bin/pnpm.mjs')
     expect(result.validatedFiles).toContain('lib/preload.cjs')
+    expect(result.validatedFiles).toContain('lib/update-helper.js')
+    expect(result.validatedFiles).toContain('update-metadata.json')
+    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-client-ui-settings-system-update/lib/client.js')
     expect(result.validatedFiles).not.toContain('lib/preload.js')
     expect(result.validatedFiles).toContain('assets/icon-source.png')
     expect(result.validatedFiles).toContain('assets/icon.icns')

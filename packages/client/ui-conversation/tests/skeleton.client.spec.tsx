@@ -100,6 +100,8 @@ function mount(
     composerBlock?: { reason: string }
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
+    /** Explicit no-project picker target. */
+    selectNoProject?: () => Promise<void>
   } = {},
 ) {
   const root = sid('root')
@@ -248,6 +250,7 @@ function mount(
     renderSlot,
     renderSlotChain,
     selectWorkspace: retargetWorkspace,
+    selectNoProject: options.selectNoProject ?? vi.fn(async () => {}),
     t,
   }
   const view = render(<ConversationRoot {...props} />)
@@ -297,20 +300,17 @@ describe('ConversationRoot resident composer', () => {
     expect(seat('conversation.input.plan')).toEqual({ locked: true })
   })
 
-  it('lets the no-workspace posture win over a block', () => {
-    // Picking a workspace is the earlier prerequisite; naming a model first
-    // would send the user somewhere they cannot act yet.
+  it('treats an unaccounted session as no-project before applying its composer block', () => {
     const b = mount(conversationSnapshot({ composerPhase: 'blank' }), [], undefined, {
       summaryBlank: true,
       composerBlock: { reason: 'select a model first' },
     })
     const box = b.view.getByRole('textbox') as HTMLTextAreaElement
-    expect(box.disabled).toBe(false)
-    expect(box.readOnly).toBe(true)
-    expect(box.getAttribute('aria-haspopup')).toBe('menu')
-    expect(box.placeholder).not.toBe('select a model first')
+    expect(box.disabled).toBe(true)
+    expect(box.placeholder).toBe('select a model first')
+    expect(b.view.getByText('不在项目中')).toBeTruthy()
     const modelSeat = b.seatOwners.filter(call => call.key === 'conversation.input.model').at(-1)?.owner
-    expect(modelSeat).toEqual({ locked: true })
+    expect(modelSeat).toEqual({ locked: false })
   })
 
   it('keeps composer text in the machine, mirrors to the chat store, and submits through the sink', () => {
@@ -391,6 +391,24 @@ describe('ConversationRoot resident composer', () => {
     act(() => { owner.onPick(wid('second')) })
     expect(b.retargetWorkspace).toHaveBeenCalledWith(wid('second'))
     expect(b.view.getByText('Selected Folder')).toBeTruthy()
+  })
+
+  it('treats an unaccounted blank session as no-project and keeps its composer usable', () => {
+    const selectNoProject = vi.fn(async () => {})
+    const b = mount(
+      conversationSnapshot({ composerPhase: 'blank', blank: true }),
+      [],
+      undefined,
+      { summaryBlank: true, selectNoProject },
+    )
+
+    expect(b.view.getByText('不在项目中')).toBeTruthy()
+    const box = b.view.getByRole('textbox') as HTMLTextAreaElement
+    expect(box.readOnly).toBe(false)
+    fireEvent.click(b.view.getByRole('button', { name: '选择工作区' }))
+    const owner = b.pickerOwner() as { onPickNoProject(): void }
+    act(() => { owner.onPickNoProject() })
+    expect(selectNoProject).toHaveBeenCalledOnce()
   })
 
   it('settling phase: a summary that does not prove the session blank hides the composer while it opens', () => {

@@ -10,11 +10,15 @@
 import type { SessionId, WorkspaceId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ObservableSnapshot } from './store.ts'
 
-/** Session-list row facts sibling domains read: recency, blank-reuse eligibility, and its cwd canon. */
+/** Session-list row facts sibling domains read for root-session reuse and selection. */
 export interface SessionsPortSummary {
   id: SessionId
   /** Empty-log bit (blank sessions are reused by New Session instead of minting another). */
   blank: boolean
+  /** A parent identifies a non-root session that New Session must never reuse. */
+  parentId?: SessionId
+  /** Coarse lineage fallback for summaries whose parent is not currently projected. */
+  origin?: 'subagent'
   cwd?: string
   updatedAt: number
 }
@@ -33,10 +37,10 @@ export interface SessionsPort {
   readonly list: ObservableSnapshot<SessionsPortList>
   /**
    * Create a session on the host.
-   * @param opts - target workspace.
+   * @param opts - optional target workspace. Omit it for an unowned session.
    * @returns the new session id.
    */
-  create(opts: { workspaceId: WorkspaceId }): Promise<SessionId>
+  create(opts?: { workspaceId?: WorkspaceId }): Promise<SessionId>
   /**
    * Select a session as current.
    * @param id - session id (must exist in the list store).

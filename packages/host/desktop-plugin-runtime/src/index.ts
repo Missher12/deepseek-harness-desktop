@@ -1,8 +1,9 @@
 /** Desktop-only Host services consumed by package-management plugins. */
 
-import { readFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, isAbsolute, join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { delimiter, dirname, isAbsolute, join } from 'node:path'
 import type { Readable } from 'node:stream'
 import type { Context } from '@deepseek-ai/cordis'
 import { resolveProfileDir } from '@deepseek-ai/dsh-app-boot'
@@ -153,15 +154,21 @@ export function resolveDesktopPluginRuntimeFacts(profileName = 'web'): DesktopPl
 class DesktopPnpmService implements DesktopPnpm {
   private active: ActiveOperation | undefined
   private closed = false
+  private nodeShimDir: string | undefined
 
   constructor(private readonly ctx: Context, private readonly facts: DesktopPluginRuntimeFacts) {
     ctx.effect(
       () => async () => {
         this.closed = true
         const active = this.active
-        if (active === undefined) return
-        active.child.terminate()
-        await active.done.catch(() => {})
+        try {
+          if (active !== undefined) {
+            active.child.terminate()
+            await active.done.catch(() => {})
+          }
+        } finally {
+          this.removeNodeShim()
+        }
       },
       `${NAME}: package operation teardown`,
     )
@@ -173,6 +180,8 @@ class DesktopPnpmService implements DesktopPnpm {
     const forwarded = validateArgs(args)
     assertAbsolute('plugin invoking directory', invokingDir)
     signal?.throwIfAborted()
+    const nodeShimDir = this.ensureNodeShim()
+    const ambientPath = process.env.PATH ?? ''
 
     const child = this.ctx.subprocess.spawn({
       argv: [
@@ -190,8 +199,10 @@ class DesktopPnpmService implements DesktopPnpm {
       env: {
         CI: 'true',
         DSH_HOME: this.facts.homeDir,
+        DSH_DESKTOP_NODE_EXECUTABLE: this.facts.executable,
         DSH_DESKTOP_PNPM_ENTRY: this.facts.pnpmEntry,
         ELECTRON_RUN_AS_NODE: '1',
+        PATH: ambientPath.length === 0 ? nodeShimDir : `${nodeShimDir}${delimiter}${ambientPath}`,
       },
     })
     if (child.stdout === undefined || child.stderr === undefined) {
@@ -222,6 +233,39 @@ class DesktopPnpmService implements DesktopPnpm {
         if (this.active === active) this.active = undefined
       }
     }
+  }
+
+  /**
+   * Give pnpm/node-gyp lifecycle wrappers a stable bare `node` command without
+   * relying on the GUI launch environment. The shim delegates to the packaged
+   * Electron executable, which is already running in Node mode for this child.
+   */
+  private ensureNodeShim(): string {
+    if (this.nodeShimDir !== undefined) return this.nodeShimDir
+    const directory = mkdtempSync(join(tmpdir(), 'dsh-desktop-node-'))
+    try {
+      chmodSync(directory, 0o700)
+      const windows = process.platform === 'win32'
+      const path = join(directory, windows ? 'node.cmd' : 'node')
+      const body = windows
+        ? '@echo off\r\n"%DSH_DESKTOP_NODE_EXECUTABLE%" %*\r\n'
+        : '#!/bin/sh\nexec "$DSH_DESKTOP_NODE_EXECUTABLE" "$@"\n'
+      writeFileSync(path, body, { encoding: 'utf8', flag: 'wx', mode: 0o700 })
+      if (!windows) chmodSync(path, 0o700)
+      this.nodeShimDir = directory
+      return directory
+    } catch (error) {
+      rmSync(directory, { recursive: true, force: true })
+      throw error
+    }
+  }
+
+  /** Remove the service-private executable shim when its Host generation ends. */
+  private removeNodeShim(): void {
+    const directory = this.nodeShimDir
+    this.nodeShimDir = undefined
+    if (directory === undefined) return
+    try { rmSync(directory, { recursive: true, force: true }) } catch { /* best-effort temp cleanup */ }
   }
 }
 

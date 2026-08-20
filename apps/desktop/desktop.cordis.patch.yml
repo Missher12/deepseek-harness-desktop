@@ -14,3 +14,6 @@
 
     - id: dsh-market
       name: 'dshmarket'
+
+    - id: desktop-system-update
+      name: '@deepseek-ai/dsh-client-ui-settings-system-update'

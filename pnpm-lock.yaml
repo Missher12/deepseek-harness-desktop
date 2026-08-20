@@ -9,7 +9,7 @@ overrides:
   '@deepseek-ai/schemastery': link:vendor/schemastery
 
 patchedDependencies:
-  dshmarket@1.10.1: bbf70e07988de4ce7cb4f21208628552b5f96d89e392330af2a40551abef2246
+  dshmarket@1.10.1: efcf04deebc80cacd39f796003fa305a0474312719305b34ab40750716213ffd
   node-pty@1.2.0-beta.15: b40ae545608897914bd25fb009c97eeac478c34e8a910298ddcb01b746534bb0
 
 importers:
@@ -530,6 +530,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings-plugins':
         specifier: workspace:^
         version: link:../../packages/client/ui-settings-plugins
+      '@deepseek-ai/dsh-client-ui-settings-system-update':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-settings-system-update
       '@deepseek-ai/dsh-client-ui-settings-usage':
         specifier: workspace:^
         version: link:../../packages/client/ui-settings-usage
@@ -1000,7 +1003,7 @@ importers:
         version: link:../../vendor/schemastery
       dshmarket:
         specifier: 1.10.1
-        version: 1.10.1(patch_hash=bbf70e07988de4ce7cb4f21208628552b5f96d89e392330af2a40551abef2246)(@deepseek-ai/cordis@vendor+cordis)
+        version: 1.10.1(patch_hash=efcf04deebc80cacd39f796003fa305a0474312719305b34ab40750716213ffd)(@deepseek-ai/cordis@vendor+cordis)
       pnpm:
         specifier: 11.7.0
         version: 11.7.0
@@ -3426,6 +3429,39 @@ importers:
       react:
         specifier: ^18.2.0
         version: 18.3.1
+
+  packages/client/ui-settings-system-update:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-client-locale':
+        specifier: workspace:^
+        version: link:../locale
+      '@deepseek-ai/dsh-client-runtime':
+        specifier: workspace:^
+        version: link:../runtime
+      '@deepseek-ai/dsh-client-ui-primitives':
+        specifier: workspace:^
+        version: link:../ui-primitives
+      '@deepseek-ai/dsh-client-ui-settings':
+        specifier: workspace:^
+        version: link:../ui-settings
+      '@deepseek-ai/dsh-client-ui-slots':
+        specifier: workspace:^
+        version: link:../ui-slots
+      '@testing-library/react':
+        specifier: ^16.1.0
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
 
   packages/client/ui-settings-usage:
     devDependencies:
@@ -19622,7 +19658,7 @@ snapshots:
 
   dotenv@16.6.1: {}
 
-  dshmarket@1.10.1(patch_hash=bbf70e07988de4ce7cb4f21208628552b5f96d89e392330af2a40551abef2246)(@deepseek-ai/cordis@vendor+cordis):
+  dshmarket@1.10.1(patch_hash=efcf04deebc80cacd39f796003fa305a0474312719305b34ab40750716213ffd)(@deepseek-ai/cordis@vendor+cordis):
     dependencies:
       '@deepseek-ai/cordis': link:vendor/cordis
 
