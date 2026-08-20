@@ -39,8 +39,8 @@ export function apply(ctx: ClientContext): void {
     bound = actions
     void bridge.getUpdateStatus().then(sync)
     return {
-      check: async () => await invoke(() => bridge.checkForUpdates()),
-      download: async () => await invoke(() => bridge.downloadUpdate()),
+      check: async () => { await invoke(() => bridge.checkForUpdates()) },
+      download: async () => { await invoke(() => bridge.downloadUpdate()) },
       install: async () => {
         const result = await bridge.installUpdate()
         if (!result.opened) throw new Error(result.message ?? 'Failed to open the verified installer.')

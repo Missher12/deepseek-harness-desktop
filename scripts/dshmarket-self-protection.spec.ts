@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PluginCommandRuntime } from '../apps/desktop/node_modules/dshmarket/lib/types/dsh-cli.d.ts'
 
-type MountMarketRoutes = typeof import('../apps/desktop/node_modules/dshmarket/src/routes.ts').mountMarketRoutes
+type MountMarketRoutes = typeof import('../apps/desktop/node_modules/dshmarket/lib/types/routes.d.ts').mountMarketRoutes
 
 const root = resolve(import.meta.dirname, '..')
 const desktopRequire = createRequire(join(root, 'apps/desktop/package.json'))
@@ -164,7 +164,9 @@ describe('active marketplace self-protection', () => {
     })
     const repaired = JSON.parse(readFileSync(file, 'utf8')) as typeof manifest
     expect(repaired.dsh.profile.bundles).not.toContain('@example/missing-carrier')
-    expect(readFileSync(join(profileDirectory, '.dsh-market-backups', readdirSync(join(profileDirectory, '.dsh-market-backups'))[0]), 'utf8'))
+    const [backupName] = readdirSync(join(profileDirectory, '.dsh-market-backups'))
+    if (backupName === undefined) throw new Error('expected a bundle residue backup')
+    expect(readFileSync(join(profileDirectory, '.dsh-market-backups', backupName), 'utf8'))
       .toContain('@example/missing-carrier')
   })
 

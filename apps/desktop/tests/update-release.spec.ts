@@ -5,8 +5,9 @@ import {
   selectUpdateAvailability,
   validateDesktopUpdateManifest,
 } from '../src/update/release.ts'
+import type { DesktopUpdateManifest } from '../src/update/release.ts'
 
-const validManifest = {
+const validManifest: DesktopUpdateManifest = {
   schema: 1,
   desktopVersion: '0.2.0',
   harnessVersion: '0.1.0-rc.8',

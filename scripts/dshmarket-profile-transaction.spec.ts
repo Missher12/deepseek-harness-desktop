@@ -9,7 +9,15 @@ const root = resolve(import.meta.dirname, '..')
 const desktopRequire = createRequire(join(root, 'apps/desktop/package.json'))
 const packageRoot = dirname(desktopRequire.resolve('dshmarket/package.json'))
 const profileUrl = pathToFileURL(join(packageRoot, 'src/profile.ts')).href
-const profile = await import(profileUrl) as typeof import('../apps/desktop/node_modules/dshmarket/src/profile.ts')
+
+interface ProfileModule {
+  readProfileManifestSnapshot(profile: string, root: string): unknown
+  restoreProfileManifestSnapshot(profile: string, snapshot: unknown, root: string): string[]
+  classifyBundleResidue(root: string): { repairable: string[]; ambiguous: string[] }
+  repairBundleResidue(root: string, name: string, now?: number): { removed: string; backupPath: string }
+}
+
+const profile = await import(profileUrl) as unknown as ProfileModule
 
 const directories: string[] = []
 

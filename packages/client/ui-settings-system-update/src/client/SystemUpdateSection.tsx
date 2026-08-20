@@ -29,20 +29,21 @@ function statusText(snapshot: DesktopUpdateSnapshot, t: SystemUpdateSectionProps
   return t('current')
 }
 
-export function SystemUpdateSection({ t, useStore, check, download, install }: SystemUpdateSectionProps) {
+export function SystemUpdateSection(props: SystemUpdateSectionProps) {
+  const { t, useStore } = props
   const snapshot = useStore(state => state.snapshot)
   const [busy, setBusy] = useState(false)
   const run = (operation: () => Promise<void>): void => {
     setBusy(true)
     void operation()
       .catch(() => undefined)
-      .finally(() => setBusy(false))
+      .finally(() => { setBusy(false) })
   }
   const action = snapshot.phase === 'desktop-available'
-    ? { label: t('download'), icon: <IconDownloadOutline16 />, run: download }
+    ? { label: t('download'), icon: <IconDownloadOutline16 />, run: () => props.download() }
     : snapshot.phase === 'ready'
-      ? { label: t('install'), icon: <IconDownloadOutline16 />, run: install }
-      : { label: t('check'), icon: <IconRefreshOutline14 />, run: check }
+      ? { label: t('install'), icon: <IconDownloadOutline16 />, run: () => props.install() }
+      : { label: t('check'), icon: <IconRefreshOutline14 />, run: () => props.check() }
   const disabled = busy || ['checking', 'downloading', 'verifying', 'installing'].includes(snapshot.phase)
   const lastChecked = snapshot.lastCheckedAt === null
     ? t('neverChecked')
@@ -51,7 +52,7 @@ export function SystemUpdateSection({ t, useStore, check, download, install }: S
     <section className={css.root} data-system-update-section>
       <header className={css.header}>
         <div><h2>{t('title')}</h2><p>{t('subtitle')}</p></div>
-        <Button variant="primary" size="sm" icon={action.icon} disabled={disabled} onClick={() => run(action.run)}>{action.label}</Button>
+        <Button variant="primary" size="sm" icon={action.icon} disabled={disabled} onClick={() => { run(action.run) }}>{action.label}</Button>
       </header>
       <div className={css.rows} aria-busy={snapshot.phase === 'checking'}>
         <div className={css.row}>

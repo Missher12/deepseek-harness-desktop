@@ -102,12 +102,15 @@ function newestVersion(values: readonly string[]): string | null {
   return newest
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 function isReleaseAsset(value: unknown): value is ReleaseAsset {
-  if (typeof value !== 'object' || value === null) return false
-  const asset = value as Record<string, unknown>
-  return typeof asset.name === 'string'
-    && Number.isSafeInteger(asset.size)
-    && typeof asset.browser_download_url === 'string'
+  if (!isRecord(value)) return false
+  return typeof value.name === 'string'
+    && Number.isSafeInteger(value.size)
+    && typeof value.browser_download_url === 'string'
 }
 
 /** Main-process owner of update discovery and verified download state. */
@@ -182,7 +185,10 @@ export class DesktopUpdateService {
   }
 
   async check(manual = false): Promise<DesktopUpdateSnapshot> {
-    if (!manual && this.#snapshot.lastCheckedAt !== null
+    const cachedDesktopNeedsRevalidation = this.#accepted === null
+      && this.#snapshot.latestDesktop !== null
+      && compareVersions(this.#snapshot.latestDesktop, this.#snapshot.runningDesktop) === 1
+    if (!manual && !cachedDesktopNeedsRevalidation && this.#snapshot.lastCheckedAt !== null
       && this.#now() - this.#snapshot.lastCheckedAt < CHECK_INTERVAL_MS) return this.getSnapshot()
     this.#activeAbort?.abort()
     const abort = new AbortController()
@@ -196,9 +202,11 @@ export class DesktopUpdateService {
         this.#fetchJson(DESKTOP_RELEASES_URL, abort.signal),
       ])
       const tagNames = Array.isArray(tags)
-        ? tags.flatMap(value => typeof value === 'object' && value !== null && 'name' in value && typeof value.name === 'string'
-          ? [parseOfficialHarnessTag(value.name)].filter((item): item is string => item !== null)
-          : [])
+        ? tags.flatMap((value) => {
+          if (!isRecord(value) || typeof value.name !== 'string') return []
+          const version = parseOfficialHarnessTag(value.name)
+          return version === null ? [] : [version]
+        })
         : []
       const latestOfficialHarness = newestVersion(tagNames)
       const accepted = await this.#selectDesktopRelease(releases, abort.signal)
@@ -355,10 +363,10 @@ export class DesktopUpdateService {
     if (!Array.isArray(value)) return null
     let selected: AcceptedDesktopRelease | null = null
     for (const item of value) {
-      if (typeof item !== 'object' || item === null || !('assets' in item) || !Array.isArray(item.assets)) continue
-      if ('draft' in item && item.draft === true) continue
-      const htmlUrl = 'html_url' in item && typeof item.html_url === 'string' ? item.html_url : ''
-      const assets = (item.assets as unknown[]).filter(isReleaseAsset)
+      if (!isRecord(item) || !Array.isArray(item.assets)) continue
+      if (item.draft === true) continue
+      const htmlUrl = typeof item.html_url === 'string' ? item.html_url : ''
+      const assets = item.assets.filter(isReleaseAsset)
       const manifestAsset = assets.find(asset => asset.name === MANIFEST_NAME)
       if (manifestAsset === undefined || manifestAsset.size > 65_536 || !isAllowedReleaseUrl(manifestAsset.browser_download_url)) continue
       let raw: unknown
