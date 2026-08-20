@@ -4,11 +4,14 @@ import { describe, expect, it } from 'vitest'
 
 const readManifest = (path: string): { version?: unknown } =>
   JSON.parse(readFileSync(path, 'utf8')) as { version?: unknown }
+const readUpdateMetadata = (): { desktopVersion?: unknown } =>
+  JSON.parse(readFileSync('apps/desktop/update-metadata.json', 'utf8')) as { desktopVersion?: unknown }
 
-describe('rc.8 Windows Desktop migration', () => {
-  it('keeps the official rc.8 root and exposes Desktop 0.2.0', () => {
+describe('rc.8 Desktop migration', () => {
+  it('keeps the official rc.8 root and advances the macOS updater release to Desktop 0.2.1', () => {
     expect(readManifest('package.json').version).toBe('0.1.0-rc.8')
-    expect(readManifest('apps/desktop/package.json').version).toBe('0.2.0')
+    expect(readManifest('apps/desktop/package.json').version).toBe('0.2.1')
+    expect(readUpdateMetadata().desktopVersion).toBe('0.2.1')
   })
 
   it('retains one canonical row for each Desktop-only product feature', () => {
