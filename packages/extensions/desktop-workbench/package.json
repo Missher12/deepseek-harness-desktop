@@ -2,6 +2,12 @@
   "name": "@deepseek-ai/dsh-desktop-workbench",
   "description": "Desktop-only Codex-style workbench for DeepSeek Harness",
   "version": "0.1.0-rc.8",
+  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/extensions/desktop-workbench"
+  },
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

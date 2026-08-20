@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HeaderButton } from '../src/client/HeaderButton.tsx'
-import { WorkbenchPanel } from '../src/client/WorkbenchPanel.tsx'
+import { HeaderButton, type HeaderButtonProps } from '../src/client/HeaderButton.tsx'
+import { WorkbenchPanel, type WorkbenchPanelProps } from '../src/client/WorkbenchPanel.tsx'
 import { WorkbenchController, loadWidth } from '../src/client/preferences.ts'
 
 afterEach(cleanup)
@@ -39,16 +39,18 @@ describe('desktop workbench shell', () => {
 
   it('opens from the compact header button and exposes five Harness-style tabs', () => {
     const { controller, common } = setup()
+    const headerProps = common as unknown as HeaderButtonProps
+    const panelProps = common as unknown as WorkbenchPanelProps
     const view = render(<>
-      <HeaderButton {...common as never} />
-      <WorkbenchPanel {...common as never} mode="terminal" />
+      <HeaderButton {...headerProps} />
+      <WorkbenchPanel {...panelProps} mode="terminal" />
     </>)
     const button = screen.getByRole('button', { name: '打开工作台' })
     expect(button.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(button)
     view.rerender(<>
-      <HeaderButton {...common as never} />
-      <WorkbenchPanel {...common as never} mode={controller.getSnapshot().mode} />
+      <HeaderButton {...headerProps} />
+      <WorkbenchPanel {...panelProps} mode={controller.getSnapshot().mode} />
     </>)
     expect(button.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['终端', '浏览器', '文件', '侧边聊天', '审阅'])
@@ -57,7 +59,8 @@ describe('desktop workbench shell', () => {
   it('switches modes without closing and closes on Escape', () => {
     const { controller, layout, common } = setup()
     controller.open(sessionId, 'terminal')
-    const view = render(<WorkbenchPanel {...common as never} mode="terminal" />)
+    const panelProps = common as unknown as WorkbenchPanelProps
+    const view = render(<WorkbenchPanel {...panelProps} mode="terminal" />)
     fireEvent.click(screen.getByRole('tab', { name: '文件' }))
     expect(layout.openUtility).toHaveBeenLastCalledWith('files')
     fireEvent.keyDown(view.container.firstElementChild!, { key: 'Escape' })
