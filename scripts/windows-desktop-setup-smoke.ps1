@@ -108,8 +108,11 @@ function Stop-IsolatedInstalledProcesses {
 
 $resolvedSetup = (Resolve-Path -LiteralPath $SetupPath).Path
 $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
-$smokeId = [Guid]::NewGuid().ToString('N').Substring(0, 8)
-$temporaryRoot = Join-Path $localAppData "dsh-setup-smoke-$smokeId"
+# Match the eight-character default "Programs" parent length. A longer test
+# prefix can push otherwise valid unpacked dependency paths beyond legacy NSIS
+# cleanup limits and would no longer represent the default per-user install.
+$smokeId = 'dh' + [Guid]::NewGuid().ToString('N').Substring(0, 6)
+$temporaryRoot = Join-Path $localAppData $smokeId
 $installRoot = Join-Path $temporaryRoot 'DeepSeek Harness'
 $harnessHome = Join-Path $temporaryRoot 'dsh-home'
 $userData = Join-Path $temporaryRoot 'electron-data'
