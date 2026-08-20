@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
@@ -10,11 +10,13 @@ let nextAnimationFrameId = 1
 let animationFrames = new Map<number, FrameRequestCallback>()
 
 function flushAnimationFrames(count: number): void {
-  for (let index = 0; index < count; index += 1) {
-    const callbacks = [...animationFrames.values()]
-    animationFrames.clear()
-    for (const callback of callbacks) callback(index)
-  }
+  act(() => {
+    for (let index = 0; index < count; index += 1) {
+      const callbacks = [...animationFrames.values()]
+      animationFrames.clear()
+      for (const callback of callbacks) callback(index)
+    }
+  })
 }
 
 beforeEach(() => {
@@ -50,7 +52,10 @@ describe('ReasoningRow', () => {
       />,
     )
     expect(view.getByText('运行中')).toBeTruthy()
-    const summary = view.getByText('Newest reasoning tokens')
+    const summary = view.container.querySelector('[class*="summary"]') as HTMLSpanElement
+    expect(summary.textContent).not.toBe('Newest reasoning tokens')
+    flushAnimationFrames(4)
+    expect(summary.textContent?.length).toBeGreaterThan(0)
     Object.defineProperties(summary, {
       scrollWidth: { configurable: true, value: 300 },
       clientWidth: { configurable: true, value: 100 },
@@ -84,6 +89,19 @@ describe('ReasoningRow', () => {
     expect(view.queryByText('运行中')).toBeNull()
     expect(summary.scrollLeft).toBe(0)
     expect(summary.hasAttribute('data-follow-end')).toBe(false)
+    expect(animationFrames.size).toBe(0)
+  })
+
+  it('flushes immediately for reduced motion and cancels work on unmount', () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })))
+    const view = render(
+      <AssistantMarkdown t={t} blocks={[{ kind: 'reasoning', text: 'Quiet reasoning' }]} streaming renderMessageImages={renderMessageImages} />,
+    )
+    expect(view.getByText('Quiet reasoning')).toBeTruthy()
+    view.unmount()
+    expect(animationFrames.size).toBe(0)
   })
 
   it('expands from either Think or the reasoning summary', () => {
