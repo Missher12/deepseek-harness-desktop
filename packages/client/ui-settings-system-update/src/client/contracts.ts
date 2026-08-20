@@ -1,9 +1,9 @@
-/** Closed native Desktop update lifecycle. */
+/** Closed renderer-facing lifecycle for a Desktop update operation. */
 export type DesktopUpdatePhase =
   | 'idle' | 'checking' | 'current' | 'upstream-available' | 'desktop-available'
   | 'downloading' | 'verifying' | 'ready' | 'installing' | 'error'
 
-/** Validated update state shared by preload and settings UI. */
+/** Sanitized update status delivered across the context-isolated bridge. */
 export interface DesktopUpdateSnapshot {
   phase: DesktopUpdatePhase
   runningDesktop: string
@@ -15,7 +15,7 @@ export interface DesktopUpdateSnapshot {
   message: string | null
 }
 
-/** Narrow native updater bridge exposed by the Desktop preload. */
+/** Fixed update operations exposed by the Electron preload bridge. */
 export interface DesktopUpdateBridge {
   getUpdateStatus(): Promise<DesktopUpdateSnapshot>
   checkForUpdates(): Promise<DesktopUpdateSnapshot>

@@ -82,6 +82,27 @@ describe('HarnessProcess', () => {
     expect(options.env?.ELECTRON_RUN_AS_NODE).toBe('1')
   })
 
+  it('accepts the Windows startup URL when the browser status shares its stdout chunk', async () => {
+    const child = new FakeChild()
+    const owned = new HarnessProcess({
+      spawn: () => child as unknown as ChildProcess,
+      executable: 'C:\\Program Files\\DeepSeek Harness\\DeepSeek Harness.exe',
+      cli: 'C:\\Program Files\\DeepSeek Harness\\resources\\app.asar\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js',
+      waitForHarness: async () => undefined,
+      platform: 'win32',
+      terminateTree: vi.fn(),
+    })
+
+    const pending = owned.start('C:\\workspace')
+    child.stdout.write([
+      'dsh web: http://127.0.0.1:45678',
+      'dsh web: opening the default browser; pass --no-open to disable',
+      '',
+    ].join('\r\n'))
+
+    await expect(pending).resolves.toBe('http://127.0.0.1:45678/')
+  })
+
   it('signals and awaits only its child process group during stop', async () => {
     const child = new FakeChild()
     const terminateTree = vi.fn(() => { queueMicrotask(() => { child.exit() }) })

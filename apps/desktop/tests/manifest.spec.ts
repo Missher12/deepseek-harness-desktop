@@ -196,6 +196,10 @@ describe('desktop package manifest', () => {
     expect(builder.files).toContain('!node_modules/**/*.d.cts')
     expect(builder.files).toContain('!node_modules/**/*.d.mts')
     expect(builder.files).toContain('!node_modules/**/*.tsbuildinfo')
+    expect(builder.files).toContain('!**/.env')
+    expect(builder.files).toContain('!**/.env.*')
+    expect(builder.files).toContain('!**/.credentials.yaml')
+    expect(builder.files).toContain('!**/.dsh/**')
     expect(builder.files).toContain(
       '!node_modules/@deepseek-ai/dsh-session-telemetry-otel/node_modules/@opentelemetry/resources/**',
     )

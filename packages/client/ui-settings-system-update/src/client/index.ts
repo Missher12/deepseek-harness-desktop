@@ -13,7 +13,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-/** System Update locale namespace. */
+/** Locale namespace registered by the System Update settings contribution. */
 export const NS = 'settings.systemUpdate'
 export const inject = ['slots', 'locale']
 

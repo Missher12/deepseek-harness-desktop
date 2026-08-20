@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
@@ -633,6 +633,65 @@ async function exerciseWindowsClipboard(
   }
 }
 
+async function exerciseWindowsDirectoryPicker(
+  page: Page,
+  harnessHome: string,
+  userData: string,
+): Promise<void> {
+  const selectedDirectory = join(harnessHome, 'native-picker-selected')
+  await mkdir(selectedDirectory, { recursive: true })
+  const automation = execFileAsync('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    join(repositoryRoot, 'scripts/windows-directory-picker-ui-smoke.ps1'),
+    '-FolderPath',
+    selectedDirectory,
+  ], { timeout: 90_000 })
+
+  const addWorkspace = page.getByRole('button', {
+    name: /^(?:Add workspace|添加工作区)$/u,
+  })
+  await addWorkspace.waitFor({ state: 'visible', timeout: 15_000 })
+  await addWorkspace.click()
+  await automation
+
+  await page.getByText(basename(selectedDirectory), { exact: true })
+    .waitFor({ state: 'visible', timeout: 30_000 })
+  const nativeBlankSession = page.getByRole('treeitem').filter({
+    has: page.getByText(/^(?:New Session|新会话)$/u, { exact: true }),
+  }).first()
+  await nativeBlankSession.waitFor({ state: 'visible', timeout: 30_000 })
+  await expect.poll(
+    () => nativeBlankSession.getAttribute('aria-selected'),
+    { timeout: 30_000 },
+  ).toBe('true')
+  await page.locator('[class*="centerCol"]')
+    .getByText(basename(selectedDirectory), { exact: true })
+    .waitFor({ state: 'visible', timeout: 30_000 })
+  const lifecycle = await readFile(join(userData, 'logs', 'lifecycle.log'), 'utf8')
+  expect(lifecycle).not.toContain('FATAL ERROR')
+  expect(await page.locator('body[data-dsh-surface="desktop"]').count()).toBe(1)
+}
+
+async function dismissCredentialOnboarding(page: Page, required: boolean): Promise<void> {
+  const credentialDialog = page.getByRole('dialog', {
+    name: /^(?:Add an API key to get started|添加一个 API Key 开始使用)$/u,
+  })
+  try {
+    await credentialDialog.waitFor({ state: 'visible', timeout: required ? 30_000 : 10_000 })
+  } catch (error) {
+    if (!required) return
+    throw error
+  }
+  await credentialDialog.getByRole('button', {
+    name: /^(?:Configure later|稍后配置)$/u,
+  }).click()
+  await credentialDialog.waitFor({ state: 'detached', timeout: 30_000 })
+}
+
 async function exerciseReasoningEffort(
   page: Page,
   harnessHome: string,
@@ -711,6 +770,7 @@ async function exerciseSessionMessenger(
   const activeRow = page.getByRole('treeitem').filter({ hasText: seeded.activeSessionTitle }).first()
   await activeRow.click()
   await expect.poll(() => activeRow.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
+  if (platform === 'win32') await dismissCredentialOnboarding(page, false)
 
   // Selecting a cold root can finish its Agent-policy replay a few seconds
   // after the row itself becomes selected. Wait through that complete restore
@@ -959,7 +1019,6 @@ async function exerciseUsageInsights(
 }
 
 async function exerciseSystemUpdate(page: Page, platform: NodeJS.Platform): Promise<void> {
-  if (platform !== 'darwin') return
   const bridgeShape = await page.evaluate(() => ({
     getUpdateStatus: typeof window.dshDesktop?.getUpdateStatus,
     checkForUpdates: typeof window.dshDesktop?.checkForUpdates,
@@ -967,6 +1026,23 @@ async function exerciseSystemUpdate(page: Page, platform: NodeJS.Platform): Prom
     installUpdate: typeof window.dshDesktop?.installUpdate,
     onUpdateStatus: typeof window.dshDesktop?.onUpdateStatus,
   }))
+  if (platform !== 'darwin') {
+    expect(bridgeShape).toEqual({
+      getUpdateStatus: 'undefined',
+      checkForUpdates: 'undefined',
+      downloadUpdate: 'undefined',
+      installUpdate: 'undefined',
+      onUpdateStatus: 'undefined',
+    })
+    const settingsTrigger = page.locator('[data-dsh-desktop-command="open-settings"]')
+    if (await settingsTrigger.getAttribute('aria-expanded') !== 'true') await settingsTrigger.click()
+    const settingsDialog = page.getByRole('dialog').last()
+    await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
+    expect(await settingsDialog.getByRole('button', { name: /^(?:System Update|系统更新)$/u }).count()).toBe(0)
+    await page.keyboard.press('Escape')
+    await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
+    return
+  }
   expect(bridgeShape).toEqual({
     getUpdateStatus: 'function',
     checkForUpdates: 'function',
@@ -1108,25 +1184,24 @@ export async function runPackagedDesktopSmoke(
     await welcomeDialog.waitFor({ state: 'visible', timeout: 30_000 })
     await welcomeDialog.getByRole('button', { name: /^(?:Continue|继续)$/u }).click()
     await welcomeDialog.waitFor({ state: 'detached', timeout: 30_000 })
-    const credentialDialog = page.getByRole('dialog', {
-      name: /^(?:Add an API key to get started|添加一个 API Key 开始使用)$/u,
-    })
     if (platform === 'darwin') {
       // The native effort acceptance starts with an isolated, usable custom
       // provider so the first Session captures that exact model selection.
       // A usable non-DeepSeek route must also suppress the keyless onboarding.
+      const credentialDialog = page.getByRole('dialog', {
+        name: /^(?:Add an API key to get started|添加一个 API Key 开始使用)$/u,
+      })
       await expect.poll(() => credentialDialog.count(), { timeout: 30_000 }).toBe(0)
     } else {
-      await credentialDialog.waitFor({ state: 'visible', timeout: 30_000 })
-      await credentialDialog.getByRole('button', {
-        name: /^(?:Configure later|稍后配置)$/u,
-      }).click()
-      await credentialDialog.waitFor({ state: 'detached', timeout: 30_000 })
+      await dismissCredentialOnboarding(page, true)
     }
     expect(await page.locator('#root').evaluate((element: HTMLElement) => !element.inert)).toBe(true)
 
     try {
       await exerciseWindowsClipboard(page, nativeApp, clipboardSeed)
+      if (platform === 'win32') {
+        await exerciseWindowsDirectoryPicker(page, harnessHome, userData)
+      }
       await exerciseSessionMessenger(page, clipboardSeed, platform)
       if (platform === 'darwin') {
         await exerciseDesktopWorkbench(page, platform)

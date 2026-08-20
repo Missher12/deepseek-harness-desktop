@@ -23,7 +23,7 @@ import {
 import { HarnessProcess } from './harness/process.ts'
 import { findConflictingHarness } from './harness/ownership.ts'
 import { createLifecycleLogger } from './logging.ts'
-import { isRecoveryAction, type DesktopCommand } from './preload-api.ts'
+import { isRecoveryAction, supportsDesktopUpdates, type DesktopCommand } from './preload-api.ts'
 import { DesktopUpdateService } from './update/service.ts'
 import { WorkbenchBrowserController } from './browser/controller.ts'
 import { isDesktopBrowserBounds, isDesktopBrowserRequest } from './browser/contracts.ts'
@@ -47,6 +47,7 @@ const desktopPatchPath = fileURLToPath(new URL('../desktop.cordis.patch.yml', im
 const desktopInstallAnchorPath = fileURLToPath(new URL('../package.json', import.meta.url))
 const updateHelperPath = fileURLToPath(new URL('./update-helper.js', import.meta.url))
 const platformBehavior = desktopPlatformBehavior(process.platform)
+const desktopUpdatesEnabled = supportsDesktopUpdates(process.platform)
 
 function resolveHarnessVersion(): string {
   const manifest = require('@deepseek-ai/dsh/package.json') as { version?: unknown }
@@ -262,44 +263,52 @@ ipcMain.on('desktop:recovery', (event, value: unknown) => {
   if (isFailureSender(event) && isRecoveryAction(value)) controller.recover(value)
 })
 
-ipcMain.handle('desktop:update-status', (event) => {
-  if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
-  return updateService.getSnapshot()
-})
+if (desktopUpdatesEnabled) {
+  ipcMain.handle('desktop:update-status', (event) => {
+    if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
+    return updateService.getSnapshot()
+  })
 
-ipcMain.handle('desktop:update-check', async (event) => {
-  if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
-  return await updateService.check(true)
-})
+  ipcMain.handle('desktop:update-check', async (event) => {
+    if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
+    return await updateService.check(true)
+  })
 
-ipcMain.handle('desktop:update-download', async (event) => {
-  if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
-  return await updateService.download()
-})
+  ipcMain.handle('desktop:update-download', async (event) => {
+    if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
+    return await updateService.download()
+  })
 
-ipcMain.handle('desktop:update-install', async (event) => {
-  if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
-  const descriptor = updateService.getInstallDescriptor()
-  if (descriptor === null) throw new Error('No verified Desktop update is ready.')
-  if (process.platform === 'darwin' && app.isPackaged) {
-    launchDesktopInstaller({
-      helperSource: updateHelperPath,
-      electronExecutable: process.execPath,
-      currentAppPath: resolve(dirname(process.execPath), '../..'),
-      dmgPath: descriptor.dmgPath,
-      expectedDesktopVersion: descriptor.desktopVersion,
-      expectedHarnessVersion: descriptor.harnessVersion,
-      expectedSha256: descriptor.sha256,
-    })
+  ipcMain.handle('desktop:update-install', async (event) => {
+    if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
+    const descriptor = updateService.getInstallDescriptor()
+    if (descriptor === null) throw new Error('No verified Desktop update is ready.')
+    if (process.platform === 'darwin' && app.isPackaged) {
+      launchDesktopInstaller({
+        helperSource: updateHelperPath,
+        electronExecutable: process.execPath,
+        currentAppPath: resolve(dirname(process.execPath), '../..'),
+        dmgPath: descriptor.dmgPath,
+        expectedDesktopVersion: descriptor.desktopVersion,
+        expectedHarnessVersion: descriptor.harnessVersion,
+        expectedSha256: descriptor.sha256,
+      })
+      updateService.beginInstall()
+      setImmediate(() => { app.quit() })
+      return { opened: true }
+    }
+    const message = await shell.openPath(descriptor.dmgPath)
+    if (message !== '') return { opened: false, message: message.slice(0, 300) }
     updateService.beginInstall()
-    setImmediate(() => { app.quit() })
     return { opened: true }
-  }
-  const message = await shell.openPath(descriptor.dmgPath)
-  if (message !== '') return { opened: false, message: message.slice(0, 300) }
-  updateService.beginInstall()
-  return { opened: true }
-})
+  })
+
+  updateService.subscribe((snapshot) => {
+    if (nativeWindow !== undefined && !nativeWindow.isDestroyed() && activeHarnessRoot !== undefined) {
+      nativeWindow.webContents.send('desktop:update-state', snapshot)
+    }
+  })
+}
 
 ipcMain.handle('desktop:workbench-browser-show', async (event, value: unknown) => {
   if (!isHarnessSender(event) || !isDesktopBrowserBounds(value) || workbenchBrowser === undefined) {
@@ -320,11 +329,6 @@ ipcMain.handle('desktop:workbench-browser-control', async (event, value: unknown
   return await workbenchBrowser.control(value)
 })
 
-updateService.subscribe((snapshot) => {
-  if (nativeWindow !== undefined && !nativeWindow.isDestroyed() && activeHarnessRoot !== undefined) {
-    nativeWindow.webContents.send('desktop:update-state', snapshot)
-  }
-})
 
 app.on('before-quit', () => { updateService.dispose(); void workbenchBrowser?.hide() })
 
@@ -335,6 +339,7 @@ Menu.setApplicationMenu(Menu.buildFromTemplate(
 void controller.run().then(() => {
   if (platformBehavior.setDockIcon) app.dock?.setIcon(iconPath)
   record('desktop application ready')
+  if (!desktopUpdatesEnabled) return
   const timer = setTimeout(() => {
     void updateService.check(false).catch((error: unknown) => {
       record(`automatic update check failed: ${error instanceof Error ? error.message : String(error)}`)

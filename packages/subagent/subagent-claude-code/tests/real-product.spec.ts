@@ -123,7 +123,7 @@ afterEach(async () => {
   }
   observedSdkMessages.length = 0
   delete sdkTestOverrides.maxTurns
-})
+}, 60_000)
 
 interface RealHarness {
   readonly ctx: Context

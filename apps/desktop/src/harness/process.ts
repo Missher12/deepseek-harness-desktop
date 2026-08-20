@@ -103,7 +103,7 @@ export class HarnessProcess {
       this.options.cli,
       'web',
       ...this.options.patch === undefined ? [] : ['--patch', this.options.patch],
-      ...this.options.platform === 'darwin' ? ['--no-open'] : [],
+      '--no-open',
       '--host',
       '127.0.0.1',
       '--port',

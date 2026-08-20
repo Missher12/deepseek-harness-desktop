@@ -7,6 +7,14 @@ describe('readHarnessUrl', () => {
       .toBe('http://127.0.0.1:54321/')
   })
 
+  it('ignores non-URL dsh status lines printed after the startup URL', () => {
+    expect(readHarnessUrl([
+      'dsh web: http://127.0.0.1:54321',
+      'dsh web: opening the default browser; pass --no-open to disable',
+      '',
+    ].join('\n'))).toBe('http://127.0.0.1:54321/')
+  })
+
   it.each([
     'dsh web: http://0.0.0.0:54321',
     'dsh web: http://localhost:54321',

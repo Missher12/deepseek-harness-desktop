@@ -452,8 +452,10 @@ describe('runScenario', () => {
       .find(f => f.params?.update?.content?.text?.startsWith('env:'))
     const env = JSON.parse((envChunk?.params?.update?.content?.text ?? 'env:{}').slice('env:'.length)) as {
       childFiles: string | null
+      nodeOptions: string | null
     }
     expect(env.childFiles).toBe(childFiles.join(delimiter))
+    expect(env.nodeOptions).toContain('--disable-warning=ExperimentalWarning')
   })
 
   it('gives concurrent scenarios distinct equal-length spill roots', { timeout: 20_000 }, async () => {

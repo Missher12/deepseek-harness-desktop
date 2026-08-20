@@ -1,6 +1,6 @@
-# Desktop System Update Settings
+# @deepseek-ai/dsh-client-ui-settings-system-update
 
-[中文](README.zh.md)
+English | [中文](README.zh.md)
 
 This Desktop-only client package contributes the System Update section to Settings. It renders the narrow `window.dshDesktop` update state and invokes only fixed check, download, and install operations owned by the Electron main process.
 
@@ -8,14 +8,14 @@ The package never selects a repository, network URL, destination path, checksum,
 
 ## Model Experience
 
-None, as this browser-side Desktop update section registers no model tool, prompt text, provider request, or conversation event.
+None, as this package only presents update state and invokes fixed Electron-owned operations. It does not assemble prompts, select models, or send provider requests.
 
 #### KV Cache effect
 
-Checking, downloading, or installing a Desktop update does not alter model context or provider request prefixes.
+None; the package never participates in a model request or changes its cache behavior.
 
 ## Known Limitations and Deferred Work
 
-- Updates require a newer compatible Intel macOS Desktop manifest with a matching DMG size and SHA-256; official Harness source tags alone cannot be installed.
-- The local unsigned build may require Finder's **Open** action on first launch. Signing and notarization require external Apple credentials.
-- Download and installation remain explicit user actions. The package does not perform silent background replacement or cross-platform updates.
+- **Intel macOS Desktop only** — the section is hidden when the verified Electron preload bridge is absent, including ordinary browsers and the current Windows Desktop build.
+- **Fixed release channel** — users cannot select a repository, mirror, asset, checksum, destination, or installer command from this package.
+- **Unsigned artifacts** — code signing and notarization remain release-infrastructure work; the Electron main process still requires an exact manifest, SHA-256 match, and compatible x86_64 bundle before installation.

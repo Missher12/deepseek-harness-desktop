@@ -183,6 +183,41 @@ describe('Desktop plugin runtime services', () => {
     expect(existsSync(shimDir)).toBe(false)
   })
 
+  it('reuses its shim, supports an empty ambient PATH, and emits both platform wrappers', async () => {
+    const originalPath = process.env.PATH
+    delete process.env.PATH
+    try {
+      const fixture = harness()
+      const service = fixture.services.pnpm as unknown as { ensureNodeShim(): string }
+      const shimDir = service.ensureNodeShim()
+      expect(service.ensureNodeShim()).toBe(shimDir)
+      const operation = fixture.services.pnpm.runPlugin(['update'], '/tmp')
+      expect((fixture.spawn.mock.calls[0]?.[0] as { env: Record<string, string> }).env.PATH).toBe(shimDir)
+      fixture.settle({ exitCode: 0, signal: null })
+      await operation.done
+      await fixture.ctx.fiber.dispose()
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH
+      else process.env.PATH = originalPath
+    }
+
+    for (const [platformName, shimName, expectedBody] of [
+      ['win32', 'node.cmd', '@echo off\r\n'],
+      ['linux', 'node', '#!/bin/sh\n'],
+    ] as const) {
+      const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue(platformName)
+      const fixture = harness()
+      try {
+        const service = fixture.services.pnpm as unknown as { ensureNodeShim(): string }
+        const shimDir = service.ensureNodeShim()
+        expect(readFileSync(join(shimDir, shimName), 'utf8')).toContain(expectedBody)
+      } finally {
+        await fixture.ctx.fiber.dispose()
+        platform.mockRestore()
+      }
+    }
+  })
+
   it('rejects unsafe inputs and serializes one operation for the generation', async () => {
     const { services, settle } = harness()
     expect(() => services.pnpm.runPlugin([], '/tmp')).toThrow(/must not be empty/i)

@@ -248,6 +248,13 @@ export async function runScenario(input: InputScript, opts: RunOptions): Promise
     await opts.prepareWorkspace?.(cwd)
     const env: NodeJS.ProcessEnv = {
       ...opts.env,
+      // Node 24.19 emits an ExperimentalWarning whenever the assembled app
+      // loads node:sqlite. Snapshot stderr remains a diagnostic channel, so
+      // suppress only that warning category in this isolated child while
+      // preserving caller-supplied Node options and every ordinary error.
+      NODE_OPTIONS: [opts.env?.NODE_OPTIONS ?? process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning']
+        .filter((value): value is string => value !== undefined && value.length > 0)
+        .join(' '),
       DSH_SNAPSHOT: opts.mode,
       DSH_SNAPSHOT_FILE: opts.fixtureFile,
       DSH_SNAPSHOT_SESSIONS_ROOT: sessionsRoot,

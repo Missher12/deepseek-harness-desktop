@@ -5,7 +5,7 @@ import {
   renameSync, rmSync,
 } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, join, posix, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 
@@ -27,11 +27,15 @@ export function validateUpdateHelperConfig(value: unknown): UpdateHelperConfig |
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const config = value as Record<string, unknown>
   if (config.schema !== 1 || !Number.isSafeInteger(config.parentPid) || Number(config.parentPid) <= 0) return null
-  if (typeof config.currentAppPath !== 'string' || !isAbsolute(config.currentAppPath)
-    || basename(config.currentAppPath) !== APP_NAME || resolve(config.currentAppPath) !== config.currentAppPath) return null
-  if (typeof config.dmgPath !== 'string' || !isAbsolute(config.dmgPath)
-    || resolve(config.dmgPath) !== config.dmgPath
-    || !/^DeepSeek-Harness-[0-9A-Za-z.-]+-mac-x64\.dmg$/.test(basename(config.dmgPath))) return null
+  // The helper installs a macOS bundle and DMG even when its contract is
+  // inspected by cross-platform CI, so validate the wire paths with POSIX
+  // semantics instead of silently inheriting the test host's path dialect.
+  if (typeof config.currentAppPath !== 'string' || !posix.isAbsolute(config.currentAppPath)
+    || posix.basename(config.currentAppPath) !== APP_NAME
+    || posix.resolve(config.currentAppPath) !== config.currentAppPath) return null
+  if (typeof config.dmgPath !== 'string' || !posix.isAbsolute(config.dmgPath)
+    || posix.resolve(config.dmgPath) !== config.dmgPath
+    || !/^DeepSeek-Harness-[0-9A-Za-z.-]+-mac-x64\.dmg$/.test(posix.basename(config.dmgPath))) return null
   if (typeof config.expectedDesktopVersion !== 'string' || !VERSION_RE.test(config.expectedDesktopVersion)) return null
   if (typeof config.expectedHarnessVersion !== 'string' || !VERSION_RE.test(config.expectedHarnessVersion)) return null
   if (typeof config.expectedSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(config.expectedSha256)) return null
