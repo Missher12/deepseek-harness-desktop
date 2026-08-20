@@ -64,7 +64,7 @@ export class BootPage {
     this.hint = div(css.hint, 'Loading plugins…')
     if (this.macDesktop) {
       this.icon = document.createElement('img')
-      this.icon.className = css.macIcon
+      this.icon.className = css.macIcon ?? ''
       this.icon.src = '/favicon.svg'
       this.icon.alt = ''
       this.icon.dataset.dshBootIcon = ''
