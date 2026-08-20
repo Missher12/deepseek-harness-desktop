@@ -86,10 +86,19 @@ The repository is based on the pinned official source and adds the desktop appli
   upgrades remain explicit Setup installs. Desktop packaging keeps its narrow
   runtime allowlist and now also excludes `.env`, credential, and `.dsh`
   paths explicitly. The final local candidate passes all 37 static gates, all
-  10 consumer/build gates, 124 Desktop tests, and the complete 14,428-test
+  10 consumer/build gates, 124 Desktop tests, and the complete 14,483-test
   coverage gate at 100% statements, branches, functions, and lines. A clean
   native Windows Setup build and installed-app lifecycle smoke remain the
-  release authority for this commit.
+  release authority for this commit. The final hosted-CI repair also makes the
+  persistent PowerShell terminal answer cursor-position device queries, waits
+  for the private OSC prompt instead of matching its echoed `dsh> ` source,
+  and defers Linux exact-wait fallback until output is quiet. A portable pwsh
+  7.6.5 run passes the real persistent-state, UTF-8, large-output, exit/restart,
+  and ACP snapshot scenarios. Browser steering snapshots now anchor on the
+  open question composer instead of runner-dependent intermediate timing. The
+  four-core Windows hosted lane now uses a bounded 3-partition/2-gate budget so
+  subprocess and worker timing tests are not starved by the coverage
+  coordinator.
 - Version 0.2.0 rebased the Desktop product on official `dsh-v0.1.0-rc.8`
   while retaining the current macOS/Desktop feature set. It adds a native
   Windows assisted installer whose ordinary double-click flow exposes Welcome,

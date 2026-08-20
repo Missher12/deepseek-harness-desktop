@@ -148,6 +148,52 @@ async function initialize(session: LocalPtySession, terminal: FakeTerminal): Pro
 }
 
 describe('LocalPtySession readiness and output', () => {
+  it('answers split pwsh cursor-position queries before waiting for its prompt', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const session = new LocalPtySession(terminal, config({ shellDialect: 'pwsh', shellPath: 'pwsh' }))
+    const pending = session.initialize()
+    expect(session.hasControlledPrompt()).toBe(false)
+
+    terminal.emitData('\x1b[')
+    terminal.emitData('6n')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(terminal.writes).toContain('\x1b[1;1R')
+
+    terminal.emitData('\x1b]133;D;0\x07dsh> ')
+    expect(session.hasControlledPrompt()).toBe(true)
+    await vi.advanceTimersByTimeAsync(10)
+    await pending
+  })
+
+  it('fails the live session when a pwsh cursor-position response cannot be written', async () => {
+    const terminal = new FakeTerminal()
+    terminal.throwWrite = true
+    const session = new LocalPtySession(terminal, config({ shellDialect: 'pwsh', shellPath: 'pwsh' }))
+    const operation = session.startSend({ text: '', submit: false })
+
+    terminal.emitData('\x1b[6n')
+
+    await expect(operation.done).rejects.toThrow('write failed')
+    expect(session.status()).toEqual({ kind: 'exited', exitCode: null, signal: null })
+  })
+
+  it('ignores a rejected pwsh cursor-position response after closing begins', async () => {
+    const terminal = new FakeTerminal()
+    const response = Promise.withResolvers<undefined>()
+    terminal.write = async () => { await response.promise }
+    const session = new LocalPtySession(terminal, config({ shellDialect: 'pwsh', shellPath: 'pwsh' }))
+
+    terminal.emitData('\x1b[6n')
+    ;(session as unknown as { closing: boolean }).closing = true
+    response.reject(new Error('late device response failure'))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(session.status()).toEqual({ kind: 'running' })
+  })
+
   it('lets queued terminal output run before the first post-write readiness poll', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()
@@ -261,6 +307,39 @@ describe('LocalPtySession readiness and output', () => {
     await vi.advanceTimersByTimeAsync(10)
     expect(settled).toBe(true)
     expect((await operation.done).waitReason).toBe('stdin_read')
+  })
+
+  it('does not settle a pwsh exact stdin wait before delayed output is quiet', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config({
+      shellDialect: 'pwsh',
+      shellPath: 'pwsh',
+      exactProbeAfterMs: 20,
+      handoffGraceMs: 40,
+      idleSilenceMs: 90,
+      timeoutMs: 200,
+    }))
+    await initialize(session, terminal)
+
+    const operation = session.startSend({ text: 'Write-Output late', submit: true })
+    let settled = false
+    void operation.done.then(() => { settled = true })
+    await Promise.resolve()
+    await Promise.resolve()
+    inspector.waiting = true
+
+    await vi.advanceTimersByTimeAsync(20)
+    expect(settled).toBe(false)
+    terminal.emitData('late result\r\n')
+    await vi.advanceTimersByTimeAsync(30)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(10)
+    expect(await operation.done).toMatchObject({
+      waitReason: 'stdin_read',
+      viewport: 'late result\n',
+    })
   })
 
   it('distinguishes inferred idle, timeout, exit signal, and operation reads', async () => {

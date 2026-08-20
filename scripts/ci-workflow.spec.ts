@@ -83,6 +83,13 @@ describe('CI workflow', () => {
     expect(windows.if).toBe("github.event_name == 'pull_request'")
     expect(commandSteps.some(step => step.run.includes('wine-windows-gates.sh'))).toBe(true)
 
+    expect(node24Coverage.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: '6',
+      DSH_COVERAGE_PARTITIONS: '4',
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
+      DSH_GATE_CONCURRENCY: '3',
+    })
+
     // windows-native: non-blocking native job with failover, runs windows-complete.
     // Its pool is resolved by the Windows-specific switch.
     expect(typeof windowsNative['runs-on']).toBe('string')
@@ -94,7 +101,11 @@ describe('CI workflow', () => {
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
     expect(windowsNative.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: '3',
+      DSH_COVERAGE_PARTITIONS: '3',
       DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
+      DSH_GATE_CONCURRENCY: '2',
+      DSH_PUBLINT_CONCURRENCY: '4',
     })
     const nativeCommandSteps = (windowsNative.steps as unknown[]).filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'

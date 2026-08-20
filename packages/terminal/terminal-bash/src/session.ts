@@ -23,6 +23,9 @@ import type {
 import type { ResolvedConfig } from './config.ts'
 import { CONTROLLED_PROMPT, TerminalSanitizer } from './sanitize.ts'
 
+const CURSOR_POSITION_QUERY = '\x1b[6n'
+const CURSOR_POSITION_RESPONSE = '\x1b[1;1R'
+
 function utf8Tail(text: string, maxBytes: number): { text: string; truncated: boolean } {
   if (Buffer.byteLength(text) <= maxBytes) return { text, truncated: false }
   const chars = Array.from(text)
@@ -184,6 +187,7 @@ export class LocalPtySession implements TerminalBackendSession {
   private closing = false
   private closePromise: Promise<void> | undefined
   private transportFailure: Error | undefined
+  private deviceQueryTail = ''
 
   constructor(
     private readonly terminal: SubprocessTerminalHandle,
@@ -339,6 +343,15 @@ export class LocalPtySession implements TerminalBackendSession {
     }
   }
 
+  /**
+   * Whether the latest send observed this backend's complete private prompt.
+   *
+   * @returns True when both the private marker and visible prompt tail were observed.
+   */
+  hasControlledPrompt(): boolean {
+    return this.promptSeen && this.promptTextSeen
+  }
+
   async signal(signal: TerminalSignal): Promise<TerminalSignalResult> {
     if (this.closing) throw new Error('PTY session is closing')
     const targetPgid = await this.terminal.signalForeground(signal)
@@ -363,7 +376,32 @@ export class LocalPtySession implements TerminalBackendSession {
 
   private readonly onTerminalData = (chunk: Buffer | Uint8Array | string): void => {
     const bytes = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk
-    this.onData(this.decoder.decode(bytes, { stream: true }))
+    const data = this.decoder.decode(bytes, { stream: true })
+    this.answerDeviceQueries(data)
+    this.onData(data)
+  }
+
+  private answerDeviceQueries(data: string): void {
+    if (this.config.shellDialect !== 'pwsh' || this.closing) return
+    const combined = this.deviceQueryTail + data
+    let offset = 0
+    for (;;) {
+      const query = combined.indexOf(CURSOR_POSITION_QUERY, offset)
+      if (query < 0) break
+      offset = query + CURSOR_POSITION_QUERY.length
+      void this.terminal.write(CURSOR_POSITION_RESPONSE).catch((error: unknown) => {
+        if (!this.closing) this.onTransportFailure(error)
+      })
+    }
+    const remaining = combined.slice(offset)
+    this.deviceQueryTail = ''
+    for (let length = Math.min(CURSOR_POSITION_QUERY.length - 1, remaining.length); length > 0; length -= 1) {
+      const suffix = remaining.slice(-length)
+      if (CURSOR_POSITION_QUERY.startsWith(suffix)) {
+        this.deviceQueryTail = suffix
+        break
+      }
+    }
   }
 
   private readonly onTerminalEnd = (): void => {
@@ -452,7 +490,13 @@ export class LocalPtySession implements TerminalBackendSession {
       const startupHasOutput = !this.initializing || this.scrollback.snapshot().text.length > 0
       const acceptsStdinWait = startupHasOutput && foreground !== undefined
         && operation.acceptsStdinWait(foreground.processGroupId, foreground.inputWaiting)
-      if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait) {
+      // Linux can publish pwsh's return to ReadConsole before ConPTY/PTY output
+      // reaches this stream. Preserve the exact wait as a readiness signal, but
+      // require one configured handoff window without output before using that
+      // fallback. A controlled prompt still settles promptly through the branch
+      // above, and bash retains its existing exact-probe behavior.
+      const exactWaitQuietMs = this.config.shellDialect === 'pwsh' ? this.config.handoffGraceMs : 0
+      if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait && idleFor >= exactWaitQuietMs) {
         this.settleActive('stdin_read')
         return
       }

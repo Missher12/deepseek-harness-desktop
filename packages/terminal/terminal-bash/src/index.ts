@@ -87,7 +87,7 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
  * input are unreliable under PSReadLine.
  */
 export const PWSH_PROMPT_SETUP =
-  "function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
+  "Remove-Module PSReadLine -ErrorAction SilentlyContinue; function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
 
 function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy): string[] {
   const argv = [config.shellPath, ...config.shellArgs]
@@ -121,8 +121,9 @@ async function startupSession(
     // UTF-8, and an un-pinned console writes its host code page for
     // non-ASCII output. The banner-to-prompt gap can outlast the silence
     // bound, so the wait loops over follow-up sends until the controlled
-    // prompt is actually visible (in the viewport or the retained scrollback
-    // when it landed between sends), bounded by the send deadline.
+    // private prompt marker was actually observed, bounded by the send
+    // deadline. Printable `dsh> ` text is insufficient because the submitted
+    // function definition itself is echoed by interactive pwsh.
     let viewport = ''
     for (;;) {
       const first = viewport.length === 0
@@ -135,8 +136,7 @@ async function startupSession(
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       viewport = result.viewport
-      const scrollback = session.read({ offset: 0, count: 20 }).text
-      if (viewport.includes(CONTROLLED_PROMPT) || scrollback.includes(CONTROLLED_PROMPT)) break
+      if (session.hasControlledPrompt()) break
     }
     session.motd = viewport
   }
