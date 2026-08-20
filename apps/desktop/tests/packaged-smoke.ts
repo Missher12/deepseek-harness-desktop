@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
@@ -633,6 +633,38 @@ async function exerciseWindowsClipboard(
   }
 }
 
+async function exerciseWindowsDirectoryPicker(
+  page: Page,
+  harnessHome: string,
+  userData: string,
+): Promise<void> {
+  const selectedDirectory = join(harnessHome, 'native-picker-selected')
+  await mkdir(selectedDirectory, { recursive: true })
+  const automation = execFileAsync('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    join(repositoryRoot, 'scripts/windows-directory-picker-ui-smoke.ps1'),
+    '-FolderPath',
+    selectedDirectory,
+  ], { timeout: 90_000 })
+
+  const addWorkspace = page.getByRole('button', {
+    name: /^(?:Add workspace|添加工作区)$/u,
+  })
+  await addWorkspace.waitFor({ state: 'visible', timeout: 15_000 })
+  await addWorkspace.click()
+  await automation
+
+  await page.getByText(basename(selectedDirectory), { exact: true })
+    .waitFor({ state: 'visible', timeout: 30_000 })
+  const lifecycle = await readFile(join(userData, 'logs', 'lifecycle.log'), 'utf8')
+  expect(lifecycle).not.toContain('FATAL ERROR')
+  expect(await page.locator('body[data-dsh-surface="desktop"]').count()).toBe(1)
+}
+
 async function exerciseReasoningEffort(
   page: Page,
   harnessHome: string,
@@ -1026,6 +1058,9 @@ export async function runPackagedDesktopSmoke(
 
     try {
       await exerciseWindowsClipboard(page, nativeApp, clipboardSeed)
+      if (platform === 'win32') {
+        await exerciseWindowsDirectoryPicker(page, harnessHome, userData)
+      }
       await exerciseSessionMessenger(page, clipboardSeed, platform)
       if (platform === 'darwin') {
         await exerciseReasoningEffort(page, harnessHome, platform)

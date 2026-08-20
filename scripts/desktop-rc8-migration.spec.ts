@@ -6,9 +6,9 @@ const readManifest = (path: string): { version?: unknown } =>
   JSON.parse(readFileSync(path, 'utf8')) as { version?: unknown }
 
 describe('rc.8 Windows Desktop migration', () => {
-  it('keeps the official rc.8 root and exposes Desktop 0.2.0', () => {
+  it('keeps the official rc.8 root and exposes Desktop 0.2.1', () => {
     expect(readManifest('package.json').version).toBe('0.1.0-rc.8')
-    expect(readManifest('apps/desktop/package.json').version).toBe('0.2.0')
+    expect(readManifest('apps/desktop/package.json').version).toBe('0.2.1')
   })
 
   it('retains one canonical row for each Desktop-only product feature', () => {

@@ -33,7 +33,7 @@ Turn the official DeepSeek Harness browser surface into standalone Intel macOS a
 
 - Electron x64 application shell.
 - Electron main process owns the application window and Harness child process.
-- The child runs the pinned official `dsh web --host 127.0.0.1 --port 0` build.
+- The child runs the pinned official `dsh web --no-open --host 127.0.0.1 --port 0` build.
 - BrowserWindow loads only the discovered loopback URL.
 - The existing React/Vite client and WebSocket transport remain intact.
 - The renderer has no Node integration and receives no credentials.
@@ -55,6 +55,7 @@ The repository is based on the pinned official source and adds the desktop appli
 - `scripts/stage-desktop.ts`: creates and validates a self-contained package staging tree.
 - `scripts/windows-desktop-setup-smoke.ps1`: verifies isolated Setup install, shortcuts, packaged launch, window close, process cleanup, uninstall, and data preservation on native Windows.
 - `scripts/windows-desktop-installer-ui-smoke.ps1`: drives and verifies every visible assisted-installer page on native Windows before cleaning up its isolated installation.
+- `scripts/windows-directory-picker-ui-smoke.ps1`: selects an exact isolated folder through the real Windows common-item dialog so the packaged result-decoding path is release-blocking.
 - `docs/superpowers/specs/`: product, architecture, and implementation plans.
 
 ## Safety Boundaries
@@ -68,12 +69,21 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
-- Version 0.2.0 rebases the Desktop product on official `dsh-v0.1.0-rc.8`
+- Version 0.2.1 fixes the Windows false startup failure by disabling the CLI's
+  default-browser handoff and accepting exactly one valid loopback URL while
+  ignoring other `dsh web:` status lines. It also replaces the directory
+  picker's unsafe fixed-size native memory view with Koffi's NUL-terminated
+  UTF-16 decoder, covering the fatal `readUtf16` crash observed after a folder
+  was selected. Native Windows acceptance now selects a real isolated folder
+  through the installed application in addition to installer, clipboard,
+  process, uninstall, and data-preservation checks. The root Harness version
+  remains `0.1.0-rc.8`; only the Desktop artifact version advances to `0.2.1`.
+- Version 0.2.0 rebased the Desktop product on official `dsh-v0.1.0-rc.8`
   while retaining the current macOS/Desktop feature set. It adds a native
   Windows assisted installer whose ordinary double-click flow exposes Welcome,
   installation directory, expanded progress/details, and Finish pages while
   remaining per-user and non-elevating. The root Harness version remains
-  `0.1.0-rc.8`; only the Desktop artifact version advances to `0.2.0`.
+  `0.1.0-rc.8`; only the Desktop artifact version advanced to `0.2.0`.
   Host/Client typecheck, the complete Host/Client/Web production build,
   85 SQLite persistence tests, 28 installer/staging contract tests, and a
   63-file Desktop staging closure pass locally. Native Windows UI, clipboard,
