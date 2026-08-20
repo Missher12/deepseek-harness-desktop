@@ -35,7 +35,7 @@ DeepSeek Harness Desktop 会在 base 与 Web 层之后恰好应用一次相同�
 
 ## Client 界面
 
-Client 侧注册一个 `conversation.session.header.utilities` 入口和一个 `shell.overlay` 抽屉。入口显示未读状态，但不改变标题栏几何。抽屉宽度限制为 320–560 px 并会记忆，在窄屏下占满宽度；它可以复制当前 Session ID，并提供直接发送／回复的人工入口。“启动目标 Agent”默认开启，发送失败的草稿会保留，最近活动只含元数据。收到的消息使用 Harness 原有的上下文折叠行，不再渲染自定义消息卡片，因此会话视觉保持原生。通知仅限站内：没有原生 macOS／Windows 通知、替代会话行、独立消息正文 inbox 或自动 Agent loop。
+Client 侧把受限 store 与发送／回复 action 提供给 Desktop 工作台；它不再注册独立的标题栏入口、抽屉或 overlay。侧边聊天可以复制当前准确 Session ID，并接收准确目标 ID、直接消息、唤醒选择和 receipt 绑定回复。“启动目标 Agent”默认开启，发送失败的草稿会保留，最近活动只含元数据。一次被接受的 outgoing 投递会在来源侧追加 ignorable 会话行，目标 relay 则保持普通可见 user-message 行，因此两边会话都能看到交流，同时来源文本不会重复进入模型历史。通知仍然只限站内：没有原生 macOS 通知、替代会话行、独立消息档案或自动 Agent loop。
 
 ## 模型体验
 
@@ -56,6 +56,6 @@ Client 侧注册一个 `conversation.session.header.utilities` 入口和一个 `
 ## 已知限制与暂缓事项
 
 - 通信仅限一个活动 profile，并且只接受普通会话；尚未实现跨 profile、跨设备、subagent、广播、群组或公共网络投递。
-- 抽屉显示投递元数据，而不是第二份消息档案；协同内容保留在来源和目标会话的普通历史中。
+- 侧边聊天显示投递元数据，而不是第二份消息档案；协同内容保留在来源和目标会话的普通历史中。
 - 原生系统通知暂缓实现，因为它需要本可独立停用包边界之外的 Electron 权限与窗口生命周期所有权。
 - 插件提供显式且有界的对等通信，而不是新的调度器：任意一个已有普通 Agent 都能发起或回复；回复链有上限，但任意一方之后仍可在用户指示下发起一条新消息。它不会创建新会话、subagent、转发规则、后台循环或自主双 Agent 对话。

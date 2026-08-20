@@ -2,16 +2,26 @@ import type { ObservableSnapshot, SessionId } from '@deepseek-ai/dsh-client-runt
 import type { ILayout, UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { MessengerDeliveryResult, MessengerStore } from '@deepseek-ai/dsh-session-messenger/client'
 
+/** Local preference key for the utility width. */
 export const WIDTH_KEY = 'dsh.desktop-workbench.width.v1'
+/** Minimal readable storage contract. */
 export interface StorageReader { getItem(key: string): string | null }
+/** Minimal writable storage contract. */
 export interface StorageWriter extends StorageReader { setItem(key: string, value: string): void }
+/** Observable workbench UI state. */
 export interface WorkbenchSnapshot { open: boolean; mode: UtilityMode; width: number; sessionId?: SessionId }
 
+/**
+ * Restore and clamp the persisted workbench width.
+ * @param storage - storage containing the optional preference.
+ * @returns a width within the 320-720 px contract.
+ */
 export function loadWidth(storage: StorageReader): number {
   const value = Number(storage.getItem(WIDTH_KEY))
   return Number.isFinite(value) ? Math.min(720, Math.max(320, Math.round(value))) : 420
 }
 
+/** Coordinates persisted workbench preferences with the generic layout service. */
 export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot> {
   #listeners = new Set<() => void>()
   #snapshot: WorkbenchSnapshot
@@ -24,6 +34,10 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
   getSnapshot = (): WorkbenchSnapshot => this.#snapshot
   subscribe = (listener: () => void): (() => void) => { this.#listeners.add(listener); return () => { this.#listeners.delete(listener) } }
 
+  /**
+   * Toggle the workbench for one session.
+   * @param sessionId - current session whose workbench should toggle.
+   */
   toggle(sessionId: SessionId): void {
     const open = this.#snapshot.sessionId === sessionId ? !this.#snapshot.open : true
     this.#set({ ...this.#snapshot, sessionId, open })
@@ -31,18 +45,32 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
     else this.layout.closeUtility()
   }
 
+  /**
+   * Open one workbench mode for a session.
+   * @param sessionId - current ordinary session.
+   * @param mode - requested utility mode.
+   */
   open(sessionId: SessionId, mode: UtilityMode = this.#snapshot.mode): void {
     this.#set({ ...this.#snapshot, sessionId, mode, open: true })
     this.layout.openUtility(mode)
   }
 
+  /** Close the utility workbench. */
   close(): void { this.#set({ ...this.#snapshot, open: false }); this.layout.closeUtility() }
 
+  /**
+   * Select and keep open one utility mode.
+   * @param mode - requested utility mode.
+   */
   selectMode(mode: UtilityMode): void {
     this.#set({ ...this.#snapshot, mode, open: true })
     this.layout.openUtility(mode)
   }
 
+  /**
+   * Persist and apply one clamped utility width.
+   * @param width - requested utility width in pixels.
+   */
   setWidth(width: number): void {
     const next = Math.min(720, Math.max(320, Math.round(width)))
     this.storage.setItem(WIDTH_KEY, String(next))
@@ -56,6 +84,7 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
   }
 }
 
+/** Workbench services injected into its Client slot entries. */
 export interface WorkbenchInjected {
   hooks: { workbench: ObservableSnapshot<WorkbenchSnapshot>; messenger: MessengerStore }
   toggle(sessionId: SessionId): void

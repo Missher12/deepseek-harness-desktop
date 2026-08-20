@@ -5,6 +5,12 @@ import { resolveWorkspacePath } from './workspace-path.ts'
 
 const slash = (value: string): string => value.split(sep).join('/')
 
+/**
+ * List one bounded visible workspace directory.
+ * @param root - live session workspace root.
+ * @param child - relative directory path.
+ * @returns a bounded directory listing.
+ */
 export async function listWorkspace(root: string, child = ''): Promise<FileListing> {
   const canonicalRoot = await resolveWorkspacePath(root)
   const directory = await resolveWorkspacePath(canonicalRoot, child)
@@ -26,6 +32,12 @@ export async function listWorkspace(root: string, child = ''): Promise<FileListi
   return { path: slash(relative(canonicalRoot, directory)), entries, truncated: visible.length > entries.length }
 }
 
+/**
+ * Read one bounded workspace file preview.
+ * @param root - live session workspace root.
+ * @param child - relative file path.
+ * @returns text or binary metadata within the preview cap.
+ */
 export async function readWorkspaceFile(root: string, child: string): Promise<FilePreview> {
   const canonicalRoot = await resolveWorkspacePath(root)
   const target = await resolveWorkspacePath(canonicalRoot, child)

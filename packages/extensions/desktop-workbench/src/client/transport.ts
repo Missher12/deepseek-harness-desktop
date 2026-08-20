@@ -27,6 +27,7 @@ async function request<T>(path: RequestPath, sessionId: SessionId, extra: Record
   return value as T
 }
 
+/** Capability-bound same-origin workbench transport. */
 export const workbenchTransport = {
   list: (sessionId: SessionId, path = '') => request<FileListing>('listPath', sessionId, { path }),
   read: (sessionId: SessionId, path: string) => request<FilePreview>('readPath', sessionId, { path }),

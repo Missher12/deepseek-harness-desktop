@@ -8,10 +8,10 @@ const readUpdateMetadata = (): { desktopVersion?: unknown } =>
   JSON.parse(readFileSync('apps/desktop/update-metadata.json', 'utf8')) as { desktopVersion?: unknown }
 
 describe('rc.8 Desktop migration', () => {
-  it('keeps the official rc.8 root and advances the macOS updater release to Desktop 0.2.2', () => {
+  it('keeps the official rc.8 root and advances the macOS workbench release to Desktop 0.3.0', () => {
     expect(readManifest('package.json').version).toBe('0.1.0-rc.8')
-    expect(readManifest('apps/desktop/package.json').version).toBe('0.2.2')
-    expect(readUpdateMetadata().desktopVersion).toBe('0.2.2')
+    expect(readManifest('apps/desktop/package.json').version).toBe('0.3.0')
+    expect(readUpdateMetadata().desktopVersion).toBe('0.3.0')
   })
 
   it('retains one canonical row for each Desktop-only product feature', () => {

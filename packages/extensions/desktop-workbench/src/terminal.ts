@@ -7,6 +7,7 @@ import {
   MAX_TERMINAL_INPUT_BYTES, MAX_TERMINAL_OUTPUT_BYTES, type WorkbenchTerminalSnapshot,
 } from './protocol.ts'
 
+/** Maximum user terminals owned by one workbench Client. */
 export const MAX_TERMINALS = 4
 const SIGNALS = new Set<SubprocessTerminalSignal>(['SIGINT', 'SIGTERM', 'SIGKILL', 'SIGTSTP', 'SIGHUP'])
 
@@ -21,8 +22,13 @@ interface RecordState {
   exitCode?: number | null
 }
 
+/** Terminal allocator supplied by the Host subprocess service. */
 export type SpawnTerminal = (spec: SubprocessTerminalSpawnSpec) => Promise<SubprocessTerminalHandle>
 
+/**
+ * Select the bounded macOS login-shell fallback.
+ * @returns the first supported absolute login-shell path.
+ */
 export async function defaultShell(): Promise<string> {
   for (const shell of ['/bin/zsh', '/bin/bash']) {
     try { await access(shell); return shell } catch { /* try the bounded fallback */ }
@@ -30,10 +36,19 @@ export async function defaultShell(): Promise<string> {
   throw new Error('no supported shell is available')
 }
 
+/** Bounded registry for user-owned terminals outside the Agent terminal service. */
 export class WorkbenchTerminalRegistry {
   private readonly records = new Map<string, RecordState>()
   constructor(private readonly spawn: SpawnTerminal, private readonly shell: () => Promise<string> = defaultShell) {}
 
+  /**
+   * Open one owned login shell.
+   * @param owner - opaque Client-generation owner.
+   * @param cwd - live session workspace directory.
+   * @param rows - initial terminal rows.
+   * @param cols - initial terminal columns.
+   * @returns initial bounded snapshot.
+   */
   async open(owner: string, cwd: string, rows = 30, cols = 100): Promise<WorkbenchTerminalSnapshot> {
     if ([...this.records.values()].filter(record => record.owner === owner).length >= MAX_TERMINALS) {
       throw new Error(`at most ${String(MAX_TERMINALS)} terminals may be open`)
@@ -57,34 +72,61 @@ export class WorkbenchTerminalRegistry {
     return snapshot(record)
   }
 
+  /**
+   * List one owner's terminals.
+   * @param owner - opaque Client-generation owner.
+   * @returns current bounded snapshots.
+   */
   list(owner: string): WorkbenchTerminalSnapshot[] {
     return [...this.records.values()].filter(record => record.owner === owner).map(snapshot)
   }
 
+  /**
+   * Write exact text to an owned terminal.
+   * @param owner - opaque Client-generation owner.
+   * @param id - terminal id.
+   * @param data - bounded UTF-8 input.
+   */
   async write(owner: string, id: string, data: string): Promise<void> {
     const record = this.owned(owner, id)
     if (Buffer.byteLength(data) > MAX_TERMINAL_INPUT_BYTES) throw new Error('terminal input is too large')
     await record.handle.write(data)
   }
 
+  /**
+   * Signal one owned foreground process group.
+   * @param owner - opaque Client-generation owner.
+   * @param id - terminal id.
+   * @param signal - closed signal vocabulary member.
+   */
   async signal(owner: string, id: string, signal: string): Promise<void> {
     const record = this.owned(owner, id)
     if (!SIGNALS.has(signal as SubprocessTerminalSignal)) throw new Error('unsupported terminal signal')
     await record.handle.signalForeground(signal as SubprocessTerminalSignal)
   }
 
+  /**
+   * Terminate and remove one owned terminal.
+   * @param owner - opaque Client-generation owner.
+   * @param id - terminal id.
+   */
   async close(owner: string, id: string): Promise<void> {
     const record = this.owned(owner, id)
     this.records.delete(id)
     await record.handle.terminate()
   }
 
+  /**
+   * Terminate every terminal owned by one Client.
+   * @param owner - owner whose terminals must all terminate.
+   */
   async closeOwner(owner: string): Promise<void> {
     const records = [...this.records.values()].filter(record => record.owner === owner)
     for (const record of records) this.records.delete(record.id)
     await Promise.allSettled(records.map(record => record.handle.terminate()))
   }
 
+  /** Terminate every retained terminal during plugin disposal. */
   async closeAll(): Promise<void> {
     const records = [...this.records.values()]
     this.records.clear()

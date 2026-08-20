@@ -35,7 +35,7 @@ DeepSeek Harness Desktop applies the same canonical row once after the base and 
 
 ## Client surface
 
-The Client half registers one `conversation.session.header.utilities` trigger and one `shell.overlay` drawer. The trigger shows unread state without changing header geometry. The 320–560 px drawer remembers its width, becomes full-width on narrow screens, copies the exact current Session ID, and provides a direct send/reply fallback. **Start target Agent** is on by default, failed drafts are retained, and recent activity contains metadata only. Incoming messages use the ordinary context-disclosure renderer rather than a custom message card, so the conversation keeps the native Harness visual language. Notifications are in-app only: there is no native macOS/Windows notification, replacement session row, separate message-body inbox, or automatic Agent loop.
+The Client half provides its bounded store and send/reply actions to the Desktop workbench; it no longer registers a separate header trigger, drawer, or overlay. Side Chat copies the exact current Session ID and accepts an exact target ID, direct message, wake choice, and receipt-bound reply. **Start target Agent** is on by default, failed drafts are retained, and recent activity contains metadata only. An accepted outgoing delivery appends an ignorable source-side conversation row, while the destination relay remains an ordinary visible user-message row, so both sessions show the exchange without duplicating source text into model history. Notifications remain in-app only: there is no native macOS notification, replacement session row, separate message archive, or automatic Agent loop.
 
 ## Model Experience
 
@@ -56,6 +56,6 @@ The four definitions and SDK declarations are byte-stable while the plugin and p
 ## Known Limitations and Deferred Work
 
 - Messaging is local to one active profile and accepts only ordinary sessions; cross-profile, cross-device, subagent, broadcast, group, and public-network delivery are not implemented.
-- The drawer shows delivery metadata rather than a second message archive; collaboration content remains in the ordinary source and destination conversation histories.
+- Side Chat shows delivery metadata rather than a second message archive; collaboration content remains in the ordinary source and destination conversation histories.
 - Native system notifications are deferred because they require Electron permission and window-lifecycle ownership outside this independently disableable package.
 - The plugin provides explicit bounded peer messaging, not a new scheduler: either existing ordinary Agent can initiate or reply, and a reply chain is capped while either side may later start a fresh user-directed message. It creates no new session, subagent, forwarding rule, background loop, or autonomous two-Agent conversation.

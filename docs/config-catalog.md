@@ -833,7 +833,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/desktop-plugin-runtime/src/index.ts:258`](../packages/host/desktop-plugin-runtime/src/index.ts)
+Source: [`packages/host/desktop-plugin-runtime/src/index.ts:302`](../packages/host/desktop-plugin-runtime/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 
@@ -3250,6 +3250,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-settings-models` ([`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-plugin-inventory` ([`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-plugins` ([`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-settings-system-update` ([`packages/client/ui-settings-system-update/src/index.ts`](../packages/client/ui-settings-system-update/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-usage` ([`packages/client/ui-settings-usage/src/index.ts`](../packages/client/ui-settings-usage/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-sidebar` ([`packages/client/ui-sidebar/src/index.ts`](../packages/client/ui-sidebar/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-skill` ([`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts))
@@ -3265,6 +3266,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-command-goal` — requires `commands` · `goals` ([`packages/goal/command-goal/src/index.ts`](../packages/goal/command-goal/src/index.ts))
 - `@deepseek-ai/dsh-commands` ([`packages/interaction/commands/src/index.ts`](../packages/interaction/commands/src/index.ts))
 - `@deepseek-ai/dsh-cordis-client-runner` ([`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts))
+- `@deepseek-ai/dsh-desktop-workbench` — requires `sessions` · `webServer` · `subprocess` ([`packages/extensions/desktop-workbench/src/index.ts`](../packages/extensions/desktop-workbench/src/index.ts))
 - `@deepseek-ai/dsh-fs-e2b` — requires `e2b` ([`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts))
 - `@deepseek-ai/dsh-fs-observation-policy` ([`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts))
 - `@deepseek-ai/dsh-goal-round-driver` — requires `agents` · `goals` · `sessions` ([`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts))

@@ -104,7 +104,10 @@ export function writeUsageSnapshot(snapshot: UsageInsightsSnapshot): void {
   }
 }
 
-/** Clear isolated test state, optionally preserving durable bytes to emulate a renderer restart. */
+/**
+ * Clear isolated test state, optionally preserving durable bytes to emulate a renderer restart.
+ * @param options - test-only storage preservation choice.
+ */
 export function resetUsageSnapshotForTest(options: { preserveStorage?: boolean } = {}): void {
   latestSnapshot = undefined
   if (options.preserveStorage === true) return

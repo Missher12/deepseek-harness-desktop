@@ -5,6 +5,11 @@ import { resolveOptionalWorkspacePath, resolveWorkspacePath } from './workspace-
 
 const execFile = promisify(execFileCallback)
 
+/**
+ * Read bounded Git working-tree status.
+ * @param root - live session workspace root.
+ * @returns changed paths and status codes.
+ */
 export async function gitStatus(root: string): Promise<ReviewStatus> {
   const workspace = await resolveWorkspacePath(root)
   const { stdout } = await execFile('git', ['-C', workspace, 'status', '--porcelain=v1', '--untracked-files=normal', '--', '.'], {
@@ -17,6 +22,12 @@ export async function gitStatus(root: string): Promise<ReviewStatus> {
   }
 }
 
+/**
+ * Read one bounded, non-mutating Git diff.
+ * @param root - live session workspace root.
+ * @param child - optional relative changed path.
+ * @returns bounded unified diff text.
+ */
 export async function gitDiff(root: string, child?: string): Promise<ReviewDiff> {
   const workspace = await resolveWorkspacePath(root)
   if (child !== undefined && child !== '') await resolveOptionalWorkspacePath(workspace, child)

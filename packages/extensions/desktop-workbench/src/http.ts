@@ -7,13 +7,21 @@ import { listWorkspace, readWorkspaceFile } from './files.ts'
 import { gitDiff, gitStatus } from './review.ts'
 import { WorkbenchTerminalRegistry } from './terminal.ts'
 
+/** Exact route for directory listings. */
 export const LIST_PATH = '/plugins/dsh-desktop-workbench/files/list'
+/** Exact route for file previews. */
 export const READ_PATH = '/plugins/dsh-desktop-workbench/files/read'
+/** Exact route for Git status. */
 export const REVIEW_PATH = '/plugins/dsh-desktop-workbench/review/status'
+/** Exact route for Git diffs. */
 export const DIFF_PATH = '/plugins/dsh-desktop-workbench/review/diff'
+/** Exact route for terminal creation. */
 export const TERMINAL_OPEN_PATH = '/plugins/dsh-desktop-workbench/terminal/open'
+/** Exact route for terminal mutation. */
 export const TERMINAL_ACTION_PATH = '/plugins/dsh-desktop-workbench/terminal/action'
+/** Exact route for bounded terminal snapshots. */
 export const TERMINAL_SNAPSHOT_PATH = '/plugins/dsh-desktop-workbench/terminal/snapshot'
+/** Generation capability header name. */
 export const WORKBENCH_CAPABILITY_HEADER = 'x-dsh-desktop-workbench-capability'
 const BODY_LIMIT = 4096
 
@@ -70,7 +78,10 @@ function workspaceOf(ctx: Context, sessionId: string): string {
   return cwd
 }
 
-/** Install four exact capability-bound, read-only workbench routes. */
+/**
+ * Install exact capability-bound workbench routes.
+ * @param ctx - Host context providing sessions, WebServer, and subprocess.
+ */
 export function installWorkbenchHttp(ctx: Context): void {
   const capability = ctx.webServer.generationValue(
     'dsh-desktop-workbench.capability',
@@ -150,6 +161,12 @@ export function installWorkbenchHttp(ctx: Context): void {
   }, 'desktop-workbench: read-only HTTP bridge')
 }
 
+/**
+ * Inject the frozen generation capability into the trusted Client document.
+ * @param html - base index document.
+ * @param capability - generation-scoped random capability.
+ * @returns index document with one early bootstrap script.
+ */
 export function injectWorkbenchBootstrap(html: string, capability: string): string {
   const data = {
     listPath: LIST_PATH, readPath: READ_PATH, reviewPath: REVIEW_PATH, diffPath: DIFF_PATH,

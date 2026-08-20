@@ -1,7 +1,9 @@
+/** Closed native Desktop update lifecycle. */
 export type DesktopUpdatePhase =
   | 'idle' | 'checking' | 'current' | 'upstream-available' | 'desktop-available'
   | 'downloading' | 'verifying' | 'ready' | 'installing' | 'error'
 
+/** Validated update state shared by preload and settings UI. */
 export interface DesktopUpdateSnapshot {
   phase: DesktopUpdatePhase
   runningDesktop: string
@@ -13,6 +15,7 @@ export interface DesktopUpdateSnapshot {
   message: string | null
 }
 
+/** Narrow native updater bridge exposed by the Desktop preload. */
 export interface DesktopUpdateBridge {
   getUpdateStatus(): Promise<DesktopUpdateSnapshot>
   checkForUpdates(): Promise<DesktopUpdateSnapshot>

@@ -1,4 +1,6 @@
+/** Desktop workbench locale namespace. */
 export const NS = 'desktopWorkbench'
+/** Simplified-Chinese workbench copy. */
 export const zh = {
   open: '打开工作台', close: '关闭工作台', terminal: '终端', browser: '浏览器', files: '文件',
   'side-chat': '侧边聊天', review: '审阅',
@@ -17,6 +19,7 @@ export const zh = {
   browserDesktopOnly: '原生浏览器仅在桌面版可用', browserPlaceholder: '搜索或输入网址', browserNewTab: '输入网址开始浏览',
   back: '后退', forward: '前进', reload: '刷新', stop: '停止',
 } as const
+/** English workbench copy. */
 export const en: Record<keyof typeof zh, string> = {
   open: 'Open workbench', close: 'Close workbench', terminal: 'Terminal', browser: 'Browser', files: 'Files',
   'side-chat': 'Side chat', review: 'Review',
@@ -35,4 +38,5 @@ export const en: Record<keyof typeof zh, string> = {
   browserDesktopOnly: 'The native Browser is available in Desktop only', browserPlaceholder: 'Search or enter address', browserNewTab: 'Enter an address to browse',
   back: 'Back', forward: 'Forward', reload: 'Reload', stop: 'Stop',
 }
+/** Closed workbench locale key set. */
 export type DesktopWorkbenchKey = keyof typeof zh

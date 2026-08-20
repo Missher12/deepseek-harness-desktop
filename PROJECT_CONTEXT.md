@@ -68,6 +68,21 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- Version 0.3.0 adds the removable Intel-macOS Codex-style workbench opened by
+  one compact button beside Session log. Its bounded 320–720 px utility panel
+  contains a separately owned Terminal, an isolated native Browser, read-only
+  Files and Git Review modes, and Side Chat. Cross-session messages now append
+  visible source and target chat rows while retaining receipt-bound delivery;
+  the former standalone messenger trigger and drawer are no longer mounted.
+  The Terminal is limited to four shells, 16 KiB input, and 1 MiB retained
+  output and is terminated on mode close or plugin disposal. The Browser allows
+  HTTP(S) only, denies popup, download, and permission requests, and destroys
+  its sandboxed native view when closed. Files and Review canonicalize the
+  live session workspace, reject traversal and symlink escape, and cap text and
+  diff previews at 256 KiB. Reasoning uses a bounded typewriter reveal with no
+  sweep effect and flushes for settled, expanded, hidden, or reduced-motion
+  states. Only Desktop composition mounts the workbench; ordinary Web remains
+  unchanged.
 - Version 0.2.2 replaces the rejected macOS startup artwork with the approved
   Codex-like A direction. The local Electron phase is a network-free centered
   DeepSeek whale, title, status, and five-pixel indeterminate bar because Host

@@ -8,7 +8,12 @@ function assertContained(root: string, candidate: string): void {
   }
 }
 
-/** Canonicalize an existing child and reject lexical or symlink escape. */
+/**
+ * Canonicalize an existing child and reject lexical or symlink escape.
+ * @param root - workspace root.
+ * @param child - relative existing child.
+ * @returns canonical contained path.
+ */
 export async function resolveWorkspacePath(root: string, child = ''): Promise<string> {
   if (isAbsolute(child)) throw new Error('path is outside workspace')
   const canonicalRoot = await realpath(root)
@@ -17,7 +22,12 @@ export async function resolveWorkspacePath(root: string, child = ''): Promise<st
   return candidate
 }
 
-/** Validate a workspace child even when the final file has been deleted. */
+/**
+ * Validate a workspace child even when the final file has been deleted.
+ * @param root - workspace root.
+ * @param child - relative child whose parent still exists.
+ * @returns contained lexical target under a canonical parent.
+ */
 export async function resolveOptionalWorkspacePath(root: string, child: string): Promise<string> {
   if (isAbsolute(child) || child.includes('\0')) throw new Error('path is outside workspace')
   const canonicalRoot = await realpath(root)
