@@ -75,6 +75,13 @@ describe('SessionMessengerCoordinator delivery', () => {
     expect(Object.isFrozen(deliveredMessage)).toBe(true)
     expect(store.writes.map(receipt => receipt.status)).toEqual(['prepared', 'delivered'])
     expect(store.get(DeliveryId('delivery-1'))).not.toHaveProperty('envelope')
+    expect(caller.session.append).toHaveBeenCalledWith('session-messenger/outgoing', {
+      deliveryId: DeliveryId('delivery-1'),
+      targetSessionId: SessionId('target'),
+      body: 'hello',
+      status: 'delivered',
+      wakeRequested: mode === 'followup',
+    }, { ignorable: true })
     expect(target.whenIdle).not.toHaveBeenCalled()
     expect(h.ctx.agents.resume).not.toHaveBeenCalled()
   })
@@ -125,6 +132,7 @@ describe('SessionMessengerCoordinator delivery', () => {
     release()
 
     await expect(delivery).rejects.toMatchObject({ code: 'target-archived' })
+    expect(caller.session.append).not.toHaveBeenCalled()
     expect(target.inject).not.toHaveBeenCalled()
     expect(store.writes.map(receipt => receipt.status)).toEqual(['prepared', 'rejected'])
     expect(store.get(DeliveryId('delivery-1'))).toMatchObject({

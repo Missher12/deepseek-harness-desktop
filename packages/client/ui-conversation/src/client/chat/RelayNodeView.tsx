@@ -81,7 +81,7 @@ export const RelayNodeView = memo(function RelayNodeView({
   const wake = relayWake(source)
   const body = relayBody(content, source)
   return (
-    <div className={css.root} data-relay-card>
+    <div className={css.root} data-session-relay-incoming>
       <div className={css.header}>
         <IconSendOutline16 size={14} className={css.icon} />
         <span className={css.attribution}>{t('message.relay.from', { sender: label })}</span>

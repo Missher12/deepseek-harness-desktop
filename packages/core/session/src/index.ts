@@ -14,7 +14,7 @@ import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, SessionId } from './types.ts'
 import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
-import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType } from './types.ts'
+import type { CreateSessionOptions, EpochHeader, LogIntent, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType } from './types.ts'
 import { snapshotJsonValue } from './json.ts'
 import { deriveEventMessage, SurfaceManager } from './surface.ts'
 import type { SessionSurface } from './surface.ts'
@@ -604,9 +604,12 @@ export class Session {
   append<T extends SessionEventType>(
     type: T,
     data: SessionEventMap[T],
-    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []
+    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : [opts?: import('./types.ts').LogIntent]
   ): SessionEvent<T> {
-    const surfaceOpts: SurfaceIntent | undefined = opts[0]
+    const eventOpts: SurfaceIntent | LogIntent | undefined = opts[0]
+    const surfaceOpts = eventOpts !== undefined && 'surfaceOp' in eventOpts
+      ? eventOpts as SurfaceIntent
+      : undefined
     const surfaceMetadata = {
       ...surfaceOpts?.sourceEventSeqs === undefined ? {} : { sourceEventSeqs: surfaceOpts.sourceEventSeqs },
       ...surfaceOpts?.surfaceOp === undefined ? {} : { surfaceOp: surfaceOpts.surfaceOp },
@@ -629,6 +632,9 @@ export class Session {
       seq: this.log.length,
       time: Date.now(),
       data: dataSnapshot,
+      ...(eventOpts !== undefined && 'ignorable' in eventOpts && eventOpts.ignorable === true
+        ? { ignorable: true as const }
+        : {}),
       ...(surfaceMetadataSnapshot as { surfaceOp?: unknown; sourceEventSeqs?: unknown }),
     } as unknown as SessionEvent<T>)
     this.surfaceManager.validateNext(event as SessionEvent)

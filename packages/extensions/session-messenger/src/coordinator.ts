@@ -255,7 +255,9 @@ export class SessionMessengerCoordinator {
     })
     await this.commit(prepared)
 
-    return this.enqueuePrepared(target, prepared, signal)
+    const result = await this.enqueuePrepared(target, prepared, signal)
+    this.appendOutgoing(caller, prepared, result)
+    return result
   }
 
   private async replyNow(
@@ -306,7 +308,23 @@ export class SessionMessengerCoordinator {
 
     // The original one-use token is now durably consumed. From this commit
     // point the reverse delivery must finish even if the calling tool aborts.
-    return this.enqueuePrepared(target, prepared)
+    const result = await this.enqueuePrepared(target, prepared)
+    this.appendOutgoing(caller, prepared, result)
+    return result
+  }
+
+  /** Persist one model-hidden sender transcript only after inbox acceptance. */
+  private appendOutgoing(caller: Agent, prepared: RecoverableReceipt, result: DeliveryResult): void {
+    caller.session.append('session-messenger/outgoing', {
+      deliveryId: result.deliveryId,
+      targetSessionId: prepared.targetSessionId,
+      body: prepared.envelope.body,
+      status: result.status,
+      wakeRequested: result.wakeRequested,
+      ...(prepared.replyToDeliveryId === undefined
+        ? {}
+        : { replyToDeliveryId: prepared.replyToDeliveryId }),
+    }, { ignorable: true })
   }
 
   private prepareReceipt(

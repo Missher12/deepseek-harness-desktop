@@ -39,6 +39,10 @@ export function fakeAgent(
   id: string,
   options: { status?: 'idle' | 'running'; events?: unknown[]; origin?: 'subagent' } = {},
 ) {
+  const events = options.events ?? []
+  const append = vi.fn((type: string, data: unknown, envelope?: { ignorable?: true }) => {
+    events.push({ type, data, ...(envelope?.ignorable === true ? { ignorable: true } : {}) })
+  })
   return {
     id: SessionId(id),
     status: options.status ?? 'idle',
@@ -50,7 +54,8 @@ export function fakeAgent(
         createdAt: 1,
         ...(options.origin === undefined ? {} : { origin: options.origin }),
       },
-      events: options.events ?? [],
+      events,
+      append,
     },
     inbox: { nextTurn: [], nextStep: [] },
     ctx: {},
@@ -62,7 +67,7 @@ export function fakeAgent(
     followup: ReturnType<typeof vi.fn>
     whenIdle: ReturnType<typeof vi.fn>
     inbox: { nextTurn: unknown[]; nextStep: unknown[] }
-    session: { header: { id: ReturnType<typeof SessionId>; origin?: 'subagent' }; events: unknown[] }
+    session: { header: { id: ReturnType<typeof SessionId>; origin?: 'subagent' }; events: unknown[]; append: ReturnType<typeof vi.fn> }
   }
 }
 

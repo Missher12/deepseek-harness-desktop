@@ -27,6 +27,23 @@ export const ReplyToken = (value: string): ReplyToken => value as ReplyToken
 /** Inbox behavior selected for one delivery. */
 export type DeliveryMode = 'inject' | 'followup'
 
+/** Model-hidden, durable source-side transcript row for an accepted relay. */
+export interface OutgoingRelayEvent {
+  readonly deliveryId: DeliveryId
+  readonly targetSessionId: SessionId
+  readonly body: string
+  readonly status: 'delivered' | 'delivery-recovery-pending'
+  readonly wakeRequested: boolean
+  readonly replyToDeliveryId?: DeliveryId
+}
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    /** UI-only sender transcript; never enters model history. */
+    'session-messenger/outgoing': OutgoingRelayEvent
+  }
+}
+
 /** Body retained only while an enqueue may need idempotent recovery. */
 export interface RelayEnvelope {
   readonly body: string

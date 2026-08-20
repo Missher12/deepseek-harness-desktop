@@ -4,11 +4,13 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { WorkbenchInjected } from './preferences.ts'
 import { NS } from './locales.ts'
 import css from './WorkbenchPanel.module.css'
+import { SideChatMode } from './SideChatMode.tsx'
 
 const MODES: UtilityMode[] = ['terminal', 'browser', 'files', 'side-chat', 'review']
 export type WorkbenchPanelProps = PropsRuntime<'layout.utility'> & PropsLocale<typeof NS> & InjectFace<WorkbenchInjected>
 
-export function WorkbenchPanel({ mode, close, selectMode, t }: WorkbenchPanelProps) {
+export function WorkbenchPanel(props: WorkbenchPanelProps) {
+  const { mode, close, selectMode, t } = props
   const tabs = useRef<Array<HTMLButtonElement | null>>([])
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape') { close(); return }
@@ -32,7 +34,9 @@ export function WorkbenchPanel({ mode, close, selectMode, t }: WorkbenchPanelPro
         </div>
         <button type="button" className={css.close} aria-label={t('close')} onClick={close}>×</button>
       </header>
-      <div className={css.body} role="tabpanel"><p>{t(`placeholder.${mode}`)}</p></div>
+      <div className={css.body} role="tabpanel">
+        {mode === 'side-chat' ? <SideChatMode {...props} /> : <p>{t(`placeholder.${mode}`)}</p>}
+      </div>
     </section>
   )
 }

@@ -134,12 +134,14 @@ afterEach(() => {
 })
 
 describe('session messenger Client registration', () => {
-  it('mounts no header, drawer, or footer surface because relays render in chat', () => {
+  it('provides transport and mounts only the outgoing chat renderer', () => {
     const registrations: Array<{ name: string; options: Record<string, unknown>; component: unknown }> = []
     const disposers: Array<() => void> = []
     const localeDispose = vi.fn()
     const slotDispose = vi.fn()
     const ctx = {
+      reflect: { provide: vi.fn(() => vi.fn()) },
+      conversationEvents: { register: vi.fn(() => vi.fn()) },
       effect(setup: () => (() => void) | undefined) {
         const dispose = setup()
         if (typeof dispose === 'function') disposers.push(dispose)
@@ -158,12 +160,14 @@ describe('session messenger Client registration', () => {
     }
 
     apply(ctx as never)
-    expect(inject).toEqual(['locale', 'slots'])
-    expect(registrations).toEqual([])
-    expect(disposers).toEqual([])
+    expect(inject).toEqual(['conversationEvents', 'locale', 'slots'])
+    expect(registrations.map(entry => entry.name)).toEqual(['conversation.chat.node'])
+    expect(registrations[0]?.options).toMatchObject({ key: 'session-relay-outgoing' })
+    expect(ctx.reflect.provide).toHaveBeenCalledWith('sessionMessengerClient', expect.any(Object))
+    expect(ctx.conversationEvents.register).toHaveBeenCalledOnce()
     for (const dispose of disposers.reverse()) dispose()
-    expect(localeDispose).not.toHaveBeenCalled()
-    expect(slotDispose).not.toHaveBeenCalled()
+    expect(localeDispose).toHaveBeenCalledOnce()
+    expect(slotDispose).toHaveBeenCalledOnce()
   })
 })
 

@@ -41,6 +41,9 @@ export const en = {
   ackFailed: 'Could not mark notifications read',
   noSession: 'Open an ordinary session to copy its ID',
   close: 'Close session messages',
+  sentTo: 'Sent to {target}',
+  wakeShort: 'wake requested',
+  recoveryPending: 'Delivered; receipt recovery is pending',
 } as const
 
 /** Stable translation key shared by every supported locale. */
@@ -85,4 +88,7 @@ export const zh = {
   ackFailed: '无法标记通知',
   noSession: '请先打开一个普通会话再复制 ID',
   close: '关闭会话通信',
+  sentTo: '已发送到 {target}',
+  wakeShort: '已请求唤醒',
+  recoveryPending: '消息已投递，回执正在恢复',
 } as const satisfies Record<SessionMessengerKey, string>

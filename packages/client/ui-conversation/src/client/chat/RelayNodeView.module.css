@@ -1,4 +1,4 @@
-/* Cross-session relay card: bordered left-aligned row with sender attribution. */
+/* Cross-session relay: a continuous left-aligned chat bubble, not a card. */
 
 .root {
   box-sizing: border-box;
@@ -7,11 +7,9 @@
   gap: 6px;
   width: fit-content;
   max-width: 100%;
-  min-width: 200px;
-  padding: 10px 12px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-base);
+  padding: 10px 14px;
+  border-radius: 18px 18px 18px 5px;
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .header {
