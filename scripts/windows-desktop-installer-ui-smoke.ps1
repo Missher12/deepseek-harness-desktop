@@ -8,6 +8,65 @@ $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class NativeInstallerWindow
+{
+    private delegate bool EnumChildProc(IntPtr window, IntPtr parameter);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Rect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumChildWindows(
+        IntPtr parent,
+        EnumChildProc callback,
+        IntPtr parameter);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(
+        IntPtr window,
+        StringBuilder className,
+        int maximumCount);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr window, out Rect rectangle);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr window);
+
+    public static bool HasVisibleChildClass(IntPtr parent, string expectedClass)
+    {
+        var found = false;
+        EnumChildWindows(parent, (window, parameter) =>
+        {
+            var className = new StringBuilder(256);
+            Rect rectangle;
+            if (GetClassName(window, className, className.Capacity) > 0 &&
+                String.Equals(className.ToString(), expectedClass, StringComparison.Ordinal) &&
+                IsWindowVisible(window) &&
+                GetWindowRect(window, out rectangle) &&
+                rectangle.Right > rectangle.Left &&
+                rectangle.Bottom > rectangle.Top)
+            {
+                found = true;
+                return false;
+            }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+}
+'@
 
 $script:InstallerProcessId = 0
 
@@ -200,7 +259,11 @@ try {
       }
       $details = Find-Control -Element $window `
         -ControlType ([System.Windows.Automation.ControlType]::List)
-      if ($null -ne $details -or $text -match 'Application files installed|Shortcuts are ready') {
+      $nativeDetailsVisible = [NativeInstallerWindow]::HasVisibleChildClass(
+        [IntPtr]$window.Current.NativeWindowHandle,
+        'SysListView32'
+      )
+      if ($null -ne $details -or $nativeDetailsVisible -or $text -match 'Application files installed|Shortcuts are ready') {
         $detailsObserved = $true
       }
       if ($text -match 'Completing DeepSeek Harness Setup') {

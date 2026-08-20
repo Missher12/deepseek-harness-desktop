@@ -13,6 +13,8 @@ describe('Windows Desktop assisted installer smoke', () => {
     expect(source).toContain('Welcome to DeepSeek Harness Setup')
     expect(source).toContain('Choose Install Location')
     expect(source).toContain('[System.Windows.Automation.ControlType]::ProgressBar')
+    expect(source).toContain('NativeInstallerWindow')
+    expect(source).toContain('SysListView32')
     expect(source).toContain('Application files installed')
     expect(source).toContain('Completing DeepSeek Harness Setup')
     expect(source).toContain('Run DeepSeek Harness')
