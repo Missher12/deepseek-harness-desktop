@@ -54,7 +54,11 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     await dialog.getByRole('button', { name: 'Edit path' }).click()
     const pathInput = dialog.locator('input[aria-label="Edit path"]')
     await pathInput.fill(path)
-    await pathInput.press('Enter')
+    // Enter commits by replacing the edit zone. Send it through the focused
+    // page so Playwright does not keep retrying an action against the input
+    // node that the successful commit intentionally detached.
+    await page.keyboard.press('Enter')
+    await pathInput.waitFor({ state: 'hidden', timeout: 10_000 })
     return dialog
   }
 
