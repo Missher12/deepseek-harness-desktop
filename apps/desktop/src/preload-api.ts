@@ -16,7 +16,7 @@ const UPDATE_PHASES = [
 ] as const
 
 /** Closed update-state vocabulary emitted by the Electron main process. */
-export type DesktopUpdatePhase = typeof UPDATE_PHASES[number]
+type DesktopUpdatePhase = typeof UPDATE_PHASES[number]
 
 export interface DesktopUpdateSnapshot {
   phase: DesktopUpdatePhase
@@ -64,6 +64,11 @@ export function isDesktopUpdateSnapshot(value: unknown): value is DesktopUpdateS
     && nullableString(candidate.message)
 }
 
+/** Whether this native platform can consume the updater's verified DMG payload. */
+export function supportsDesktopUpdates(platform: NodeJS.Platform): boolean {
+  return platform === 'darwin'
+}
+
 /** Narrow API exposed through context isolation. */
 export interface DesktopApi {
   /** Subscribe to validated native menu commands. */
@@ -71,15 +76,15 @@ export interface DesktopApi {
   /** Request one validated recovery action. */
   recover(action: RecoveryAction): void
   /** Read the cached main-process update state. */
-  getUpdateStatus(): Promise<DesktopUpdateSnapshot>
+  getUpdateStatus?(): Promise<DesktopUpdateSnapshot>
   /** Run a manual fixed-channel update check. */
-  checkForUpdates(): Promise<DesktopUpdateSnapshot>
+  checkForUpdates?(): Promise<DesktopUpdateSnapshot>
   /** Download and verify the accepted Desktop release. */
-  downloadUpdate(): Promise<DesktopUpdateSnapshot>
+  downloadUpdate?(): Promise<DesktopUpdateSnapshot>
   /** Open the verified native installation payload. */
-  installUpdate(): Promise<{ opened: boolean; message?: string }>
+  installUpdate?(): Promise<{ opened: boolean; message?: string }>
   /** Subscribe to validated update-state transitions. */
-  onUpdateStatus(listener: (snapshot: DesktopUpdateSnapshot) => void): () => void
+  onUpdateStatus?(listener: (snapshot: DesktopUpdateSnapshot) => void): () => void
 }
 
 declare global {

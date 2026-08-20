@@ -125,6 +125,10 @@ describe('CI workflow', () => {
       expect(job['runs-on']).toContain('vm-backup')
       expect(job['runs-on']).toContain("|| 'ubuntu-24.04'")
     }
+    if (!isRecord(node24Consumers.env)) throw new TypeError('node-24-consumers must define resource budgets')
+    expect(node24Consumers.env.DSH_GATE_CONCURRENCY).toContain("&& '8' || '3'")
+    expect(node24Consumers.env.DSH_WEB_SNAPSHOT_WORKERS).toContain("&& '6' || '2'")
+    expect(node24Consumers.env.DSH_SNAPSHOT_MAX_CONCURRENCY).toContain("&& '12' || '2'")
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')

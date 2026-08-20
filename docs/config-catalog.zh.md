@@ -835,7 +835,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/host/desktop-plugin-runtime/src/index.ts:258`](../packages/host/desktop-plugin-runtime/src/index.ts)
+来源：[`packages/host/desktop-plugin-runtime/src/index.ts:302`](../packages/host/desktop-plugin-runtime/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 
@@ -3252,6 +3252,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-settings-models`（[`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-plugin-inventory`（[`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-plugins`（[`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-settings-system-update`（[`packages/client/ui-settings-system-update/src/index.ts`](../packages/client/ui-settings-system-update/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-usage`（[`packages/client/ui-settings-usage/src/index.ts`](../packages/client/ui-settings-usage/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-sidebar`（[`packages/client/ui-sidebar/src/index.ts`](../packages/client/ui-sidebar/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-skill`（[`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts)）

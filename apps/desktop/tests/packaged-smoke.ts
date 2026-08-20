@@ -968,7 +968,6 @@ async function exerciseUsageInsights(
 }
 
 async function exerciseSystemUpdate(page: Page, platform: NodeJS.Platform): Promise<void> {
-  if (platform !== 'darwin') return
   const bridgeShape = await page.evaluate(() => ({
     getUpdateStatus: typeof window.dshDesktop?.getUpdateStatus,
     checkForUpdates: typeof window.dshDesktop?.checkForUpdates,
@@ -976,6 +975,23 @@ async function exerciseSystemUpdate(page: Page, platform: NodeJS.Platform): Prom
     installUpdate: typeof window.dshDesktop?.installUpdate,
     onUpdateStatus: typeof window.dshDesktop?.onUpdateStatus,
   }))
+  if (platform !== 'darwin') {
+    expect(bridgeShape).toEqual({
+      getUpdateStatus: 'undefined',
+      checkForUpdates: 'undefined',
+      downloadUpdate: 'undefined',
+      installUpdate: 'undefined',
+      onUpdateStatus: 'undefined',
+    })
+    const settingsTrigger = page.locator('[data-dsh-desktop-command="open-settings"]')
+    if (await settingsTrigger.getAttribute('aria-expanded') !== 'true') await settingsTrigger.click()
+    const settingsDialog = page.getByRole('dialog').last()
+    await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
+    expect(await settingsDialog.getByRole('button', { name: /^(?:System Update|系统更新)$/u }).count()).toBe(0)
+    await page.keyboard.press('Escape')
+    await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
+    return
+  }
   expect(bridgeShape).toEqual({
     getUpdateStatus: 'function',
     checkForUpdates: 'function',

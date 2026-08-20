@@ -82,6 +82,14 @@ The repository is based on the pinned official source and adds the desktop appli
   GitHub-hosted `ubuntu-24.04` and `windows-2025` runners; the existing explicit
   self-hosted failover selectors remain available. This prevents release
   checks from waiting forever on upstream-only enterprise runner labels.
+  Windows does not expose or invoke the macOS-only update bridge; Windows
+  upgrades remain explicit Setup installs. Desktop packaging keeps its narrow
+  runtime allowlist and now also excludes `.env`, credential, and `.dsh`
+  paths explicitly. The final local candidate passes all 37 static gates, all
+  10 consumer/build gates, 124 Desktop tests, and the complete 14,428-test
+  coverage gate at 100% statements, branches, functions, and lines. A clean
+  native Windows Setup build and installed-app lifecycle smoke remain the
+  release authority for this commit.
 - Version 0.2.0 rebased the Desktop product on official `dsh-v0.1.0-rc.8`
   while retaining the current macOS/Desktop feature set. It adds a native
   Windows assisted installer whose ordinary double-click flow exposes Welcome,

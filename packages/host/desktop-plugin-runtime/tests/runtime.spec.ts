@@ -183,6 +183,33 @@ describe('Desktop plugin runtime services', () => {
     expect(existsSync(shimDir)).toBe(false)
   })
 
+  it('reuses its shim, supports an empty ambient PATH, and emits the Windows wrapper', async () => {
+    const originalPath = process.env.PATH
+    delete process.env.PATH
+    try {
+      const fixture = harness()
+      const service = fixture.services.pnpm as unknown as { ensureNodeShim(): string }
+      const shimDir = service.ensureNodeShim()
+      expect(service.ensureNodeShim()).toBe(shimDir)
+      const operation = fixture.services.pnpm.runPlugin(['update'], '/tmp')
+      expect((fixture.spawn.mock.calls[0]?.[0] as { env: Record<string, string> }).env.PATH).toBe(shimDir)
+      fixture.settle({ exitCode: 0, signal: null })
+      await operation.done
+      await fixture.ctx.fiber.dispose()
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH
+      else process.env.PATH = originalPath
+    }
+
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const windows = harness()
+    const windowsService = windows.services.pnpm as unknown as { ensureNodeShim(): string }
+    const windowsShimDir = windowsService.ensureNodeShim()
+    expect(readFileSync(join(windowsShimDir, 'node.cmd'), 'utf8')).toContain('@echo off\r\n')
+    await windows.ctx.fiber.dispose()
+    platform.mockRestore()
+  })
+
   it('rejects unsafe inputs and serializes one operation for the generation', async () => {
     const { services, settle } = harness()
     expect(() => services.pnpm.runPlugin([], '/tmp')).toThrow(/must not be empty/i)

@@ -25,6 +25,12 @@ files:
   - "!node_modules/**/*.d.cts"
   - "!node_modules/**/*.d.mts"
   - "!node_modules/**/*.tsbuildinfo"
+  # Credentials belong to the user's runtime home. Fail closed even if a
+  # future dependency or staging change accidentally places one in the tree.
+  - "!**/.env"
+  - "!**/.env.*"
+  - "!**/.credentials.yaml"
+  - "!**/.dsh/**"
   # The telemetry package accepts resources 2.x and the deployed graph already
   # carries a compatible top-level copy. Avoid a duplicate deeply nested tree.
   - "!node_modules/@deepseek-ai/dsh-session-telemetry-otel/node_modules/@opentelemetry/resources/**"

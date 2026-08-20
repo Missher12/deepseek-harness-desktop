@@ -1,3 +1,4 @@
+/** Simplified Chinese copy for the System Update settings section. */
 export const zh = {
   section: '系统更新',
   title: '系统更新',
@@ -22,8 +23,10 @@ export const zh = {
   officialRelease: '查看官方发布',
 }
 
+/** Message keys shared by every System Update locale. */
 export type SystemUpdateLocaleKey = keyof typeof zh
 
+/** English copy for the System Update settings section. */
 export const en: Record<SystemUpdateLocaleKey, string> = {
   section: 'System Update',
   title: 'System Update',

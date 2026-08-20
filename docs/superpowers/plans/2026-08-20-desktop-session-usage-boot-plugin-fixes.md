@@ -1,5 +1,7 @@
 # Desktop Session, Usage, Boot, and Plugin Fixes Implementation Plan
 
+English | [中文](2026-08-20-desktop-session-usage-boot-plugin-fixes.zh.md)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fix permanent deletion of resumed archived sessions, add real no-project sessions, make Usage Insights instant and geometry-stable, restore the macOS cold-start progress bar, and make packaged plugin installs independent of a system Node binary.
