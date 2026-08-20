@@ -722,7 +722,7 @@ async function exerciseSessionMessenger(
   expect(await page.locator('[data-messenger-trigger]').count()).toBe(0)
   expect(await page.getByRole('dialog', { name: /^(?:Session messages|会话通信)$/u }).count()).toBe(0)
 
-  const relay = page.locator('[data-relay-card]').filter({ hasText: 'desktop-smoke-visible-message' })
+  const relay = page.locator('[data-session-relay-incoming]').filter({ hasText: 'desktop-smoke-visible-message' })
   await relay.waitFor({ state: 'visible', timeout: 30_000 })
   const relayText = await relay.innerText()
   expect(relayText).toContain(seeded.messengerSourceSessionTitle)
@@ -732,6 +732,57 @@ async function exerciseSessionMessenger(
   await page.screenshot({
     path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-messenger-${platform}.png`),
   })
+}
+
+async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): Promise<void> {
+  const sessionLog = page.getByRole('button', { name: /^Session log/u })
+  const trigger = page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })
+  await trigger.waitFor({ state: 'visible', timeout: 15_000 })
+  const [sessionLogBounds, triggerBounds] = await Promise.all([
+    sessionLog.boundingBox(),
+    trigger.boundingBox(),
+  ])
+  if (sessionLogBounds === null || triggerBounds === null) {
+    throw new Error('Packaged smoke: Session log and workbench trigger geometry is unavailable.')
+  }
+  expect(triggerBounds.x).toBeGreaterThanOrEqual(sessionLogBounds.x + sessionLogBounds.width)
+
+  await trigger.click()
+  const panel = page.locator('[data-desktop-workbench-panel]:visible')
+  await panel.waitFor({ state: 'visible', timeout: 15_000 })
+  const tabs = panel.getByRole('tablist').getByRole('tab')
+  await expect.poll(() => tabs.count(), { timeout: 15_000 }).toBe(5)
+  expect([
+    ['终端', '浏览器', '文件', '侧边聊天', '审阅'],
+    ['Terminal', 'Browser', 'Files', 'Side chat', 'Review'],
+  ]).toContainEqual(await tabs.allTextContents())
+  const terminalInput = panel.getByPlaceholder(/^(?:Type a command and press Return|输入命令并按回车)$/u)
+  await terminalInput.waitFor({ state: 'visible', timeout: 15_000 })
+  await terminalInput.fill("printf 'desktop-workbench-terminal-ok\\n'")
+  await terminalInput.press('Enter')
+  await expect.poll(() => panel.innerText(), { timeout: 15_000 }).toContain('desktop-workbench-terminal-ok')
+  expect(await panel.innerText()).not.toContain('posix_spawn failed')
+  await page.screenshot({
+    path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-workbench-${platform}.png`),
+  })
+
+  await panel.getByRole('tab', { name: /^(?:Browser|浏览器)$/u }).click()
+  await panel.locator('[data-native-browser-host]').waitFor({ state: 'visible', timeout: 15_000 })
+  // Leaving Terminal asynchronously tears down its PTY. Keep that teardown
+  // fenced from the parent Harness process: the workbench must not take its
+  // own Host offline when a user changes tools.
+  await page.waitForTimeout(2_000)
+  await expect.poll(async () => await page.evaluate(async () => {
+    try { return (await fetch('/', { cache: 'no-store' })).status } catch { return 0 }
+  }), { timeout: 10_000 }).toBe(200)
+  await panel.getByRole('tab', { name: /^(?:Files|文件)$/u }).click()
+  await panel.getByPlaceholder(/^(?:Filter files|筛选文件)$/u).waitFor({ state: 'visible', timeout: 15_000 })
+  await panel.getByRole('tab', { name: /^(?:Side chat|侧边聊天)$/u }).click()
+  await panel.getByText(/^(?:Current Session ID|当前会话 ID)$/u).waitFor({ state: 'visible', timeout: 15_000 })
+  await panel.getByRole('tab', { name: /^(?:Review|审阅)$/u }).click()
+  await panel.getByText(/^(?:Changes|变更)$/u).waitFor({ state: 'visible', timeout: 15_000 })
+  await page.keyboard.press('Escape')
+  await expect.poll(() => trigger.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('false')
 }
 
 interface MarketRouteResult {
@@ -1019,7 +1070,10 @@ export async function runPackagedDesktopSmoke(
     const page = await nativeApp.firstWindow({ timeout: 120_000 })
     const consoleErrors: string[] = []
     page.on('console', (message) => {
-      if (message.type() === 'error') consoleErrors.push(message.text())
+      if (message.type() === 'error') {
+        const source = message.location().url
+        consoleErrors.push(`${message.text()}${source === '' ? '' : ` [${source}]`}`)
+      }
     })
     page.on('pageerror', error => consoleErrors.push(error.message))
     await waitForDesktopSurface(page, userData)
@@ -1075,6 +1129,7 @@ export async function runPackagedDesktopSmoke(
       await exerciseWindowsClipboard(page, nativeApp, clipboardSeed)
       await exerciseSessionMessenger(page, clipboardSeed, platform)
       if (platform === 'darwin') {
+        await exerciseDesktopWorkbench(page, platform)
         await exerciseReasoningEffort(page, harnessHome, platform)
       }
     } catch (error) {
@@ -1100,8 +1155,8 @@ export async function runPackagedDesktopSmoke(
     await exerciseSystemUpdate(page, platform)
     await exercisePluginMarket(page, harnessHome, platform, consoleErrors)
     expect(consoleErrors.filter(message => (
-      !/^Failed to load resource: the server responded with a status of 409 \(Conflict\)$/u.test(message)
-      && message !== 'Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING'
+      !/^Failed to load resource: the server responded with a status of 409 \(Conflict\)(?: \[https?:\/\/[^\]]+\])?$/u.test(message)
+      && !/^Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING(?: \[https?:\/\/[^\]]+\])?$/u.test(message)
     ))).toEqual([])
     expect(providerTripwire.requests).toEqual([])
 

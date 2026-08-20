@@ -272,6 +272,21 @@ describe('AppFrame', () => {
     expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBe('true')
   })
 
+  it('renders utility as an overlay drawer when the center cannot retain its floor', () => {
+    frameWidth = 1180
+    const { frame, instance, getByTestId } = mountFrame()
+    act(() => { instance.actions.openUtility('terminal') })
+    expect(tracks(frame)).toEqual([280, 0, 0])
+    expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBe('true')
+  })
+
+  it('keeps every narrow utility surface in the overlay drawer even when columns barely fit', () => {
+    frameWidth = 1020
+    const { instance, getByTestId } = mountFrame()
+    act(() => { instance.actions.openUtility('terminal') })
+    expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBe('true')
+  })
+
   it('closed sidebar keeps its compact rail with mounted slot content and collapsed owner props', () => {
     const { frame, instance, slotCalls, getByTestId } = mountFrame()
     act(() => { instance.actions.toggleSidebar() })

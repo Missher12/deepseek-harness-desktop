@@ -153,13 +153,25 @@ export function AppFrame({
     ? 0
     : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
   const utilityOpen = detailsSession !== undefined && panels.utilityOpen
-  const utilityDrawer = narrow && utilityOpen
-  const cols = computeColumns(
+  const dockedCols = computeColumns(
     viewport,
     sidebarPreference,
     detailsSession === undefined ? 0 : panels.details,
-    utilityDrawer || !utilityOpen ? 0 : panels.utilityWidth,
+    utilityOpen ? panels.utilityWidth : 0,
   )
+  // The column solver protects the conversation floor by conceding the
+  // utility column to zero. In that state the workbench must become a drawer
+  // even when the viewport is just above the fixed narrow breakpoint;
+  // otherwise its mounted content is present but completely invisible.
+  const utilityDrawer = utilityOpen && (narrow || dockedCols.utility === 0)
+  const cols = utilityDrawer
+    ? computeColumns(
+      viewport,
+      sidebarPreference,
+      detailsSession === undefined ? 0 : panels.details,
+      0,
+    )
+    : dockedCols
   const colsRef = useRef(cols)
   colsRef.current = cols
 

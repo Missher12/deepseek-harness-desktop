@@ -12,9 +12,20 @@ const execFile = promisify(execFileCallback)
  */
 export async function gitStatus(root: string): Promise<ReviewStatus> {
   const workspace = await resolveWorkspacePath(root)
-  const { stdout } = await execFile('git', ['-C', workspace, 'status', '--porcelain=v1', '--untracked-files=normal', '--', '.'], {
-    encoding: 'utf8', maxBuffer: 1024 * 1024,
-  })
+  let stdout: string
+  try {
+    const result = await execFile('git', ['-C', workspace, 'status', '--porcelain=v1', '--untracked-files=normal', '--', '.'], {
+      encoding: 'utf8', maxBuffer: 1024 * 1024,
+      env: { ...process.env, LC_ALL: 'C', LANG: 'C' },
+    })
+    stdout = result.stdout
+  } catch (error: unknown) {
+    const failure = error as { code?: unknown; stderr?: unknown }
+    if (failure.code === 128 && typeof failure.stderr === 'string' && failure.stderr.includes('not a git repository')) {
+      return { entries: [], truncated: false }
+    }
+    throw error
+  }
   const lines = stdout.split('\n').filter(Boolean)
   return {
     entries: lines.slice(0, 200).map(line => ({ status: line.slice(0, 2), path: line.slice(3) })),

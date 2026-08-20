@@ -27,7 +27,7 @@ export function WorkbenchPanel(props: WorkbenchPanelProps) {
     event.preventDefault()
   }
   return (
-    <section className={css.panel} aria-label={t(mode)} onKeyDown={onKeyDown}>
+    <section className={css.panel} aria-label={t(mode)} data-desktop-workbench-panel onKeyDown={onKeyDown}>
       <header className={css.header}>
         <div className={css.tabs} role="tablist">
           {MODES.map((item, index) => (

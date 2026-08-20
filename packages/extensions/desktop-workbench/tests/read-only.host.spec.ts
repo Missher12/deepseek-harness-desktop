@@ -41,4 +41,9 @@ describe('read-only workbench data sources', () => {
     expect((await gitStatus(root)).entries).toContainEqual({ status: ' D', path: 'gone.txt' })
     expect((await gitDiff(root, 'gone.txt')).text).toContain('-before')
   })
+
+  it('renders a non-Git workspace as an empty review instead of an HTTP error', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-review-non-git-'))
+    await expect(gitStatus(root)).resolves.toEqual({ entries: [], truncated: false })
+  })
 })

@@ -111,7 +111,12 @@ export class WorkbenchTerminalRegistry {
    * @param id - terminal id.
    */
   async close(owner: string, id: string): Promise<void> {
-    const record = this.owned(owner, id)
+    const record = this.records.get(id)
+    // React effect cleanup and an explicit close can race. A missing random
+    // terminal id is already closed, while a live foreign record remains a
+    // hard authorization failure.
+    if (record === undefined) return
+    if (record.owner !== owner) throw new Error('foreign terminal')
     this.records.delete(id)
     await record.handle.terminate()
   }

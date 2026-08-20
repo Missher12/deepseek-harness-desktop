@@ -28,7 +28,6 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
 
   constructor(private readonly layout: Pick<ILayout, 'openUtility' | 'closeUtility' | 'toggleUtility' | 'setUtilityWidth'>, private readonly storage: StorageWriter) {
     this.#snapshot = { open: false, mode: 'terminal', width: loadWidth(storage) }
-    layout.setUtilityWidth(this.#snapshot.width)
   }
 
   getSnapshot = (): WorkbenchSnapshot => this.#snapshot
@@ -41,7 +40,7 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
   toggle(sessionId: SessionId): void {
     const open = this.#snapshot.sessionId === sessionId ? !this.#snapshot.open : true
     this.#set({ ...this.#snapshot, sessionId, open })
-    if (open) this.layout.openUtility(this.#snapshot.mode)
+    if (open) this.#openUtility(this.#snapshot.mode)
     else this.layout.closeUtility()
   }
 
@@ -52,7 +51,7 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
    */
   open(sessionId: SessionId, mode: UtilityMode = this.#snapshot.mode): void {
     this.#set({ ...this.#snapshot, sessionId, mode, open: true })
-    this.layout.openUtility(mode)
+    this.#openUtility(mode)
   }
 
   /** Close the utility workbench. */
@@ -64,7 +63,7 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
    */
   selectMode(mode: UtilityMode): void {
     this.#set({ ...this.#snapshot, mode, open: true })
-    this.layout.openUtility(mode)
+    this.#openUtility(mode)
   }
 
   /**
@@ -81,6 +80,11 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
   #set(next: WorkbenchSnapshot): void {
     this.#snapshot = next
     for (const listener of this.#listeners) listener()
+  }
+
+  #openUtility(mode: UtilityMode): void {
+    this.layout.setUtilityWidth(this.#snapshot.width)
+    this.layout.openUtility(mode)
   }
 }
 

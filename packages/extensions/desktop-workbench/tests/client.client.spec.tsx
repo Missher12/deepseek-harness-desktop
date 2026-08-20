@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HeaderButton, type HeaderButtonProps } from '../src/client/HeaderButton.tsx'
 import { WorkbenchPanel, type WorkbenchPanelProps } from '../src/client/WorkbenchPanel.tsx'
@@ -31,6 +32,25 @@ function setup() {
 }
 
 describe('desktop workbench shell', () => {
+  it('defers persisted width until the first open after the layout root mounts', () => {
+    const layout = new LayoutController()
+    const controller = new WorkbenchController(layout, {
+      getItem: () => '512',
+      setItem: vi.fn(),
+    })
+    const panels = {
+      setSidebar: vi.fn(), setDetails: vi.fn(), toggleSidebar: vi.fn(),
+      openDetails: vi.fn(), closeDetails: vi.fn(), openUtility: vi.fn(),
+      closeUtility: vi.fn(), toggleUtility: vi.fn(), setUtilityWidth: vi.fn(),
+    }
+    layout.attachPanels(panels as never)
+
+    controller.open(sessionId)
+
+    expect(panels.setUtilityWidth).toHaveBeenCalledWith(512)
+    expect(panels.openUtility).toHaveBeenCalledWith('terminal')
+  })
+
   it('clamps the persisted width', () => {
     expect(loadWidth({ getItem: () => '9999' })).toBe(720)
     expect(loadWidth({ getItem: () => '100' })).toBe(320)
@@ -53,6 +73,7 @@ describe('desktop workbench shell', () => {
       <WorkbenchPanel {...panelProps} mode={controller.getSnapshot().mode} />
     </>)
     expect(button.getAttribute('aria-expanded')).toBe('true')
+    expect(view.container.querySelector('[data-desktop-workbench-panel]')).not.toBeNull()
     expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['终端', '浏览器', '文件', '侧边聊天', '审阅'])
   })
 

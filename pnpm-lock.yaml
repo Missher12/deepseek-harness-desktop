@@ -10,7 +10,7 @@ overrides:
 
 patchedDependencies:
   dshmarket@1.10.1: efcf04deebc80cacd39f796003fa305a0474312719305b34ab40750716213ffd
-  node-pty@1.2.0-beta.15: b40ae545608897914bd25fb009c97eeac478c34e8a910298ddcb01b746534bb0
+  node-pty@1.2.0-beta.15: 88fd1642f61a07e1f2f750e566e801b5f6870ad8bb7012ff86e6803db01a5739
 
 importers:
 
@@ -8846,7 +8846,7 @@ importers:
         version: 3.1.1
       node-pty:
         specifier: 1.2.0-beta.15
-        version: 1.2.0-beta.15(patch_hash=b40ae545608897914bd25fb009c97eeac478c34e8a910298ddcb01b746534bb0)
+        version: 1.2.0-beta.15(patch_hash=88fd1642f61a07e1f2f750e566e801b5f6870ad8bb7012ff86e6803db01a5739)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -21437,7 +21437,7 @@ snapshots:
 
   node-int64@0.4.0: {}
 
-  node-pty@1.2.0-beta.15(patch_hash=b40ae545608897914bd25fb009c97eeac478c34e8a910298ddcb01b746534bb0):
+  node-pty@1.2.0-beta.15(patch_hash=88fd1642f61a07e1f2f750e566e801b5f6870ad8bb7012ff86e6803db01a5739):
     dependencies:
       node-addon-api: 7.1.1
 

@@ -249,10 +249,13 @@ describe('desktop package manifest', () => {
 
     expect(smoke).toContain('desktop-smoke-reasoning-${platform}.png')
     expect(smoke).toContain("locator('[data-messenger-trigger]').count()).toBe(0)")
-    expect(smoke).toContain("locator('[data-relay-card]')")
+    expect(smoke).toContain("locator('[data-session-relay-incoming]')")
+    expect(smoke).not.toContain("locator('[data-relay-card]')")
     expect(smoke).toContain('desktop-smoke-visible-message')
     expect(smoke).not.toContain('desktop-smoke-visible-reply')
     expect(smoke).toContain('desktop-smoke-messenger-${platform}.png')
+    expect(smoke).toContain('desktop-smoke-workbench-${platform}.png')
+    expect(smoke).toContain("getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })")
     expect(smoke).not.toContain("platform === 'win32'\n    ? await seedWindowsClipboardSmokeState")
   })
 

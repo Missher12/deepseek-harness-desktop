@@ -46,4 +46,18 @@ describe('WorkbenchTerminalRegistry', () => {
     await expect(registry.open('owner', '/workspace')).rejects.toThrow(/at most 4/)
     await registry.closeAll()
   })
+
+  it('treats a repeated close as an idempotent UI teardown', async () => {
+    const terminate = vi.fn(async () => {})
+    const handle: SubprocessTerminalHandle = {
+      pid: 42, output: new PassThrough(), done: new Promise(() => {}), write: async () => {}, terminate,
+      inspectForeground: async () => undefined, signalForeground: async () => 42,
+    }
+    const registry = new WorkbenchTerminalRegistry(async () => handle, async () => '/bin/zsh')
+    const opened = await registry.open('owner-a', '/workspace')
+    await expect(registry.close('owner-b', opened.id)).rejects.toThrow(/foreign terminal/)
+    await registry.close('owner-a', opened.id)
+    await expect(registry.close('owner-a', opened.id)).resolves.toBeUndefined()
+    expect(terminate).toHaveBeenCalledOnce()
+  })
 })
