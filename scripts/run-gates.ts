@@ -482,9 +482,19 @@ function ciWindowsBlockingGates(): Gate[] {
 }
 
 function ciWindowsCompleteGates(): Gate[] {
-  const coverage = coverageGates().map(gate => gate.id === 'coverage-exempt-heavy'
-    ? { ...gate, needs: [...new Set(['build', ...(gate.needs ?? [])])] }
-    : gate)
+  // A hosted Windows runner has four vCPUs. Do not overlap the instrumented
+  // partitions with the highly parallel build, or the uninstrumented heavy
+  // suite with those partitions: subprocess and worker-thread fixtures need
+  // real scheduling headroom to keep their behavioral timeouts meaningful.
+  const coverage = coverageGates().map(gate => ({
+    ...gate,
+    needs: [...new Set([
+      'build',
+      'windows-site',
+      ...gate.id === 'coverage-exempt-heavy' ? ['coverage'] : [],
+      ...(gate.needs ?? []),
+    ])],
+  }))
   const coverageAfter = coverage.map(gate => gate.id)
   const observational = ciWindowsObservationalGates()
     // The required production site replaces the observational MPA build; both

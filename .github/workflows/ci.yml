@@ -477,8 +477,8 @@ jobs:
     timeout-minutes: 120
     env:
       # windows-2025 is a four-vCPU hosted runner. Two instrumented partitions
-      # plus the one-worker exempt lane leave a core for real subprocess,
-      # worker-thread, ConPTY, and protocol-timer fixtures.
+      # run only after the build and before the one-worker exempt lane, leaving
+      # scheduling headroom for subprocess, worker-thread, ConPTY, and timer fixtures.
       DSH_COVERAGE_MAX_WORKERS: '3'
       DSH_COVERAGE_PARTITIONS: '2'
       # Instrumented process and polling fixtures can exceed Vitest's defaults
