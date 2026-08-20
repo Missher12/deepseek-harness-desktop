@@ -665,6 +665,22 @@ async function exerciseWindowsDirectoryPicker(
   expect(await page.locator('body[data-dsh-surface="desktop"]').count()).toBe(1)
 }
 
+async function dismissCredentialOnboarding(page: Page, required: boolean): Promise<void> {
+  const credentialDialog = page.getByRole('dialog', {
+    name: /^(?:Add an API key to get started|添加一个 API Key 开始使用)$/u,
+  })
+  try {
+    await credentialDialog.waitFor({ state: 'visible', timeout: required ? 30_000 : 10_000 })
+  } catch (error) {
+    if (!required) return
+    throw error
+  }
+  await credentialDialog.getByRole('button', {
+    name: /^(?:Configure later|稍后配置)$/u,
+  }).click()
+  await credentialDialog.waitFor({ state: 'detached', timeout: 30_000 })
+}
+
 async function exerciseReasoningEffort(
   page: Page,
   harnessHome: string,
@@ -743,6 +759,7 @@ async function exerciseSessionMessenger(
   const activeRow = page.getByRole('treeitem').filter({ hasText: seeded.activeSessionTitle }).first()
   await activeRow.click()
   await expect.poll(() => activeRow.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
+  if (platform === 'win32') await dismissCredentialOnboarding(page, false)
 
   const beforeFiles = await waitForStableProtectedFileSnapshot(seeded.protectedPaths)
   expect(await page.locator('[data-messenger-trigger]').count()).toBe(0)
@@ -1039,20 +1056,16 @@ export async function runPackagedDesktopSmoke(
     await welcomeDialog.waitFor({ state: 'visible', timeout: 30_000 })
     await welcomeDialog.getByRole('button', { name: /^(?:Continue|继续)$/u }).click()
     await welcomeDialog.waitFor({ state: 'detached', timeout: 30_000 })
-    const credentialDialog = page.getByRole('dialog', {
-      name: /^(?:Add an API key to get started|添加一个 API Key 开始使用)$/u,
-    })
     if (platform === 'darwin') {
       // The native effort acceptance starts with an isolated, usable custom
       // provider so the first Session captures that exact model selection.
       // A usable non-DeepSeek route must also suppress the keyless onboarding.
+      const credentialDialog = page.getByRole('dialog', {
+        name: /^(?:Add an API key to get started|添加一个 API Key 开始使用)$/u,
+      })
       await expect.poll(() => credentialDialog.count(), { timeout: 30_000 }).toBe(0)
     } else {
-      await credentialDialog.waitFor({ state: 'visible', timeout: 30_000 })
-      await credentialDialog.getByRole('button', {
-        name: /^(?:Configure later|稍后配置)$/u,
-      }).click()
-      await credentialDialog.waitFor({ state: 'detached', timeout: 30_000 })
+      await dismissCredentialOnboarding(page, true)
     }
     expect(await page.locator('#root').evaluate((element: HTMLElement) => !element.inert)).toBe(true)
 
