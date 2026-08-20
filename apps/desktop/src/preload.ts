@@ -5,6 +5,9 @@ import {
   isDesktopUpdateSnapshot,
   isRecoveryAction,
 } from './preload-api.ts'
+import {
+  isDesktopBrowserBounds, isDesktopBrowserRequest, isDesktopBrowserSnapshot,
+} from './browser/contracts.ts'
 
 const api: DesktopApi = {
   onCommand(listener) {
@@ -46,6 +49,28 @@ const api: DesktopApi = {
     }
     ipcRenderer.on('desktop:update-state', handler)
     return () => { ipcRenderer.off('desktop:update-state', handler) }
+  },
+  async showWorkbenchBrowser(bounds) {
+    if (!isDesktopBrowserBounds(bounds)) throw new Error('Invalid workbench Browser bounds.')
+    const value: unknown = await ipcRenderer.invoke('desktop:workbench-browser-show', bounds)
+    if (!isDesktopBrowserSnapshot(value)) throw new Error('Invalid workbench Browser state.')
+    return value
+  },
+  async hideWorkbenchBrowser() {
+    await ipcRenderer.invoke('desktop:workbench-browser-hide')
+  },
+  async controlWorkbenchBrowser(request) {
+    if (!isDesktopBrowserRequest(request)) throw new Error('Invalid workbench Browser request.')
+    const value: unknown = await ipcRenderer.invoke('desktop:workbench-browser-control', request)
+    if (!isDesktopBrowserSnapshot(value)) throw new Error('Invalid workbench Browser state.')
+    return value
+  },
+  onWorkbenchBrowserState(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      if (isDesktopBrowserSnapshot(value)) listener(value)
+    }
+    ipcRenderer.on('desktop:workbench-browser-state', handler)
+    return () => { ipcRenderer.off('desktop:workbench-browser-state', handler) }
   },
 }
 

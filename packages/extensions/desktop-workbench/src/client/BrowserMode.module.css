@@ -1,0 +1,11 @@
+.browser { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-height: 100%; margin: -18px; background: var(--dsw-alias-bg-base); }
+.toolbar { display: flex; align-items: center; gap: 3px; padding: 8px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.toolbar button { width: 28px; height: 28px; flex: none; border: 0; border-radius: 7px; color: var(--dsw-alias-label-secondary); background: transparent; cursor: pointer; }
+.toolbar button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.toolbar input { min-width: 0; height: 28px; flex: 1; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; outline: none; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); font-size: 12px; }
+.toolbar input:focus { border-color: var(--dsw-alias-border-focus); }
+.status { display: flex; min-width: 0; justify-content: space-between; gap: 8px; padding: 5px 10px; color: var(--dsw-alias-label-caption); font-size: 10px; }
+.status span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status strong { overflow: hidden; color: var(--dsw-alias-state-error-primary); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.host { position: relative; min-height: 120px; overflow: hidden; border-top: 1px solid var(--dsw-alias-border-l2); }
+.host > span { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dsw-alias-label-caption); font-size: 12px; }

@@ -14,6 +14,8 @@ export const zh = {
   changes: '变更', refresh: '刷新', noChanges: '没有待审阅的变更', selectChange: '选择变更以查看差异', noDiff: '该文件暂无可显示的差异',
   reviewInChat: '在聊天中审阅', reviewDraft: '请审阅当前工作区中的 {path}，重点检查正确性、稳定性和潜在回归。',
   terminalTab: '终端 {index}', clearView: '清屏', terminalReady: '终端已就绪', terminalPlaceholder: '输入命令并按回车',
+  browserDesktopOnly: '原生浏览器仅在桌面版可用', browserPlaceholder: '搜索或输入网址', browserNewTab: '输入网址开始浏览',
+  back: '后退', forward: '前进', reload: '刷新', stop: '停止',
 } as const
 export const en: Record<keyof typeof zh, string> = {
   open: 'Open workbench', close: 'Close workbench', terminal: 'Terminal', browser: 'Browser', files: 'Files',
@@ -30,5 +32,7 @@ export const en: Record<keyof typeof zh, string> = {
   changes: 'Changes', refresh: 'Refresh', noChanges: 'No changes to review', selectChange: 'Select a change to view its diff', noDiff: 'No displayable diff for this file',
   reviewInChat: 'Review in chat', reviewDraft: 'Review {path} in the current workspace for correctness, stability, and regressions.',
   terminalTab: 'Terminal {index}', clearView: 'Clear', terminalReady: 'Terminal ready', terminalPlaceholder: 'Type a command and press Return',
+  browserDesktopOnly: 'The native Browser is available in Desktop only', browserPlaceholder: 'Search or enter address', browserNewTab: 'Enter an address to browse',
+  back: 'Back', forward: 'Forward', reload: 'Reload', stop: 'Stop',
 }
 export type DesktopWorkbenchKey = keyof typeof zh

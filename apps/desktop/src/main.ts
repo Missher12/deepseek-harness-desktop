@@ -25,6 +25,8 @@ import { findConflictingHarness } from './harness/ownership.ts'
 import { createLifecycleLogger } from './logging.ts'
 import { isRecoveryAction, type DesktopCommand } from './preload-api.ts'
 import { DesktopUpdateService } from './update/service.ts'
+import { WorkbenchBrowserController } from './browser/controller.ts'
+import { isDesktopBrowserBounds, isDesktopBrowserRequest } from './browser/contracts.ts'
 import { launchDesktopInstaller } from './update/installer.ts'
 import { allowRendererPermission, classifyNavigation } from './window/navigation.ts'
 import { createMenuTemplate } from './window/menu.ts'
@@ -91,6 +93,7 @@ const appFacade: AppFacade = {
 }
 
 let nativeWindow: BrowserWindow | undefined
+let workbenchBrowser: WorkbenchBrowserController | undefined
 let activeHarnessRoot: string | undefined
 const lifecycle: { controller?: DesktopApplication } = {}
 const updateService = new DesktopUpdateService({
@@ -178,6 +181,9 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
   const bounds = await readWindowBounds(windowStatePath, displays)
   const window = new BrowserWindow(createWindowOptions(bounds, preloadPath, process.platform))
   nativeWindow = window
+  workbenchBrowser = new WorkbenchBrowserController(window, (snapshot) => {
+    if (!window.isDestroyed()) window.webContents.send('desktop:workbench-browser-state', snapshot)
+  })
   let ownedRoot: string | undefined
   installNavigationPolicy(window, () => ownedRoot)
   const persistState = createStateWriter(window)
@@ -185,6 +191,7 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
   window.on('close', (event) => {
     event.preventDefault()
     persistState()
+    void workbenchBrowser?.hide()
     if (platformBehavior.hideWindowOnClose) window.hide()
     else app.quit()
   })
@@ -195,6 +202,7 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
 
   const desktopWindow: DesktopWindow = {
     async loadLoading() {
+      await workbenchBrowser?.hide()
       ownedRoot = undefined
       activeHarnessRoot = undefined
       await window.loadFile(loadingPath)
@@ -205,6 +213,7 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
       await window.loadURL(url)
     },
     async loadFailure(reason: FailureReason) {
+      await workbenchBrowser?.hide()
       ownedRoot = undefined
       activeHarnessRoot = undefined
       await window.loadFile(failurePath, { query: { reason } })
@@ -241,6 +250,7 @@ function isFailureSender(event: IpcMainEvent): boolean {
 
 function isHarnessSender(event: IpcMainInvokeEvent): boolean {
   if (nativeWindow === undefined || event.sender !== nativeWindow.webContents || activeHarnessRoot === undefined) return false
+  if (event.senderFrame !== event.sender.mainFrame) return false
   try {
     return new URL(event.sender.getURL()).origin === new URL(activeHarnessRoot).origin
   } catch {
@@ -291,13 +301,32 @@ ipcMain.handle('desktop:update-install', async (event) => {
   return { opened: true }
 })
 
+ipcMain.handle('desktop:workbench-browser-show', async (event, value: unknown) => {
+  if (!isHarnessSender(event) || !isDesktopBrowserBounds(value) || workbenchBrowser === undefined) {
+    throw new Error('Untrusted workbench Browser request.')
+  }
+  return await workbenchBrowser.show(value)
+})
+
+ipcMain.handle('desktop:workbench-browser-hide', async (event) => {
+  if (!isHarnessSender(event) || workbenchBrowser === undefined) throw new Error('Untrusted workbench Browser request.')
+  await workbenchBrowser.hide()
+})
+
+ipcMain.handle('desktop:workbench-browser-control', async (event, value: unknown) => {
+  if (!isHarnessSender(event) || !isDesktopBrowserRequest(value) || workbenchBrowser === undefined) {
+    throw new Error('Untrusted workbench Browser request.')
+  }
+  return await workbenchBrowser.control(value)
+})
+
 updateService.subscribe((snapshot) => {
   if (nativeWindow !== undefined && !nativeWindow.isDestroyed() && activeHarnessRoot !== undefined) {
     nativeWindow.webContents.send('desktop:update-state', snapshot)
   }
 })
 
-app.on('before-quit', () => { updateService.dispose() })
+app.on('before-quit', () => { updateService.dispose(); void workbenchBrowser?.hide() })
 
 Menu.setApplicationMenu(Menu.buildFromTemplate(
   createMenuTemplate(PRODUCT_NAME, (command) => { controller.sendCommand(command) }, process.platform),

@@ -80,10 +80,17 @@ export interface DesktopApi {
   installUpdate(): Promise<{ opened: boolean; message?: string }>
   /** Subscribe to validated update-state transitions. */
   onUpdateStatus(listener: (snapshot: DesktopUpdateSnapshot) => void): () => void
+  showWorkbenchBrowser(bounds: DesktopBrowserBounds): Promise<DesktopBrowserSnapshot>
+  hideWorkbenchBrowser(): Promise<void>
+  controlWorkbenchBrowser(request: DesktopBrowserRequest): Promise<DesktopBrowserSnapshot>
+  onWorkbenchBrowserState(listener: (snapshot: DesktopBrowserSnapshot) => void): () => void
 }
+
+export type { DesktopBrowserBounds, DesktopBrowserRequest, DesktopBrowserSnapshot } from './browser/contracts.ts'
 
 declare global {
   interface Window {
     dshDesktop?: DesktopApi
   }
 }
+import type { DesktopBrowserBounds, DesktopBrowserRequest, DesktopBrowserSnapshot } from './browser/contracts.ts'
