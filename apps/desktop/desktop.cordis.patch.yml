@@ -12,6 +12,9 @@
     - id: session-messenger
       name: '@deepseek-ai/dsh-session-messenger'
 
+    - id: desktop-workbench
+      name: '@deepseek-ai/dsh-desktop-workbench'
+
     - id: dsh-market
       name: 'dshmarket'
 
