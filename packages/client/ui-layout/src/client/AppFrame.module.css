@@ -61,6 +61,24 @@
   border-left: 1px solid var(--dsw-alias-border-l2);
 }
 
+.utilityCol {
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+}
+
+.utilityDrawer {
+  position: absolute;
+  inset: 38px 0 0 auto;
+  z-index: 12;
+  max-width: 100%;
+  overflow: hidden;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  box-shadow: -16px 0 40px rgb(0 0 0 / 12%);
+}
+
 /* The details subtree stays mounted at zero width, so its border must not paint
    a 1px seam. The collapsed sidebar instead retains a bordered compact rail. */
 .frame[data-details-collapsed] .detailsCol {
@@ -94,7 +112,8 @@
   }
 }
 
-.handle[data-side='details']::after {
+.handle[data-side='details']::after,
+.handle[data-side='utility']::after {
   content: '';
   position: absolute;
   top: 50%;
@@ -116,12 +135,17 @@
 
 .detailsCol:hover ~ .handle[data-side='details']::after,
 .handle[data-side='details']:hover::after,
-.handle[data-side='details'][data-dragging='true']::after {
+.handle[data-side='details'][data-dragging='true']::after,
+.utilityCol:hover ~ .handle[data-side='utility']::after,
+.handle[data-side='utility']:hover::after,
+.handle[data-side='utility'][data-dragging='true']::after {
   opacity: 1;
 }
 
 .handle[data-side='details']:hover::after,
-.handle[data-side='details'][data-dragging='true']::after {
+.handle[data-side='details'][data-dragging='true']::after,
+.handle[data-side='utility']:hover::after,
+.handle[data-side='utility'][data-dragging='true']::after {
   background: var(--dsw-alias-button-floating-hover);
   border-color: var(--dsw-alias-border-l3);
 }
