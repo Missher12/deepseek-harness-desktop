@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-reasoning-effort",
   "description": "Harness-native model and reasoning selector with attributed Canvas effects",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"
   },
@@ -97,8 +97,8 @@
     "lib/index.js",
     "lib/invariant.js",
     "lib/client.js",
-    "THIRD_PARTY_NOTICES.md",
     "cordis.patch.yml",
+    "THIRD_PARTY_NOTICES.md",
     "lib/assets",
     "lib/types/**/*.d.ts"
   ]

@@ -20,10 +20,10 @@ English | [中文](2026-08-19-macos-market-usage-startup-polish.zh.md)
 - Create: `packages/client/web/src/DesktopBootSurface.module.css`
 - Modify: `apps/desktop/src/main.ts`
 - Modify: `apps/desktop/tests/renderer-pages.spec.ts`
-- Modify: `packages/client/web/src/AppRoot.tsx`
-- Modify: `packages/client/web/src/AppRoot.module.css`
-- Modify: `packages/client/web/src/boot.tsx`
-- Test: `packages/client/web/tests/app-root.client.spec.tsx`
+- Modify: `packages/client/web/src/{AppRoot.tsx}`
+- Modify: `packages/client/web/src/{AppRoot.module.css}`
+- Modify: `packages/client/web/src/{boot.tsx}`
+- Test: `packages/client/web/tests/{app-root.client.spec.tsx}`
 
 - [ ] **Step 1: Write failing macOS renderer and kernel transition tests**
 
@@ -44,7 +44,7 @@ expect(bed.container.querySelector('[data-desktop-boot-phase="exit"]')).not.toBe
 
 - [ ] **Step 2: Run the focused tests and confirm RED**
 
-Run: `pnpm exec vitest run apps/desktop/tests/renderer-pages.spec.ts packages/client/web/tests/app-root.client.spec.tsx`
+Run: `pnpm exec vitest run apps/desktop/tests/renderer-pages.spec.ts packages/client/web/tests/{app-root.client.spec.tsx}`
 
 Expected: FAIL because the Darwin page, Desktop boot component, and direct-reveal state do not exist.
 
@@ -78,7 +78,7 @@ if (props.macDesktop) {
 
 - [ ] **Step 5: Run startup tests and commit**
 
-Run: `pnpm exec vitest run apps/desktop/tests/renderer-pages.spec.ts apps/desktop/tests/main-lifecycle.spec.ts packages/client/web/tests/app-root.client.spec.tsx apps/web/tests/settings-chrome.e2e.ts`
+Run: `pnpm exec vitest run apps/desktop/tests/renderer-pages.spec.ts apps/desktop/tests/main-lifecycle.spec.ts packages/client/web/tests/{app-root.client.spec.tsx} apps/web/tests/settings-chrome.e2e.ts`
 
 Expected: PASS; the existing lifecycle still overlaps the loading page with conflict detection and runtime startup.
 
@@ -315,7 +315,7 @@ Commit: `git add .agents/notes/implemented/feature/2026-08-19-macos-startup-and-
 
 - [ ] **Step 1: Run all focused source tests together**
 
-Run: `pnpm exec vitest run apps/desktop/tests/renderer-pages.spec.ts apps/desktop/tests/main-lifecycle.spec.ts apps/desktop/tests/readiness.spec.ts packages/client/web/tests/app-root.client.spec.tsx packages/client/ui-settings-usage/tests scripts/dshmarket-baseline.spec.ts scripts/dshmarket-client-layout.spec.ts scripts/dshmarket-client-artifact.spec.ts scripts/dshmarket-self-protection.spec.ts scripts/stage-desktop.spec.ts packages/extensions/session-messenger/tests`
+Run: `pnpm exec vitest run apps/desktop/tests/renderer-pages.spec.ts apps/desktop/tests/main-lifecycle.spec.ts apps/desktop/tests/readiness.spec.ts packages/client/web/tests/{app-root.client.spec.tsx} packages/client/ui-settings-usage/tests scripts/dshmarket-baseline.spec.ts scripts/dshmarket-client-layout.spec.ts scripts/dshmarket-client-artifact.spec.ts scripts/dshmarket-self-protection.spec.ts scripts/stage-desktop.spec.ts packages/extensions/session-messenger/tests`
 
 Expected: PASS with no regression in cross-Session messaging, startup ownership, Usage aggregation presentation, or marketplace protections.
 

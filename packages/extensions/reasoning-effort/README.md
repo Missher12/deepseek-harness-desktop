@@ -24,7 +24,7 @@ Module resolution, missing required services, and plugin `apply` failures occur 
 
 ## Compatibility and provenance
 
-This fork targets the DeepSeek Harness `0.1.0-rc.5` workspace contract. Its `workspace:^` peers describe that verified source boundary; they do not claim compatibility with the original plugin's `rc.6` dependency set.
+This fork targets the DeepSeek Harness `0.1.0-rc.8` workspace contract. Its `workspace:^` peers describe that verified source boundary; they do not claim compatibility with the original plugin's `rc.6` dependency set.
 
 The retained Canvas implementation and `chibi-runner-strip.png` come from [`HanaAyane/dsh-reasoning-effort`](https://github.com/HanaAyane/dsh-reasoning-effort) `v0.6.0` at commit `f94622b46078ac8c064f91bdc10ab27e8cf32270`. The complete MIT text, `Copyright (c) 2026 HanaAyane`, source URL, commit, and sprite attribution remain in `LICENSE`, package-local `THIRD_PARTY_NOTICES.md`, and the Desktop artifact's root `THIRD_PARTY_NOTICES.md`.
 
@@ -50,6 +50,6 @@ The plugin does not rewrite conversation history, so it creates no cache-prefix 
 
 ## Known Limitations and Deferred Work
 
-- Compatibility is verified only against the repository's `0.1.0-rc.5` contract; a Harness upgrade requires a fresh peer, service, staged-profile, and visual review.
+- Compatibility is verified only against the repository's `0.1.0-rc.8` contract; a Harness upgrade requires a fresh peer, service, staged-profile, and visual review.
 - The profile-scoped character preference is intentionally small but is not an uninstall scrubber; removing the plugin may leave that inert boolean for a later reinstall.
 - Native-seat fallback covers a replacement component that reached the slot and then crashed. Pre-registration failures instead keep the Web graph unactivated and require the reported module, peer, service, or `apply` problem to be fixed.

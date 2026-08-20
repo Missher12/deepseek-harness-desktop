@@ -13,14 +13,8 @@ if ((kind !== 'ordinary' && kind !== 'terminal')
 }
 
 const treeState = join(root, 'tree.json')
-const ready = join(root, 'ready')
 const proceed = join(root, 'proceed')
 const managedTree = fileURLToPath(new URL('./managed-tree.ts', import.meta.url))
-
-interface PublishedTree {
-  root: number
-  descendant: number
-}
 
 async function waitForFile(path: string): Promise<void> {
   for (;;) {
@@ -28,21 +22,6 @@ async function waitForFile(path: string): Promise<void> {
       await access(path)
       return
     } catch (_notReady) {
-      await new Promise(resolve => setTimeout(resolve, 10))
-    }
-  }
-}
-
-async function waitForPublishedTree(path: string): Promise<PublishedTree> {
-  for (;;) {
-    try {
-      const published = JSON.parse(await readFile(path, 'utf8')) as Partial<PublishedTree>
-      if (!Number.isSafeInteger(published.root) || !Number.isSafeInteger(published.descendant)) {
-        throw new Error('managed tree published invalid process ids')
-      }
-      return published as PublishedTree
-    } catch (error: unknown) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
       await new Promise(resolve => setTimeout(resolve, 10))
     }
   }
@@ -73,8 +52,11 @@ if (kind === 'ordinary') {
   })
 }
 
-await waitForPublishedTree(treeState)
-await writeFile(ready, 'ready')
+await waitForFile(treeState)
+const published = JSON.parse(await readFile(treeState, 'utf8')) as { root?: unknown; descendant?: unknown }
+if (!Number.isSafeInteger(published.root) || !Number.isSafeInteger(published.descendant)) {
+  throw new Error('managed tree published invalid process ids')
+}
 await waitForFile(proceed)
 
 if (trigger === 'dispose') {

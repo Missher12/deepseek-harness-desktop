@@ -6,10 +6,9 @@
       - id: llm-deepseek
         config:
           baseURL: !!js process.env.DSH_SNAPSHOT_BASE_URL
-          thinking: disabled
-          # Keep the threshold comfortably above scheduler stalls on shared CI
-          # while the fixture still proves that SSE comment frames reset it.
-          streamIdleTimeoutMs: 2000
+          thinking: enabled
+          reasoningEffort: low
+          streamIdleTimeoutMs: 150
       - id: agent-spine
         config:
           agents:

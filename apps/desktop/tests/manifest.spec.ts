@@ -20,9 +20,11 @@ interface BuilderConfiguration {
     target?: Array<{ target?: string; arch?: string[] }>
   }
   nsis?: {
+    include?: string
     oneClick?: boolean
     perMachine?: boolean
     allowElevation?: boolean
+    allowToChangeInstallationDirectory?: boolean
     createDesktopShortcut?: boolean
     createStartMenuShortcut?: boolean
     runAfterFinish?: boolean
@@ -96,7 +98,7 @@ describe('desktop package manifest', () => {
       'utf8',
     )
     const boot = readFileSync(
-      new URL('../../../packages/client/web/src/boot.tsx', import.meta.url),
+      new URL('../../../packages/client/web/src/boot.ts', import.meta.url),
       'utf8',
     )
 
@@ -106,8 +108,9 @@ describe('desktop package manifest', () => {
     expect(boot).toContain("state === 'pending'")
     expect(boot).toContain('failures.push(`${name}: ${state}`)')
     expect(boot).toContain('did not activate')
-    expect(boot).toContain('await this.runPluginBoot(prefetching)\n      this.settled.set(true)')
-    expect(boot).toContain('await loader.await()\n    this.assertEntriesActive()')
+    expect(boot).toContain('await this.runPluginBoot(ctx, prefetching)')
+    expect(boot).toContain('await this.mountApp(ctx)')
+    expect(boot).toContain('await loader.await()\n    this.assertEntriesActive(ctx)')
   })
 
   it('mounts one canonical session messenger row in the Desktop-only overlay', () => {
@@ -126,7 +129,7 @@ describe('desktop package manifest', () => {
     })
   })
 
-  it('builds one per-user Windows x64 Setup with shortcuts and launch-after-install', () => {
+  it('builds one visible per-user Windows x64 Setup with progress, shortcuts, and launch-after-install', () => {
     const manifest = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
     ) as DesktopManifest
@@ -146,9 +149,11 @@ describe('desktop package manifest', () => {
       icon: 'assets/icon.ico',
     })
     expect(builder.nsis).toMatchObject({
-      oneClick: true,
+      include: 'build/installer.nsh',
+      oneClick: false,
       perMachine: false,
       allowElevation: false,
+      allowToChangeInstallationDirectory: true,
       createDesktopShortcut: true,
       createStartMenuShortcut: true,
       runAfterFinish: true,
@@ -156,6 +161,15 @@ describe('desktop package manifest', () => {
       shortcutName: 'DeepSeek Harness',
       artifactName: 'DeepSeek-Harness-Setup-${version}-win-x64.${ext}',
     })
+    const installer = readFileSync(
+      new URL('../build/installer.nsh', import.meta.url),
+      'utf8',
+    )
+    expect(installer).toContain('!macro customWelcomePage')
+    expect(installer).toContain('!insertmacro MUI_PAGE_WELCOME')
+    expect(installer).toContain('StrCpy $isForceCurrentInstall "1"')
+    expect(installer).toContain('ShowInstDetails show')
+    expect(installer).toContain('DetailPrint')
     expect(builder.files).toContain('!node_modules/**/*.map')
     expect(builder.files).toContain('!node_modules/**/*.d.ts')
     expect(builder.files).toContain('!node_modules/**/*.d.cts')
@@ -173,6 +187,11 @@ describe('desktop package manifest', () => {
     )
 
     expect(smoke).toContain("[Environment]::GetFolderPath('LocalApplicationData')")
+    expect(smoke).toContain("$smokeId = 'dh' + [Guid]::NewGuid().ToString('N').Substring(0, 6)")
+    expect(smoke).toContain('$temporaryRoot = Join-Path $localAppData $smokeId')
+    expect(smoke).not.toContain('dsh-setup-smoke-')
+    expect(smoke).toContain('$startInfo.Arguments = "/S /D=$InstallRoot"')
+    expect(smoke).not.toContain('/D=$requestedInstallRoot')
     expect(smoke).not.toContain('[IO.Path]::GetTempPath()')
   })
 

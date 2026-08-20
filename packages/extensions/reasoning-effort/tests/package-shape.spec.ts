@@ -88,8 +88,8 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
       'lib/index.js',
       'lib/invariant.js',
       'lib/client.js',
-      'THIRD_PARTY_NOTICES.md',
       'cordis.patch.yml',
+      'THIRD_PARTY_NOTICES.md',
       'lib/assets',
       'lib/types/**/*.d.ts',
     ])

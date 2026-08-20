@@ -52,9 +52,6 @@ describe('CI workflow', () => {
     if (!Array.isArray(windows.steps) || !Array.isArray(aggregate.needs)) {
       throw new TypeError('Windows job must define steps and the aggregate must define needs')
     }
-    if (!isRecord(node24.env) || !isRecord(node24Coverage.env) || !isRecord(node24Consumers.env)) {
-      throw new TypeError('Required Linux jobs must define bounded concurrency environments')
-    }
     const commandSteps = windows.steps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
@@ -72,33 +69,16 @@ describe('CI workflow', () => {
     expect(windowsNative['runs-on']).not.toContain('DSH_CI_FAILOVER_LINUX')
     expect(windowsNative['runs-on']).toContain('self-hosted')
     expect(windowsNative['runs-on']).toContain('dsh-win-ci')
-    expect(windowsNative['runs-on']).toContain('windows-2025')
-    expect(windowsNative['runs-on']).not.toContain('dsh-windows-2025-16core')
+    expect(windowsNative['runs-on']).toContain('dsh-windows-2025-16core')
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
+    expect(windowsNative.env).toMatchObject({
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
+    })
     const nativeCommandSteps = (windowsNative.steps as unknown[]).filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
-    const nativeBuild = nativeCommandSteps.find(step => step.name === 'Build the one-click Windows desktop Setup')
-    if (nativeBuild === undefined) throw new TypeError('windows-native must define the Setup build command')
     expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
-    expect(nativeBuild.run).toContain("$env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'")
-    expect(nativeBuild.run).toContain('pnpm run desktop:stage:built')
-    expect(nativeBuild.run).toContain('electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"')
-    expect(nativeBuild.run).toContain('Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact')
-    expect(nativeBuild.run).not.toContain('pnpm run desktop:setup:built')
-    expect(nativeCommandSteps.some(step => step.run.includes('windows-desktop-setup-smoke.ps1'))).toBe(true)
-    expect(nativeCommandSteps.some(step => (
-      step.run.includes('Get-FileHash') && step.run.includes('.sha256')
-    ))).toBe(true)
-    expect((windowsNative.steps as unknown[]).some(step => (
-      isRecord(step)
-      && step.uses === 'actions/upload-artifact@v7'
-      && isRecord(step.with)
-      && typeof step.with.path === 'string'
-      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe\n')
-      && step.with.path.includes('apps/desktop/release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe.sha256')
-    ))).toBe(true)
 
     // wine-apt-cache: master-only, seeds the Wine apt cache.
     expect(wineAptCache.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
@@ -108,18 +88,6 @@ describe('CI workflow', () => {
     expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
-    if (!Array.isArray(serialWindows.steps)) throw new TypeError('serial-windows must define steps')
-    const serialWindowsCommands = serialWindows.steps.filter(
-      (step): step is Record<string, unknown> & { run: string } => isRecord(step) && typeof step.run === 'string',
-    )
-    const serialWindowsBuild = serialWindowsCommands.find(step => step.name === 'Build the one-click Windows desktop Setup')
-    if (serialWindowsBuild === undefined) throw new TypeError('serial-windows must define the Setup build command')
-    expect(serialWindowsBuild.run).toContain("$env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'")
-    expect(serialWindowsBuild.run).toContain('pnpm run desktop:stage:built')
-    expect(serialWindowsBuild.run).toContain('electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"')
-    expect(serialWindowsBuild.run).toContain('Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact')
-    expect(serialWindowsBuild.run).not.toContain('pnpm run desktop:setup:built')
-    expect(serialWindowsCommands.some(step => step.run.includes('windows-desktop-setup-smoke.ps1'))).toBe(true)
 
     // Aggregate: Wine `windows` required, native `windows-native` excluded.
     expect(aggregate.needs).toContain('windows')
@@ -134,18 +102,7 @@ describe('CI workflow', () => {
       expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
       expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
       expect(job['runs-on']).toContain('vm-backup')
-      expect(job['runs-on'], `${jobName} must have a portable public-repository default`).toContain('ubuntu-latest')
-      expect(job['runs-on'], `${jobName} must not require an external enterprise pool`).not.toContain('dsh-ubuntu-24-04-16core')
     }
-    expect(node24.env).toMatchObject({ DSH_GATE_CONCURRENCY: '2' })
-    expect(node24Coverage.env).toMatchObject({ DSH_GATE_CONCURRENCY: '2' })
-    expect(node24Coverage.env?.DSH_COVERAGE_MAX_WORKERS).toContain("&& '8' || '2'")
-    expect(node24Consumers.env).toMatchObject({
-      DSH_GATE_CONCURRENCY: '2',
-      DSH_OXLINT_THREADS: '2',
-      DSH_PUBLINT_CONCURRENCY: '2',
-    })
-    expect(node24Consumers.env?.DSH_SNAPSHOT_MAX_CONCURRENCY).toContain("&& '12' || '4'")
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')
@@ -281,6 +238,20 @@ describe('E2B e2e workflow', () => {
   })
 })
 
+describe('DeepSeek e2e workflow', () => {
+  it('prepares bubblewrap from the pinned payload without a package transaction', () => {
+    const workflow = loadWorkflow('.github/workflows/e2e.yml')
+    const e2e = workflowJob(workflow, 'e2e')
+    if (!Array.isArray(e2e.steps)) throw new TypeError('DeepSeek e2e workflow must define steps')
+
+    const steps = e2e.steps.filter(isRecord)
+    expect(steps.find(step => step.name === 'Prepare bubblewrap (unrestrict userns)')).toMatchObject({
+      run: 'bash scripts/prepare-ci-bubblewrap.sh',
+    })
+    expect(JSON.stringify(steps)).not.toContain('apt-get')
+  })
+})
+
 describe('Python release workflows', () => {
   it('keeps complete wheel validation separate from protected public publication', () => {
     const workflow = loadWorkflow('.github/workflows/python-release.yml')
@@ -311,7 +282,10 @@ describe('Python release workflows', () => {
       },
     })
     expect(pythonCompat.strategy).toMatchObject({ matrix: { python: ['3.10', '3.14'] } })
-    expect(JSON.stringify(pythonCompat.steps)).toContain('deepseek-harness-sdk==${{ steps.compatibility-version.outputs.version }}')
+    const pythonCompatSteps = JSON.stringify(pythonCompat.steps)
+    expect(pythonCompatSteps).toContain('dist/deepseek_harness_sdk-$VERSION-py3-none-any.whl')
+    expect(pythonCompatSteps).toContain('dist/deepseek_harness_runtime_bin-$VERSION-py3-none-manylinux_2_28_x86_64.whl')
+    expect(pythonCompatSteps).not.toContain('--find-links')
     const validateSteps = JSON.stringify(validate.steps)
     const authorize = validate.steps.filter(isRecord).find(step => step.name === 'Authorize publication request')
     if (!isRecord(authorize) || typeof authorize.run !== 'string') {
@@ -370,7 +344,6 @@ describe('Python release workflows', () => {
     }
 
     const buildSteps: unknown[] = build.steps
-    const setupNode = buildSteps.find(step => isRecord(step) && step.uses === 'actions/setup-node@v6')
     const manylinuxAddon = buildSteps.find(step => isRecord(step) && step.name === 'Rebuild Linux node-pty against manylinux 2.28')
     const macosCheck = buildSteps.find(step => isRecord(step) && step.name === 'Check macOS deployment target')
     const manylinuxSmoke = buildSteps.find(step => isRecord(step) && step.name === 'Run wheel in a manylinux 2.28 container')
@@ -385,12 +358,18 @@ describe('Python release workflows', () => {
     expect(plan.if).toContain('inputs.ci')
     expect(plan.if).toContain('inputs.release')
     expect(JSON.stringify(plan.steps)).toContain('pep440_version')
-    expect(JSON.stringify(workflow)).toContain('macosx_14_0_arm64')
-    expect(setupNode).toMatchObject({ with: { 'node-version': 24 } })
-    expect(isRecord(setupNode) && isRecord(setupNode.with) ? setupNode.with : {}).not.toHaveProperty('cache')
+    const workflowJson = JSON.stringify(workflow)
+    expect(workflowJson).toContain('macosx_14_0_arm64')
+    expect(workflowJson).toContain('dist-python/$SDK_WHEEL')
+    expect(workflowJson).toContain('dist-python/$RUNTIME_WHEEL')
+    expect(workflowJson).toContain('/work/dist-python/$SDK_WHEEL')
+    expect(workflowJson).toContain('/work/dist-python/$RUNTIME_WHEEL')
+    expect(workflowJson).not.toContain('--find-links dist-python')
+    expect(workflowJson).not.toContain('--find-links /work/dist-python')
     expect(manylinuxAddon).toMatchObject({ if: "runner.os == 'Linux'" })
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_x86_64')
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_aarch64')
+    expect(JSON.stringify(manylinuxAddon)).toContain('npm_config_build_from_source=true pnpm run install')
     expect(JSON.stringify(manylinuxAddon)).toContain('$HOME/setup-pnpm:$HOME/setup-pnpm:ro')
     expect(JSON.stringify(manylinuxAddon)).toContain('node-pty-glibc-versions.txt')
     expect(JSON.stringify(manylinuxAddon)).toContain('le 2.28')
@@ -420,94 +399,14 @@ describe('Python release workflows', () => {
   })
 })
 
-describe('Windows desktop Setup workflow', () => {
-  it('maps the checkout to a drive root so native MSVC rebuilds stay below MAX_PATH', () => {
-    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
-    const job = workflowJob(workflow, 'build-install-smoke')
-    if (!Array.isArray(job.steps) || !isRecord(job.defaults) || !isRecord(job.defaults.run)) {
-      throw new TypeError('Windows desktop workflow must define job steps and run defaults')
-    }
-
-    const checkout = job.steps.filter(isRecord).find(step => step.uses === 'actions/checkout@v6')
-    const pnpmSetup = job.steps.filter(isRecord).find(step => step.uses === 'pnpm/action-setup@v4')
-    const install = job.steps.filter(isRecord).find(step => step.name === 'Install immutable dependencies')
-    const build = job.steps.filter(isRecord).find(step => step.name === 'Build the one-click Windows Setup')
-    const smoke = job.steps.filter(isRecord).find(step => step.name === 'Install and exercise the packaged application')
-    const checksum = job.steps.filter(isRecord).find(step => step.name === 'Record SHA-256')
-    const upload = job.steps.filter(isRecord).find(step => step.uses === 'actions/upload-artifact@v7')
-    if (!isRecord(build) || typeof build.run !== 'string') {
-      throw new TypeError('Windows desktop workflow must define the Setup build command')
-    }
-    if (!isRecord(smoke) || typeof smoke.run !== 'string') {
-      throw new TypeError('Windows desktop workflow must define the installed application smoke command')
-    }
-    if (!isRecord(checksum) || typeof checksum.run !== 'string') {
-      throw new TypeError('Windows desktop workflow must define the checksum command')
-    }
-    if (!isRecord(upload) || !isRecord(upload.with) || typeof upload.with.path !== 'string') {
-      throw new TypeError('Windows desktop workflow must define the Setup artifact upload')
-    }
-
-    expect(checkout).toMatchObject({ with: { path: 's', 'persist-credentials': false } })
-    expect(pnpmSetup).toMatchObject({ with: { version: '11.7.0' } })
-    expect(job.defaults.run['working-directory']).toBe('s')
-    expect(job.env).toBeUndefined()
-    expect(install).toMatchObject({ run: 'pnpm install --frozen-lockfile' })
-    expect(build.run).toContain('pnpm run desktop:stage')
-    expect(build.run).toContain("$env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'")
-    expect(build.run).toContain('pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR"')
-    expect(build.run).toContain('Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact')
-    expect(build.run).not.toContain('pnpm run desktop:setup\n')
-    expect(smoke.run).toContain('./scripts/windows-desktop-setup-smoke.ps1 -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe')
-    expect(smoke.run).not.toContain('Set-Location S:\\')
-    expect(checksum.run).not.toContain('Set-Location S:\\')
-    expect(upload.with.path).toContain('s/apps/desktop/release/DeepSeek-Harness-Setup-0.1.9-win-x64.exe')
-  })
-})
-
-describe('Desktop release workflow', () => {
-  it('builds, verifies, and publishes both native desktop installers inside GitHub', () => {
-    const workflow = loadWorkflow('.github/workflows/desktop-release.yml')
-    const dispatch = workflowEvent(workflow, 'workflow_dispatch')
-    const mac = workflowJob(workflow, 'mac')
-    const windows = workflowJob(workflow, 'windows')
-    const publish = workflowJob(workflow, 'publish')
-    const macSteps = Array.isArray(mac.steps) ? mac.steps.filter(isRecord) : []
-    const windowsSteps = Array.isArray(windows.steps) ? windows.steps.filter(isRecord) : []
-    const publishSteps = Array.isArray(publish.steps) ? publish.steps.filter(isRecord) : []
-    const macCommands = macSteps.flatMap(step => typeof step.run === 'string' ? [step.run] : [])
-    const windowsCommands = windowsSteps.flatMap(step => typeof step.run === 'string' ? [step.run] : [])
-    const publishCommands = publishSteps.flatMap(step => typeof step.run === 'string' ? [step.run] : [])
-
-    expect(dispatch).toMatchObject({ inputs: { tag: { required: true } } })
-    expect(workflow.permissions).toEqual({ contents: 'write' })
-    expect(workflow.concurrency).toMatchObject({ 'cancel-in-progress': false })
-    expect(mac['runs-on']).toBe('macos-15-intel')
-    expect(macCommands.some(command => command.includes('pnpm run desktop:dmg'))).toBe(true)
-    expect(macCommands.some(command => command.includes('packaged-smoke.spec.ts'))).toBe(true)
-    expect(macCommands.some(command => command.includes('hdiutil verify'))).toBe(true)
-    expect(macSteps.some(step => step.uses === 'actions/upload-artifact@v7')).toBe(true)
-    expect(windows['runs-on']).toBe('windows-2025')
-    expect(windowsCommands.some(command => command.includes('pnpm run desktop:stage'))).toBe(true)
-    expect(windowsCommands.some(command => command.includes('windows-desktop-setup-smoke.ps1'))).toBe(true)
-    expect(windowsSteps.some(step => step.uses === 'actions/upload-artifact@v7')).toBe(true)
-    expect(publish.needs).toEqual(['mac', 'windows'])
-    expect(publishSteps.some(step => step.uses === 'actions/download-artifact@v8')).toBe(true)
-    expect(publishCommands.some(command => command.includes('shasum -a 256 -c'))).toBe(true)
-    expect(publishCommands.some(command => command.includes('gh release upload'))).toBe(true)
-    expect(publishCommands.some(command => command.includes('gh release edit') && command.includes('--draft=false'))).toBe(true)
-  })
-})
-
-describe('Upstream-only workflows', () => {
-  it('skips issue automation in mirrors while preserving explicit review handoff events', () => {
+describe('Issue lifecycle workflow', () => {
+  it('uses explicit review handoff events without rerunning when a draft becomes ready', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
     const lifecyclePullRequest = workflowEvent(lifecycle, 'pull_request')
     const lifecycleReview = workflowEvent(lifecycle, 'pull_request_review')
     const lifecycleJob = workflowJob(lifecycle, 'lifecycle')
     const policy = loadWorkflow('.github/workflows/issue-policy.yml')
     const policyPullRequest = workflowEvent(policy, 'pull_request')
-    const policyJob = workflowJob(policy, 'policy')
 
     expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
     expect(lifecyclePullRequest.types).toContain('review_requested')
@@ -515,23 +414,10 @@ describe('Upstream-only workflows', () => {
     expect(lifecycleJob.if).toBe(
       "${{ github.repository == 'deepseek-harness/deepseek-harness' && (github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested')) }}",
     )
+    expect(workflowJob(policy, 'policy').if).toBe(
+      "${{ github.repository == 'deepseek-harness/deepseek-harness' }}",
+    )
     expect(policyPullRequest.types).toContain('ready_for_review')
-    expect(policyJob.if).toBe("${{ github.repository == 'deepseek-harness/deepseek-harness' }}")
-  })
-
-  it('skips real-API e2e in mirrors but still hard-fails a missing upstream key', () => {
-    const workflow = loadWorkflow('.github/workflows/e2e.yml')
-    const job = workflowJob(workflow, 'e2e')
-    if (!Array.isArray(job.steps)) throw new TypeError('e2e job must define steps')
-    const preflight = job.steps.filter(isRecord).find(step => step.name === 'Preflight (require DEEPSEEK_API_KEY)')
-
-    expect(job.if).toContain("github.repository == 'deepseek-harness/deepseek-harness'")
-    expect(job.if).toContain("github.event_name != 'pull_request'")
-    expect(preflight).toMatchObject({
-      env: { DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}' },
-    })
-    expect(preflight?.run).toContain('exit 1')
-    expect(preflight?.['continue-on-error']).not.toBe(true)
   })
 })
 

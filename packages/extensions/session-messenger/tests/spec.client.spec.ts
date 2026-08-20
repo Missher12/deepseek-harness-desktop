@@ -36,7 +36,7 @@ describe('session messenger receipt boundary', () => {
       files: string[]
     }
     expect(manifest.name).toBe('@deepseek-ai/dsh-session-messenger')
-    expect(manifest.version).toBe('0.1.0-rc.5')
+    expect(manifest.version).toBe('0.1.0-rc.8')
     expect(Object.keys(manifest.exports)).toEqual(expect.arrayContaining([
       '.', './invariant', './client', './cordis.patch.yml', './package.json',
     ]))
