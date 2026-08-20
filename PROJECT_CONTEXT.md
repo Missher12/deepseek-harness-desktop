@@ -88,9 +88,9 @@ The repository is based on the pinned official source and adds the desktop appli
   Desktop DMG can authorize installation. Marketplace install and update also
   snapshot `dependencies` and `dsh.profile.bundles` together and restore both
   on failed, cancelled, timed-out, stale, or rejected operations.
-  The original macOS 0.1.9 implementation passed 212 focused tests before this
-  transplant; rc8-native build, package, and public-release evidence still has
-  to be produced from the integrated source.
+  The integrated Intel Mac build, verified DMG, packaged smoke, native
+  replacement, random-port startup, and no-browser-handoff checks pass locally;
+  public Release download and updater-discovery evidence remains to be produced.
 - Version 0.1.9 consolidated the earlier macOS/Desktop work: the separate
   session-communication trigger and drawer are removed, session-messenger
   relays render directly in the ordinary chat timeline with source

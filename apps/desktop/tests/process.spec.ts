@@ -71,6 +71,7 @@ describe('HarnessProcess', () => {
       'web',
       '--patch',
       '/app/desktop.cordis.patch.yml',
+      '--no-open',
       '--host',
       '127.0.0.1',
       '--port',
