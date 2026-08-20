@@ -156,7 +156,9 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
     ))
     expect(hereString).toBe('alpha\nbeta')
 
-    const large = text(await execute('large-output', '1..12050 | ForEach-Object { $_ }'))
+    // Stay above the 16k model-output bound while keeping this real-ConPTY
+    // probe inside the instrumented Windows runner's scheduling budget.
+    const large = text(await execute('large-output', '1..5000 | ForEach-Object { $_ }'))
     expect(large.startsWith('1\n2\n3\n')).toBe(true)
     expect(large).toContain('<response clipped>')
     expect(large).not.toContain('beginning of this command output was dropped')

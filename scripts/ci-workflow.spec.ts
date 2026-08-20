@@ -102,7 +102,7 @@ describe('CI workflow', () => {
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
     expect(windowsNative.env).toMatchObject({
       DSH_COVERAGE_MAX_WORKERS: '3',
-      DSH_COVERAGE_PARTITIONS: '3',
+      DSH_COVERAGE_PARTITIONS: '2',
       DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
       DSH_GATE_CONCURRENCY: '2',
       DSH_PUBLINT_CONCURRENCY: '4',
