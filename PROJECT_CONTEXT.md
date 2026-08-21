@@ -72,9 +72,11 @@ The repository is based on the pinned official source and adds the desktop appli
 - Version 0.3.0 adds the removable Intel-macOS Codex-style workbench opened by
   one compact button beside Session log. Its bounded 320–720 px utility panel
   contains a separately owned Terminal, an isolated native Browser, read-only
-  Files and Git Review modes, and Side Chat. Cross-session messages now append
-  visible source and target chat rows while retaining receipt-bound delivery;
-  the former standalone messenger trigger and drawer are no longer mounted.
+  Files and Git Review modes. The duplicate Side Chat surface, its component,
+  styles, service dependency, and utility mode were removed; cross-session
+  messages still append visible source and target chat rows while retaining
+  receipt-bound delivery through requests made in the ordinary composer. The
+  former standalone messenger trigger and drawer remain unmounted.
   The Terminal is limited to four shells, 16 KiB input, and 1 MiB retained
   output and is terminated on mode close or plugin disposal. The Browser allows
   HTTP(S) only, denies popup, download, and permission requests, and destroys
@@ -86,33 +88,39 @@ The repository is based on the pinned official source and adds the desktop appli
   unchanged. Public main baseline
   `59058b0173b1f2b9447fef89f4312303eb2de200` is merged as the second parent,
   retaining its no-browser-handoff startup parsing, macOS-only updater bridge,
-  packaging exclusions, and runtime hardening. The synchronized unsigned Intel
-  DMG is 163,561,475 bytes with SHA-256
-  `ab9ba892fff15287dfd43c6809119f57d51c98115b3d94e03293f4230655cd40`;
+  packaging exclusions, and runtime hardening. Mac Desktop packaging now uses
+  the existing official Client profile, so the official DeepSeek Harness brand
+  occupant replaces the local fallback and its clipped commit badge. The final
+  build record is bound to source commit `c8e556cffad6bd67d543612065efc605325bf21a`.
+  The synchronized unsigned Intel DMG is 163,555,915 bytes with SHA-256
+  `5c306c58b8e733b25baddac1f2f711ff97e350138945f5c10b64d569d2bde633`;
   `hdiutil verify` passes and the packaged application reports `0.3.0` / `x86_64`.
-  The merge-focused regression passes 21 files / 130 tests, the Desktop unit
-  regression passes 21 files / 127 tests with one platform-only skip, all 28
-  documentation gates pass, and the complete Host, Client, Web, Desktop-main,
-  and 67-file Desktop staging builds pass.
+  Brand/profile regression passes 3 files / 26 tests; the affected Workbench,
+  Layout, Messenger, and Desktop regression passes 13 files / 115 tests; the
+  two affected TypeScript project builds pass. The complete official Host,
+  Client, Web, Desktop-main, 67-file staging, and DMG builds pass.
   The isolated native packaged smoke passes the ordinary and archived
   clipboard paths, visible cross-session chat rows, a real workbench terminal
-  command and teardown, all five workbench modes, reasoning effort, Usage
+  command and teardown, all four workbench modes with no Side Chat tab,
+  reasoning effort, Usage
   Insights, System Update, Plugin Market, provider isolation, random-port
   ownership, and final process cleanup. The synchronized application is
   installed and running at `/Applications/DeepSeek Harness.app`; its owned
-  Harness returned HTTP 200 on random port 50137. The installed and final
+  Harness returned HTTP 200 on random port 58995. The installed and final
   packaged `app.asar` share SHA-256
-  `4240b61add6fa97ec22bc182f5d589896373c47f035d8a501ee01447d3727c86`.
-  The live 96-file `~/.dsh` aggregate remained
-  `bd2d707d6b01414c4403689515e5b419628ed10beff40e694688ef1ce6a86838`
+  `c89e2078391bae97ef9523201ad8c392dad7e79bc36714e2ced5548b070fc7eb`.
+  The live 97-file `~/.dsh` aggregate remained
+  `8195253bdf6de8b0beb2cd4c18195f44514a73633fa8df890ab01ab4f2841850`
   before replacement, after replacement, and after launch. The previous 0.2.2
   application is recoverably retained at
   `~/Library/Application Support/DeepSeek Harness Backups/DeepSeek Harness-0.2.2-pre-0.3.0-20260821-020107.app`.
   The pre-final-layout 0.3.0 application is retained beside it as
   `DeepSeek Harness-0.3.0-pre-final-layout-20260821-022529.app`; the immediately
   preceding 0.3.0 application is retained as
-  `DeepSeek Harness-0.3.0-pre-main-59058b0-20260821-042841.app`. No Windows build
-  or public GitHub release was produced for this synchronization task.
+  `DeepSeek Harness-0.3.0-pre-main-59058b0-20260821-042841.app`; the immediately
+  replaced build is retained as
+  `DeepSeek Harness-0.3.0-before-brand-sidechat-20260821-094826.app`. No Windows
+  build or public GitHub release was produced for this synchronization task.
 - Version 0.2.2 replaces the rejected macOS startup artwork with the approved
   Codex-like A direction. The local Electron phase is a network-free centered
   DeepSeek whale, title, status, and five-pixel indeterminate bar because Host
