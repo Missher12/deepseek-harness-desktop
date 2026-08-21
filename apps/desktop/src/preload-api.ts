@@ -91,8 +91,6 @@ export interface DesktopApi {
   onWorkbenchBrowserState(listener: (snapshot: DesktopBrowserSnapshot) => void): () => void
 }
 
-export type { DesktopBrowserBounds, DesktopBrowserRequest, DesktopBrowserSnapshot } from './browser/contracts.ts'
-
 declare global {
   interface Window {
     dshDesktop?: DesktopApi
