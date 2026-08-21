@@ -811,10 +811,10 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): 
   const panel = page.locator('[data-desktop-workbench-panel]:visible')
   await panel.waitFor({ state: 'visible', timeout: 15_000 })
   const tabs = panel.getByRole('tablist').getByRole('tab')
-  await expect.poll(() => tabs.count(), { timeout: 15_000 }).toBe(5)
+  await expect.poll(() => tabs.count(), { timeout: 15_000 }).toBe(4)
   expect([
-    ['终端', '浏览器', '文件', '侧边聊天', '审阅'],
-    ['Terminal', 'Browser', 'Files', 'Side chat', 'Review'],
+    ['终端', '浏览器', '文件', '审阅'],
+    ['Terminal', 'Browser', 'Files', 'Review'],
   ]).toContainEqual(await tabs.allTextContents())
   const terminalInput = panel.getByPlaceholder(/^(?:Type a command and press Return|输入命令并按回车)$/u)
   await terminalInput.waitFor({ state: 'visible', timeout: 15_000 })
@@ -837,8 +837,7 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): 
   }), { timeout: 10_000 }).toBe(200)
   await panel.getByRole('tab', { name: /^(?:Files|文件)$/u }).click()
   await panel.getByPlaceholder(/^(?:Filter files|筛选文件)$/u).waitFor({ state: 'visible', timeout: 15_000 })
-  await panel.getByRole('tab', { name: /^(?:Side chat|侧边聊天)$/u }).click()
-  await panel.getByText(/^(?:Current Session ID|当前会话 ID)$/u).waitFor({ state: 'visible', timeout: 15_000 })
+  expect(await panel.getByRole('tab', { name: /^(?:Side chat|侧边聊天)$/u }).count()).toBe(0)
   await panel.getByRole('tab', { name: /^(?:Review|审阅)$/u }).click()
   await panel.getByText(/^(?:Changes|变更)$/u).waitFor({ state: 'visible', timeout: 15_000 })
   await page.keyboard.press('Escape')

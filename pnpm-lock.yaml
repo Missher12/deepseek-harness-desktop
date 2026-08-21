@@ -5042,9 +5042,6 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
-      '@deepseek-ai/dsh-session-messenger':
-        specifier: workspace:^
-        version: link:../session-messenger
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
         version: link:../../subprocess/subprocess

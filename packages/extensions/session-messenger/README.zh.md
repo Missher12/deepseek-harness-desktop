@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-面向 Desktop 的 Host 与 Client 插件，用于在同一个活动 profile 内的普通 DeepSeek Harness 会话之间进行类似 Codex 的有界通信。复制会话 A 的准确 ID，粘贴到会话 B，再让 B 的 Agent 发送消息：插件会启动 A 的已有 Agent，A 可以通过可信的来源与 delivery 元数据回复 B。任意一方都能发起或继续交流。它注册四个模型工具，持久化 write-ahead 投递 receipt，通过 Host 所有的 Typert lookup 寻址 live 或 cold 会话，并提供可调宽的操作界面，不改变普通 Web 组合。
+面向 Desktop 的 Host 与 Client 插件，用于在同一个活动 profile 内的普通 DeepSeek Harness 会话之间进行类似 Codex 的有界通信。复制会话 A 的准确 ID，粘贴到会话 B 的普通聊天框，再让 B 的 Agent 发送消息：插件会启动 A 的已有 Agent，A 可以通过可信的来源与 delivery 元数据回复 B。任意一方都能发起或继续交流。它注册四个模型工具，持久化 write-ahead 投递 receipt，通过 Host 所有的 Typert lookup 寻址 live 或 cold 会话，并把交流显示在普通会话历史中，不改变普通 Web 组合。
 
 ## 工具约定
 
@@ -19,7 +19,7 @@
 - 归档状态会在 lookup 前检查一次，并在入队前立即同步复查。格式错误、缺失、自身、已归档和 subagent 所有的目标都会在 inbox 变化前被拒绝。
 - 每次接受的投递先持久化 `prepared`，再用一个预先创建的 Message ID 入队，最后持久化 `delivered`。恢复会在重试前检查目标 inbox 与事件日志，因此不确定的入队后写入不会重复消息。
 - 未解决 receipt 在 24 小时后过期。已结算 receipt 元数据保留七天；已提交的会话消息继续遵循普通会话保留策略，并在插件停用后保留。
-- 停用插件会移除其四个工具、协同 prompt 段、五条 HTTP 路由、index bootstrap、活动等待、Client graph 行、标题栏操作、抽屉、监听器和定时器。它不会移除已提交消息或保留的 receipt 存储。
+- 停用插件会移除其四个工具、协同 prompt 段、五条 HTTP 路由、index bootstrap、活动等待、Client graph 行、监听器和定时器。它不会移除已提交消息或保留的 receipt 存储。
 
 ## Desktop 组合
 
@@ -35,7 +35,7 @@ DeepSeek Harness Desktop 会在 base 与 Web 层之后恰好应用一次相同�
 
 ## Client 界面
 
-Client 侧把受限 store 与发送／回复 action 提供给 Desktop 工作台；它不再注册独立的标题栏入口、抽屉或 overlay。侧边聊天可以复制当前准确 Session ID，并接收准确目标 ID、直接消息、唤醒选择和 receipt 绑定回复。“启动目标 Agent”默认开启，发送失败的草稿会保留，最近活动只含元数据。一次被接受的 outgoing 投递会在来源侧追加 ignorable 会话行，目标 relay 则保持普通可见 user-message 行，因此两边会话都能看到交流，同时来源文本不会重复进入模型历史。通知仍然只限站内：没有原生 macOS 通知、替代会话行、独立消息档案或自动 Agent loop。
+Client 侧维护普通会话消息行所需的受限 receipt 状态；它不注册独立标题栏入口、抽屉、侧边聊天或 overlay。用户复制准确 Session ID，粘贴到普通聊天框，再让当前 Agent 发送或回复。一次被接受的 outgoing 投递会在来源侧追加 ignorable 会话行，目标 relay 则保持普通可见 user-message 行，因此两边会话都能看到交流，同时来源文本不会重复进入模型历史。通知仍然只限站内：没有原生 macOS 通知、替代会话行、独立消息档案或自动 Agent loop。
 
 ## 模型体验
 
@@ -56,6 +56,6 @@ Client 侧把受限 store 与发送／回复 action 提供给 Desktop 工作台�
 ## 已知限制与暂缓事项
 
 - 通信仅限一个活动 profile，并且只接受普通会话；尚未实现跨 profile、跨设备、subagent、广播、群组或公共网络投递。
-- 侧边聊天显示投递元数据，而不是第二份消息档案；协同内容保留在来源和目标会话的普通历史中。
+- 协同内容保留在来源和目标会话的普通历史中；不存在第二份消息档案或手动 relay 面板。
 - 原生系统通知暂缓实现，因为它需要本可独立停用包边界之外的 Electron 权限与窗口生命周期所有权。
 - 插件提供显式且有界的对等通信，而不是新的调度器：任意一个已有普通 Agent 都能发起或回复；回复链有上限，但任意一方之后仍可在用户指示下发起一条新消息。它不会创建新会话、subagent、转发规则、后台循环或自主双 Agent 对话。

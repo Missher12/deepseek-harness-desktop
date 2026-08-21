@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Desktop-only Host and Client plugin for bounded Codex-style messaging between ordinary DeepSeek Harness sessions in one active profile. Copy Session A's exact ID, paste it into Session B, and ask B's Agent to send a message: the plugin wakes A's existing Agent, and A can reply to B through the trusted source and delivery metadata. Either session can initiate or continue the exchange. The plugin registers four model tools, persists write-ahead delivery receipts, addresses live or cold sessions through the Host-owned Typert lookup, and contributes a resizable operator surface without changing the ordinary Web composition.
+Desktop-only Host and Client plugin for bounded Codex-style messaging between ordinary DeepSeek Harness sessions in one active profile. Copy Session A's exact ID, paste it into Session B's ordinary composer, and ask B's Agent to send a message: the plugin wakes A's existing Agent, and A can reply to B through the trusted source and delivery metadata. Either session can initiate or continue the exchange. The plugin registers four model tools, persists write-ahead delivery receipts, addresses live or cold sessions through the Host-owned Typert lookup, and renders the exchange in ordinary conversation history without changing the ordinary Web composition.
 
 ## Tool contracts
 
@@ -19,7 +19,7 @@ The caller identity always comes from tool execution and is not a model argument
 - Archived state is checked before lookup and synchronously again immediately before enqueue. Malformed, missing, self, archived, and subagent-owned targets are rejected before their inbox is changed.
 - Each accepted delivery persists `prepared`, enqueues one pre-created Message ID, then persists `delivered`. Recovery checks the target inbox and event log before retrying, so an indeterminate post-enqueue write cannot duplicate the message.
 - Unresolved receipts expire after 24 hours. Settled receipt metadata is retained for seven days; committed session messages remain under ordinary session retention and survive plugin disablement.
-- Disabling the plugin removes its four tools, collaboration prompt section, five HTTP routes, index bootstrap, active waits, Client graph row, header action, drawer, listeners, and timers. It does not remove already committed messages or retained receipt storage.
+- Disabling the plugin removes its four tools, collaboration prompt section, five HTTP routes, index bootstrap, active waits, Client graph row, listeners, and timers. It does not remove already committed messages or retained receipt storage.
 
 ## Desktop composition
 
@@ -35,7 +35,7 @@ DeepSeek Harness Desktop applies the same canonical row once after the base and 
 
 ## Client surface
 
-The Client half provides its bounded store and send/reply actions to the Desktop workbench; it no longer registers a separate header trigger, drawer, or overlay. Side Chat copies the exact current Session ID and accepts an exact target ID, direct message, wake choice, and receipt-bound reply. **Start target Agent** is on by default, failed drafts are retained, and recent activity contains metadata only. An accepted outgoing delivery appends an ignorable source-side conversation row, while the destination relay remains an ordinary visible user-message row, so both sessions show the exchange without duplicating source text into model history. Notifications remain in-app only: there is no native macOS notification, replacement session row, separate message archive, or automatic Agent loop.
+The Client half maintains the bounded receipt state used by ordinary conversation rows; it registers no separate header trigger, drawer, Side Chat, or overlay. The user copies an exact Session ID, pastes it into the ordinary composer, and asks the current Agent to send or reply. An accepted outgoing delivery appends an ignorable source-side conversation row, while the destination relay remains an ordinary visible user-message row, so both sessions show the exchange without duplicating source text into model history. Notifications remain in-app only: there is no native macOS notification, replacement session row, separate message archive, or automatic Agent loop.
 
 ## Model Experience
 
@@ -56,6 +56,6 @@ The four definitions and SDK declarations are byte-stable while the plugin and p
 ## Known Limitations and Deferred Work
 
 - Messaging is local to one active profile and accepts only ordinary sessions; cross-profile, cross-device, subagent, broadcast, group, and public-network delivery are not implemented.
-- Side Chat shows delivery metadata rather than a second message archive; collaboration content remains in the ordinary source and destination conversation histories.
+- Collaboration content remains in the ordinary source and destination conversation histories; there is no second message archive or manual relay panel.
 - Native system notifications are deferred because they require Electron permission and window-lifecycle ownership outside this independently disableable package.
 - The plugin provides explicit bounded peer messaging, not a new scheduler: either existing ordinary Agent can initiate or reply, and a reply chain is capped while either side may later start a fresh user-directed message. It creates no new session, subagent, forwarding rule, background loop, or autonomous two-Agent conversation.

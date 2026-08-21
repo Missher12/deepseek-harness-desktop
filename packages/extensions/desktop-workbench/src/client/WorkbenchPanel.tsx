@@ -4,13 +4,12 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { WorkbenchInjected } from './preferences.ts'
 import { NS } from './locales.ts'
 import css from './WorkbenchPanel.module.css'
-import { SideChatMode } from './SideChatMode.tsx'
 import { FilesMode } from './FilesMode.tsx'
 import { ReviewMode } from './ReviewMode.tsx'
 import { TerminalMode } from './TerminalMode.tsx'
 import { BrowserMode } from './BrowserMode.tsx'
 
-const MODES: UtilityMode[] = ['terminal', 'browser', 'files', 'side-chat', 'review']
+const MODES: UtilityMode[] = ['terminal', 'browser', 'files', 'review']
 export type WorkbenchPanelProps = PropsRuntime<'layout.utility'> & PropsLocale<typeof NS> & InjectFace<WorkbenchInjected>
 
 export function WorkbenchPanel(props: WorkbenchPanelProps) {
@@ -41,10 +40,9 @@ export function WorkbenchPanel(props: WorkbenchPanelProps) {
       <div className={css.body} role="tabpanel">
         {mode === 'terminal' ? <TerminalMode {...props} />
           : mode === 'browser' ? <BrowserMode {...props} />
-            : mode === 'side-chat' ? <SideChatMode {...props} />
-              : mode === 'files' ? <FilesMode {...props} />
-                : mode === 'review' ? <ReviewMode {...props} />
-                  : <p>{t(`placeholder.${mode}`)}</p>}
+            : mode === 'files' ? <FilesMode {...props} />
+              : mode === 'review' ? <ReviewMode {...props} />
+                : <p>{t(`placeholder.${mode}`)}</p>}
       </div>
     </section>
   )

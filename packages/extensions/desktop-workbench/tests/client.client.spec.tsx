@@ -11,7 +11,7 @@ afterEach(cleanup)
 const sessionId = 'session-a' as never
 const labels = {
   open: '打开工作台', close: '关闭工作台', terminal: '终端', browser: '浏览器',
-  files: '文件', 'side-chat': '侧边聊天', review: '审阅',
+  files: '文件', review: '审阅',
 } as const
 const t = (key: keyof typeof labels) => labels[key]
 
@@ -57,7 +57,7 @@ describe('desktop workbench shell', () => {
     expect(loadWidth({ getItem: () => 'nope' })).toBe(420)
   })
 
-  it('opens from the compact header button and exposes five Harness-style tabs', () => {
+  it('opens from the compact header button without a duplicate side-chat surface', () => {
     const { controller, common } = setup()
     const headerProps = common as unknown as HeaderButtonProps
     const panelProps = common as unknown as WorkbenchPanelProps
@@ -74,7 +74,8 @@ describe('desktop workbench shell', () => {
     </>)
     expect(button.getAttribute('aria-expanded')).toBe('true')
     expect(view.container.querySelector('[data-desktop-workbench-panel]')).not.toBeNull()
-    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['终端', '浏览器', '文件', '侧边聊天', '审阅'])
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['终端', '浏览器', '文件', '审阅'])
+    expect(screen.queryByRole('tab', { name: '侧边聊天' })).toBeNull()
   })
 
   it('switches modes without closing and closes on Escape', () => {

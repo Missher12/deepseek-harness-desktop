@@ -1,6 +1,5 @@
 import type { ObservableSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ILayout, UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { MessengerDeliveryResult, MessengerStore } from '@deepseek-ai/dsh-session-messenger/client'
 
 /** Local preference key for the utility width. */
 export const WIDTH_KEY = 'dsh.desktop-workbench.width.v1'
@@ -90,12 +89,9 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
 
 /** Workbench services injected into its Client slot entries. */
 export interface WorkbenchInjected {
-  hooks: { workbench: ObservableSnapshot<WorkbenchSnapshot>; messenger: MessengerStore }
+  hooks: { workbench: ObservableSnapshot<WorkbenchSnapshot> }
   toggle(sessionId: SessionId): void
   close(): void
   selectMode(mode: UtilityMode): void
   setWidth(width: number): void
-  send(sourceSessionId: SessionId, targetSessionId: SessionId, message: string, wake: boolean): Promise<MessengerDeliveryResult>
-  reply(sourceSessionId: SessionId, deliveryId: string, message: string, wake: boolean): Promise<MessengerDeliveryResult>
-  acknowledge(sessionId: SessionId, deliveryIds: readonly string[]): Promise<number>
 }
