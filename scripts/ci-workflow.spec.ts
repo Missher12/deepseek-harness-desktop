@@ -48,6 +48,32 @@ describe('CI workflow', () => {
     expect(publishRelease?.run).toContain('release/deepseek-harness-desktop-update.json')
   })
 
+  it('derives every Windows Setup path from the Desktop package version', () => {
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+    const windows = workflowJob(workflow, 'build-install-smoke')
+    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
+    const steps = windows.steps.filter(isRecord)
+    const metadata = steps.find(step => step.name === 'Resolve Desktop release metadata')
+    const upload = steps.find(step => (
+      typeof step.uses === 'string' && step.uses.startsWith('actions/upload-artifact@')
+    ))
+
+    expect(workflow.permissions).toEqual({ contents: 'read' })
+    expect(metadata).toMatchObject({ id: 'desktop', shell: 'pwsh' })
+    expect(metadata?.run).toContain('apps/desktop/package.json')
+    expect(metadata?.run).toContain('$env:GITHUB_OUTPUT')
+    expect(metadata?.run).toContain('artifact=DeepSeek-Harness-Setup-$version-win-x64.exe')
+
+    const serialized = JSON.stringify(windows)
+    expect(serialized).not.toContain('0.2.1')
+    expect(serialized).toContain('${{ steps.desktop.outputs.artifact }}')
+    expect(upload).toMatchObject({
+      with: {
+        name: 'DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ github.sha }}',
+      },
+    })
+  })
+
   it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')
     if (!isRecord(workflow.jobs)

@@ -25,13 +25,24 @@ interface RecordState {
 /** Terminal allocator supplied by the Host subprocess service. */
 export type SpawnTerminal = (spec: SubprocessTerminalSpawnSpec) => Promise<SubprocessTerminalHandle>
 
+/** Executable and arguments used to open one native workbench terminal. */
+export type WorkbenchShellCommand = readonly [string, ...string[]]
+
+type ShellAccess = (path: string) => Promise<void>
+
 /**
- * Select the bounded macOS login-shell fallback.
- * @returns the first supported absolute login-shell path.
+ * Select the bounded native shell command for the current platform.
+ * @param platform - runtime operating-system identifier.
+ * @param verifyAccess - executable probe; injectable for platform-independent tests.
+ * @returns PowerShell on Windows or the first supported POSIX login shell.
  */
-export async function defaultShell(): Promise<string> {
+export async function defaultShell(
+  platform: NodeJS.Platform = process.platform,
+  verifyAccess: ShellAccess = access,
+): Promise<WorkbenchShellCommand> {
+  if (platform === 'win32') return ['powershell.exe', '-NoLogo', '-NoProfile']
   for (const shell of ['/bin/zsh', '/bin/bash']) {
-    try { await access(shell); return shell } catch { /* try the bounded fallback */ }
+    try { await verifyAccess(shell); return [shell, '-l'] } catch { /* try the bounded fallback */ }
   }
   throw new Error('no supported shell is available')
 }
@@ -39,7 +50,10 @@ export async function defaultShell(): Promise<string> {
 /** Bounded registry for user-owned terminals outside the Agent terminal service. */
 export class WorkbenchTerminalRegistry {
   private readonly records = new Map<string, RecordState>()
-  constructor(private readonly spawn: SpawnTerminal, private readonly shell: () => Promise<string> = defaultShell) {}
+  constructor(
+    private readonly spawn: SpawnTerminal,
+    private readonly shell: () => Promise<WorkbenchShellCommand> = defaultShell,
+  ) {}
 
   /**
    * Open one owned login shell.
@@ -53,7 +67,7 @@ export class WorkbenchTerminalRegistry {
     if ([...this.records.values()].filter(record => record.owner === owner).length >= MAX_TERMINALS) {
       throw new Error(`at most ${String(MAX_TERMINALS)} terminals may be open`)
     }
-    const handle = await this.spawn({ argv: [await this.shell(), '-l'], cwd, rows: clamp(rows, 8, 120), cols: clamp(cols, 20, 240), graceMs: 1500,
+    const handle = await this.spawn({ argv: await this.shell(), cwd, rows: clamp(rows, 8, 120), cols: clamp(cols, 20, 240), graceMs: 1500,
       env: { TERM: 'xterm-256color', DSH_UI_TERMINAL: '1' } })
     const record: RecordState = {
       id: randomBytes(12).toString('base64url'), owner, cwd, handle, output: Buffer.alloc(0), revision: 0, status: 'running',

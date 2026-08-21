@@ -90,45 +90,40 @@ export function installWorkbenchHttp(ctx: Context): void {
   const authority = `127.0.0.1:${String(ctx.webServer.port)}`
   const origin = `http://${authority}`
   const terminals = new WorkbenchTerminalRegistry(spec => ctx.subprocess.spawnTerminal(spec))
-  const authenticated = (
+  const authorized = (req: IncomingMessage): boolean => (
+    req.method === 'POST'
+    && exactHeader(req, 'host') === authority
+    && exactHeader(req, 'origin') === origin
+    && matches(exactHeader(req, WORKBENCH_CAPABILITY_HEADER), capability)
+  )
+  const exactPost = (
     path: string,
-    action: (body: Record<string, unknown>) => unknown,
+    action: (req: IncomingMessage, res: ServerResponse) => Promise<void>,
   ): WebRoute => ({
     kind: 'exact', path,
     async handler(req, res) {
-      if (req.method !== 'POST'
-        || exactHeader(req, 'host') !== authority
-        || exactHeader(req, 'origin') !== origin
-        || !matches(exactHeader(req, WORKBENCH_CAPABILITY_HEADER), capability)) {
+      if (!authorized(req)) {
         respond(res, 403, { error: 'forbidden' })
         return
       }
-      try { respond(res, 200, await action(await readBody(req))) } catch (error: unknown) {
+      try { await action(req, res) } catch (error: unknown) {
         respond(res, 400, { error: error instanceof Error ? error.message : 'request failed' })
       }
     },
   })
+  const authenticated = (
+    path: string,
+    action: (body: Record<string, unknown>) => unknown,
+  ): WebRoute => exactPost(path, async (req, res) => {
+    respond(res, 200, await action(await readBody(req)))
+  })
   const route = (
     path: string,
     action: (root: string, child: string | undefined) => Promise<unknown>,
-  ): WebRoute => ({
-    kind: 'exact', path,
-    async handler(req, res) {
-      if (req.method !== 'POST'
-        || exactHeader(req, 'host') !== authority
-        || exactHeader(req, 'origin') !== origin
-        || !matches(exactHeader(req, WORKBENCH_CAPABILITY_HEADER), capability)) {
-        respond(res, 403, { error: 'forbidden' })
-        return
-      }
-      try {
-        const body = await readBody(req)
-        if (!safeId(body.sessionId) || (body.path !== undefined && !safePath(body.path))) throw new Error('invalid request')
-        respond(res, 200, await action(workspaceOf(ctx, body.sessionId), body.path))
-      } catch (error: unknown) {
-        respond(res, 400, { error: error instanceof Error ? error.message : 'request failed' })
-      }
-    },
+  ): WebRoute => exactPost(path, async (req, res) => {
+    const body = await readBody(req)
+    if (!safeId(body.sessionId) || (body.path !== undefined && !safePath(body.path))) throw new Error('invalid request')
+    respond(res, 200, await action(workspaceOf(ctx, body.sessionId), body.path))
   })
   ctx.effect(function* () {
     yield async () => { await terminals.closeAll() }

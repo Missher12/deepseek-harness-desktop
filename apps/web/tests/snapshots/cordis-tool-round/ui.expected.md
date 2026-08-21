@@ -93,7 +93,7 @@
   - img
 - text: {{clock}} Ran for {{duration}}
 - textbox "Message the agent"
-- button "Commands":
+- button "Add":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
 - button "Select model, current DeepSeek-V4-Flash":
@@ -101,4 +101,4 @@
   - img
 - button "0% of context used"
 - button "Send message" [disabled]
-- text: 3 turns · 7 steps LLM {{duration}} · Tool call {{duration}} Cache hit 77% Input 66.5K tok · Output 321 tok Session est. ≈ ¥0.03
+- text: 3 turns · 7 steps LLM {{duration}} · Tool call {{duration}} Cache hit 77% Input 66.5K tok · Output 321 tok Session est. ≈ ¥{{price}}

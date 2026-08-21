@@ -29,7 +29,7 @@
 - paragraph: partial
 - status: Deep diving...
 - textbox "Message the agent"
-- button "Commands":
+- button "Add":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
 - button "Select model, current DeepSeek-V4-Flash":
@@ -37,4 +37,4 @@
   - img
 - button "6% of context used"
 - button "Stop generating"
-- text: 1 turns · 1 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 0% Input 7.8K tok · Output 109 tok Session est. ≈ ¥0.01
+- text: 1 turns · 1 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 0% Input 7.8K tok · Output 109 tok Session est. ≈ ¥{{price}}

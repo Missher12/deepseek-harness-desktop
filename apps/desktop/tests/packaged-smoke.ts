@@ -24,6 +24,13 @@ const MESSENGER_SOURCE_SESSION_ID = 'desktop-smoke-messenger-source-session-id'
 const MESSENGER_SUBAGENT_SESSION_ID = 'desktop-smoke-messenger-subagent-session-id'
 const RECEIPT_TTL_MS = 24 * 60 * 60 * 1_000
 
+/** Native command used to prove the packaged workbench terminal is interactive. */
+export function workbenchTerminalProbe(platform: NodeJS.Platform): string {
+  return platform === 'win32'
+    ? "Write-Output 'desktop-workbench-terminal-ok'"
+    : "printf 'desktop-workbench-terminal-ok\\n'"
+}
+
 interface ProviderTripwire {
   readonly url: string
   readonly requests: string[]
@@ -904,7 +911,7 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): 
   }
   const terminalInput = panel.getByPlaceholder(/^(?:Type a command and press Return|输入命令并按回车)$/u)
   await terminalInput.waitFor({ state: 'visible', timeout: 15_000 })
-  await terminalInput.fill("printf 'desktop-workbench-terminal-ok\\n'")
+  await terminalInput.fill(workbenchTerminalProbe(platform))
   await terminalInput.press('Enter')
   await expect.poll(() => panel.innerText(), { timeout: 15_000 }).toContain('desktop-workbench-terminal-ok')
   expect(await panel.innerText()).not.toContain('posix_spawn failed')
@@ -1216,9 +1223,7 @@ export async function runPackagedDesktopSmoke(
   await Promise.all([mkdir(harnessHome, { recursive: true }), mkdir(userData, { recursive: true })])
   const clipboardSeed = await seedWindowsClipboardSmokeState(harnessHome)
   const providerTripwire = await startProviderTripwire()
-  if (platform === 'darwin') {
-    await writeDesktopSmokeModelSettings(harnessHome, providerTripwire.url)
-  }
+  await writeDesktopSmokeModelSettings(harnessHome, providerTripwire.url)
 
   let nativeApp: ElectronApplication | undefined
   let quitCompleted = false
@@ -1278,17 +1283,13 @@ export async function runPackagedDesktopSmoke(
     await welcomeDialog.waitFor({ state: 'visible', timeout: 30_000 })
     await welcomeDialog.getByRole('button', { name: /^(?:Continue|继续)$/u }).click()
     await welcomeDialog.waitFor({ state: 'detached', timeout: 30_000 })
-    if (platform === 'darwin') {
-      // The native effort acceptance starts with an isolated, usable custom
-      // provider so the first Session captures that exact model selection.
-      // A usable non-DeepSeek route must also suppress the keyless onboarding.
-      const credentialDialog = page.getByRole('dialog', {
-        name: /^(?:Add an API key to get started|添加一个 API Key 开始使用)$/u,
-      })
-      await expect.poll(() => credentialDialog.count(), { timeout: 30_000 }).toBe(0)
-    } else {
-      await dismissCredentialOnboarding(page, true)
-    }
+    // The native effort acceptance starts with an isolated, usable custom
+    // provider so the first Session captures that exact model selection.
+    // A usable non-DeepSeek route must also suppress the keyless onboarding.
+    const credentialDialog = page.getByRole('dialog', {
+      name: /^(?:Add an API key to get started|添加一个 API Key 开始使用)$/u,
+    })
+    await expect.poll(() => credentialDialog.count(), { timeout: 30_000 }).toBe(0)
     expect(await page.locator('#root').evaluate((element: HTMLElement) => !element.inert)).toBe(true)
 
     try {
@@ -1298,13 +1299,11 @@ export async function runPackagedDesktopSmoke(
       }
       await exerciseSessionMessenger(page, clipboardSeed, platform)
       await exerciseComposerAddMenu(page)
-      if (platform === 'darwin') {
-        await exerciseDesktopWorkbench(page, platform)
-        await exerciseReasoningEffort(page, harnessHome, platform)
-      }
+      await exerciseDesktopWorkbench(page, platform)
+      await exerciseReasoningEffort(page, harnessHome, platform)
     } catch (error) {
       throw new Error(
-        `Packaged smoke: native clipboard and session-messenger acceptance failed: ${String(error)}\n${await desktopStartupDiagnostic(page, userData)}`,
+        `Packaged smoke: native shared-feature acceptance failed: ${String(error)}\n${await desktopStartupDiagnostic(page, userData)}`,
         { cause: error },
       )
     }

@@ -13,9 +13,16 @@ const {
   isUsageTokenTooltip,
   parseWindowsProcessRows,
   seedWindowsClipboardSmokeState,
+  workbenchTerminalProbe,
 } = packagedSmoke
 
 describe('packaged desktop process inspection', () => {
+  it('uses a native workbench terminal probe on each packaged platform', () => {
+    expect(workbenchTerminalProbe('win32')).toBe("Write-Output 'desktop-workbench-terminal-ok'")
+    expect(workbenchTerminalProbe('darwin')).toBe("printf 'desktop-workbench-terminal-ok\\n'")
+    expect(workbenchTerminalProbe('linux')).toBe("printf 'desktop-workbench-terminal-ok\\n'")
+  })
+
   it('parses both PowerShell single-object and array JSON', () => {
     expect(parseWindowsProcessRows('{"ProcessId":12,"ParentProcessId":4}')).toEqual([
       { processId: 12, parentProcessId: 4 },
