@@ -96,7 +96,13 @@ The repository is based on the pinned official source and adds the desktop appli
   replacement flow, then relaunched `/Applications/DeepSeek Harness.app` as
   0.3.2 x86_64. The `~/.dsh` file/directory counts remained 97 / 103 across
   that update; two runtime-managed links were added and no data tree was
-  copied or deleted by the installer.
+  copied or deleted by the installer. The verified 0.3.0 DMG is also published
+  as a normal historical Release with its checksum and updater manifest. The
+  verified 0.3.1 DMG is published only as a prerelease archive: it was a local
+  transition build without a separately reproducible source commit, so it has
+  no updater manifest and must never enter automatic update selection. Public
+  re-downloads of both historical DMGs match their local byte counts and
+  SHA-256 values.
 - Version 0.3.0 adds the removable Intel-macOS Codex-style workbench opened by
   one compact button beside Session log. Its bounded 320–720 px utility panel
   contains a separately owned Terminal, an isolated native Browser, read-only
