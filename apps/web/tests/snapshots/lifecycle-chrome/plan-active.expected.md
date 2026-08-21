@@ -32,7 +32,7 @@
   - text: Standard mode
   - img
 - textbox "Describe what you want to build"
-- button "Commands":
+- button "Add":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
 - button "Plan mode on, press to turn off": Plan

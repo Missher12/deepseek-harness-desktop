@@ -32,9 +32,9 @@
   - text: Standard mode
   - img
 - textbox "Describe what you want to build"
-- button "Commands":
+- button "Add":
   - img
-- tooltip "Commands"
+- tooltip "Add"
 - 'button "Access mode, current: Workspace Write"': Workspace Write
 - button "Select model, current DeepSeek-V4-Flash":
   - text: DeepSeek-V4-Flash

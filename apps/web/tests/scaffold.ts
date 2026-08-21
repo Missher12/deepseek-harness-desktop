@@ -856,7 +856,7 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
     .replace(/\d+(?:\.\d+)?(?= tok\/s(?!\w))/g, '{{throughput}}')
     // Realizing fixture cwd values changes their heuristic prompt price between
     // a local worktree and the hosted runner without changing UI behavior.
-    .replace(/(Session est\. ≈ ¥)\d+(?:\.\d+)?/g, '$1{{price}}')
+    .replace(/(Session est\. ≈ ¥)<?\d+(?:\.\d+)?/g, '$1{{price}}')
     // Seeded compaction prices realized file paths, whose length differs
     // between local worktrees and CI scratch directories.
     .replace(/(Compacted \d+ history items \(~)\d+( tokens\))/g, '$1{{tokens}}$2')
