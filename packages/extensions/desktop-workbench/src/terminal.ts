@@ -28,15 +28,21 @@ export type SpawnTerminal = (spec: SubprocessTerminalSpawnSpec) => Promise<Subpr
 /** Executable and arguments used to open one native workbench terminal. */
 export type WorkbenchShellCommand = readonly [string, ...string[]]
 
+type ShellAccess = (path: string) => Promise<void>
+
 /**
  * Select the bounded native shell command for the current platform.
  * @param platform - runtime operating-system identifier.
+ * @param verifyAccess - executable probe; injectable for platform-independent tests.
  * @returns PowerShell on Windows or the first supported POSIX login shell.
  */
-export async function defaultShell(platform: NodeJS.Platform = process.platform): Promise<WorkbenchShellCommand> {
+export async function defaultShell(
+  platform: NodeJS.Platform = process.platform,
+  verifyAccess: ShellAccess = access,
+): Promise<WorkbenchShellCommand> {
   if (platform === 'win32') return ['powershell.exe', '-NoLogo', '-NoProfile']
   for (const shell of ['/bin/zsh', '/bin/bash']) {
-    try { await access(shell); return [shell, '-l'] } catch { /* try the bounded fallback */ }
+    try { await verifyAccess(shell); return [shell, '-l'] } catch { /* try the bounded fallback */ }
   }
   throw new Error('no supported shell is available')
 }

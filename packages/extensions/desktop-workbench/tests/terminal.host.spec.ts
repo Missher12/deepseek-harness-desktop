@@ -13,7 +13,12 @@ function deferred<T>() {
 describe('WorkbenchTerminalRegistry', () => {
   it('selects the native platform shell command', async () => {
     await expect(defaultShell('win32')).resolves.toEqual(['powershell.exe', '-NoLogo', '-NoProfile'])
-    await expect(defaultShell('darwin')).resolves.toEqual([expect.stringMatching(/^\/bin\/(?:zsh|bash)$/), '-l'])
+    const accessed: string[] = []
+    await expect(defaultShell('darwin', async (path) => {
+      accessed.push(path)
+      if (path === '/bin/zsh') throw new Error('missing zsh')
+    })).resolves.toEqual(['/bin/bash', '-l'])
+    expect(accessed).toEqual(['/bin/zsh', '/bin/bash'])
   })
 
   it('passes the complete resolved shell command to the terminal owner', async () => {
