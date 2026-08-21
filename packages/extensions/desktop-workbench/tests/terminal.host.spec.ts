@@ -2,7 +2,7 @@ import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 import type { SubprocessOutcome, SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TERMINAL_INPUT_BYTES } from '../src/protocol.ts'
-import { WorkbenchTerminalRegistry } from '../src/terminal.ts'
+import { defaultShell, WorkbenchTerminalRegistry } from '../src/terminal.ts'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -11,6 +11,31 @@ function deferred<T>() {
 }
 
 describe('WorkbenchTerminalRegistry', () => {
+  it('selects the native platform shell command', async () => {
+    await expect(defaultShell('win32')).resolves.toEqual(['powershell.exe', '-NoLogo', '-NoProfile'])
+    await expect(defaultShell('darwin')).resolves.toEqual([expect.stringMatching(/^\/bin\/(?:zsh|bash)$/), '-l'])
+  })
+
+  it('passes the complete resolved shell command to the terminal owner', async () => {
+    const handle: SubprocessTerminalHandle = {
+      pid: 42, output: new PassThrough(), done: new Promise(() => {}), write: async () => {}, terminate: async () => {},
+      inspectForeground: async () => undefined, signalForeground: async () => 42,
+    }
+    const spawn = vi.fn(async () => handle)
+    const registry = new WorkbenchTerminalRegistry(
+      spawn,
+      async () => ['powershell.exe', '-NoLogo', '-NoProfile'] as const,
+    )
+
+    await registry.open('owner-a', 'C:\\workspace')
+
+    expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
+      argv: ['powershell.exe', '-NoLogo', '-NoProfile'],
+      cwd: 'C:\\workspace',
+    }))
+    await registry.closeAll()
+  })
+
   it('owns terminals, bounds input, output and teardown', async () => {
     const output = new PassThrough()
     const done = deferred<SubprocessOutcome>()
@@ -20,7 +45,7 @@ describe('WorkbenchTerminalRegistry', () => {
       pid: 42, output, done: done.promise, write, terminate,
       inspectForeground: async () => undefined, signalForeground: async () => 42,
     }
-    const registry = new WorkbenchTerminalRegistry(async () => handle, async () => '/bin/zsh')
+    const registry = new WorkbenchTerminalRegistry(async () => handle, async () => ['/bin/zsh', '-l'])
     const opened = await registry.open('owner-a', '/workspace')
     expect(opened.cwd).toBe('/workspace')
     await expect(registry.write('owner-b', opened.id, 'pwd\n')).rejects.toThrow(/foreign terminal/)
@@ -41,7 +66,7 @@ describe('WorkbenchTerminalRegistry', () => {
       }
       handles.push(handle)
       return handle
-    }, async () => '/bin/zsh')
+    }, async () => ['/bin/zsh', '-l'])
     for (let index = 0; index < 4; index += 1) await registry.open('owner', '/workspace')
     await expect(registry.open('owner', '/workspace')).rejects.toThrow(/at most 4/)
     await registry.closeAll()
@@ -53,7 +78,7 @@ describe('WorkbenchTerminalRegistry', () => {
       pid: 42, output: new PassThrough(), done: new Promise(() => {}), write: async () => {}, terminate,
       inspectForeground: async () => undefined, signalForeground: async () => 42,
     }
-    const registry = new WorkbenchTerminalRegistry(async () => handle, async () => '/bin/zsh')
+    const registry = new WorkbenchTerminalRegistry(async () => handle, async () => ['/bin/zsh', '-l'])
     const opened = await registry.open('owner-a', '/workspace')
     await expect(registry.close('owner-b', opened.id)).rejects.toThrow(/foreign terminal/)
     await registry.close('owner-a', opened.id)
