@@ -826,8 +826,8 @@ async function persistSeedSession(
 
 /**
  * Normalize an aria snapshot: uuid, cwd, workspace-basename, duration,
- * decode-throughput, and path-sensitive compaction estimates collapse to
- * stable tokens.
+ * decode-throughput, and path-sensitive compaction/session estimates collapse
+ * to stable tokens.
  *
  * Throughput needs a token for the same reason durations do, and no fixture
  * can supply one: the figure divides a replayed step's output tokens by the
@@ -854,6 +854,9 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
       duration => duration.startsWith('约') ? duration : '{{duration}}',
     )
     .replace(/\d+(?:\.\d+)?(?= tok\/s(?!\w))/g, '{{throughput}}')
+    // Realizing fixture cwd values changes their heuristic prompt price between
+    // a local worktree and the hosted runner without changing UI behavior.
+    .replace(/(Session est\. ≈ ¥)\d+(?:\.\d+)?/g, '$1{{price}}')
     // Seeded compaction prices realized file paths, whose length differs
     // between local worktrees and CI scratch directories.
     .replace(/(Compacted \d+ history items \(~)\d+( tokens\))/g, '$1{{tokens}}$2')
