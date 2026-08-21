@@ -102,7 +102,20 @@ The repository is based on the pinned official source and adds the desktop appli
   transition build without a separately reproducible source commit, so it has
   no updater manifest and must never enter automatic update selection. Public
   re-downloads of both historical DMGs match their local byte counts and
-  SHA-256 values.
+  SHA-256 values. Windows x64 is synchronized with the same 0.3.2 product at
+  public main commit `bf5d1805a0fb14e614a1438bc5ba49d9f9e93caf`. Native
+  Windows run `32456696621` passed the assisted installer pages and the full
+  installed-application lifecycle, including exact active/archived Session ID
+  clipboard behavior, refusal feedback, the native directory picker,
+  PowerShell workbench, process cleanup, uninstall, and isolated data
+  preservation. The published Setup is
+  `DeepSeek-Harness-Setup-0.3.2-win-x64.exe`, 139639588 bytes, SHA-256
+  `816a6ce48b96d2fcfebbe42d4c962b2b29df9a0d5e4e028bcac8f471302f1542`;
+  its 107-byte LF-only checksum and Setup bytes match an anonymous public
+  re-download. The NSIS archive and its `app.asar` contain no `.env*`,
+  `.credentials.yaml`, or `.dsh` paths. The three existing macOS Release
+  assets retain their original IDs, sizes, and digests; the macOS updater
+  manifest remains macOS-only.
 - Version 0.3.0 adds the removable Intel-macOS Codex-style workbench opened by
   one compact button beside Session log. Its bounded 320–720 px utility panel
   contains a separately owned Terminal, an isolated native Browser, read-only
