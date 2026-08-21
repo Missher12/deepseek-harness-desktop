@@ -52,6 +52,7 @@ describe('desktop workbench shell', () => {
   })
 
   it('clamps the persisted width', () => {
+    expect(loadWidth({ getItem: () => null })).toBe(420)
     expect(loadWidth({ getItem: () => '9999' })).toBe(720)
     expect(loadWidth({ getItem: () => '100' })).toBe(320)
     expect(loadWidth({ getItem: () => 'nope' })).toBe(420)
@@ -81,11 +82,26 @@ describe('desktop workbench shell', () => {
   it('switches modes without closing and closes on Escape', () => {
     const { controller, layout, common } = setup()
     controller.open(sessionId, 'terminal')
+    layout.setUtilityWidth.mockClear()
     const panelProps = common as unknown as WorkbenchPanelProps
     const view = render(<WorkbenchPanel {...panelProps} mode="terminal" />)
     fireEvent.click(screen.getByRole('tab', { name: '文件' }))
+    expect(layout.setUtilityWidth).not.toHaveBeenCalled()
     expect(layout.openUtility).toHaveBeenLastCalledWith('files')
     fireEvent.keyDown(view.container.firstElementChild!, { key: 'Escape' })
     expect(layout.closeUtility).toHaveBeenCalledOnce()
+  })
+
+  it('restores the saved width once without overwriting later drag widths on reopen', () => {
+    const { controller, layout } = setup()
+    controller.open(sessionId)
+    expect(layout.setUtilityWidth).toHaveBeenCalledOnce()
+    layout.setUtilityWidth.mockClear()
+
+    controller.close()
+    controller.open(sessionId, 'browser')
+
+    expect(layout.setUtilityWidth).not.toHaveBeenCalled()
+    expect(layout.openUtility).toHaveBeenLastCalledWith('browser')
   })
 })

@@ -168,7 +168,7 @@ export function AppFrame({
     ? computeColumns(
       viewport,
       sidebarPreference,
-      detailsSession === undefined ? 0 : panels.details,
+      panels.details,
       0,
     )
     : dockedCols

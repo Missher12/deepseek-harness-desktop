@@ -14,11 +14,11 @@ export class WorkbenchBrowserController {
     private readonly emit: (snapshot: DesktopBrowserSnapshot) => void,
   ) {}
 
-  async show(bounds: DesktopBrowserBounds): Promise<DesktopBrowserSnapshot> {
+  show(bounds: DesktopBrowserBounds): Promise<DesktopBrowserSnapshot> {
     const view = this.ensureView()
     view.setBounds(this.clip(bounds))
     view.setVisible(true)
-    return this.snapshot()
+    return Promise.resolve(this.snapshot())
   }
 
   async control(request: DesktopBrowserRequest): Promise<DesktopBrowserSnapshot> {
@@ -37,9 +37,9 @@ export class WorkbenchBrowserController {
     return this.snapshot()
   }
 
-  async hide(): Promise<void> {
+  hide(): Promise<void> {
     const view = this.view
-    if (view === undefined) return
+    if (view === undefined) return Promise.resolve()
     this.view = undefined
     view.setVisible(false)
     this.window.contentView.removeChildView(view)
@@ -49,6 +49,7 @@ export class WorkbenchBrowserController {
     this.partition?.setPermissionRequestHandler(null)
     this.partition = undefined
     this.error = null
+    return Promise.resolve()
   }
 
   private ensureView(): WebContentsView {

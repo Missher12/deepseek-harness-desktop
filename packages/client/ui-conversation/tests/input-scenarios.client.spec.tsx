@@ -160,9 +160,9 @@ async function scopedBench(register?: (inputTriggers: InputTriggerService) => vo
       previewUrl: `blob:${id}`,
     })),
     resolveSubmitMode: () => 'queue',
-    toggleCommandMenu: (selection) => {
+    toggleAddMenu: (selection) => {
       const snapshot = shell.snapshot
-      controller.toggleSource('command', {
+      controller.toggleSources('composer-add', [{ name: 'command' }], {
         trigger: '/',
         query: '',
         quoted: false,

@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -48,6 +49,18 @@ interface EffortLevel {
 
 type ModelCatalogModel = ModelDirectoryState['groups'][number]['models'][number]
 
+/** Stable positive-effort ladder shown for every adjustable model. */
+const DISPLAY_LEVELS: readonly EffortLevel[] = [
+  { id: 'low', name: 'Low' },
+  { id: 'medium', name: 'Medium' },
+  { id: 'high', name: 'High' },
+  { id: 'xhigh', name: 'XHigh' },
+  { id: 'max', name: 'Max' },
+  { id: 'ultra', name: 'Ultra' },
+]
+
+const DISPLAY_RANK = new Map(DISPLAY_LEVELS.map((level, index) => [level.id, index]))
+
 const EXPECTED_PREFERENCE_PATH = '/plugins/dsh-reasoning-effort/preference'
 const EXPECTED_CAPABILITY_HEADER = 'x-dsh-reasoning-effort-capability'
 
@@ -58,10 +71,15 @@ function currentModel(state: ModelDirectoryState): ModelCatalogModel | undefined
     ?.models.find(model => model.id === state.current?.model)
 }
 
-/** Exact Host-advertised levels, hidden when a slider would have no choice. */
+/** Host-advertised levels the ladder may target, absent for off-only models. */
+function modelEffortLevels(state: ModelDirectoryState): readonly EffortLevel[] {
+  const levels = currentModel(state)?.reasoning?.efforts ?? []
+  return levels.some(level => level.id !== 'off') ? levels : []
+}
+
+/** Six stable visual levels, hidden only when the model offers no positive effort. */
 export function sliderLevels(state: ModelDirectoryState): readonly EffortLevel[] {
-  const levels = currentModel(state)?.reasoning?.efforts
-  return levels !== undefined && levels.length >= 2 ? levels : []
+  return modelEffortLevels(state).length === 0 ? [] : DISPLAY_LEVELS
 }
 
 function clampIndex(value: number, count: number): number {
@@ -72,25 +90,67 @@ function effortIndex(levels: readonly EffortLevel[], effort: string | undefined)
   return levels.findIndex(level => level.id === effort)
 }
 
-/** Current -> Host default -> middle, without inventing a Client effort. */
+/** Map one fixed visual step to a real effort the exact model advertises. */
+function modelEffortAt(levels: readonly EffortLevel[], visualIndex: number): EffortLevel | undefined {
+  if (levels.length === 0) return undefined
+  const target = clampIndex(visualIndex, DISPLAY_LEVELS.length)
+  const ranked = levels.flatMap((level, order) => {
+    const rank = level.id === 'off' || level.id === 'minimal' ? 0 : DISPLAY_RANK.get(level.id)
+    return rank === undefined ? [] : [{ level, rank, order }]
+  })
+  if (ranked.length > 0) {
+    // Prefer the strongest supported level not exceeding the visual target.
+    // When none exists (for example a High-only model at Low), use the model's
+    // weakest positive level. Stable Host order breaks equal-rank ties so Low
+    // wins over Minimal when both are advertised.
+    return ranked
+      .filter(item => item.rank <= target)
+      .sort((a, b) => b.rank - a.rank || b.order - a.order)[0]?.level
+      ?? ranked.sort((a, b) => a.rank - b.rank || b.order - a.order)[0]?.level
+  }
+  // Adapter-defined opaque IDs have no shared vocabulary. Preserve their
+  // advertised escalation order and spread it across the six visual stops.
+  const at = Math.round(target * (levels.length - 1) / (DISPLAY_LEVELS.length - 1))
+  return levels[at]
+}
+
+/** Visual stop representing an accepted real effort. */
+function visualIndexForEffort(levels: readonly EffortLevel[], effort: string | undefined): number {
+  const direct = effort === 'off' || effort === 'minimal' ? 0 : DISPLAY_RANK.get(effort ?? '')
+  if (direct !== undefined) return direct
+  const actual = effortIndex(levels, effort)
+  if (actual < 0 || levels.length < 2) return 0
+  return Math.round(actual * (DISPLAY_LEVELS.length - 1) / (levels.length - 1))
+}
+
+/** Current -> Host default -> middle, expressed on the fixed visual ladder. */
 export function effectiveEffortIndex(
   levels: readonly EffortLevel[],
   state: ModelDirectoryState,
 ): number {
-  const current = effortIndex(levels, state.current?.reasoningEffort)
-  if (current >= 0) return current
-  const fallback = effortIndex(levels, currentModel(state)?.reasoning?.defaultEffort)
-  if (fallback >= 0) return fallback
+  const actual = modelEffortLevels(state)
+  const current = effortIndex(actual, state.current?.reasoningEffort)
+  if (current >= 0) return visualIndexForEffort(actual, actual[current]?.id)
+  const fallback = effortIndex(actual, currentModel(state)?.reasoning?.defaultEffort)
+  if (fallback >= 0) return visualIndexForEffort(actual, actual[fallback]?.id)
   return Math.floor((levels.length - 1) / 2)
 }
 
 function resolvedEffortIndex(
-  levels: readonly EffortLevel[],
+  visualLevels: readonly EffortLevel[],
+  actualLevels: readonly EffortLevel[],
   state: ModelDirectoryState,
   acceptedEffortId: string | null,
+  preferredVisualIndex: number | null,
 ): number {
-  const accepted = effortIndex(levels, acceptedEffortId ?? undefined)
-  return accepted >= 0 ? accepted : effectiveEffortIndex(levels, state)
+  if (preferredVisualIndex !== null
+    && modelEffortAt(actualLevels, preferredVisualIndex)?.id === acceptedEffortId) {
+    return preferredVisualIndex
+  }
+  const accepted = effortIndex(actualLevels, acceptedEffortId ?? undefined)
+  return accepted >= 0
+    ? visualIndexForEffort(actualLevels, actualLevels[accepted]?.id)
+    : effectiveEffortIndex(visualLevels, state)
 }
 
 function validBootstrap(value: unknown): PreferenceBootstrap | undefined {
@@ -172,6 +232,10 @@ export interface EffortSliderProps {
   readonly levels: readonly EffortLevel[]
   readonly acceptedIndex: number
   readonly previewIndex: number
+  /** Exact Host effort reached by the visual stop, when its label differs. */
+  readonly actualName?: string
+  /** Strongest exact effort the model advertises. */
+  readonly capName?: string
   readonly disabled: boolean
   readonly dragging: boolean
   readonly chibiThumb: boolean
@@ -187,6 +251,8 @@ export function EffortSlider({
   levels,
   acceptedIndex,
   previewIndex,
+  actualName,
+  capName,
   disabled,
   dragging,
   chibiThumb,
@@ -204,6 +270,11 @@ export function EffortSlider({
   const redraw = useRef<(() => void) | null>(null)
   const count = levels.length
   const selected = levels[clampIndex(previewIndex, count)]
+  const selectedName = selected === undefined
+    ? ''
+    : actualName === undefined || actualName.toLowerCase() === selected.name.toLowerCase()
+      ? selected.name
+      : t('effort.mapped', { display: selected.name, actual: actualName })
   const progress = count < 2 ? 0 : previewIndex / (count - 1)
 
   useEffect(() => {
@@ -338,7 +409,7 @@ export function EffortSlider({
     <div className={css.effortGroup} role="group" aria-label={t('effort.title')}>
       <div className={css.effortHeader}>
         <span>{t('effort.title')}</span>
-        <span className={css.effortValue}>{selected?.name ?? ''}</span>
+        <span className={css.effortValue}>{selectedName}</span>
       </div>
       <div className={css.slider} style={style} data-dragging={dragging || undefined}>
         <div className={css.track} aria-hidden="true" />
@@ -354,7 +425,7 @@ export function EffortSlider({
           value={previewIndex}
           disabled={disabled}
           aria-label={t('effort.aria')}
-          aria-valuetext={selected?.name ?? ''}
+          aria-valuetext={selectedName}
           onChange={(event) => { onPreview(Number(event.currentTarget.value)) }}
           onKeyDown={keyDown}
           onPointerDown={startPointer}
@@ -385,6 +456,7 @@ export function EffortSlider({
           aria-hidden="true"
         />
       </div>
+      {capName === undefined ? null : <div className={css.effortCap}>{t('effort.cap', { effort: capName })}</div>}
       {error === null ? null : <div className={css.error} role="alert">{error}</div>}
     </div>
   )
@@ -415,17 +487,30 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
   const [error, setError] = useState<string | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const acceptedEffortIdRef = useRef<string | null>(null)
+  const preferredVisualIndexRef = useRef<number | null>(null)
+  const routeRef = useRef<string | null>(null)
   const committingRef = useRef(false)
   const id = useId()
   const preference = useCharacterPreference()
-  const placement = usePopupPlacement({ anchor, popup, open, preferred: 'below' })
-  const levels = sliderLevels(state)
   const choice = currentModel(state)
-  const effectiveIndex = levels.length >= 2 ? effectiveEffortIndex(levels, state) : -1
+  const actualLevels = useMemo(
+    () => {
+      const advertised = choice?.reasoning?.efforts ?? []
+      return advertised.some(level => level.id !== 'off') ? advertised : []
+    },
+    [choice?.reasoning?.efforts],
+  )
+  const levels = actualLevels.length === 0 ? [] : DISPLAY_LEVELS
+  const placement = usePopupPlacement({ anchor, popup, open, preferred: 'below' })
+  const effectiveIndex = levels.length > 0 ? effectiveEffortIndex(levels, state) : -1
   const acceptedIndex = effectiveIndex
-  const effortName = effectiveIndex >= 0 ? levels[effectiveIndex]?.name : undefined
+  const selectedActual = actualLevels.find(level => level.id === state.current?.reasoningEffort)
+    ?? actualLevels.find(level => level.id === choice?.reasoning?.defaultEffort)
+  const effortName = selectedActual?.name
   const modelName = choice?.name ?? state.current?.model ?? t('trigger.fallback')
   const busy = committing || state.status === 'selecting'
+  const previewActual = modelEffortAt(actualLevels, previewIndex)
+  const modelCap = actualLevels.at(-1)
 
   const bindTrigger = useCallback((node: HTMLButtonElement | null): void => {
     triggerRef.current = node
@@ -433,12 +518,24 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
   }, [])
 
   useEffect(() => {
-    if (levels.length < 2 || committingRef.current || dragging) return
-    const next = effectiveEffortIndex(levels, state)
-    acceptedEffortIdRef.current = levels[next]?.id ?? null
+    if (levels.length === 0 || committingRef.current || dragging) return
+    const route = state.current === null ? null : `${state.current.provider}\u0000${state.current.model}`
+    if (routeRef.current !== route) {
+      routeRef.current = route
+      preferredVisualIndexRef.current = null
+    }
+    const accepted = selectedActual?.id ?? modelEffortAt(actualLevels, effectiveEffortIndex(levels, state))?.id ?? null
+    const next = resolvedEffortIndex(
+      levels,
+      actualLevels,
+      state,
+      accepted,
+      preferredVisualIndexRef.current,
+    )
+    acceptedEffortIdRef.current = accepted
     setPreviewIndex(next)
     setError(null)
-  }, [dragging, levels, state])
+  }, [actualLevels, dragging, levels, selectedActual?.id, state])
 
   const close = useCallback((restoreFocus = false): void => {
     setOpen(false)
@@ -486,14 +583,15 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
   }, [anchor, close, open, popup])
 
   const commitEffort = useCallback(async (rawIndex: number): Promise<void> => {
-    if (committingRef.current || state.current === null || levels.length < 2) return
+    if (committingRef.current || state.current === null || levels.length === 0) return
     const index = clampIndex(rawIndex, levels.length)
-    const target = levels[index]
+    const target = modelEffortAt(actualLevels, index)
     if (target === undefined) return
     const route = { provider: state.current.provider, model: state.current.model }
-    const previousId = acceptedEffortIdRef.current ?? levels[acceptedIndex]?.id ?? null
+    const previousId = acceptedEffortIdRef.current ?? modelEffortAt(actualLevels, acceptedIndex)?.id ?? null
     let rollbackState = state
-    let rollbackLevels = levels
+    let rollbackVisualLevels = levels
+    let rollbackActualLevels: readonly EffortLevel[] = actualLevels
     committingRef.current = true
     setCommitting(true)
     setDragging(false)
@@ -503,26 +601,34 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
       const fresh = await controller.load()
       const freshState = stateFromModels(fresh)
       const available = sliderLevels(freshState)
+      const freshActual = modelEffortLevels(freshState)
       rollbackState = freshState
-      rollbackLevels = available
+      rollbackVisualLevels = available
+      rollbackActualLevels = freshActual
       if (fresh.current.provider !== route.provider || fresh.current.model !== route.model) {
         throw new Error(t('error.staleRoute'))
       }
-      if (!available.some(level => level.id === target.id)) throw new Error(t('error.staleEffort'))
+      if (!freshActual.some(level => level.id === target.id)) throw new Error(t('error.staleEffort'))
       await controller.select({ ...route, reasoningEffort: target.id })
-      const settled = available.findIndex(level => level.id === target.id)
       acceptedEffortIdRef.current = target.id
-      setPreviewIndex(settled)
+      preferredVisualIndexRef.current = index
+      setPreviewIndex(index)
     } catch (cause) {
-      const rollback = resolvedEffortIndex(rollbackLevels, rollbackState, previousId)
-      acceptedEffortIdRef.current = rollbackLevels[rollback]?.id ?? null
+      const rollback = resolvedEffortIndex(
+        rollbackVisualLevels,
+        rollbackActualLevels,
+        rollbackState,
+        previousId,
+        preferredVisualIndexRef.current,
+      )
+      acceptedEffortIdRef.current = modelEffortAt(rollbackActualLevels, rollback)?.id ?? null
       setPreviewIndex(rollback)
       setError(t('error.action', { message: cause instanceof Error ? cause.message : String(cause) }))
     } finally {
       committingRef.current = false
       setCommitting(false)
     }
-  }, [acceptedIndex, controller, levels, state, t])
+  }, [acceptedIndex, actualLevels, controller, levels, state, t])
 
   const chooseModel = async (
     provider: string,
@@ -607,11 +713,13 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
             triggerRef.current?.focus()
           }}
         >
-          {levels.length >= 2
+          {levels.length > 0
             ? <EffortSlider
               levels={levels}
               acceptedIndex={acceptedIndex}
               previewIndex={previewIndex}
+              {...previewActual === undefined ? {} : { actualName: previewActual.name }}
+              {...modelCap === undefined ? {} : { capName: modelCap.name }}
               disabled={busy}
               dragging={dragging}
               chibiThumb={preference.enabled}

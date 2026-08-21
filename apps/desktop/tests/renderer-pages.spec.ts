@@ -25,10 +25,24 @@ describe('local renderer pages', () => {
     expect(html).toContain('aria-valuetext="正在启动本地服务"')
     expect(html).toContain('height: 5px')
     expect(html).toContain('#4d6bfe')
+    expect(html).toContain('color-scheme: light')
+    expect(html).toContain('background: #f6f7fb')
+    expect(html).not.toContain('#07090f')
     expect(html).toContain('prefers-reduced-motion: reduce')
     expect(html).not.toContain('class="grid"')
     expect(html).not.toContain('class="rail"')
     expect(html).not.toMatch(/https?:\/\//u)
+  })
+
+  it('keeps the macOS plugin-loading surface on the same light theme', async () => {
+    const css = await readFile(
+      new URL('../../../packages/client/web/src/boot-page.module.css', import.meta.url),
+      'utf8',
+    )
+    const macSurface = css.slice(css.indexOf('.boot[data-dsh-boot-mac]'))
+    expect(macSurface).toContain('--dsh-boot-bg: #f6f7fb')
+    expect(macSurface).toContain('--dsh-boot-label-primary: #171a21')
+    expect(macSurface).not.toContain('--dsh-boot-bg: #07090f')
   })
 
   it('renders only closed failure reasons and recovery actions', async () => {

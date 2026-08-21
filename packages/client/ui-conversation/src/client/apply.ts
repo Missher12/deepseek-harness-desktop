@@ -24,6 +24,7 @@ import { ComposerBlockRegistry } from './input/blocks.ts'
 import type { ComposerBlock } from './input/blocks.ts'
 import { InputHub } from './input/hub.ts'
 import { ComposerSubmissionPolicy } from './input/submission-policy.ts'
+import { composerAddLauncherSources, createComposerAddSource } from './input/composer-add-source.ts'
 import { InputBar } from './skeleton/InputBar.tsx'
 import { EnterBehaviorRow } from './settings/EnterBehaviorRow.tsx'
 import type { EnterBehaviorRowInjected } from './settings/EnterBehaviorRow.tsx'
@@ -127,6 +128,18 @@ export function apply(ctx: Context): void {
   // translate as a thunk, so it follows the active locale without
   // re-registration; components read the standard `t` seat instead.
   const t = ctx.locale.bind(NS)
+
+  ctx.inject(['inputTriggers'], (scope: Context) => {
+    const inputTriggers = scope.get('inputTriggers')
+    if (inputTriggers === undefined) return
+    scope.effect(() => inputTriggers.registerSource(createComposerAddSource({
+      files: t('add.files'),
+      filesDescription: t('add.filesDescription'),
+      image: t('add.image'),
+      imageDescription: t('add.imageDescription'),
+      section: t('add.section'),
+    })), 'ui-conversation: composer Add source')
+  })
 
   // Apply-time construction keeps store identity bound to this fiber.
   const chatStore = createChatStore()
@@ -303,7 +316,7 @@ export function apply(ctx: Context): void {
           draftImages: undefined,
           resolveSubmitMode: (running, gesture, steeringAvailable) =>
             submissionPolicy.resolve(running, gesture, steeringAvailable),
-          toggleCommandMenu: undefined,
+          toggleAddMenu: undefined,
           stop: undefined,
           command: undefined,
           hooks: { notices: ABSENT_NOTICES, lexicon: ABSENT_LEXICON, menuLauncher: ABSENT_MENU_LAUNCHER },
@@ -337,12 +350,16 @@ export function apply(ctx: Context): void {
         draftImages: ids => conversation.draftImages(ids),
         resolveSubmitMode: (running, gesture, steeringAvailable) =>
           submissionPolicy.resolve(running, gesture, steeringAvailable),
-        toggleCommandMenu: inputTriggers === undefined
+        toggleAddMenu: inputTriggers === undefined
           ? undefined
           : (selection) => {
             shell.dismissPopup()
             const snapshot = shell.snapshot
-            inputTriggers.toggleSource('command', {
+            inputTriggers.toggleSources('composer-add', composerAddLauncherSources({
+              addSection: t('add.section'),
+              commandsSection: t('add.commandsSection'),
+              pluginsSection: t('add.pluginsSection'),
+            }), {
               trigger: '/',
               query: '',
               quoted: false,

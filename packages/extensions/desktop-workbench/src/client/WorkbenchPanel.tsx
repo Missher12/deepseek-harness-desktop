@@ -41,8 +41,7 @@ export function WorkbenchPanel(props: WorkbenchPanelProps) {
         {mode === 'terminal' ? <TerminalMode {...props} />
           : mode === 'browser' ? <BrowserMode {...props} />
             : mode === 'files' ? <FilesMode {...props} />
-              : mode === 'review' ? <ReviewMode {...props} />
-                : <p>{t(`placeholder.${mode}`)}</p>}
+              : <ReviewMode {...props} />}
       </div>
     </section>
   )

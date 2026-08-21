@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-A removable Harness-native replacement for the single model-selection seat. It keeps HanaAyane's pinned Canvas reasoning-effort effect, prefers a popup below the composer, and reads every model, effort label, submitted value, and current selection from the active Host `ModelDirectory`.
+A removable Harness-native replacement for the single model-selection seat. It keeps HanaAyane's pinned Canvas reasoning-effort effect and prefers a popup below the composer. Models, real submitted values, and current selections come from the active Host `ModelDirectory`; the stable six-stop presentation scale maps safely onto each exact model capability.
 
 ## Behavior
 
@@ -12,7 +12,7 @@ A removable Harness-native replacement for the single model-selection seat. It k
 - The optional character thumb is off for absent or corrupt settings and becomes profile-persistent only after an explicit opt-in.
 - With the character off, the ordinary 28-pixel thumb reserves its radius at both endpoints, so the minimum and maximum selections stay inside the track.
 - Keyboard, pointer, touch, Escape focus return, outside-click close, theme switching, zoom, and live Host directory refresh remain supported.
-- Addressed subagent sessions stay hidden, and models with fewer than two Host-advertised efforts keep ordinary model selection without a meaningless slider.
+- Addressed subagent sessions stay hidden. Every adjustable model receives the stable `Low / Medium / High / XHigh / Max / Ultra` six-stop ladder; each visual stop maps to the strongest Host-advertised effort that does not exceed it, and stops above the model limit converge on that real limit (for example, Max and Ultra both submit High on a High-only model) while the control labels both visual and actual values. Only a model with no positive reasoning capability hides the slider; an advertised Off remains reachable from the Low end.
 
 ## Installation and fallback
 
@@ -38,7 +38,7 @@ The Host half owns one profile-scoped `chibiThumb` boolean and one exact loopbac
 
 #### What the model sees
 
-The plugin contributes no prompt, tool, or hidden message. It routes the person's Host-advertised `reasoningEffort` selection through the existing model-directory command; the Host snapshots that ordinary selection at the next request boundary.
+The plugin contributes no prompt, tool, or hidden message. The six stops are a stable presentation scale; the existing model-directory command receives only the mapped `reasoningEffort` that the exact Host model catalog actually advertises. The Host snapshots that ordinary selection at the next request boundary, and the plugin never disguises a visual label such as Ultra as a protocol value the model does not accept.
 
 #### Token effect
 

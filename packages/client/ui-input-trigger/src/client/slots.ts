@@ -29,6 +29,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export interface MenuViewInjected {
   /** The service's menu state store (read-only here; MenuView subscribes). */
   menu: SnapshotStore<MenuState>
+  /** Named programmatic launcher, used only to select the launcher's presentation. */
+  launcher: SnapshotStore<string | null>
   /**
    * Pointer pick routed back through the service pipeline.
    * @param source - source (group) name.

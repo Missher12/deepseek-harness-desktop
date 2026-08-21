@@ -104,13 +104,13 @@
 }
 
 .boot[data-dsh-boot-mac] {
-  --dsh-boot-bg: #07090f;
-  --dsh-boot-label-primary: #f5f7fc;
-  --dsh-boot-label-secondary: #d1d9ea;
-  --dsh-boot-label-tertiary: #818ca5;
+  --dsh-boot-bg: #f6f7fb;
+  --dsh-boot-label-primary: #171a21;
+  --dsh-boot-label-secondary: #4a5568;
+  --dsh-boot-label-tertiary: #697386;
 
   background:
-    radial-gradient(circle at 50% 38%, rgb(77 107 254 / 10%), transparent 35%),
+    radial-gradient(circle at 50% 38%, rgb(77 107 254 / 9%), transparent 36%),
     var(--dsh-boot-bg);
 }
 
@@ -120,12 +120,9 @@
 }
 
 .macIcon {
-  box-sizing: border-box;
   width: 48px;
   height: 48px;
-  padding: 7px;
   border-radius: 12px;
-  background: #4d6bfe;
   box-shadow: 0 8px 24px rgb(77 107 254 / 24%);
 }
 
@@ -146,7 +143,7 @@
   margin-top: 27px;
   overflow: hidden;
   border-radius: 999px;
-  background: #171d2a;
+  background: #e4e8f2;
 }
 
 .macProgressFill {
@@ -154,7 +151,7 @@
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, #4d6bfe, #6f8dff 68%, #79e8ff);
-  box-shadow: 0 0 12px rgb(77 107 254 / 56%);
+  box-shadow: 0 0 10px rgb(77 107 254 / 34%);
   transition: width 240ms ease-out;
 }
 
@@ -163,14 +160,14 @@
   justify-content: space-between;
   width: 100%;
   margin-top: 10px;
-  color: #8d98ae;
+  color: #778197;
   font-family: var(--ds-font-family-code, "SF Mono", ui-monospace, monospace);
   font-size: 10px;
   line-height: 14px;
 }
 
 .macStatus > :last-child {
-  color: #d1d9ea;
+  color: #4a5568;
   font-variant-numeric: tabular-nums;
 }
 

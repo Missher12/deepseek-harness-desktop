@@ -69,6 +69,29 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- Version 0.3.2 is the current Intel-macOS release candidate. The composer `+` now
+  opens one compact Codex-style Add menu over the existing input-trigger
+  pipeline: files/folders reuse `@` references, images reuse the existing
+  attachment intake, Goal and Plan are promoted without duplicating their
+  command implementations, every remaining command is preserved, and current
+  callable skills appear under Plugins. Image is omitted when the active
+  composer has no attachment capability. The reasoning plugin now presents a
+  stable six-stop `Low / Medium / High / XHigh / Max / Ultra` ladder and maps
+  each stop to an exact Host-advertised effort; visual stops above a model's
+  limit converge on that real limit (High-only Max/Ultra submit High), while a
+  model with no positive reasoning capability remains explicitly unavailable.
+  The candidate also preserves live workbench width across every utility-mode
+  switch, overlaps safe startup discovery with local loading, and unifies the
+  white native/Web loading surfaces around the official app icon. Final local
+  acceptance passes 51 changed-surface test files / 705 tests, 28 / 28 full
+  documentation gates, full-repository lint, the production Host/Client/Web
+  build, and the isolated native packaged smoke. The x86_64 application is
+  installed in `/Applications` as 0.3.2 without changing `~/.dsh` at the
+  installation boundary. The verified DMG is
+  `apps/desktop/release/DeepSeek-Harness-0.3.2-mac-x64.dmg`, 163572840 bytes,
+  SHA-256 `4bd4ef106ba018b2a99cab95ecf243989f25effeb3ee533b8f9988d80fe19944`;
+  its checksum and updater manifest validate locally. Public Mac-only Release
+  download verification is the remaining release gate.
 - Version 0.3.0 adds the removable Intel-macOS Codex-style workbench opened by
   one compact button beside Session log. Its bounded 320–720 px utility panel
   contains a separately owned Terminal, an isolated native Browser, read-only

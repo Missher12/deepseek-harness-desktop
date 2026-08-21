@@ -57,12 +57,13 @@ afterEach(() => {
 // unknown source comes back verbatim (its raw name).
 const t = makeTranslate(zh, commonZh)
 
-function mount(state: MenuState) {
+function mount(state: MenuState, launcherName: string | null = null) {
   const menu = createSnapshotStore<MenuState>(state)
+  const launcher = createSnapshotStore<string | null>(launcherName)
   const onPick = vi.fn()
   const onDismiss = vi.fn()
-  const view = render(<MenuView menu={menu} onPick={onPick} onDismiss={onDismiss} t={t} />)
-  return { menu, onPick, onDismiss, view }
+  const view = render(<MenuView menu={menu} launcher={launcher} onPick={onPick} onDismiss={onDismiss} t={t} />)
+  return { menu, launcher, onPick, onDismiss, view }
 }
 
 /** The non-interactive group title rows (role=presentation), in document order. */
@@ -135,6 +136,54 @@ describe('MenuView', () => {
     expect(onPick).toHaveBeenCalledWith('reference', 2)
   })
 
+  it('renders the composer Add launcher as one compact sectioned list with SVG icons and no duplicate section title', () => {
+    const { view, onPick } = mount(openState({
+      groups: [
+        {
+          source: 'composer-add',
+          showGroupTitle: false,
+          status: 'ready',
+          items: [
+            { name: '文件和文件夹', value: 'files', description: '引用工作区内容', section: '添加' },
+            { name: '添加图片', value: 'image', description: 'PNG、JPG、WebP 或 GIF', section: '添加' },
+          ],
+        },
+        {
+          source: 'command',
+          status: 'ready',
+          items: [
+            { name: 'goal', description: '设置目标', section: '添加' },
+            { name: 'plan', description: '进入计划模式', section: '添加' },
+            { name: 'compact', description: '压缩上下文', section: '命令' },
+          ],
+        },
+        {
+          source: 'skill',
+          status: 'ready',
+          items: [{ name: 'github', description: '处理 GitHub 工作流', section: '插件' }],
+        },
+      ],
+      highlight: { source: 'composer-add', index: 0 },
+    }), 'composer-add')
+
+    expect(view.container.querySelector('[data-composer-add-menu]')).not.toBeNull()
+    expect([...view.container.querySelectorAll('[data-add-section]')].map(node => node.textContent)).toEqual([
+      '添加', '命令', '插件',
+    ])
+    const options = screen.getAllByRole('option')
+    expect(options.map(option => option.textContent)).toEqual([
+      '文件和文件夹引用工作区内容',
+      '添加图片PNG、JPG、WebP 或 GIF',
+      'goal设置目标',
+      'plan进入计划模式',
+      'compact压缩上下文',
+      'github处理 GitHub 工作流',
+    ])
+    expect(options.every(option => option.querySelector('svg') !== null)).toBe(true)
+    fireEvent.mouseDown(options[3]!)
+    expect(onPick).toHaveBeenCalledWith('command', 1)
+  })
+
   it('exposes the highlight via aria-activedescendant and aria-selected', () => {
     mount(openState({ highlight: { source: 'command', index: 1 } }))
     const listbox = screen.getByRole('listbox')
@@ -198,7 +247,13 @@ describe('MenuView', () => {
     const onDismiss = vi.fn()
     render(
       <div data-composer-card="">
-        <MenuView menu={menu} onPick={vi.fn()} onDismiss={onDismiss} t={t} />
+        <MenuView
+          menu={menu}
+          launcher={createSnapshotStore<string | null>(null)}
+          onPick={vi.fn()}
+          onDismiss={onDismiss}
+          t={t}
+        />
         <button type="button" data-testid="composer-button" />
       </div>,
     )

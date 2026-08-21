@@ -47,7 +47,7 @@ describe('BootPage', () => {
     page.setTotal(4)
     const progress = el.querySelector<HTMLElement>('[data-dsh-boot-linear]')
     expect(el.firstElementChild?.getAttribute('data-dsh-boot-mac')).toBe('')
-    expect(el.querySelector<HTMLImageElement>('[data-dsh-boot-icon]')?.src).toMatch(/\/favicon\.svg$/u)
+    expect(el.querySelector<HTMLImageElement>('[data-dsh-boot-icon]')?.src).toMatch(/\/desktop-icon\.png$/u)
     expect(progress?.getAttribute('aria-valuenow')).toBe('0')
     expect(el.textContent).toContain('正在加载组件 0 / 4')
     page.setState('a', 'active')

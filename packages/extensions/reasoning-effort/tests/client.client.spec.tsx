@@ -220,7 +220,7 @@ describe('EffortControl', () => {
     fireEvent.click(trigger)
     await flushFrames()
     let slider = await screen.findByRole('slider', { name: '推理等级' }) as HTMLInputElement
-    expect(slider.value).toBe('1')
+    expect(slider.value).toBe('2')
     fireEvent.keyDown(slider, { key: 'Escape' })
     await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
 
@@ -278,11 +278,11 @@ describe('EffortControl', () => {
     fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
     await flushFrames()
     const slider = await screen.findByRole('slider', { name: '推理等级' }) as HTMLInputElement
-    expect(slider.value).toBe('1')
+    expect(slider.value).toBe('2')
     fireEvent.keyDown(slider, { key: 'End' })
     await screen.findByRole('alert')
     expect(b.select).not.toHaveBeenCalled()
-    expect(slider.value).toBe('1')
+    expect(slider.value).toBe('2')
     expect(screen.getByRole('alert').textContent).toContain('已变化')
   })
 
@@ -306,7 +306,7 @@ describe('EffortControl', () => {
     fireEvent.keyDown(slider, { key: 'End' })
     expect((await screen.findByRole('alert')).textContent).toContain('该推理等级已变化')
     expect(b.select).not.toHaveBeenCalled()
-    expect(slider.value).toBe('1')
+    expect(slider.value).toBe('2')
   })
 
   it('rolls back a Host-rejected effort and exposes the failure in Harness chrome', async () => {
@@ -319,7 +319,7 @@ describe('EffortControl', () => {
     fireEvent.keyDown(slider, { key: 'End' })
     const error = await screen.findByRole('alert')
     expect(error.textContent).toContain('provider refused max')
-    expect(slider.value).toBe('1')
+    expect(slider.value).toBe('2')
   })
 
   it('rolls back a Host-rejected effort by stable ID after Host reorders the levels', async () => {
@@ -344,11 +344,11 @@ describe('EffortControl', () => {
     fireEvent.keyDown(slider, { key: 'End' })
 
     await screen.findByRole('alert')
-    expect(slider.value).toBe('0')
+    expect(slider.value).toBe('2')
     expect(slider.getAttribute('aria-valuetext')).toBe('High')
   })
 
-  it('keeps model selection but renders no meaningless slider for fewer than two efforts', async () => {
+  it('keeps the six-step Codex ladder and caps Ultra at a single High model effort', async () => {
     const oneEffort = models({
       groups: [{
         id: 'deepseek',
@@ -365,8 +365,68 @@ describe('EffortControl', () => {
     fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
     await flushFrames()
     expect(await screen.findByRole('dialog')).toBeTruthy()
-    expect(screen.queryByRole('slider')).toBeNull()
+    const slider = screen.getByRole('slider', { name: '推理等级' }) as HTMLInputElement
+    expect(slider.min).toBe('0')
+    expect(slider.max).toBe('5')
+    expect(screen.getByText('模型上限 High')).toBeTruthy()
+    fireEvent.keyDown(slider, { key: 'End' })
+    await waitFor(() => {
+      expect(b.select).toHaveBeenCalledWith({
+        provider: 'deepseek',
+        model: 'chat',
+        reasoningEffort: 'high',
+      })
+    })
+    expect(slider.getAttribute('aria-valuetext')).toBe('Ultra，实际 High')
     expect(screen.getAllByRole('button', { name: /DeepSeek Chat/ })).toHaveLength(2)
+  })
+
+  it('keeps an advertised Off reachable at Low while retaining the six visual stops', async () => {
+    const withOff = models({
+      current: { provider: 'deepseek', model: 'chat', reasoningEffort: 'off' },
+      groups: [{
+        id: 'deepseek',
+        name: 'DeepSeek',
+        models: [{
+          id: 'chat',
+          name: 'DeepSeek Chat',
+          reasoning: {
+            efforts: [{ id: 'off', name: 'Off' }, { id: 'high', name: 'High' }, { id: 'max', name: 'Max' }],
+            defaultEffort: 'high',
+          },
+        }],
+      }],
+    })
+    const b = makeController([withOff, withOff])
+    renderControl(b.controller)
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
+    await flushFrames()
+    const slider = await screen.findByRole('slider', { name: '推理等级' }) as HTMLInputElement
+    expect(slider.max).toBe('5')
+    expect(slider.value).toBe('0')
+    expect(slider.getAttribute('aria-valuetext')).toBe('Low，实际 Off')
+    fireEvent.keyDown(slider, { key: 'Home' })
+    await waitFor(() => {
+      expect(b.select).toHaveBeenCalledWith({ provider: 'deepseek', model: 'chat', reasoningEffort: 'off' })
+    })
+  })
+
+  it('keeps unsupported models explicit instead of inventing a reasoning effort', async () => {
+    const unsupported = models({
+      groups: [{
+        id: 'deepseek',
+        name: 'DeepSeek',
+        models: [{ id: 'chat', name: 'DeepSeek Chat' }],
+      }],
+    })
+    const b = makeController([unsupported])
+    renderControl(b.controller)
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
+    await flushFrames()
+    expect(await screen.findByRole('dialog')).toBeTruthy()
+    expect(screen.queryByRole('slider')).toBeNull()
+    expect(screen.getByText('当前模型不支持调节推理等级。')).toBeTruthy()
+    expect(b.select).not.toHaveBeenCalled()
   })
 
   it('supports pointer and touch commits through the same exact Host validation', async () => {

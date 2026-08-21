@@ -76,9 +76,7 @@ async function writeDesktopSmokeModelSettings(harnessHome: string, baseURL: stri
     '          contextWindow: 65536',
     '          maxTokens: 4096',
     '          reasoningEfforts:',
-    '            off:',
     '            high: high',
-    '            max: ultra',
     '',
   ].join('\n'), 'utf8')
 }
@@ -547,7 +545,7 @@ async function waitForDesktopSurface(page: Page, userData: string): Promise<void
         page.locator('[class*="centerCol"]').count(),
         page.locator('[class*="detailsCol"]').count(),
         page.locator('[data-dsh-desktop-command="new-session"]').count(),
-        page.locator('[data-dsh-desktop-command="open-command-menu"]').count(),
+        page.locator('[data-dsh-desktop-command="open-add-menu"]').count(),
         page.locator('[data-dsh-desktop-command="open-settings"]').count(),
       ])
       if (requiredSurfaceCounts.every(count => count === 1)) return
@@ -563,6 +561,61 @@ async function waitForDesktopSurface(page: Page, userData: string): Promise<void
     await page.waitForTimeout(250)
   }
   throw new Error(`Packaged smoke: desktop surface missed its startup deadline.\n${await desktopStartupDiagnostic(page, userData)}`)
+}
+
+/** Native Add-menu acceptance without submitting any provider request. */
+async function exerciseComposerAddMenu(page: Page): Promise<void> {
+  const trigger = page.locator('[data-dsh-desktop-command="open-add-menu"]')
+  const composer = page.locator('[data-composer-card]').last()
+  const input = composer.locator('textarea')
+
+  await trigger.click()
+  const menu = composer.locator('[data-composer-add-menu="true"]')
+  await menu.waitFor({ state: 'visible', timeout: 15_000 })
+  expect(await menu.evaluate((element) => {
+    const bounds = element.getBoundingClientRect()
+    return bounds.left >= 0
+      && bounds.top >= 0
+      && bounds.right <= window.innerWidth
+      && bounds.bottom <= window.innerHeight
+  })).toBe(true)
+  await expect.poll(() => menu.locator('[data-add-section="true"]').allTextContents()).toEqual(
+    expect.arrayContaining([expect.stringMatching(/^(?:Add|添加)$/u), expect.stringMatching(/^(?:Commands|命令)$/u)]),
+  )
+  const options = menu.getByRole('option')
+  await expect.poll(() => options.count()).toBeGreaterThanOrEqual(5)
+  expect(await options.evaluateAll(rows => rows.every(row => row.querySelector('svg') !== null))).toBe(true)
+  await menu.getByRole('option', { name: /^goal/iu }).waitFor({ state: 'visible' })
+  await menu.getByRole('option', { name: /^plan/iu }).waitFor({ state: 'visible' })
+  const commandRows = menu.locator('button[id^="dsh-slash-option-command-"]')
+  expect(await commandRows.count()).toBeGreaterThanOrEqual(2)
+  const skillRows = menu.locator('button[id^="dsh-slash-option-skill-"]')
+  if (await skillRows.count() > 0) {
+    expect(await menu.locator('[data-add-section="true"]').allTextContents()).toContainEqual(
+      expect.stringMatching(/^(?:Plugins|插件)$/u),
+    )
+  }
+
+  // Files delegates into the existing @ reference pipeline.
+  await menu.getByRole('option', { name: /^(?:Files and folders|文件和文件夹)/u }).click()
+  await expect.poll(() => input.inputValue()).toBe('@')
+  await input.fill('')
+
+  // Image delegates into the existing attachment intake and preview rail.
+  await trigger.click()
+  await menu.waitFor({ state: 'visible', timeout: 15_000 })
+  const chooser = page.waitForEvent('filechooser')
+  await menu.getByRole('option', { name: /^(?:Add image|添加图片)/u }).click()
+  const fileChooser = await chooser
+  await fileChooser.setFiles({
+    name: 'desktop-add-menu.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
+  })
+  const remove = page.getByRole('button', { name: /^(?:Remove image|移除图片).*desktop-add-menu\.png/iu })
+  await remove.waitFor({ state: 'visible', timeout: 15_000 })
+  await remove.click()
+  await expect.poll(() => remove.count()).toBe(0)
 }
 
 async function exerciseWindowsClipboard(
@@ -724,9 +777,9 @@ async function exerciseReasoningEffort(
   })
   await slider.waitFor({ state: 'visible', timeout: 15_000 })
   expect(await slider.getAttribute('min')).toBe('0')
-  expect(await slider.getAttribute('max')).toBe('2')
+  expect(await slider.getAttribute('max')).toBe('5')
   expect(await slider.getAttribute('step')).toBe('1')
-  expect(await slider.inputValue()).toBe('1')
+  expect(await slider.inputValue()).toBe('2')
   expect(await slider.getAttribute('aria-valuetext')).toBe('High')
   const canvas = popup.locator('canvas').first()
   expect(await canvas.count()).toBe(1)
@@ -742,19 +795,25 @@ async function exerciseReasoningEffort(
   })
   expect(await character.getAttribute('aria-checked')).toBe('false')
   await slider.press('End')
-  await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 15_000 }).toMatch(
-    /^(?:Select model, current Native Smoke Thinker, reasoning effort Max|选择模型，当前 Native Smoke Thinker，推理等级 Max)$/u,
+  await expect.poll(() => slider.getAttribute('aria-valuetext'), { timeout: 15_000 }).toMatch(
+    /^(?:Ultra, actual High|Ultra，实际 High)$/u,
   )
-  expect(await slider.evaluate((element) => {
+  await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 15_000 }).toMatch(
+    /^(?:Select model, current Native Smoke Thinker, reasoning effort High|选择模型，当前 Native Smoke Thinker，推理等级 High)$/u,
+  )
+  await expect.poll(() => slider.evaluate((element) => {
     const track = element.parentElement
     const thumb = track?.querySelector('span[aria-hidden="true"]')
     if (!(track instanceof HTMLElement) || !(thumb instanceof HTMLElement)) return false
     const trackBounds = track.getBoundingClientRect()
     const thumbBounds = thumb.getBoundingClientRect()
-    return thumbBounds.left >= trackBounds.left && thumbBounds.right <= trackBounds.right
-  })).toBe(true)
+    const rightGap = trackBounds.right - thumbBounds.right
+    return thumbBounds.left >= trackBounds.left
+      && rightGap >= 0
+      && rightGap <= 3
+  }), { timeout: 5_000 }).toBe(true)
   await expect.poll(() => readFile(join(harnessHome, 'settings.yaml'), 'utf8'), { timeout: 15_000 })
-    .toContain('reasoningEffort: max')
+    .toContain('reasoningEffort: high')
   await page.screenshot({
     path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-reasoning-${platform}.png`),
   })
@@ -795,6 +854,10 @@ async function exerciseSessionMessenger(
 }
 
 async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): Promise<void> {
+  // Keep this part of the native smoke in the resizable column layout rather
+  // than the narrow-window utility drawer, which intentionally has no drag
+  // handle.
+  await page.setViewportSize({ width: 1600, height: 1000 })
   const sessionLog = page.getByRole('button', { name: /^Session log/u })
   const trigger = page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })
   await trigger.waitFor({ state: 'visible', timeout: 15_000 })
@@ -816,6 +879,29 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): 
     ['终端', '浏览器', '文件', '审阅'],
     ['Terminal', 'Browser', 'Files', 'Review'],
   ]).toContainEqual(await tabs.allTextContents())
+  const originalPanelBounds = await panel.boundingBox()
+  const utilityHandle = page.locator('[data-side="utility"]')
+  const utilityHandleBounds = await utilityHandle.boundingBox()
+  if (originalPanelBounds === null || utilityHandleBounds === null) {
+    throw new Error('Packaged smoke: workbench resize geometry is unavailable.')
+  }
+  await page.mouse.move(
+    utilityHandleBounds.x + utilityHandleBounds.width / 2,
+    utilityHandleBounds.y + utilityHandleBounds.height / 2,
+  )
+  await page.mouse.down()
+  await page.mouse.move(utilityHandleBounds.x - 96, utilityHandleBounds.y + utilityHandleBounds.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await expect.poll(async () => (await panel.boundingBox())?.width ?? 0, {
+    timeout: 15_000,
+  }).toBeGreaterThan(originalPanelBounds.width + 64)
+  const stablePanelWidth = (await panel.boundingBox())?.width ?? 0
+  expect(stablePanelWidth).toBeGreaterThan(originalPanelBounds.width + 64)
+  const expectStablePanelWidth = async (): Promise<void> => {
+    await expect.poll(async () => Math.abs(((await panel.boundingBox())?.width ?? 0) - stablePanelWidth), {
+      timeout: 15_000,
+    }).toBeLessThanOrEqual(1)
+  }
   const terminalInput = panel.getByPlaceholder(/^(?:Type a command and press Return|输入命令并按回车)$/u)
   await terminalInput.waitFor({ state: 'visible', timeout: 15_000 })
   await terminalInput.fill("printf 'desktop-workbench-terminal-ok\\n'")
@@ -828,6 +914,7 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): 
 
   await panel.getByRole('tab', { name: /^(?:Browser|浏览器)$/u }).click()
   await panel.locator('[data-native-browser-host]').waitFor({ state: 'visible', timeout: 15_000 })
+  await expectStablePanelWidth()
   // Leaving Terminal asynchronously tears down its PTY. Keep that teardown
   // fenced from the parent Harness process: the workbench must not take its
   // own Host offline when a user changes tools.
@@ -837,11 +924,19 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): 
   }), { timeout: 10_000 }).toBe(200)
   await panel.getByRole('tab', { name: /^(?:Files|文件)$/u }).click()
   await panel.getByPlaceholder(/^(?:Filter files|筛选文件)$/u).waitFor({ state: 'visible', timeout: 15_000 })
+  await expectStablePanelWidth()
   expect(await panel.getByRole('tab', { name: /^(?:Side chat|侧边聊天)$/u }).count()).toBe(0)
   await panel.getByRole('tab', { name: /^(?:Review|审阅)$/u }).click()
   await panel.getByText(/^(?:Changes|变更)$/u).waitFor({ state: 'visible', timeout: 15_000 })
-  await page.keyboard.press('Escape')
-  await expect.poll(() => trigger.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('false')
+  await expectStablePanelWidth()
+  await panel.getByRole('button', { name: /^(?:Close workbench|关闭工作台)$/u }).click()
+  const reopenTrigger = page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })
+  await expect.poll(() => reopenTrigger.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('false')
+  await reopenTrigger.click()
+  await panel.waitFor({ state: 'visible', timeout: 15_000 })
+  await expectStablePanelWidth()
+  await panel.getByRole('button', { name: /^(?:Close workbench|关闭工作台)$/u }).click()
+  await expect.poll(() => reopenTrigger.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('false')
 }
 
 interface MarketRouteResult {
@@ -1174,7 +1269,7 @@ export async function runPackagedDesktopSmoke(
     expect(await page.locator('[class*="centerCol"]').count()).toBe(1)
     expect(await page.locator('[class*="detailsCol"]').count()).toBe(1)
     expect(await page.locator('[data-dsh-desktop-command="new-session"]').count()).toBe(1)
-    expect(await page.locator('[data-dsh-desktop-command="open-command-menu"]').count()).toBe(1)
+    expect(await page.locator('[data-dsh-desktop-command="open-add-menu"]').count()).toBe(1)
     expect(await page.locator('[data-dsh-desktop-command="open-settings"]').count()).toBe(1)
 
     const welcomeDialog = page.getByRole('dialog', {
@@ -1202,6 +1297,7 @@ export async function runPackagedDesktopSmoke(
         await exerciseWindowsDirectoryPicker(page, harnessHome, userData)
       }
       await exerciseSessionMessenger(page, clipboardSeed, platform)
+      await exerciseComposerAddMenu(page)
       if (platform === 'darwin') {
         await exerciseDesktopWorkbench(page, platform)
         await exerciseReasoningEffort(page, harnessHome, platform)

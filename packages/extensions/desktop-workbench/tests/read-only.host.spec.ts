@@ -26,7 +26,7 @@ describe('read-only workbench data sources', () => {
       await new Promise<void>((resolve, reject) => {
         execFile('git', ['-C', root, ...args], (error) => {
           if (error === null) resolve()
-          else reject(error)
+          else reject(new Error(error.message, { cause: error }))
         })
       })
     }

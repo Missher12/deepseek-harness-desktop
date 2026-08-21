@@ -177,8 +177,8 @@ git commit -m "feat(desktop): add Codex-style workbench shell"
 - Delete: `packages/extensions/session-messenger/src/client/MessengerDrawer.tsx`
 - Delete: `packages/extensions/session-messenger/src/client/MessengerHeaderButton.tsx`
 - Delete: `packages/extensions/session-messenger/src/client/MessengerUiController.ts`
-- Create: `packages/extensions/desktop-workbench/src/client/SideChatMode.tsx`
-- Create: `packages/extensions/desktop-workbench/src/client/SideChatMode.module.css`
+- Create: a Desktop workbench Side Chat component (subsequently removed)
+- Create: its scoped style module (subsequently removed)
 - Modify: `packages/client/ui-conversation/src/client/chat/RelayNodeView.tsx`
 - Modify: `packages/client/ui-conversation/src/client/chat/RelayNodeView.module.css`
 - Modify: `packages/extensions/session-messenger/tests/coordinator.client.spec.ts`

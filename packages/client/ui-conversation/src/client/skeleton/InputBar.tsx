@@ -29,6 +29,7 @@ import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
 import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
 import { isSafariBrowser, repairSafariTextareaLayout } from './safari.ts'
+import { bindComposerImagePicker } from '../input/composer-add-source.ts'
 import css from './InputBar.module.css'
 
 /** Decoration product of the no-session state (no machine, empty draft). */
@@ -38,7 +39,7 @@ export type InputBarProps = ComposerBarProps
 
 export function InputBar({
   useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages,
-  resolveSubmitMode, toggleCommandMenu, stop, command, t,
+  resolveSubmitMode, toggleAddMenu, stop, command, t,
   renderSlot, useNotices, useLexicon, useMenuLauncher,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
@@ -47,7 +48,7 @@ export function InputBar({
   const input = useInput(s => s)
   const notice = useNotices(s => s)
   const lexicon = useLexicon(s => s)
-  const commandMenuOpen = useMenuLauncher(source => source === 'command')
+  const addMenuOpen = useMenuLauncher(source => source === 'composer-add')
   const promptError = useSession(s => s.promptError) ?? null
   const running = useSession(s => s.running) ?? false
   const subagent = useSession(s => s.subagent) ?? null
@@ -96,11 +97,15 @@ export function InputBar({
     if (notice?.level === 'error') showToast(notice.text)
   }, [notice, showToast])
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const imagePickerRef = useRef<HTMLInputElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const mirrorRef = useRef<HTMLDivElement | null>(null)
   const safari = useMemo(() => isSafariBrowser(navigator), [])
   const safariNativeShrinkRef = useRef(false)
+  useEffect(() => addImages === undefined || sessionId === undefined
+    ? undefined
+    : bindComposerImagePicker(sessionId, () => { imagePickerRef.current?.click() }), [addImages, sessionId])
   // IME guard: composition Enter picks a candidate, it must not send. The ref outlives renders;
   // clearing is deferred one tick because Safari delivers the closing keydown AFTER compositionend.
   const composingRef = useRef(false)
@@ -139,7 +144,7 @@ export function InputBar({
   // and keyboard users can reach the recovery action.
   const workspaceTrigger = inert && !removed && onRequestWorkspace !== undefined
   const textareaDisabled = removed || (locked && !workspaceTrigger)
-  const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && subagent === null
+  const canSteerQueue = !locked && !machineBusy && !addMenuOpen && empty && running && subagent === null
     && input.queue.some(row => row.placement === 'queued')
 
   useEffect(() => {
@@ -482,9 +487,9 @@ export function InputBar({
     inputRef.current?.focus({ preventScroll: true })
   }
 
-  const onToggleCommandMenu = (): void => {
+  const onToggleAddMenu = (): void => {
     const el = inputRef.current
-    if (el !== null) toggleCommandMenu?.(selectionOf(el))
+    if (el !== null) toggleAddMenu?.(selectionOf(el))
   }
 
   // Ordinary sessions retain their primary Send/Stop toggle. A continuable
@@ -604,6 +609,19 @@ export function InputBar({
 
   return (
     <div className={clsx(css.root, variant === 'hero' && css.hero)}>
+      <input
+        ref={imagePickerRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        multiple
+        hidden
+        data-composer-image-picker
+        onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? [])
+          event.currentTarget.value = ''
+          if (files.length > 0) intakeImages(files)
+        }}
+      />
       {toast !== null && (
         <Toast
           key={toast.seq}
@@ -694,17 +712,17 @@ export function InputBar({
         </div>
         <div className={css.row}>
           <div className={css.tools}>
-            <Tooltip label={t('input.commands')} side="top" delayMs={500}>
+            <Tooltip label={t('input.add')} side="top" delayMs={500}>
               <button
                 type="button"
                 className={css.add}
-                data-dsh-desktop-command="open-command-menu"
-                aria-label={t('input.commands')}
+                data-dsh-desktop-command="open-add-menu"
+                aria-label={t('input.add')}
                 aria-haspopup="listbox"
-                aria-expanded={commandMenuOpen}
-                disabled={locked || toggleCommandMenu === undefined}
+                aria-expanded={addMenuOpen}
+                disabled={locked || toggleAddMenu === undefined}
                 onMouseDown={keepFocus}
-                onClick={onToggleCommandMenu}
+                onClick={onToggleAddMenu}
               >
                 <IconPlusOutline16 size={14} />
               </button>

@@ -65,7 +65,7 @@ export class BootPage {
     if (this.macDesktop) {
       this.icon = document.createElement('img')
       this.icon.className = css.macIcon ?? ''
-      this.icon.src = '/favicon.svg'
+      this.icon.src = '/desktop-icon.png'
       this.icon.alt = ''
       this.icon.dataset.dshBootIcon = ''
       this.wordmark.textContent = 'DeepSeek Harness'

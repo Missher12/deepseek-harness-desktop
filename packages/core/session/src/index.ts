@@ -607,8 +607,9 @@ export class Session {
     ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : [opts?: import('./types.ts').LogIntent]
   ): SessionEvent<T> {
     const eventOpts: SurfaceIntent | LogIntent | undefined = opts[0]
+    const ignorable = eventOpts !== undefined && Reflect.get(eventOpts, 'ignorable') === true
     const surfaceOpts = eventOpts !== undefined && 'surfaceOp' in eventOpts
-      ? eventOpts as SurfaceIntent
+      ? eventOpts
       : undefined
     const surfaceMetadata = {
       ...surfaceOpts?.sourceEventSeqs === undefined ? {} : { sourceEventSeqs: surfaceOpts.sourceEventSeqs },
@@ -632,7 +633,7 @@ export class Session {
       seq: this.log.length,
       time: Date.now(),
       data: dataSnapshot,
-      ...(eventOpts !== undefined && 'ignorable' in eventOpts && eventOpts.ignorable === true
+      ...(ignorable
         ? { ignorable: true as const }
         : {}),
       ...(surfaceMetadataSnapshot as { surfaceOp?: unknown; sourceEventSeqs?: unknown }),

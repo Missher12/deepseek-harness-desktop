@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   findConflictingHarness,
+  MAC_DSH_PROCESS_QUERY,
+  parsePosixProcesses,
   parseWindowsProcesses,
   windowsProcessQuery,
 } from '../src/harness/ownership.ts'
@@ -33,6 +35,22 @@ describe('findConflictingHarness', () => {
     })
 
     expect(conflict).toBeUndefined()
+  })
+
+  it('uses a narrow macOS process query before the exact command and DSH_HOME checks', () => {
+    expect(MAC_DSH_PROCESS_QUERY).toEqual({
+      file: '/usr/bin/pgrep',
+      args: ['-lf', 'web'],
+      noMatchExitCode: 1,
+    })
+    expect(parsePosixProcesses([
+      '91 node /cache/node_modules/.bin/dsh web --port 65000',
+      '92 node server.js',
+      '',
+    ].join('\n'))).toEqual([
+      { pid: 91, command: 'node /cache/node_modules/.bin/dsh web --port 65000' },
+      { pid: 92, command: 'node server.js' },
+    ])
   })
 
   it('fails closed on an observable Windows dsh web command without open-file inspection', async () => {

@@ -1,5 +1,7 @@
 # DeepSeek Harness 0.3.2 Codex-style Add Menu
 
+English | [中文](2026-08-21-macos-codex-add-menu-design.zh.md)
+
 ## Goal
 
 Replace the composer's plain `+` command list with the compact Codex-style “Add” menu approved on 2026-08-21. Keep all existing command, skill, attachment, keyboard, and accessibility behavior intact; only the launcher organization and presentation change.

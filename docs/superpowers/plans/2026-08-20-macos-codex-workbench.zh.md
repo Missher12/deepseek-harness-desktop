@@ -177,8 +177,8 @@ git commit -m "feat(desktop): add Codex-style workbench shell"
 - 删除：`packages/extensions/session-messenger/src/client/MessengerDrawer.tsx`
 - 删除：`packages/extensions/session-messenger/src/client/MessengerHeaderButton.tsx`
 - 删除：`packages/extensions/session-messenger/src/client/MessengerUiController.ts`
-- 创建：`packages/extensions/desktop-workbench/src/client/SideChatMode.tsx`
-- 创建：`packages/extensions/desktop-workbench/src/client/SideChatMode.module.css`
+- 创建：Desktop 工作台侧边聊天组件（后续已移除）
+- 创建：对应的局部样式模块（后续已移除）
 - 修改：`packages/client/ui-conversation/src/client/chat/RelayNodeView.tsx`
 - 修改：`packages/client/ui-conversation/src/client/chat/RelayNodeView.module.css`
 - 修改：`packages/extensions/session-messenger/tests/coordinator.client.spec.ts`

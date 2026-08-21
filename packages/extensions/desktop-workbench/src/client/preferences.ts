@@ -16,7 +16,9 @@ export interface WorkbenchSnapshot { open: boolean; mode: UtilityMode; width: nu
  * @returns a width within the 320-720 px contract.
  */
 export function loadWidth(storage: StorageReader): number {
-  const value = Number(storage.getItem(WIDTH_KEY))
+  const stored = storage.getItem(WIDTH_KEY)
+  if (stored === null) return 420
+  const value = Number(stored)
   return Number.isFinite(value) ? Math.min(720, Math.max(320, Math.round(value))) : 420
 }
 
@@ -24,6 +26,7 @@ export function loadWidth(storage: StorageReader): number {
 export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot> {
   #listeners = new Set<() => void>()
   #snapshot: WorkbenchSnapshot
+  #widthApplied = false
 
   constructor(private readonly layout: Pick<ILayout, 'openUtility' | 'closeUtility' | 'toggleUtility' | 'setUtilityWidth'>, private readonly storage: StorageWriter) {
     this.#snapshot = { open: false, mode: 'terminal', width: loadWidth(storage) }
@@ -74,6 +77,7 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
     this.storage.setItem(WIDTH_KEY, String(next))
     this.#set({ ...this.#snapshot, width: next })
     this.layout.setUtilityWidth(next)
+    this.#widthApplied = true
   }
 
   #set(next: WorkbenchSnapshot): void {
@@ -82,7 +86,13 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
   }
 
   #openUtility(mode: UtilityMode): void {
-    this.layout.setUtilityWidth(this.#snapshot.width)
+    // Restore the saved preference only on the first open. The layout store
+    // owns live drag geometry after that, so switching modes or reopening the
+    // panel must not overwrite the user's current width with a stale value.
+    if (!this.#widthApplied) {
+      this.layout.setUtilityWidth(this.#snapshot.width)
+      this.#widthApplied = true
+    }
     this.layout.openUtility(mode)
   }
 }

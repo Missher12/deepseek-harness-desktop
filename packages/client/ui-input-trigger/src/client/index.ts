@@ -14,7 +14,7 @@ import { en, zh, type MenuKey } from './locales.ts'
 
 export { InputTriggerService } from './service.ts'
 export { InputTriggerController } from './controller.ts'
-export type { InputTriggerControllerDeps, SourceRoster } from './controller.ts'
+export type { InputTriggerControllerDeps, LauncherSource, SourceRoster } from './controller.ts'
 export type { MenuViewInjected } from './slots.ts'
 export type { MenuViewProps } from './MenuView.tsx'
 export type { MenuKey } from './locales.ts'
@@ -71,6 +71,7 @@ export function apply(ctx: ClientContext): void {
         const controller = inputTriggers.sessionOf(actx)
         return {
           menu: controller.menu,
+          launcher: controller.launcher,
           onPick: (source, index) => { controller.pick(source, index) },
           onDismiss: () => { controller.dismiss() },
         }

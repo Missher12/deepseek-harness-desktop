@@ -32,9 +32,9 @@ export function TerminalMode({ sessionId, t }: Props) {
   }, [refresh, sessionId])
   useEffect(() => {
     let mounted = true
-    void open().catch((reason) => { if (mounted) setError(reason instanceof Error ? reason.message : String(reason)) })
+    void open().catch((reason: unknown) => { if (mounted) setError(reason instanceof Error ? reason.message : String(reason)) })
     const timer = window.setInterval(() => {
-      void refresh().catch((reason) => { if (mounted) setError(reason instanceof Error ? reason.message : String(reason)) })
+      void refresh().catch((reason: unknown) => { if (mounted) setError(reason instanceof Error ? reason.message : String(reason)) })
     }, 300)
     return () => {
       mounted = false

@@ -102,6 +102,12 @@
   white-space: nowrap;
 }
 
+.effortCap {
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .slider {
   --reasoning-effort-progress: 50%;
   position: relative;

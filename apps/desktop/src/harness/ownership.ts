@@ -4,6 +4,13 @@ import { isAbsolute, relative, resolve } from 'node:path'
 
 const EXEC_MAX_BUFFER = 4 * 1024 * 1024
 
+/** macOS process-table query narrowed to commands that can contain the `web` subcommand. */
+export const MAC_DSH_PROCESS_QUERY = {
+  file: '/usr/bin/pgrep',
+  args: ['-lf', 'web'],
+  noMatchExitCode: 1,
+} as const
+
 /** Process record returned by the host process table. */
 export interface ProcessRecord {
   pid: number
@@ -22,10 +29,15 @@ export interface OwnershipDependencies {
   ownPid?: number
 }
 
-function execText(file: string, args: readonly string[]): Promise<string> {
+function execText(file: string, args: readonly string[], allowedExitCodes: readonly number[] = []): Promise<string> {
   return new Promise((resolveText, reject) => {
     execFile(file, [...args], { encoding: 'utf8', maxBuffer: EXEC_MAX_BUFFER }, (error, stdout) => {
       if (error !== null) {
+        const code = (error as { code?: string | number }).code
+        if (typeof code === 'number' && allowedExitCodes.includes(code)) {
+          resolveText(stdout)
+          return
+        }
         reject(error instanceof Error ? error : new Error('Process inspection failed.', { cause: error }))
         return
       }
@@ -34,8 +46,8 @@ function execText(file: string, args: readonly string[]): Promise<string> {
   })
 }
 
-async function listMacProcesses(): Promise<readonly ProcessRecord[]> {
-  const stdout = await execText('/bin/ps', ['-axo', 'pid=,command='])
+/** Parse POSIX `pid command` process rows. */
+export function parsePosixProcesses(stdout: string): ProcessRecord[] {
   const records: ProcessRecord[] = []
   for (const line of stdout.split(/\r?\n/u)) {
     const match = /^\s*(\d+)\s+(.+)$/u.exec(line)
@@ -45,6 +57,16 @@ async function listMacProcesses(): Promise<readonly ProcessRecord[]> {
     if (Number.isSafeInteger(pid) && pid > 0 && command !== undefined) records.push({ pid, command })
   }
   return records
+}
+
+async function listMacProcesses(): Promise<readonly ProcessRecord[]> {
+  const query = MAC_DSH_PROCESS_QUERY
+  const stdout = await execText(query.file, query.args, [query.noMatchExitCode])
+  return parsePosixProcesses(stdout)
+}
+
+async function listPosixProcesses(): Promise<readonly ProcessRecord[]> {
+  return parsePosixProcesses(await execText('/bin/ps', ['-axo', 'pid=,command=']))
 }
 
 /**
@@ -143,7 +165,9 @@ export async function findConflictingHarness(
 ): Promise<HarnessConflict | undefined> {
   const platform = dependencies.platform ?? process.platform
   const processLister = dependencies.listProcesses
-    ?? (platform === 'win32' ? listWindowsProcesses : listMacProcesses)
+    ?? (platform === 'win32' ? listWindowsProcesses
+      : platform === 'darwin' ? listMacProcesses
+        : listPosixProcesses)
   const openFileLister = dependencies.listOpenFiles ?? listOpenFiles
   const canonicalizer = dependencies.canonicalize ?? canonicalize
   const ownPid = dependencies.ownPid ?? process.pid

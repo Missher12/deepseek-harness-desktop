@@ -92,7 +92,7 @@ export function installWorkbenchHttp(ctx: Context): void {
   const terminals = new WorkbenchTerminalRegistry(spec => ctx.subprocess.spawnTerminal(spec))
   const authenticated = (
     path: string,
-    action: (body: Record<string, unknown>) => Promise<unknown> | unknown,
+    action: (body: Record<string, unknown>) => unknown,
   ): WebRoute => ({
     kind: 'exact', path,
     async handler(req, res) {

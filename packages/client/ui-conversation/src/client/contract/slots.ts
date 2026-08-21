@@ -547,8 +547,8 @@ export interface ComposerBarInjected {
     gesture: ComposerSubmitGesture,
     steeringAvailable: boolean,
   ) => InputSubmitMode
-  /** Toggle the shared slash menu with only its command source; absent without ui-input-trigger or a session. */
-  toggleCommandMenu: ((selection: EditSelection) => void) | undefined
+  /** Toggle the shared composer Add launcher; absent without ui-input-trigger or a session. */
+  toggleAddMenu: ((selection: EditSelection) => void) | undefined
   /** Cancel the in-flight turn; absent with the session. */
   stop: (() => void) | undefined
   /**

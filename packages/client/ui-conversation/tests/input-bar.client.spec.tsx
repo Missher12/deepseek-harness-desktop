@@ -15,6 +15,7 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import type { ClientContext, ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SubmitOutcome } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { SessionInputShell } from '../src/client/input/facade.ts'
+import { createComposerAddSource } from '../src/client/input/composer-add-source.ts'
 import type {
   ComposerAttachment, ComposerAttachmentsOwnerProps,
 } from '../src/client/contract/slots.ts'
@@ -90,9 +91,9 @@ interface BenchOptions {
   rightItems?: React.ReactNode
   attachments?: readonly ComposerAttachment[]
   addImages?: (files: readonly File[]) => string | null
-  commandMenuOpen?: boolean
+  addMenuOpen?: boolean
   busyEnter?: 'queue' | 'steer'
-  toggleCommandMenu?: (selection: { start: number; end: number }) => void
+  toggleAddMenu?: (selection: { start: number; end: number }) => void
 }
 
 /** One pending queue row (the runtime snapshot shape, as the dock tests build it). */
@@ -143,7 +144,7 @@ function bench(over?: BenchOptions) {
   if (over?.attachments !== undefined) shell.addImages(over.attachments.map(attachment => attachment.id))
   const stop = vi.fn()
   const removeImage = vi.fn((id: DraftAttachmentId) => { shell.removeImage(id) })
-  const menuLauncher = createSnapshotStore<string | null>(over?.commandMenuOpen === true ? 'command' : null)
+  const menuLauncher = createSnapshotStore<string | null>(over?.addMenuOpen === true ? 'composer-add' : null)
   const slotCalls: { key: string; owner: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
     slotCalls.push({ key, owner })
@@ -181,7 +182,7 @@ function bench(over?: BenchOptions) {
       const preferred = over?.busyEnter ?? 'queue'
       return gesture === 'enter' ? preferred : preferred === 'queue' ? 'steer' : 'queue'
     },
-    toggleCommandMenu: over?.toggleCommandMenu ?? vi.fn(),
+    toggleAddMenu: over?.toggleAddMenu ?? vi.fn(),
     useNotices: bindSnapshotSelector(shell.notices),
     useLexicon: bindSnapshotSelector(shell.lexicon),
     useMenuLauncher: bindSnapshotSelector(menuLauncher),
@@ -430,7 +431,7 @@ describe('Enter semantics', () => {
     expect(bench({
       running: true,
       queue: [row('q-1')],
-      commandMenuOpen: true,
+      addMenuOpen: true,
     }).textarea.placeholder).toBe('给智能体发消息')
     // The steer hint intentionally outranks the plan placeholder: while it
     // shows, the whole-queue gesture is genuinely available in plan mode.
@@ -446,7 +447,7 @@ describe('Enter semantics', () => {
     const { textarea, sink } = bench({
       running: true,
       queue: [row('q-1')],
-      commandMenuOpen: true,
+      addMenuOpen: true,
       steerQueue,
     })
     fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true })
@@ -665,7 +666,7 @@ describe('running and lock semantics', () => {
     })
     expect(textarea.disabled).toBe(true)
     expect(textarea.placeholder).toBe('父会话已离线，无法继续发送；仍可停止当前运行')
-    expect((view.getByLabelText('命令') as HTMLButtonElement).disabled).toBe(true)
+    expect((view.getByLabelText('添加') as HTMLButtonElement).disabled).toBe(true)
     expect(button.getAttribute('aria-label')).toBe('发送消息')
     expect(button.disabled).toBe(true)
     expect(interruptButton?.disabled).toBe(false)
@@ -713,7 +714,7 @@ describe('running and lock semantics', () => {
     const { textarea, view } = bench({ disabled: true })
     expect(textarea.disabled).toBe(true)
     expect(textarea.placeholder).toBe('会话不可用')
-    expect((view.getByLabelText('命令') as HTMLButtonElement).disabled).toBe(true)
+    expect((view.getByLabelText('添加') as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('idle primary sends and disables on empty draft', () => {
@@ -1070,7 +1071,7 @@ describe('running and lock semantics', () => {
     expect(textarea.readOnly).toBe(true)
     expect(textarea.getAttribute('aria-haspopup')).toBe('menu')
     expect(textarea.getAttribute('aria-expanded')).toBe('false')
-    expect((view.getByLabelText('命令') as HTMLButtonElement).disabled).toBe(true)
+    expect((view.getByLabelText('添加') as HTMLButtonElement).disabled).toBe(true)
 
     fireEvent.click(textarea)
     fireEvent.keyDown(textarea, { key: 'Enter' })
@@ -1340,10 +1341,10 @@ describe('strips and variants', () => {
   })
 })
 
-describe('command launcher chrome and control seats', () => {
-  it('renders the command launcher; the Access chip is absent without the permissions projection; the control seats render EMPTY without entries', () => {
+describe('composer Add launcher chrome and control seats', () => {
+  it('renders the Add launcher; the Access chip is absent without the permissions projection; the control seats render EMPTY without entries', () => {
     const { view, slotCalls } = bench()
-    expect(view.getByLabelText('命令')).toBeTruthy()
+    expect(view.getByLabelText('添加')).toBeTruthy()
     // Capability absent (no projection value): the chip renders nothing.
     expect(view.queryByLabelText(/^访问模式/)).toBeNull()
     // Every seat dispatched, nothing rendered.
@@ -1354,16 +1355,40 @@ describe('command launcher chrome and control seats', () => {
     expect(view.queryByLabelText('Model')).toBeNull()
   })
 
-  it('passes the textarea selection to the command menu launcher and reflects its expanded state', () => {
-    const toggleCommandMenu = vi.fn()
-    const { view, textarea, menuLauncher } = bench({ draft: 'draft text', toggleCommandMenu })
+  it('passes the textarea selection to the Add launcher and reflects its expanded state', () => {
+    const toggleAddMenu = vi.fn()
+    const { view, textarea, menuLauncher } = bench({ draft: 'draft text', toggleAddMenu })
     textarea.setSelectionRange(2, 7)
-    const launcher = view.getByLabelText('命令')
+    const launcher = view.getByLabelText('添加')
     expect(launcher.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(launcher)
-    expect(toggleCommandMenu).toHaveBeenCalledExactlyOnceWith({ start: 2, end: 7 })
-    act(() => { menuLauncher.set('command') })
+    expect(toggleAddMenu).toHaveBeenCalledExactlyOnceWith({ start: 2, end: 7 })
+    act(() => { menuLauncher.set('composer-add') })
     expect(launcher.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('opens the hidden image chooser through the Add source and sends selected files through the existing intake path', () => {
+    const addImages = vi.fn(() => null)
+    const { view } = bench({ addImages })
+    const picker = view.container.querySelector<HTMLInputElement>('[data-composer-image-picker]')!
+    const click = vi.spyOn(picker, 'click')
+    const source = createComposerAddSource({
+      files: '文件和文件夹', filesDescription: '', image: '添加图片', imageDescription: '', section: '添加',
+    })
+
+    expect(source.onPick({
+      session: { sessionId: SID },
+      candidate: { name: '添加图片', value: 'image' },
+      position: 'leading',
+      via: 'menu',
+      span: { start: 0, end: 0, draftRev: 1 },
+    })).toBe('handled')
+    expect(click).toHaveBeenCalledTimes(1)
+
+    const file = new File([Uint8Array.of(1, 2, 3)], 'preview.png', { type: 'image/png' })
+    fireEvent.change(picker, { target: { files: [file] } })
+    expect(addImages).toHaveBeenCalledExactlyOnceWith([file])
+    expect(picker.value).toBe('')
   })
 
   it('the Access chip renders the projection value and submits a non-Full-access pick directly', async () => {
@@ -1505,10 +1530,10 @@ describe('command launcher chrome and control seats', () => {
     expect(attachmentOwner(live.slotCalls).canAcceptDrop).toBe(true)
   })
 
-  it('disabled locks the Access chip and command launcher (running does not)', () => {
+  it('disabled locks the Access chip and Add launcher (running does not)', () => {
     const permissions = { options: [{ value: 'workspace-write', name: 'workspace-write' }], currentValue: 'workspace-write' }
     const { view } = bench({ disabled: true, permissions })
-    expect((view.getByLabelText('命令') as HTMLButtonElement).disabled).toBe(true)
+    expect((view.getByLabelText('添加') as HTMLButtonElement).disabled).toBe(true)
     expect((view.getByLabelText(/^访问模式/) as HTMLButtonElement).disabled).toBe(true)
     cleanup()
     const live = bench({ running: true, permissions })
