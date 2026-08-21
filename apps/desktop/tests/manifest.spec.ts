@@ -73,6 +73,18 @@ describe('desktop package manifest', () => {
     expect(manifest.scripts['pack:dmg']).toContain('--mac dmg --x64')
   })
 
+  it('builds Mac desktop artifacts with the official client brand profile', () => {
+    const rootManifest = JSON.parse(
+      readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
+    ) as Pick<DesktopManifest, 'scripts'>
+
+    expect(rootManifest.scripts['desktop:stage']).toBe(
+      'pnpm run build:official && pnpm run desktop:stage:built',
+    )
+    expect(rootManifest.scripts['desktop:pack']).toContain('desktop:stage')
+    expect(rootManifest.scripts['desktop:dmg']).toContain('desktop:stage')
+  })
+
   it('keeps packaged update metadata aligned with the Desktop and Harness versions', () => {
     const desktop = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),

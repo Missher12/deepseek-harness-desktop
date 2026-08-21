@@ -147,7 +147,7 @@
     "dev:web": "tsx scripts/dev-web.ts --poll",
     "desktop:dev": "pnpm run build && pnpm run build:desktop:main && pnpm --filter @deepseek-ai/dsh-desktop start",
     "desktop:stage:built": "pnpm run build:desktop:main && pnpm exec tsx scripts/stage-desktop.ts",
-    "desktop:stage": "pnpm run build && pnpm run desktop:stage:built",
+    "desktop:stage": "pnpm run build:official && pnpm run desktop:stage:built",
     "desktop:pack": "pnpm run desktop:stage && pnpm --filter @deepseek-ai/dsh-desktop run pack:dir",
     "desktop:dmg": "pnpm run desktop:stage && pnpm --filter @deepseek-ai/dsh-desktop run pack:dmg",
     "desktop:setup:built": "pnpm run desktop:stage:built && pnpm --filter @deepseek-ai/dsh-desktop run pack:setup",
