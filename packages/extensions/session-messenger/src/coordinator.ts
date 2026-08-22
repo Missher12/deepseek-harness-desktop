@@ -202,7 +202,12 @@ export class SessionMessengerCoordinator {
     })
   }
 
-  /** Stop one exact collaboration chain without blocking a later explicit new send. */
+  /**
+   * Stop one exact collaboration chain without blocking a later explicit new send.
+   * @param caller - ordinary participant Agent authorizing the chain stop.
+   * @param deliveryId - exact durable delivery identity anchoring the chain.
+   * @returns the durable stop result after all matching waits are settled.
+   */
   stopCollaboration(caller: Agent, deliveryId: DeliveryId): Promise<CollaborationStopResult> {
     return this.serialize(() => this.stopCollaborationNow(caller, deliveryId))
   }

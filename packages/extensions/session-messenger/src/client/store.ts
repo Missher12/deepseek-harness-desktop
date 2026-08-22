@@ -618,7 +618,12 @@ export class MessengerStore {
     ))
   }
 
-  /** Stop the chain containing one displayed outgoing delivery. */
+  /**
+   * Stop the chain containing one displayed outgoing delivery.
+   * @param sourceSessionId - displayed ordinary session authorizing the stop.
+   * @param deliveryId - exact durable delivery identity anchoring the chain.
+   * @returns the durable stop result for the whole collaboration chain.
+   */
   stop(sourceSessionId: SessionId, deliveryId: string): Promise<MessengerStopResult> {
     if (this.transport.stop === undefined) return Promise.reject(new Error('session messenger Host bridge is unavailable'))
     const task = this.transport.stop(sourceSessionId, deliveryId, this.lifetimeController.signal)

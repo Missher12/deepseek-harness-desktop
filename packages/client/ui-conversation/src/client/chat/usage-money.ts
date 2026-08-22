@@ -45,9 +45,14 @@ const V4_PRICES: Readonly<Record<string, TieredModelPriceCny>> = {
   },
 }
 
+/** Beijing-time price windows exposed to the footer. */
 export type PricingTier = 'weekday-peak' | 'weekday-off-peak' | 'weekend-off-peak'
 
-/** Resolve the official Beijing-time tier, including all-day weekend discounts. */
+/**
+ * Resolve the official Beijing-time tier, including all-day weekend discounts.
+ * @param at - instant to classify after conversion to Beijing time.
+ * @returns the active weekday peak, weekday off-peak, or weekend off-peak tier.
+ */
 export function pricingTierAt(at = new Date()): PricingTier {
   const beijing = new Date(at.getTime() + 8 * 60 * 60 * 1_000)
   const day = beijing.getUTCDay()

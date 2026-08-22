@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 
-export type DesktopCloseBehavior = 'keep-running' | 'quit'
+type DesktopCloseBehavior = 'keep-running' | 'quit'
 
 export interface DesktopPreferencesSnapshot {
   readonly closeBehavior: DesktopCloseBehavior
@@ -16,7 +16,7 @@ export function defaultDesktopPreferences(platform: NodeJS.Platform): DesktopPre
   }
 }
 
-export function isDesktopPreferences(value: unknown): value is DesktopPreferencesSnapshot {
+function isDesktopPreferences(value: unknown): value is DesktopPreferencesSnapshot {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const record = value as Record<string, unknown>
   return Object.keys(record).length === 2

@@ -678,7 +678,7 @@ Source: [`packages/session/session-title-llm/src/index.ts:43`](../packages/sessi
 'session-messenger/outgoing': OutgoingRelayEvent
 ```
 
-Source: [`packages/extensions/session-messenger/src/types.ts:43`](../packages/extensions/session-messenger/src/types.ts)
+Source: [`packages/extensions/session-messenger/src/types.ts:44`](../packages/extensions/session-messenger/src/types.ts)
 
 ### `step/*`
 

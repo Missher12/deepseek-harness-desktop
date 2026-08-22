@@ -29,7 +29,7 @@ export interface DesktopUpdateSnapshot {
   message: string | null
 }
 
-export type DesktopCloseBehavior = 'keep-running' | 'quit'
+type DesktopCloseBehavior = 'keep-running' | 'quit'
 
 export interface DesktopPreferencesSnapshot {
   closeBehavior: DesktopCloseBehavior
