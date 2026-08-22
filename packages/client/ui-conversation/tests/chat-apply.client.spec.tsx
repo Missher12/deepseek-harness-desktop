@@ -5,7 +5,7 @@
 // (the AppFrame role), and the shared store handle rides all strict session
 // entries. Tool composition belongs to ui-tool and its machinery spec.
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SlotTestRuntime, usePinnedBrowserLanguages, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -18,6 +18,10 @@ usePinnedBrowserLanguages('zh-CN')
 
 const ROOT = 'root-1' as SessionId
 const CHILD = 'child-1' as SessionId
+
+afterEach(() => {
+  Reflect.deleteProperty(window, 'dshDesktop')
+})
 
 async function bench() {
   const runtime = await SlotTestRuntime.create()
@@ -97,6 +101,27 @@ describe('apply wiring', () => {
     expect(b.slots.spec('conversation.session.header.lineage'))
       .toEqual({ kind: 'single', scope: 'session' })
     expect(b.slots.entries('settings.general.item').map(entry => entry.options.id)).toEqual(['composer-enter'])
+    await b.runtime.dispose()
+  })
+
+  it('registers Desktop preferences only when the complete native bridge exists', async () => {
+    Object.defineProperty(window, 'dshDesktop', {
+      configurable: true,
+      value: {
+        getDesktopPreferences: vi.fn(async () => ({
+          closeBehavior: 'keep-running', tieredPricingEstimates: true,
+        })),
+        setDesktopPreference: vi.fn(async () => ({
+          closeBehavior: 'keep-running', tieredPricingEstimates: true,
+        })),
+        onDesktopPreferences: vi.fn(() => () => {}),
+      },
+    })
+    const b = await bench()
+
+    expect(b.slots.entries('settings.general.item').map(entry => entry.options.id)).toEqual([
+      'composer-enter', 'desktop-preferences',
+    ])
     await b.runtime.dispose()
   })
 

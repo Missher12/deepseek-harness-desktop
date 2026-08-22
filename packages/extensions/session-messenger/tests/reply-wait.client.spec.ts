@@ -128,6 +128,28 @@ describe('reply authority', () => {
 })
 
 describe('explicit reply wait', () => {
+  it('settles an active receipt-bound wait immediately when either participant stops the collaboration', async () => {
+    const source = fakeAgent('source')
+    const target = fakeAgent('target')
+    const h = fakeContext([source, target])
+    const store = new MemoryReceiptStore()
+    const coordinator = new SessionMessengerCoordinator(h.ctx as never, store, options(() => 2_000))
+    const delivery = await coordinator.deliver(source, {
+      targetSessionId: 'target', message: 'please check', mode: 'followup',
+    })
+    const waiter = new SessionReplyWaiter(coordinator)
+    const pending = waiter.wait(source, delivery.deliveryId, 55_000)
+
+    await coordinator.stopCollaboration(target, delivery.deliveryId)
+
+    await expect(pending).resolves.toMatchObject({
+      deliveryId: delivery.deliveryId,
+      status: 'aborted',
+      errorCode: 'collaboration-stopped',
+      replyDeliveryId: null,
+    })
+  })
+
   it('closes the subscribe/recheck race and ignores unrelated updates', async () => {
     const original = delivered()
     const reverse = delivered({

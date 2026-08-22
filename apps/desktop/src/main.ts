@@ -7,6 +7,7 @@ import {
   BrowserWindow,
   ipcMain,
   Menu,
+  Tray,
   screen,
   shell,
   type IpcMainEvent,
@@ -23,7 +24,19 @@ import {
 import { HarnessProcess } from './harness/process.ts'
 import { findConflictingHarness } from './harness/ownership.ts'
 import { createLifecycleLogger } from './logging.ts'
-import { isRecoveryAction, supportsDesktopUpdates, type DesktopCommand } from './preload-api.ts'
+import {
+  isDesktopPreferenceMutation,
+  isRecoveryAction,
+  supportsDesktopUpdates,
+  type DesktopCommand,
+  type DesktopPreferenceMutation,
+} from './preload-api.ts'
+import {
+  defaultDesktopPreferences,
+  readDesktopPreferences,
+  writeDesktopPreferences,
+  type DesktopPreferencesSnapshot,
+} from './preferences.ts'
 import { DesktopUpdateService } from './update/service.ts'
 import { WorkbenchBrowserController } from './browser/controller.ts'
 import { isDesktopBrowserBounds, isDesktopBrowserRequest } from './browser/contracts.ts'
@@ -68,6 +81,7 @@ app.setName(PRODUCT_NAME)
 const userData = app.getPath('userData')
 const logPath = join(userData, 'logs', 'lifecycle.log')
 const windowStatePath = join(userData, 'window-state.json')
+const preferencesPath = join(userData, 'desktop-preferences.json')
 const logger = createLifecycleLogger(logPath)
 const dshHome = resolveDshHome()
 
@@ -94,9 +108,19 @@ const appFacade: AppFacade = {
 }
 
 let nativeWindow: BrowserWindow | undefined
+let tray: Tray | undefined
 let workbenchBrowser: WorkbenchBrowserController | undefined
 let activeHarnessRoot: string | undefined
 const lifecycle: { controller?: DesktopApplication } = {}
+let desktopPreferences: DesktopPreferencesSnapshot = defaultDesktopPreferences(process.platform)
+let preferencesMutationTail: Promise<void> = Promise.resolve()
+const preferencesReady = readDesktopPreferences(preferencesPath, process.platform).then((value) => {
+  desktopPreferences = value
+  return value
+}).catch((error: unknown) => {
+  record(`desktop preferences read failed: ${error instanceof Error ? error.message : String(error)}`)
+  return desktopPreferences
+})
 const updateService = new DesktopUpdateService({
   runningDesktop: app.getVersion(),
   includedHarness: resolveHarnessVersion(),
@@ -121,6 +145,52 @@ function openExternal(url: string): void {
   void shell.openExternal(url).catch((error: unknown) => {
     record(`external URL failed: ${error instanceof Error ? error.message : String(error)}`)
   })
+}
+
+function showDesktopWindow(): void {
+  if (nativeWindow === undefined || nativeWindow.isDestroyed()) return
+  if (nativeWindow.isMinimized()) nativeWindow.restore()
+  nativeWindow.show()
+  nativeWindow.focus()
+}
+
+function syncWindowsTray(): void {
+  if (process.platform !== 'win32' || desktopPreferences.closeBehavior !== 'keep-running') {
+    tray?.destroy()
+    tray = undefined
+    return
+  }
+  if (tray !== undefined) return
+  tray = new Tray(iconPath)
+  tray.setToolTip(PRODUCT_NAME)
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Show DeepSeek Harness', click: showDesktopWindow },
+    { type: 'separator' },
+    { label: 'Quit', click: () => { app.quit() } },
+  ]))
+  tray.on('double-click', showDesktopWindow)
+}
+
+async function setDesktopPreference(
+  mutation: DesktopPreferenceMutation,
+): Promise<DesktopPreferencesSnapshot> {
+  let snapshot!: DesktopPreferencesSnapshot
+  const task = preferencesMutationTail.then(async () => {
+    await preferencesReady
+    const next: DesktopPreferencesSnapshot = mutation.key === 'closeBehavior'
+      ? { ...desktopPreferences, closeBehavior: mutation.value }
+      : { ...desktopPreferences, tieredPricingEstimates: mutation.value }
+    await writeDesktopPreferences(preferencesPath, next)
+    desktopPreferences = next
+    snapshot = next
+    syncWindowsTray()
+    if (nativeWindow !== undefined && !nativeWindow.isDestroyed() && activeHarnessRoot !== undefined) {
+      nativeWindow.webContents.send('desktop:preferences-state', next)
+    }
+  })
+  preferencesMutationTail = task.catch(() => {})
+  await task
+  return snapshot
 }
 
 function installNavigationPolicy(window: BrowserWindow, ownedRoot: () => string | undefined): void {
@@ -178,6 +248,7 @@ function createStateWriter(window: BrowserWindow): () => void {
 }
 
 async function createDesktopWindow(): Promise<DesktopWindow> {
+  await preferencesReady
   const displays = screen.getAllDisplays().map(display => display.workArea)
   const bounds = await readWindowBounds(windowStatePath, displays)
   const window = new BrowserWindow(createWindowOptions(bounds, preloadPath, process.platform))
@@ -193,8 +264,10 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
     event.preventDefault()
     persistState()
     void workbenchBrowser?.hide()
-    if (platformBehavior.hideWindowOnClose) window.hide()
-    else app.quit()
+    if (desktopPreferences.closeBehavior === 'keep-running') {
+      window.hide()
+      syncWindowsTray()
+    } else app.quit()
   })
   window.webContents.on('render-process-gone', () => { void controller.rendererExited() })
   window.webContents.on('did-fail-load', (_event, errorCode) => {
@@ -261,6 +334,19 @@ function isHarnessSender(event: IpcMainInvokeEvent): boolean {
 
 ipcMain.on('desktop:recovery', (event, value: unknown) => {
   if (isFailureSender(event) && isRecoveryAction(value)) controller.recover(value)
+})
+
+ipcMain.handle('desktop:preferences-get', async (event) => {
+  if (!isHarnessSender(event)) throw new Error('Untrusted Desktop preferences sender.')
+  await preferencesReady
+  return desktopPreferences
+})
+
+ipcMain.handle('desktop:preferences-set', async (event, value: unknown) => {
+  if (!isHarnessSender(event) || !isDesktopPreferenceMutation(value)) {
+    throw new Error('Untrusted Desktop preference mutation.')
+  }
+  return await setDesktopPreference(value)
 })
 
 if (desktopUpdatesEnabled) {
@@ -330,7 +416,12 @@ ipcMain.handle('desktop:workbench-browser-control', async (event, value: unknown
 })
 
 
-app.on('before-quit', () => { updateService.dispose(); void workbenchBrowser?.hide() })
+app.on('before-quit', () => {
+  updateService.dispose()
+  tray?.destroy()
+  tray = undefined
+  void workbenchBrowser?.hide()
+})
 
 Menu.setApplicationMenu(Menu.buildFromTemplate(
   createMenuTemplate(PRODUCT_NAME, (command) => { controller.sendCommand(command) }, process.platform),
@@ -338,6 +429,7 @@ Menu.setApplicationMenu(Menu.buildFromTemplate(
 
 void controller.run().then(() => {
   if (platformBehavior.setDockIcon) app.dock?.setIcon(iconPath)
+  syncWindowsTray()
   record('desktop application ready')
   if (!desktopUpdatesEnabled) return
   const timer = setTimeout(() => {

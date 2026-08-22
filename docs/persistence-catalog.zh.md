@@ -680,7 +680,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'session-messenger/outgoing': OutgoingRelayEvent
 ```
 
-来源：[`packages/extensions/session-messenger/src/types.ts:43`](../packages/extensions/session-messenger/src/types.ts)
+来源：[`packages/extensions/session-messenger/src/types.ts:44`](../packages/extensions/session-messenger/src/types.ts)
 
 ### `step/*`
 

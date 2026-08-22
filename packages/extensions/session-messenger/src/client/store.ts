@@ -24,6 +24,8 @@ export interface NotificationReceipt {
   readonly updatedAt: number
   readonly acknowledged: boolean
   readonly replyToDeliveryId?: string
+  readonly continuationOfDeliveryId?: string
+  readonly collaborationStoppedAt?: number
   readonly errorCode?: string
 }
 
@@ -51,6 +53,7 @@ export interface SessionMessengerBootstrap {
   readonly eventsPath: string
   readonly sendPath: string
   readonly replyPath: string
+  readonly stopPath: string
   readonly capabilityHeader: string
   readonly capability: string
 }
@@ -88,6 +91,11 @@ export interface MessengerTransport {
     wake: boolean,
     signal: AbortSignal,
   ): Promise<MessengerDeliveryResult>
+  stop?(
+    sourceSessionId: SessionId,
+    deliveryId: string,
+    signal: AbortSignal,
+  ): Promise<MessengerStopResult>
 }
 
 /** Browser-safe result returned by both operator routes. */
@@ -96,6 +104,14 @@ export interface MessengerDeliveryResult {
   readonly messageId: string
   readonly status: 'delivered' | 'delivery-recovery-pending'
   readonly wakeRequested: boolean
+}
+
+/** Browser-safe result returned by the stop route. */
+export interface MessengerStopResult {
+  readonly deliveryId: string
+  readonly rootDeliveryId: string
+  readonly status: 'stopped'
+  readonly stoppedAt: number
 }
 
 /** Immutable external-store snapshot. */
@@ -127,7 +143,6 @@ function reconnectDelay(signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     const finish = (): void => {
       clearTimeout(timer)
-      signal.removeEventListener('abort', finish)
       resolve()
     }
     const timer = setTimeout(finish, RECONNECT_DELAY_MS)
@@ -161,6 +176,9 @@ function parseReceipt(value: unknown): NotificationReceipt | undefined {
     || Number(value.updatedAt) < 0
     || typeof value.acknowledged !== 'boolean'
     || (value.replyToDeliveryId !== undefined && !safeString(value.replyToDeliveryId))
+    || (value.continuationOfDeliveryId !== undefined && !safeString(value.continuationOfDeliveryId))
+    || (value.collaborationStoppedAt !== undefined
+      && (!Number.isSafeInteger(value.collaborationStoppedAt) || Number(value.collaborationStoppedAt) < 0))
     || (value.errorCode !== undefined && !safeString(value.errorCode, 128))) return undefined
 
   return {
@@ -173,6 +191,8 @@ function parseReceipt(value: unknown): NotificationReceipt | undefined {
     updatedAt: Number(value.updatedAt),
     acknowledged: value.acknowledged,
     ...(value.replyToDeliveryId === undefined ? {} : { replyToDeliveryId: value.replyToDeliveryId }),
+    ...(value.continuationOfDeliveryId === undefined ? {} : { continuationOfDeliveryId: value.continuationOfDeliveryId }),
+    ...(value.collaborationStoppedAt === undefined ? {} : { collaborationStoppedAt: Number(value.collaborationStoppedAt) }),
     ...(value.errorCode === undefined ? {} : { errorCode: value.errorCode }),
   }
 }
@@ -253,6 +273,7 @@ function checkedBootstrap(value: SessionMessengerBootstrap): SessionMessengerBoo
     value.eventsPath,
     value.sendPath,
     value.replyPath,
+    value.stopPath,
     value.capabilityHeader,
     value.capability,
   ]) {
@@ -420,6 +441,27 @@ export function createHttpMessengerTransport(
       })
       return deliveryResponse(response, 'session messenger reply')
     },
+    async stop(sourceSessionId, deliveryId, signal) {
+      const response = await fetcher(bootstrap.stopPath, {
+        method: 'POST',
+        headers: { ...capabilityHeaders, 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store',
+        body: JSON.stringify({ sourceSessionId, deliveryId }),
+        signal,
+      })
+      const value = await responseJson(response, 'session messenger stop')
+      if (!isRecord(value) || !safeString(value.deliveryId) || !safeString(value.rootDeliveryId)
+        || value.status !== 'stopped' || !Number.isSafeInteger(value.stoppedAt)) {
+        throw new Error('invalid session messenger stop response')
+      }
+      return {
+        deliveryId: value.deliveryId,
+        rootDeliveryId: value.rootDeliveryId,
+        status: 'stopped',
+        stoppedAt: Number(value.stoppedAt),
+      }
+    },
   }
 }
 
@@ -443,7 +485,7 @@ export class MessengerStore {
   private readonly listeners = new Set<() => void>()
   private readonly lifetimeController = new AbortController()
   private readonly acknowledgementTasks = new Set<Promise<number>>()
-  private readonly operatorTasks = new Set<Promise<MessengerDeliveryResult>>()
+  private readonly operatorTasks = new Set<Promise<unknown>>()
   private active: {
     readonly controller: AbortController
     readonly done: Promise<void>
@@ -574,6 +616,21 @@ export class MessengerStore {
     return this.trackOperator(this.transport.reply(
       sourceSessionId, deliveryId, message, wake, this.lifetimeController.signal,
     ))
+  }
+
+  /**
+   * Stop the chain containing one displayed outgoing delivery.
+   * @param sourceSessionId - displayed ordinary session authorizing the stop.
+   * @param deliveryId - exact durable delivery identity anchoring the chain.
+   * @returns the durable stop result for the whole collaboration chain.
+   */
+  stop(sourceSessionId: SessionId, deliveryId: string): Promise<MessengerStopResult> {
+    if (this.transport.stop === undefined) return Promise.reject(new Error('session messenger Host bridge is unavailable'))
+    const task = this.transport.stop(sourceSessionId, deliveryId, this.lifetimeController.signal)
+    this.operatorTasks.add(task)
+    const forget = (): void => { this.operatorTasks.delete(task) }
+    void task.then(forget, forget)
+    return task
   }
 
   private trackOperator(task: Promise<MessengerDeliveryResult>): Promise<MessengerDeliveryResult> {

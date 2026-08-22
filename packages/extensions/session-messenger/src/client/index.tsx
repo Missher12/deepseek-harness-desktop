@@ -23,6 +23,7 @@ export interface ISessionMessengerClient {
   readonly store: MessengerStore
   send: MessengerStore['send']
   reply: MessengerStore['reply']
+  stop: MessengerStore['stop']
   acknowledge: MessengerStore['acknowledge']
 }
 
@@ -52,6 +53,7 @@ export function apply(ctx: ClientContext): void {
     store,
     send: store.send.bind(store),
     reply: store.reply.bind(store),
+    stop: store.stop.bind(store),
     acknowledge: store.acknowledge.bind(store),
   }
   ctx.effect(() => {
@@ -64,5 +66,6 @@ export function apply(ctx: ClientContext): void {
   ctx.conversationEvents.register(outgoingRelayDefinition)
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node', key: 'session-relay-outgoing', locale: NS,
+    inject: () => ({ messenger: face }),
   }, OutgoingRelayView))
 }

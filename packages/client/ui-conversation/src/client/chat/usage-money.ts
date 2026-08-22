@@ -39,12 +39,28 @@ const V4_PRICES: Readonly<Record<string, TieredModelPriceCny>> = {
     peak: { cacheHit: 0.3, cacheMiss: 9, output: 27 },
     offPeak: { cacheHit: 0.15, cacheMiss: 4.5, output: 13.5 },
   },
+  'deepseek-v4-flash-vision-exp': {
+    peak: { cacheHit: 0.1, cacheMiss: 3, output: 9 },
+    offPeak: { cacheHit: 0.05, cacheMiss: 1.5, output: 4.5 },
+  },
 }
 
-/** Beijing has a fixed UTC+8 offset and no daylight-saving transitions. */
-function isBeijingPeak(at: Date): boolean {
-  const hour = (at.getUTCHours() + 8) % 24
+/** Beijing-time price windows exposed to the footer. */
+export type PricingTier = 'weekday-peak' | 'weekday-off-peak' | 'weekend-off-peak'
+
+/**
+ * Resolve the official Beijing-time tier, including all-day weekend discounts.
+ * @param at - instant to classify after conversion to Beijing time.
+ * @returns the active weekday peak, weekday off-peak, or weekend off-peak tier.
+ */
+export function pricingTierAt(at = new Date()): PricingTier {
+  const beijing = new Date(at.getTime() + 8 * 60 * 60 * 1_000)
+  const day = beijing.getUTCDay()
+  if (day === 0 || day === 6) return 'weekend-off-peak'
+  const hour = beijing.getUTCHours()
   return (hour >= 9 && hour < 12) || (hour >= 14 && hour < 18)
+    ? 'weekday-peak'
+    : 'weekday-off-peak'
 }
 
 /**
@@ -57,7 +73,7 @@ export function priceOfModel(model: string | undefined, at = new Date()): ModelP
   if (model === undefined) return null
   const prices = V4_PRICES[model]
   if (prices === undefined) return null
-  return isBeijingPeak(at) ? prices.peak : prices.offPeak
+  return pricingTierAt(at) === 'weekday-peak' ? prices.peak : prices.offPeak
 }
 
 /**

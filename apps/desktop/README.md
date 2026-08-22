@@ -16,16 +16,26 @@ the host clipboard accepted the write.
 The removable `@deepseek-ai/dsh-session-messenger` plugin adds bounded,
 same-profile Agent messaging. Copy Session A's exact ID, paste it into Session
 B, and ask B's Agent to send: Native Function Calling or Code Mode wakes A's
-existing Agent, and A can reply to B through receipt-bound metadata. Either
-session can initiate another message with the other's ID. The four tools cover
-direct send, optional send-and-wait, one-use Host-authorized reply, and an
-explicit matching-reply wait. Received messages keep the ordinary Harness
-context-disclosure presentation instead of a custom card. A Session-header
-trigger opens a remembered 320–560 px operator drawer for exact-ID copy,
-send/reply composition, pending/unread state, and metadata-only activity;
-**Start target Agent** is enabled by default and the drawer becomes full-width
-on narrow windows. The plugin never creates new sessions, subagents, or
-autonomous Agent-to-Agent loops, and received text remains untrusted content.
+existing Agent, and A can reply or continue the same collaboration chain through
+receipt-bound metadata. Five tools cover direct send, optional send-and-wait,
+one-use Host-authorized reply, explicit matching-reply wait, and participant-
+authorized stopping of the complete collaboration chain. Stop immediately
+settles unresolved deliveries and waits and rejects later replies or
+continuations; a fresh user-directed message still starts an independent chain.
+Communication stays in ordinary Harness history, with only a compact
+**Stop / Stopped** action on the existing source-side conversation row. There is
+no header trigger, operator drawer, custom message card, or second archive. The
+plugin never creates new sessions, subagents, or autonomous Agent-to-Agent loops,
+and received text remains untrusted content.
+
+Desktop General Settings exposes close behavior and tiered price estimates.
+macOS defaults to keeping the app running after its window closes, while Windows
+defaults to quitting; Windows creates a Show/Quit tray only when keep-running is
+selected. Every explicit Quit stops the app-owned Harness process. The
+conversation footer keeps the existing performance data and adds settled
+latest-turn cost, session estimate, exact official-endpoint balance, and current
+pricing tier on a second line. Disabling tiered estimates hides estimates and the
+tier but preserves the exact balance.
 
 The removable `@deepseek-ai/dsh-reasoning-effort` plugin replaces the plain
 effort rows with a keyboard-accessible slider that uses only values advertised
@@ -117,6 +127,6 @@ For Windows, build the Setup on native Windows and run:
   -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.3.2-win-x64.exe
 ```
 
-The packaged smokes use an external temporary working directory, temporary Electron data, and temporary `DSH_HOME`. Native macOS and Windows acceptance verifies the preload bridge, three-column workspace, exact ordinary and archived Session IDs in the real system clipboard without opening, restoring, deleting, sending, or starting an Agent, peer-session send/reply metadata, default wake control, ordinary no-card rendering, drawer-width persistence, and rejection side effects, the Add menu, the four-mode workbench, the down-first adaptive reasoning slider and persisted effort, visible Canvas output with the optional character off, all 371 Usage particles plus daily/weekly/cumulative hover semantics, stable Plugin Market category order plus separated search/filter/category geometry, random listener, and complete process cleanup after native exit. Protected self-update remains macOS-only and is explicitly absent on Windows. Tool-level acceptance separately proves bidirectional Agent wake/reply behavior, optional exact receipt-bound waiting, and matching-reply refusal without making an external model request. Desktop staging additionally requires exactly one `dshmarket@1.10.1`, coherent compact and category-rail markers in its source, Client bundle, and source map, the Host self-protection marker, immutable Desktop patches, plugin-runtime providers, packaged pnpm bin, and the assisted-installer include. The Windows UI smoke walks the visible Welcome, destination, expanded progress/details, and Finish pages, while the lifecycle smoke proves the same feature behavior alongside silent install, shortcut creation, real clipboard copy, uninstall cleanup, and data preservation. Native Windows CI derives the artifact name from the package version, builds the Setup, runs both smokes, records SHA-256, and uploads both exact files.
+The packaged smokes use an external temporary working directory, temporary Electron data, and temporary `DSH_HOME`. Native macOS and Windows acceptance verifies the preload bridge, preference round-trips, hide-on-close with the Harness still running, window restoration, the three-column workspace, exact ordinary and archived Session IDs in the real system clipboard without opening, restoring, deleting, sending, or starting an Agent, peer-session send/reply metadata, ordinary no-card rendering and rejection side effects, the Add menu, the four-mode workbench, the down-first adaptive reasoning slider and persisted effort, visible Canvas output with the optional character off, all 371 Usage particles plus daily/weekly/cumulative hover semantics, stable Plugin Market category order plus separated search/filter/category geometry, random listener, and complete process cleanup after native exit. Protected self-update remains macOS-only and is explicitly absent on Windows. Tool-level acceptance separately proves bidirectional Agent wake/reply behavior, exact receipt-bound waiting, collaboration stop, and matching-reply refusal without making an external model request. Desktop staging additionally requires exactly one `dshmarket@1.10.1`, coherent compact and category-rail markers in its source, Client bundle, and source map, the Host self-protection marker, immutable Desktop patches, plugin-runtime providers, packaged pnpm bin, and the assisted-installer include. The Windows UI smoke walks the visible Welcome, destination, expanded progress/details, and Finish pages, while the lifecycle smoke proves the same feature behavior alongside silent install, shortcut creation, real clipboard copy, uninstall cleanup, and data preservation. Native Windows CI derives the artifact name from the package version, builds the Setup, runs both smokes, records SHA-256, and uploads both exact files.
 
 Local artifacts are unsigned. macOS may require **Open** from Finder's context menu; Windows SmartScreen may require confirmation of the unknown publisher. Removing those prompts requires trusted platform signing credentials.

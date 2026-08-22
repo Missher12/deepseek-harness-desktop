@@ -3,6 +3,8 @@ import {
   type DesktopApi,
   type DesktopUpdateSnapshot,
   isDesktopCommand,
+  isDesktopPreferenceMutation,
+  isDesktopPreferencesSnapshot,
   isDesktopUpdateSnapshot,
   isRecoveryAction,
   supportsDesktopUpdates,
@@ -75,6 +77,24 @@ const api: DesktopApi = {
     }
     ipcRenderer.on('desktop:workbench-browser-state', handler)
     return () => { ipcRenderer.off('desktop:workbench-browser-state', handler) }
+  },
+  async getDesktopPreferences() {
+    const value: unknown = await ipcRenderer.invoke('desktop:preferences-get')
+    if (!isDesktopPreferencesSnapshot(value)) throw new Error('Invalid Desktop preferences.')
+    return value
+  },
+  async setDesktopPreference(mutation) {
+    if (!isDesktopPreferenceMutation(mutation)) throw new Error('Invalid Desktop preference mutation.')
+    const value: unknown = await ipcRenderer.invoke('desktop:preferences-set', mutation)
+    if (!isDesktopPreferencesSnapshot(value)) throw new Error('Invalid Desktop preferences.')
+    return value
+  },
+  onDesktopPreferences(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      if (isDesktopPreferencesSnapshot(value)) listener(value)
+    }
+    ipcRenderer.on('desktop:preferences-state', handler)
+    return () => { ipcRenderer.off('desktop:preferences-state', handler) }
   },
 }
 

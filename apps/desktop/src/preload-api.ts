@@ -29,6 +29,34 @@ export interface DesktopUpdateSnapshot {
   message: string | null
 }
 
+type DesktopCloseBehavior = 'keep-running' | 'quit'
+
+export interface DesktopPreferencesSnapshot {
+  closeBehavior: DesktopCloseBehavior
+  tieredPricingEstimates: boolean
+}
+
+export type DesktopPreferenceMutation =
+  | { key: 'closeBehavior'; value: DesktopCloseBehavior }
+  | { key: 'tieredPricingEstimates'; value: boolean }
+
+export function isDesktopPreferencesSnapshot(value: unknown): value is DesktopPreferencesSnapshot {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const candidate = value as Record<string, unknown>
+  return Object.keys(candidate).length === 2
+    && (candidate.closeBehavior === 'keep-running' || candidate.closeBehavior === 'quit')
+    && typeof candidate.tieredPricingEstimates === 'boolean'
+}
+
+export function isDesktopPreferenceMutation(value: unknown): value is DesktopPreferenceMutation {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const candidate = value as Record<string, unknown>
+  if (Object.keys(candidate).length !== 2) return false
+  return candidate.key === 'closeBehavior'
+    ? candidate.value === 'keep-running' || candidate.value === 'quit'
+    : candidate.key === 'tieredPricingEstimates' && typeof candidate.value === 'boolean'
+}
+
 /**
  * Check an IPC payload against the desktop command vocabulary.
  * @param value - Untrusted IPC payload.
@@ -89,6 +117,9 @@ export interface DesktopApi {
   hideWorkbenchBrowser(): Promise<void>
   controlWorkbenchBrowser(request: DesktopBrowserRequest): Promise<DesktopBrowserSnapshot>
   onWorkbenchBrowserState(listener: (snapshot: DesktopBrowserSnapshot) => void): () => void
+  getDesktopPreferences(): Promise<DesktopPreferencesSnapshot>
+  setDesktopPreference(mutation: DesktopPreferenceMutation): Promise<DesktopPreferencesSnapshot>
+  onDesktopPreferences(listener: (snapshot: DesktopPreferencesSnapshot) => void): () => void
 }
 
 declare global {
