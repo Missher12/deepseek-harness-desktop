@@ -95,10 +95,28 @@ The repository is based on the pinned official source and adds the desktop appli
   `803810e8767ed86514368906782d0a80c0bed54907973f84ff57eb8edf0167fa`;
   `hdiutil verify` passes, the bundle reports Desktop `0.3.3`, the packaged
   executable reports `x86_64`, and the embedded Harness reports `0.1.1-rc.2`.
-  Installed-app update acceptance and public Release verification remain
-  pending at this checkpoint. This Mac task does not build, replace, or
-  publish Windows assets; Windows remains at the separately verified Desktop
-  0.3.2 release.
+  PR #17 was squash-merged as public main commit
+  `927a5f7c999a3074496ac3b0274fc8dcc35ead75`; tag and Release
+  `desktop-v0.3.3` point to that exact application tree. The public DMG asset
+  (ID `524615247`) is 163,638,106 bytes and its anonymous proxy-assisted
+  re-download matches the local candidate byte-for-byte and passes the
+  101-byte LF checksum. The public updater manifest (ID `524615248`) also
+  matches the local 378-byte manifest exactly. The already installed 0.3.2
+  application then displayed the real `Download update` action, progressed to
+  `Restart and install`, verified the public DMG SHA-256, invoked the native
+  rollback-capable helper, and relaunched `/Applications/DeepSeek Harness.app`
+  as Desktop `0.3.3`, `x86_64`, with embedded Harness `0.1.1-rc.2`. The live
+  `~/.dsh` aggregate remained 98 files / 8,972 KiB before and after replacement,
+  and the custom Usage, Evolution, Plugin Market, and reasoning controls
+  remounted on the upgraded core. The old 0.3.2 single-stream GitHub transfer
+  became CDN-throttled during acceptance, so the final UI/hash/native-install
+  leg reused the separately anonymous-downloaded, byte-identical public DMG
+  through a temporary exact-URL bridge; this did not bypass the updater's byte
+  count or SHA-256 checks. Normal Finder launches do not inherit the temporary
+  proxy environment, so persistent application-level proxy selection and
+  concurrent download acceleration remain future work. This Mac task did not
+  build, replace, or publish Windows assets; Windows remains at the separately
+  verified Desktop 0.3.2 release.
 - Version 0.3.2 was the preceding Intel-macOS release. The composer `+` now
   opens one compact Codex-style Add menu over the existing input-trigger
   pipeline: files/folders reuse `@` references, images reuse the existing
