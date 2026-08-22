@@ -1,4 +1,6 @@
 .frame {
+  --dsh-native-titlebar-inset: 0px;
+
   position: relative; /* anchors the drag handles, which straddle column borders */
   display: grid;
   grid-template-rows: 100%;
@@ -11,15 +13,17 @@
 }
 
 /* Electron's hidden-inset title bar leaves traffic lights above the web
-   shell. Only the explicit desktop surface reserves that native drag strip;
-   ordinary `dsh web` keeps its existing browser layout. */
-:global(body[data-dsh-surface='desktop']) .frame {
+   shell. Only the platform marker paired with that native window style
+   reserves the drag strip; Windows and ordinary `dsh web` start at y=0. */
+:global(body[data-dsh-surface='desktop'][data-dsh-titlebar='hidden-inset']) .frame {
+  --dsh-native-titlebar-inset: 38px;
+
   grid-template-rows: minmax(0, 1fr);
-  padding-top: 38px;
+  padding-top: var(--dsh-native-titlebar-inset);
   box-sizing: border-box;
 }
 
-:global(body[data-dsh-surface='desktop']) .frame::before {
+:global(body[data-dsh-surface='desktop'][data-dsh-titlebar='hidden-inset']) .frame::before {
   content: '';
   position: absolute;
   inset: 0 0 auto;
@@ -70,7 +74,7 @@
 
 .utilityDrawer {
   position: absolute;
-  inset: 38px 0 0 auto;
+  inset: var(--dsh-native-titlebar-inset) 0 0 auto;
   z-index: 12;
   max-width: 100%;
   overflow: hidden;

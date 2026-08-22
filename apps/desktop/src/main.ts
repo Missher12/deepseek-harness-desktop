@@ -30,7 +30,7 @@ import { isDesktopBrowserBounds, isDesktopBrowserRequest } from './browser/contr
 import { launchDesktopInstaller } from './update/installer.ts'
 import { allowRendererPermission, classifyNavigation } from './window/navigation.ts'
 import { createMenuTemplate } from './window/menu.ts'
-import { createWindowOptions } from './window/options.ts'
+import { createWindowOptions, desktopRendererUrl } from './window/options.ts'
 import { desktopPlatformBehavior } from './window/platform.ts'
 import { readWindowBounds, writeWindowBounds } from './window/state.ts'
 
@@ -211,7 +211,7 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
     async loadHarness(url) {
       ownedRoot = url
       activeHarnessRoot = url
-      await window.loadURL(url)
+      await window.loadURL(desktopRendererUrl(url, process.platform))
     },
     async loadFailure(reason: FailureReason) {
       await workbenchBrowser?.hide()
