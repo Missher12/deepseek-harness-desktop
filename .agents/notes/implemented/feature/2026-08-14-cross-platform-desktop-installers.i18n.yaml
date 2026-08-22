@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-14-cross-platform-desktop-installers.md
 2026-08-14-cross-platform-desktop-installers.md: 4406ea6d1bc8402941d837fb9e4aac6036955724
-2026-08-14-cross-platform-desktop-installers.zh.md: bde8275352012bc3b002fb041ae1b7d2643ae8a4
+2026-08-14-cross-platform-desktop-installers.zh.md: 36077053e6b1ed9e69968edf5d73b4602405ef92

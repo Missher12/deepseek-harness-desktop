@@ -1,6 +1,6 @@
 # 内置 Agent 预设扩展设计
 
-[English](2026-08-20-agent-presets-expansion-design.md)
+[English](2026-08-20-agent-presets-expansion-design.md) | 中文
 
 ## 状态与已确认决定
 

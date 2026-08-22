@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-host-desktop-plugin-runtime",
   "description": "Desktop-only active-profile and packaged-pnpm services for trusted DSH plugin managers",
-  "version": "0.1.0-rc.8",
+  "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
   },

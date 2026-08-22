@@ -1,6 +1,6 @@
 # Reference-Style Plugin Market Design
 
-[中文](2026-08-20-reference-plugin-market-design.zh.md)
+English | [中文](2026-08-20-reference-plugin-market-design.zh.md)
 
 ## Status and confirmed decisions
 

@@ -8,15 +8,17 @@ DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的�
 
 ## 非官方 Intel macOS 桌面发行版
 
-这个社区仓库保留官方源码，并在 [`apps/desktop`](apps/desktop/README.md) 下增加非官方 Intel macOS 桌面应用。它不是 DeepSeek 官方桌面版。应用在原生 Electron 窗口中内置现有 Harness Web 运行时，自主管理随机回环端口，并使用用户提供的鲸鱼图标。
+这个社区仓库保留官方源码，并在 [`apps/desktop`](apps/desktop/README.zh.md) 下增加非官方 Intel macOS 桌面应用。它不是 DeepSeek 官方桌面版。应用在原生 Electron 窗口中内置现有 Harness Web 运行时，自主管理随机回环端口，并使用用户提供的鲸鱼图标。
 
 请从本仓库的 [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases) 下载 DMG。当前本机构建未签名、未公证；首次启动时，macOS 可能要求在 Finder 右键菜单中选择“打开”。
 
-Desktop 0.1.8 已在原生 Intel Mac 和 Windows x64 上完成构建与原生验证。两个平台的安装包及其 SHA-256 校验文件会一并发布在对应的 Desktop Release 下。
+Desktop 0.3.3 为 Intel macOS 内置了经过适配测试的官方 Harness `0.1.1-rc.2` 核心。Windows 在完成独立的原生验收前仍保留在已验证的 Desktop 0.3.2 版本。
 
 ## 开发者预览
 
 DeepSeek Harness 目前处于 _开发者预览_ 阶段，正在快速迭代。**未来将出现破坏兼容性的变更。**
+
+<a id="run"></a>
 
 ## 运行
 
@@ -28,7 +30,9 @@ DeepSeek Harness 目前处于 _开发者预览_ 阶段，正在快速迭代。**
 npx @deepseek-ai/dsh web
 ```
 
-该命令默认会在 `http://127.0.0.1:3080` 启动 Web UI，本机启动时还会用默认浏览器打开页面。通过 SSH 启动时只打印宿主机 URL，因为本地转发地址由 SSH 客户端或编辑器持有。传入 `--no-open` 可仅运行服务器而不打开浏览器。详见 [Web UI 指南](docs/user/guide/index.md)。
+该命令默认会在 `http://127.0.0.1:3080` 启动 Web UI，本机启动时还会用默认浏览器打开页面。通过 SSH 启动时只打印宿主机 URL，因为本地转发地址由 SSH 客户端或编辑器持有。传入 `--no-open` 可仅运行服务器而不打开浏览器。详见 [Web UI 指南](docs/user/guide/index.zh.md)。
+
+<a id="run-from-source"></a>
 
 ### 从源码运行
 
@@ -69,11 +73,11 @@ pnpm dsh web
 
 ## 参与贡献
 
-参见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+参见 [CONTRIBUTING.md](CONTRIBUTING.zh.md)。
 
 ## 开发
 
-请先阅读[开发指南](docs/development.md)与[架构文档](docs/architecture.md)。
+请先阅读[开发指南](docs/development.zh.md)与[架构文档](docs/architecture.zh.md)。
 
 面向 agent：请遵循 [AGENTS.md](AGENTS.md)。
 
