@@ -69,6 +69,30 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- The 2026-08-23 source candidate adds an explicit stop boundary to the existing
+  transcript-only cross-session messenger: either participant can stop one
+  receipt-linked collaboration chain, all unresolved deliveries and waits settle
+  as `collaboration-stopped`, later replies/continuations are rejected, and a
+  fresh user-directed send starts an independent chain. The existing outgoing
+  conversation row gains only a compact Stop/Stopped action; no drawer, card,
+  side-chat surface, background Agent loop, or second message archive was added.
+  Desktop General Settings now persist an owner-only close preference and a
+  tiered-price-estimate switch under Electron `userData`. macOS defaults to
+  keep-running and Windows defaults to quit; Windows creates a Show/Quit tray
+  only when keep-running is selected, while explicit Quit always performs the
+  bounded Harness shutdown. The conversation footer keeps its performance line
+  and adds settled latest-turn cost, session estimate, exact provider balance,
+  and the current official pricing tier on a second line. Disabling estimates
+  hides both local estimates and the tier while retaining exact balance. These
+  passed 201 focused cross-session/Desktop/billing tests, 40 packaged-helper and
+  manifest tests, affected production builds, full-repository lint, bilingual
+  contract pairing, 67-file Desktop staging, and the isolated native Intel Mac
+  packaged smoke. The native smoke verified preference round-trips, hide-on-close
+  with the Harness listener still owned, window restoration, explicit bounded
+  quit, and complete process/listener cleanup. Windows code and the same native
+  smoke contract are synchronized, but native Windows Setup/tray acceptance has
+  not run from this source candidate. No release version or public asset is
+  implied here.
 - Version 0.3.4 is the current verified cross-platform release. The stable
   `Low / Medium / High / XHigh / Max / Ultra` reasoning ladder still maps every
   visual stop to an exact Host-advertised effort and still displays the model's

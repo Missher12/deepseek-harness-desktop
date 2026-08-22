@@ -8,12 +8,15 @@ import type { ConversationSnapshot, UseProjection } from '@deepseek-ai/dsh-clien
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: merges the sessionStats key into SessionProjectionMap for useProjection.
 import type {} from '@deepseek-ai/dsh-session-stats/client'
-import type { ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
+import type {
+  ContextPressureProjection, LatestTurnBillingProjection, TokenUsageProjection,
+} from '@deepseek-ai/dsh-token-meter/client'
 import type { ComposerBarProps } from '../contract/slots.ts'
 import { formatTokensPerSecond } from './message-chrome.ts'
 import { assistantStepReading } from './turn-metrics.ts'
 import {
-  fetchBalanceSnapshot, formatBalance, formatCny, readBalanceBootstrap, sessionCostCny,
+  fetchBalanceSnapshot, formatBalance, formatCny, priceOfModel, pricingTierAt,
+  readBalanceBootstrap, sessionCostCny,
   type BalanceSnapshot,
 } from './usage-money.ts'
 import css from './StatsLine.module.css'
@@ -212,6 +215,27 @@ export interface StatsLineProps {
   t: ComposerBarProps['t']
 }
 
+interface DesktopEstimateBridge {
+  getDesktopPreferences(): Promise<{ tieredPricingEstimates: boolean }>
+  onDesktopPreferences(listener: (value: { tieredPricingEstimates: boolean }) => void): () => void
+}
+
+function estimateBridge(): DesktopEstimateBridge | undefined {
+  if (typeof window === 'undefined') return undefined
+  const candidate = (window as unknown as { dshDesktop?: Partial<DesktopEstimateBridge> }).dshDesktop
+  return typeof candidate?.getDesktopPreferences === 'function'
+    && typeof candidate.onDesktopPreferences === 'function'
+    ? candidate as DesktopEstimateBridge
+    : undefined
+}
+
+function latestModel(latest: LatestTurnBillingProjection | null | undefined): string | undefined {
+  return latest?.billingModel.kind === 'single'
+    && latest.billingModel.provider === 'deepseek-official'
+    ? latest.billingModel.model
+    : undefined
+}
+
 export const StatsLine = memo(function StatsLine({ useSession, useProjection, t }: StatsLineProps) {
   const settledNodes = useSession(s => s.chat.legacy.nodes)
   const usage = useProjection('tokenUsage')
@@ -222,12 +246,26 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
   const projected = useProjection('sessionStats')
   const stats = useMemo(() => projected ?? deriveStats(settledNodes), [projected, settledNodes])
   const billingModel = useProjection('tokenBillingModel')
+  const latestBilling = useProjection('latestTurnBilling')
   const model = billingModel?.kind === 'single' && billingModel.provider === 'deepseek-official'
     ? billingModel.model
     : undefined
   // Account balance: fetched once on mount and re-read on a one-minute cycle
   // through the Host bridge; absent bridge or failed read hides the group.
   const [balance, setBalance] = useState<BalanceSnapshot | null>(null)
+  const [tieredEstimates, setTieredEstimates] = useState(true)
+  useEffect(() => {
+    const bridge = estimateBridge()
+    if (bridge === undefined) return
+    let disposed = false
+    void bridge.getDesktopPreferences().then((value) => {
+      if (!disposed) setTieredEstimates(value.tieredPricingEstimates)
+    }).catch(() => {})
+    const unsubscribe = bridge.onDesktopPreferences((value) => {
+      if (!disposed) setTieredEstimates(value.tieredPricingEstimates)
+    })
+    return () => { disposed = true; unsubscribe() }
+  }, [])
   useEffect(() => {
     const bootstrap = readBalanceBootstrap()
     if (bootstrap === null) return
@@ -276,16 +314,27 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
       input: formatTokens(billedInputTokens(usage)),
       output: formatTokens(usage.outputTokens),
     }))
-    // Money figures ride the same durable token projection; the cost is an
-    // estimate only when every observed billed step used one supported model.
-    const cost = sessionCostCny(usage, model)
-    if (cost !== null && cost > 0) {
-      groups.push(t('stats.cost', { cost: formatCny(cost) }))
+  }
+  const financialGroups: string[] = []
+  if (tieredEstimates) {
+    const turnModel = latestModel(latestBilling)
+    const turnCost = latestBilling === null || latestBilling === undefined
+      ? null
+      : sessionCostCny(latestBilling, turnModel)
+    if (turnCost !== null && turnCost > 0) {
+      financialGroups.push(t('stats.lastTurnCost', { cost: formatCny(turnCost) }))
+    }
+    if (usage !== undefined && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)) {
+      const cost = sessionCostCny(usage, model)
+      if (cost !== null && cost > 0) financialGroups.push(t('stats.cost', { cost: formatCny(cost) }))
     }
   }
   if (balance?.totalBalance !== null && balance?.totalBalance !== undefined) {
     const formatted = formatBalance(balance.totalBalance, balance.currency)
-    if (formatted !== null) groups.push(t('stats.balance', { balance: formatted }))
+    if (formatted !== null) financialGroups.push(t('stats.balance', { balance: formatted }))
+  }
+  if (tieredEstimates && priceOfModel(model) !== null) {
+    financialGroups.push(t(`stats.tier.${pricingTierAt()}`))
   }
   const line = groups.join(' | ')
   // The row elides with ellipsis when overlong; a delayed hover tooltip carries
@@ -302,17 +351,27 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
     observer.observe(el)
     return () => { observer.disconnect() }
   }, [line])
-  if (groups.length === 0) return null
+  if (groups.length === 0 && financialGroups.length === 0) return null
   return (
-    <Tooltip label={line} side="top" delayMs={500} disabled={!truncated}>
-      <div ref={rootRef} className={css.root}>
-        {groups.map((group, i) => (
+    <>
+      {groups.length > 0 && <Tooltip label={line} side="top" delayMs={500} disabled={!truncated}>
+        <div ref={rootRef} className={css.root}>
+          {groups.map((group, i) => (
+            <Fragment key={group}>
+              {i > 0 && <><span className={css.sep} aria-hidden>|</span>{' '}</>}
+              <span>{group}</span>
+            </Fragment>
+          ))}
+        </div>
+      </Tooltip>}
+      {financialGroups.length > 0 && <div className={`${css.root} ${css.finance}`}>
+        {financialGroups.map((group, i) => (
           <Fragment key={group}>
             {i > 0 && <><span className={css.sep} aria-hidden>|</span>{' '}</>}
             <span>{group}</span>
           </Fragment>
         ))}
-      </div>
-    </Tooltip>
+      </div>}
+    </>
   )
 })

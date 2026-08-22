@@ -44,6 +44,10 @@ export const en = {
   sentTo: 'Sent to {target}',
   wakeShort: 'wake requested',
   recoveryPending: 'Delivered; receipt recovery is pending',
+  stop: 'Stop',
+  stopping: 'Stopping…',
+  stopped: 'Stopped',
+  stopFailed: 'Could not stop this collaboration',
 } as const
 
 /** Stable translation key shared by every supported locale. */
@@ -91,4 +95,8 @@ export const zh = {
   sentTo: '已发送到 {target}',
   wakeShort: '已请求唤醒',
   recoveryPending: '消息已投递，回执正在恢复',
+  stop: '停止',
+  stopping: '正在停止…',
+  stopped: '已停止',
+  stopFailed: '无法停止这次协作',
 } as const satisfies Record<SessionMessengerKey, string>

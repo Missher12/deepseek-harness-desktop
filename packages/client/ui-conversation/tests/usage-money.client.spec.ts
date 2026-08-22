@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import {
-  formatCny, priceOfModel, sessionCostCny,
+  formatCny, priceOfModel, pricingTierAt, sessionCostCny,
 } from '../src/client/chat/usage-money.ts'
 
 const ONE_MILLION_EACH: TokenUsageProjection = {
@@ -43,6 +43,18 @@ describe('DeepSeek session money', () => {
     expect(sessionCostCny(ONE_MILLION_EACH, 'deepseek-v4-flash', peak)).toBeCloseTo(15.1)
     expect(sessionCostCny(ONE_MILLION_EACH, 'deepseek-v4-pro', offPeak)).toBeCloseTo(22.65)
     expect(sessionCostCny(ONE_MILLION_EACH, undefined, peak)).toBeNull()
+  })
+
+  it('uses all-day off-peak pricing on weekends and supports the Vision experiment', () => {
+    const saturdayPeakClock = new Date('2026-08-22T01:30:00.000Z')
+    const sundayPeakClock = new Date('2026-08-23T06:30:00.000Z')
+    expect(pricingTierAt(saturdayPeakClock)).toBe('weekend-off-peak')
+    expect(pricingTierAt(sundayPeakClock)).toBe('weekend-off-peak')
+    expect(priceOfModel('deepseek-v4-flash-vision-exp', sundayPeakClock)).toEqual({
+      cacheHit: 0.05, cacheMiss: 1.5, output: 4.5,
+    })
+    expect(pricingTierAt(new Date('2026-08-24T01:30:00.000Z'))).toBe('weekday-peak')
+    expect(pricingTierAt(new Date('2026-08-24T04:30:00.000Z'))).toBe('weekday-off-peak')
   })
 
   it('never formats a positive sub-ten-thousandth estimate as zero', () => {

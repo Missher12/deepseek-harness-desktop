@@ -7,7 +7,7 @@ import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type {
-  ContextPressureProjection, TokenBillingModelProjection, TokenUsageProjection,
+  ContextPressureProjection, LatestTurnBillingProjection, TokenBillingModelProjection, TokenUsageProjection,
 } from './projection.ts'
 import { foldSurfaceProjection } from './surface-projection.ts'
 
@@ -90,6 +90,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
     tokenUsage: TokenUsageState
     tokenBillingModel: BillingModelState
+    latestTurnBilling: LatestTurnBillingState
     contextPressure: ContextPressureState
   }
 }
@@ -191,6 +192,96 @@ const mergeBillingRoute = (
     ? state
     : { kind: 'mixed' }
 }
+
+const latestTurnViewSchema: z.ZodType<LatestTurnBillingProjection | null> = z.object({
+  turn: z.number().int().nonnegative(),
+  settledAt: z.number().int().nonnegative(),
+  billingModel: billingModelSchema,
+  uncachedInputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  cacheReadTokens: z.number().int().nonnegative(),
+  cacheWriteTokens: z.number().int().nonnegative(),
+}).strict().nullable()
+
+const latestTurnDraftSchema = z.object({
+  turn: z.number().int().nonnegative(),
+  totals: projectionSchema,
+  billing: billingModelSchema,
+  last: z.object({
+    step: z.number().int().nonnegative(),
+    buckets: projectionSchema,
+    route: billingRouteSchema.optional(),
+    beforeBilling: billingModelSchema,
+  }).optional(),
+}).strict()
+
+const latestTurnBillingStateSchema = z.object({
+  current: billingRouteSchema.optional(),
+  draft: latestTurnDraftSchema.optional(),
+  settled: latestTurnViewSchema,
+}).strict()
+
+type LatestTurnBillingState = z.infer<typeof latestTurnBillingStateSchema>
+
+/** Latest billed turn, deliberately hidden from the wire until `turn/end`. */
+export const latestTurnBillingProjectionDefinition = {
+  key: 'latestTurnBilling',
+  stateVersion: 1,
+  stateSchema: latestTurnBillingStateSchema,
+  init: () => ({ settled: null }),
+  apply: (state, event) => {
+    if (event.type === 'request/header') {
+      const route = event.data.header.config
+      const current = { provider: route.provider, model: route.model }
+      return sameBillingRoute(state.current, current) ? state : { ...state, current }
+    }
+    if (event.type === 'turn/end') {
+      if (state.draft?.turn !== event.data.turn) return state
+      return {
+        ...state,
+        settled: {
+          turn: state.draft.turn,
+          settledAt: event.time,
+          billingModel: state.draft.billing,
+          ...state.draft.totals,
+        },
+      }
+    }
+
+    let turn: number
+    let step: number
+    let usage: TokenUsage
+    let route: BillingRoute | undefined
+    if (event.type === 'assistant/chunk' && event.data.chunk.type === 'usage') {
+      ;({ turn, step } = event.data)
+      usage = event.data.chunk.usage
+      route = state.current
+    } else if (event.type === 'assistant/message' && event.data.usage !== undefined) {
+      ;({ turn, step, usage } = event.data)
+      const source = event.data.message.source
+      route = { provider: source.provider, model: source.model }
+    } else {
+      return state
+    }
+
+    const draft = state.draft?.turn === turn
+      ? state.draft
+      : { turn, totals: zeroBuckets(), billing: { kind: 'none' as const } }
+    const sameStep = draft.last?.step === step ? draft.last : undefined
+    const buckets = bucketsFrom(usage)
+    const beforeBilling = sameStep?.beforeBilling ?? draft.billing
+    return {
+      ...state,
+      draft: {
+        turn,
+        totals: addReplacing(draft.totals, sameStep?.buckets, buckets),
+        billing: mergeBillingRoute(beforeBilling, route),
+        last: { step, buckets, ...route === undefined ? {} : { route }, beforeBilling },
+      },
+    }
+  },
+  wire: { viewSchema: latestTurnViewSchema, view: state => state.settled },
+} satisfies ProjectionDefinition<'latestTurnBilling', LatestTurnBillingState>
 
 /**
  * Durable billing-route projection. It waits for a finalized usage-bearing

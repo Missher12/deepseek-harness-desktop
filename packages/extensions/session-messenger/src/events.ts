@@ -29,6 +29,8 @@ export interface NotificationReceipt {
   readonly updatedAt: number
   readonly acknowledged: boolean
   readonly replyToDeliveryId?: DeliveryId
+  readonly continuationOfDeliveryId?: DeliveryId
+  readonly collaborationStoppedAt?: number
   readonly errorCode?: string
 }
 
@@ -79,6 +81,12 @@ export function notificationReceiptOf(
     ...(receipt.replyToDeliveryId === undefined
       ? {}
       : { replyToDeliveryId: receipt.replyToDeliveryId }),
+    ...(receipt.continuationOfDeliveryId === undefined
+      ? {}
+      : { continuationOfDeliveryId: receipt.continuationOfDeliveryId }),
+    ...(receipt.collaborationStoppedAt === undefined
+      ? {}
+      : { collaborationStoppedAt: receipt.collaborationStoppedAt }),
     ...('errorCode' in receipt ? { errorCode: receipt.errorCode } : {}),
   }
 }

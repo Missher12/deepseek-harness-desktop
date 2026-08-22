@@ -22,6 +22,102 @@ function options(now = 1_000): CoordinatorOptions {
 }
 
 describe('SessionMessengerCoordinator delivery', () => {
+  it('stops a receipt-bound collaboration chain for either participant and leaves a fresh send available', async () => {
+    const caller = fakeAgent('caller')
+    const target = fakeAgent('target')
+    const h = fakeContext([caller, target])
+    const store = new MemoryReceiptStore()
+    const coordinator = new SessionMessengerCoordinator(h.ctx as never, store, options())
+
+    const first = await coordinator.deliver(caller, {
+      targetSessionId: 'target', message: 'start', mode: 'followup',
+    })
+    const reply = await coordinator.replyToDelivery(target, {
+      deliveryId: first.deliveryId, message: 'answer', wake: true,
+    })
+    const stopped = await coordinator.stopCollaboration(caller, reply.deliveryId)
+
+    expect(stopped).toMatchObject({
+      deliveryId: reply.deliveryId,
+      rootDeliveryId: first.deliveryId,
+      status: 'stopped',
+    })
+    expect(store.get(first.deliveryId)).toMatchObject({ collaborationStoppedAt: 1_000 })
+    expect(store.get(reply.deliveryId)).toMatchObject({
+      status: 'aborted', errorCode: 'collaboration-stopped', collaborationStoppedAt: 1_000,
+    })
+    const writesAfterStop = store.writes.length
+    await expect(coordinator.stopCollaboration(target, first.deliveryId)).resolves.toMatchObject({
+      deliveryId: first.deliveryId,
+      rootDeliveryId: first.deliveryId,
+      status: 'stopped',
+      stoppedAt: stopped.stoppedAt,
+    })
+    expect(store.writes).toHaveLength(writesAfterStop)
+    await expect(coordinator.replyToDelivery(caller, {
+      deliveryId: reply.deliveryId, message: 'must not continue', wake: true,
+    })).rejects.toMatchObject({ code: 'collaboration-stopped' })
+    await expect(coordinator.stopCollaboration(fakeAgent('stranger'), first.deliveryId))
+      .rejects.toMatchObject({ code: 'reply-forbidden' })
+    expect(store.writes).toHaveLength(writesAfterStop)
+
+    const fresh = await coordinator.deliver(caller, {
+      targetSessionId: 'target', message: 'new explicit chain', mode: 'followup',
+    })
+    expect(fresh.deliveryId).toBe(DeliveryId('delivery-3'))
+    expect(store.get(fresh.deliveryId)).not.toHaveProperty('collaborationStoppedAt')
+  })
+
+  it('links an explicit continuation to the trusted prior delivery and rejects it after stop', async () => {
+    const caller = fakeAgent('caller')
+    const target = fakeAgent('target')
+    const h = fakeContext([caller, target])
+    const store = new MemoryReceiptStore()
+    const coordinator = new SessionMessengerCoordinator(h.ctx as never, store, options())
+    const first = await coordinator.deliver(caller, {
+      targetSessionId: 'target', message: 'start', mode: 'followup',
+    })
+    const next = await coordinator.deliver(target, {
+      targetSessionId: 'caller', message: 'continue', mode: 'followup',
+      continuationOfDeliveryId: first.deliveryId,
+    })
+
+    expect(store.get(next.deliveryId)).toMatchObject({
+      continuationOfDeliveryId: first.deliveryId,
+      hop: 1,
+    })
+    await coordinator.stopCollaboration(target, next.deliveryId)
+    await expect(coordinator.deliver(caller, {
+      targetSessionId: 'target', message: 'blocked continuation', mode: 'followup',
+      continuationOfDeliveryId: next.deliveryId,
+    })).rejects.toMatchObject({ code: 'collaboration-stopped' })
+  })
+
+  it('stops a valid chain even when an unrelated retained receipt has a missing parent', async () => {
+    const caller = fakeAgent('caller')
+    const target = fakeAgent('target')
+    const h = fakeContext([caller, target])
+    const store = new MemoryReceiptStore()
+    const coordinator = new SessionMessengerCoordinator(h.ctx as never, store, options())
+    const delivery = await coordinator.deliver(caller, {
+      targetSessionId: 'target', message: 'valid chain', mode: 'followup',
+    })
+    store.records.set(DeliveryId('orphan'), {
+      ...store.get(delivery.deliveryId)!,
+      id: DeliveryId('orphan'),
+      continuationOfDeliveryId: DeliveryId('missing-parent'),
+    })
+
+    await expect(coordinator.stopCollaboration(target, delivery.deliveryId)).resolves.toMatchObject({
+      rootDeliveryId: delivery.deliveryId,
+      status: 'stopped',
+    })
+    expect(store.get(delivery.deliveryId)).toMatchObject({
+      status: 'aborted', errorCode: 'collaboration-stopped',
+    })
+    expect(store.get(DeliveryId('orphan'))).not.toHaveProperty('collaborationStoppedAt')
+  })
+
   it.each([
     ['idle', 'inject'],
     ['running', 'inject'],

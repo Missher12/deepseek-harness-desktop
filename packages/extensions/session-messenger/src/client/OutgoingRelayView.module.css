@@ -4,3 +4,7 @@
 .meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bubble { max-width: 100%; padding: 10px 16px; border-radius: 18px 18px 5px 18px; background: var(--dsw-specific-bubble); color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; white-space: pre-wrap; }
 .stack small { color: var(--dsw-alias-label-caption); font-size: 11px; }
+.stop { padding: 1px 7px; border: 0; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; cursor: pointer; }
+.stop:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.stop:disabled { opacity: .55; cursor: default; }
+.stopped { color: var(--dsw-alias-label-caption); }

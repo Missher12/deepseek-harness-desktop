@@ -30,6 +30,7 @@ import { fakeAgent, fakeContext } from './helpers.client.ts'
 
 const SEND_PATH = '/plugins/dsh-session-messenger/send'
 const REPLY_PATH = '/plugins/dsh-session-messenger/reply'
+const STOP_PATH = '/plugins/dsh-session-messenger/stop'
 
 const PORT = 50_288
 const AUTHORITY = `127.0.0.1:${String(PORT)}`
@@ -319,11 +320,17 @@ describe('session messenger HTTP trust fence', () => {
       status: 'delivered' as const,
       wakeRequested: false,
     }))
+    const stop = vi.fn(async () => ({
+      deliveryId: DeliveryId('reverse'),
+      rootDeliveryId: DeliveryId('outgoing'),
+      status: 'stopped' as const,
+      stoppedAt: 2_000,
+    }))
     const surface = createSessionMessengerHttpSurface({
       port: PORT,
       capability: CAPABILITY,
       source,
-      operator: { send, reply },
+      operator: { send, reply, stop },
     })
 
     const sent = await invoke(
@@ -369,6 +376,17 @@ describe('session messenger HTTP trust fence', () => {
       wake: false,
     }, expect.any(AbortSignal))
     expect(replied.body).not.toContain('replyToken')
+
+    const stopped = await invoke(
+      route(surface, STOP_PATH),
+      validHeaders(true),
+      JSON.stringify({ sourceSessionId: 'source-session', deliveryId: 'reverse' }),
+    )
+    expect(stopped.status).toBe(200)
+    expect(stop).toHaveBeenCalledWith({
+      sourceSessionId: 'source-session', deliveryId: DeliveryId('reverse'),
+    })
+    expect(JSON.parse(stopped.body)).toMatchObject({ status: 'stopped', rootDeliveryId: 'outgoing' })
     surface.dispose()
   })
 
@@ -379,7 +397,7 @@ describe('session messenger HTTP trust fence', () => {
       port: PORT,
       capability: CAPABILITY,
       source: new FakeSource(),
-      operator: { send, reply },
+      operator: { send, reply, stop: vi.fn() },
     })
     const candidate = route(surface, SEND_PATH)
 
@@ -546,9 +564,11 @@ describe('session messenger Host operator', () => {
     const h = fakeContext([source, target])
     const deliver = vi.fn()
     const replyToDelivery = vi.fn()
+    const stopCollaboration = vi.fn()
     const operator = createSessionMessengerOperator(h.ctx as never, {
       deliver,
       replyToDelivery,
+      stopCollaboration,
     })
     const before = {
       sourceEvents: source.session.events.length,
@@ -688,7 +708,7 @@ describe('session messenger Host registration', () => {
     }
   })
 
-  it('registers exactly five routes plus one index tap and disposes only its own surfaces', async () => {
+  it('registers exactly six routes plus one index tap and disposes only its own surfaces', async () => {
     const source = new FakeSource()
     const ctx = new Context()
     const routes: WebRoute[] = []
@@ -725,6 +745,7 @@ describe('session messenger Host registration', () => {
       EVENTS_PATH,
       SEND_PATH,
       REPLY_PATH,
+      STOP_PATH,
     ])
     expect(taps).toHaveLength(1)
     expect(source.listenerCount()).toBe(1)

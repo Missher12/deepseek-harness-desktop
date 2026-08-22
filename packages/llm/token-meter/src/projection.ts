@@ -23,6 +23,13 @@ export type TokenBillingModelProjection =
   | { readonly kind: 'single'; readonly provider: string; readonly model: string }
   | { readonly kind: 'mixed' }
 
+/** Provider usage and route identity for the newest settled billed turn. */
+export interface LatestTurnBillingProjection extends TokenUsageProjection {
+  readonly turn: number
+  readonly settledAt: number
+  readonly billingModel: TokenBillingModelProjection
+}
+
 /**
  * Approximate context occupancy for a status display.
  *
@@ -77,6 +84,8 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
     tokenUsage: TokenUsageProjection
     /** Single settled billed route, or a conservative mixed/none marker. */
     tokenBillingModel: TokenBillingModelProjection
+    /** Newest settled billed turn; null before any turn reports usage. */
+    latestTurnBilling: LatestTurnBillingProjection | null
     /** Newest request pressure paired with the newest known route capacity. */
     contextPressure: ContextPressureProjection
     /** Heuristic system/tools/message composition of the next request. */

@@ -34,6 +34,7 @@ import {
   REPLY_PATH,
   SEND_PATH,
   SNAPSHOT_PATH,
+  STOP_PATH,
 } from '../src/http.ts'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', async (importOriginal) => {
@@ -449,6 +450,7 @@ describe('session messenger streaming-fetch transport', () => {
       eventsPath: EVENTS_PATH,
       sendPath: SEND_PATH,
       replyPath: REPLY_PATH,
+      stopPath: STOP_PATH,
       capabilityHeader: MESSENGER_CAPABILITY_HEADER,
       capability: 'browser-capability',
     }
@@ -684,6 +686,7 @@ describe('session messenger streaming-fetch transport', () => {
       eventsPath: EVENTS_PATH,
       sendPath: SEND_PATH,
       replyPath: REPLY_PATH,
+      stopPath: STOP_PATH,
       capabilityHeader: MESSENGER_CAPABILITY_HEADER,
       capability: 'browser-capability',
     }, fetcher)
@@ -722,6 +725,7 @@ describe('session messenger streaming-fetch transport', () => {
       eventsPath: EVENTS_PATH,
       sendPath: SEND_PATH,
       replyPath: REPLY_PATH,
+      stopPath: STOP_PATH,
       capabilityHeader: MESSENGER_CAPABILITY_HEADER,
       capability: 'browser-capability',
     }, fetcher)

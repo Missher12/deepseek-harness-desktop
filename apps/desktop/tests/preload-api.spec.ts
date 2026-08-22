@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   isDesktopCommand,
   isDesktopUpdateSnapshot,
+  isDesktopPreferenceMutation,
+  isDesktopPreferencesSnapshot,
   isRecoveryAction,
   supportsDesktopUpdates,
 } from '../src/preload-api.ts'
@@ -40,5 +42,16 @@ describe('desktop preload vocabulary', () => {
     expect(supportsDesktopUpdates('darwin')).toBe(true)
     expect(supportsDesktopUpdates('win32')).toBe(false)
     expect(supportsDesktopUpdates('linux')).toBe(false)
+  })
+
+  it('accepts only the closed Desktop preference vocabulary', () => {
+    expect(isDesktopPreferencesSnapshot({
+      closeBehavior: 'keep-running', tieredPricingEstimates: false,
+    })).toBe(true)
+    expect(isDesktopPreferencesSnapshot({ closeBehavior: 'hide', tieredPricingEstimates: true })).toBe(false)
+    expect(isDesktopPreferenceMutation({ key: 'closeBehavior', value: 'quit' })).toBe(true)
+    expect(isDesktopPreferenceMutation({ key: 'tieredPricingEstimates', value: false })).toBe(true)
+    expect(isDesktopPreferenceMutation({ key: 'closeBehavior', value: false })).toBe(false)
+    expect(isDesktopPreferenceMutation({ key: 'shell', value: 'quit' })).toBe(false)
   })
 })

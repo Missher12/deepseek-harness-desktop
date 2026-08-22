@@ -21,6 +21,7 @@ import type {
 import { contextBreakdownProjectionDefinition } from './breakdown-projection.ts'
 import {
   contextPressureProjectionDefinition,
+  latestTurnBillingProjectionDefinition,
   tokenBillingModelProjectionDefinition,
   tokenUsageProjectionDefinition,
 } from './usage-projection.ts'
@@ -91,6 +92,7 @@ export class TokenMeter extends Service {
     ctx.inject(['sessionProjections'], (projectionCtx) => {
       projectionCtx.sessionProjections.register(tokenUsageProjectionDefinition)
       projectionCtx.sessionProjections.register(tokenBillingModelProjectionDefinition)
+      projectionCtx.sessionProjections.register(latestTurnBillingProjectionDefinition)
       projectionCtx.sessionProjections.register(contextPressureProjectionDefinition)
       projectionCtx.sessionProjections.register(contextBreakdownProjectionDefinition)
     })

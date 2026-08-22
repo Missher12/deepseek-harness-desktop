@@ -5,7 +5,9 @@ import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:
 import type { Context } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { DeliveryResult, SessionMessengerCoordinator } from './coordinator.ts'
+import type {
+  CollaborationStopResult, DeliveryResult, SessionMessengerCoordinator,
+} from './coordinator.ts'
 import {
   MAX_EVENT_CLIENTS,
   SessionMessengerEventHub,
@@ -29,6 +31,8 @@ export const EVENTS_PATH = '/plugins/dsh-session-messenger/events'
 export const SEND_PATH = '/plugins/dsh-session-messenger/send'
 /** Exact POST route for a receipt-bound operator reply. */
 export const REPLY_PATH = '/plugins/dsh-session-messenger/reply'
+/** Exact POST route for stopping one receipt-linked collaboration chain. */
+export const STOP_PATH = '/plugins/dsh-session-messenger/stop'
 /** Secret header injected into the same-origin browser generation. */
 export const MESSENGER_CAPABILITY_HEADER = 'x-dsh-session-messenger-capability'
 /** Inline bootstrap variable read by the Client half. */
@@ -61,10 +65,17 @@ export interface SessionMessengerReplyBody {
   readonly wake: boolean
 }
 
+/** Exact parsed browser request for stopping a collaboration chain. */
+export interface SessionMessengerStopBody {
+  readonly sourceSessionId: string
+  readonly deliveryId: DeliveryId
+}
+
 /** Host-owned mutation boundary exposed to the HTTP parser. */
 export interface SessionMessengerOperator {
   send(body: SessionMessengerSendBody, signal: AbortSignal): Promise<DeliveryResult>
   reply(body: SessionMessengerReplyBody, signal: AbortSignal): Promise<DeliveryResult>
+  stop(body: SessionMessengerStopBody): Promise<CollaborationStopResult>
 }
 
 /** Complete independently disposable Host notification surface. */
@@ -254,6 +265,14 @@ function parseReplyBody(raw: Buffer): SessionMessengerReplyBody | undefined {
   }
 }
 
+function parseStopBody(raw: Buffer): SessionMessengerStopBody | undefined {
+  const value = parseJson(raw)
+  if (!isExactRecord(value, ['sourceSessionId', 'deliveryId'])
+    || !safeOpaqueId(value.sourceSessionId)
+    || !safeOpaqueId(value.deliveryId)) return undefined
+  return { sourceSessionId: value.sourceSessionId, deliveryId: DeliveryId(value.deliveryId) }
+}
+
 function safeOpaqueId(value: unknown): value is string {
   return typeof value === 'string'
     && value.length > 0
@@ -358,10 +377,10 @@ export function createSessionMessengerHttpSurface(
     },
   }
 
-  const operatorRoute = <T extends SessionMessengerSendBody | SessionMessengerReplyBody>(
+  const operatorRoute = <T extends SessionMessengerSendBody | SessionMessengerReplyBody | SessionMessengerStopBody>(
     path: string,
     parse: (raw: Buffer) => T | undefined,
-    invoke: (operator: SessionMessengerOperator, body: T, signal: AbortSignal) => Promise<DeliveryResult>,
+    invoke: (operator: SessionMessengerOperator, body: T, signal: AbortSignal) => Promise<unknown>,
   ): WebRoute => ({
     kind: 'exact',
     path,
@@ -402,6 +421,11 @@ export function createSessionMessengerHttpSurface(
     REPLY_PATH,
     parseReplyBody,
     (operator, body, signal) => operator.reply(body, signal),
+  )
+  const stop = operatorRoute(
+    STOP_PATH,
+    parseStopBody,
+    (operator, body) => operator.stop(body),
   )
 
   const events: WebRoute = {
@@ -464,7 +488,7 @@ export function createSessionMessengerHttpSurface(
     injectSessionMessengerCapability(html, options.capability)
 
   return {
-    routes: [snapshot, acknowledge, events, send, reply],
+    routes: [snapshot, acknowledge, events, send, reply, stop],
     hub,
     injectIndex,
     dispose() {
@@ -489,6 +513,7 @@ export function injectSessionMessengerCapability(html: string, capability: strin
     eventsPath: EVENTS_PATH,
     sendPath: SEND_PATH,
     replyPath: REPLY_PATH,
+    stopPath: STOP_PATH,
     capabilityHeader: MESSENGER_CAPABILITY_HEADER,
     capability,
   }
@@ -501,7 +526,7 @@ export function injectSessionMessengerCapability(html: string, capability: strin
 }
 
 /**
- * Register all five exact routes and the index tap under one Cordis fiber.
+ * Register all six exact routes and the index tap under one Cordis fiber.
  * @param ctx - Cordis context providing the generation-bound WebServer service.
  * @returns a reservation that can be bound exactly once to a receipt source.
  */
@@ -512,7 +537,7 @@ export function reserveSessionMessengerHttp(ctx: Context): SessionMessengerHttpR
   )
   let surface: SessionMessengerHttpSurface | undefined
   let disposed = false
-  const paths = [SNAPSHOT_PATH, ACK_PATH, EVENTS_PATH, SEND_PATH, REPLY_PATH] as const
+  const paths = [SNAPSHOT_PATH, ACK_PATH, EVENTS_PATH, SEND_PATH, REPLY_PATH, STOP_PATH] as const
   const proxies: WebRoute[] = paths.map((path, index) => ({
     kind: 'exact',
     path,
@@ -580,7 +605,7 @@ export function installSessionMessengerHttp(
  */
 export function createSessionMessengerOperator(
   ctx: Context,
-  coordinator: Pick<SessionMessengerCoordinator, 'deliver' | 'replyToDelivery'>,
+  coordinator: Pick<SessionMessengerCoordinator, 'deliver' | 'replyToDelivery' | 'stopCollaboration'>,
 ): SessionMessengerOperator {
   return {
     async send(body, signal) {
@@ -598,6 +623,10 @@ export function createSessionMessengerOperator(
         message: body.message,
         wake: body.wake,
       }, signal)
+    },
+    async stop(body) {
+      const source = resolveOrdinaryOperatorSource(ctx, body.sourceSessionId)
+      return await coordinator.stopCollaboration(source, body.deliveryId)
     },
   }
 }

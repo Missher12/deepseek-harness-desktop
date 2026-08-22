@@ -60,6 +60,8 @@ export interface DeliveryRequest {
   readonly message: string
   readonly mode: DeliveryMode
   readonly hop?: number
+  /** Trusted receipt that keeps this send inside an existing collaboration chain. */
+  readonly continuationOfDeliveryId?: DeliveryId
 }
 
 /** One capability-bound reverse delivery request. */
@@ -85,11 +87,20 @@ export interface DeliveryResult {
   readonly wakeRequested: boolean
 }
 
+/** Stable result for an idempotent collaboration-chain stop. */
+export interface CollaborationStopResult {
+  readonly deliveryId: DeliveryId
+  readonly rootDeliveryId: DeliveryId
+  readonly status: 'stopped'
+  readonly stoppedAt: number
+}
+
 interface PreparedReceiptOptions {
   readonly mode: DeliveryMode
   readonly hop: number
   readonly wakeRequested: boolean
   readonly replyToDeliveryId?: DeliveryId
+  readonly continuationOfDeliveryId?: DeliveryId
 }
 
 /** Receipt transition subscriber used by notifications and explicit waits. */
@@ -191,6 +202,11 @@ export class SessionMessengerCoordinator {
     })
   }
 
+  /** Stop one exact collaboration chain without blocking a later explicit new send. */
+  stopCollaboration(caller: Agent, deliveryId: DeliveryId): Promise<CollaborationStopResult> {
+    return this.serialize(() => this.stopCollaborationNow(caller, deliveryId))
+  }
+
   /** Recover crash-window records without generating replacement identities. */
   recover(): Promise<void> {
     return this.serialize(async () => {
@@ -248,10 +264,26 @@ export class SessionMessengerCoordinator {
     signal?.throwIfAborted()
 
     const at = this.now()
+    let hop = request.hop ?? 0
+    if (request.continuationOfDeliveryId !== undefined) {
+      const parent = this.receipts.get(request.continuationOfDeliveryId)
+      if (parent === undefined) throw messengerError('receipt-not-found', 'continuation receipt was not found')
+      const samePair = parent.sourceSessionId === caller.id && parent.targetSessionId === target.id
+        || parent.targetSessionId === caller.id && parent.sourceSessionId === target.id
+      if (!samePair) throw messengerError('reply-forbidden', 'continuation is bound to its two participants')
+      if (this.collaborationRoot(parent).collaborationStoppedAt !== undefined) {
+        throw messengerError('collaboration-stopped', 'collaboration chain was stopped')
+      }
+      if (parent.hop >= MAX_HOP) throw messengerError('hop-limit', 'maximum collaboration chain depth reached')
+      hop = parent.hop + 1
+    }
     const prepared = this.prepareReceipt(caller, target, envelope, at, {
       mode: request.mode,
-      hop: request.hop ?? 0,
+      hop,
       wakeRequested: request.mode === 'followup',
+      ...(request.continuationOfDeliveryId === undefined
+        ? {}
+        : { continuationOfDeliveryId: request.continuationOfDeliveryId }),
     })
     await this.commit(prepared)
 
@@ -271,6 +303,9 @@ export class SessionMessengerCoordinator {
     if (original === undefined) throw messengerError('receipt-not-found', 'delivery receipt was not found')
     if (original.targetSessionId !== caller.id) {
       throw messengerError('reply-forbidden', 'reply authority is bound to the original target session')
+    }
+    if (this.collaborationRoot(original).collaborationStoppedAt !== undefined) {
+      throw messengerError('collaboration-stopped', 'collaboration chain was stopped')
     }
     if (original.status === 'replied') throw messengerError('reply-consumed', 'reply token was already consumed')
     if (original.status !== 'delivered' && original.status !== 'claimed') {
@@ -324,6 +359,9 @@ export class SessionMessengerCoordinator {
       ...(prepared.replyToDeliveryId === undefined
         ? {}
         : { replyToDeliveryId: prepared.replyToDeliveryId }),
+      ...(prepared.continuationOfDeliveryId === undefined
+        ? {}
+        : { continuationOfDeliveryId: prepared.continuationOfDeliveryId }),
     }, { ignorable: true })
   }
 
@@ -350,8 +388,59 @@ export class SessionMessengerCoordinator {
       ...(options.replyToDeliveryId === undefined
         ? {}
         : { replyToDeliveryId: options.replyToDeliveryId }),
+      ...(options.continuationOfDeliveryId === undefined
+        ? {}
+        : { continuationOfDeliveryId: options.continuationOfDeliveryId }),
       envelope,
     }
+  }
+
+  private async stopCollaborationNow(
+    caller: Agent,
+    deliveryId: DeliveryId,
+  ): Promise<CollaborationStopResult> {
+    this.assertActive()
+    const selected = this.receipts.get(deliveryId)
+    if (selected === undefined) throw messengerError('receipt-not-found', 'delivery receipt was not found')
+    const root = this.collaborationRoot(selected)
+    if (caller.id !== root.sourceSessionId && caller.id !== root.targetSessionId) {
+      throw messengerError('reply-forbidden', 'only collaboration participants may stop it')
+    }
+    const stoppedAt = root.collaborationStoppedAt ?? this.now()
+    if (root.collaborationStoppedAt === undefined) {
+      const chain = this.receipts.entries().map(([, receipt]) => receipt)
+        .filter((receipt) => {
+          try {
+            return this.collaborationRoot(receipt).id === root.id
+          } catch {
+            // A corrupt or independently pruned foreign chain must not prevent
+            // the selected valid collaboration from stopping.
+            return false
+          }
+        })
+      for (const receipt of chain) {
+        const marked = { ...receipt, updatedAt: stoppedAt, collaborationStoppedAt: stoppedAt }
+        await this.commit(isUnresolved(marked)
+          ? toTerminal(marked, 'aborted', stoppedAt, 'collaboration-stopped')
+          : marked)
+      }
+    }
+    return { deliveryId, rootDeliveryId: root.id, status: 'stopped', stoppedAt }
+  }
+
+  private collaborationRoot(receipt: Receipt): Receipt {
+    let current = receipt
+    const seen = new Set<DeliveryId>()
+    for (let depth = 0; depth <= MAX_HOP; depth += 1) {
+      if (seen.has(current.id)) throw messengerError('delivery-failed', 'collaboration receipt cycle')
+      seen.add(current.id)
+      const parentId = current.replyToDeliveryId ?? current.continuationOfDeliveryId
+      if (parentId === undefined) return current
+      const parent = this.receipts.get(parentId)
+      if (parent === undefined) throw messengerError('receipt-not-found', 'collaboration root was not found')
+      current = parent
+    }
+    throw messengerError('hop-limit', 'collaboration chain depth exceeded')
   }
 
   private parseEnvelope(message: string): RelayEnvelope {
@@ -416,7 +505,16 @@ export class SessionMessengerCoordinator {
   }
 
   private replyPreparationAuthorized(receipt: RecoverableReceipt): boolean {
-    if (receipt.replyToDeliveryId === undefined) return true
+    if (receipt.replyToDeliveryId === undefined) {
+      if (receipt.continuationOfDeliveryId === undefined) return true
+      const parent = this.receipts.get(receipt.continuationOfDeliveryId)
+      if (parent === undefined) return false
+      try {
+        return this.collaborationRoot(parent).collaborationStoppedAt === undefined
+      } catch {
+        return false
+      }
+    }
     const original = this.receipts.get(receipt.replyToDeliveryId)
     return original?.status === 'replied' && original.replyDeliveryId === receipt.id
   }

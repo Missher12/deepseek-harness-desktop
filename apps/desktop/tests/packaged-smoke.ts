@@ -1260,6 +1260,65 @@ async function quitDesktop(application: ElectronApplication, platform: NodeJS.Pl
   })
 }
 
+async function exerciseDesktopPreferences(
+  page: Page,
+  application: ElectronApplication,
+  platform: NodeJS.Platform,
+  port: number,
+): Promise<void> {
+  const expectedDefault = platform === 'darwin' ? 'keep-running' : 'quit'
+  const initial = await page.evaluate(async () => {
+    if (typeof window.dshDesktop?.getDesktopPreferences !== 'function'
+      || typeof window.dshDesktop.setDesktopPreference !== 'function'
+      || typeof window.dshDesktop.onDesktopPreferences !== 'function') {
+      throw new Error('Packaged smoke: Desktop preferences bridge is incomplete.')
+    }
+    return await window.dshDesktop.getDesktopPreferences()
+  })
+  expect(initial).toEqual({ closeBehavior: expectedDefault, tieredPricingEstimates: true })
+
+  const switched = await page.evaluate(async () => {
+    const bridge = window.dshDesktop
+    if (bridge === undefined) throw new Error('Packaged smoke: Desktop preferences bridge disappeared.')
+    await bridge.setDesktopPreference({ key: 'tieredPricingEstimates', value: false })
+    await bridge.setDesktopPreference({ key: 'closeBehavior', value: 'keep-running' })
+    return await bridge.getDesktopPreferences()
+  })
+  expect(switched).toEqual({ closeBehavior: 'keep-running', tieredPricingEstimates: false })
+
+  await application.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0]
+    if (window === undefined) throw new Error('Packaged smoke: native window is missing.')
+    window.close()
+  })
+  await expect.poll(() => application.evaluate(({ BrowserWindow }) => (
+    BrowserWindow.getAllWindows()[0]?.isVisible() ?? true
+  )), { timeout: 15_000 }).toBe(false)
+  expect(await listenerPids(port, platform)).not.toEqual([])
+
+  await application.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0]
+    if (window === undefined) throw new Error('Packaged smoke: hidden native window was destroyed.')
+    window.show()
+    window.focus()
+  })
+  await expect.poll(() => application.evaluate(({ BrowserWindow }) => (
+    BrowserWindow.getAllWindows()[0]?.isVisible() ?? false
+  )), { timeout: 15_000 }).toBe(true)
+
+  const restored = await page.evaluate(async (closeBehavior) => {
+    const bridge = window.dshDesktop
+    if (bridge === undefined) throw new Error('Packaged smoke: Desktop preferences bridge disappeared.')
+    if (closeBehavior !== 'keep-running' && closeBehavior !== 'quit') {
+      throw new Error('Packaged smoke: invalid close behavior fixture.')
+    }
+    await bridge.setDesktopPreference({ key: 'tieredPricingEstimates', value: true })
+    await bridge.setDesktopPreference({ key: 'closeBehavior', value: closeBehavior })
+    return await bridge.getDesktopPreferences()
+  }, expectedDefault)
+  expect(restored).toEqual({ closeBehavior: expectedDefault, tieredPricingEstimates: true })
+}
+
 /**
  * Launch and exercise one packaged desktop executable on its native platform.
  * @param executable - Packaged Electron executable.
@@ -1319,6 +1378,7 @@ export async function runPackagedDesktopSmoke(
     const port = Number(url.port)
     expect(port).toBeGreaterThan(0)
     expect(await listenerPids(port, platform)).not.toEqual([])
+    await exerciseDesktopPreferences(page, nativeApp, platform, port)
 
     // CDP-driven Electron clicks do not carry the browser's ordinary user
     // clipboard permission. Grant the same automation permission as the

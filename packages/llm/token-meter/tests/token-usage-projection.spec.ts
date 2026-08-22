@@ -6,7 +6,9 @@ import SessionStore from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
-import type { ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
+import type {
+  ContextPressureProjection, LatestTurnBillingProjection, TokenUsageProjection,
+} from '@deepseek-ai/dsh-token-meter/client'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import type {} from '../src/usage-projection.ts'
 
@@ -77,6 +79,9 @@ const projected = (ctx: Context, session: Session): TokenUsageProjection => {
 const billingModel = (ctx: Context, session: Session): unknown =>
   ctx.sessionProjections.snapshot(session).values['tokenBillingModel' as never]
 
+const latestTurnBilling = (ctx: Context, session: Session): LatestTurnBillingProjection | null =>
+  ctx.sessionProjections.snapshot(session).values.latestTurnBilling ?? null
+
 /**
  * Meter one upcoming replacement the way compaction-basic does: price the
  * replaced span from the measurement service's own nodes and log the
@@ -99,6 +104,29 @@ function appendSummaryMeter(ctx: Context, session: Session, start: number, end: 
 }
 
 describe('tokenUsage session projection', () => {
+  it('publishes the latest turn usage only when that turn settles', async () => {
+    const { ctx, session } = await harness()
+    session.append('request/header', {
+      header: { config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } },
+      reason: 'initial',
+    })
+    startStep(session, 1, 1)
+    const source = usageChunk(session, { inputTokens: 10, outputTokens: 2, cacheReadTokens: 4 }, 1, 1)
+    expect(latestTurnBilling(ctx, session)).toBeNull()
+    finalUsage(session, { inputTokens: 12, outputTokens: 5, cacheReadTokens: 7 }, 1, 1, [source],
+      'deepseek-official', 'deepseek-v4-flash')
+    expect(latestTurnBilling(ctx, session)).toBeNull()
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(latestTurnBilling(ctx, session)).toMatchObject({
+      turn: 1,
+      uncachedInputTokens: 12,
+      outputTokens: 5,
+      cacheReadTokens: 7,
+      cacheWriteTokens: 0,
+      billingModel: { kind: 'single', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    })
+  })
+
   it('serves zero buckets for an empty log', async () => {
     const { ctx, session } = await harness()
     expect(projected(ctx, session)).toEqual(ZERO)

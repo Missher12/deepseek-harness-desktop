@@ -225,7 +225,8 @@ describe('StatsLine', () => {
       tokenUsage: usage,
       tokenBillingModel: { kind: 'single', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     })} />)
-    expect(view.container.textContent).toContain('Session est. ≈ ¥7.55')
+    expect(view.container.textContent).toContain('Session est. ¥7.55')
+    expect(view.container.textContent).toContain('Weekday off-peak')
 
     const mixed = makeSource()
     const mixedView = render(<StatsLine {...props(mixed.source, {
@@ -254,11 +255,43 @@ describe('StatsLine', () => {
     const { source } = makeSource()
     const view = render(<StatsLine {...props(source)} />)
 
-    await waitFor(() => { expect(view.container.textContent).toContain('Balance ¥8.50') })
+    await waitFor(() => { expect(view.container.textContent).toContain('Available ¥8.50') })
     expect(fetchMock).toHaveBeenCalledWith('/plugins/llm-deepseek/balance', expect.objectContaining({
       method: 'GET',
       headers: { 'x-dsh-llm-deepseek-capability': 'test-capability' },
     }))
+  })
+
+  it('shows the settled latest-turn estimate and hides estimates/tier without hiding balance', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-24T01:30:00.000Z'))
+    const listeners = new Set<(value: { tieredPricingEstimates: boolean }) => void>()
+    const desktop = {
+      getDesktopPreferences: vi.fn(async () => ({ tieredPricingEstimates: true })),
+      onDesktopPreferences: vi.fn((listener: (value: { tieredPricingEstimates: boolean }) => void) => {
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      }),
+    }
+    Object.assign(window, { dshDesktop: desktop })
+    const { source } = makeSource()
+    const view = render(<StatsLine {...props(source, {
+      tokenUsage: { uncachedInputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      tokenBillingModel: { kind: 'single', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      latestTurnBilling: {
+        turn: 1, settledAt: Date.now(), uncachedInputTokens: 1_000_000,
+        outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0,
+        billingModel: { kind: 'single', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      },
+    })} />)
+    await act(async () => {})
+    expect(view.container.textContent).toContain('Turn est. ¥12.00')
+    expect(view.container.textContent).toContain('Weekday peak')
+    act(() => { for (const listener of listeners) listener({ tieredPricingEstimates: false }) })
+    expect(view.container.textContent).not.toContain('est.')
+    expect(view.container.textContent).not.toContain('peak')
+    delete (window as unknown as { dshDesktop?: unknown }).dshDesktop
+    vi.useRealTimers()
   })
 
   it.each([

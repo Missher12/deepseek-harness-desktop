@@ -31,9 +31,9 @@ function result(overrides: Record<string, unknown> = {}) {
 }
 
 describe('session messenger tools', () => {
-  it('registers exactly four global tools with no caller-controlled sender parameter', async () => {
+  it('registers exactly five global tools with no caller-controlled sender parameter', async () => {
     const ctx = await toolContext()
-    const coordinator = { deliver: vi.fn(), replyToDelivery: vi.fn() }
+    const coordinator = { deliver: vi.fn(), replyToDelivery: vi.fn(), stopCollaboration: vi.fn() }
     const waiter = { wait: vi.fn(), dispose: vi.fn() }
     const dispose = registerSessionMessengerTools(
       ctx,
@@ -46,6 +46,7 @@ describe('session messenger tools', () => {
       'send_message_to_session_and_wait',
       'reply_to_session',
       'wait_for_session_reply',
+      'stop_session_collaboration',
     ])
     for (const schema of ctx.tools.schemas()) {
       const properties = (schema.parameters as { properties?: Record<string, unknown> }).properties ?? {}
@@ -62,6 +63,30 @@ describe('session messenger tools', () => {
     dispose()
   })
 
+  it('forwards the exact collaboration receipt to the stop boundary', async () => {
+    const ctx = await toolContext()
+    const caller = fakeAgent('caller')
+    const stopCollaboration = vi.fn().mockResolvedValue({
+      deliveryId: DeliveryId('delivery-2'),
+      rootDeliveryId: DeliveryId('delivery-1'),
+      status: 'stopped',
+      stoppedAt: 1_000,
+    })
+    registerSessionMessengerTools(
+      ctx,
+      () => ({ deliver: vi.fn(), replyToDelivery: vi.fn(), stopCollaboration }),
+      () => ({ wait: vi.fn() }),
+    )
+
+    const result = await ctx.tools.execute({
+      callId: CallId('stop'), signal, agent: caller,
+      name: 'stop_session_collaboration', arguments: { delivery_id: 'delivery-2' },
+    })
+
+    expect(stopCollaboration).toHaveBeenCalledWith(caller, DeliveryId('delivery-2'))
+    expect(result.value).toMatchObject({ status: 'stopped', rootDeliveryId: 'delivery-1' })
+  })
+
   it('wakes the target for sends and performs one receipt-bound collaboration wait', async () => {
     const ctx = await toolContext()
     const caller = fakeAgent('caller')
@@ -75,6 +100,7 @@ describe('session messenger tools', () => {
         .mockResolvedValueOnce(result({ wakeRequested: true }))
         .mockResolvedValueOnce(result({ deliveryId: DeliveryId('delivery-2'), wakeRequested: true })),
       replyToDelivery: vi.fn(),
+      stopCollaboration: vi.fn(),
     }
     registerSessionMessengerTools(ctx, () => coordinator, () => ({ wait }))
 
@@ -103,7 +129,7 @@ describe('session messenger tools', () => {
     const ctx = await toolContext()
     const dispose = registerSessionMessengerTools(
       ctx,
-      () => ({ deliver: vi.fn(), replyToDelivery: vi.fn() }),
+      () => ({ deliver: vi.fn(), replyToDelivery: vi.fn(), stopCollaboration: vi.fn() }),
       () => ({ wait: vi.fn() }),
     )
 
@@ -121,7 +147,7 @@ describe('session messenger tools', () => {
 
   it('returns a stable caller-required value instead of guessing identity', async () => {
     const ctx = await toolContext()
-    const coordinator = { deliver: vi.fn(), replyToDelivery: vi.fn() }
+    const coordinator = { deliver: vi.fn(), replyToDelivery: vi.fn(), stopCollaboration: vi.fn() }
     registerSessionMessengerTools(ctx, () => coordinator, () => ({ wait: vi.fn() }))
 
     const rejected = await ctx.tools.execute({
@@ -145,7 +171,7 @@ describe('session messenger tools', () => {
     const replyToDelivery = vi.fn().mockResolvedValue(result())
     registerSessionMessengerTools(
       ctx,
-      () => ({ deliver: vi.fn(), replyToDelivery }),
+      () => ({ deliver: vi.fn(), replyToDelivery, stopCollaboration: vi.fn() }),
       () => ({ wait: vi.fn() }),
     )
 
@@ -168,7 +194,7 @@ describe('session messenger tools', () => {
       status: 'wait-timeout', wakeRequested: false, errorCode: 'wait-timeout', replyDeliveryId: null,
     })
     const definitions = createSessionMessengerToolDefinitions(
-      () => ({ deliver: vi.fn(), replyToDelivery: vi.fn() }),
+      () => ({ deliver: vi.fn(), replyToDelivery: vi.fn(), stopCollaboration: vi.fn() }),
       () => ({ wait: forwarded }),
     )
     expect(definitions[3].timeoutMs).toBe(60_000)

@@ -35,6 +35,7 @@ export interface OutgoingRelayEvent {
   readonly status: 'delivered' | 'delivery-recovery-pending'
   readonly wakeRequested: boolean
   readonly replyToDeliveryId?: DeliveryId
+  readonly continuationOfDeliveryId?: DeliveryId
 }
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -64,6 +65,10 @@ export interface ReceiptBase {
   readonly wakeRequested: boolean
   /** Reverse receipt authorization link, present only for replies. */
   readonly replyToDeliveryId?: DeliveryId
+  /** Trusted prior delivery when either participant continues the same chain. */
+  readonly continuationOfDeliveryId?: DeliveryId
+  /** Timestamp that closes this receipt's collaboration chain. */
+  readonly collaborationStoppedAt?: number
 }
 
 /** Write-ahead state whose exact message has not been proven enqueued. */
@@ -138,6 +143,7 @@ export type MessengerErrorCode =
   | 'reply-forbidden'
   | 'reply-expired'
   | 'reply-consumed'
+  | 'collaboration-stopped'
   | 'hop-limit'
   | 'invalid-timeout'
   | 'wait-timeout'
