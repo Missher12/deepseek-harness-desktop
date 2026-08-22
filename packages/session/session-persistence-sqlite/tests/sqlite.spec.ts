@@ -445,13 +445,18 @@ describe('SessionPersistenceSqlite schema ownership', () => {
         : undefined
     })
 
-    const db = await openDatabase(BusyOnceDatabase, path, 'wal', 100)
-    expect(attempts).toBe(2)
-    expect(db.prepare(sql('journal-mode-wal')).get()).toEqual({ journal_mode: 'wal' })
-    expect(db.prepare(sql('select-trusted-schema')).get()).toEqual({ trusted_schema: 0 })
-    expect(db.prepare(sql('select-mmap-size')).get()).toEqual({ mmap_size: 0 })
-    expect(db.prepare(sql('select-synchronous')).get()).toEqual({ synchronous: 2 })
-    db.close()
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0)
+    try {
+      const db = await openDatabase(BusyOnceDatabase, path, 'wal', 100)
+      expect(attempts).toBe(2)
+      expect(db.prepare(sql('journal-mode-wal')).get()).toEqual({ journal_mode: 'wal' })
+      expect(db.prepare(sql('select-trusted-schema')).get()).toEqual({ trusted_schema: 0 })
+      expect(db.prepare(sql('select-mmap-size')).get()).toEqual({ mmap_size: 0 })
+      expect(db.prepare(sql('select-synchronous')).get()).toEqual({ synchronous: 2 })
+      db.close()
+    } finally {
+      clock.mockRestore()
+    }
   })
 
   it('does not retry journal failures outside the available busy budget', async () => {
