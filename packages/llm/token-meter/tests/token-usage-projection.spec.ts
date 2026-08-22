@@ -116,6 +116,8 @@ describe('tokenUsage session projection', () => {
     finalUsage(session, { inputTokens: 12, outputTokens: 5, cacheReadTokens: 7 }, 1, 1, [source],
       'deepseek-official', 'deepseek-v4-flash')
     expect(latestTurnBilling(ctx, session)).toBeNull()
+    session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+    expect(latestTurnBilling(ctx, session)).toBeNull()
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect(latestTurnBilling(ctx, session)).toMatchObject({
       turn: 1,

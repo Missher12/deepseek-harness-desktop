@@ -197,10 +197,7 @@ const latestTurnViewSchema: z.ZodType<LatestTurnBillingProjection | null> = z.ob
   turn: z.number().int().nonnegative(),
   settledAt: z.number().int().nonnegative(),
   billingModel: billingModelSchema,
-  uncachedInputTokens: z.number().int().nonnegative(),
-  outputTokens: z.number().int().nonnegative(),
-  cacheReadTokens: z.number().int().nonnegative(),
-  cacheWriteTokens: z.number().int().nonnegative(),
+  ...projectionSchema.shape,
 }).strict().nullable()
 
 const latestTurnDraftSchema = z.object({
