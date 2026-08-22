@@ -22,6 +22,11 @@ export function installDesktopSurface(url: URL, bridge?: DesktopBridge): () => v
   if (url.searchParams.get('surface') !== 'desktop') return () => undefined
 
   document.body.dataset.dshSurface = 'desktop'
+  if (url.searchParams.get('titlebar') === 'hidden-inset') {
+    document.body.dataset.dshTitlebar = 'hidden-inset'
+  } else {
+    delete document.body.dataset.dshTitlebar
+  }
   const unsubscribe = bridge?.onCommand((command) => {
     if (!isDesktopCommand(command)) return
     document.querySelector<HTMLButtonElement>(`[data-dsh-desktop-command="${command}"]`)?.click()
@@ -30,5 +35,6 @@ export function installDesktopSurface(url: URL, bridge?: DesktopBridge): () => v
   return () => {
     unsubscribe?.()
     delete document.body.dataset.dshSurface
+    delete document.body.dataset.dshTitlebar
   }
 }

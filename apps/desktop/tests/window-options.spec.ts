@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { createWindowOptions } from '../src/window/options.ts'
+import * as windowOptions from '../src/window/options.ts'
+
+const { createWindowOptions } = windowOptions
 
 describe('createWindowOptions', () => {
   it('enables the hardened persistent desktop renderer', () => {
@@ -45,5 +47,21 @@ describe('createWindowOptions', () => {
       sandbox: true,
       webSecurity: true,
     })
+  })
+
+  it('marks only the macOS hidden-inset renderer URL', () => {
+    const desktopRendererUrl = (windowOptions as {
+      desktopRendererUrl?: (url: string, platform: NodeJS.Platform) => string
+    }).desktopRendererUrl
+    expect(desktopRendererUrl).toBeTypeOf('function')
+    if (desktopRendererUrl === undefined) return
+
+    const root = 'http://127.0.0.1:45678/?surface=desktop&titlebar=hidden-inset'
+    const macUrl = new URL(desktopRendererUrl(root, 'darwin'))
+    const windowsUrl = new URL(desktopRendererUrl(root, 'win32'))
+
+    expect(macUrl.searchParams.get('titlebar')).toBe('hidden-inset')
+    expect(windowsUrl.searchParams.get('surface')).toBe('desktop')
+    expect(windowsUrl.searchParams.has('titlebar')).toBe(false)
   })
 })

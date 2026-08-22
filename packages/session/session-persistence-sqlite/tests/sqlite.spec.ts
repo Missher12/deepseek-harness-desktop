@@ -499,6 +499,7 @@ describe('SessionPersistenceSqlite schema ownership', () => {
 
   it('paces repeated busy journal-mode attempts', async () => {
     const path = await freshDbPath('dsh-sqlite-journal-paced-')
+    const busyTimeoutMs = 50
     let attempts = 0
     const BusyDatabase = databaseWithJournalFailure(() => {
       attempts += 1
@@ -506,9 +507,9 @@ describe('SessionPersistenceSqlite schema ownership', () => {
     })
     vi.useFakeTimers()
     try {
-      const opening = expect(openDatabase(BusyDatabase, path, 'wal', 50))
+      const opening = expect(openDatabase(BusyDatabase, path, 'wal', busyTimeoutMs))
         .rejects.toThrow('database is locked')
-      await vi.runAllTimersAsync()
+      await vi.advanceTimersByTimeAsync(busyTimeoutMs)
       await opening
     } finally {
       vi.useRealTimers()

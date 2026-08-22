@@ -6,6 +6,7 @@ describe('desktop surface bridge', () => {
   beforeEach(() => {
     document.body.replaceChildren()
     delete document.body.dataset.dshSurface
+    delete document.body.dataset.dshTitlebar
   })
 
   it('leaves the browser surface untouched without the desktop marker', () => {
@@ -58,6 +59,19 @@ describe('desktop surface bridge', () => {
     const dispose = installDesktopSurface(new URL('http://127.0.0.1:65000/?surface=desktop'))
 
     expect(document.body.dataset.dshSurface).toBe('desktop')
+    expect(document.body.dataset.dshTitlebar).toBeUndefined()
     dispose()
+  })
+
+  it('reserves a renderer title bar only for the explicit hidden-inset window', () => {
+    const dispose = installDesktopSurface(new URL(
+      'http://127.0.0.1:65000/?surface=desktop&titlebar=hidden-inset',
+    ))
+
+    expect(document.body.dataset.dshSurface).toBe('desktop')
+    expect(document.body.dataset.dshTitlebar).toBe('hidden-inset')
+
+    dispose()
+    expect(document.body.dataset.dshTitlebar).toBeUndefined()
   })
 })

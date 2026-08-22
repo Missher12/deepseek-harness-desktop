@@ -83,6 +83,17 @@ jobs:
           ./scripts/windows-desktop-setup-smoke.ps1
           -SetupPath apps/desktop/release/${{ steps.desktop.outputs.artifact }}
 
+      - name: Preserve native title-bar diagnostics
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Windows-titlebar-diagnostics-${{ github.sha }}
+          path: |
+            s/apps/desktop/release/desktop-smoke-titlebar-win32.json
+            s/apps/desktop/release/desktop-smoke-titlebar-win32.png
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Record SHA-256
         shell: pwsh
         run: |
