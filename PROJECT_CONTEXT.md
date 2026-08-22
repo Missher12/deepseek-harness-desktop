@@ -69,16 +69,37 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
-- Version 0.3.4 is the current cross-platform patch candidate. The stable
+- Version 0.3.4 is the current verified cross-platform release. The stable
   `Low / Medium / High / XHigh / Max / Ultra` reasoning ladder still maps every
   visual stop to an exact Host-advertised effort and still displays the model's
   separate capability limit, but the selected value no longer appends
-  `actual …` / `实际 …`; visual and accessibility value text now use only the
-  clean display label. The package and updater metadata remain bound to Harness
-  `0.1.1-rc.2`. The focused reasoning suite passes 72 assertions, including
-  explicit High-only Ultra→High and Low→Off submission checks. Intel macOS
-  packaging, installed-app acceptance, public Release publication, and native
-  Windows top-gap reproduction/acceptance remain pending at this checkpoint.
+  `actual …` / `实际 …`; visual and accessibility value text use only the clean
+  display label. High-only Ultra still submits High, and Low can still submit
+  Off where the model capability requires it. The shared Mac/UI source landed
+  as public main commit `3c3f72c8565be8c76df465ab36ebc7efd9ec378a`.
+  Windows standard-frame windows had also inherited the Mac-only 38 px
+  hidden-inset drag strip: native RED run `32554789168` measured
+  `sidebarTop=38`, `padding-top=38px`, and a 38 px pseudo-element. The Desktop
+  renderer URL now marks `titlebar=hidden-inset` only for the actual macOS
+  hidden-inset window, and the Web surface applies its inset only for that
+  trusted marker. Windows therefore keeps the standard native frame with no
+  renderer inset while macOS retains its drag strip. PR #20 squash-merged this
+  fix as public main commit `fb8dc97c368417edd4420a493b32cb280ffc8fc4`.
+  Final native Windows Setup run `32558492256` passed the visible installer,
+  installed-app lifecycle, Ultra→real-effort fallback, directory picker,
+  clipboard, process cleanup, uninstall, and isolated data preservation; its
+  packaged geometry is `frameTop=0`, `sidebarTop=0`, `padding-top=0`, with no
+  drag pseudo-element. Full Windows CI run `32558492405` passed all 46 native
+  gates after the SQLite retry pacing test stopped advancing unrelated fake
+  timers. Release `desktop-v0.3.4` now contains
+  `DeepSeek-Harness-Setup-0.3.4-win-x64.exe`, 139,705,330 bytes, SHA-256
+  `46671cd4be4533196a1e0e939494e8e69797f9ccc71acd9917b5f162ba84b28a`,
+  plus its 107-byte LF checksum. Anonymous public re-download matches both
+  exact files. The final 16,656-entry Setup scan contains no private config,
+  secret-like value, or personal path. Windows assets are IDs `524796800` and
+  `524796801`; the existing Mac DMG, checksum, and updater-manifest assets keep
+  IDs `524704681`, `524704689`, and `524704688` with their original bytes and
+  digests. Package and updater metadata remain bound to Harness `0.1.1-rc.2`.
 - Version 0.3.3 is the preceding verified Intel-macOS release. It applies the
   complete official `dsh-v0.1.0-rc.8` → `dsh-v0.1.1-rc.2` source delta while
   retaining the Desktop shell, workbench, plugin market, reasoning-effort,
