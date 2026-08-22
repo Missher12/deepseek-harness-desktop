@@ -232,8 +232,6 @@ export interface EffortSliderProps {
   readonly levels: readonly EffortLevel[]
   readonly acceptedIndex: number
   readonly previewIndex: number
-  /** Exact Host effort reached by the visual stop, when its label differs. */
-  readonly actualName?: string
   /** Strongest exact effort the model advertises. */
   readonly capName?: string
   readonly disabled: boolean
@@ -251,7 +249,6 @@ export function EffortSlider({
   levels,
   acceptedIndex,
   previewIndex,
-  actualName,
   capName,
   disabled,
   dragging,
@@ -270,11 +267,7 @@ export function EffortSlider({
   const redraw = useRef<(() => void) | null>(null)
   const count = levels.length
   const selected = levels[clampIndex(previewIndex, count)]
-  const selectedName = selected === undefined
-    ? ''
-    : actualName === undefined || actualName.toLowerCase() === selected.name.toLowerCase()
-      ? selected.name
-      : t('effort.mapped', { display: selected.name, actual: actualName })
+  const selectedName = selected?.name ?? ''
   const progress = count < 2 ? 0 : previewIndex / (count - 1)
 
   useEffect(() => {
@@ -509,7 +502,6 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
   const effortName = selectedActual?.name
   const modelName = choice?.name ?? state.current?.model ?? t('trigger.fallback')
   const busy = committing || state.status === 'selecting'
-  const previewActual = modelEffortAt(actualLevels, previewIndex)
   const modelCap = actualLevels.at(-1)
 
   const bindTrigger = useCallback((node: HTMLButtonElement | null): void => {
@@ -718,7 +710,6 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
               levels={levels}
               acceptedIndex={acceptedIndex}
               previewIndex={previewIndex}
-              {...previewActual === undefined ? {} : { actualName: previewActual.name }}
               {...modelCap === undefined ? {} : { capName: modelCap.name }}
               disabled={busy}
               dragging={dragging}

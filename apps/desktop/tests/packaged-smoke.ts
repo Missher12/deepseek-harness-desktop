@@ -802,9 +802,8 @@ async function exerciseReasoningEffort(
   })
   expect(await character.getAttribute('aria-checked')).toBe('false')
   await slider.press('End')
-  await expect.poll(() => slider.getAttribute('aria-valuetext'), { timeout: 15_000 }).toMatch(
-    /^(?:Ultra, actual High|Ultra，实际 High)$/u,
-  )
+  await expect.poll(() => slider.getAttribute('aria-valuetext'), { timeout: 15_000 }).toBe('Ultra')
+  expect(await popup.getByText(/(?:actual High|实际 High)/u).count()).toBe(0)
   await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 15_000 }).toMatch(
     /^(?:Select model, current Native Smoke Thinker, reasoning effort High|选择模型，当前 Native Smoke Thinker，推理等级 High)$/u,
   )

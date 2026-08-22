@@ -348,7 +348,7 @@ describe('EffortControl', () => {
     expect(slider.getAttribute('aria-valuetext')).toBe('High')
   })
 
-  it('keeps the six-step Codex ladder and caps Ultra at a single High model effort', async () => {
+  it('keeps the six-step Codex ladder visually clean while Ultra maps to High', async () => {
     const oneEffort = models({
       groups: [{
         id: 'deepseek',
@@ -377,7 +377,8 @@ describe('EffortControl', () => {
         reasoningEffort: 'high',
       })
     })
-    expect(slider.getAttribute('aria-valuetext')).toBe('Ultra，实际 High')
+    expect(slider.getAttribute('aria-valuetext')).toBe('Ultra')
+    expect(screen.queryByText(/实际 High/)).toBeNull()
     expect(screen.getAllByRole('button', { name: /DeepSeek Chat/ })).toHaveLength(2)
   })
 
@@ -404,7 +405,8 @@ describe('EffortControl', () => {
     const slider = await screen.findByRole('slider', { name: '推理等级' }) as HTMLInputElement
     expect(slider.max).toBe('5')
     expect(slider.value).toBe('0')
-    expect(slider.getAttribute('aria-valuetext')).toBe('Low，实际 Off')
+    expect(slider.getAttribute('aria-valuetext')).toBe('Low')
+    expect(screen.queryByText(/实际 Off/)).toBeNull()
     fireEvent.keyDown(slider, { key: 'Home' })
     await waitFor(() => {
       expect(b.select).toHaveBeenCalledWith({ provider: 'deepseek', model: 'chat', reasoningEffort: 'off' })
