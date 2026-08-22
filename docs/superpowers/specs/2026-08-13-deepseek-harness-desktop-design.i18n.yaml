@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/specs/2026-08-13-deepseek-harness-desktop-design.md
 2026-08-13-deepseek-harness-desktop-design.md: 1e260473f208f982bf3e46811bb2c4f6f0c83f8a
-2026-08-13-deepseek-harness-desktop-design.zh.md: ba5550b2e9f9296196db993928ca4875308b8785
+2026-08-13-deepseek-harness-desktop-design.zh.md: e12afd00c38e75eabbc35a202e5d9f7b61dbb53f

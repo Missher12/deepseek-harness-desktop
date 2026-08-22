@@ -8,13 +8,13 @@ Turn the official DeepSeek Harness browser surface into standalone Intel macOS a
 
 - Target machine: Intel (`x86_64`) Mac running macOS 15.7.4.
 - Previously installed runtime: `@deepseek-ai/dsh@0.1.0-rc.6`.
-- Desktop source baseline: official repository version `0.1.0-rc.8` at upstream commit `141eb6fef83422698aef7a981029e843e8161534`.
+- Desktop source baseline: official repository version `0.1.1-rc.2` at upstream commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`.
 - Previous launch path: Hermes gateway → `npm exec @deepseek-ai/dsh web --port 65000` → Node web host.
 - Current launch path: `/Applications/DeepSeek Harness.app` → owned bundled CLI → random loopback listener.
 - Current UI: React/Vite application with workspaces, sessions, model and permission selection, tools, plans, jobs, settings, a details pane, a Codex-style archived-session manager, and exact session-ID copy actions for active and archived sessions.
 - User data root: `~/.dsh`.
 - Official source: <https://github.com/deepseek-ai/deepseek-harness>.
-- Inspected upstream head: `141eb6fef83422698aef7a981029e843e8161534` (`dsh-v0.1.0-rc.8`) on 2026-08-20.
+- Inspected upstream release: `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e` (`dsh-v0.1.1-rc.2`) on 2026-08-22.
 - Upstream currently contains `apps/cli` and `apps/web`; there is no implemented desktop application.
 
 ## Confirmed Product Decisions
@@ -69,7 +69,37 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
-- Version 0.3.2 is the current Intel-macOS release candidate. The composer `+` now
+- Version 0.3.3 is the current Intel-macOS release candidate. It applies the
+  complete official `dsh-v0.1.0-rc.8` → `dsh-v0.1.1-rc.2` source delta while
+  retaining the Desktop shell, workbench, plugin market, reasoning-effort,
+  usage-insights, session-messenger, archive, updater, and DeepSeek billing
+  additions. The official session-projection API now requires persisted state
+  schemas and explicit wire views; the custom billing-model projection has
+  been migrated to that contract and is versioned with the other token-meter
+  projections. `apps/desktop/update-metadata.json` binds the candidate to
+  Desktop `0.3.3`, Harness `0.1.1-rc.2`, Intel macOS, and the release channel.
+  A failing migration assertion first pinned the required 0.3.3/rc.2 pair;
+  after the minimal manifest change it passed, as did 20 focused token-meter
+  projection tests, 207 merge/conflict-impact tests, and the full Host/Client
+  typecheck. The raw full-repository test run saturated the Intel host and
+  timed out 31 files; its two deterministic manifest/version failures were
+  fixed, then every affected path passed under a one-worker budget (527 passed,
+  2 platform-skipped). Final validation passes lint, the Host/Client/Web
+  production build, all 28 documentation gates, 187 updater/custom-feature
+  assertions, and 10 readiness/process assertions. Packaged smoke first caught
+  the rc.2 boot-manifest assignment change; a regression test now proves the
+  Desktop probe accepts both the legacy `window.__DSH_BOOT__` assignment and
+  rc.2's `globalThis["__DSH_BOOT__"]` assignment, and the rebuilt packaged
+  application passes its complete isolated smoke. The unsigned Intel DMG is
+  163,638,106 bytes with SHA-256
+  `803810e8767ed86514368906782d0a80c0bed54907973f84ff57eb8edf0167fa`;
+  `hdiutil verify` passes, the bundle reports Desktop `0.3.3`, the packaged
+  executable reports `x86_64`, and the embedded Harness reports `0.1.1-rc.2`.
+  Installed-app update acceptance and public Release verification remain
+  pending at this checkpoint. This Mac task does not build, replace, or
+  publish Windows assets; Windows remains at the separately verified Desktop
+  0.3.2 release.
+- Version 0.3.2 was the preceding Intel-macOS release. The composer `+` now
   opens one compact Codex-style Add menu over the existing input-trigger
   pipeline: files/folders reuse `@` references, images reuse the existing
   attachment intake, Goal and Plan are promoted without duplicating their

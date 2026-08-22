@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-usage-insights",
   "description": "Privacy-minimal all-history usage index and read-only Settings Remote",
-  "version": "0.1.0-rc.8",
+  "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
   },

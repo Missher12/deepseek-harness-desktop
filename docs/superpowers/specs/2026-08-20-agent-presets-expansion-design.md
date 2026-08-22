@@ -1,6 +1,6 @@
 # Built-in Agent Presets Expansion Design
 
-[中文](2026-08-20-agent-presets-expansion-design.zh.md)
+English | [中文](2026-08-20-agent-presets-expansion-design.zh.md)
 
 ## Status and confirmed decisions
 

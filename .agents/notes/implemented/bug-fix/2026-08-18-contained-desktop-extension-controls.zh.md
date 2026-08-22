@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-[`dsh-reasoning-effort`](../../../../packages/extensions/reasoning-effort/README.md) 把普通滑块中心限制在其 14 像素半径与轨道宽度减去该半径之间。可选角色保留自己更小的端点余量，关闭角色只改变滑块外观。
+[`dsh-reasoning-effort`](../../../../packages/extensions/reasoning-effort/README.zh.md) 把普通滑块中心限制在其 14 像素半径与轨道宽度减去该半径之间。可选角色保留自己更小的端点余量，关闭角色只改变滑块外观。
 
 固定的 `dshmarket@1.10.1` 源码补丁把市场根节点设为 inline-size 查询容器。分类标签不再压缩或换行，并通过横向滚动保持可达；搜索框填满工具栏。容器宽度不超过 620 像素时，插件操作进入网格第二行，元数据可以换行，不再依赖外层浏览器视口。
 

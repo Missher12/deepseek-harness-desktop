@@ -56,7 +56,7 @@ flowchart TD
 
 Intel 专用 Electron 应用同时打包为 `.app` 与 DMG。Harness profile fallback 需要创建指向已安装包的文件系统软链接，因此运行时包以实体文件形式存放在 `app.asar.unpacked/node_modules` 下。主入口保留在 `app.asar` 中，preload 则输出为 `preload.cjs`，供 Electron 的沙箱 preload loader 加载。
 
-当前本机构建没有签名或公证。Apple Developer 签名、公证、自动更新、Apple Silicon 和 Linux 仍不属于这个 Intel 安装包的范围。Windows 交付由独立的 [Windows Setup 设计](2026-08-14-deepseek-harness-windows-setup-design.md)负责。
+当前本机构建没有签名或公证。Apple Developer 签名、公证、自动更新、Apple Silicon 和 Linux 仍不属于这个 Intel 安装包的范围。Windows 交付由独立的 [Windows Setup 设计](2026-08-14-deepseek-harness-windows-setup-design.zh.md)负责。
 
 ## 失败处理
 

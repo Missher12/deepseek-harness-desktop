@@ -1,6 +1,6 @@
 # Plugin Install Transaction Recovery Implementation Plan
 
-[中文](2026-08-20-plugin-install-transaction-recovery.zh.md)
+English | [中文](2026-08-20-plugin-install-transaction-recovery.zh.md)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

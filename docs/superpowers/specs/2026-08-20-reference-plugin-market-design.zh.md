@@ -1,6 +1,6 @@
 # 参考图式插件市场设计
 
-[English](2026-08-20-reference-plugin-market-design.md)
+[English](2026-08-20-reference-plugin-market-design.md) | 中文
 
 ## 状态与已确认决定
 

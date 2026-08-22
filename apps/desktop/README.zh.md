@@ -41,6 +41,8 @@ Desktop patch 的普通浏览器 profile 不受影响。插件属于第三方代
 更新自身（`dshmarket` 与 `dsh-market` 都会在包运行器启动前被拒绝），普通插件
 操作仍保留上游路由行为。
 
+<a id="icon-provenance"></a>
+
 ## 图标来源
 
 `assets/icon-source.png` 是 2026-08-14 通过 macOS 与 Windows 两端验收的

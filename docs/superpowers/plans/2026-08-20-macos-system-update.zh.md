@@ -1,6 +1,6 @@
 # macOS 系统更新实施计划
 
-[English](2026-08-20-macos-system-update.md)
+[English](2026-08-20-macos-system-update.md) | 中文
 
 > **供 Agent 工作进程使用：** 必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。步骤使用复选框（`- [ ]`）跟踪。
 

@@ -16,8 +16,8 @@ Status: implemented
 - Windows 使用标准原生窗框、File/Edit/View/Window/Help 菜单、关闭即退出、封闭失败的 PowerShell 进程发现，以及针对准确 PID 的 `taskkill /T /F` 清理。
 - 工作台终端选择完整的原生命令：Windows 使用系统内置 PowerShell，POSIX 使用首个可用的 zsh 或 bash 登录 shell。平台参数与可执行文件一起解析，确保 Windows 永远不会收到 POSIX 的 `-l` 参数。
 - Electron Builder 以一键、当前用户范围、非升权模式输出一个未签名 Windows x64 NSIS Setup。交互式安装创建桌面和开始菜单快捷方式并启动应用；卸载保留 Harness 与 Electron 数据。
-- 圆角 RGBA 母版同时生成 [`icon.icns` 和 `icon.ico`](../../../../apps/desktop/README.md#icon-provenance)，因此 Finder、Dock、Windows 资源管理器、快捷方式、Setup 和卸载程序使用同一个应用图形身份。
-- [Windows Setup 设计](../../../../docs/superpowers/specs/2026-08-14-deepseek-harness-windows-setup-design.md)拥有完整的打包、生命周期和失败行为说明。
+- 圆角 RGBA 母版同时生成 [`icon.icns` 和 `icon.ico`](../../../../apps/desktop/README.zh.md#icon-provenance)，因此 Finder、Dock、Windows 资源管理器、快捷方式、Setup 和卸载程序使用同一个应用图形身份。
+- [Windows Setup 设计](../../../../docs/superpowers/specs/2026-08-14-deepseek-harness-windows-setup-design.zh.md)拥有完整的打包、生命周期和失败行为说明。
 
 ## 原生验证
 
