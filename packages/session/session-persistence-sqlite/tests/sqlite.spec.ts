@@ -503,19 +503,18 @@ describe('SessionPersistenceSqlite schema ownership', () => {
     let attempts = 0
     const BusyDatabase = databaseWithJournalFailure(() => {
       attempts += 1
-      return Object.assign(new Error('database is locked'), { errcode: 5 })
+      return attempts <= 3
+        ? Object.assign(new Error('database is locked'), { errcode: 5 })
+        : Object.assign(new Error('journal transition failed'), { errcode: 1 })
     })
-    vi.useFakeTimers()
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0)
     try {
-      const opening = expect(openDatabase(BusyDatabase, path, 'wal', busyTimeoutMs))
-        .rejects.toThrow('database is locked')
-      await vi.advanceTimersByTimeAsync(busyTimeoutMs)
-      await opening
+      await expect(openDatabase(BusyDatabase, path, 'wal', busyTimeoutMs))
+        .rejects.toThrow('journal transition failed')
     } finally {
-      vi.useRealTimers()
+      clock.mockRestore()
     }
-    expect(attempts).toBeGreaterThan(1)
-    expect(attempts).toBeLessThanOrEqual(6)
+    expect(attempts).toBe(4)
   })
 
   it('rejects unversioned, incompatible, and foreign-application databases', async () => {
