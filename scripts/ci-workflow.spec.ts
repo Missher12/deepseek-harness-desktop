@@ -64,7 +64,9 @@ describe('CI workflow', () => {
     const steps = windows.steps.filter(isRecord)
     const metadata = steps.find(step => step.name === 'Resolve Desktop release metadata')
     const upload = steps.find(step => (
-      typeof step.uses === 'string' && step.uses.startsWith('actions/upload-artifact@')
+      typeof step.uses === 'string'
+      && step.uses.startsWith('actions/upload-artifact@')
+      && JSON.stringify(step).includes('${{ steps.desktop.outputs.artifact }}')
     ))
 
     expect(workflow.permissions).toEqual({ contents: 'read' })

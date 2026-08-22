@@ -87,7 +87,7 @@ jobs:
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: Windows-titlebar-diagnostics-${{ steps.desktop.outputs.version }}-${{ github.sha }}
+          name: Windows-titlebar-diagnostics-${{ github.sha }}
           path: |
             s/apps/desktop/release/desktop-smoke-titlebar-win32.json
             s/apps/desktop/release/desktop-smoke-titlebar-win32.png
