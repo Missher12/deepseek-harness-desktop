@@ -570,6 +570,61 @@ async function waitForDesktopSurface(page: Page, userData: string): Promise<void
   throw new Error(`Packaged smoke: desktop surface missed its startup deadline.\n${await desktopStartupDiagnostic(page, userData)}`)
 }
 
+interface DesktopTitlebarGeometry {
+  readonly frameTop: number
+  readonly sidebarTop: number
+  readonly framePaddingTop: string
+  readonly dragStripContent: string
+  readonly dragStripHeight: string
+}
+
+/**
+ * Prove that the packaged renderer reserves native chrome only when the host
+ * actually uses Electron's hidden-inset title bar. Windows already places the
+ * renderer below its standard native frame, so an extra web drag strip is a
+ * visible blank band rather than usable title-bar space.
+ */
+async function exerciseDesktopTitlebarGeometry(
+  page: Page,
+  platform: NodeJS.Platform,
+): Promise<void> {
+  const geometry = await page.locator('[class*="sidebarCol"]').evaluate((sidebar): DesktopTitlebarGeometry => {
+    const frame = sidebar.parentElement
+    if (!(frame instanceof HTMLElement)) throw new Error('Desktop frame is missing around the sidebar column.')
+    const frameBounds = frame.getBoundingClientRect()
+    const sidebarBounds = sidebar.getBoundingClientRect()
+    const frameStyle = getComputedStyle(frame)
+    const dragStripStyle = getComputedStyle(frame, '::before')
+    return {
+      frameTop: frameBounds.top,
+      sidebarTop: sidebarBounds.top,
+      framePaddingTop: frameStyle.paddingTop,
+      dragStripContent: dragStripStyle.content,
+      dragStripHeight: dragStripStyle.height,
+    }
+  })
+  const diagnosticBase = join(repositoryRoot, `apps/desktop/release/desktop-smoke-titlebar-${platform}`)
+  await Promise.all([
+    writeFile(`${diagnosticBase}.json`, `${JSON.stringify(geometry, null, 2)}\n`, 'utf8'),
+    page.screenshot({ path: `${diagnosticBase}.png` }),
+  ])
+
+  if (platform !== 'win32') return
+  const contentInset = geometry.sidebarTop - geometry.frameTop
+  if (
+    Math.abs(contentInset) > 0.5
+    || geometry.framePaddingTop !== '0px'
+    || geometry.dragStripContent !== 'none'
+  ) {
+    throw new Error(
+      `Packaged Windows desktop reserves a renderer title-bar inset under the native frame: ${JSON.stringify({
+        ...geometry,
+        contentInset,
+      })}`,
+    )
+  }
+}
+
 /** Native Add-menu acceptance without submitting any provider request. */
 async function exerciseComposerAddMenu(page: Page): Promise<void> {
   const trigger = page.locator('[data-dsh-desktop-command="open-add-menu"]')
@@ -1251,6 +1306,7 @@ export async function runPackagedDesktopSmoke(
     })
     page.on('pageerror', error => consoleErrors.push(error.message))
     await waitForDesktopSurface(page, userData)
+    await exerciseDesktopTitlebarGeometry(page, platform)
 
     expect(await page.evaluate(() => (
       typeof window.dshDesktop?.onCommand === 'function'
