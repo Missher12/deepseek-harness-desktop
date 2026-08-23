@@ -20,7 +20,7 @@
 
 - [x] **步骤 1：编写失败的每周与累积测试**
 
-```ts
+```ts ignore-check
 import { describe, expect, it } from 'vitest'
 import type { UsageActivityDay } from '@deepseek-ai/dsh-api-remotes/client'
 import { buildParticleGrid } from '../src/client/charts.ts'
@@ -63,7 +63,7 @@ describe('aggregate particle intensity', () => {
 
 - [x] **步骤 3：添加最小相对等级投影**
 
-```ts
+```ts ignore-check
 function logarithmicLevel(tokens: number, maximum: number): UsageActivityDay['level'] {
   if (tokens <= 0 || maximum <= 0) return 0
   const level = Math.ceil(4 * Math.log1p(tokens) / Math.log1p(maximum))

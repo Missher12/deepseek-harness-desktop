@@ -24,7 +24,7 @@
 
 将分离的通用/macOS 断言替换为一项读取 `loading.html` 并要求以下内容的测试：
 
-```ts
+```ts ignore-check
 expect(html).toContain('data-desktop-startup')
 expect(html).toContain('data-desktop-local-progress')
 expect(html).toContain('../assets/icon-source.png')
@@ -50,7 +50,7 @@ expect(html).not.toMatch(/https?:\/\//u)
 
 将主进程路径设置为一个常量：
 
-```ts
+```ts ignore-check
 const loadingPath = fileURLToPath(new URL('../renderer/loading.html', import.meta.url))
 ```
 
@@ -75,7 +75,7 @@ const loadingPath = fileURLToPath(new URL('../renderer/loading.html', import.met
 
 定义预期的检测器行为：
 
-```ts
+```ts ignore-check
 expect(isDesktopSurface('?surface=desktop')).toBe(true)
 expect(isDesktopSurface('')).toBe(false)
 ```

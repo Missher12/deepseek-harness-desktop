@@ -20,7 +20,7 @@ English | [中文](2026-08-23-usage-intensity-consistency.zh.md)
 
 - [x] **Step 1: Write the failing weekly and cumulative tests**
 
-```ts
+```ts ignore-check
 import { describe, expect, it } from 'vitest'
 import type { UsageActivityDay } from '@deepseek-ai/dsh-api-remotes/client'
 import { buildParticleGrid } from '../src/client/charts.ts'
@@ -63,7 +63,7 @@ Expected: FAIL because both aggregate modes currently return only level `4` for 
 
 - [x] **Step 3: Add the minimal relative-level projection**
 
-```ts
+```ts ignore-check
 function logarithmicLevel(tokens: number, maximum: number): UsageActivityDay['level'] {
   if (tokens <= 0 || maximum <= 0) return 0
   const level = Math.ceil(4 * Math.log1p(tokens) / Math.log1p(maximum))

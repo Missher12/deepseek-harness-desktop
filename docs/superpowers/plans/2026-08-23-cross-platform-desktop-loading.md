@@ -24,7 +24,7 @@ English | [中文](2026-08-23-cross-platform-desktop-loading.zh.md)
 
 Replace the separate generic/macOS assertions with one test that reads `loading.html` and requires:
 
-```ts
+```ts ignore-check
 expect(html).toContain('data-desktop-startup')
 expect(html).toContain('data-desktop-local-progress')
 expect(html).toContain('../assets/icon-source.png')
@@ -50,7 +50,7 @@ Move the complete contents of `loading-macos.html` into `loading.html`, rename `
 
 Set the main-process path to one constant:
 
-```ts
+```ts ignore-check
 const loadingPath = fileURLToPath(new URL('../renderer/loading.html', import.meta.url))
 ```
 
@@ -75,7 +75,7 @@ Expected: both files pass; startup concurrency and show timing remain unchanged.
 
 Define the expected detector behavior:
 
-```ts
+```ts ignore-check
 expect(isDesktopSurface('?surface=desktop')).toBe(true)
 expect(isDesktopSurface('')).toBe(false)
 ```
