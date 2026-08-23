@@ -1,0 +1,78 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { PersonalizationSection, type PersonalizationSectionProps } from '../src/client/PersonalizationSection.tsx'
+import { en } from '../src/client/locales.ts'
+
+afterEach(cleanup)
+
+const base = {
+  instructions: 'Prefer concrete evidence.',
+  style: 'default' as const,
+  revision: 'a'.repeat(64),
+  hasExternalContent: false,
+  writable: true,
+}
+
+function props(overrides: Partial<PersonalizationSectionProps> = {}): PersonalizationSectionProps {
+  return {
+    t: makeTranslate(en),
+    load: vi.fn(async () => base),
+    save: vi.fn(async input => ({ ...base, ...input, revision: 'b'.repeat(64) })),
+    ...overrides,
+  } as PersonalizationSectionProps
+}
+
+describe('PersonalizationSection', () => {
+  it('paints stable controls, loads the saved value, and enables Save only when dirty', async () => {
+    const save = vi.fn(async input => ({ ...base, ...input, revision: 'b'.repeat(64) }))
+    render(<PersonalizationSection {...props({ save })} />)
+    const editor = screen.getByRole('textbox', { name: 'Custom instructions' }) as HTMLTextAreaElement
+    const button = screen.getByRole('button', { name: 'Save' })
+    expect(editor.disabled).toBe(true)
+    expect((button as HTMLButtonElement).disabled).toBe(true)
+
+    await waitFor(() => { expect(editor.value).toBe('Prefer concrete evidence.') })
+    expect(editor.disabled).toBe(false)
+    expect((button as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(editor, { target: { value: 'Lead with the result.' } })
+    fireEvent.change(screen.getByRole('combobox', { name: /Reply style/ }), { target: { value: 'professional' } })
+    expect((button as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(button)
+
+    await waitFor(() => {
+      expect(save).toHaveBeenCalledWith({
+        instructions: 'Lead with the result.',
+        style: 'professional',
+        expectedRevision: 'a'.repeat(64),
+      })
+    })
+    expect(screen.getByText('Saved')).toBeTruthy()
+    expect((button as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('shows preserved external instructions and keeps an externally managed file read-only', async () => {
+    render(<PersonalizationSection {...props({
+      load: vi.fn(async () => ({ ...base, writable: false, hasExternalContent: true })),
+    })} />)
+
+    await waitFor(() => { expect(screen.getByText(/Existing manual instructions are preserved/)).toBeTruthy() })
+    expect((screen.getByRole('textbox', { name: 'Custom instructions' }) as HTMLTextAreaElement).disabled).toBe(true)
+    expect(screen.getByText(/managed outside Desktop/)).toBeTruthy()
+  })
+
+  it('keeps the draft and gives a retryable status when save fails', async () => {
+    render(<PersonalizationSection {...props({
+      save: vi.fn(async () => { throw new Error('global personalization changed; reload before saving') }),
+    })} />)
+    const editor = screen.getByRole('textbox', { name: 'Custom instructions' }) as HTMLTextAreaElement
+    await waitFor(() => { expect(editor.value).toBe(base.instructions) })
+    fireEvent.change(editor, { target: { value: 'Do not lose this draft.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => { expect(screen.getByRole('status').textContent).toContain('Could not save') })
+    expect(editor.value).toBe('Do not lose this draft.')
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+})

@@ -1555,6 +1555,19 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     ['my-agent', { trust: 'user', content: "- id: tool-read\n  name: '@deepseek-ai/dsh-tool-read'\n" }],
   ])
   let fixtureDefaultPreset = 'standard'
+  let fixturePersonalization: {
+    instructions: string
+    style: 'default' | 'concise' | 'friendly' | 'professional'
+    revision: string
+    hasExternalContent: boolean
+    writable: boolean
+  } = {
+    instructions: '',
+    style: 'default',
+    revision: '0'.repeat(64),
+    hasExternalContent: false,
+    writable: true,
+  }
   const nextTurn = new Map<SessionId, number>([[sid('fx-alpha'), 75]])
   let nextSession = 1
   let nextRpc = 1
@@ -3045,6 +3058,24 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       }),
       // Native opens are deterministic no-op successes in this fixture, as is host.openPath.
       openDocument: request => ok(request, { opened: true as const }),
+      personalizationRead: request => ok(request, fixturePersonalization),
+      personalizationWrite: (request) => {
+        if (request.payload.expectedRevision !== fixturePersonalization.revision) {
+          return err(request, {
+            code: 'settings-rejected',
+            message: 'fixture: global personalization changed; reload before saving',
+            details: { ns: 'personalization' },
+          })
+        }
+        fixturePersonalization = {
+          instructions: request.payload.instructions,
+          style: request.payload.style,
+          revision: '1'.repeat(64),
+          hasExternalContent: false,
+          writable: true,
+        }
+        return ok(request, fixturePersonalization)
+      },
       update: request => err(request, {
         code: 'settings-rejected',
         message: 'fixture: the minimal readiness settings descriptor is read-only',
@@ -3261,6 +3292,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'goal.clear': return this.api.goals.clear(request)
       case 'settings.describe': return this.api.settings.describe(request)
       case 'settings.openDocument': return this.api.settings.openDocument(request, signal)
+      case 'settings.personalizationRead': return this.api.settings.personalizationRead(request)
+      case 'settings.personalizationWrite': return this.api.settings.personalizationWrite(request)
       case 'settings.update': return this.api.settings.update(request)
       case 'settings.replace': return this.api.settings.replace(request)
       case 'settings.mutate': return this.api.settings.mutate(request)
