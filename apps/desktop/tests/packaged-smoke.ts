@@ -1065,6 +1065,8 @@ async function exercisePluginMarket(
   for (const control of [search, installedRail, publicMode, personalMode, management]) {
     await control.waitFor({ state: 'visible', timeout: 30_000 })
   }
+  const builtinMemory = installedRail.locator('button[data-package="dsh-missher-memory"]')
+  await builtinMemory.waitFor({ state: 'visible', timeout: 30_000 })
   expect(await installedRail.evaluate(element => getComputedStyle(element).overflowX)).toBe('auto')
   // The shell and its controls mount before the same-origin registry request
   // resolves. Wait for the categorized content, not merely the outer shell.
@@ -1078,6 +1080,12 @@ async function exercisePluginMarket(
   await personalMode.click()
   await expect.poll(() => market.locator('[data-dshmarket-personal] [data-package]').count(), { timeout: 15_000 }).toBeGreaterThan(0)
   expect(await market.locator(`[data-package="${fixtureName}"]`).isVisible()).toBe(true)
+  await publicMode.click()
+
+  await builtinMemory.click()
+  await market.locator('[data-dshmarket-protected-package]').waitFor({ state: 'visible', timeout: 15_000 })
+  expect(await market.locator('[data-dshmarket-protected-package]').innerText())
+    .toMatch(/(?:Managed by DeepSeek Harness Desktop|由 DeepSeek Harness Desktop 管理)/u)
   await publicMode.click()
 
   await management.click()
@@ -1119,6 +1127,10 @@ async function exercisePluginMarket(
   consoleErrors.length = 0
   const protectedUpdate = await postMarket(page, '/dsh-market/update', { name: 'dshmarket' })
   expect(protectedUpdate).toEqual({ status: 409, body: { ok: false, code: 'self-protected' } })
+  const protectedMemoryUpdate = await postMarket(page, '/dsh-market/update', { name: 'dsh-missher-memory' })
+  expect(protectedMemoryUpdate).toEqual({ status: 409, body: { ok: false, code: 'self-protected' } })
+  const protectedMemoryUninstall = await postMarket(page, '/dsh-market/uninstall', { name: 'dsh-missher-memory' })
+  expect(protectedMemoryUninstall).toEqual({ status: 409, body: { ok: false, code: 'self-protected' } })
 
   const ordinaryUninstall = await postMarket(page, '/dsh-market/uninstall', { name: fixtureName })
   expect(ordinaryUninstall.status, JSON.stringify(ordinaryUninstall.body)).toBe(200)
@@ -1169,6 +1181,79 @@ async function exerciseUsageInsights(
     path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-usage-${platform}.png`),
   })
 
+  await page.keyboard.press('Escape')
+  await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
+}
+
+async function exercisePersonalization(
+  page: Page,
+  harnessHome: string,
+  platform: NodeJS.Platform,
+): Promise<void> {
+  const settingsTrigger = page.locator('[data-dsh-desktop-command="open-settings"]')
+  if (await settingsTrigger.getAttribute('aria-expanded') !== 'true') await settingsTrigger.click()
+  let settingsDialog = page.getByRole('dialog').last()
+  await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
+  await settingsDialog.getByRole('button', { name: /^(?:Personalization|个性化)$/u }).click()
+
+  let section = settingsDialog.locator('[data-personalization-section]')
+  await section.waitFor({ state: 'visible', timeout: 15_000 })
+  const instructions = `desktop-0.3.6-personalization-${platform}`
+  const editor = section.locator('#dsh-personalization-instructions')
+  await expect.poll(() => editor.isEnabled(), { timeout: 15_000 }).toBe(true)
+  await editor.fill(instructions)
+  await section.locator('#dsh-personalization-style').selectOption('professional')
+  await section.getByRole('button', { name: /^(?:Save|保存)$/u }).click()
+  await expect.poll(() => section.getByRole('status').innerText(), { timeout: 15_000 })
+    .toMatch(/^(?:Saved|已保存)$/u)
+
+  const stored = await readFile(join(harnessHome, 'AGENTS.md'), 'utf8')
+  expect(stored).toContain('<!-- dsh-desktop:personalization:start -->')
+  expect(stored).toContain(instructions)
+  expect(stored).toContain('<!-- dsh-desktop:reply-style:professional -->')
+  await page.screenshot({
+    path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-personalization-${platform}.png`),
+  })
+
+  await page.keyboard.press('Escape')
+  await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
+  await settingsTrigger.click()
+  settingsDialog = page.getByRole('dialog').last()
+  await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
+  await settingsDialog.getByRole('button', { name: /^(?:Personalization|个性化)$/u }).click()
+  section = settingsDialog.locator('[data-personalization-section]')
+  await expect.poll(
+    () => section.locator('#dsh-personalization-instructions').inputValue(),
+    { timeout: 15_000 },
+  ).toBe(instructions)
+  expect(await section.locator('#dsh-personalization-style').inputValue()).toBe('professional')
+  await page.keyboard.press('Escape')
+  await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
+}
+
+async function exerciseMemorySettings(
+  page: Page,
+  harnessHome: string,
+  platform: NodeJS.Platform,
+): Promise<void> {
+  const stateFile = join(harnessHome, 'missher-memory', 'state.db')
+  const stateExists = async (): Promise<boolean> => readFile(stateFile).then(() => true, () => false)
+  expect(await stateExists()).toBe(false)
+
+  const settingsTrigger = page.locator('[data-dsh-desktop-command="open-settings"]')
+  if (await settingsTrigger.getAttribute('aria-expanded') !== 'true') await settingsTrigger.click()
+  const settingsDialog = page.getByRole('dialog').last()
+  await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
+  await settingsDialog.getByRole('button', { name: /^(?:Project Memory|项目记忆)$/u }).click()
+  const heading = settingsDialog.getByRole('heading', { name: /^(?:Project Memory|项目记忆)$/u })
+  await heading.waitFor({ state: 'visible', timeout: 30_000 })
+  const section = heading.locator('xpath=ancestor::section[1]')
+  await expect.poll(() => section.innerText(), { timeout: 15_000 })
+    .toMatch(/(?:Not configured|未配置)/u)
+  expect(await stateExists()).toBe(false)
+  await page.screenshot({
+    path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-memory-${platform}.png`),
+  })
   await page.keyboard.press('Escape')
   await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
 }
@@ -1436,6 +1521,8 @@ export async function runPackagedDesktopSmoke(
     })
 
     await exerciseUsageInsights(page, platform, clipboardSeed.expectedDailyTokens)
+    await exercisePersonalization(page, harnessHome, platform)
+    await exerciseMemorySettings(page, harnessHome, platform)
     await exerciseSystemUpdate(page, platform)
     await exercisePluginMarket(page, harnessHome, platform, consoleErrors)
     expect(consoleErrors.filter(message => (

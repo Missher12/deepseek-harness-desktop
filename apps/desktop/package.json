@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
   "description": "Native desktop shell for DeepSeek Harness",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "license": "MIT",
   "author": "DeepSeek Harness Contributors",
   "private": true,
@@ -241,6 +241,7 @@
     "@deepseek-ai/dsh-workflow-worker-thread": "workspace:^",
     "@deepseek-ai/dsh-workspace": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
+    "dsh-missher-memory": "https://github.com/Missher12/dsh-missher-memory/releases/download/v0.1.1/dsh-missher-memory-0.1.1.tgz",
     "dshmarket": "1.10.1",
     "pnpm": "11.7.0"
   },

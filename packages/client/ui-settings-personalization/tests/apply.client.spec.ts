@@ -60,7 +60,7 @@ describe('ui-settings-personalization apply', () => {
     b.personalizationRead.mockResolvedValueOnce({
       rpcId: 'read' as never,
       result: { ok: false as const, error: { code: 'settings-rejected' as const, message: 'blocked', details: { ns: 'personalization' } } },
-    })
+    } as never)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const face = (b.slots.entries('settings.section')[0]!.inject as unknown as () => PersonalizationSectionInjected)()
     await expect(face.load()).rejects.toThrow('blocked')

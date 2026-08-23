@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-08-24-desktop-0.3.6-personalization-billing-memory.md
-2026-08-24-desktop-0.3.6-personalization-billing-memory.md: a7489f1bb8c9a2c8700fbf1d6a9668c4f3861c48
-2026-08-24-desktop-0.3.6-personalization-billing-memory.zh.md: c5d9b2e4e3095cf2c9889f902fcf4c4fa28a5393
+2026-08-24-desktop-0.3.6-personalization-billing-memory.md: 107d7cf8ec8bffdbc8b77b4910c92cced6ad62df
+2026-08-24-desktop-0.3.6-personalization-billing-memory.zh.md: 90b8409ec052698741f6c33ba5ae8a7cbfa40545

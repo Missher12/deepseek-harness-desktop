@@ -22,8 +22,8 @@ export interface PersonalizationWrite {
 }
 
 export interface PersonalizationSectionInjected {
-  load(): Promise<PersonalizationView>
-  save(input: PersonalizationWrite): Promise<PersonalizationView>
+  load: () => Promise<PersonalizationView>
+  save: (input: PersonalizationWrite) => Promise<PersonalizationView>
 }
 
 export type PersonalizationSectionProps = PropsRuntime<'settings.section'>

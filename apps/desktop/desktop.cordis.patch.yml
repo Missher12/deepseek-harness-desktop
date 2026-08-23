@@ -15,8 +15,27 @@
     - id: desktop-workbench
       name: '@deepseek-ai/dsh-desktop-workbench'
 
+    # Built-in fallback for the independently upgradeable reviewed-memory
+    # bundle. Profile-local installations still win through Loader resolution.
+    - id: missher-memory
+      name: 'dsh-missher-memory'
+      config:
+        enabled: true
+        captureEnabled: true
+        recallEnabled: true
+
     - id: dsh-market
       name: 'dshmarket'
+      config:
+        builtins:
+          - name: 'dsh-missher-memory'
+            spec: 'builtin:0.1.1'
+            owner: 'Missher12'
+            url: 'https://github.com/Missher12/dsh-missher-memory'
+            category: 'memory'
+            description:
+              zh: '面向超长项目的本地审核式记忆：默认开启候选收集与召回，按项目隔离，并保留来源。'
+              en: 'Reviewed local memory for long projects, with default-on capture and recall, project isolation, and visible sources.'
 
     - id: desktop-system-update
       name: '@deepseek-ai/dsh-client-ui-settings-system-update'

@@ -1,3 +1,4 @@
+/** Simplified Chinese strings for the personalization Settings surface. */
 export const zh = {
   section: '个性化',
   title: '个性化',
@@ -22,8 +23,10 @@ export const zh = {
   styleProfessional: '专业',
 } satisfies Record<string, string>
 
+/** Stable dictionary keys shared by both supported locales. */
 export type PersonalizationLocaleKey = keyof typeof zh
 
+/** English strings mirroring every Simplified Chinese dictionary key. */
 export const en = {
   section: 'Personalization',
   title: 'Personalization',

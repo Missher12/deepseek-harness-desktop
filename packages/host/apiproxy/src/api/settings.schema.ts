@@ -14,8 +14,10 @@ const personalizationStyleSchema = z.union([
   z.literal('default'), z.literal('concise'), z.literal('friendly'), z.literal('professional'),
 ])
 
+/** Empty request for reading the fixed global personalization document. */
 export const settingsPersonalizationReadRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'settings.personalizationRead'>>>
 
+/** Browser-safe personalization state returned without exposing a file path. */
 export const settingsPersonalizationViewSchema = z.object({
   instructions: z.string(),
   style: personalizationStyleSchema,
@@ -24,14 +26,17 @@ export const settingsPersonalizationViewSchema = z.object({
   writable: z.boolean(),
 }) satisfies z.ZodType<Wire<PersonalizationView>>
 
+/** Response value for a successful personalization read. */
 export const settingsPersonalizationReadValueSchema = settingsPersonalizationViewSchema satisfies z.ZodType<Wire<ResponseValue<'settings.personalizationRead'>>>
 
+/** Revision-checked bounded write request for the Desktop-owned block. */
 export const settingsPersonalizationWriteRequestSchema = z.object({
   instructions: z.string().max(49_152),
   style: personalizationStyleSchema,
   expectedRevision: z.string().regex(/^[a-f0-9]{64}$/),
 }) satisfies z.ZodType<Wire<RequestPayload<'settings.personalizationWrite'>>>
 
+/** Authoritative personalization state returned after a successful write. */
 export const settingsPersonalizationWriteValueSchema = settingsPersonalizationViewSchema satisfies z.ZodType<Wire<ResponseValue<'settings.personalizationWrite'>>>
 
 /** One redacted secret slot. */

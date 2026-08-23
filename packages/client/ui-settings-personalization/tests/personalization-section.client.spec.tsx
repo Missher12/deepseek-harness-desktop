@@ -14,19 +14,27 @@ const base = {
   hasExternalContent: false,
   writable: true,
 }
+const unusedHook = (() => { throw new Error('unused by personalization components') }) as never
 
 function props(overrides: Partial<PersonalizationSectionProps> = {}): PersonalizationSectionProps {
   return {
+    close: vi.fn(),
+    useSessions: unusedHook,
+    useWorkspaces: unusedHook,
     t: makeTranslate(en),
     load: vi.fn(async () => base),
-    save: vi.fn(async input => ({ ...base, ...input, revision: 'b'.repeat(64) })),
+    save: vi.fn(async (input: Parameters<PersonalizationSectionProps['save']>[0]) => ({
+      ...base, ...input, revision: 'b'.repeat(64),
+    })),
     ...overrides,
-  } as PersonalizationSectionProps
+  }
 }
 
 describe('PersonalizationSection', () => {
   it('paints stable controls, loads the saved value, and enables Save only when dirty', async () => {
-    const save = vi.fn(async input => ({ ...base, ...input, revision: 'b'.repeat(64) }))
+    const save = vi.fn(async (input: Parameters<PersonalizationSectionProps['save']>[0]) => ({
+      ...base, ...input, revision: 'b'.repeat(64),
+    }))
     render(<PersonalizationSection {...props({ save })} />)
     const editor = screen.getByRole('textbox', { name: 'Custom instructions' }) as HTMLTextAreaElement
     const button = screen.getByRole('button', { name: 'Save' })
@@ -58,7 +66,7 @@ describe('PersonalizationSection', () => {
     })} />)
 
     await waitFor(() => { expect(screen.getByText(/Existing manual instructions are preserved/)).toBeTruthy() })
-    expect((screen.getByRole('textbox', { name: 'Custom instructions' }) as HTMLTextAreaElement).disabled).toBe(true)
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Custom instructions' }).disabled).toBe(true)
     expect(screen.getByText(/managed outside Desktop/)).toBeTruthy()
   })
 
@@ -73,6 +81,6 @@ describe('PersonalizationSection', () => {
 
     await waitFor(() => { expect(screen.getByRole('status').textContent).toContain('Could not save') })
     expect(editor.value).toBe('Do not lose this draft.')
-    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(false)
   })
 })

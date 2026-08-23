@@ -113,6 +113,17 @@ function scriptedApi(overrides: {
     settings: {
       describe: r => ok(r, { writable: true, hasDocument: false, namespaces: [] }),
       openDocument: r => ok(r, { opened: true as const }),
+      personalizationRead: r => ok(r, {
+        instructions: '', style: 'default' as const, revision: 'empty',
+        hasExternalContent: false, writable: true,
+      }),
+      personalizationWrite: r => ok(r, {
+        instructions: r.payload.instructions,
+        style: r.payload.style,
+        revision: 'saved',
+        hasExternalContent: false,
+        writable: true,
+      }),
       update: err,
       replace: err,
       mutate: err,

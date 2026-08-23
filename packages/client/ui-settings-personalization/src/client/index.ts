@@ -19,9 +19,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
+/** Locale namespace owned by the global personalization Settings section. */
 export const NS = 'settings.personalization'
+/** Browser services required to register and operate the Settings section. */
 export const inject = ['slots', 'locale', 'connection']
 
+/** Registers the localized personalization section against the typed Settings API. */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-personalization: dictionaries')
   const api = (ctx.get('connection') as ConnectionHandle).api.settings

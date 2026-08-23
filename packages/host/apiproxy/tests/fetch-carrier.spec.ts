@@ -256,6 +256,33 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       async openDocument(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { opened: true as const } } }
       },
+      async personalizationRead(request) {
+        return {
+          rpcId: request.rpcId,
+          result: {
+            ok: true,
+            value: {
+              instructions: '', style: 'default' as const, revision: 'empty',
+              hasExternalContent: false, writable: true,
+            },
+          },
+        }
+      },
+      async personalizationWrite(request) {
+        return {
+          rpcId: request.rpcId,
+          result: {
+            ok: true,
+            value: {
+              instructions: request.payload.instructions,
+              style: request.payload.style,
+              revision: 'saved',
+              hasExternalContent: false,
+              writable: true,
+            },
+          },
+        }
+      },
       async update(request) {
         return { rpcId: request.rpcId, result: { ok: false, error: { code: 'settings-rejected', message: 'stub', details: { ns: request.payload.ns } } } }
       },

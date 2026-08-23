@@ -9,14 +9,18 @@ import {
 } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 
+/** Maximum UTF-8 size accepted for the Desktop-owned custom instructions. */
 export const MAX_PERSONALIZATION_INSTRUCTIONS_BYTES = 48 * 1024
 
+/** Reply styles encoded inside the managed personalization block. */
 export const PERSONALIZATION_STYLES = [
   'default', 'concise', 'friendly', 'professional',
 ] as const
 
+/** One supported global reply-style preference. */
 export type PersonalizationStyle = typeof PERSONALIZATION_STYLES[number]
 
+/** Browser-safe projection of the fixed global personalization document. */
 export interface PersonalizationDocumentView {
   instructions: string
   style: PersonalizationStyle
@@ -25,12 +29,14 @@ export interface PersonalizationDocumentView {
   writable: boolean
 }
 
+/** Revision-checked input for replacing only the Desktop-owned block. */
 export interface PersonalizationDocumentWrite {
   instructions: string
   style: PersonalizationStyle
   expectedRevision: string
 }
 
+/** Stable validation, conflict, or ownership rejection from document storage. */
 export class PersonalizationDocumentError extends Error {
   constructor(
     readonly code: 'invalid' | 'conflict' | 'read-only',
@@ -155,6 +161,11 @@ async function readRegular(path: string): Promise<Buffer> {
   return await existingKind(path) === 'file' ? readFile(path) : Buffer.alloc(0)
 }
 
+/**
+ * Reads the managed block and ownership state without creating a document.
+ * @param path Fixed Host-resolved global AGENTS.md path.
+ * @returns Browser-safe content, revision, and writability facts.
+ */
 export async function readPersonalizationDocument(path: string): Promise<PersonalizationDocumentView> {
   const kind = await existingKind(path)
   if (kind === 'symlink' || kind === 'other') {
@@ -229,7 +240,7 @@ async function replaceAtomically(path: string, raw: Buffer): Promise<void> {
         throw replacementError
       }
     }
-    await chmod(path, 0o600).catch((error) => {
+    await chmod(path, 0o600).catch((error: unknown) => {
       if (process.platform !== 'win32') throw error
     })
   } finally {
@@ -238,6 +249,12 @@ async function replaceAtomically(path: string, raw: Buffer): Promise<void> {
   }
 }
 
+/**
+ * Atomically replaces the managed block after validating ownership and revision.
+ * @param path Fixed Host-resolved global AGENTS.md path.
+ * @param input Bounded instructions, style, and optimistic revision.
+ * @returns Authoritative document state after the replacement.
+ */
 export async function writePersonalizationDocument(
   path: string,
   input: PersonalizationDocumentWrite,

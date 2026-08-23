@@ -10,7 +10,7 @@ The section paints stable disabled controls before the first response, then prov
 
 ## Model Experience
 
-Saved text becomes visible on the next request through the existing agent-instructions loader. This package does not inject model context itself and does not add a second instruction source.
+Indirectly, through the existing agent-instructions loader, which makes saved text visible from the next request while this browser package adds no second instruction source.
 
 #### KV Cache effect
 

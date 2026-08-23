@@ -156,10 +156,59 @@ describe('desktop package manifest', () => {
       id: 'session-messenger',
       name: '@deepseek-ai/dsh-session-messenger',
     }])
-    expect(rows.find(row => row.id === 'dsh-market')).toEqual({
+    expect(rows.find(row => row.id === 'dsh-market')).toMatchObject({
       id: 'dsh-market',
       name: 'dshmarket',
     })
+  })
+
+  it('ships one default-on reviewed memory plugin from its immutable release archive', () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as DesktopManifest
+    const patches = yaml.load(
+      readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8'),
+    ) as DesktopPatch[]
+    const rows = patches.flatMap(patch => patch.insert ?? [])
+
+    expect(manifest.dependencies['dsh-missher-memory']).toBe(
+      'https://github.com/Missher12/dsh-missher-memory/releases/download/v0.1.1/dsh-missher-memory-0.1.1.tgz',
+    )
+    expect(rows.filter(row => row.id === 'missher-memory')).toEqual([{
+      id: 'missher-memory',
+      name: 'dsh-missher-memory',
+      config: {
+        enabled: true,
+        captureEnabled: true,
+        recallEnabled: true,
+      },
+    }])
+
+    expect(rows.find(row => row.id === 'dsh-market')).toEqual({
+      id: 'dsh-market',
+      name: 'dshmarket',
+      config: {
+        builtins: [{
+          name: 'dsh-missher-memory',
+          spec: 'builtin:0.1.1',
+          owner: 'Missher12',
+          url: 'https://github.com/Missher12/dsh-missher-memory',
+          category: 'memory',
+          description: {
+            zh: '面向超长项目的本地审核式记忆：默认开启候选收集与召回，按项目隔离，并保留来源。',
+            en: 'Reviewed local memory for long projects, with default-on capture and recall, project isolation, and visible sources.',
+          },
+        }],
+      },
+    })
+
+    const marketPatch = readFileSync(
+      new URL('../../../patches/dshmarket@1.10.1.patch', import.meta.url),
+      'utf8',
+    )
+    expect(marketPatch).toContain('builtins?: BuiltinPlugin[]')
+    expect(marketPatch).toContain('protected: [...protectedPackageNames]')
+    expect(marketPatch).toContain('data-dshmarket-protected-package')
   })
 
   it('builds one visible per-user Windows x64 Setup with progress, shortcuts, and launch-after-install', () => {
@@ -241,6 +290,8 @@ describe('desktop package manifest', () => {
     expect(smoke).toContain('data-dshmarket-plugin-row')
     expect(smoke).toContain('data-dshmarket-primary-action')
     expect(smoke).toContain('data-dshmarket-overflow-menu')
+    expect(smoke).toContain('button[data-package="dsh-missher-memory"]')
+    expect(smoke).toContain('data-dshmarket-protected-package')
     expect(smoke).toContain("'/dsh-market/update'")
     expect(smoke).toContain("'/dsh-market/uninstall'")
     expect(smoke).toContain("code: 'self-protected'")
