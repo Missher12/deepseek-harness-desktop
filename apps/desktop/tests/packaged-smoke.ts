@@ -1079,7 +1079,7 @@ async function exercisePluginMarket(
 
   await personalMode.click()
   await expect.poll(() => market.locator('[data-dshmarket-personal] [data-package]').count(), { timeout: 15_000 }).toBeGreaterThan(0)
-  expect(await market.locator(`[data-package="${fixtureName}"]`).isVisible()).toBe(true)
+  expect(await market.locator(`[data-dshmarket-personal] [data-package="${fixtureName}"]`).isVisible()).toBe(true)
   await publicMode.click()
 
   await builtinMemory.click()
@@ -1435,6 +1435,7 @@ export async function runPackagedDesktopSmoke(
         DSH_HOME: harnessHome,
         DSH_DESKTOP_SMOKE_MODEL_KEY: 'desktop-smoke-placeholder-key',
         DSH_TELEMETRY_DISABLED: '1',
+        MISSHER_TENCENTDB_DIR: join(temporaryRoot, 'memory-source-unconfigured'),
         DEEPSEEK_API_KEY: '',
         DEEPSEEK_BASE_URL: providerTripwire.url,
       },
