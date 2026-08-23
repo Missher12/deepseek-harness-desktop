@@ -16,7 +16,7 @@
 - Create: `packages/client/ui-settings-usage/tests/charts.client.spec.ts`
 - Modify: `packages/client/ui-settings-usage/src/client/charts.ts`
 
-- [ ] **Step 1: Write the failing weekly and cumulative tests**
+- [x] **Step 1: Write the failing weekly and cumulative tests**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -53,13 +53,13 @@ describe('aggregate particle intensity', () => {
 })
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: `pnpm exec vitest run packages/client/ui-settings-usage/tests/charts.client.spec.ts`
 
 Expected: FAIL because both aggregate modes currently return only level `4` for every filled particle.
 
-- [ ] **Step 3: Add the minimal relative-level projection**
+- [x] **Step 3: Add the minimal relative-level projection**
 
 ```ts
 function logarithmicLevel(tokens: number, maximum: number): UsageActivityDay['level'] {
@@ -79,13 +79,13 @@ function stackLevel(
 
 In weekly and cumulative projection, compute `const level = logarithmicLevel(tokens, maximum)` and pass it to `stackLevel(row, filledRows, level)`.
 
-- [ ] **Step 4: Run the focused test and verify GREEN**
+- [x] **Step 4: Run the focused test and verify GREEN**
 
 Run: `pnpm exec vitest run packages/client/ui-settings-usage/tests/charts.client.spec.ts packages/client/ui-settings-usage/tests/components.client.spec.tsx packages/client/ui-settings-usage/tests/styles.client.spec.ts`
 
 Expected: all Usage tests pass with no snapshot geometry changes.
 
-- [ ] **Step 5: Commit the independently testable Usage change**
+- [x] **Step 5: Commit the independently testable Usage change**
 
 ```bash
 git add packages/client/ui-settings-usage/src/client/charts.ts packages/client/ui-settings-usage/tests/charts.client.spec.ts
