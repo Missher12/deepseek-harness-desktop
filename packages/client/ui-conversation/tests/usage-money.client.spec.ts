@@ -57,6 +57,19 @@ describe('DeepSeek session money', () => {
     expect(pricingTierAt(new Date('2026-08-24T04:30:00.000Z'))).toBe('weekday-off-peak')
   })
 
+  it('classifies every minute boundary and the Friday-to-Saturday transition exactly', () => {
+    expect(pricingTierAt(new Date('2026-08-24T00:59:59.999Z'))).toBe('weekday-off-peak')
+    expect(pricingTierAt(new Date('2026-08-24T01:00:00.000Z'))).toBe('weekday-peak')
+    expect(pricingTierAt(new Date('2026-08-24T03:59:59.999Z'))).toBe('weekday-peak')
+    expect(pricingTierAt(new Date('2026-08-24T04:00:00.000Z'))).toBe('weekday-off-peak')
+    expect(pricingTierAt(new Date('2026-08-24T05:59:59.999Z'))).toBe('weekday-off-peak')
+    expect(pricingTierAt(new Date('2026-08-24T06:00:00.000Z'))).toBe('weekday-peak')
+    expect(pricingTierAt(new Date('2026-08-24T09:59:59.999Z'))).toBe('weekday-peak')
+    expect(pricingTierAt(new Date('2026-08-24T10:00:00.000Z'))).toBe('weekday-off-peak')
+    expect(pricingTierAt(new Date('2026-08-28T15:59:59.999Z'))).toBe('weekday-off-peak')
+    expect(pricingTierAt(new Date('2026-08-28T16:00:00.000Z'))).toBe('weekend-off-peak')
+  })
+
   it('never formats a positive sub-ten-thousandth estimate as zero', () => {
     expect(formatCny(0)).toBe('0.0000')
     expect(formatCny(0.00002)).toBe('<0.0001')

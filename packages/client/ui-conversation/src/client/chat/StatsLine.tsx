@@ -250,9 +250,27 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
   const model = billingModel?.kind === 'single' && billingModel.provider === 'deepseek-official'
     ? billingModel.model
     : undefined
+  // One wall-clock snapshot owns both price lookup and the visible tier. Its
+  // aligned minute tick makes documented Beijing boundaries self-updating,
+  // even when no conversation event causes another render.
+  const [clock, setClock] = useState(() => new Date())
+  useEffect(() => {
+    let interval: number | undefined
+    const tick = (): void => { setClock(new Date()) }
+    const timeout = window.setTimeout(() => {
+      tick()
+      interval = window.setInterval(tick, 60_000)
+    }, 60_000 - (Date.now() % 60_000))
+    return () => {
+      window.clearTimeout(timeout)
+      if (interval !== undefined) window.clearInterval(interval)
+    }
+  }, [])
   // Account balance: fetched once on mount and re-read on a one-minute cycle
-  // through the Host bridge; absent bridge or failed read hides the group.
+  // through the Host bridge. A mounted bridge's failed read is explicit; an
+  // absent bridge remains absent because this capability is Desktop/Web-only.
   const [balance, setBalance] = useState<BalanceSnapshot | null>(null)
+  const [balanceAttempted, setBalanceAttempted] = useState(false)
   const [tieredEstimates, setTieredEstimates] = useState(true)
   useEffect(() => {
     const bridge = estimateBridge()
@@ -272,7 +290,10 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
     let disposed = false
     const refresh = async (): Promise<void> => {
       const snapshot = await fetchBalanceSnapshot(bootstrap)
-      if (!disposed) setBalance(snapshot)
+      if (!disposed) {
+        setBalance(snapshot)
+        setBalanceAttempted(true)
+      }
     }
     void refresh()
     const timer = window.setInterval(() => { void refresh() }, 60_000)
@@ -320,21 +341,23 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
     const turnModel = latestModel(latestBilling)
     const turnCost = latestBilling === null || latestBilling === undefined
       ? null
-      : sessionCostCny(latestBilling, turnModel)
+      : sessionCostCny(latestBilling, turnModel, clock)
     if (turnCost !== null && turnCost > 0) {
       financialGroups.push(t('stats.lastTurnCost', { cost: formatCny(turnCost) }))
     }
     if (usage !== undefined && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)) {
-      const cost = sessionCostCny(usage, model)
+      const cost = sessionCostCny(usage, model, clock)
       if (cost !== null && cost > 0) financialGroups.push(t('stats.cost', { cost: formatCny(cost) }))
     }
   }
   if (balance?.totalBalance !== null && balance?.totalBalance !== undefined) {
     const formatted = formatBalance(balance.totalBalance, balance.currency)
     if (formatted !== null) financialGroups.push(t('stats.balance', { balance: formatted }))
+  } else if (balanceAttempted) {
+    financialGroups.push(t('stats.balanceUnavailable'))
   }
-  if (tieredEstimates && priceOfModel(model) !== null) {
-    financialGroups.push(t(`stats.tier.${pricingTierAt()}`))
+  if (tieredEstimates && priceOfModel(model, clock) !== null) {
+    financialGroups.push(t(`stats.tier.${pricingTierAt(clock)}`))
   }
   const line = groups.join(' | ')
   // The row elides with ellipsis when overlong; a delayed hover tooltip carries
@@ -358,7 +381,7 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
         <div ref={rootRef} className={css.root}>
           {groups.map((group, i) => (
             <Fragment key={group}>
-              {i > 0 && <><span className={css.sep} aria-hidden>|</span>{' '}</>}
+              {i > 0 && <>{' '}<span className={css.sep} aria-hidden>|</span>{' '}</>}
               <span>{group}</span>
             </Fragment>
           ))}
@@ -367,7 +390,7 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
       {financialGroups.length > 0 && <div className={`${css.root} ${css.finance}`}>
         {financialGroups.map((group, i) => (
           <Fragment key={group}>
-            {i > 0 && <><span className={css.sep} aria-hidden>|</span>{' '}</>}
+            {i > 0 && <>{' '}<span className={css.sep} aria-hidden>|</span>{' '}</>}
             <span>{group}</span>
           </Fragment>
         ))}

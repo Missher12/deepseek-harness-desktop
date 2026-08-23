@@ -477,10 +477,13 @@ export function apply(ctx: Context, config: Config): void {
     onChange: ensureRegistrationFacts,
   })
 
-  // Read-only account-balance bridge: mounted only in Web compositions that
-  // carry the WebServer service; other compositions skip it entirely.
-  const disposeBalance = installDeepSeekBalanceHttp(ctx, { options, resolveApiKey })
-  if (disposeBalance !== undefined) {
-    ctx.effect(() => disposeBalance, 'llm-deepseek: account balance HTTP bridge')
-  }
+  // Read-only account-balance bridge: an optional child of the WebServer
+  // service. Desktop loads this adapter before the server, so a one-shot
+  // lookup here would permanently miss the bridge for the real application.
+  ctx.inject(['webServer'], (balanceCtx) => {
+    const disposeBalance = installDeepSeekBalanceHttp(balanceCtx, { options, resolveApiKey })
+    /* v8 ignore next -- the declared injection guarantees the service; the installer stays optional for direct callers. */
+    if (disposeBalance === undefined) return
+    balanceCtx.effect(() => disposeBalance, 'llm-deepseek: account balance HTTP bridge')
+  })
 }
