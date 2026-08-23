@@ -10,12 +10,12 @@ function mount() {
   return { el, page: new BootPage(el) }
 }
 
-function mountMacDesktop() {
+function mountDesktop(userAgent = 'Macintosh') {
   const el = document.createElement('div')
   document.body.append(el)
   return {
     el,
-    page: new BootPage(el, { search: '?surface=desktop', userAgent: 'Macintosh' }),
+    page: new BootPage(el, { search: '?surface=desktop', userAgent }),
   }
 }
 
@@ -42,11 +42,11 @@ describe('BootPage', () => {
     expect(el.textContent).not.toContain('Failed to load plugins')
   })
 
-  it('shows truthful linear plugin progress on the Mac Desktop surface', () => {
-    const { el, page } = mountMacDesktop()
+  it('shows truthful linear plugin progress on the native Desktop surface', () => {
+    const { el, page } = mountDesktop()
     page.setTotal(4)
     const progress = el.querySelector<HTMLElement>('[data-dsh-boot-linear]')
-    expect(el.firstElementChild?.getAttribute('data-dsh-boot-mac')).toBe('')
+    expect(el.firstElementChild?.getAttribute('data-dsh-boot-desktop')).toBe('')
     expect(el.querySelector<HTMLImageElement>('[data-dsh-boot-icon]')?.src).toMatch(/\/desktop-icon\.png$/u)
     expect(progress?.getAttribute('aria-valuenow')).toBe('0')
     expect(el.textContent).toContain('正在加载组件 0 / 4')
@@ -59,6 +59,15 @@ describe('BootPage', () => {
     page.setState('d', 'active')
     expect(progress?.getAttribute('aria-valuenow')).toBe('100')
     expect(el.textContent).toContain('正在加载组件 4 / 4')
+  })
+
+  it('uses the same truthful plugin progress on Windows Desktop', () => {
+    const { el, page } = mountDesktop('Mozilla/5.0 (Windows NT 10.0)')
+    page.setTotal(4)
+    page.setState('a', 'active')
+    expect(el.firstElementChild?.getAttribute('data-dsh-boot-desktop')).toBe('')
+    expect(el.querySelector('[data-dsh-boot-linear]')?.getAttribute('aria-valuenow')).toBe('25')
+    expect(el.textContent).toContain('正在加载组件 1 / 4')
   })
 
   it('lists failed entries', () => {
@@ -81,8 +90,8 @@ describe('BootPage', () => {
     expect(el.textContent).not.toContain('Loading plugins…')
   })
 
-  it('replaces the Mac Desktop progress surface with the failure report', () => {
-    const { el, page } = mountMacDesktop()
+  it('replaces the native Desktop progress surface with the failure report', () => {
+    const { el, page } = mountDesktop()
     page.setTotal(2)
     page.setState('a', 'active')
     page.fail('plugin activation stopped')

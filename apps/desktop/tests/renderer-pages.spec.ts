@@ -6,19 +6,12 @@ async function rendererPage(name: string): Promise<string> {
 }
 
 describe('local renderer pages', () => {
-  it('ships a self-contained loading page with a restrictive policy', async () => {
+  it('ships one polished self-contained Desktop loading page', async () => {
     const html = await rendererPage('loading.html')
     expect(html).toContain("default-src 'none'")
-    expect(html).toContain('Starting DeepSeek Harness')
-    expect(html).not.toMatch(/https?:\/\//u)
-  })
-
-  it('ships the self-contained minimal macOS startup progress surface', async () => {
-    const html = await rendererPage('loading-macos.html')
-    expect(html).toContain("default-src 'none'")
     expect(html).toContain("img-src 'self'")
-    expect(html).toContain('data-macos-startup')
-    expect(html).toContain('data-macos-local-progress')
+    expect(html).toContain('data-desktop-startup')
+    expect(html).toContain('data-desktop-local-progress')
     expect(html).toContain('../assets/icon-source.png')
     expect(html).toContain('正在准备你的工作区')
     expect(html).toContain('启动本地服务')
@@ -34,15 +27,21 @@ describe('local renderer pages', () => {
     expect(html).not.toMatch(/https?:\/\//u)
   })
 
-  it('keeps the macOS plugin-loading surface on the same light theme', async () => {
+  it('selects the same local loading document on every native platform', async () => {
+    const main = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8')
+    expect(main).toContain("new URL('../renderer/loading.html', import.meta.url)")
+    expect(main).not.toContain('loading-macos.html')
+  })
+
+  it('keeps the shared Desktop plugin-loading surface on the same light theme', async () => {
     const css = await readFile(
       new URL('../../../packages/client/web/src/boot-page.module.css', import.meta.url),
       'utf8',
     )
-    const macSurface = css.slice(css.indexOf('.boot[data-dsh-boot-mac]'))
-    expect(macSurface).toContain('--dsh-boot-bg: #f6f7fb')
-    expect(macSurface).toContain('--dsh-boot-label-primary: #171a21')
-    expect(macSurface).not.toContain('--dsh-boot-bg: #07090f')
+    const desktopSurface = css.slice(css.indexOf('.boot[data-dsh-boot-desktop]'))
+    expect(desktopSurface).toContain('--dsh-boot-bg: #f6f7fb')
+    expect(desktopSurface).toContain('--dsh-boot-label-primary: #171a21')
+    expect(desktopSurface).not.toContain('--dsh-boot-bg: #07090f')
   })
 
   it('renders only closed failure reasons and recovery actions', async () => {

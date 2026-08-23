@@ -11,11 +11,11 @@ const readUpdateMetadata = (): { desktopVersion?: unknown; harnessVersion?: unkn
   }
 
 describe('official core Desktop migration', () => {
-  it('embeds official rc.2 and advances the clean effort-label release to Desktop 0.3.4', () => {
+  it('embeds official rc.2 and advances the shared loading release to Desktop 0.3.5', () => {
     expect(readManifest('package.json').version).toBe('0.1.1-rc.2')
-    expect(readManifest('apps/desktop/package.json').version).toBe('0.3.4')
+    expect(readManifest('apps/desktop/package.json').version).toBe('0.3.5')
     expect(readUpdateMetadata()).toMatchObject({
-      desktopVersion: '0.3.4',
+      desktopVersion: '0.3.5',
       harnessVersion: '0.1.1-rc.2',
     })
   })

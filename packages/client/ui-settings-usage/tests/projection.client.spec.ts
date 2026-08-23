@@ -42,7 +42,7 @@ describe('usage chart projections', () => {
     expect(cumulative.flat().at(-1)?.periodStart).toBe('2025-08-17')
     expect(cumulative.flat().at(-1)?.periodEnd).toBe('2026-08-22')
     expect(cumulative[0]?.slice(0, 6).every(particle => particle.level === 0)).toBe(true)
-    expect(cumulative[0]?.at(-1)?.level).toBe(4)
+    expect(cumulative[0]?.at(-1)?.level).toBe(2)
     expect(cumulative.at(-1)?.every(particle => particle.level === 4)).toBe(true)
 
     const withPriorHistory = buildParticleGrid(source, 'cumulative', 10_000)

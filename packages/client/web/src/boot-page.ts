@@ -5,11 +5,12 @@
  */
 import type { LoaderEntryState } from './loader-status.ts'
 import css from './boot-page.module.css'
-import { isMacDesktopSurface } from './desktop-surface.ts'
+import { isDesktopSurface } from './desktop-surface.ts'
 
-/** Browser inputs used to select the native macOS-only boot surface. */
+/** Browser inputs used to select the explicit native Desktop boot surface. */
 export interface BootPageEnvironment {
   search: string
+  /** Retained as a test seam; platform no longer changes native Desktop branding. */
   userAgent: string
 }
 
@@ -36,7 +37,7 @@ export class BootPage {
   private readonly wordmark: HTMLDivElement
   private readonly spinner: HTMLDivElement
   private readonly hint: HTMLDivElement
-  private readonly macDesktop: boolean
+  private readonly desktop: boolean
   private readonly icon: HTMLImageElement | undefined
   private readonly linear: HTMLDivElement | undefined
   private readonly linearFill: HTMLDivElement | undefined
@@ -53,16 +54,16 @@ export class BootPage {
    * @param container - Application mount point.
    */
   constructor(container: HTMLElement, environment: BootPageEnvironment = browserEnvironment()) {
-    this.macDesktop = isMacDesktopSurface(environment.search, environment.userAgent)
+    this.desktop = isDesktopSurface(environment.search)
     this.root = div(css.boot)
     this.root.dataset.dshBoot = ''
-    if (this.macDesktop) this.root.dataset.dshBootMac = ''
+    if (this.desktop) this.root.dataset.dshBootDesktop = ''
     this.card = div(css.card)
     this.wordmark = div(css.wordmark, 'HARNESS')
     this.spinner = div(css.spinner)
     this.spinner.dataset.dshBootSpinner = ''
     this.hint = div(css.hint, 'Loading plugins…')
-    if (this.macDesktop) {
+    if (this.desktop) {
       this.icon = document.createElement('img')
       this.icon.className = css.macIcon ?? ''
       this.icon.src = '/desktop-icon.png'
@@ -145,9 +146,9 @@ export class BootPage {
     this.card.replaceChildren(this.wordmark, report)
   }
 
-  /** Restore the correct generic or macOS loading composition after state changes. */
+  /** Restore the correct generic Web or native Desktop composition after state changes. */
   private renderLoading(): void {
-    if (this.macDesktop) {
+    if (this.desktop) {
       if (this.linear?.parentElement !== this.card) {
         this.card.replaceChildren(
           this.icon as HTMLImageElement,

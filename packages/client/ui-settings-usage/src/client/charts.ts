@@ -50,15 +50,26 @@ function logarithmicRows(tokens: number, maximum: number): number {
   return Math.min(7, Math.max(1, Math.ceil(ratio * 7)))
 }
 
+/** Map a positive aggregate onto the same four relative color levels as a day. */
+function logarithmicLevel(tokens: number, maximum: number): UsageActivityDay['level'] {
+  if (tokens <= 0 || maximum <= 0) return 0
+  const level = Math.ceil(4 * Math.log1p(tokens) / Math.log1p(maximum))
+  return Math.min(4, Math.max(1, level)) as 1 | 2 | 3 | 4
+}
+
 /** Preserve a readable bottom-up progression for an already cumulative series. */
 function cumulativeRows(tokens: number, maximum: number): number {
   if (tokens <= 0 || maximum <= 0) return 0
   return Math.min(7, Math.max(1, Math.ceil(tokens / maximum * 7)))
 }
 
-/** Fill a seven-particle column from bottom to top. */
-function stackLevel(row: number, filledRows: number): UsageActivityDay['level'] {
-  return row >= 7 - filledRows ? 4 : 0
+/** Fill a seven-particle column from bottom to top at one aggregate intensity. */
+function stackLevel(
+  row: number,
+  filledRows: number,
+  level: UsageActivityDay['level'],
+): UsageActivityDay['level'] {
+  return row >= 7 - filledRows ? level : 0
 }
 
 /**
@@ -98,10 +109,11 @@ export function buildParticleGrid(
       const periodStart = week[0].date
       const periodEnd = (week[week.length - 1] as UsageActivityDay).date
       const filledRows = logarithmicRows(tokens, maximum)
+      const level = logarithmicLevel(tokens, maximum)
       return mapWeek(week, (day, row) => ({
         date: day.date,
         tokens,
-        level: stackLevel(row, filledRows),
+        level: stackLevel(row, filledRows, level),
         periodStart,
         periodEnd,
         labelDate: periodStart,
@@ -123,10 +135,11 @@ export function buildParticleGrid(
     const labelDate = week[0].date
     const periodEnd = (week[week.length - 1] as UsageActivityDay).date
     const filledRows = cumulativeRows(tokens, maximum)
+    const level = logarithmicLevel(tokens, maximum)
     return mapWeek(week, (day, row) => ({
       date: day.date,
       tokens,
-      level: stackLevel(row, filledRows),
+      level: stackLevel(row, filledRows, level),
       periodStart: rangeStart,
       periodEnd,
       labelDate,

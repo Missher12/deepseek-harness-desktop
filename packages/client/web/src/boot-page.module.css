@@ -103,7 +103,7 @@
   white-space: pre-wrap;
 }
 
-.boot[data-dsh-boot-mac] {
+.boot[data-dsh-boot-desktop] {
   --dsh-boot-bg: #f6f7fb;
   --dsh-boot-label-primary: #171a21;
   --dsh-boot-label-secondary: #4a5568;
@@ -114,7 +114,7 @@
     var(--dsh-boot-bg);
 }
 
-.boot[data-dsh-boot-mac] .card {
+.boot[data-dsh-boot-desktop] .card {
   width: min(300px, calc(100% - 48px));
   gap: 0;
 }
@@ -126,7 +126,7 @@
   box-shadow: 0 8px 24px rgb(77 107 254 / 24%);
 }
 
-.boot[data-dsh-boot-mac] .wordmark {
+.boot[data-dsh-boot-desktop] .wordmark {
   margin-top: 17px;
   font-size: 25px;
   line-height: 30px;
@@ -134,7 +134,7 @@
   letter-spacing: -.035em;
 }
 
-.boot[data-dsh-boot-mac] .hint { margin-top: 6px; }
+.boot[data-dsh-boot-desktop] .hint { margin-top: 6px; }
 
 .macProgress {
   position: relative;

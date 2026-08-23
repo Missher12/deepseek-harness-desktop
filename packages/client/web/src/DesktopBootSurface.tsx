@@ -1,13 +1,13 @@
 /**
- * macOS Desktop boot continuity surface. It is deliberately kernel-local and
+ * Native Desktop boot continuity surface. It is deliberately kernel-local and
  * self-contained: plugin failures must remain visible even when no UI plugin
  * can activate.
  */
 import css from './DesktopBootSurface.module.css'
 
-export { isMacDesktopSurface } from './desktop-surface.ts'
+export { isDesktopSurface } from './desktop-surface.ts'
 
-/** Visual phase for the macOS Desktop startup surface. */
+/** Visual phase for the native Desktop startup surface. */
 export type DesktopBootPhase = 'hold' | 'exit'
 
 /** Inputs owned by the shell boot gate. */
