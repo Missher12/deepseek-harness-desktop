@@ -69,6 +69,20 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- The 2026-08-23 loading/usage candidate keeps the existing 53×7 particle
+  geometry and daily heatmap semantics, but gives weekly and cumulative filled
+  particles logarithmic relative intensity levels from 1 through 4 instead of
+  painting every non-zero aggregate at the strongest color. This changes only
+  visual emphasis: row counts, token totals, hover facts, and daily particles
+  are unchanged. Desktop startup now uses one shared white DeepSeek loading
+  document on macOS and Windows, and the later Web-plugin boot surface recognizes
+  the explicit `surface=desktop` marker on both platforms; ordinary browser Web
+  sessions retain the generic Harness spinner. The focused regression suite
+  passes 42 tests across Usage, boot-page, Desktop lifecycle, and window paths;
+  Host, Client, Web, and Desktop-main production builds also pass. This is
+  source-level cross-platform evidence only: native Windows Setup acceptance,
+  a packaged Intel Mac smoke, installation, merge, publication, and release
+  asset replacement have not been performed for this candidate.
 - The 2026-08-23 source candidate adds an explicit stop boundary to the existing
   transcript-only cross-session messenger: either participant can stop one
   receipt-linked collaboration chain, all unresolved deliveries and waits settle
