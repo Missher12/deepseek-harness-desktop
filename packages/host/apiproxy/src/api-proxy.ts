@@ -110,6 +110,10 @@ import {
   inspectApiRemoteSession,
 } from '@deepseek-ai/dsh-api-remotes'
 import { canOpenNativePath, openNativePath, openNativeTextFile } from './native-path-opener.ts'
+import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+import {
+  readPersonalizationDocument, writePersonalizationDocument,
+} from './personalization-document.ts'
 
 /** Page size when history is called without maxMessages. */
 const DEFAULT_MAX_MESSAGES = 50
@@ -608,6 +612,8 @@ export interface ApiProxyDefaults {
    * falls back to platform detection ({@link canOpenNativePath}).
    */
   canOpenPath?: () => boolean
+  /** Fixed global AGENTS.md override for isolated tests; production uses dshHomePath. */
+  personalizationPath?: string
 }
 
 /** The tool/call payload fields the presenter path reads. */
@@ -1045,6 +1051,7 @@ function changedWorkspaceView(workspaceId: string, value: unknown): WorkspaceVie
  * @returns the ApiProxy implementation.
  */
 export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiProxy {
+  const personalizationPath = defaults.personalizationPath ?? dshHomePath('AGENTS.md')
   const sessionExportCompressionLevel = defaults.sessionExportCompressionLevel
     ?? DEFAULT_SESSION_LOG_COMPRESSION_LEVEL
   const coldBlankProbeMaxBytes = defaults.coldBlankProbeMaxBytes
@@ -3231,6 +3238,29 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     },
 
     settings: {
+      async personalizationRead(request) {
+        try {
+          return ok(request, await readPersonalizationDocument(personalizationPath))
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'settings-rejected',
+            message: error instanceof Error ? error.message : String(error),
+            details: { ns: 'personalization' },
+          })
+        }
+      },
+      async personalizationWrite(request) {
+        try {
+          return ok(request, await writePersonalizationDocument(personalizationPath, request.payload))
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error)
+          return err(request, {
+            code: 'settings-rejected',
+            message,
+            details: { ns: 'personalization' },
+          })
+        }
+      },
       describe(request) {
         const settings = ctx.get('settings')
         if (settings === undefined) return Promise.resolve(err(request, settingsAbsent()))

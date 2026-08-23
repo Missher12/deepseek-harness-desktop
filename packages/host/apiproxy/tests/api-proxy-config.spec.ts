@@ -5,6 +5,9 @@
  * invalidation frames (settings/credentials/models changed).
  */
 
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -268,6 +271,46 @@ function forwardedSettings(ns: string): HostFrame {
 }
 
 describe('settings domain', () => {
+  it('exposes bounded global personalization methods independently of the settings provider', async () => {
+    const ctx = await harness({ settings: false })
+    const api = createApiProxy(ctx, DEFAULTS)
+    const personalization = api.settings as unknown as {
+      personalizationRead?: unknown
+      personalizationWrite?: unknown
+    }
+
+    expect(personalization.personalizationRead).toBeTypeOf('function')
+    expect(personalization.personalizationWrite).toBeTypeOf('function')
+  })
+
+  it('reads, writes, and rejects stale global personalization through the typed API', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-personalization-api-'))
+    try {
+      const ctx = await harness({ settings: false })
+      const api = createApiProxy(ctx, { ...DEFAULTS, personalizationPath: join(root, 'AGENTS.md') })
+      const before = expectOk(await api.settings.personalizationRead(request({})))
+      const saved = expectOk(await api.settings.personalizationWrite(request({
+        instructions: 'Prefer executable conclusions.',
+        style: 'professional',
+        expectedRevision: before.revision,
+      })))
+      expect(saved).toMatchObject({
+        instructions: 'Prefer executable conclusions.',
+        style: 'professional',
+      })
+
+      const stale = expectErr(await api.settings.personalizationWrite(request({
+        instructions: 'stale',
+        style: 'default',
+        expectedRevision: before.revision,
+      })))
+      expect(stale).toMatchObject({ code: 'settings-rejected', details: { ns: 'personalization' } })
+      expect(stale.message).toContain('reload before saving')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('reports an actionable error when no settings provider is mounted', async () => {
     const ctx = await harness({ settings: false })
     const api = createApiProxy(ctx, DEFAULTS)

@@ -57,6 +57,7 @@ import {
 } from '../api/goals.schema.ts'
 import {
   settingsDescribeValueSchema, settingsMutateValueSchema, settingsOpenDocumentValueSchema,
+  settingsPersonalizationReadValueSchema, settingsPersonalizationWriteValueSchema,
   settingsReplaceValueSchema, settingsUpdateValueSchema,
 } from '../api/settings.schema.ts'
 import {
@@ -150,6 +151,8 @@ export interface IApiClient {
   }
   settings: {
     describe(payload: RequestPayload<'settings.describe'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.describe'>>>
+    personalizationRead(payload: RequestPayload<'settings.personalizationRead'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.personalizationRead'>>>
+    personalizationWrite(payload: RequestPayload<'settings.personalizationWrite'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.personalizationWrite'>>>
     openDocument(payload: RequestPayload<'settings.openDocument'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.openDocument'>>>
     update(payload: RequestPayload<'settings.update'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.update'>>>
     replace(payload: RequestPayload<'settings.replace'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.replace'>>>
@@ -218,6 +221,8 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'goal.complete': goalCompleteValueSchema,
   'goal.clear': goalClearValueSchema,
   'settings.describe': settingsDescribeValueSchema,
+  'settings.personalizationRead': settingsPersonalizationReadValueSchema,
+  'settings.personalizationWrite': settingsPersonalizationWriteValueSchema,
   'settings.openDocument': settingsOpenDocumentValueSchema,
   'settings.update': settingsUpdateValueSchema,
   'settings.replace': settingsReplaceValueSchema,
@@ -490,6 +495,8 @@ export abstract class AbstractApiClient implements IApiClient {
 
   readonly settings: IApiClient['settings'] = {
     describe: (payload, signal) => this.callUnary('settings.describe', payload, signal),
+    personalizationRead: (payload, signal) => this.callUnary('settings.personalizationRead', payload, signal),
+    personalizationWrite: (payload, signal) => this.callUnary('settings.personalizationWrite', payload, signal),
     openDocument: (payload, signal) => this.callUnary('settings.openDocument', payload, signal),
     update: (payload, signal) => this.callUnary('settings.update', payload, signal),
     replace: (payload, signal) => this.callUnary('settings.replace', payload, signal),

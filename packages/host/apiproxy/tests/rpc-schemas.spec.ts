@@ -37,6 +37,12 @@ import { approvalRequestIdSchema, approvalResponsePayloadSchema } from '../src/a
 import { askUserQuestionAnswerSchema, questionResponsePayloadSchema } from '../src/api/questions.schema.ts'
 import { goalEditRequestSchema } from '../src/api/goals.schema.ts'
 import { subagentPromptRequestSchema } from '../src/api/subagents.schema.ts'
+import {
+  settingsPersonalizationReadRequestSchema,
+  settingsPersonalizationReadValueSchema,
+  settingsPersonalizationWriteRequestSchema,
+  settingsPersonalizationWriteValueSchema,
+} from '../src/api/settings.schema.ts'
 
 describe('RpcId', () => {
   it('brands a raw string at zero runtime cost', () => {
@@ -52,6 +58,35 @@ describe('transportError', () => {
   it('folds Error and non-Error throws into the internal error branch', () => {
     expect(transportError(new Error('wire down'))).toEqual({ ok: false, error: { code: 'internal', message: 'wire down', details: {} } })
     expect(transportError('raw')).toMatchObject({ ok: false, error: { code: 'internal', message: 'raw' } })
+  })
+})
+
+describe('personalization settings schemas', () => {
+  const revision = 'a'.repeat(64)
+
+  it('accepts the bounded read and write wire shapes', () => {
+    expect(settingsPersonalizationReadRequestSchema.parse({})).toEqual({})
+    expect(settingsPersonalizationWriteRequestSchema.parse({
+      instructions: 'Be direct.', style: 'concise', expectedRevision: revision,
+    })).toEqual({ instructions: 'Be direct.', style: 'concise', expectedRevision: revision })
+    const view = {
+      instructions: 'Be direct.', style: 'friendly', revision,
+      hasExternalContent: true, writable: true,
+    } as const
+    expect(settingsPersonalizationReadValueSchema.parse(view)).toEqual(view)
+    expect(settingsPersonalizationWriteValueSchema.parse(view)).toEqual(view)
+  })
+
+  it('rejects unknown styles, malformed revisions, and over-limit text', () => {
+    expect(() => settingsPersonalizationWriteRequestSchema.parse({
+      instructions: '', style: 'playful', expectedRevision: revision,
+    })).toThrow()
+    expect(() => settingsPersonalizationWriteRequestSchema.parse({
+      instructions: '', style: 'default', expectedRevision: 'stale',
+    })).toThrow()
+    expect(() => settingsPersonalizationWriteRequestSchema.parse({
+      instructions: 'x'.repeat(49_153), style: 'default', expectedRevision: revision,
+    })).toThrow()
   })
 })
 

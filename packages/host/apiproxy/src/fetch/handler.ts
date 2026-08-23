@@ -60,6 +60,7 @@ import {
 } from '../api/goals.schema.ts'
 import {
   settingsDescribeRequestSchema, settingsMutateRequestSchema, settingsOpenDocumentRequestSchema,
+  settingsPersonalizationReadRequestSchema, settingsPersonalizationWriteRequestSchema,
   settingsReplaceRequestSchema, settingsUpdateRequestSchema,
 } from '../api/settings.schema.ts'
 import {
@@ -134,6 +135,8 @@ const UNARY_ROUTES: UnaryRoutes = {
   'goal.complete': { schema: goalCompleteRequestSchema, invoke: (api, r) => api.goals.complete(r) },
   'goal.clear': { schema: goalClearRequestSchema, invoke: (api, r) => api.goals.clear(r) },
   'settings.describe': { schema: settingsDescribeRequestSchema, invoke: (api, r) => api.settings.describe(r) },
+  'settings.personalizationRead': { schema: settingsPersonalizationReadRequestSchema, invoke: (api, r) => api.settings.personalizationRead(r) },
+  'settings.personalizationWrite': { schema: settingsPersonalizationWriteRequestSchema, invoke: (api, r) => api.settings.personalizationWrite(r) },
   'settings.openDocument': { schema: settingsOpenDocumentRequestSchema, invoke: (api, r, signal) => api.settings.openDocument(r, signal) },
   'settings.update': { schema: settingsUpdateRequestSchema, invoke: (api, r) => api.settings.update(r) },
   'settings.replace': { schema: settingsReplaceRequestSchema, invoke: (api, r) => api.settings.replace(r) },

@@ -8,6 +8,18 @@
 
 import type { RpcRequest, RpcResponse } from './rpc.ts'
 
+/** Reply styles stored inside the Desktop-owned global instruction block. */
+export type PersonalizationStyle = 'default' | 'concise' | 'friendly' | 'professional'
+
+/** Safe browser view of the fixed global personalization document. */
+export interface PersonalizationView {
+  instructions: string
+  style: PersonalizationStyle
+  revision: string
+  hasExternalContent: boolean
+  writable: boolean
+}
+
 /** One schema-declared secret slot inside a redacted namespace value. */
 export interface SettingsSecretView {
   /** Path from the section root to the removed field. */
@@ -51,6 +63,16 @@ export type SettingsPathOpView =
 
 /** Settings-domain unary methods (the map keys settings.* of RpcMethodMap). */
 export interface SettingsApi {
+  /** Read the Desktop-owned block from the fixed global AGENTS.md. */
+  personalizationRead(request: RpcRequest<{}>): Promise<RpcResponse<PersonalizationView>>
+
+  /** Replace only the Desktop-owned block after a revision check. */
+  personalizationWrite(request: RpcRequest<{
+    instructions: string
+    style: PersonalizationStyle
+    expectedRevision: string
+  }>): Promise<RpcResponse<PersonalizationView>>
+
   /**
    * Describe every registered namespace: redacted layered values plus the
    * serialized schema a client renders its form from. `hasDocument` reports

@@ -6,7 +6,33 @@
 import { z } from 'zod'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
-import type { SettingsNamespaceView, SettingsPathOpView, SettingsSecretView } from './settings.ts'
+import type {
+  PersonalizationView, SettingsNamespaceView, SettingsPathOpView, SettingsSecretView,
+} from './settings.ts'
+
+const personalizationStyleSchema = z.union([
+  z.literal('default'), z.literal('concise'), z.literal('friendly'), z.literal('professional'),
+])
+
+export const settingsPersonalizationReadRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'settings.personalizationRead'>>>
+
+export const settingsPersonalizationViewSchema = z.object({
+  instructions: z.string(),
+  style: personalizationStyleSchema,
+  revision: z.string().regex(/^[a-f0-9]{64}$/),
+  hasExternalContent: z.boolean(),
+  writable: z.boolean(),
+}) satisfies z.ZodType<Wire<PersonalizationView>>
+
+export const settingsPersonalizationReadValueSchema = settingsPersonalizationViewSchema satisfies z.ZodType<Wire<ResponseValue<'settings.personalizationRead'>>>
+
+export const settingsPersonalizationWriteRequestSchema = z.object({
+  instructions: z.string().max(49_152),
+  style: personalizationStyleSchema,
+  expectedRevision: z.string().regex(/^[a-f0-9]{64}$/),
+}) satisfies z.ZodType<Wire<RequestPayload<'settings.personalizationWrite'>>>
+
+export const settingsPersonalizationWriteValueSchema = settingsPersonalizationViewSchema satisfies z.ZodType<Wire<ResponseValue<'settings.personalizationWrite'>>>
 
 /** One redacted secret slot. */
 export const settingsSecretViewSchema = z.object({
