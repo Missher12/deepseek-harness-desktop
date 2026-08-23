@@ -1,5 +1,7 @@
 # Cross-Platform Desktop Loading Implementation Plan
 
+English | [中文](2026-08-23-cross-platform-desktop-loading.zh.md)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give Windows and macOS the same DeepSeek Harness startup and real plugin-progress presentation while leaving ordinary browser users on the generic Web boot page.

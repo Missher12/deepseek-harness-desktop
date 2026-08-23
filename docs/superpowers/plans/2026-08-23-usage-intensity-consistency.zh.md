@@ -1,24 +1,24 @@
-# Usage Particle Intensity Consistency Implementation Plan
+# Usage 颗粒强度一致性实现计划
 
-English | [中文](2026-08-23-usage-intensity-consistency.zh.md)
+[English](2026-08-23-usage-intensity-consistency.md) | 中文
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向 agent 工作者：** 必需的子 skill：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实现本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Make weekly and cumulative Usage particles communicate relative token volume with the same four blue intensity levels already used by the daily view.
+**目标：** 让 Usage 的每周与累积颗粒使用每日视图已有的四档蓝色强度来表达相对 token 量。
 
-**Architecture:** Keep the Host snapshot and all 371 stable particle positions unchanged. Add a client-only logarithmic aggregate intensity helper, then combine that level with the existing bottom-up filled-row projection so weekly and cumulative views encode volume through both height and color.
+**架构：** 保持 Host 快照和全部 371 个稳定颗粒位置不变。新增一个仅限客户端的对数聚合强度辅助函数，再将该等级与现有的自底向上填充行投影结合，使每周与累积视图同时通过高度和颜色编码用量。
 
-**Tech Stack:** TypeScript, React projection helpers, Vitest.
+**技术栈：** TypeScript、React 投影辅助函数、Vitest。
 
 ---
 
-### Task 1: Prove aggregate particles need graded intensity
+### 任务 1：证明聚合颗粒需要分级强度
 
-**Files:**
-- Create: `packages/client/ui-settings-usage/tests/charts.client.spec.ts`
-- Modify: `packages/client/ui-settings-usage/src/client/charts.ts`
+**文件：**
+- 新建：`packages/client/ui-settings-usage/tests/charts.client.spec.ts`
+- 修改：`packages/client/ui-settings-usage/src/client/charts.ts`
 
-- [x] **Step 1: Write the failing weekly and cumulative tests**
+- [x] **步骤 1：编写失败的每周与累积测试**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -55,13 +55,13 @@ describe('aggregate particle intensity', () => {
 })
 ```
 
-- [x] **Step 2: Run the focused test and verify RED**
+- [x] **步骤 2：运行聚焦测试并验证 RED**
 
-Run: `pnpm exec vitest run packages/client/ui-settings-usage/tests/charts.client.spec.ts`
+运行：`pnpm exec vitest run packages/client/ui-settings-usage/tests/charts.client.spec.ts`
 
-Expected: FAIL because both aggregate modes currently return only level `4` for every filled particle.
+预期：失败，因为两个聚合模式目前都会为每个填充颗粒只返回等级 `4`。
 
-- [x] **Step 3: Add the minimal relative-level projection**
+- [x] **步骤 3：添加最小相对等级投影**
 
 ```ts
 function logarithmicLevel(tokens: number, maximum: number): UsageActivityDay['level'] {
@@ -79,15 +79,15 @@ function stackLevel(
 }
 ```
 
-In weekly and cumulative projection, compute `const level = logarithmicLevel(tokens, maximum)` and pass it to `stackLevel(row, filledRows, level)`.
+在每周与累积投影中计算 `const level = logarithmicLevel(tokens, maximum)`，并将它传给 `stackLevel(row, filledRows, level)`。
 
-- [x] **Step 4: Run the focused test and verify GREEN**
+- [x] **步骤 4：运行聚焦测试并验证 GREEN**
 
-Run: `pnpm exec vitest run packages/client/ui-settings-usage/tests/charts.client.spec.ts packages/client/ui-settings-usage/tests/components.client.spec.tsx packages/client/ui-settings-usage/tests/styles.client.spec.ts`
+运行：`pnpm exec vitest run packages/client/ui-settings-usage/tests/charts.client.spec.ts packages/client/ui-settings-usage/tests/components.client.spec.tsx packages/client/ui-settings-usage/tests/styles.client.spec.ts`
 
-Expected: all Usage tests pass with no snapshot geometry changes.
+预期：所有 Usage 测试均通过，且快照几何结构没有变化。
 
-- [x] **Step 5: Commit the independently testable Usage change**
+- [x] **步骤 5：提交可独立测试的 Usage 改动**
 
 ```bash
 git add packages/client/ui-settings-usage/src/client/charts.ts packages/client/ui-settings-usage/tests/charts.client.spec.ts
