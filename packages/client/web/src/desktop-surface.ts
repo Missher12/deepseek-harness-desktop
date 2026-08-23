@@ -1,10 +1,8 @@
 /**
- * Identify the native macOS Desktop renderer without affecting ordinary Web.
+ * Identify an explicit native Desktop renderer without affecting ordinary Web.
  * @param search - current location search string.
- * @param userAgent - current browser user-agent string.
- * @returns whether both Desktop and macOS markers are present.
+ * @returns whether the Desktop marker is present.
  */
-export function isMacDesktopSurface(search: string, userAgent: string): boolean {
+export function isDesktopSurface(search: string): boolean {
   return new URLSearchParams(search).get('surface') === 'desktop'
-    && /Macintosh|Mac OS X/u.test(userAgent)
 }

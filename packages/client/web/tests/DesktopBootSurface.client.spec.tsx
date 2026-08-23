@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { DesktopBootSurface, isMacDesktopSurface } from '../src/DesktopBootSurface.tsx'
+import { DesktopBootSurface } from '../src/DesktopBootSurface.tsx'
+import * as desktopSurface from '../src/desktop-surface.ts'
 
 afterEach(cleanup)
 
@@ -23,9 +24,13 @@ describe('DesktopBootSurface', () => {
     expect(screen.getByText('settlement failed')).toBeTruthy()
   })
 
-  it('activates only for the explicit macOS Desktop surface', () => {
-    expect(isMacDesktopSurface('?surface=desktop', 'Mozilla/5.0 (Macintosh; Intel Mac OS X)')).toBe(true)
-    expect(isMacDesktopSurface('?surface=desktop', 'Mozilla/5.0 (Windows NT 10.0)')).toBe(false)
-    expect(isMacDesktopSurface('', 'Mozilla/5.0 (Macintosh; Intel Mac OS X)')).toBe(false)
+  it('activates for the explicit native Desktop marker on either platform', () => {
+    const isDesktopSurface = (desktopSurface as {
+      isDesktopSurface?: (search: string) => boolean
+    }).isDesktopSurface
+    expect(isDesktopSurface).toBeTypeOf('function')
+    if (isDesktopSurface === undefined) return
+    expect(isDesktopSurface('?surface=desktop')).toBe(true)
+    expect(isDesktopSurface('')).toBe(false)
   })
 })
