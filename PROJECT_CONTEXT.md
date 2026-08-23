@@ -69,6 +69,36 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- Version 0.3.6 adds a first-class global Personalization section whose bounded
+  Host API owns only a marked block in `~/.dsh/AGENTS.md`, preserves unrelated
+  instructions byte-for-byte, rejects stale revisions and unsafe targets, and
+  exposes no filesystem path to the browser. The conversation footer now uses
+  the current Beijing tariff window, late-bound DeepSeek provider facts, and the
+  official read-only balance endpoint; failures keep cost estimates and show an
+  explicit unavailable balance instead of fabricating a value. The standalone
+  `dsh-missher-memory@0.1.1` bundle is included as an enabled Desktop fallback,
+  remains inert until a project is explicitly bound, appears in Plugin Market,
+  and is protected from market update, disable, repair, and uninstall actions;
+  profile-local installations retain Loader precedence. The 229-test affected
+  suite, all 28 documentation gates, full typecheck and lint, official build,
+  67-file Desktop staging, and two final isolated native packaged smokes pass.
+  The public Intel DMG is 163,728,392 bytes with SHA-256
+  `bffc197ca145b3dc7c8262bf8ab5d8878ce05cbe1ebe03f3717b5e9c7b2d7b80`;
+  `hdiutil verify`, LF checksum validation, and anonymous public re-download
+  byte comparison pass. The installed 0.3.5 application then discovered,
+  downloaded, verified, installed, and relaunched this exact 0.3.6 release
+  through its real update bridge. The installed executable and `app.asar`
+  match the built application, the random loopback Host is ready, and the
+  existing `~/.dsh` file count and total byte count are unchanged. Native
+  Windows run `32656918392` built from the same tagged source commit
+  `a52c03b7c59a454dae2ac50a53115e35e72e0980` and passed 206 focused tests plus
+  the visible installer, installed-app lifecycle, personalization, balance
+  fallback, memory-market protection, cross-session stop, close behavior,
+  shortcut, process-cleanup, uninstall, and data-preservation checks. Its Setup
+  is 139,791,104 bytes with SHA-256
+  `be8757e794c9532b3aee9eb7280ed5b0db361663dbf0770cb0d84b8e3396e895`;
+  anonymous public re-download and the 107-byte LF checksum match the CI
+  artifact, and publication preserved all three Mac asset identities.
 - Version 0.3.5 keeps the existing 53×7 particle
   geometry and daily heatmap semantics, but gives weekly and cumulative filled
   particles logarithmic relative intensity levels from 1 through 4 instead of
