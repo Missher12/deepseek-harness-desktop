@@ -25,12 +25,7 @@ describe('DesktopBootSurface', () => {
   })
 
   it('activates for the explicit native Desktop marker on either platform', () => {
-    const isDesktopSurface = (desktopSurface as {
-      isDesktopSurface?: (search: string) => boolean
-    }).isDesktopSurface
-    expect(isDesktopSurface).toBeTypeOf('function')
-    if (isDesktopSurface === undefined) return
-    expect(isDesktopSurface('?surface=desktop')).toBe(true)
-    expect(isDesktopSurface('')).toBe(false)
+    expect(desktopSurface.isDesktopSurface('?surface=desktop')).toBe(true)
+    expect(desktopSurface.isDesktopSurface('')).toBe(false)
   })
 })
