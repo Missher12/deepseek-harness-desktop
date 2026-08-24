@@ -24,7 +24,7 @@ export default class BrainHub extends Service {
 
   constructor(ctx: Context) {
     super(ctx, 'missherBrain')
-    ctx.on('agent/pre-step', async ({ agent, step, signal }, next): Promise<PreStepDecision> => {
+    ctx.on('agent/pre-step', async ({ agent, turn, step, signal }, next): Promise<PreStepDecision> => {
       const decision = await next()
       const { cwd, origin, delegationDepth } = agent.session.header
       if (cwd === undefined) return decision
@@ -32,6 +32,8 @@ export default class BrainHub extends Service {
         decision,
         providers: this.registry.list(),
         projectKey: brainProjectKey(cwd),
+        sessionId: agent.session.id,
+        turn,
         topLevel: origin !== 'subagent' && (delegationDepth ?? 0) === 0,
         step,
         signal,

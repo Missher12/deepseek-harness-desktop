@@ -15,6 +15,8 @@ export interface BrainPreStepInput {
   decision: PreStepDecision
   providers: readonly BrainProvider[]
   projectKey: string
+  sessionId: string
+  turn: number
   topLevel: boolean
   step: number
   signal: AbortSignal
@@ -36,10 +38,18 @@ async function cancelQuietly(batch: PreparedBrainBatch): Promise<void> {
 async function prepareWithinSignal(
   provider: BrainProvider,
   projectKey: string,
+  sessionId: string,
+  turn: number,
   query: string,
   signal: AbortSignal,
 ): Promise<PreparedProvider | undefined> {
-  const operation = Promise.resolve().then(() => provider.prepare({ projectKey, query, signal }))
+  const operation = Promise.resolve().then(() => provider.prepare({
+    projectKey,
+    sessionId,
+    turn,
+    query,
+    signal,
+  }))
   /* v8 ignore next 4 -- pre-aborted turns are rejected, and the fresh deadline
    * cannot abort synchronously before this check. */
   if (signal.aborted) {
@@ -83,7 +93,7 @@ async function selectAcceptedContributions(input: BrainPreStepInput, query: stri
   const signal = AbortSignal.any([input.signal, deadline.signal])
   try {
     const prepared = (await Promise.all(input.providers.map(provider =>
-      prepareWithinSignal(provider, input.projectKey, query, signal))))
+      prepareWithinSignal(provider, input.projectKey, input.sessionId, input.turn, query, signal))))
       .filter((value): value is PreparedProvider => value !== undefined)
     if (signal.aborted) {
       await Promise.all(prepared.map(({ batch }) => cancelQuietly(batch)))

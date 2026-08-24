@@ -17,6 +17,7 @@ function agent(parentSession?: string, cwd: string | null = '/private/example/pr
     options: {},
     status: 'running',
     session: {
+      id: 'agent-1',
       header: {
         id: 'agent-1',
         cwd: cwd ?? undefined,
@@ -74,6 +75,8 @@ describe('BrainHub Host composition', () => {
     expect(memory.prepare).toHaveBeenCalledWith(expect.objectContaining({
       projectKey: expect.stringMatching(/^[a-f0-9]{64}$/),
       query: 'remember the release boundary',
+      sessionId: 'agent-1',
+      turn: 1,
     }))
     expect(JSON.stringify(vi.mocked(memory.prepare).mock.calls)).not.toContain('/private/example/project')
 

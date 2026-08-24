@@ -30,11 +30,20 @@ export interface BrainProviderStatus {
   count: number
 }
 
+/** Pathless per-turn context required for transactional provider attribution. */
+export interface BrainPrepareInput {
+  projectKey: string
+  sessionId: string
+  turn: number
+  query: string
+  signal: AbortSignal
+}
+
 /** Versioned provider contract shared by factual memory and procedural learning. */
 export interface BrainProvider {
   readonly protocolVersion: 1
   readonly id: string
   readonly byteBudget: number
-  prepare(input: { projectKey: string; query: string; signal: AbortSignal }): Promise<PreparedBrainBatch>
+  prepare(input: BrainPrepareInput): Promise<PreparedBrainBatch>
   status(): Promise<BrainProviderStatus>
 }
