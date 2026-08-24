@@ -7,6 +7,9 @@
     - button "个性化":
       - img
       - text: 个性化
+    - button "外置大脑":
+      - img
+      - text: 外置大脑
     - button "模型":
       - img
       - text: 模型

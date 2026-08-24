@@ -97,6 +97,7 @@
     { "path": "./packages/client/ui-settings-models" },
     { "path": "./packages/client/ui-settings-plugin-inventory" },
     { "path": "./packages/client/ui-settings-usage" },
+    { "path": "./packages/client/ui-settings-brain" },
     { "path": "./packages/client/ui-settings-system-update" },
     { "path": "./packages/client/ui-settings-personalization" },
     { "path": "./packages/client/locale" },

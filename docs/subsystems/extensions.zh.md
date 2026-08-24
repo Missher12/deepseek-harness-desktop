@@ -301,6 +301,35 @@ Types: [Agent](core.zh.md)
 
 Source: [`packages/extensions/cordis-host-runner/src/index.ts`](../../packages/extensions/cordis-host-runner/src/index.ts)
 
+<a id="ctxmissherbrain--brainhub"></a>
+
+### `ctx.missherBrain` — `BrainHub`
+
+Coordinates bounded local-knowledge providers and exposes pathless status.
+
+```ts cordis-catalog
+/**
+ * Register one factual-memory or procedural-learning provider.
+ * @param provider Provider whose prepared contributions enter shared arbitration.
+ * @returns Disposer for this exact registration.
+ */
+register(provider: BrainProvider): () => void
+
+/**
+ * Snapshot the providers currently participating in recall.
+ * @returns Providers in deterministic registration order.
+ */
+listProviders(): readonly BrainProvider[]
+
+/**
+ * Read only pathless facts; provider failures become unavailable rows.
+ * @returns Current provider availability and fixed arbitration limits.
+ */
+@Remote('snapshot') async snapshot(): Promise<BrainHubSnapshot>
+```
+
+Source: [`packages/brain/missher-brain/src/index.ts`](../../packages/brain/missher-brain/src/index.ts)
+
 <a id="cordis-events"></a>
 
 ### `cordis/*` events

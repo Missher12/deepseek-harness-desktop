@@ -53,6 +53,7 @@
       "ignoreDependencies": [
         "@deepseek-ai/.+",
         "@electron/rebuild",
+        "dsh-missher-evolution",
         "dsh-missher-memory",
         "dshmarket",
         "pnpm"
@@ -153,6 +154,27 @@
         "src/**/*.ts",
         "src/**/*.tsx",
         "tests/**/*.tsx"
+      ]
+    },
+    "packages/brain/missher-brain": {
+      "entry": [
+        "tests/**/*.spec.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "zod"
+      ]
+    },
+    "packages/client/ui-settings-brain": {
+      "entry": [
+        "tests/**/*.client.spec.tsx"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}",
+        "tests/**/*.client.spec.tsx"
       ]
     },
     "packages/client/ui-goal": {

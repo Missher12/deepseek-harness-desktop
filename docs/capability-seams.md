@@ -59,6 +59,8 @@ flowchart LR
   pkg_usage_insights["usage-insights"]
   svc_usageInsights["ctx.usageInsights<br/>Local all-history usage insights"]
   pkg_ui_settings_usage["ui-settings-usage"]
+  pkg_missher_brain["missher-brain"]
+  svc_missherBrain["ctx.missherBrain<br/>Local external-brain provider hub"]
   pkg_storage["storage"]
   svc_storage["ctx.storage<br/>Non-session storage hub"]
   pkg_storage_json["storage-json"]
@@ -255,6 +257,7 @@ flowchart LR
   pkg_lsp --> svc_lsp
   pkg_lsp_local --> svc_lsp
   pkg_message_feedback --> svc_messageFeedback
+  pkg_missher_brain --> svc_missherBrain
   pkg_modules --> svc_clientModules
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
@@ -452,6 +455,7 @@ flowchart LR
 | `ctx.authorization` | `seam` | [`authorization`](../packages/credentials/authorization) | - | [`llm-pi-ai`](../packages/llm/llm-pi-ai) | - | Flows are registered by the plugin that knows how to obtain one credential and keyed by the record they write; the seam owns the conversation and the one-attempt-per-key lifecycle, never the protocol. |
 | `ctx.sessionTelemetry` | `seam` | [`session-telemetry`](../packages/session/session-telemetry) | [`session-telemetry-otel`](../packages/session/session-telemetry-otel) | - | - | The seam captures, redacts, and hands session records to one backend; nothing else consumes the service — its output leaves the process. |
 | `ctx.usageInsights` | `core` | [`usage-insights`](../packages/session/usage-insights) | - | `ui-settings-usage` | - | Folds durable session history into privacy-minimal cached rows and exposes one bounded read-only snapshot to the Settings dashboard. |
+| `ctx.missherBrain` | `core` | [`missher-brain`](../packages/brain/missher-brain) | - | - | - | External Memory and Evolution bundles register bounded contribution providers; the hub owns the only automatic injection path, shared deadline, total byte budget, and pathless Settings snapshot. |
 | `ctx.storage` | `seam` | [`storage`](../packages/storage/storage) | [`storage-json`](../packages/storage/storage-json), [`storage-sqlite`](../packages/storage/storage-sqlite) | [`storage-domain`](../packages/storage/storage-domain) | - | Backends register side by side under names; data forms (domain first) mount on the hub and translate typed operations into opaque KV-unit primitives. |
 | `ctx.storageDomain` | `core` | [`storage-domain`](../packages/storage/storage-domain) | - | [`workspace`](../packages/workspace/workspace), [`message-feedback`](../packages/feedback/message-feedback) | - | Waits for every configured backend, then publishes the domain form as one lifecycle-bound service for typed durable state. |
 | `ctx.messageFeedback` | `core` | [`message-feedback`](../packages/feedback/message-feedback) | - | - | - | Owns local per-assistant-message feedback, lifecycle and target validation, per-item compare-and-set, and the Host unary Remote contract without entering Session history or telemetry. |

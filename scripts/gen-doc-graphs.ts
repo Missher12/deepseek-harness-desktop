@@ -216,6 +216,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Folds durable session history into privacy-minimal cached rows and exposes one bounded read-only snapshot to the Settings dashboard.',
   },
   {
+    key: 'missherBrain',
+    pkg: 'missher-brain',
+    title: 'Local external-brain provider hub',
+    mode: 'core',
+    consumers: [],
+    note: 'External Memory and Evolution bundles register bounded contribution providers; the hub owns the only automatic injection path, shared deadline, total byte budget, and pathless Settings snapshot.',
+  },
+  {
     key: 'storage',
     pkg: 'storage',
     title: 'Non-session storage hub',

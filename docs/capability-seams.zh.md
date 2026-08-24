@@ -61,6 +61,8 @@ flowchart LR
   pkg_usage_insights["usage-insights"]
   svc_usageInsights["ctx.usageInsights<br/>Local all-history usage insights"]
   pkg_ui_settings_usage["ui-settings-usage"]
+  pkg_missher_brain["missher-brain"]
+  svc_missherBrain["ctx.missherBrain<br/>Local external-brain provider hub"]
   pkg_storage["storage"]
   svc_storage["ctx.storage<br/>Non-session storage hub"]
   pkg_storage_json["storage-json"]
@@ -257,6 +259,7 @@ flowchart LR
   pkg_lsp --> svc_lsp
   pkg_lsp_local --> svc_lsp
   pkg_message_feedback --> svc_messageFeedback
+  pkg_missher_brain --> svc_missherBrain
   pkg_modules --> svc_clientModules
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
@@ -454,6 +457,7 @@ flowchart LR
 | `ctx.authorization` | `seam` | [`authorization`](../packages/credentials/authorization) | - | [`llm-pi-ai`](../packages/llm/llm-pi-ai) | - | flow 由知道如何取得某份凭据的插件注册，并以其写入的记录为键；seam 拥有这段对话与"每个键同时只跑一次尝试"的生命周期，而非协议本身。 |
 | `ctx.sessionTelemetry` | `seam` | [`session-telemetry`](../packages/session/session-telemetry) | [`session-telemetry-otel`](../packages/session/session-telemetry-otel) | - | - | 该 seam 捕获会话记录、进行脱敏并交给一个后端；没有其他组件消费该服务，其输出会离开当前进程。 |
 | `ctx.usageInsights` | `core` | [`usage-insights`](../packages/session/usage-insights) | - | `ui-settings-usage` | - | 将持久会话历史折叠为隐私最小化的缓存行，并向设置仪表盘提供一个有界的只读快照。 |
+| `ctx.missherBrain` | `core` | [`missher-brain`](../packages/brain/missher-brain) | - | - | - | 外部 Memory 和 Evolution Bundle 注册有界的贡献 Provider；该枢纽拥有唯一自动注入路径、共享截止时间、总字节预算和不含路径的设置快照。 |
 | `ctx.storage` | `seam` | [`storage`](../packages/storage/storage) | [`storage-json`](../packages/storage/storage-json), [`storage-sqlite`](../packages/storage/storage-sqlite) | [`storage-domain`](../packages/storage/storage-domain) | - | 各后端以不同名称并列注册；数据形态（领域优先）挂载到枢纽上，并将类型化操作转换为不透明的 KV 单元原语。 |
 | `ctx.storageDomain` | `core` | [`storage-domain`](../packages/storage/storage-domain) | - | [`workspace`](../packages/workspace/workspace), [`message-feedback`](../packages/feedback/message-feedback) | - | 等待所有已配置后端就绪，然后将领域形态发布为一个受生命周期约束的服务，用于类型化持久状态。 |
 | `ctx.messageFeedback` | `core` | [`message-feedback`](../packages/feedback/message-feedback) | - | - | - | 拥有本地逐 assistant 消息反馈、生命周期与目标校验、逐条目 compare-and-set 及 Host 一元 Remote 契约，且不进入 Session 历史或遥测。 |
