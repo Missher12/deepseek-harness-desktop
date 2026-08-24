@@ -8,6 +8,7 @@ const PACKAGE_NAME = '@deepseek-ai/dsh-client-ui-settings-personalization'
 
 export const name = 'client-ui-settings-personalization-invariant'
 export const inject = ['invariants']
+// No runtime invariant: this Client-only editor delegates persistence and validation to Settings.
 const install: InvariantInstaller = () => {}
 export const apply = (ctx: Context): Promise<() => void> =>
   Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install))
