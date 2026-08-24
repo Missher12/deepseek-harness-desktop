@@ -66,7 +66,9 @@ async function harness(
       if (log.error !== undefined) throw log.error
       if (log.waitForAbort === true) {
         await new Promise<never>((_resolve, reject) => {
-          const abort = (): void => { reject(signal?.reason ?? new Error('inspection aborted')) }
+          const abort = (): void => {
+            reject(new Error('inspection aborted'))
+          }
           if (signal?.aborted === true) abort()
           else signal?.addEventListener('abort', abort, { once: true })
         })

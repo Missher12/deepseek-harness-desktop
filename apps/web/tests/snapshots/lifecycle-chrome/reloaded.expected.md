@@ -39,4 +39,4 @@
   - img
 - button "8% of context used"
 - button "Send message" [disabled]
-- text: 1 turns · 1 steps LLM {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 99.5% Input 10K tok · Output 21 tok Turn est. ¥0.0007 Session est. ¥0.0007 Weekend off-peak
+- text: 1 turns · 1 steps LLM {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 99.5% Input 10K tok · Output 21 tok Turn est. ¥0.0007 Session est. ¥0.0007 {{pricing tier}}

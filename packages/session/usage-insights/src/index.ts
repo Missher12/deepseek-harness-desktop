@@ -159,7 +159,7 @@ export class UsageInsightsGateway extends TypertRemoteService {
     const timer = setTimeout(() => {
       controller.abort(new Error('usage insights: refresh deadline exceeded'))
     }, this.refreshTimeoutMs)
-    timer.unref?.()
+    timer.unref()
     try {
       return await this.refreshWithin(controller.signal)
     } finally {

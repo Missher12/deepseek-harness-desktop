@@ -5,6 +5,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { apply, inject, NS } from '../src/client/index.ts'
 import { PersonalizationSection, type PersonalizationSectionInjected } from '../src/client/PersonalizationSection.tsx'
+import { apply as applyHostEntry } from '../src/index.ts'
 
 async function bench() {
   const ctx = new Context()
@@ -64,5 +65,17 @@ describe('ui-settings-personalization apply', () => {
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const face = (b.slots.entries('settings.section')[0]!.inject as unknown as () => PersonalizationSectionInjected)()
     await expect(face.load()).rejects.toThrow('blocked')
+
+    b.personalizationWrite.mockResolvedValueOnce({
+      rpcId: 'write' as never,
+      result: { ok: false as const, error: { code: 'settings-rejected' as const, message: 'read-only', details: { ns: 'personalization' } } },
+    } as never)
+    await expect(face.save({ instructions: 'x', style: 'default', expectedRevision: 'a'.repeat(64) }))
+      .rejects.toThrow('read-only')
+  })
+
+  it('keeps the Host loader entry intentionally inert', () => {
+    expect(applyHostEntry).toBeTypeOf('function')
+    applyHostEntry()
   })
 })

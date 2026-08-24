@@ -753,9 +753,17 @@ describe('config unary surface', () => {
       active: false,
     }
     const group = { id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'deepseek-v4-flash', name: 'Flash' }] }
+    const personalizationView = {
+      instructions: 'Lead with evidence.', style: 'concise' as const, revision: 'a'.repeat(64),
+      hasExternalContent: true, writable: true,
+    }
     const api = scriptedApi({
       settings: {
         describe: record('settings.describe', r => ok(r, { writable: true, hasDocument: false, namespaces: [view] })),
+        personalizationRead: record('settings.personalizationRead', r => ok(r, personalizationView)),
+        personalizationWrite: record('settings.personalizationWrite', r => ok(r, {
+          ...personalizationView, instructions: r.payload.instructions, style: r.payload.style,
+        })),
         openDocument: record('settings.openDocument', r => ok(r, { opened: true as const })),
         update: record('settings.update', r => ok(r, view)),
         replace: record('settings.replace', r => ok(r, view)),
@@ -776,6 +784,13 @@ describe('config unary surface', () => {
 
     const described = await c.settings.describe({})
     expect(described.result).toEqual({ ok: true, value: { writable: true, hasDocument: false, namespaces: [view] } })
+    expect((await c.settings.personalizationRead({})).result).toEqual({ ok: true, value: personalizationView })
+    expect((await c.settings.personalizationWrite({
+      instructions: 'Use concise evidence.', style: 'professional', expectedRevision: 'a'.repeat(64),
+    })).result).toEqual({
+      ok: true,
+      value: { ...personalizationView, instructions: 'Use concise evidence.', style: 'professional' },
+    })
     expect((await c.settings.openDocument({})).result).toEqual({ ok: true, value: { opened: true } })
     const updated = await c.settings.update({ ns: 'llm-deepseek', patch: { baseURL: 'https://next' } })
     expect(updated.result).toEqual({ ok: true, value: view })
@@ -804,17 +819,21 @@ describe('config unary surface', () => {
     expect(discovered.result).toEqual({ ok: true, value: { models: [{ id: 'acme-large', contextWindow: 65536 }] } })
 
     expect(seen.map(call => call.method)).toEqual([
-      'settings.describe', 'settings.openDocument', 'settings.update', 'settings.replace', 'settings.mutate',
+      'settings.describe', 'settings.personalizationRead', 'settings.personalizationWrite',
+      'settings.openDocument', 'settings.update', 'settings.replace', 'settings.mutate',
       'credentials.describe', 'credentials.set', 'credentials.unset',
       'llm.providers', 'llm.models', 'llm.discoverModels',
     ])
-    expect(seen[2]?.payload).toEqual({ ns: 'llm-deepseek', patch: { baseURL: 'https://next' } })
-    expect(seen[4]?.payload)
+    expect(seen[2]?.payload).toEqual({
+      instructions: 'Use concise evidence.', style: 'professional', expectedRevision: 'a'.repeat(64),
+    })
+    expect(seen[4]?.payload).toEqual({ ns: 'llm-deepseek', patch: { baseURL: 'https://next' } })
+    expect(seen[6]?.payload)
       .toEqual({ ns: 'llm-deepseek', ops: [{ op: 'unset', path: ['baseURL'] }], expectedRevision: 0 })
-    expect(seen[6]?.payload).toEqual({ ref: 'OPENAI_API_KEY', value: 'sk-x' })
+    expect(seen[8]?.payload).toEqual({ ref: 'OPENAI_API_KEY', value: 'sk-x' })
     // The draft crosses whole, credential included: the host needs it for this
     // one interrogation and stores none of it.
-    expect(seen[10]?.payload).toEqual({
+    expect(seen[12]?.payload).toEqual({
       settingsNs: 'llm-pi-ai',
       baseURL: 'https://gateway.acme.example/v1',
       api: 'openai-completions',

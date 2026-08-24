@@ -10,6 +10,11 @@ import {
 } from '../src/personalization-document.ts'
 
 const roots: string[] = []
+const START = '<!-- dsh-desktop:personalization:start -->'
+const END = '<!-- dsh-desktop:personalization:end -->'
+const STYLE = '<!-- dsh-desktop:reply-style:default -->'
+const INSTRUCTIONS_START = '<!-- dsh-desktop:instructions:start -->'
+const INSTRUCTIONS_END = '<!-- dsh-desktop:instructions:end -->'
 
 async function target(): Promise<{ root: string; path: string }> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-personalization-'))
@@ -98,6 +103,10 @@ describe('personalization document', () => {
       instructions: '界'.repeat(MAX_PERSONALIZATION_INSTRUCTIONS_BYTES),
       style: 'default', expectedRevision: (await readPersonalizationDocument(path)).revision,
     })).rejects.toMatchObject({ code: 'invalid' })
+    await expect(writePersonalizationDocument(path, {
+      instructions: '', style: 'unsupported' as never,
+      expectedRevision: (await readPersonalizationDocument(path)).revision,
+    })).rejects.toMatchObject({ code: 'invalid' })
   })
 
   it('never follows a final-component symlink', async () => {
@@ -113,5 +122,70 @@ describe('personalization document', () => {
       instructions: 'replace', style: 'default', expectedRevision: view.revision,
     })).rejects.toMatchObject({ code: 'read-only' })
     expect(await readFile(external, 'utf8')).toBe('external secret')
+  })
+
+  it('treats directories and malformed ownership markers as read-only', async () => {
+    const { root, path } = await target()
+    await mkdir(path, { recursive: true })
+    await expect(readPersonalizationDocument(path)).resolves.toMatchObject({
+      writable: false, hasExternalContent: true,
+    })
+
+    await rm(path, { recursive: true })
+    await mkdir(join(root, 'home'), { recursive: true })
+    const malformed = [
+      END,
+      START,
+      `${START}\n${END}\n${START}`,
+      `${START}\n${END}\n${END}`,
+      `${END}\n${START}`,
+    ]
+    for (const raw of malformed) {
+      await writeFile(path, raw)
+      await expect(readPersonalizationDocument(path)).resolves.toMatchObject({
+        writable: false, hasExternalContent: true,
+      })
+    }
+  })
+
+  it('rejects malformed managed content without exposing partial instructions', async () => {
+    const { path } = await target()
+    await mkdir(join(path, '..'), { recursive: true })
+    const malformed = [
+      Buffer.concat([Buffer.from(`${START}\n${STYLE}\n`), Buffer.from([0xff]), Buffer.from(`\n${END}`)]),
+      Buffer.from(`${START}\n${INSTRUCTIONS_START}\ntext\n${INSTRUCTIONS_END}\n${END}`),
+      Buffer.from(`${START}\n${STYLE}\n${INSTRUCTIONS_END}\n${INSTRUCTIONS_START}\n${END}`),
+      Buffer.from(`${START}\n${STYLE}\n${INSTRUCTIONS_START}\ntext\n${END}`),
+    ]
+    for (const raw of malformed) {
+      await writeFile(path, raw)
+      await expect(readPersonalizationDocument(path)).resolves.toMatchObject({
+        instructions: '', style: 'default', writable: false, hasExternalContent: true,
+      })
+    }
+  })
+
+  it('parses a valid compact block without requiring surrounding instruction newlines', async () => {
+    const { path } = await target()
+    await mkdir(join(path, '..'), { recursive: true })
+    await writeFile(path, `${START}\n${STYLE}\n${INSTRUCTIONS_START}compact${INSTRUCTIONS_END}\n${END}`)
+
+    await expect(readPersonalizationDocument(path)).resolves.toMatchObject({
+      instructions: 'compact', style: 'default', writable: true, hasExternalContent: false,
+    })
+  })
+
+  it('returns the unchanged absent document for an empty default write', async () => {
+    const { path } = await target()
+    const before = await readPersonalizationDocument(path)
+
+    await expect(writePersonalizationDocument(path, {
+      instructions: '', style: 'default', expectedRevision: before.revision,
+    })).resolves.toEqual(before)
+    await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('propagates non-ENOENT filesystem lookup errors', async () => {
+    await expect(readPersonalizationDocument('bad\0path')).rejects.toThrow()
   })
 })
