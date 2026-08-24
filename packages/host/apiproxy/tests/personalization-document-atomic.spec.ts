@@ -124,6 +124,7 @@ describe('personalization atomic replacement fallbacks', () => {
   })
 
   it('propagates chmod failures on POSIX and tolerates them on Windows', async () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
     const posixPath = await target()
     const posixBefore = await readPersonalizationDocument(posixPath)
     injected.chmodError = true
@@ -135,7 +136,7 @@ describe('personalization atomic replacement fallbacks', () => {
     const windowsPath = await target()
     const windowsBefore = await readPersonalizationDocument(windowsPath)
     injected.chmodError = true
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    platform.mockReturnValue('win32')
     await expect(writePersonalizationDocument(windowsPath, {
       instructions: 'x', style: 'default', expectedRevision: windowsBefore.revision,
     })).resolves.toMatchObject({ instructions: 'x' })

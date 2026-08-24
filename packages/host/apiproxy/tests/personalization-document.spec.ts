@@ -57,7 +57,9 @@ describe('personalization document', () => {
     expect(raw).toContain('<!-- dsh-desktop:personalization:start -->')
     expect(raw).toContain('请优先给出可以直接执行的结论。')
     expect(raw).toContain('Use a warm, friendly tone')
-    expect((await stat(path)).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') {
+      expect((await stat(path)).mode & 0o777).toBe(0o600)
+    }
     expect(await readdir(join(root, 'home'))).toEqual(['AGENTS.md'])
   })
 
