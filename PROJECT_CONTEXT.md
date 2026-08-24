@@ -69,6 +69,22 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- Version 0.3.7 is the active release candidate. It upgrades the managed memory
+  fallback to `dsh-missher-memory@0.1.2`, separates ready built-in project memory
+  from the optional legacy `vectors.db` source on fresh Desktop installs, and
+  preserves the zero-write-before-binding boundary. Usage Insights
+  now shares one 12-second cancellation deadline across durable Session reads,
+  returns partial cached results when a Session stalls, clears every shared
+  refresh for retry, and leaves a first-load renderer skeleton after 15 seconds
+  with an honest retryable state. Repeated reads of an active Session now reuse
+  a process-local generation-bound row and invalidate it on the next Session
+  event, avoiding a full active-log fold without ever persisting a row ahead of
+  its durable revision. The Settings shell also owns one 760px page measure and
+  one title, intro, and subsection typography contract for built-in, bundled,
+  and profile-installed sections. Native Intel macOS packaging, install,
+  persisted-data preservation, visual geometry, and repeated-open performance
+  acceptance have passed; public-release evidence remains pending. Windows is
+  validated and published from its separate platform worktree.
 - Version 0.3.6 adds a first-class global Personalization section whose bounded
   Host API owns only a marked block in `~/.dsh/AGENTS.md`, preserves unrelated
   instructions byte-for-byte, rejects stale revisions and unsafe targets, and
