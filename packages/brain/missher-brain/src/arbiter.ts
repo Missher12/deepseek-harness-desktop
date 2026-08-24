@@ -46,12 +46,21 @@ function renderContribution(item: BrainContribution): string {
   }).replaceAll('<', '\\u003c')
 }
 
-/** Render the complete model-facing external-brain context. */
+/**
+ * Render the complete model-facing external-brain context.
+ * @param items Accepted contributions in final model-facing order.
+ * @returns A tag-delimited, instruction-safe background context block.
+ */
 export function renderBrainContext(items: readonly BrainContribution[]): string {
   return `${CONTEXT_PREFIX}${items.map(renderContribution).join('\n')}${CONTEXT_SUFFIX}`
 }
 
-/** Select a deterministic, duplicate-free set bounded by complete rendered UTF-8 bytes. */
+/**
+ * Select a deterministic, duplicate-free set bounded by complete rendered UTF-8 bytes.
+ * @param candidates Prepared contributions from every available provider.
+ * @param limits Shared item and rendered-byte limits.
+ * @returns Accepted contributions in stable priority order.
+ */
 export function arbitrate(
   candidates: readonly BrainContribution[],
   limits: { maxItems: number; maxBytes: number },

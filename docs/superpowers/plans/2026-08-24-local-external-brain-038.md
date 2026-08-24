@@ -106,7 +106,7 @@ git commit -m "feat(brain): add provider contract"
 **Files:**
 - Create: `packages/brain/missher-brain/src/arbiter.ts`
 - Create: `packages/brain/missher-brain/src/index.ts`
-- Create: `packages/brain/missher-brain/src/typert.host.ts`
+- Create: `packages/brain/missher-brain/src/injection.ts`
 - Test: `packages/brain/missher-brain/tests/arbiter.spec.ts`
 - Test: `packages/brain/missher-brain/tests/injection.spec.ts`
 
@@ -406,17 +406,17 @@ git commit -m "feat(memory): consolidate reviewed memory reversibly"
 
 Push a PR to `Missher12/dsh-missher-memory`, require canonical CI on macOS Intel/Apple Silicon and Windows x64, tag `v0.2.0`, upload the canonical `.tgz` and LF/ASCII checksum, then anonymously verify exact bytes and SHA-256.
 
-### Task 7: Build the unified External Brain Settings and recall disclosure
+### Task 7: Build the unified External Brain Settings overview
 
 **Files:**
-- Create: `packages/brain/missher-brain/src/remote-contract.ts`
-- Create: `packages/brain/missher-brain/src/remote.ts`
-- Create: `packages/brain/missher-brain/src/ui/BrainSection.tsx`
-- Create: `packages/brain/missher-brain/src/ui/BrainSection.module.css`
-- Create: `packages/brain/missher-brain/src/ui/RecallDisclosure.tsx`
-- Create: `packages/brain/missher-brain/src/ui/locales.ts`
-- Test: `packages/brain/missher-brain/tests/brain-section.client.spec.tsx`
-- Test: `packages/brain/missher-brain/tests/recall-disclosure.client.spec.tsx`
+- Create: `packages/brain/missher-brain/src/contracts.ts`
+- Create: `packages/brain/missher-brain/src/index.ts`
+- Create: `packages/client/ui-settings-brain/src/client/BrainSettingsSection.tsx`
+- Create: `packages/client/ui-settings-brain/src/client/BrainSettingsSection.module.css`
+- Create: `packages/client/ui-settings-brain/src/client/index.ts`
+- Create: `packages/client/ui-settings-brain/src/client/locales.ts`
+- Test: `packages/client/ui-settings-brain/tests/components.client.spec.tsx`
+- Test: `packages/client/ui-settings-brain/tests/apply.client.spec.tsx`
 
 - [ ] **Step 1: Write failing UI state and accessibility tests**
 
@@ -428,24 +428,24 @@ it('shows stable placeholders before provider counts arrive', () => {
   expect(screen.queryByText('加载中')).toBeNull()
 })
 
-it('discloses exactly the context selected for one turn', async () => {
-  render(<RecallDisclosure memories={2} rules={1} items={selectedItems} />)
-  await user.click(screen.getByRole('button', { name: '2 条记忆 · 1 条学习规则' }))
-  expect(screen.getAllByTestId('brain-source')).toHaveLength(3)
+it('replaces placeholders with bounded pathless provider counts', async () => {
+  render(<BrainSettingsSection load={resolvedSnapshot()} />)
+  expect(await screen.findByText('2 条记忆')).toBeVisible()
+  expect(screen.queryByText('/Users/example/project')).toBeNull()
 })
 ```
 
 - [ ] **Step 2: Run Client tests and confirm RED**
 
-Run: `pnpm exec vitest run packages/brain/missher-brain/tests/brain-section.client.spec.tsx packages/brain/missher-brain/tests/recall-disclosure.client.spec.tsx`
+Run: `pnpm exec vitest run packages/client/ui-settings-brain/tests/components.client.spec.tsx packages/client/ui-settings-brain/tests/apply.client.spec.tsx`
 
 Expected: FAIL because the page, Remote, and disclosure do not exist.
 
 - [ ] **Step 3: Implement the managed Settings page and provider panels**
 
-Brain Hub registers one `settings.section` entry and declares an `external-brain.panel` list slot. Managed memory and MSE Clients register their existing controls into `Memory`, `Consolidation`, and `Learning` panels; standalone mode continues to register their old sections. The Brain Remote exposes pathless status, counts, maintenance history, and explicit actions only.
+The Brain Settings Client registers one `settings.section` entry. Memory and MSE keep their existing provider-owned controls, while the overview reads one bounded Brain Remote snapshot containing pathless status and counts only.
 
-The page follows the 760 px Settings measure and shared title/intro/subsection typography. Overview paints `—` placeholders immediately, then refreshes. Recall disclosure renders only the items selected by the Host and never exposes filesystem paths, database names, local keys, or raw session IDs.
+The page follows the shared Settings measure and title/intro/subsection typography. It paints stable placeholders immediately, then refreshes without exposing filesystem paths, database names, local keys, raw session IDs, or provider errors.
 
 - [ ] **Step 4: Run Client tests, snapshots, and visual smoke**
 

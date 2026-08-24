@@ -69,15 +69,18 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
-- The Desktop 0.3.8 local external-brain design is approved and documented in
-  `docs/superpowers/specs/2026-08-24-local-external-brain-design.md`; runtime
-  implementation has not started. The design keeps project facts in
+- The Desktop 0.3.8 local external brain implements the bounded local scope recorded in
+  `.agents/notes/implemented/architecture/2026-08-24-local-external-brain.md`. It keeps project facts in
   `dsh-missher-memory`, procedural learning in the Harness-native
   `dsh-missher-evolution`, and coordination in a new `dsh-missher-brain`
-  Bundle. It adds reversible automatic consolidation for reviewed memory and
+  Bundle. The Brain Hub owns the only injection path and a pathless Settings
+  snapshot; Provider failures are fail-open. Memory schema v2 adds FTS5 search
+  and reversible automatic consolidation for reviewed memory and
   packages the TencentDB compatibility reader without packaging, writing,
-  migrating, consolidating, or learning from a user's live `vectors.db`.
-- Version 0.3.7 is the active release candidate. It upgrades the managed memory
+  migrating, consolidating, or learning from a user's live `vectors.db`. The
+  Mac and Windows native packaging plus public artifact verification must all
+  originate from the same final shared commit.
+- Version 0.3.8 is the active release candidate; 0.3.7 is the previous public baseline. Version 0.3.7 upgrades the managed memory
   fallback to `dsh-missher-memory@0.1.3`, separates ready built-in project memory
   from the optional legacy `vectors.db` source on fresh Desktop installs, and
   preserves the zero-write-before-binding boundary. Usage Insights

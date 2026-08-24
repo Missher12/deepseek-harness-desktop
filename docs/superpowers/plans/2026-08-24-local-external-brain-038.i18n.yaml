@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-08-24-local-external-brain-038.md
-2026-08-24-local-external-brain-038.md: 5bac581b08486474b293c3a1ae83b72e7ce26713
-2026-08-24-local-external-brain-038.zh.md: 2815da16b6f5c40a83044c4f4ff43b0636c52823
+2026-08-24-local-external-brain-038.md: f9f4bece6dbdf27cba5409757f8c64f5aa41b3d2
+2026-08-24-local-external-brain-038.zh.md: f9083f32719018762d01666e5657171df849387e

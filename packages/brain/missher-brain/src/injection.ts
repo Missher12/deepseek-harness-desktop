@@ -129,7 +129,11 @@ async function selectAcceptedContributions(input: BrainPreStepInput, query: stri
   }
 }
 
-/** Fail-open pre-step augmentation used by the Cordis listener and focused tests. */
+/**
+ * Apply fail-open pre-step augmentation for the Cordis listener and focused tests.
+ * @param input Accepted decision, local providers, project identity, and hard limits.
+ * @returns The original decision or one decision augmented with accepted context.
+ */
 export async function augmentPreStepDecision(input: BrainPreStepInput): Promise<PreStepDecision> {
   if (input.decision.kind === 'reject' || !input.topLevel || input.step !== 1 || input.signal.aborted) {
     return input.decision

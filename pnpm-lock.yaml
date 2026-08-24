@@ -521,6 +521,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings':
         specifier: workspace:^
         version: link:../../packages/client/ui-settings
+      '@deepseek-ai/dsh-client-ui-settings-brain':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-settings-brain
       '@deepseek-ai/dsh-client-ui-settings-general':
         specifier: workspace:^
         version: link:../../packages/client/ui-settings-general
@@ -1010,9 +1013,15 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../vendor/schemastery
         version: link:../../vendor/schemastery
+      dsh-missher-brain:
+        specifier: workspace:^
+        version: link:../../packages/brain/missher-brain
+      dsh-missher-evolution:
+        specifier: https://github.com/Missher12/dsh-missher-evolution/releases/download/v0.1.1/dsh-missher-evolution-0.1.1.tgz
+        version: https://github.com/Missher12/dsh-missher-evolution/releases/download/v0.1.1/dsh-missher-evolution-0.1.1.tgz(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-agent-loop@packages+core+agent-loop)(@deepseek-ai/dsh-agent@packages+core+agent)(@deepseek-ai/dsh-api-remotes@packages+api+remotes)(@deepseek-ai/dsh-client-locale@packages+client+locale)(@deepseek-ai/dsh-client-runtime@packages+client+runtime)(@deepseek-ai/dsh-client-ui-settings@packages+client+ui-settings)(@deepseek-ai/dsh-client-ui-slots@packages+client+ui-slots)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-session@packages+core+session)(@deepseek-ai/dsh-tools@packages+core+tools)(@deepseek-ai/dsh-typert-protocol@packages+typert+protocol)(@deepseek-ai/schemastery@vendor+schemastery)(react@18.3.1)(zod@4.4.3)
       dsh-missher-memory:
-        specifier: https://github.com/Missher12/dsh-missher-memory/releases/download/v0.1.3/dsh-missher-memory-0.1.3.tgz
-        version: https://github.com/Missher12/dsh-missher-memory/releases/download/v0.1.3/dsh-missher-memory-0.1.3.tgz(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-agent-loop@packages+core+agent-loop)(@deepseek-ai/dsh-agent@packages+core+agent)(@deepseek-ai/dsh-api-remotes@packages+api+remotes)(@deepseek-ai/dsh-client-locale@packages+client+locale)(@deepseek-ai/dsh-client-runtime@packages+client+runtime)(@deepseek-ai/dsh-client-ui-settings@packages+client+ui-settings)(@deepseek-ai/dsh-client-ui-slots@packages+client+ui-slots)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-session@packages+core+session)(@deepseek-ai/dsh-tools@packages+core+tools)(@deepseek-ai/dsh-typert-protocol@packages+typert+protocol)(@deepseek-ai/schemastery@vendor+schemastery)(react@18.3.1)(zod@4.4.3)
+        specifier: https://github.com/Missher12/dsh-missher-memory/releases/download/v0.2.0/dsh-missher-memory-0.2.0.tgz
+        version: https://github.com/Missher12/dsh-missher-memory/releases/download/v0.2.0/dsh-missher-memory-0.2.0.tgz(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-agent-loop@packages+core+agent-loop)(@deepseek-ai/dsh-agent@packages+core+agent)(@deepseek-ai/dsh-api-remotes@packages+api+remotes)(@deepseek-ai/dsh-client-locale@packages+client+locale)(@deepseek-ai/dsh-client-runtime@packages+client+runtime)(@deepseek-ai/dsh-client-ui-settings@packages+client+ui-settings)(@deepseek-ai/dsh-client-ui-slots@packages+client+ui-slots)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-session@packages+core+session)(@deepseek-ai/dsh-tools@packages+core+tools)(@deepseek-ai/dsh-typert-protocol@packages+typert+protocol)(@deepseek-ai/schemastery@vendor+schemastery)(react@18.3.1)(zod@4.4.3)
       dshmarket:
         specifier: 1.10.1
         version: 1.10.1(patch_hash=a52633be0ed7ecd2a28e992c351f73caae9482c0c46948545142f4ff02db9973)(@deepseek-ai/cordis@vendor+cordis)
@@ -3314,9 +3323,6 @@ importers:
       '@deepseek-ai/dsh-client-test-runtime':
         specifier: workspace:^
         version: link:../../test-support/client-runtime
-      '@deepseek-ai/dsh-client-ui-primitives':
-        specifier: workspace:^
-        version: link:../ui-primitives
       '@deepseek-ai/dsh-client-ui-settings':
         specifier: workspace:^
         version: link:../ui-settings
@@ -13867,9 +13873,55 @@ packages:
     resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
     engines: {node: '>=12'}
 
-  dsh-missher-memory@https://github.com/Missher12/dsh-missher-memory/releases/download/v0.1.3/dsh-missher-memory-0.1.3.tgz:
-    resolution: {integrity: sha512-bzkyeEv42bL3AoTzIzWnxWSw1J8wMGVW/l9s7k9tpg9yj5ZR6XQ+MuWPhSw3qX+NNlLAcx4ki+8uK0nY+1J/5Q==, tarball: https://github.com/Missher12/dsh-missher-memory/releases/download/v0.1.3/dsh-missher-memory-0.1.3.tgz}
-    version: 0.1.3
+  dsh-missher-evolution@https://github.com/Missher12/dsh-missher-evolution/releases/download/v0.1.1/dsh-missher-evolution-0.1.1.tgz:
+    resolution: {integrity: sha512-zmYDFp9LZiiH0TxAEwYDjAIR3bQEZn5aDxXdgiNJ7GGPEorWpnPiyurK39jOQiaFzA+Cquaut7IJG+YrM0OMHg==, tarball: https://github.com/Missher12/dsh-missher-evolution/releases/download/v0.1.1/dsh-missher-evolution-0.1.1.tgz}
+    version: 0.1.1
+    engines: {node: '>=22.19.0'}
+    peerDependencies:
+      '@deepseek-ai/cordis': '>=4.0.1 <5.0.0'
+      '@deepseek-ai/dsh-agent': '>=0.1.0-rc.5 <0.2.0'
+      '@deepseek-ai/dsh-agent-loop': '>=0.1.0-rc.5 <0.2.0'
+      '@deepseek-ai/dsh-api-remotes': '>=0.1.0-rc.5 <0.2.0'
+      '@deepseek-ai/dsh-client-locale': '>=0.1.0-rc.5 <0.2.0'
+      '@deepseek-ai/dsh-client-runtime': '>=0.1.0-rc.5 <0.2.0'
+      '@deepseek-ai/dsh-client-ui-settings': '>=0.1.0-rc.5 <0.2.0'
+      '@deepseek-ai/dsh-client-ui-slots': '>=0.1.0-rc.5 <0.2.0'
+      '@deepseek-ai/dsh-llm': '>=0.1.0-rc.5 <0.2.0'
+      '@deepseek-ai/dsh-session': '>=0.1.0-rc.5 <0.2.0'
+      '@deepseek-ai/dsh-tools': '>=0.1.0-rc.5 <0.2.0'
+      '@deepseek-ai/dsh-typert-protocol': '>=0.1.0-rc.5 <0.2.0'
+      '@deepseek-ai/schemastery': '>=3.18.0 <4.0.0'
+      react: ^18.2.0
+      zod: '>=4.0.0 <5.0.0'
+    peerDependenciesMeta:
+      '@deepseek-ai/cordis':
+        optional: true
+      '@deepseek-ai/dsh-agent':
+        optional: true
+      '@deepseek-ai/dsh-agent-loop':
+        optional: true
+      '@deepseek-ai/dsh-api-remotes':
+        optional: true
+      '@deepseek-ai/dsh-client-locale':
+        optional: true
+      '@deepseek-ai/dsh-client-runtime':
+        optional: true
+      '@deepseek-ai/dsh-client-ui-settings':
+        optional: true
+      '@deepseek-ai/dsh-client-ui-slots':
+        optional: true
+      '@deepseek-ai/dsh-llm':
+        optional: true
+      '@deepseek-ai/dsh-session':
+        optional: true
+      '@deepseek-ai/dsh-tools':
+        optional: true
+      '@deepseek-ai/dsh-typert-protocol':
+        optional: true
+
+  dsh-missher-memory@https://github.com/Missher12/dsh-missher-memory/releases/download/v0.2.0/dsh-missher-memory-0.2.0.tgz:
+    resolution: {integrity: sha512-V0dPaEMrnTEWwtVd+gIut4nU3bHCU45m8SuzT+Kup1I/uMKUf6JKsTxugAzTfKNHSQvaB1Xgyvmgx0LPN81AfQ==, tarball: https://github.com/Missher12/dsh-missher-memory/releases/download/v0.2.0/dsh-missher-memory-0.2.0.tgz}
+    version: 0.2.0
     engines: {node: ^22.19.0 || >=24.0.0}
     peerDependencies:
       '@deepseek-ai/cordis': '>=4.0.1 <5.0.0'
@@ -19924,7 +19976,26 @@ snapshots:
 
   dotenv@16.6.1: {}
 
-  dsh-missher-memory@https://github.com/Missher12/dsh-missher-memory/releases/download/v0.1.3/dsh-missher-memory-0.1.3.tgz(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-agent-loop@packages+core+agent-loop)(@deepseek-ai/dsh-agent@packages+core+agent)(@deepseek-ai/dsh-api-remotes@packages+api+remotes)(@deepseek-ai/dsh-client-locale@packages+client+locale)(@deepseek-ai/dsh-client-runtime@packages+client+runtime)(@deepseek-ai/dsh-client-ui-settings@packages+client+ui-settings)(@deepseek-ai/dsh-client-ui-slots@packages+client+ui-slots)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-session@packages+core+session)(@deepseek-ai/dsh-tools@packages+core+tools)(@deepseek-ai/dsh-typert-protocol@packages+typert+protocol)(@deepseek-ai/schemastery@vendor+schemastery)(react@18.3.1)(zod@4.4.3):
+  dsh-missher-evolution@https://github.com/Missher12/dsh-missher-evolution/releases/download/v0.1.1/dsh-missher-evolution-0.1.1.tgz(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-agent-loop@packages+core+agent-loop)(@deepseek-ai/dsh-agent@packages+core+agent)(@deepseek-ai/dsh-api-remotes@packages+api+remotes)(@deepseek-ai/dsh-client-locale@packages+client+locale)(@deepseek-ai/dsh-client-runtime@packages+client+runtime)(@deepseek-ai/dsh-client-ui-settings@packages+client+ui-settings)(@deepseek-ai/dsh-client-ui-slots@packages+client+ui-slots)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-session@packages+core+session)(@deepseek-ai/dsh-tools@packages+core+tools)(@deepseek-ai/dsh-typert-protocol@packages+typert+protocol)(@deepseek-ai/schemastery@vendor+schemastery)(react@18.3.1)(zod@4.4.3):
+    dependencies:
+      '@deepseek-ai/schemastery': link:vendor/schemastery
+      react: 18.3.1
+      zod: 4.4.3
+    optionalDependencies:
+      '@deepseek-ai/cordis': link:vendor/cordis
+      '@deepseek-ai/dsh-agent': link:packages/core/agent
+      '@deepseek-ai/dsh-agent-loop': link:packages/core/agent-loop
+      '@deepseek-ai/dsh-api-remotes': link:packages/api/remotes
+      '@deepseek-ai/dsh-client-locale': link:packages/client/locale
+      '@deepseek-ai/dsh-client-runtime': link:packages/client/runtime
+      '@deepseek-ai/dsh-client-ui-settings': link:packages/client/ui-settings
+      '@deepseek-ai/dsh-client-ui-slots': link:packages/client/ui-slots
+      '@deepseek-ai/dsh-llm': link:packages/llm/llm
+      '@deepseek-ai/dsh-session': link:packages/core/session
+      '@deepseek-ai/dsh-tools': link:packages/core/tools
+      '@deepseek-ai/dsh-typert-protocol': link:packages/typert/protocol
+
+  dsh-missher-memory@https://github.com/Missher12/dsh-missher-memory/releases/download/v0.2.0/dsh-missher-memory-0.2.0.tgz(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-agent-loop@packages+core+agent-loop)(@deepseek-ai/dsh-agent@packages+core+agent)(@deepseek-ai/dsh-api-remotes@packages+api+remotes)(@deepseek-ai/dsh-client-locale@packages+client+locale)(@deepseek-ai/dsh-client-runtime@packages+client+runtime)(@deepseek-ai/dsh-client-ui-settings@packages+client+ui-settings)(@deepseek-ai/dsh-client-ui-slots@packages+client+ui-slots)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-session@packages+core+session)(@deepseek-ai/dsh-tools@packages+core+tools)(@deepseek-ai/dsh-typert-protocol@packages+typert+protocol)(@deepseek-ai/schemastery@vendor+schemastery)(react@18.3.1)(zod@4.4.3):
     dependencies:
       react: 18.3.1
       zod: 4.4.3

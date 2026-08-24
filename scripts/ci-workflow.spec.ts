@@ -39,12 +39,16 @@ describe('CI workflow', () => {
   it('publishes the updater manifest generated from the same verified macOS DMG', () => {
     const workflow = loadWorkflow('.github/workflows/desktop-release.yml')
     const mac = workflowJob(workflow, 'mac')
+    const windows = workflowJob(workflow, 'windows')
     const publish = workflowJob(workflow, 'publish')
-    if (!Array.isArray(mac.steps) || !Array.isArray(publish.steps)) {
+    if (!Array.isArray(mac.steps) || !Array.isArray(windows.steps) || !Array.isArray(publish.steps)) {
       throw new TypeError('Desktop release jobs must define steps')
     }
     const macSteps = mac.steps.filter(isRecord)
+    const windowsSteps = windows.steps.filter(isRecord)
     const publishSteps = publish.steps.filter(isRecord)
+    const macMetadata = macSteps.find(step => step.name === 'Resolve Desktop release metadata')
+    const windowsMetadata = windowsSteps.find(step => step.name === 'Resolve Desktop release metadata')
     const generate = macSteps.find(step => step.name === 'Generate verified Desktop update manifest')
     const macUpload = macSteps.find(step => (
       typeof step.uses === 'string' && step.uses.startsWith('actions/upload-artifact@')
@@ -53,8 +57,13 @@ describe('CI workflow', () => {
 
     expect(generate?.run).toContain('pnpm exec tsx scripts/create-desktop-update-manifest.ts')
     expect(generate?.run).toContain('deepseek-harness-desktop-update.json')
+    expect(macMetadata?.run).toContain('apps/desktop/package.json')
+    expect(windowsMetadata?.run).toContain('apps/desktop/package.json')
+    expect(JSON.stringify(mac)).toContain('${{ steps.desktop.outputs.artifact }}')
+    expect(JSON.stringify(windows)).toContain('${{ steps.desktop.outputs.artifact }}')
     expect(JSON.stringify(macUpload)).toContain('deepseek-harness-desktop-update.json')
     expect(publishRelease?.run).toContain('release/deepseek-harness-desktop-update.json')
+    expect(JSON.stringify(workflow)).not.toContain('0.2.1')
   })
 
   it('derives every Windows Setup path from the Desktop package version', () => {

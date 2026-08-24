@@ -1,3 +1,4 @@
+/** Simplified Chinese copy for the External Brain settings overview. */
 export const zh = {
   section: '外置大脑',
   title: '外置大脑',
@@ -24,8 +25,10 @@ export const zh = {
   loading: '正在读取…',
 } satisfies Record<string, string>
 
+/** Stable locale keys shared by every External Brain dictionary. */
 export type BrainSettingsLocaleKey = keyof typeof zh
 
+/** English copy matching every External Brain locale key. */
 export const en = {
   section: 'External Brain',
   title: 'External Brain',

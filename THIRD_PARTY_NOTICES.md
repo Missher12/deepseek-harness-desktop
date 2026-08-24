@@ -64,6 +64,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`clsx`](https://github.com/lukeed/clsx) | MIT |
 | [`commander`](https://github.com/tj/commander.js) | MIT |
 | [`diff`](https://github.com/kpdecker/jsdiff) | BSD-3-Clause |
+| [`dsh-missher-evolution`](https://github.com/Missher12/dsh-missher-evolution) | MIT |
 | [`dsh-missher-memory`](https://github.com/Missher12/dsh-missher-memory) | MIT |
 | [`dshmarket`](https://github.com/dsh-market/dsh-market) | MIT |
 | [`e2b`](https://github.com/e2b-dev/e2b) | MIT |

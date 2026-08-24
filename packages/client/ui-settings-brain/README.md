@@ -8,7 +8,15 @@ The page paints three stable source rows before the first response: project memo
 
 ## Model Experience
 
-Indirect. This package renders local status only. Model-visible memory continues to be selected and injected exclusively by `dsh-missher-brain`.
+### External-brain settings overview
+
+#### What the model sees
+
+Nothing from opening this page. This package renders local status only; model-visible memory continues to be selected and injected exclusively by `dsh-missher-brain`.
+
+#### Token effect
+
+None from this settings package. A qualifying recall is separately bounded by the Brain Hub to six complete records and 4 KB.
 
 #### KV Cache effect
 

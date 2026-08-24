@@ -1066,7 +1066,11 @@ async function exercisePluginMarket(
     await control.waitFor({ state: 'visible', timeout: 30_000 })
   }
   const builtinMemory = installedRail.locator('button[data-package="dsh-missher-memory"]')
+  const builtinBrain = installedRail.locator('button[data-package="dsh-missher-brain"]')
+  const builtinEvolution = installedRail.locator('button[data-package="dsh-missher-evolution"]')
+  await builtinBrain.waitFor({ state: 'visible', timeout: 30_000 })
   await builtinMemory.waitFor({ state: 'visible', timeout: 30_000 })
+  await builtinEvolution.waitFor({ state: 'visible', timeout: 30_000 })
   expect(await installedRail.evaluate(element => getComputedStyle(element).overflowX)).toBe('auto')
   // The shell and its controls mount before the same-origin registry request
   // resolves. Wait for the categorized content, not merely the outer shell.
@@ -1198,7 +1202,7 @@ async function exercisePersonalization(
 
   let section = settingsDialog.locator('[data-personalization-section]')
   await section.waitFor({ state: 'visible', timeout: 15_000 })
-  const instructions = `desktop-0.3.7-personalization-${platform}`
+  const instructions = `desktop-0.3.8-personalization-${platform}`
   const editor = section.locator('#dsh-personalization-instructions')
   await expect.poll(() => editor.isEnabled(), { timeout: 15_000 }).toBe(true)
   await editor.fill(instructions)

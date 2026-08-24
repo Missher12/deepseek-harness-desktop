@@ -57,7 +57,7 @@ describe('desktop package manifest', () => {
 
     expect(manifest).toMatchObject({
       name: '@deepseek-ai/dsh-desktop',
-      version: '0.3.7',
+      version: '0.3.8',
       packageManager: 'pnpm@11.7.0',
       private: true,
       main: 'lib/main.js',
@@ -164,7 +164,7 @@ describe('desktop package manifest', () => {
     })
   })
 
-  it('ships one default-on reviewed memory plugin from its immutable release archive', () => {
+  it('ships one ordered default-on external-brain stack from immutable release archives', () => {
     const manifest = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
     ) as DesktopManifest
@@ -174,8 +174,17 @@ describe('desktop package manifest', () => {
     const rows = patches.flatMap(patch => patch.insert ?? [])
 
     expect(manifest.dependencies['dsh-missher-memory']).toBe(
-      'https://github.com/Missher12/dsh-missher-memory/releases/download/v0.1.3/dsh-missher-memory-0.1.3.tgz',
+      'https://github.com/Missher12/dsh-missher-memory/releases/download/v0.2.0/dsh-missher-memory-0.2.0.tgz',
     )
+    expect(manifest.dependencies['dsh-missher-evolution']).toBe(
+      'https://github.com/Missher12/dsh-missher-evolution/releases/download/v0.1.1/dsh-missher-evolution-0.1.1.tgz',
+    )
+    expect(manifest.dependencies['dsh-missher-brain']).toBe('workspace:^')
+    expect(rows.findIndex(row => row.id === 'missher-brain')).toBeLessThan(rows.findIndex(row => row.id === 'missher-memory'))
+    expect(rows.findIndex(row => row.id === 'missher-memory')).toBeLessThan(rows.findIndex(row => row.id === 'missher-evolution'))
+    expect(rows.filter(row => row.id === 'missher-brain')).toEqual([{
+      id: 'missher-brain', name: 'dsh-missher-brain',
+    }])
     expect(rows.filter(row => row.id === 'missher-memory')).toEqual([{
       id: 'missher-memory',
       name: 'dsh-missher-memory',
@@ -183,24 +192,24 @@ describe('desktop package manifest', () => {
         enabled: true,
         captureEnabled: true,
         recallEnabled: true,
+        consolidationEnabled: true,
       },
+    }])
+    expect(rows.filter(row => row.id === 'missher-evolution')).toEqual([{
+      id: 'missher-evolution',
+      name: 'dsh-missher-evolution',
+      config: { enabled: true, maintenanceIntervalHours: 24, maxInjectedRules: 4 },
     }])
 
     expect(rows.find(row => row.id === 'dsh-market')).toEqual({
       id: 'dsh-market',
       name: 'dshmarket',
       config: {
-        builtins: [{
-          name: 'dsh-missher-memory',
-          spec: 'builtin:0.1.1',
-          owner: 'Missher12',
-          url: 'https://github.com/Missher12/dsh-missher-memory',
-          category: 'memory',
-          description: {
-            zh: '面向超长项目的本地审核式记忆：默认开启候选收集与召回，按项目隔离，并保留来源。',
-            en: 'Reviewed local memory for long projects, with default-on capture and recall, project isolation, and visible sources.',
-          },
-        }],
+        builtins: [
+          expect.objectContaining({ name: 'dsh-missher-brain', spec: 'builtin:0.1.0', category: 'memory' }),
+          expect.objectContaining({ name: 'dsh-missher-memory', spec: 'builtin:0.2.0', category: 'memory' }),
+          expect.objectContaining({ name: 'dsh-missher-evolution', spec: 'builtin:0.1.1', category: 'agent' }),
+        ],
       },
     })
 

@@ -106,7 +106,7 @@ git commit -m "feat(brain): add provider contract"
 **文件：**
 - 新建：`packages/brain/missher-brain/src/arbiter.ts`
 - 新建：`packages/brain/missher-brain/src/index.ts`
-- 新建：`packages/brain/missher-brain/src/typert.host.ts`
+- 新建：`packages/brain/missher-brain/src/injection.ts`
 - 测试：`packages/brain/missher-brain/tests/arbiter.spec.ts`
 - 测试：`packages/brain/missher-brain/tests/injection.spec.ts`
 
@@ -406,17 +406,17 @@ git commit -m "feat(memory): consolidate reviewed memory reversibly"
 
 向 `Missher12/dsh-missher-memory` 推送 PR，要求 macOS Intel/Apple Silicon 和 Windows x64 规范 CI，标记 `v0.2.0`，上传规范 `.tgz` 与 LF/ASCII checksum，再匿名验证准确字节和 SHA-256。
 
-### 任务 7：构建统一“外置大脑”设置和召回提示
+### 任务 7：构建统一“外置大脑”设置概览
 
 **文件：**
-- 新建：`packages/brain/missher-brain/src/remote-contract.ts`
-- 新建：`packages/brain/missher-brain/src/remote.ts`
-- 新建：`packages/brain/missher-brain/src/ui/BrainSection.tsx`
-- 新建：`packages/brain/missher-brain/src/ui/BrainSection.module.css`
-- 新建：`packages/brain/missher-brain/src/ui/RecallDisclosure.tsx`
-- 新建：`packages/brain/missher-brain/src/ui/locales.ts`
-- 测试：`packages/brain/missher-brain/tests/brain-section.client.spec.tsx`
-- 测试：`packages/brain/missher-brain/tests/recall-disclosure.client.spec.tsx`
+- 新建：`packages/brain/missher-brain/src/contracts.ts`
+- 新建：`packages/brain/missher-brain/src/index.ts`
+- 新建：`packages/client/ui-settings-brain/src/client/BrainSettingsSection.tsx`
+- 新建：`packages/client/ui-settings-brain/src/client/BrainSettingsSection.module.css`
+- 新建：`packages/client/ui-settings-brain/src/client/index.ts`
+- 新建：`packages/client/ui-settings-brain/src/client/locales.ts`
+- 测试：`packages/client/ui-settings-brain/tests/components.client.spec.tsx`
+- 测试：`packages/client/ui-settings-brain/tests/apply.client.spec.tsx`
 
 - [ ] **步骤 1：编写失败的 UI 状态和无障碍测试**
 
@@ -428,24 +428,24 @@ it('shows stable placeholders before provider counts arrive', () => {
   expect(screen.queryByText('加载中')).toBeNull()
 })
 
-it('discloses exactly the context selected for one turn', async () => {
-  render(<RecallDisclosure memories={2} rules={1} items={selectedItems} />)
-  await user.click(screen.getByRole('button', { name: '2 条记忆 · 1 条学习规则' }))
-  expect(screen.getAllByTestId('brain-source')).toHaveLength(3)
+it('replaces placeholders with bounded pathless provider counts', async () => {
+  render(<BrainSettingsSection load={resolvedSnapshot()} />)
+  expect(await screen.findByText('2 条记忆')).toBeVisible()
+  expect(screen.queryByText('/Users/example/project')).toBeNull()
 })
 ```
 
 - [ ] **步骤 2：运行 Client 测试并确认 RED**
 
-运行：`pnpm exec vitest run packages/brain/missher-brain/tests/brain-section.client.spec.tsx packages/brain/missher-brain/tests/recall-disclosure.client.spec.tsx`
+运行：`pnpm exec vitest run packages/client/ui-settings-brain/tests/components.client.spec.tsx packages/client/ui-settings-brain/tests/apply.client.spec.tsx`
 
 预期：失败，因为页面、Remote 和提示尚不存在。
 
 - [ ] **步骤 3：实现受管设置页和 Provider 面板**
 
-Brain Hub 注册一个 `settings.section` 条目并声明 `external-brain.panel` 列表 Slot。受管 Memory 和 MSE Client 把既有控制注册到“记忆”“自动整理”和“学习”面板；独立模式继续注册旧页面。Brain Remote 只暴露不含路径的状态、计数、维护历史和显式操作。
+Brain Settings Client 注册一个 `settings.section` 条目。Memory 和 MSE 保留各自 Provider 所有的控件，概览页只读取一份有界的 Brain Remote 快照，其中仅包含不含路径的状态和计数。
 
-页面遵循 760 px 设置宽度和共享标题/简介/小节排版。总览立即绘制 `—` 占位，再刷新数据。召回提示只渲染 Host 实际选择的内容，绝不暴露文件路径、数据库名、本地密钥或原始会话 ID。
+页面遵循共享设置宽度和标题/简介/小节排版。它会立即绘制稳定占位内容，随后刷新，且不暴露文件系统路径、数据库名称、本地键、原始会话 ID 或 Provider 错误。
 
 - [ ] **步骤 4：运行 Client 测试、快照和视觉 smoke**
 

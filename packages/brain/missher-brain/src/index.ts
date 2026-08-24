@@ -13,7 +13,11 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Stable pathless project identity shared by local providers. */
+/**
+ * Create the stable pathless project identity shared by local providers.
+ * @param cwd Canonical session working directory, retained only for this calculation.
+ * @returns SHA-256 project identity without the source path.
+ */
 export function brainProjectKey(cwd: string): string {
   return createHash('sha256').update(resolve(cwd)).digest('hex')
 }
@@ -37,6 +41,7 @@ async function providerStatus(provider: BrainProvider): Promise<BrainProviderSta
   }
 }
 
+/** Coordinates bounded local-knowledge providers and exposes pathless status. */
 export default class BrainHub extends TypertRemoteService {
   private readonly registry = new BrainProviderRegistry()
 
@@ -62,28 +67,41 @@ export default class BrainHub extends TypertRemoteService {
     }, { prepend: true })
   }
 
-  /** Register one factual-memory or procedural-learning provider. */
+  /**
+   * Register one factual-memory or procedural-learning provider.
+   * @param provider Provider whose prepared contributions enter shared arbitration.
+   * @returns Disposer for this exact registration.
+   */
   register(provider: BrainProvider): () => void {
     return this.registry.register(provider)
   }
 
-  /** Snapshot the providers currently participating in recall. */
+  /**
+   * Snapshot the providers currently participating in recall.
+   * @returns Providers in deterministic registration order.
+   */
   listProviders(): readonly BrainProvider[] {
     return this.registry.list()
   }
 
-  /** Read only pathless facts; provider failures become unavailable rows. */
+  /**
+   * Read only pathless facts; provider failures become unavailable rows.
+   * @returns Current provider availability and fixed arbitration limits.
+   */
   @Remote('snapshot')
   async snapshot(): Promise<BrainHubSnapshot> {
     const providers = this.registry.list()
-    const statuses = await Promise.all(providers.map(providerStatus))
+    const providerStatuses = await Promise.all(providers.map(async provider => ({
+      provider,
+      status: await providerStatus(provider),
+    })))
     return {
       generatedAt: Date.now(),
       limits: { ...RECALL_LIMITS },
-      providers: providers.map((provider, index) => ({
+      providers: providerStatuses.map(({ provider, status }) => ({
         id: provider.id,
         byteBudget: provider.byteBudget,
-        ...(statuses[index] ?? { state: 'unavailable' as const, count: 0 }),
+        ...status,
       })),
     }
   }

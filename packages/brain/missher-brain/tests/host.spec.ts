@@ -79,6 +79,30 @@ describe('BrainHub Host composition', () => {
     await ctx.fiber.dispose()
   })
 
+  it('bounds a stalled provider status read without exposing its failure', async () => {
+    vi.useFakeTimers()
+    const ctx = new Context()
+    try {
+      await ctx.plugin(BrainHub)
+      ctx.missherBrain.register({
+        ...provider(),
+        id: 'stalled',
+        async status() { return new Promise(() => undefined) },
+      })
+
+      const pending = ctx.missherBrain.snapshot()
+      await vi.advanceTimersByTimeAsync(300)
+      await expect(pending).resolves.toEqual({
+        generatedAt: expect.any(Number),
+        limits: { maxItems: 6, maxBytes: 4_000, timeoutMs: 150 },
+        providers: [{ id: 'stalled', state: 'unavailable', count: 0, byteBudget: 3_000 }],
+      })
+    } finally {
+      vi.useRealTimers()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('injects through the real scoped pre-step waterfall without exposing the cwd to providers', async () => {
     const ctx = new Context()
     await ctx.plugin(BrainHub)

@@ -4,7 +4,11 @@ import type { BrainProvider } from './contracts.ts'
 export class BrainProviderRegistry {
   private readonly providers = new Map<string, BrainProvider>()
 
-  /** Register one provider and return its idempotent exact-registration disposer. */
+  /**
+   * Register one provider and return its idempotent exact-registration disposer.
+   * @param provider Provider implementing the versioned local Brain contract.
+   * @returns Disposer for this exact registration.
+   */
   register(provider: BrainProvider): () => void {
     if (provider.id.trim().length === 0) {
       throw new TypeError('brain provider must have a non-empty id')
@@ -27,7 +31,10 @@ export class BrainProviderRegistry {
     }
   }
 
-  /** Return a stable insertion-ordered snapshot of live providers. */
+  /**
+   * Return a stable insertion-ordered snapshot of live providers.
+   * @returns Current provider objects in registration order.
+   */
   list(): readonly BrainProvider[] {
     return [...this.providers.values()]
   }
