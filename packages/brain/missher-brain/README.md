@@ -9,6 +9,7 @@ The local External Brain hub for DeepSeek Harness. It validates and registers in
 - Every live provider has a non-empty unique `id`, protocol version `1`, and an integer byte budget from 1 through 6,000.
 - `prepare()` returns opaque candidates plus single-use `accept()` and `cancel()` operations. Preparing candidates does not mark them used or mutate provider state.
 - Registration is insertion ordered and returns an exact-registration disposer. A stale disposer cannot remove a successor with the same ID.
+- The local Settings Remote exposes only provider ID, state, bounded item count, byte budget, and the fixed arbitration limits. Provider errors and timeouts become an `unavailable` row; paths and error details never cross into the browser.
 
 ## Model Experience
 

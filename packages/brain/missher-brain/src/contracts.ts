@@ -30,6 +30,23 @@ export interface BrainProviderStatus {
   count: number
 }
 
+/** One pathless provider row exposed to the local Desktop settings surface. */
+export interface BrainProviderSnapshot extends BrainProviderStatus {
+  id: string
+  byteBudget: number
+}
+
+/** Bounded operational facts for the unified local external brain. */
+export interface BrainHubSnapshot {
+  generatedAt: number
+  limits: {
+    maxItems: number
+    maxBytes: number
+    timeoutMs: number
+  }
+  providers: BrainProviderSnapshot[]
+}
+
 /** Pathless per-turn context required for transactional provider attribution. */
 export interface BrainPrepareInput {
   projectKey: string

@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
-import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { augmentPreStepDecision } from './injection.ts'
-import type { BrainProvider } from './contracts.ts'
+import type { BrainHubSnapshot, BrainProvider, BrainProviderStatus } from './contracts.ts'
 import { BrainProviderRegistry } from './registry.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -19,7 +19,25 @@ export function brainProjectKey(cwd: string): string {
 }
 
 /** One local service and one pre-step injection path for all brain providers. */
-export default class BrainHub extends Service {
+const RECALL_LIMITS = { maxItems: 6, maxBytes: 4_000, timeoutMs: 150 } as const
+const STATUS_TIMEOUT_MS = 300
+
+/** Single error-redacting provider status read for the settings snapshot. */
+async function providerStatus(provider: BrainProvider): Promise<BrainProviderStatus> {
+  try {
+    return await Promise.race([
+      provider.status(),
+      new Promise<never>((_resolve, reject) => {
+        const timer = setTimeout(() => { reject(new Error('brain provider status timeout')) }, STATUS_TIMEOUT_MS)
+        timer.unref()
+      }),
+    ])
+  } catch {
+    return { state: 'unavailable', count: 0 }
+  }
+}
+
+export default class BrainHub extends TypertRemoteService {
   private readonly registry = new BrainProviderRegistry()
 
   constructor(ctx: Context) {
@@ -37,9 +55,9 @@ export default class BrainHub extends Service {
         topLevel: origin !== 'subagent' && (delegationDepth ?? 0) === 0,
         step,
         signal,
-        timeoutMs: 150,
-        maxItems: 6,
-        maxBytes: 4_000,
+        timeoutMs: RECALL_LIMITS.timeoutMs,
+        maxItems: RECALL_LIMITS.maxItems,
+        maxBytes: RECALL_LIMITS.maxBytes,
       })
     }, { prepend: true })
   }
@@ -52,6 +70,22 @@ export default class BrainHub extends Service {
   /** Snapshot the providers currently participating in recall. */
   listProviders(): readonly BrainProvider[] {
     return this.registry.list()
+  }
+
+  /** Read only pathless facts; provider failures become unavailable rows. */
+  @Remote('snapshot')
+  async snapshot(): Promise<BrainHubSnapshot> {
+    const providers = this.registry.list()
+    const statuses = await Promise.all(providers.map(providerStatus))
+    return {
+      generatedAt: Date.now(),
+      limits: { ...RECALL_LIMITS },
+      providers: providers.map((provider, index) => ({
+        id: provider.id,
+        byteBudget: provider.byteBudget,
+        ...(statuses[index] ?? { state: 'unavailable' as const, count: 0 }),
+      })),
+    }
   }
 }
 

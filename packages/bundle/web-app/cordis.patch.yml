@@ -210,6 +210,9 @@
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
 
+    - id: ui-settings-brain
+      name: '@deepseek-ai/dsh-client-ui-settings-brain'
+
     - id: ui-settings-usage
       name: '@deepseek-ai/dsh-client-ui-settings-usage'
 

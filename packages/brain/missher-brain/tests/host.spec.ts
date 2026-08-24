@@ -38,7 +38,7 @@ function provider(): BrainProvider {
       items: [{
         handle: 'm1',
         providerId: 'memory',
-        kind: 'reviewed-memory',
+        kind: 'reviewed-memory' as const,
         text: 'Keep release operations reversible.',
         reference: 'memory:m1',
         recordedAt: '2026-08-24T00:00:00.000Z',
@@ -55,6 +55,30 @@ function provider(): BrainProvider {
 }
 
 describe('BrainHub Host composition', () => {
+  it('projects a bounded pathless provider snapshot for the Desktop settings page', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BrainHub)
+    const memory = provider()
+    ctx.missherBrain.register(memory)
+    ctx.missherBrain.register({
+      ...provider(),
+      id: 'evolution',
+      byteBudget: 2_000,
+      async status() { throw new Error('/private/secret must not escape') },
+    })
+
+    await expect(ctx.missherBrain.snapshot()).resolves.toEqual({
+      generatedAt: expect.any(Number),
+      limits: { maxItems: 6, maxBytes: 4_000, timeoutMs: 150 },
+      providers: [
+        { id: 'memory', state: 'ready', count: 1, byteBudget: 3_000 },
+        { id: 'evolution', state: 'unavailable', count: 0, byteBudget: 2_000 },
+      ],
+    })
+
+    await ctx.fiber.dispose()
+  })
+
   it('injects through the real scoped pre-step waterfall without exposing the cwd to providers', async () => {
     const ctx = new Context()
     await ctx.plugin(BrainHub)
