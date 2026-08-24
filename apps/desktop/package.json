@@ -171,6 +171,8 @@
     "@deepseek-ai/dsh-session-log-export": "workspace:^",
     "@deepseek-ai/dsh-session-messenger": "workspace:^",
     "@deepseek-ai/dsh-desktop-workbench": "workspace:^",
+    "@deepseek-ai/dsh-desktop-managed-evolution": "workspace:^",
+    "@deepseek-ai/dsh-desktop-managed-memory": "workspace:^",
     "@deepseek-ai/dsh-session-stats": "workspace:^",
     "@deepseek-ai/dsh-session-telemetry": "workspace:^",
     "@deepseek-ai/dsh-session-telemetry-otel": "workspace:^",

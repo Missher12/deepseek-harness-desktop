@@ -620,6 +620,12 @@ importers:
       '@deepseek-ai/dsh-credentials-local':
         specifier: workspace:^
         version: link:../../packages/credentials/credentials-local
+      '@deepseek-ai/dsh-desktop-managed-evolution':
+        specifier: workspace:^
+        version: link:../desktop-managed-evolution
+      '@deepseek-ai/dsh-desktop-managed-memory':
+        specifier: workspace:^
+        version: link:../desktop-managed-memory
       '@deepseek-ai/dsh-desktop-workbench':
         specifier: workspace:^
         version: link:../../packages/extensions/desktop-workbench
@@ -1041,6 +1047,10 @@ importers:
       playwright:
         specifier: ^1.49.0
         version: 1.61.1
+
+  apps/desktop-managed-evolution: {}
+
+  apps/desktop-managed-memory: {}
 
   apps/web:
     devDependencies:

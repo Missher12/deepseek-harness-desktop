@@ -78,7 +78,13 @@ The repository is based on the pinned official source and adds the desktop appli
   and reversible automatic consolidation for reviewed memory and
   packages the TencentDB compatibility reader without packaging, writing,
   migrating, consolidating, or learning from a user's live `vectors.db`. The
-  Mac and Windows native packaging plus public artifact verification must all
+  immutable Desktop overlay disables matching legacy Profile rows without
+  editing the Profile, then mounts distinct Desktop-owned dual-face wrappers;
+  this prevents old Profile-local Memory or Evolution packages from shadowing
+  either the packaged Host implementation or its Web settings page during an
+  application upgrade. Packaged smoke seeds both legacy Host and Web tripwires
+  and exercises a real plugin-market transaction before accepting the build.
+  The Mac and Windows native packaging plus public artifact verification must all
   originate from the same final shared commit.
 - Version 0.3.8 is the active release candidate; 0.3.7 is the previous public baseline. Version 0.3.7 upgrades the managed memory
   fallback to `dsh-missher-memory@0.1.3`, separates ready built-in project memory

@@ -26,6 +26,7 @@
       "entry": [
         "scripts/**/*.mjs",
         "scripts/**/*.cjs",
+        "scripts/sync-desktop-managed-providers.ts",
         "scripts/types/client-build-environment/index.d.ts"
       ],
       "ignoreUnresolved": [

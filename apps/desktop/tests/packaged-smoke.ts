@@ -88,6 +88,91 @@ async function writeDesktopSmokeModelSettings(harnessHome: string, baseURL: stri
   ].join('\n'), 'utf8')
 }
 
+/**
+ * Seed the exact old-Profile shape that previously collided with Desktop's
+ * built-in providers. The profile-local modules are deliberate tripwires: a
+ * successful packaged boot proves the immutable overlay disabled them and
+ * resolved the managed wrappers from the application installation instead.
+ */
+async function seedLegacyExternalBrainProfile(harnessHome: string): Promise<void> {
+  const profile = join(harnessHome, 'profiles', 'web')
+  const packages = [
+    ['dsh-missher-memory', '0.1.3', 'missher-memory'],
+    ['dsh-missher-evolution', '0.1.0', 'missher-evolution'],
+  ] as const
+  await mkdir(profile, { recursive: true })
+  await writeFile(join(profile, 'package.json'), `${JSON.stringify({
+    name: 'dsh-profile-web',
+    private: true,
+    dependencies: Object.fromEntries(packages.map(([name]) => [name, `file:./legacy-packages/${name}`])),
+    dsh: {
+      profile: {
+        bundles: [
+          '@deepseek-ai/dsh-base',
+          '@deepseek-ai/dsh-web-app',
+          ...packages.map(([name]) => name),
+        ],
+      },
+    },
+  }, null, 2)}\n`, 'utf8')
+  await writeFile(join(profile, 'cordis.patch.yml'), '[]\n', 'utf8')
+  await writeFile(join(profile, 'pnpm-workspace.yaml'), 'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n', 'utf8')
+  for (const [packageName, version, id] of packages) {
+    for (const packageRoot of [
+      join(profile, 'legacy-packages', packageName),
+      join(profile, 'node_modules', packageName),
+    ]) {
+      await mkdir(join(packageRoot, 'lib'), { recursive: true })
+      await writeFile(join(packageRoot, 'package.json'), `${JSON.stringify({
+        name: packageName,
+        version,
+        type: 'module',
+        exports: {
+          '.': { default: './lib/index.js' },
+          './client': { default: './lib/client.js' },
+          './package.json': './package.json',
+        },
+        dsh: {
+          bundle: { patch: './cordis.patch.yml' },
+          client: {
+            inject: [
+              '@deepseek-ai/dsh-client-runtime',
+              '@deepseek-ai/dsh-client-ui-settings',
+              '@deepseek-ai/dsh-client-locale',
+              '@deepseek-ai/dsh-api-remotes',
+            ],
+            platform: 'web',
+          },
+        },
+      }, null, 2)}\n`, 'utf8')
+      await writeFile(join(packageRoot, 'cordis.patch.yml'), [
+        '- insert:',
+        `    - id: ${id}`,
+        `      name: ${packageName}`,
+        '',
+      ].join('\n'), 'utf8')
+      await writeFile(
+        join(packageRoot, 'lib/index.js'),
+        `throw new Error(${JSON.stringify(`packaged smoke loaded legacy ${packageName}`)})\n`,
+        'utf8',
+      )
+      await writeFile(
+        join(packageRoot, 'lib/client.js'),
+        [
+          'window.__ModuleLoader__.load({',
+          `  id: ${JSON.stringify(packageName)},`,
+          '  factory: () => {',
+          `    throw new Error(${JSON.stringify(`packaged smoke loaded legacy client ${packageName}`)})`,
+          '  },',
+          '})',
+          '',
+        ].join('\n'),
+        'utf8',
+      )
+    }
+  }
+}
+
 /** Isolated on-disk state used by the native system-clipboard smoke. */
 export interface WindowsClipboardSmokeState {
   activeSessionId: string
@@ -1426,6 +1511,7 @@ export async function runPackagedDesktopSmoke(
   const harnessHome = process.env.DSH_DESKTOP_SMOKE_DSH_HOME ?? join(temporaryRoot, 'dsh-home')
   const userData = process.env.DSH_DESKTOP_SMOKE_USER_DATA ?? join(temporaryRoot, 'electron-data')
   await Promise.all([mkdir(harnessHome, { recursive: true }), mkdir(userData, { recursive: true })])
+  await seedLegacyExternalBrainProfile(harnessHome)
   const clipboardSeed = await seedWindowsClipboardSmokeState(harnessHome)
   const providerTripwire = await startProviderTripwire()
   await writeDesktopSmokeModelSettings(harnessHome, providerTripwire.url)
