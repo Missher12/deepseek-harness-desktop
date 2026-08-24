@@ -44,4 +44,31 @@ describe('BrainSettingsSection', () => {
     expect(screen.getByText(en.consolidationDescription)).toBeTruthy()
     expect(screen.queryByText('/private/secret')).toBeNull()
   })
+
+  it('renders unavailable sources and a ready evolution rule count', async () => {
+    render(<BrainSettingsSection {...props(async () => ({
+      generatedAt: 1,
+      limits: { maxItems: 6, maxBytes: 4_000, timeoutMs: 150 },
+      providers: [
+        { id: 'evolution', state: 'ready', count: 4, byteBudget: 2_000 },
+      ],
+    }))} />)
+
+    expect(await screen.findAllByText(en.unavailable)).toHaveLength(2)
+    expect(screen.getByText('4 rules')).toBeTruthy()
+  })
+
+  it('ignores both successful and failed loads after disposal', async () => {
+    const success = Promise.withResolvers<Awaited<ReturnType<BrainSettingsProps['load']>>>()
+    const successfulView = render(<BrainSettingsSection {...props(() => success.promise)} />)
+    successfulView.unmount()
+    success.resolve({ generatedAt: 1, limits: { maxItems: 1, maxBytes: 1_000, timeoutMs: 1 }, providers: [] })
+    await success.promise
+
+    const failure = Promise.withResolvers<Awaited<ReturnType<BrainSettingsProps['load']>>>()
+    const failedView = render(<BrainSettingsSection {...props(() => failure.promise)} />)
+    failedView.unmount()
+    failure.reject(new Error('disposed'))
+    await expect(failure.promise).rejects.toThrow('disposed')
+  })
 })

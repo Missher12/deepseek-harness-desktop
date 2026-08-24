@@ -7,6 +7,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject, NS } from '../src/client/index.ts'
+import { apply as applyHostEntry } from '../src/index.ts'
 import { BrainSettingsSection, type BrainSettingsInjected } from '../src/client/BrainSettingsSection.tsx'
 
 usePinnedBrowserLanguages('zh-CN')
@@ -36,6 +37,10 @@ async function bench() {
 }
 
 describe('ui-settings-brain browser plugin', () => {
+  it('keeps the host loader entry inert', () => {
+    expect(applyHostEntry()).toBeUndefined()
+  })
+
   it('registers one lazy localized external-brain section', async () => {
     expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.missherBrain'])
     const b = await bench()
