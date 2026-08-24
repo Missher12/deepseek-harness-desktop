@@ -1,0 +1,40 @@
+/** A contribution kind understood by the Brain Hub's deterministic arbiter. */
+export type BrainContributionKind =
+  | 'reviewed-memory'
+  | 'memory-capsule'
+  | 'legacy-memory'
+  | 'learned-rule'
+
+/** One opaque, source-attributed candidate prepared for a single model step. */
+export interface BrainContribution {
+  handle: string
+  providerId: string
+  kind: BrainContributionKind
+  text: string
+  reference: string
+  recordedAt: string
+  score: number
+  pinned: boolean
+}
+
+/** Single-use prepared candidates whose source side effects happen only after acceptance. */
+export interface PreparedBrainBatch {
+  readonly items: readonly BrainContribution[]
+  accept(handles: readonly string[]): Promise<void>
+  cancel(): Promise<void>
+}
+
+/** Pathless provider status safe to expose through the local Desktop UI. */
+export interface BrainProviderStatus {
+  state: 'ready' | 'disabled' | 'unavailable'
+  count: number
+}
+
+/** Versioned provider contract shared by factual memory and procedural learning. */
+export interface BrainProvider {
+  readonly protocolVersion: 1
+  readonly id: string
+  readonly byteBudget: number
+  prepare(input: { projectKey: string; query: string; signal: AbortSignal }): Promise<PreparedBrainBatch>
+  status(): Promise<BrainProviderStatus>
+}
