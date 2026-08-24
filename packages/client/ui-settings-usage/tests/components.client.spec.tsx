@@ -8,6 +8,7 @@ import { en, zh, type UsageInsightsLocaleKey } from '../src/client/locales.ts'
 import { resetUsageSnapshotForTest } from '../src/client/snapshot-cache.ts'
 
 afterEach(() => {
+  vi.useRealTimers()
   cleanup()
   resetUsageSnapshotForTest()
 })
@@ -57,6 +58,51 @@ function props(
 }
 
 describe('UsageInsightsSection', () => {
+  it('keeps the native page title and description visible across loading and ready states', async () => {
+    const deferred = Promise.withResolvers<UsageInsightsSnapshot>()
+    render(<UsageInsightsSection {...props(() => deferred.promise)} />)
+
+    expect(screen.getByRole('heading', { name: en.section, level: 2 })).toBeTruthy()
+    expect(screen.getByText(en.sectionIntro)).toBeTruthy()
+
+    await act(async () => { deferred.resolve(SNAPSHOT); await deferred.promise })
+    expect(screen.getByRole('heading', { name: en.section, level: 2 })).toBeTruthy()
+    expect(screen.getByText(en.sectionIntro)).toBeTruthy()
+  })
+
+  it('ends a never-settling first-load skeleton and allows a successful retry', async () => {
+    vi.useFakeTimers()
+    const never = new Promise<UsageInsightsSnapshot>(() => {})
+    const load = vi.fn<UsageInsightsSectionInjected['load']>()
+      .mockReturnValueOnce(never)
+      .mockResolvedValueOnce(SNAPSHOT)
+    render(<UsageInsightsSection {...props(load)} />)
+
+    expect(document.querySelector('[data-usage-skeleton]')).not.toBeNull()
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+    expect(screen.getByRole('alert').textContent).toBe(en.error)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: en.retry }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(screen.getByText('96.5K')).toBeTruthy()
+  })
+
+  it('accepts the original response when it settles after the first-load timeout', async () => {
+    vi.useFakeTimers()
+    const deferred = Promise.withResolvers<UsageInsightsSnapshot>()
+    render(<UsageInsightsSection {...props(() => deferred.promise)} />)
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+    expect(screen.getByRole('alert').textContent).toBe(en.error)
+
+    await act(async () => { deferred.resolve(SNAPSHOT); await deferred.promise })
+    expect(screen.getByText('96.5K')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('renders the five KPIs, partial notice, charts, insights, and ranked features', async () => {
     const deferred = Promise.withResolvers<UsageInsightsSnapshot>()
     const view = render(<UsageInsightsSection {...props(() => deferred.promise)} />)

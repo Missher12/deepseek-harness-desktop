@@ -15,7 +15,10 @@ describe('usage heatmap styles', () => {
   })
 
   it('gives the dashboard a settings-native vertical rhythm', () => {
-    expect(styles).toMatch(/\.section\s*\{[^}]*padding:\s*28px\s+0\s+36px/s)
+    expect(styles).toMatch(/\.section\s*\{[^}]*padding:\s*0\s+0\s+36px/s)
+    expect(styles).toMatch(/\.pageHeader\s*\{[^}]*margin-bottom:\s*20px/s)
+    expect(styles).toMatch(/\.pageTitle\s*\{[^}]*font-size:\s*16px;[^}]*line-height:\s*24px;[^}]*font-weight:\s*500/s)
+    expect(styles).toMatch(/\.pageIntro\s*\{[^}]*font-size:\s*14px;[^}]*line-height:\s*22px/s)
     expect(styles).toMatch(/\.activityHeader\s*\{[^}]*margin-top:\s*32px/s)
     expect(styles).toMatch(/\.chartPanel\s*\{[^}]*margin-top:\s*16px/s)
     expect(styles).toMatch(/\.detailsGrid\s*\{[^}]*margin-top:\s*44px/s)
