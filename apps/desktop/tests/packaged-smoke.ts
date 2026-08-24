@@ -1198,7 +1198,7 @@ async function exercisePersonalization(
 
   let section = settingsDialog.locator('[data-personalization-section]')
   await section.waitFor({ state: 'visible', timeout: 15_000 })
-  const instructions = `desktop-0.3.6-personalization-${platform}`
+  const instructions = `desktop-0.3.7-personalization-${platform}`
   const editor = section.locator('#dsh-personalization-instructions')
   await expect.poll(() => editor.isEnabled(), { timeout: 15_000 }).toBe(true)
   await editor.fill(instructions)
@@ -1248,8 +1248,11 @@ async function exerciseMemorySettings(
   const heading = settingsDialog.getByRole('heading', { name: /^(?:Project Memory|项目记忆)$/u })
   await heading.waitFor({ state: 'visible', timeout: 30_000 })
   const section = heading.locator('xpath=ancestor::section[1]')
-  await expect.poll(() => section.innerText(), { timeout: 15_000 })
-    .toMatch(/(?:Not configured|未配置)/u)
+  await expect.poll(() => section.innerText(), { timeout: 15_000 }).toSatisfy((text: string) => (
+    /(?:Built-in project memory|内置项目记忆)/u.test(text)
+    && /(?:Ready|已就绪)/u.test(text)
+    && /(?:Not connected \(optional\)|未连接（可选）)/u.test(text)
+  ))
   expect(await stateExists()).toBe(false)
   await page.screenshot({
     path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-memory-${platform}.png`),

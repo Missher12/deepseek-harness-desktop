@@ -53,6 +53,7 @@
       "ignoreDependencies": [
         "@deepseek-ai/.+",
         "@electron/rebuild",
+        "dsh-missher-memory",
         "dshmarket",
         "pnpm"
       ]

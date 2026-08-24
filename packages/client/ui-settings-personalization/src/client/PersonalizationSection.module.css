@@ -1,7 +1,7 @@
-.root{display:flex;flex-direction:column;gap:22px;padding:4px 2px 24px;color:var(--dsw-alias-label-primary,#1f2328)}
+.root{display:flex;flex-direction:column;gap:22px;padding:0 0 24px;color:var(--dsw-alias-label-primary,#1f2328)}
 .header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
-.header h2{margin:0;font-size:28px;font-weight:600;line-height:38px;letter-spacing:-.025em}
-.header p{max-width:620px;margin:4px 0 0;color:var(--dsw-alias-label-secondary,#6b7280);font-size:13px;line-height:20px}
+.header h2{margin:0;font-size:16px;font-weight:500;line-height:24px;letter-spacing:0}
+.header p{max-width:620px;margin:4px 0 0;color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:14px;line-height:22px}
 .editorBlock{display:flex;flex-direction:column;gap:7px}
 .labelRow{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
 .labelRow label{font-size:15px;font-weight:600;line-height:22px}

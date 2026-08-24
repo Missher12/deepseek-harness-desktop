@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { PersonalizationSection, type PersonalizationSectionProps } from '../src/client/PersonalizationSection.tsx'
 import { en } from '../src/client/locales.ts'
@@ -82,5 +82,53 @@ describe('PersonalizationSection', () => {
     await waitFor(() => { expect(screen.getByRole('status').textContent).toContain('Could not save') })
     expect(editor.value).toBe('Do not lose this draft.')
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(false)
+  })
+
+  it('shows a retryable status when loading fails', async () => {
+    render(<PersonalizationSection {...props({
+      load: vi.fn(async () => { throw new Error('read failed') }),
+    })} />)
+
+    await waitFor(() => { expect(screen.getByRole('status').textContent).toContain('temporarily unavailable') })
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(true)
+  })
+
+  it('ignores a late load settlement after the section is unmounted', async () => {
+    let resolveLoad!: (value: typeof base) => void
+    const load = vi.fn(() => new Promise<typeof base>((resolve) => { resolveLoad = resolve }))
+    const view = render(<PersonalizationSection {...props({ load })} />)
+    view.unmount()
+
+    await act(async () => { resolveLoad(base); await Promise.resolve() })
+    expect(load).toHaveBeenCalledOnce()
+  })
+
+  it('ignores a late load rejection after the section is unmounted', async () => {
+    let rejectLoad!: (error: Error) => void
+    const load = vi.fn(() => new Promise<typeof base>((_resolve, reject) => { rejectLoad = reject }))
+    const view = render(<PersonalizationSection {...props({ load })} />)
+    view.unmount()
+
+    await act(async () => { rejectLoad(new Error('late failure')); await Promise.resolve() })
+    expect(load).toHaveBeenCalledOnce()
+  })
+
+  it('keeps oversized UTF-8 drafts unsaveable and guards forced disabled clicks', async () => {
+    const save = vi.fn(props().save)
+    render(<PersonalizationSection {...props({ save })} />)
+    const editor = screen.getByRole('textbox', { name: 'Custom instructions' }) as HTMLTextAreaElement
+    const button = screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement
+
+    button.disabled = false
+    fireEvent.click(button)
+    expect(save).not.toHaveBeenCalled()
+    button.disabled = true
+
+    await waitFor(() => { expect(editor.disabled).toBe(false) })
+    fireEvent.change(editor, { target: { value: '界'.repeat(20_000) } })
+    expect(button.disabled).toBe(true)
+    button.disabled = false
+    fireEvent.click(button)
+    expect(save).not.toHaveBeenCalled()
   })
 })

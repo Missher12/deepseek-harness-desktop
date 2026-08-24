@@ -34,6 +34,8 @@ type ViewState =
 
 type ChartMode = ParticleChartMode
 
+const LOAD_TIMEOUT_MS = 15_000
+
 /** Month label in the active UI locale. */
 function monthLabel(date: string, locale: string): string {
   const [year, month] = date.split('-').map(Number) as [number, number]
@@ -65,8 +67,18 @@ function partialText(
   return template.replace('{sessions}', String(sessions)).replace('{samples}', String(samples))
 }
 
+/** Shared page heading kept stable across loading, ready, and error states. */
+function PageHeader({ title, intro }: { title: string; intro: string }): ReactNode {
+  return (
+    <header className={css.pageHeader}>
+      <h2 className={css.pageTitle}>{title}</h2>
+      <p className={css.pageIntro}>{intro}</p>
+    </header>
+  )
+}
+
 /** Geometry-first placeholder used before the first local snapshot is available. */
-function UsageSkeleton({ label }: { label: string }): ReactNode {
+function UsageSkeleton({ label, intro }: { label: string; intro: string }): ReactNode {
   return (
     <section
       className={`${css.section} ${css.skeleton}`}
@@ -74,6 +86,7 @@ function UsageSkeleton({ label }: { label: string }): ReactNode {
       aria-label={label}
       aria-busy="true"
     >
+      <PageHeader title={label} intro={intro} />
       <div className={`${css.summary} ${css.skeletonSummary}`} aria-hidden="true">
         {Array.from({ length: 5 }, (_, index) => (
           <div className={`${css.metric} ${css.skeletonMetric}`} data-usage-skeleton-metric key={index}>
@@ -238,20 +251,29 @@ export function UsageInsightsSection({ load, locale, t }: UsageInsightsSectionPr
 
   useEffect(() => {
     let current = true
+    const fail = (): void => {
+      setState(previous => previous.status === 'ready'
+        ? { ...previous, refreshing: false, stale: true }
+        : { status: 'error' })
+    }
+    const timeout = window.setTimeout(fail, LOAD_TIMEOUT_MS)
     void Promise.resolve().then(() => load()).then(
       (snapshot) => {
         if (!current) return
+        window.clearTimeout(timeout)
         writeUsageSnapshot(snapshot)
         setState({ status: 'ready', snapshot, refreshing: false, stale: false })
       },
       () => {
         if (!current) return
-        setState(previous => previous.status === 'ready'
-          ? { ...previous, refreshing: false, stale: true }
-          : { status: 'error' })
+        window.clearTimeout(timeout)
+        fail()
       },
     )
-    return () => { current = false }
+    return () => {
+      current = false
+      window.clearTimeout(timeout)
+    }
   }, [load, request])
 
   const retry = (): void => {
@@ -273,13 +295,16 @@ export function UsageInsightsSection({ load, locale, t }: UsageInsightsSectionPr
     tabRefs.current[next]?.focus()
   }
 
-  if (state.status === 'loading') return <UsageSkeleton label={t('section')} />
+  if (state.status === 'loading') return <UsageSkeleton label={t('section')} intro={t('sectionIntro')} />
   if (state.status === 'error') {
     return (
-      <div className={css.failure}>
-        <p role="alert">{t('error')}</p>
-        <button type="button" onClick={retry}>{t('retry')}</button>
-      </div>
+      <section className={css.section} aria-label={t('section')}>
+        <PageHeader title={t('section')} intro={t('sectionIntro')} />
+        <div className={css.failure}>
+          <p role="alert">{t('error')}</p>
+          <button type="button" onClick={retry}>{t('retry')}</button>
+        </div>
+      </section>
     )
   }
   const { snapshot } = state
@@ -293,6 +318,7 @@ export function UsageInsightsSection({ load, locale, t }: UsageInsightsSectionPr
   ]
   return (
     <section className={css.section} aria-label={t('section')} aria-busy={state.refreshing}>
+      <PageHeader title={t('section')} intro={t('sectionIntro')} />
       <Summary snapshot={snapshot} locale={locale} t={t} />
       {state.stale ? (
         <div className={css.refreshNotice} data-usage-refresh-stale role="status">

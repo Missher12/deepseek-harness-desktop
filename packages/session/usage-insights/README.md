@@ -15,7 +15,7 @@ Feature rankings deliberately describe **features**, not installed plugins. Nati
   name: '@deepseek-ai/dsh-usage-insights'
 ```
 
-The plugin injects Session persistence and the storage-domain registry. It reuses an indexed row when the Session revision matches, rebuilds only changed rows with bounded concurrency, and serves partial results when an individual Session cannot be inspected.
+The plugin injects Session persistence and the storage-domain registry. It reuses an indexed row when the Session revision matches, rebuilds only changed rows with bounded concurrency, and serves partial results when an individual Session cannot be inspected. The newest folded row for a live Session remains process-local and is invalidated by generation on its next Session event; it is never written under an older durable revision. One refresh has a 12-second Host deadline: pending persistence reads receive the same cancellation signal, timed-out Sessions are counted as omitted, and the shared in-flight promise always settles so a retry can start fresh.
 
 ## Model Experience
 
@@ -29,5 +29,5 @@ None; displayed cache-read and cache-write figures are provider accounting alrea
 
 - **Provider counts are authoritative or absent** — invalid, negative, unsafe, or missing token fields are omitted instead of estimated; the snapshot reports how many Sessions were omitted during a partial refresh.
 - **Feature ownership is intentionally conservative** — old tool records can identify a tool or skill but cannot reliably map every call back to the Loader plugin that registered it, so the API does not claim a plugin ranking.
-- **The first read can be expensive** — a cold or invalidated cache must inspect every durable Session once; later reads reuse per-Session revisions.
+- **The first read is bounded but can be partial** — a cold or invalidated cache inspects durable Sessions until the 12-second refresh deadline; completed rows are cached, timed-out rows are reported as omitted, and later reads can continue from those cached revisions.
 - **Local time-zone semantics** — daily buckets and streaks follow the Host machine's current time zone, so changing that zone can move events near midnight after the affected rows are rebuilt.

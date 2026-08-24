@@ -1,6 +1,7 @@
 /** Simplified Chinese copy and key source of truth for Usage Settings. */
 export const zh = {
   section: '使用统计',
+  sectionIntro: '汇总这台电脑上的本地会话、Token 活动和常用功能。',
   loading: '正在汇总本地历史…',
   error: '暂时无法读取使用统计。',
   refreshFailed: '当前显示的是上次结果，后台刷新暂时失败。',
@@ -43,6 +44,7 @@ export type UsageInsightsLocaleKey = keyof typeof zh
 /** English dictionary checked against the Chinese key set. */
 export const en = {
   section: 'Usage',
+  sectionIntro: 'A local overview of sessions, token activity, and frequently used features on this computer.',
   loading: 'Summarizing local history…',
   error: 'Usage insights are temporarily unavailable.',
   refreshFailed: 'Showing the last result because the background refresh failed.',

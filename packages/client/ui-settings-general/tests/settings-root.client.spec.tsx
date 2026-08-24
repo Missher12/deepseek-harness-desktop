@@ -236,6 +236,21 @@ describe('SettingsPanel navigation', () => {
     )
   })
 
+  it('normalizes contributed page geometry and typography to the native Models baseline', () => {
+    expect(settingsCss).toMatch(/\.options\s*\{[^}]*--dsh-settings-page-title-size:\s*16px;/s)
+    expect(settingsCss).toMatch(/\.options\s*\{[^}]*--dsh-settings-page-intro-size:\s*14px;/s)
+    expect(settingsCss).toMatch(
+      /data-slot=['"]settings\.section['"][^}]*box-sizing:\s*border-box;[^}]*padding:\s*0\s+0\s+24px;/s,
+    )
+    expect(settingsCss).toMatch(
+      /data-slot=['"]settings\.section['"][^}]*h2\s*\{[^}]*font-size:\s*var\(--dsh-settings-page-title-size\);/s,
+    )
+    expect(settingsCss).toMatch(/h2\s*\+\s*p\s*\{[^}]*font-size:\s*var\(--dsh-settings-page-intro-size\);/s)
+    expect(settingsCss).toMatch(
+      /:global\(\[data-dshmarket-layout=['"]reference['"]\]\)\s*>\s*:first-child\s*\{[^}]*padding:\s*0\s+0\s+10px;/s,
+    )
+  })
+
   it('mounts onboarding steps in order and transfers ownership only on completion', () => {
     const { renderSlot } = mount()
     const first = renderSlot.mock.calls.find(call => call[0] === 'settings.onboarding')

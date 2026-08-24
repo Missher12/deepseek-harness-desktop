@@ -6,7 +6,7 @@ Read-only **Usage** section for Web and Desktop Settings. The browser plugin reg
 
 The section shows cumulative and peak tokens, longest active Session time, current streak, and longest streak. All scopes retain the same 53-by-7 particle field: Daily is a calendar heatmap, while Weekly and Cumulative fill each Sunday-aligned column from bottom to top. The visible rounded tooltip uses scope-specific date copy and changes from one day's tokens, to the containing week's total, to the all-history running total through that week. Below the chart, activity insights summarize cache-hit rate, most-used model and reasoning effort, unique skills, tool calls, and chat days; the ranked feature list distinguishes skills from tools.
 
-Loading, retry, empty, and partial-data states stay inside the section. Missing metrics render as an em dash rather than a fabricated zero. The layout uses the existing Settings width and semantic theme tokens, supports keyboard tab navigation, collapses the KPI strip at narrow widths, and introduces no horizontal page scroll.
+Loading, retry, empty, and partial-data states stay inside the section. A first load that has not settled after 15 seconds leaves the skeleton for a retryable error; a retained aggregate remains visible with a stale-refresh notice. A later success can still replace either state. Missing metrics render as an em dash rather than a fabricated zero. The layout uses the existing Settings width and semantic theme tokens, supports keyboard tab navigation, collapses the KPI strip at narrow widths, and introduces no horizontal page scroll.
 
 ## Model Experience
 

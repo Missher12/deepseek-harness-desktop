@@ -918,6 +918,12 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
     // Seeded compaction prices realized file paths, whose length differs
     // between local worktrees and CI scratch directories.
     .replace(/(Compacted \d+ history items \(~)\d+( tokens\))/g, '$1{{tokens}}$2')
+    // Pricing tiers intentionally follow the current Beijing weekday and
+    // clock, so a golden must not flip between weekday and weekend runs.
+    .replace(
+      /(?:Weekday peak|Weekday off-peak|Weekend off-peak|工作日高峰价|工作日低谷价|周末低谷价)/g,
+      '{{pricing tier}}',
+    )
     // Session summaries and Message IconActions clocks cross calendar
     // boundaries; collapse every shape so goldens stay stable across them.
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, '{{timestamp}}')

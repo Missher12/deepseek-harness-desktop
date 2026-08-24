@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 interface DesktopManifest {
   name: string
+  version: string
   packageManager: string
   private: boolean
   main: string
@@ -56,6 +57,7 @@ describe('desktop package manifest', () => {
 
     expect(manifest).toMatchObject({
       name: '@deepseek-ai/dsh-desktop',
+      version: '0.3.7',
       packageManager: 'pnpm@11.7.0',
       private: true,
       main: 'lib/main.js',
@@ -172,7 +174,7 @@ describe('desktop package manifest', () => {
     const rows = patches.flatMap(patch => patch.insert ?? [])
 
     expect(manifest.dependencies['dsh-missher-memory']).toBe(
-      'https://github.com/Missher12/dsh-missher-memory/releases/download/v0.1.1/dsh-missher-memory-0.1.1.tgz',
+      'https://github.com/Missher12/dsh-missher-memory/releases/download/v0.1.3/dsh-missher-memory-0.1.3.tgz',
     )
     expect(rows.filter(row => row.id === 'missher-memory')).toEqual([{
       id: 'missher-memory',

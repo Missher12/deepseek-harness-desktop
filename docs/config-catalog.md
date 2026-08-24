@@ -3034,6 +3034,8 @@ Requires: `storageDomain` · `sessionPersistence`
 export interface Config {
   /** IANA zone used for calendar aggregation; defaults to the system zone. */
   timeZone?: string
+  /** Total refresh budget before pending Session inspections are cancelled. */
+  refreshTimeoutMs?: number
 }
 ```
 
