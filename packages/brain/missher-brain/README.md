@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-The local External Brain hub for DeepSeek Harness. It validates and registers independently owned factual-memory and procedural-learning providers so a later arbiter can select one bounded context batch for each eligible top-level turn. Providers retain their own databases and side effects; the hub owns no user memory.
+The local External Brain hub for DeepSeek Harness. It validates and registers independently owned factual-memory and procedural-learning providers, then selects one bounded context batch for each eligible top-level turn. Providers retain their own databases and side effects; the hub owns no user memory.
 
 ## Provider contract
 
@@ -16,16 +16,17 @@ The local External Brain hub for DeepSeek Harness. It validates and registers in
 
 #### What the model sees
 
-Nothing from the registry alone. The Brain Hub injector is the sole component allowed to render selected contributions into an eligible model step.
+Only selected, source-attributed JSON records inside an explicitly untrusted `External brain context` block. Recall runs only for the first step of a top-level direct-user turn whose session has a project working directory. Subagent children, plugin-only messages, later steps, rejected steps, and sessions without a project directory receive nothing.
 
 #### Token effect
 
-Zero tokens until the injector selects and renders provider contributions. The provider and hub budgets bound that later context.
+Zero tokens on ineligible steps. An eligible recall adds at most six selected contributions and at most 4,000 UTF-8 bytes including the complete wrapper and source metadata.
 
 #### KV Cache effect
 
-The registry does not touch request prefixes. A later eligible recall changes only that turn's external-brain context and can reduce cache reuse for the affected prefix.
+The registry does not touch request prefixes. Eligible recall changes only that turn's external-brain context and can reduce cache reuse for the affected prefix. Providers share a 150 ms deadline; timeout, cancellation, malformed output, acceptance failure, and cleanup failure all return the original downstream decision.
 
 ## Known Limitations and Deferred Work
 
 - Protocol version `1` supports local, text-only contributions. Binary knowledge, remote provider discovery, and cross-device synchronization are outside this package.
+- Project identity is a pathless SHA-256 of the absolute session working directory. This isolates providers from the raw path but does not merge projects reached through distinct symlink spellings.

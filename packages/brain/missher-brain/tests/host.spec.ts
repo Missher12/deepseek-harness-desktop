@@ -1,0 +1,118 @@
+import { Context } from '@deepseek-ai/cordis'
+import { agentEvents } from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { describe, expect, it, vi } from 'vitest'
+import BrainHub from '../src/index.js'
+import type { BrainProvider } from '../src/contracts.js'
+
+const direct = createUserMessage({
+  content: [{ type: 'text', text: 'remember the release boundary' }],
+  source: { kind: 'user' },
+})
+
+function agent(parentSession?: string, cwd: string | null = '/private/example/project'): Agent {
+  return {
+    id: 'agent-1',
+    options: {},
+    status: 'running',
+    session: {
+      header: {
+        id: 'agent-1',
+        cwd: cwd ?? undefined,
+        createdAt: 0,
+        parentSession,
+        ...(parentSession === undefined ? {} : { origin: 'subagent' as const, delegationDepth: 1 }),
+      },
+    } as Agent['session'],
+  } as Agent
+}
+
+function provider(): BrainProvider {
+  return {
+    protocolVersion: 1,
+    id: 'memory',
+    byteBudget: 3_000,
+    prepare: vi.fn(async () => ({
+      items: [{
+        handle: 'm1',
+        providerId: 'memory',
+        kind: 'reviewed-memory',
+        text: 'Keep release operations reversible.',
+        reference: 'memory:m1',
+        recordedAt: '2026-08-24T00:00:00.000Z',
+        score: 0,
+        pinned: false,
+      }],
+      accept: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+    })),
+    async status() {
+      return { state: 'ready', count: 1 }
+    },
+  }
+}
+
+describe('BrainHub Host composition', () => {
+  it('injects through the real scoped pre-step waterfall without exposing the cwd to providers', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BrainHub)
+    const memory = provider()
+    ctx.missherBrain.register(memory)
+    expect(ctx.missherBrain.listProviders()).toEqual([memory])
+    const owner = agent()
+
+    const decision = await agentEvents(ctx, owner).waterfall(
+      'agent/pre-step',
+      { messages: [direct], turn: 1, step: 1, signal: new AbortController().signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [direct] }),
+    )
+
+    expect(decision.kind).toBe('enter')
+    if (decision.kind !== 'enter') throw new Error('expected entered decision')
+    expect(decision.messages).toHaveLength(2)
+    expect(memory.prepare).toHaveBeenCalledWith(expect.objectContaining({
+      projectKey: expect.stringMatching(/^[a-f0-9]{64}$/),
+      query: 'remember the release boundary',
+    }))
+    expect(JSON.stringify(vi.mocked(memory.prepare).mock.calls)).not.toContain('/private/example/project')
+
+    await ctx.fiber.dispose()
+  })
+
+  it('does not recall into a durable subagent child', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BrainHub)
+    const memory = provider()
+    ctx.missherBrain.register(memory)
+    const child = agent('parent-1')
+
+    const downstream = { kind: 'enter' as const, messages: [direct] }
+    await expect(agentEvents(ctx, child).waterfall(
+      'agent/pre-step',
+      { messages: [direct], turn: 1, step: 1, signal: new AbortController().signal },
+      () => Promise.resolve(downstream),
+    )).resolves.toBe(downstream)
+    expect(memory.prepare).not.toHaveBeenCalled()
+
+    await ctx.fiber.dispose()
+  })
+
+  it('does not prepare providers when the session has no project cwd', async () => {
+    const ctx = new Context()
+    await ctx.plugin(BrainHub)
+    const memory = provider()
+    ctx.missherBrain.register(memory)
+    const owner = agent(undefined, null)
+
+    const downstream = { kind: 'enter' as const, messages: [direct] }
+    await expect(agentEvents(ctx, owner).waterfall(
+      'agent/pre-step',
+      { messages: [direct], turn: 1, step: 1, signal: new AbortController().signal },
+      () => Promise.resolve(downstream),
+    )).resolves.toBe(downstream)
+    expect(memory.prepare).not.toHaveBeenCalled()
+
+    await ctx.fiber.dispose()
+  })
+})
