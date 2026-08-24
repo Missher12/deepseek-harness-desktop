@@ -89,7 +89,9 @@ async function selectAcceptedContributions(input: BrainPreStepInput, query: stri
     throw new RangeError('brain timeoutMs must be a positive safe integer')
   }
   const deadline = new AbortController()
-  const timer = setTimeout(() => deadline.abort(new Error('brain provider deadline exceeded')), input.timeoutMs)
+  const timer = setTimeout(() => {
+    deadline.abort(new Error('brain provider deadline exceeded'))
+  }, input.timeoutMs)
   const signal = AbortSignal.any([input.signal, deadline.signal])
   try {
     const prepared = (await Promise.all(input.providers.map(provider =>

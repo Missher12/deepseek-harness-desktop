@@ -3,7 +3,7 @@ import type { BrainHubSnapshot, BrainProviderSnapshot } from '@deepseek-ai/dsh-a
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './BrainSettingsSection.module.css'
 
-export interface BrainSettingsInjected { load(): Promise<BrainHubSnapshot> }
+export interface BrainSettingsInjected { load: () => Promise<BrainHubSnapshot> }
 export type BrainSettingsProps = PropsRuntime<'settings.section'>
   & PropsLocale<'settings.brain'>
   & BrainSettingsInjected

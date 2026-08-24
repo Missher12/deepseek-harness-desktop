@@ -13,7 +13,8 @@ export class BrainProviderRegistry {
     if (provider.id.trim().length === 0) {
       throw new TypeError('brain provider must have a non-empty id')
     }
-    if (provider.protocolVersion !== 1) {
+    const protocolVersion: unknown = provider.protocolVersion
+    if (protocolVersion !== 1) {
       throw new TypeError('brain provider must use protocol version 1')
     }
     if (!Number.isInteger(provider.byteBudget) || provider.byteBudget < 1 || provider.byteBudget > 6_000) {

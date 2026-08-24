@@ -7,6 +7,9 @@
     - button "Personalization":
       - img
       - text: Personalization
+    - button "External Brain":
+      - img
+      - text: External Brain
     - button "Models":
       - img
       - text: Models

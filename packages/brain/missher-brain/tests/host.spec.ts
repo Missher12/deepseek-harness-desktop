@@ -29,12 +29,12 @@ function agent(parentSession?: string, cwd: string | null = '/private/example/pr
   } as Agent
 }
 
-function provider(): BrainProvider {
+function provider(): BrainProvider & { prepare: ReturnType<typeof vi.fn<BrainProvider['prepare']>> } {
   return {
     protocolVersion: 1,
     id: 'memory',
     byteBudget: 3_000,
-    prepare: vi.fn(async () => ({
+    prepare: vi.fn<BrainProvider['prepare']>(async () => ({
       items: [{
         handle: 'm1',
         providerId: 'memory',
@@ -67,8 +67,10 @@ describe('BrainHub Host composition', () => {
       async status() { throw new Error('/private/secret must not escape') },
     })
 
-    await expect(ctx.missherBrain.snapshot()).resolves.toEqual({
-      generatedAt: expect.any(Number),
+    const snapshot = await ctx.missherBrain.snapshot()
+    expect(snapshot.generatedAt).toBeTypeOf('number')
+    expect(snapshot).toEqual({
+      generatedAt: snapshot.generatedAt,
       limits: { maxItems: 6, maxBytes: 4_000, timeoutMs: 150 },
       providers: [
         { id: 'memory', state: 'ready', count: 1, byteBudget: 3_000 },
@@ -92,8 +94,10 @@ describe('BrainHub Host composition', () => {
 
       const pending = ctx.missherBrain.snapshot()
       await vi.advanceTimersByTimeAsync(300)
-      await expect(pending).resolves.toEqual({
-        generatedAt: expect.any(Number),
+      const snapshot = await pending
+      expect(snapshot.generatedAt).toBeTypeOf('number')
+      expect(snapshot).toEqual({
+        generatedAt: snapshot.generatedAt,
         limits: { maxItems: 6, maxBytes: 4_000, timeoutMs: 150 },
         providers: [{ id: 'stalled', state: 'unavailable', count: 0, byteBudget: 3_000 }],
       })
@@ -120,13 +124,15 @@ describe('BrainHub Host composition', () => {
     expect(decision.kind).toBe('enter')
     if (decision.kind !== 'enter') throw new Error('expected entered decision')
     expect(decision.messages).toHaveLength(2)
-    expect(memory.prepare).toHaveBeenCalledWith(expect.objectContaining({
-      projectKey: expect.stringMatching(/^[a-f0-9]{64}$/),
-      query: 'remember the release boundary',
-      sessionId: 'agent-1',
-      turn: 1,
-    }))
-    expect(JSON.stringify(vi.mocked(memory.prepare).mock.calls)).not.toContain('/private/example/project')
+    expect(memory.prepare).toHaveBeenCalledOnce()
+    const request = memory.prepare.mock.calls[0]?.[0]
+    expect(request).toBeDefined()
+    if (request === undefined) throw new Error('expected one provider request')
+    expect(request.projectKey).toMatch(/^[a-f0-9]{64}$/)
+    expect(request.query).toBe('remember the release boundary')
+    expect(request.sessionId).toBe('agent-1')
+    expect(request.turn).toBe(1)
+    expect(JSON.stringify(memory.prepare.mock.calls)).not.toContain('/private/example/project')
 
     await ctx.fiber.dispose()
   })

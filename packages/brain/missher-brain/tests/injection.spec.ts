@@ -15,13 +15,13 @@ function batch(items: readonly BrainContribution[]): PreparedBrainBatch & {
 }
 
 function provider(id: string, prepared: PreparedBrainBatch | Promise<PreparedBrainBatch>): BrainProvider & {
-  prepare: ReturnType<typeof vi.fn>
+  prepare: ReturnType<typeof vi.fn<BrainProvider['prepare']>>
 } {
   return {
     protocolVersion: 1,
     id,
     byteBudget: 3_000,
-    prepare: vi.fn(async () => await prepared),
+    prepare: vi.fn<BrainProvider['prepare']>(async () => await prepared),
     async status() {
       return { state: 'ready', count: prepared instanceof Promise ? 0 : prepared.items.length }
     },
@@ -123,7 +123,9 @@ describe('brain pre-step injection', () => {
     const first = provider('memory', prepared)
     const aborting = provider('evolution', Promise.resolve(batch([])))
     aborting.prepare.mockImplementationOnce(async () => {
-      await new Promise(resolve => setTimeout(resolve, 1))
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 1)
+      })
       controller.abort(new Error('turn stopped'))
       return batch([])
     })

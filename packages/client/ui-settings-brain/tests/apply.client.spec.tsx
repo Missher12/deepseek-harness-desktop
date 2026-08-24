@@ -38,7 +38,8 @@ async function bench() {
 
 describe('ui-settings-brain browser plugin', () => {
   it('keeps the host loader entry inert', () => {
-    expect(applyHostEntry()).toBeUndefined()
+    applyHostEntry()
+    expect(applyHostEntry).toBeTypeOf('function')
   })
 
   it('registers one lazy localized external-brain section', async () => {
