@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = 'dsh-missher-brain'
+const PACKAGE_NAME = '@deepseek-ai/dsh-missher-brain'
 
 /** Cordis companion plugin name. */
 export const name = 'missher-brain-invariant'

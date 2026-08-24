@@ -1066,7 +1066,7 @@ async function exercisePluginMarket(
     await control.waitFor({ state: 'visible', timeout: 30_000 })
   }
   const builtinMemory = installedRail.locator('button[data-package="dsh-missher-memory"]')
-  const builtinBrain = installedRail.locator('button[data-package="dsh-missher-brain"]')
+  const builtinBrain = installedRail.locator('button[data-package="@deepseek-ai/dsh-missher-brain"]')
   const builtinEvolution = installedRail.locator('button[data-package="dsh-missher-evolution"]')
   await builtinBrain.waitFor({ state: 'visible', timeout: 30_000 })
   await builtinMemory.waitFor({ state: 'visible', timeout: 30_000 })

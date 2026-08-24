@@ -73,7 +73,7 @@ itself (`dshmarket` and `dsh-market` are both rejected before the package
 runner), while ordinary plugin operations retain the upstream route behavior.
 
 Desktop 0.3.8 includes one ordered local external-brain stack: the
-`dsh-missher-brain@0.1.0` coordinator, `dsh-missher-memory@0.2.0`, and the
+`@deepseek-ai/dsh-missher-brain@0.1.1-rc.2` coordinator, `dsh-missher-memory@0.2.0`, and the
 Harness-native `dsh-missher-evolution@0.1.1`. Reviewed project facts and
 validated workflow rules share one bounded recall path; provider timeout or
 failure never blocks a normal reply. Project memory adds local FTS5 search and

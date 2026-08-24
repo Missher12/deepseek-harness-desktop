@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-24-local-external-brain.md
-2026-08-24-local-external-brain.md: cb74eeff95b233f2fd5255f7cefce109af494b5b
-2026-08-24-local-external-brain.zh.md: eba0930f5dd737c7cc9db0fbd85759fa77015459
+2026-08-24-local-external-brain.md: fde27a535830048b273beb4fca9b62fecabc1a24
+2026-08-24-local-external-brain.zh.md: 4e8e0216c5aecb30cc082840ae59c758918215bc

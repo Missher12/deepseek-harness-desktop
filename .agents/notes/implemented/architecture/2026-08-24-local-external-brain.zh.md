@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-Desktop 按 `dsh-missher-brain`、`dsh-missher-memory`、`dsh-missher-evolution` 的顺序加载。Brain 独占自动外部上下文注入监听器并提供 Provider 注册表；Memory 与 Evolution 要求该服务存在，不建立备用注入监听器。召回只在带工作目录的顶层直接用户会话第一步执行，使用工作目录的无路径 SHA-256 项目标识，并在同一个 150 毫秒期限内最多选择六项、合计 4,000 UTF-8 字节。Provider 超时、输出无效、确认失败或清理失败都会保留原始下游决策。
+Desktop 按 `@deepseek-ai/dsh-missher-brain`、`dsh-missher-memory`、`dsh-missher-evolution` 的顺序加载。Brain 独占自动外部上下文注入监听器并提供 Provider 注册表；Memory 与 Evolution 要求该服务存在，不建立备用注入监听器。召回只在带工作目录的顶层直接用户会话第一步执行，使用工作目录的无路径 SHA-256 项目标识，并在同一个 150 毫秒期限内最多选择六项、合计 4,000 UTF-8 字节。Provider 超时、输出无效、确认失败或清理失败都会保留原始下游决策。
 
 Memory 负责已审核项目事实、schema 2 FTS5 检索，以及至少四条旧的、未固定的精确重复内容的确定性压缩。压缩事务生成一个抽取式胶囊，归档而不删除来源记忆，记录来源标识与校验和，并支持恢复来源和 FTS 行的事务回滚。包内包含固定查询的 `node:sqlite` TencentDB 兼容读取器，但 Desktop 不打包数据库；读取器只会只读打开用户明确选择且通过路径包含校验的 `vectors.db`，拒绝符号链接和扩展加载，也绝不为 MSE 提供证据。
 

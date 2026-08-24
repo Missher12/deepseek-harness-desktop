@@ -179,11 +179,11 @@ describe('desktop package manifest', () => {
     expect(manifest.dependencies['dsh-missher-evolution']).toBe(
       'https://github.com/Missher12/dsh-missher-evolution/releases/download/v0.1.1/dsh-missher-evolution-0.1.1.tgz',
     )
-    expect(manifest.dependencies['dsh-missher-brain']).toBe('workspace:^')
+    expect(manifest.dependencies['@deepseek-ai/dsh-missher-brain']).toBe('workspace:^')
     expect(rows.findIndex(row => row.id === 'missher-brain')).toBeLessThan(rows.findIndex(row => row.id === 'missher-memory'))
     expect(rows.findIndex(row => row.id === 'missher-memory')).toBeLessThan(rows.findIndex(row => row.id === 'missher-evolution'))
     expect(rows.filter(row => row.id === 'missher-brain')).toEqual([{
-      id: 'missher-brain', name: 'dsh-missher-brain',
+      id: 'missher-brain', name: '@deepseek-ai/dsh-missher-brain',
     }])
     expect(rows.filter(row => row.id === 'missher-memory')).toEqual([{
       id: 'missher-memory',
@@ -206,7 +206,7 @@ describe('desktop package manifest', () => {
       name: 'dshmarket',
       config: {
         builtins: [
-          expect.objectContaining({ name: 'dsh-missher-brain', spec: 'builtin:0.1.0', category: 'memory' }),
+          expect.objectContaining({ name: '@deepseek-ai/dsh-missher-brain', spec: 'builtin:0.1.1-rc.2', category: 'memory' }),
           expect.objectContaining({ name: 'dsh-missher-memory', spec: 'builtin:0.2.0', category: 'memory' }),
           expect.objectContaining({ name: 'dsh-missher-evolution', spec: 'builtin:0.1.1', category: 'agent' }),
         ],

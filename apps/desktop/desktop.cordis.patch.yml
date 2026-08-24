@@ -18,7 +18,7 @@
     # One bounded arbitration and injection path for every local knowledge
     # provider. This row must precede memory and evolution registration.
     - id: missher-brain
-      name: 'dsh-missher-brain'
+      name: '@deepseek-ai/dsh-missher-brain'
 
     # Built-in fallback for the independently upgradeable reviewed-memory
     # bundle. Profile-local installations still win through Loader resolution.
@@ -41,8 +41,8 @@
       name: 'dshmarket'
       config:
         builtins:
-          - name: 'dsh-missher-brain'
-            spec: 'builtin:0.1.0'
+          - name: '@deepseek-ai/dsh-missher-brain'
+            spec: 'builtin:0.1.1-rc.2'
             owner: 'Missher12'
             url: 'https://github.com/Missher12/deepseek-harness-desktop'
             category: 'memory'

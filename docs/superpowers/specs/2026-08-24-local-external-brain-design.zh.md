@@ -18,7 +18,7 @@
 
 - `dsh-missher-memory` 负责项目事实和情景记忆。
 - `dsh-missher-evolution` 负责程序性规则：偏好、成功方法、失败规避以及 Candidate -> Trial -> Active 晋升。
-- 新增 `dsh-missher-brain` Bundle，统一协调检索、注入预算、来源展示和设置界面；它不保存项目事实或 MSE 规则。
+- 新增 `@deepseek-ai/dsh-missher-brain` Bundle，统一协调检索、注入预算、来源展示和设置界面；它不保存项目事实或 MSE 规则。
 - 只有已经审核的记忆可以参与语义固化。待审核候选可以确定性去重，但绝不会被自动批准。
 - 新绑定项目默认开启自动固化。它只在空闲时有界运行，任何失败都放行聊天。
 - 固化是“认知压缩”，不是破坏性压缩磁盘：原始已审核记忆会被归档并保留来源，只有用户显式操作才能真正删除。
@@ -31,7 +31,7 @@
 
 Desktop 组合三个可独立发布的包：
 
-1. **Brain Hub（`dsh-missher-brain`）**
+1. **Brain Hub（`@deepseek-ai/dsh-missher-brain`）**
    - 在受管 Desktop 组合中注册唯一的顶层 `agent/pre-step` 注入器。
    - 提供小型 Provider 注册表，并行请求有界贡献。
    - 统一执行总字节/条目预算、Provider 超时、信任标签、排序和来源元数据。

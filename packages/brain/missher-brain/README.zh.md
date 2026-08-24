@@ -1,4 +1,4 @@
-# dsh-missher-brain
+# @deepseek-ai/dsh-missher-brain
 
 [English](README.md) | 中文
 

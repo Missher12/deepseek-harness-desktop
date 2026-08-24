@@ -716,6 +716,9 @@ importers:
       '@deepseek-ai/dsh-message-feedback':
         specifier: workspace:^
         version: link:../../packages/feedback/message-feedback
+      '@deepseek-ai/dsh-missher-brain':
+        specifier: workspace:^
+        version: link:../../packages/brain/missher-brain
       '@deepseek-ai/dsh-output-retention':
         specifier: workspace:^
         version: link:../../packages/util/output-retention
@@ -1013,9 +1016,6 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../vendor/schemastery
         version: link:../../vendor/schemastery
-      dsh-missher-brain:
-        specifier: workspace:^
-        version: link:../../packages/brain/missher-brain
       dsh-missher-evolution:
         specifier: https://github.com/Missher12/dsh-missher-evolution/releases/download/v0.1.1/dsh-missher-evolution-0.1.1.tgz
         version: https://github.com/Missher12/dsh-missher-evolution/releases/download/v0.1.1/dsh-missher-evolution-0.1.1.tgz(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-agent-loop@packages+core+agent-loop)(@deepseek-ai/dsh-agent@packages+core+agent)(@deepseek-ai/dsh-api-remotes@packages+api+remotes)(@deepseek-ai/dsh-client-locale@packages+client+locale)(@deepseek-ai/dsh-client-runtime@packages+client+runtime)(@deepseek-ai/dsh-client-ui-settings@packages+client+ui-settings)(@deepseek-ai/dsh-client-ui-slots@packages+client+ui-slots)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-session@packages+core+session)(@deepseek-ai/dsh-tools@packages+core+tools)(@deepseek-ai/dsh-typert-protocol@packages+typert+protocol)(@deepseek-ai/schemastery@vendor+schemastery)(react@18.3.1)(zod@4.4.3)
@@ -1573,6 +1573,9 @@ importers:
       '@deepseek-ai/dsh-message-feedback':
         specifier: workspace:^
         version: link:../../feedback/message-feedback
+      '@deepseek-ai/dsh-missher-brain':
+        specifier: workspace:^
+        version: link:../../brain/missher-brain
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
@@ -1591,9 +1594,6 @@ importers:
       '@deepseek-ai/dsh-usage-insights':
         specifier: workspace:^
         version: link:../../session/usage-insights
-      dsh-missher-brain:
-        specifier: workspace:^
-        version: link:../../brain/missher-brain
 
   packages/attachment/attachment:
     devDependencies:

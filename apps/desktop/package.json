@@ -242,7 +242,7 @@
     "@deepseek-ai/dsh-workflow-worker-thread": "workspace:^",
     "@deepseek-ai/dsh-workspace": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
-    "dsh-missher-brain": "workspace:^",
+    "@deepseek-ai/dsh-missher-brain": "workspace:^",
     "dsh-missher-evolution": "https://github.com/Missher12/dsh-missher-evolution/releases/download/v0.1.1/dsh-missher-evolution-0.1.1.tgz",
     "dsh-missher-memory": "https://github.com/Missher12/dsh-missher-memory/releases/download/v0.2.0/dsh-missher-memory-0.2.0.tgz",
     "dshmarket": "1.10.1",

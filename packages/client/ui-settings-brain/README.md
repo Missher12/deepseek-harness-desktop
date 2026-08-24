@@ -12,7 +12,7 @@ The page paints three stable source rows before the first response: project memo
 
 #### What the model sees
 
-Nothing from opening this page. This package renders local status only; model-visible memory continues to be selected and injected exclusively by `dsh-missher-brain`.
+Nothing from opening this page. This package renders local status only; model-visible memory continues to be selected and injected exclusively by `@deepseek-ai/dsh-missher-brain`.
 
 #### Token effect
 

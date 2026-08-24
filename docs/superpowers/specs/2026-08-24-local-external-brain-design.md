@@ -18,7 +18,7 @@ This delivery does not connect Obsidian or any remote knowledge base. It package
 
 - `dsh-missher-memory` owns factual and episodic project memory.
 - `dsh-missher-evolution` owns procedural rules: preferences, successful methods, failure avoidance, and Candidate -> Trial -> Active progression.
-- A new `dsh-missher-brain` bundle coordinates retrieval, injection budgets, source presentation, and the unified Settings surface. It owns no project facts or MSE rules.
+- A new `@deepseek-ai/dsh-missher-brain` bundle coordinates retrieval, injection budgets, source presentation, and the unified Settings surface. It owns no project facts or MSE rules.
 - Only reviewed memories are eligible for semantic consolidation. Pending candidates may be deterministically de-duplicated, but are never automatically approved.
 - Automatic consolidation is enabled for newly bound projects. It runs only while idle, is bounded, and fails open.
 - Consolidation is cognitive compression, not destructive disk compression: original reviewed atoms remain archived and traceable until the user explicitly removes them.
@@ -31,7 +31,7 @@ This delivery does not connect Obsidian or any remote knowledge base. It package
 
 The Desktop composition bundles three independently releasable packages:
 
-1. **Brain Hub (`dsh-missher-brain`)**
+1. **Brain Hub (`@deepseek-ai/dsh-missher-brain`)**
    - Registers the single top-level `agent/pre-step` injector in managed Desktop composition.
    - Provides a small provider registry and requests bounded contributions in parallel.
    - Enforces one total byte/item budget, provider timeouts, trust labels, ordering, and source metadata.

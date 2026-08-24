@@ -72,7 +72,7 @@ The repository is based on the pinned official source and adds the desktop appli
 - The Desktop 0.3.8 local external brain implements the bounded local scope recorded in
   `.agents/notes/implemented/architecture/2026-08-24-local-external-brain.md`. It keeps project facts in
   `dsh-missher-memory`, procedural learning in the Harness-native
-  `dsh-missher-evolution`, and coordination in a new `dsh-missher-brain`
+  `dsh-missher-evolution`, and coordination in a new `@deepseek-ai/dsh-missher-brain`
   Bundle. The Brain Hub owns the only injection path and a pathless Settings
   snapshot; Provider failures are fail-open. Memory schema v2 adds FTS5 search
   and reversible automatic consolidation for reviewed memory and

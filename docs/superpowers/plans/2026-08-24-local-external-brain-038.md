@@ -6,7 +6,7 @@ English | [中文](2026-08-24-local-external-brain-038.zh.md)
 
 **Goal:** Ship DeepSeek Harness Desktop 0.3.8 for Intel macOS and Windows x64 with one local Brain Hub, the Harness-native MSE provider, reversible reviewed-memory consolidation, and bundled read-only TencentDB compatibility.
 
-**Architecture:** `dsh-missher-brain@0.1.0` owns one injection and budget path; `dsh-missher-memory@0.2.0` owns factual state, FTS5, capsules, and the legacy read-only reader; `dsh-missher-evolution@0.1.1` owns procedural learning. Desktop pins immutable release archives, composes Brain before both providers, and produces both native installers from one public source commit.
+**Architecture:** `@deepseek-ai/dsh-missher-brain@0.1.1-rc.2` owns one injection and budget path; `dsh-missher-memory@0.2.0` owns factual state, FTS5, capsules, and the legacy read-only reader; `dsh-missher-evolution@0.1.1` owns procedural learning. Desktop pins immutable provider archives, composes Brain before both providers, and produces both native installers from one public source commit.
 
 **Tech Stack:** TypeScript, Cordis, React, Typert Remote, Node `worker_threads`, `node:sqlite`/FTS5, Vitest, Electron/electron-builder, GitHub Actions, PowerShell, macOS `hdiutil`.
 
@@ -18,7 +18,7 @@ English | [中文](2026-08-24-local-external-brain-038.zh.md)
 - Memory repository: `/Users/missher/Documents/ChatGPT/Deepseek-Desktop/.worktrees/dsh-missher-memory-github`; implementation worktree sibling: `dsh-missher-memory-brain-020` from `origin/main` (`5c672a4` or newer).
 - MSE repository: `/Users/missher/Documents/Missher Evolution System`; implementation worktree: `.worktrees/harness-brain-provider` from `codex/universal-agent-mse` (`43eb7d0` or its reviewed successor), never from the dirty primary worktree.
 - Public MSE package repository: `/Users/missher/Documents/ChatGPT/Deepseek-Desktop/.worktrees/dsh-missher-evolution-public`; it receives only an allowlisted Harness package export, never Hermes, Feishu, credentials, runtime state, or personal configuration.
-- Brain Hub lives in the public Desktop monorepo at `packages/brain/missher-brain/` and is packed as the independently versioned `dsh-missher-brain@0.1.0`.
+- Brain Hub lives in the public Desktop monorepo at `packages/brain/missher-brain/` as the workspace release member `@deepseek-ai/dsh-missher-brain@0.1.1-rc.2`.
 - Memory schema, migration, FTS, consolidation, and TencentDB isolation stay in the standalone memory repository.
 - Desktop composition, release metadata, packaging smoke, and native installers stay under `apps/desktop/` and `scripts/`.
 
@@ -90,7 +90,7 @@ export interface BrainProvider {
 
 - [ ] **Step 4: Run tests and package checks**
 
-Run: `pnpm exec vitest run packages/brain/missher-brain/tests/registry.spec.ts && pnpm --filter dsh-missher-brain run typecheck`
+Run: `pnpm exec vitest run packages/brain/missher-brain/tests/registry.spec.ts && pnpm --filter @deepseek-ai/dsh-missher-brain run typecheck`
 
 Expected: all registry tests pass and strict TypeScript exits `0`.
 
@@ -477,7 +477,7 @@ git commit -m "feat(brain): add unified external brain controls"
 
 ```typescript
 expect(desktop.version).toBe('0.3.8')
-expect(desktop.dependencies['dsh-missher-brain']).toMatch(/0\.1\.0\.tgz$/)
+expect(desktop.dependencies['@deepseek-ai/dsh-missher-brain']).toBe('workspace:^')
 expect(desktop.dependencies['dsh-missher-memory']).toMatch(/0\.2\.0\.tgz$/)
 expect(desktop.dependencies['dsh-missher-evolution']).toMatch(/0\.1\.1\.tgz$/)
 expect(compositionOrder).toEqual(['missher-brain', 'missher-memory', 'missher-evolution'])

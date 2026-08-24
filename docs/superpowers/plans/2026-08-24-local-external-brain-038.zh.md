@@ -6,7 +6,7 @@
 
 **目标：** 为 Intel macOS 与 Windows x64 发布 DeepSeek Harness Desktop 0.3.8，包含一个本地 Brain Hub、Harness 原生 MSE Provider、可回滚的已审核记忆固化，以及内置 TencentDB 只读兼容能力。
 
-**架构：** `dsh-missher-brain@0.1.0` 统一负责注入和预算；`dsh-missher-memory@0.2.0` 负责事实状态、FTS5、胶囊和旧版只读 Reader；`dsh-missher-evolution@0.1.1` 负责程序性学习。Desktop 固定不可变 Release 包，先组合 Brain 再组合两个 Provider，并从同一个公开源码提交生成两个原生安装包。
+**架构：** `@deepseek-ai/dsh-missher-brain@0.1.1-rc.2` 统一负责注入和预算；`dsh-missher-memory@0.2.0` 负责事实状态、FTS5、胶囊和旧版只读 Reader；`dsh-missher-evolution@0.1.1` 负责程序性学习。Desktop 固定不可变 Provider Release 包，先组合 Brain 再组合两个 Provider，并从同一个公开源码提交生成两个原生安装包。
 
 **技术栈：** TypeScript、Cordis、React、Typert Remote、Node `worker_threads`、`node:sqlite`/FTS5、Vitest、Electron/electron-builder、GitHub Actions、PowerShell、macOS `hdiutil`。
 
@@ -18,7 +18,7 @@
 - 记忆仓库：`/Users/missher/Documents/ChatGPT/Deepseek-Desktop/.worktrees/dsh-missher-memory-github`；从 `origin/main`（`5c672a4` 或更新提交）创建同级 `dsh-missher-memory-brain-020` 实施 worktree。
 - MSE 仓库：`/Users/missher/Documents/Missher Evolution System`；从 `codex/universal-agent-mse`（`43eb7d0` 或经审核的后续提交）创建 `.worktrees/harness-brain-provider`，绝不使用有改动的主 worktree。
 - 公开 MSE 包仓库：`/Users/missher/Documents/ChatGPT/Deepseek-Desktop/.worktrees/dsh-missher-evolution-public`；只接收白名单内的 Harness 包导出，绝不包含 Hermes、飞书、凭据、运行状态或个人配置。
-- Brain Hub 位于公开 Desktop monorepo 的 `packages/brain/missher-brain/`，并打包为独立版本的 `dsh-missher-brain@0.1.0`。
+- Brain Hub 位于公开 Desktop monorepo 的 `packages/brain/missher-brain/`，作为 workspace release member `@deepseek-ai/dsh-missher-brain@0.1.1-rc.2`。
 - 记忆 schema、迁移、FTS、固化和 TencentDB 隔离保留在独立记忆仓库。
 - Desktop 组合、Release 元数据、打包 smoke 和原生安装包保留在 `apps/desktop/` 与 `scripts/`。
 
@@ -90,7 +90,7 @@ export interface BrainProvider {
 
 - [ ] **步骤 4：运行测试和包检查**
 
-运行：`pnpm exec vitest run packages/brain/missher-brain/tests/registry.spec.ts && pnpm --filter dsh-missher-brain run typecheck`
+运行：`pnpm exec vitest run packages/brain/missher-brain/tests/registry.spec.ts && pnpm --filter @deepseek-ai/dsh-missher-brain run typecheck`
 
 预期：所有注册表测试通过，严格 TypeScript 退出码为 `0`。
 
@@ -477,7 +477,7 @@ git commit -m "feat(brain): add unified external brain controls"
 
 ```typescript
 expect(desktop.version).toBe('0.3.8')
-expect(desktop.dependencies['dsh-missher-brain']).toMatch(/0\.1\.0\.tgz$/)
+expect(desktop.dependencies['@deepseek-ai/dsh-missher-brain']).toBe('workspace:^')
 expect(desktop.dependencies['dsh-missher-memory']).toMatch(/0\.2\.0\.tgz$/)
 expect(desktop.dependencies['dsh-missher-evolution']).toMatch(/0\.1\.1\.tgz$/)
 expect(compositionOrder).toEqual(['missher-brain', 'missher-memory', 'missher-evolution'])

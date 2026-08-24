@@ -52,7 +52,7 @@ Desktop patch 的普通浏览器 profile 不受影响。插件属于第三方代
 默认、简洁、亲和或专业。保存结果从下一次请求起生效，项目内 `AGENTS.md` 仍是
 范围更窄的项目规则。
 
-Desktop 0.3.8 内置一套有明确顺序的本地外置大脑：`dsh-missher-brain@0.1.0`
+Desktop 0.3.8 内置一套有明确顺序的本地外置大脑：`@deepseek-ai/dsh-missher-brain@0.1.1-rc.2`
 负责协调，`dsh-missher-memory@0.2.0` 管理项目事实，Harness 原生
 `dsh-missher-evolution@0.1.1` 管理经过验证的流程规则。项目记忆与经验规则共用
 唯一的有界召回路径；Provider 超时或失败不会阻塞正常回复。项目记忆新增本地 FTS5

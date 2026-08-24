@@ -67,7 +67,7 @@
       "@deepseek-ai/dsh-usage-insights": ["./packages/session/usage-insights/src"],
       "@deepseek-ai/dsh-usage-insights/types": ["./packages/session/usage-insights/src/types.ts"],
       "@deepseek-ai/dsh-client-ui-settings-brain": ["./packages/client/ui-settings-brain/src"],
-      "dsh-missher-brain": ["./packages/brain/missher-brain/src/index.ts"],
+      "@deepseek-ai/dsh-missher-brain": ["./packages/brain/missher-brain/src/index.ts"],
       "@deepseek-ai/dsh-plan-mode/types": ["./packages/plan/plan-mode/src/types.ts"],
       "@deepseek-ai/dsh-plan-mode/client": ["./packages/plan/plan-mode/src/client.ts"],
       "@deepseek-ai/dsh-agent-presets/types": ["./packages/preset/agent-presets/src/types.ts"],
