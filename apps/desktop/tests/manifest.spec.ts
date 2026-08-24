@@ -174,7 +174,7 @@ describe('desktop package manifest', () => {
     const rows = patches.flatMap(patch => patch.insert ?? [])
 
     expect(manifest.dependencies['dsh-missher-memory']).toBe(
-      'https://github.com/Missher12/dsh-missher-memory/releases/download/v0.1.2/dsh-missher-memory-0.1.2.tgz',
+      'https://github.com/Missher12/dsh-missher-memory/releases/download/v0.1.3/dsh-missher-memory-0.1.3.tgz',
     )
     expect(rows.filter(row => row.id === 'missher-memory')).toEqual([{
       id: 'missher-memory',

@@ -70,7 +70,7 @@ The repository is based on the pinned official source and adds the desktop appli
 ## Current Progress
 
 - Version 0.3.7 is the active release candidate. It upgrades the managed memory
-  fallback to `dsh-missher-memory@0.1.2`, separates ready built-in project memory
+  fallback to `dsh-missher-memory@0.1.3`, separates ready built-in project memory
   from the optional legacy `vectors.db` source on fresh Desktop installs, and
   preserves the zero-write-before-binding boundary. Usage Insights
   now shares one 12-second cancellation deadline across durable Session reads,
