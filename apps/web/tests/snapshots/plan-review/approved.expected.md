@@ -52,6 +52,4 @@
   - img
 - button "4% of context used"
 - button "Send message" [disabled]
-- text: 1 turns · 2 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 51% Input 10.2K tok · Output 346 tok
-- tooltip "1 turns · 2 steps | LLM {{duration}} · Tool call {{duration}} | TTFT avg {{duration}} · {{throughput}} tok/s | Cache hit 51% | Input 10.2K tok · Output 346 tok"
-- text: Turn est. ¥0.0093 Session est. ¥0.0093 {{pricing tier}}
+- text: 1 turns · 2 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 51% Input 10.2K tok · Output 346 tok Turn est. ¥0.0093 Session est. ¥0.0093 {{pricing tier}}
