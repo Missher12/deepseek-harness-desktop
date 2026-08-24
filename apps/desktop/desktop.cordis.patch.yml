@@ -1,5 +1,13 @@
 # Desktop-only plugin management. This immutable application resource is
 # composed after the ordinary Web profile and is never written to ~/.dsh.
+- id: missher-memory
+  name: 'dsh-missher-memory'
+  disabled: true
+
+- id: missher-evolution
+  name: 'dsh-missher-evolution'
+  disabled: true
+
 - insert:
     - id: desktop-plugin-runtime
       name: '@deepseek-ai/dsh-host-desktop-plugin-runtime'
@@ -20,18 +28,20 @@
     - id: missher-brain
       name: '@deepseek-ai/dsh-missher-brain'
 
-    # Built-in fallback for the independently upgradeable reviewed-memory
-    # bundle. Profile-local installations still win through Loader resolution.
-    - id: missher-memory
-      name: 'dsh-missher-memory'
+    # Desktop-owned dual-face wrappers resolve these exact provider builds from
+    # the app tree for both Host and Web. The legacy Profile rows above stay
+    # intact but disabled, preventing duplicate ids and profile-local packages
+    # from shadowing an app upgrade.
+    - id: desktop-missher-memory
+      name: '@deepseek-ai/dsh-desktop-managed-memory'
       config:
         enabled: true
         captureEnabled: true
         recallEnabled: true
         consolidationEnabled: true
 
-    - id: missher-evolution
-      name: 'dsh-missher-evolution'
+    - id: desktop-missher-evolution
+      name: '@deepseek-ai/dsh-desktop-managed-evolution'
       config:
         enabled: true
         maintenanceIntervalHours: 24

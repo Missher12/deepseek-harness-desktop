@@ -180,14 +180,14 @@ describe('desktop package manifest', () => {
       'https://github.com/Missher12/dsh-missher-evolution/releases/download/v0.1.1/dsh-missher-evolution-0.1.1.tgz',
     )
     expect(manifest.dependencies['@deepseek-ai/dsh-missher-brain']).toBe('workspace:^')
-    expect(rows.findIndex(row => row.id === 'missher-brain')).toBeLessThan(rows.findIndex(row => row.id === 'missher-memory'))
-    expect(rows.findIndex(row => row.id === 'missher-memory')).toBeLessThan(rows.findIndex(row => row.id === 'missher-evolution'))
+    expect(rows.findIndex(row => row.id === 'missher-brain')).toBeLessThan(rows.findIndex(row => row.id === 'desktop-missher-memory'))
+    expect(rows.findIndex(row => row.id === 'desktop-missher-memory')).toBeLessThan(rows.findIndex(row => row.id === 'desktop-missher-evolution'))
     expect(rows.filter(row => row.id === 'missher-brain')).toEqual([{
       id: 'missher-brain', name: '@deepseek-ai/dsh-missher-brain',
     }])
-    expect(rows.filter(row => row.id === 'missher-memory')).toEqual([{
-      id: 'missher-memory',
-      name: 'dsh-missher-memory',
+    expect(rows.filter(row => row.id === 'desktop-missher-memory')).toEqual([{
+      id: 'desktop-missher-memory',
+      name: '@deepseek-ai/dsh-desktop-managed-memory',
       config: {
         enabled: true,
         captureEnabled: true,
@@ -195,9 +195,9 @@ describe('desktop package manifest', () => {
         consolidationEnabled: true,
       },
     }])
-    expect(rows.filter(row => row.id === 'missher-evolution')).toEqual([{
-      id: 'missher-evolution',
-      name: 'dsh-missher-evolution',
+    expect(rows.filter(row => row.id === 'desktop-missher-evolution')).toEqual([{
+      id: 'desktop-missher-evolution',
+      name: '@deepseek-ai/dsh-desktop-managed-evolution',
       config: { enabled: true, maintenanceIntervalHours: 24, maxInjectedRules: 4 },
     }])
 
