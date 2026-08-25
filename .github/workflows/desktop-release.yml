@@ -7,7 +7,7 @@ on:
         description: Existing draft desktop release tag to publish
         required: true
         type: string
-        default: desktop-v0.3.8
+        default: desktop-v0.3.9
 
 permissions:
   contents: write
@@ -44,6 +44,14 @@ jobs:
       - name: Resolve Desktop release metadata
         id: desktop
         run: |
+          if [[ "$GITHUB_REF" != "refs/tags/${{ inputs.tag }}" ]]; then
+            echo "Release workflow must be dispatched from tag ${{ inputs.tag }}, got $GITHUB_REF" >&2
+            exit 1
+          fi
+          if [[ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+            echo "Checked-out commit does not match the workflow SHA" >&2
+            exit 1
+          fi
           version=$(node -p "require('./apps/desktop/package.json').version")
           harness=$(node -p "require('./apps/desktop/update-metadata.json').harnessVersion")
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -113,6 +121,12 @@ jobs:
         id: desktop
         shell: pwsh
         run: |
+          if ($env:GITHUB_REF -ne 'refs/tags/${{ inputs.tag }}') {
+            throw "Release workflow must be dispatched from tag ${{ inputs.tag }}, got $env:GITHUB_REF"
+          }
+          if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) {
+            throw 'Checked-out commit does not match the workflow SHA'
+          }
           $manifest = Get-Content -LiteralPath 'apps/desktop/package.json' -Raw | ConvertFrom-Json
           $version = [string]$manifest.version
           if ($version -notmatch '^\d+\.\d+\.\d+$') {

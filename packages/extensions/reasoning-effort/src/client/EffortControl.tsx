@@ -12,7 +12,7 @@ import {
   type TouchEvent as ReactTouchEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
-import type { ModelSelection, SessionModels } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ModelSelection, SessionId, SessionModels } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ModelDirectory, ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import { IconCheckOutline16, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -37,7 +37,7 @@ declare global {
 /** Injected session face; addressed subagents receive the unavailable branch. */
 export type EffortControlInjected =
   | { readonly available: false; readonly controller: null }
-  | { readonly available: true; readonly controller: ModelDirectory }
+  | { readonly available: true; readonly controller: ModelDirectory; readonly sessionId: SessionId }
 
 type Translate = PropsLocale<'reasoningEffort'>['t']
 
@@ -163,13 +163,41 @@ function validBootstrap(value: unknown): PreferenceBootstrap | undefined {
   return candidate as PreferenceBootstrap
 }
 
-/** Profile-backed optional character preference; absent/corrupt always stays off. */
-function useCharacterPreference(): {
+interface ClientPreference {
+  readonly chibiThumb: boolean
+  readonly visualEfforts: Readonly<Record<string, number>>
+}
+
+const DEFAULT_CLIENT_PREFERENCE: ClientPreference = { chibiThumb: false, visualEfforts: {} }
+
+function readClientPreference(value: unknown): ClientPreference | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (Object.keys(record).length !== 2
+    || typeof record.chibiThumb !== 'boolean'
+    || typeof record.visualEfforts !== 'object'
+    || record.visualEfforts === null
+    || Array.isArray(record.visualEfforts)) return undefined
+  if (Object.keys(record.visualEfforts).length > 64) return undefined
+  const visualEfforts: Record<string, number> = {}
+  for (const [route, index] of Object.entries(record.visualEfforts)) {
+    if (route.length === 0 || route.length > 512 || !Number.isInteger(index) || Number(index) < 0 || Number(index) > 5) {
+      return undefined
+    }
+    visualEfforts[route] = Number(index)
+  }
+  return { chibiThumb: record.chibiThumb, visualEfforts }
+}
+
+/** Profile-backed plugin preferences; absent/corrupt data always fails closed. */
+function useReasoningEffortPreference(): {
+  readonly value: ClientPreference
   readonly enabled: boolean
   readonly pending: boolean
   readonly toggle: () => Promise<boolean>
+  readonly persistVisual: (route: string, index: number) => Promise<boolean>
 } {
-  const [enabled, setEnabled] = useState(false)
+  const [value, setValue] = useState<ClientPreference>(DEFAULT_CLIENT_PREFERENCE)
   const [pending, setPending] = useState(false)
 
   useEffect(() => {
@@ -184,12 +212,8 @@ function useCharacterPreference(): {
       headers: { [bootstrap.capabilityHeader]: bootstrap.capability },
     }).then(async (response) => {
       if (!response.ok) return
-      const value = await response.json() as unknown
-      if (typeof value !== 'object' || value === null || Array.isArray(value)) return
-      const record = value as Record<string, unknown>
-      if (Object.keys(record).length === 1 && typeof record.chibiThumb === 'boolean') {
-        setEnabled(record.chibiThumb)
-      }
+      const accepted = readClientPreference(await response.json() as unknown)
+      if (accepted !== undefined) setValue(accepted)
     }).catch(() => { /* the fail-closed default remains false */ })
     return () => { controller.abort() }
   }, [])
@@ -197,7 +221,7 @@ function useCharacterPreference(): {
   const toggle = useCallback(async (): Promise<boolean> => {
     const bootstrap = validBootstrap(window.__DSH_REASONING_EFFORT__)
     if (bootstrap === undefined || pending) return false
-    const next = !enabled
+    const next = !value.chibiThumb
     setPending(true)
     try {
       const response = await fetch(bootstrap.preferencePath, {
@@ -211,20 +235,44 @@ function useCharacterPreference(): {
         body: JSON.stringify({ chibiThumb: next }),
       })
       if (!response.ok) return false
-      const value = await response.json() as unknown
-      if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
-      const record = value as Record<string, unknown>
-      if (Object.keys(record).length !== 1 || record.chibiThumb !== next) return false
-      setEnabled(next)
+      const accepted = readClientPreference(await response.json() as unknown)
+      if (accepted?.chibiThumb !== next) return false
+      setValue(accepted)
       return true
     } catch {
       return false
     } finally {
       setPending(false)
     }
-  }, [enabled, pending])
+  }, [pending, value.chibiThumb])
 
-  return { enabled, pending, toggle }
+  const persistVisual = useCallback(async (route: string, index: number): Promise<boolean> => {
+    const bootstrap = validBootstrap(window.__DSH_REASONING_EFFORT__)
+    // Source/unit environments do not have a Host bridge. Keep the immediate
+    // visual choice without presenting a false persistence failure there.
+    if (bootstrap === undefined) return true
+    try {
+      const response = await fetch(bootstrap.preferencePath, {
+        method: 'PUT',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: {
+          [bootstrap.capabilityHeader]: bootstrap.capability,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ visualEffort: { route, index } }),
+      })
+      if (!response.ok) return false
+      const accepted = readClientPreference(await response.json() as unknown)
+      if (accepted?.visualEfforts[route] !== index) return false
+      setValue(accepted)
+      return true
+    } catch {
+      return false
+    }
+  }, [])
+
+  return { value, enabled: value.chibiThumb, pending, toggle, persistVisual }
 }
 
 /** Props for the accessible effort range and its attributed Canvas layer. */
@@ -458,6 +506,7 @@ export function EffortSlider({
 interface ActiveEffortControlProps {
   readonly locked: boolean
   readonly controller: ModelDirectory
+  readonly sessionId: SessionId
   readonly t: Translate
 }
 
@@ -466,7 +515,7 @@ function stateFromModels(models: SessionModels): ModelDirectoryState {
 }
 
 /** Active session model/effort control. */
-function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps) {
+function ActiveEffortControl({ locked, controller, sessionId, t }: ActiveEffortControlProps) {
   const state = useSyncExternalStore(
     notify => controller.store.subscribe(notify),
     () => controller.store.getSnapshot(),
@@ -484,7 +533,7 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
   const routeRef = useRef<string | null>(null)
   const committingRef = useRef(false)
   const id = useId()
-  const preference = useCharacterPreference()
+  const preference = useReasoningEffortPreference()
   const choice = currentModel(state)
   const actualLevels = useMemo(
     () => {
@@ -496,10 +545,31 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
   const levels = actualLevels.length === 0 ? [] : DISPLAY_LEVELS
   const placement = usePopupPlacement({ anchor, popup, open, preferred: 'below' })
   const effectiveIndex = levels.length > 0 ? effectiveEffortIndex(levels, state) : -1
-  const acceptedIndex = effectiveIndex
   const selectedActual = actualLevels.find(level => level.id === state.current?.reasoningEffort)
     ?? actualLevels.find(level => level.id === choice?.reasoning?.defaultEffort)
-  const effortName = selectedActual?.name
+  const route = state.current === null
+    ? null
+    : JSON.stringify([sessionId, state.current.provider, state.current.model])
+  const storedVisualIndex = route === null ? null : preference.value.visualEfforts[route] ?? null
+  const preferredVisualIndex = routeRef.current === route
+    ? preferredVisualIndexRef.current ?? storedVisualIndex
+    : storedVisualIndex
+  const acceptedEffortId = selectedActual?.id
+    ?? modelEffortAt(actualLevels, effectiveIndex)?.id
+    ?? null
+  const acceptedIndex = levels.length === 0
+    ? -1
+    : resolvedEffortIndex(
+      levels,
+      actualLevels,
+      state,
+      acceptedEffortId,
+      preferredVisualIndex,
+    )
+  // The label reflects the stable six-step UI selection. Providers still
+  // receive the exact supported level mapped by modelEffortAt; a High-only
+  // model therefore keeps "Ultra" visible after Ultra safely dispatches High.
+  const effortName = acceptedIndex < 0 ? undefined : levels[acceptedIndex]?.name
   const modelName = choice?.name ?? state.current?.model ?? t('trigger.fallback')
   const busy = committing || state.status === 'selecting'
   const modelCap = actualLevels.at(-1)
@@ -511,23 +581,23 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
 
   useEffect(() => {
     if (levels.length === 0 || committingRef.current || dragging) return
-    const route = state.current === null ? null : `${state.current.provider}\u0000${state.current.model}`
     if (routeRef.current !== route) {
       routeRef.current = route
-      preferredVisualIndexRef.current = null
+      preferredVisualIndexRef.current = storedVisualIndex
+    } else if (preferredVisualIndexRef.current === null && storedVisualIndex !== null) {
+      preferredVisualIndexRef.current = storedVisualIndex
     }
-    const accepted = selectedActual?.id ?? modelEffortAt(actualLevels, effectiveEffortIndex(levels, state))?.id ?? null
     const next = resolvedEffortIndex(
       levels,
       actualLevels,
       state,
-      accepted,
+      acceptedEffortId,
       preferredVisualIndexRef.current,
     )
-    acceptedEffortIdRef.current = accepted
+    acceptedEffortIdRef.current = acceptedEffortId
     setPreviewIndex(next)
     setError(null)
-  }, [actualLevels, dragging, levels, selectedActual?.id, state])
+  }, [acceptedEffortId, actualLevels, dragging, levels, route, state, storedVisualIndex])
 
   const close = useCallback((restoreFocus = false): void => {
     setOpen(false)
@@ -605,6 +675,10 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
       acceptedEffortIdRef.current = target.id
       preferredVisualIndexRef.current = index
       setPreviewIndex(index)
+      const durableRoute = JSON.stringify([sessionId, route.provider, route.model])
+      if (!await preference.persistVisual(durableRoute, index)) {
+        setError(t('effort.persistFailed'))
+      }
     } catch (cause) {
       const rollback = resolvedEffortIndex(
         rollbackVisualLevels,
@@ -620,7 +694,7 @@ function ActiveEffortControl({ locked, controller, t }: ActiveEffortControlProps
       committingRef.current = false
       setCommitting(false)
     }
-  }, [acceptedIndex, actualLevels, controller, levels, state, t])
+  }, [acceptedIndex, actualLevels, controller, levels, preference, sessionId, state, t])
 
   const chooseModel = async (
     provider: string,
@@ -788,5 +862,10 @@ export function EffortControl(
   props: EffortControlInjected & { readonly locked: boolean } & PropsLocale<'reasoningEffort'>,
 ) {
   if (!props.available) return null
-  return <ActiveEffortControl locked={props.locked} controller={props.controller} t={props.t} />
+  return <ActiveEffortControl
+    locked={props.locked}
+    controller={props.controller}
+    sessionId={props.sessionId}
+    t={props.t}
+  />
 }

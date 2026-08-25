@@ -7,9 +7,9 @@ import {
 
 describe('reasoning-effort character preference', () => {
   it('defaults an absent setting to a frozen character-off value', () => {
-    expect(readPreference(undefined)).toEqual({ chibiThumb: false })
-    expect(readPreference(null)).toEqual({ chibiThumb: false })
-    expect(readPreference({})).toEqual({ chibiThumb: false })
+    expect(readPreference(undefined)).toEqual({ chibiThumb: false, visualEfforts: {} })
+    expect(readPreference(null)).toEqual({ chibiThumb: false, visualEfforts: {} })
+    expect(readPreference({})).toEqual({ chibiThumb: false, visualEfforts: {} })
     expect(readPreference(undefined)).toBe(DEFAULT_REASONING_EFFORT_PREFERENCE)
     expect(Object.isFrozen(DEFAULT_REASONING_EFFORT_PREFERENCE)).toBe(true)
   })
@@ -27,18 +27,22 @@ describe('reasoning-effort character preference', () => {
 
   it('accepts either boolean and returns a detached preference', () => {
     const enabled = { chibiThumb: true }
-    expect(readPreference(enabled)).toEqual({ chibiThumb: true })
+    expect(readPreference(enabled)).toEqual({ chibiThumb: true, visualEfforts: {} })
     expect(readPreference(enabled)).not.toBe(enabled)
-    expect(readPreference({ chibiThumb: false })).toEqual({ chibiThumb: false })
+    expect(readPreference({ chibiThumb: false })).toEqual({ chibiThumb: false, visualEfforts: {} })
+    const stored = { chibiThumb: false, visualEfforts: { '["session","provider","model"]': 5 } }
+    expect(readPreference(stored)).toEqual(stored)
+    expect(readPreference(stored)).not.toBe(stored)
   })
 
   it('normalizes persisted data to one detached defaulted boolean', () => {
-    expect(ReasoningEffortPreferenceSchema({})).toEqual({ chibiThumb: false })
+    expect(ReasoningEffortPreferenceSchema({})).toEqual({ chibiThumb: false, visualEfforts: {} })
     const valid = { chibiThumb: true }
-    expect(ReasoningEffortPreferenceSchema(valid)).toEqual({ chibiThumb: true })
+    expect(ReasoningEffortPreferenceSchema(valid)).toEqual({ chibiThumb: true, visualEfforts: {} })
     expect(ReasoningEffortPreferenceSchema(valid)).not.toBe(valid)
-    expect(ReasoningEffortPreferenceSchema({ chibiThumb: 'true' })).toEqual({ chibiThumb: false })
+    expect(ReasoningEffortPreferenceSchema({ chibiThumb: 'true' }))
+      .toEqual({ chibiThumb: false, visualEfforts: {} })
     expect(ReasoningEffortPreferenceSchema({ chibiThumb: true, extra: true }))
-      .toEqual({ chibiThumb: false })
+      .toEqual({ chibiThumb: false, visualEfforts: {} })
   })
 })

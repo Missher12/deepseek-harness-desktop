@@ -1097,6 +1097,46 @@ describe('hand-declared providers', () => {
     expect(firstMutate(mutate).ops[0]?.value).toMatchObject({ models: [{ id: 'bare' }] })
   })
 
+  it('declares a reasoning ceiling for a hand-added model', async () => {
+    const { mutate, onClose } = mountCard()
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'reasoner' } })
+    expandModel(1)
+
+    fireEvent.change(screen.getByLabelText(`${en.modelReasoningCeiling} 1`), { target: { value: 'high' } })
+    fireEvent.click(screen.getByText(en.create))
+
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+    expect(firstMutate(mutate).ops[0]?.value).toMatchObject({
+      models: [{
+        id: 'reasoner',
+        reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' },
+      }],
+    })
+  })
+
+  it('declares a High-only capability without inventing lower wire efforts', async () => {
+    const { mutate, onClose } = mountCard()
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'high-only' } })
+    expandModel(1)
+
+    fireEvent.change(screen.getByLabelText(`${en.modelReasoningCeiling} 1`), { target: { value: 'only-high' } })
+    fireEvent.click(screen.getByText(en.create))
+
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+    expect(firstMutate(mutate).ops[0]?.value).toMatchObject({
+      models: [{
+        id: 'high-only',
+        reasoningEfforts: { high: 'high' },
+      }],
+    })
+  })
+
   it('refuses to create until the route, endpoint, and a model are usable', () => {
     mountCard()
     expect(buttonNamed(en.create).disabled).toBe(true)

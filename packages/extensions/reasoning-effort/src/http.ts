@@ -5,6 +5,8 @@ import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import {
   DEFAULT_REASONING_EFFORT_PREFERENCE,
+  MAX_VISUAL_EFFORT_PREFERENCES,
+  MAX_VISUAL_EFFORT_ROUTE_LENGTH,
   readPreference,
   type ReasoningEffortPreference,
 } from './preference.ts'
@@ -107,8 +109,12 @@ async function boundedBody(req: IncomingMessage, res: ServerResponse): Promise<B
 }
 /* jscpd:ignore-end */
 
-/** Accept only the exact one-key JSON wire shape. */
-function parsePutBody(body: Buffer): ReasoningEffortPreference | undefined {
+type PreferencePatch =
+  | { readonly chibiThumb: boolean }
+  | { readonly visualEffort: { readonly route: string; readonly index: number } }
+
+/** Accept only the exact plugin-owned JSON patch shapes. */
+function parsePutBody(body: Buffer): PreferencePatch | undefined {
   let value: unknown
   try {
     value = JSON.parse(body.toString('utf8')) as unknown
@@ -117,8 +123,49 @@ function parsePutBody(body: Buffer): ReasoningEffortPreference | undefined {
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
   const record = value as Record<string, unknown>
-  if (Object.keys(record).length !== 1 || typeof record.chibiThumb !== 'boolean') return undefined
-  return { chibiThumb: record.chibiThumb }
+  if (Object.keys(record).length !== 1) return undefined
+  if (typeof record.chibiThumb === 'boolean') return { chibiThumb: record.chibiThumb }
+  if (typeof record.visualEffort !== 'object'
+    || record.visualEffort === null
+    || Array.isArray(record.visualEffort)) return undefined
+  const visualEffort = record.visualEffort as Record<string, unknown>
+  if (Object.keys(visualEffort).length !== 2
+    || typeof visualEffort.route !== 'string'
+    || visualEffort.route.length === 0
+    || visualEffort.route.length > MAX_VISUAL_EFFORT_ROUTE_LENGTH
+    || !Number.isInteger(visualEffort.index)
+    || Number(visualEffort.index) < 0
+    || Number(visualEffort.index) > 5) return undefined
+  try {
+    const route = JSON.parse(visualEffort.route) as unknown
+    if (!Array.isArray(route)
+      || route.length !== 3
+      || route.some(part => typeof part !== 'string' || part.length === 0)) return undefined
+  } catch {
+    return undefined
+  }
+  return {
+    visualEffort: {
+      route: visualEffort.route,
+      index: Number(visualEffort.index),
+    },
+  }
+}
+
+/** Apply one narrow patch while retaining a bounded insertion-ordered route map. */
+function applyPatch(currentValue: unknown, patch: PreferencePatch): ReasoningEffortPreference {
+  const current = readPreference(currentValue)
+  if ('chibiThumb' in patch) {
+    return { chibiThumb: patch.chibiThumb, visualEfforts: { ...current.visualEfforts } }
+  }
+  const entries = Object.entries(current.visualEfforts)
+  const alreadyStored = Object.hasOwn(current.visualEfforts, patch.visualEffort.route)
+  if (!alreadyStored && entries.length >= MAX_VISUAL_EFFORT_PREFERENCES) entries.shift()
+  const visualEfforts = Object.fromEntries([
+    ...entries.filter(([route]) => route !== patch.visualEffort.route),
+    [patch.visualEffort.route, patch.visualEffort.index],
+  ])
+  return { chibiThumb: current.chibiThumb, visualEfforts }
 }
 
 /**
@@ -131,6 +178,7 @@ function parsePutBody(body: Buffer): ReasoningEffortPreference | undefined {
 export function createPreferenceHttpHandler(options: PreferenceHttpOptions): WebRoute['handler'] {
   const authority = `127.0.0.1:${String(options.port)}`
   const origin = `http://${authority}`
+  let writeTail: Promise<void> = Promise.resolve()
   return async (req, res) => {
     if (header(req.headers, 'host') !== authority
       || !matchesCapability(header(req.headers, PREFERENCE_CAPABILITY_HEADER), options.capability)) {
@@ -145,6 +193,7 @@ export function createPreferenceHttpHandler(options: PreferenceHttpOptions): Web
     }
 
     if (req.method === 'GET') {
+      await writeTail
       json(res, 200, readPreference(options.read()))
       return
     }
@@ -165,13 +214,19 @@ export function createPreferenceHttpHandler(options: PreferenceHttpOptions): Web
     }
     const raw = await boundedBody(req, res)
     if (raw === undefined) return
-    const preference = parsePutBody(raw)
-    if (preference === undefined) {
+    const patch = parsePutBody(raw)
+    if (patch === undefined) {
       text(res, 400, 'invalid preference')
       return
     }
     try {
-      await options.write(preference)
+      const write = writeTail.then(async () => {
+        const preference = applyPatch(options.read(), patch)
+        await options.write(preference)
+        return preference
+      })
+      writeTail = write.then(() => undefined, () => undefined)
+      const preference = await write
       json(res, 200, preference)
     } catch {
       // Settings persistence diagnostics stay in the Host logger; the browser

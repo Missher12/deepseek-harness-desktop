@@ -6,13 +6,13 @@ DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek 
 
 It uses an architecture where **everything is a plugin**, and is powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://github.com/cordiverse/paper).
 
-## Unofficial Intel macOS desktop distribution
+## Unofficial desktop distribution
 
-This community repository preserves the official source and adds an unofficial Intel macOS desktop application under [`apps/desktop`](apps/desktop/README.md). It is not an official DeepSeek desktop release. The application embeds the existing Harness Web runtime in a native Electron window, owns a random loopback port, and ships the user-supplied whale icon.
+This community repository preserves the official source and adds an unofficial Intel macOS and Windows x64 desktop application under [`apps/desktop`](apps/desktop/README.md). It is not an official DeepSeek desktop release. The application embeds the existing Harness Web runtime in a native Electron window, owns a random loopback port, and ships the user-supplied whale icon.
 
-Download the DMG from this repository's [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases). The current local build is unsigned and unnotarized; on first launch, macOS may require **Open** from Finder's context menu.
+Download the DMG or Setup executable from this repository's [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases). The current builds are unsigned; macOS may require **Open** from Finder's context menu on first launch, and Windows may show a SmartScreen prompt.
 
-Desktop 0.3.3 embeds the tested official Harness `0.1.1-rc.2` core for Intel macOS. Windows remains on the separately verified Desktop 0.3.2 release until it receives its own native acceptance run.
+Desktop 0.3.9 builds the Intel macOS DMG and Windows x64 Setup from the same tested Harness `0.1.1-rc.2` source revision. Windows remains installer-updated; the in-app updater is currently available only for Intel macOS.
 
 ## Developer preview
 
