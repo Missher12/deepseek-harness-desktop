@@ -7,8 +7,16 @@ const event = (type: string, data: unknown, time = 1000, view?: unknown) => ({
 
 describe('safe Harness turn projection', () => {
   test('streams only visible assistant text and real usage', () => {
-    const projection = new TurnProjection('session-1')
+    const projection = new TurnProjection('session-1', {
+      provider: 'initial-provider', model: 'initial-model', reasoningEffort: 'max',
+    })
     projection.apply(event('turn/start', { turn: 7 }, 1000))
+    expect(projection.snapshot().model).toEqual({
+      provider: 'initial-provider', model: 'initial-model', reasoningEffort: 'max',
+    })
+    projection.apply(event('request/header', {
+      header: { config: { provider: 'p', model: 'm', reasoningEffort: 'high' } }, reason: 'change',
+    }, 1050))
     projection.apply(event('assistant/chunk', { turn: 7, step: 1, chunk: { type: 'text-delta', index: 0, text: 'Hel' } }, 1100))
     projection.apply(event('assistant/chunk', { turn: 7, step: 1, chunk: { type: 'reasoning-delta', index: 1, text: 'private chain' } }, 1101))
     projection.apply(event('assistant/message', {
@@ -20,6 +28,7 @@ describe('safe Harness turn projection', () => {
     }, 1200))
     expect(projection.snapshot()).toMatchObject({
       turn: 7, text: 'Hello', status: 'streaming',
+      model: { provider: 'p', model: 'm', reasoningEffort: 'high' },
       usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 2, reasoningTokens: 3 },
     })
     expect(JSON.stringify(projection.snapshot())).not.toContain('private chain')

@@ -22,6 +22,7 @@ describe('monotonic streaming card', () => {
     await stream.update(state('Hello'))
     await stream.update({
       ...state('Hello', 'completed'), elapsedMs: 1500,
+      model: { provider: 'deepseek', model: 'deepseek-v4-flash', reasoningEffort: 'max' },
       usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 2 },
     }, true)
     expect(sendCard).toHaveBeenCalledOnce()
@@ -31,6 +32,12 @@ describe('monotonic streaming card', () => {
     expect(payloads[1]).toContain('Hello')
     expect(payloads[2]).toContain('17')
     expect(payloads[2]).toContain('1.5s')
+    expect(payloads[2]).toContain('deepseek-v4-flash')
+    expect(payloads[2]).toContain('deepseek')
+    expect(payloads[2]).toContain('max')
+    expect(payloads[2]).toContain('↑ 10')
+    expect(payloads[2]).toContain('↓ 5')
+    expect(payloads[2]).toContain('缓存 2/0')
     expect(sendText).not.toHaveBeenCalled()
   })
 

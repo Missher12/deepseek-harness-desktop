@@ -27,7 +27,7 @@ The first accepted private DM receives a short pairing code. Enter that code loc
 
 Send exact `/`, `/进入`, `/切换`, or use the `进入项目` menu item. This opens a no-model project card. Select the full project path, then select an existing ordinary unarchived Session. Running Sessions are listed first. Archived, deleted, blank, subagent, and project-mismatched Sessions are excluded and revalidated when clicked. The final owner/chat/project/Session binding is durable across restart.
 
-Ordinary text then becomes one remote Harness turn in that exact Session. Every accepted Feishu event is write-ahead persisted with a pre-created Harness Message ID. Messages are delivered in original Feishu order, one at a time; item N+1 is not submitted until item N is claimed by the selected Session and its exact `turn/end` is observed. Restart recovery reconciles the existing inbox and Session history before reusing that same Message ID, so it does not intentionally duplicate an indeterminate delivery.
+Ordinary text then becomes one remote Harness turn in that exact Session and appears in conversation history as the same visible user message produced by the local composer. Every accepted Feishu event is write-ahead persisted with a pre-created Harness Message ID. Messages are delivered in original Feishu order, one at a time; item N+1 is not submitted until item N is claimed by the selected Session and its exact `turn/end` is observed. Restart recovery reconciles the existing inbox and Session history before reusing that same Message ID, so it does not intentionally duplicate an indeterminate delivery.
 
 Before an active binding exists, ordinary text is not accepted into the durable queue. The bot replies with the current binding status and directs the owner to `/` instead of failing the Feishu callback.
 
@@ -43,7 +43,7 @@ Images are downloaded only after owner admission, validated by the Harness Attac
 - `/停止`: cancel the active remote turn, remove only unclaimed `dsh-lark` messages, and retain unrelated inbox work.
 - `/帮助`: show bounded command help.
 
-Each Harness turn owns one Feishu interactive card. It paints a stable placeholder first, then streams visible assistant text with a typewriter effect, safe tool titles/status, elapsed time, and real Harness token usage when available. Reasoning, system messages, environment values, raw tool arguments/results, secrets, and unrestricted logs are not projected. A bounded text reply is used if card creation or update fails.
+Each Harness turn owns one Feishu interactive card. It paints a stable placeholder first, then streams visible assistant text with a typewriter effect, safe tool titles/status, elapsed time, the exact model ID/provider/reasoning effort, and real Harness input/output/cache token usage when available. The route comes from the selected Session's durable request header and is corrected by the actual assistant message, so a model switch is reflected in the same card. Reasoning content, system messages, environment values, raw tool arguments/results, secrets, and unrestricted logs are not projected. A bounded text reply is used if card creation or update fails.
 
 Harness approval requests use the existing ApiProxy approval record. Feishu exposes only Allow once and Deny; the first valid desktop or Feishu response wins. No always-allow authority is added.
 
@@ -67,11 +67,11 @@ The implementation uses the official `@larksuiteoapi/node-sdk`. WebSocket lifecy
 
 #### What the model sees
 
-The plugin registers no model tool, system prompt, or hidden instruction. Each accepted ordinary Feishu message becomes one ordinary user-role turn in the already selected Session with `source.kind=plugin` and `source.plugin=dsh-lark` metadata. Admitted images appear as durable Harness image attachments; admitted generic files add only the owner text plus their private staged path, display name, SHA-256, and expiry. Feishu identity values, pairing codes, credentials, card action values, transport diagnostics, raw tool payloads, and reasoning are never added to model context.
+The plugin registers no model tool, system prompt, or hidden instruction. Each accepted ordinary Feishu message becomes one ordinary visible user-role turn in the selected Session with `source.kind=user`; the paired-owner and transport facts remain in plugin-owned storage rather than model context. Admitted images appear as durable Harness image attachments; admitted generic files add only the owner text plus their private staged path, display name, SHA-256, and expiry. Feishu identity values, pairing codes, credentials, card action values, transport diagnostics, raw tool payloads, and reasoning are never added to model context.
 
 #### Token effect
 
-An accepted remote turn adds the same user text and admitted attachment description that a local turn would add, then the selected Agent's normal reply, tool calls, and results follow the Session's existing retention policy. The settings UI, transport, project cards, queue metadata, pairing state, and streamed Feishu projection add no model tokens. The card reports Harness token usage but does not feed that report back into the Session.
+An accepted remote turn adds the same user text and admitted attachment description that a local turn would add, then the selected Agent's normal reply, tool calls, and results follow the Session's existing retention policy. The settings UI, transport, project cards, queue metadata, pairing state, and streamed Feishu projection add no model tokens. The card reports the actual Harness model route and token usage but does not feed that report back into the Session.
 
 #### KV Cache effect
 

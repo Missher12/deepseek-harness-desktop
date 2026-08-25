@@ -276,7 +276,7 @@ export class DurableLarkInbox {
           .filter((item): item is Extract<QueueAttachment, { kind: 'image' }> => item.kind === 'image')
           .map(item => ({ type: 'image' as const, attachment: item.attachment as ImageAttachmentRef })),
       ],
-      source: { kind: 'plugin', plugin: 'dsh-lark' },
+      source: { kind: 'user' },
     })
   }
 

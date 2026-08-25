@@ -44,7 +44,7 @@ const inbound = (eventId: string, text = eventId) => ({
 })
 
 describe('strict durable Feishu FIFO', () => {
-  test('persists before followup and waits for the exact claimed turn to end', async () => {
+  test('submits paired-owner text as a visible Harness user message', async () => {
     const h = harness()
     await h.inbox.enqueue(inbound('event-1', 'first'))
     await h.inbox.enqueue(inbound('event-2', 'second'))
@@ -52,7 +52,7 @@ describe('strict durable Feishu FIFO', () => {
     expect(h.followup).toHaveBeenCalledTimes(1)
     expect(h.pending[0]).toMatchObject({
       id: 'harness-1', content: [{ type: 'text', text: 'first' }],
-      source: { kind: 'plugin', plugin: 'dsh-lark' },
+      source: { kind: 'user' },
     })
     expect([...h.records.values()].map(record => [record.sequence, record.status]))
       .toEqual([[1, 'queued'], [2, 'prepared']])
@@ -112,12 +112,12 @@ describe('strict durable Feishu FIFO', () => {
     expect(h.records.get('media')?.attachments).toHaveLength(2)
   })
 
-  test('/插话 uses only steer with a plugin-owned immutable message', async () => {
+  test('/插话 uses only steer with a visible Harness user message', async () => {
     const h = harness()
     await h.inbox.steer('urgent correction')
     expect(h.steer).toHaveBeenCalledWith(expect.objectContaining({
       content: [{ type: 'text', text: 'urgent correction' }],
-      source: { kind: 'plugin', plugin: 'dsh-lark' },
+      source: { kind: 'user' },
     }))
     expect(h.followup).not.toHaveBeenCalled()
   })

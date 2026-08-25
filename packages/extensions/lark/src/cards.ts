@@ -21,6 +21,17 @@ const statusText: Record<TurnProjectionState['status'], string> = {
 
 const elapsed = (milliseconds: number): string => `${(milliseconds / 1000).toFixed(1)}s`
 
+const compactNumber = (value: number): string => {
+  const absolute = Math.abs(value)
+  if (absolute >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}m`
+  if (absolute >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, '')}k`
+  return String(Math.round(value))
+}
+
+const inlineFact = (value: string): string => value
+  .replace(/[\r\n\t]+/g, ' ')
+  .replace(/([\\`*_{}\[\]()#+!|>~])/g, '\\$1')
+
 const usageTotal = (state: TurnProjectionState): number | undefined => {
   const usage = state.usage
   if (usage === undefined) return undefined
@@ -40,12 +51,29 @@ export function renderTurnCard(state: TurnProjectionState): unknown {
     .filter(approval => approval.status === 'pending')
   const approvals = pendingApprovals.map(approval => `待确认：${approval.toolName}`)
   const tokenTotal = usageTotal(state)
-  const details = `耗时 ${elapsed(state.elapsedMs)} · Token ${tokenTotal ?? '暂不可用'}`
+  const route = state.model === undefined
+    ? '模型 暂不可用'
+    : [
+      `模型 ${inlineFact(state.model.model)}`,
+      `提供方 ${inlineFact(state.model.provider)}`,
+      ...(state.model.reasoningEffort === undefined
+        ? [] : [`推理 ${inlineFact(state.model.reasoningEffort)}`]),
+    ].join(' · ')
+  const primaryDetails = `${statusText[state.status]} · 耗时 ${elapsed(state.elapsedMs)} · ${route}`
+  const usageDetails = state.usage === undefined
+    ? 'Token 暂不可用'
+    : [
+      `↑ ${compactNumber(state.usage.inputTokens)} ↓ ${compactNumber(state.usage.outputTokens)}`,
+      `Token ${compactNumber(tokenTotal ?? 0)}`,
+      ...(state.usage.cacheReadTokens === undefined && state.usage.cacheWriteTokens === undefined
+        ? []
+        : [`缓存 ${compactNumber(state.usage.cacheReadTokens ?? 0)}/${compactNumber(state.usage.cacheWriteTokens ?? 0)}`]),
+    ].join(' · ')
   const content = [
     state.text || '正在连接 Harness 会话…',
     toolLines.length === 0 ? '' : `\n---\n${toolLines.join('\n')}`,
     approvals.length === 0 ? '' : `\n${approvals.join('\n')}`,
-    `\n---\n${details}`,
+    `\n---\n${primaryDetails}\n${usageDetails}`,
   ].join('')
   return {
     config: { wide_screen_mode: true, update_multi: true, enable_forward: false },

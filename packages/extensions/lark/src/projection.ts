@@ -7,6 +7,13 @@ export interface ProjectedUsage {
   reasoningTokens?: number
 }
 
+/** Exact non-secret model route used by the projected Harness request. */
+export interface ProjectedModel {
+  provider: string
+  model: string
+  reasoningEffort?: string
+}
+
 /** Safe tool title, kind, and lifecycle status. */
 export interface ProjectedTool {
   callId: string
@@ -33,6 +40,7 @@ export interface TurnProjectionState {
   text: string
   tools: ProjectedTool[]
   approvals: ProjectedApproval[]
+  model?: ProjectedModel
   usage?: ProjectedUsage
   startedAt?: number
   elapsedMs: number
@@ -52,9 +60,10 @@ const string = (value: unknown): string | undefined => typeof value === 'string'
 export class TurnProjection {
   private state: TurnProjectionState
 
-  constructor(private readonly sessionId: string) {
+  constructor(private readonly sessionId: string, initialModel?: ProjectedModel) {
     this.state = {
       sessionId, status: 'placeholder', text: '', tools: [], approvals: [], elapsedMs: 0,
+      ...(initialModel === undefined ? {} : { model: structuredClone(initialModel) }),
     }
   }
 
@@ -76,18 +85,24 @@ export class TurnProjection {
     if (data === undefined || eventType === undefined) return this.snapshot()
     if (eventType === 'turn/start') {
       const turn = number(data.turn)
+      const model = this.state.model
       this.state = {
         sessionId: this.sessionId,
         status: 'streaming', text: '', tools: [], approvals: [],
+        ...(model === undefined ? {} : { model }),
         ...(turn === undefined ? {} : { turn }),
         ...(time === undefined ? {} : { startedAt: time }),
         elapsedMs: 0,
       }
+    } else if (eventType === 'request/header') {
+      const header = record(data.header)
+      this.setModel(record(header?.config), false)
     } else if (eventType === 'assistant/chunk') {
       const chunk = record(data.chunk)
       if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') this.state.text += chunk.text
     } else if (eventType === 'assistant/message') {
       const message = record(data.message)
+      this.setModel(record(message?.source), true)
       const content = Array.isArray(message?.content) ? message.content : []
       const visible = content.flatMap((block) => {
         const value = record(block)
@@ -152,6 +167,22 @@ export class TurnProjection {
       cacheReadTokens: (current.cacheReadTokens ?? 0) + (next.cacheReadTokens ?? 0),
       cacheWriteTokens: (current.cacheWriteTokens ?? 0) + (next.cacheWriteTokens ?? 0),
       reasoningTokens: (current.reasoningTokens ?? 0) + (next.reasoningTokens ?? 0),
+    }
+  }
+
+  private setModel(value: UnknownRecord | undefined, preserveMatchingEffort: boolean): void {
+    const provider = string(value?.provider)
+    const model = string(value?.model)
+    if (provider === undefined || provider.length === 0 || model === undefined || model.length === 0) return
+    const previous = this.state.model
+    const explicitEffort = string(value?.reasoningEffort)
+    const reasoningEffort = explicitEffort === undefined && preserveMatchingEffort
+      && previous?.provider === provider && previous.model === model
+      ? previous.reasoningEffort
+      : explicitEffort
+    this.state.model = {
+      provider, model,
+      ...(reasoningEffort === undefined || reasoningEffort.length === 0 ? {} : { reasoningEffort }),
     }
   }
 

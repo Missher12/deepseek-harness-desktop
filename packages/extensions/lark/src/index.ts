@@ -328,10 +328,13 @@ export async function apply(ctx: Context, base: Config = {}): Promise<void> {
       await queue.onTurnEnd(frame.sessionId, frame.event.data.turn, turnOutcome(frame.event.data.reason))
     }
     if (frame.type === 'session/event' && frame.event.type === 'turn/start') {
-      const projection = new TurnProjection(frame.sessionId)
+      const config = ctx.agents.get(frame.sessionId)?.session.requestHeader()?.config
+      const projection = new TurnProjection(frame.sessionId, config === undefined ? undefined : {
+        provider: config.provider, model: config.model,
+        ...(config.reasoningEffort === undefined ? {} : { reasoningEffort: String(config.reasoningEffort) }),
+      })
       const initial: TurnProjectionState = {
-        sessionId: frame.sessionId, turn: frame.event.data.turn,
-        status: 'placeholder', text: '', tools: [], approvals: [], elapsedMs: 0,
+        ...projection.snapshot(), turn: frame.event.data.turn,
       }
       const stream = await streaming.open(current.chatId, initial)
       activeTurns.set(`${frame.sessionId}:${String(frame.event.data.turn)}`, { projection, stream })
