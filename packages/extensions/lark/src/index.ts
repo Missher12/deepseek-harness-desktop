@@ -5,7 +5,8 @@ import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import type { MuxFrame } from '@deepseek-ai/dsh-host-apiproxy/api/events'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { resolveOrdinarySession } from '@deepseek-ai/dsh-session-messenger'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import { resolveOrdinaryTargetForSource } from '@deepseek-ai/dsh-session-messenger'
 import type { MessageId } from '@deepseek-ai/dsh-llm'
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -59,6 +60,14 @@ export const inject = [
   'settings', 'credentials', 'storageDomain', 'apiProxy', 'attachments',
   'workspaceRegistry', 'typert', 'agents', 'webServer',
 ]
+
+// The existing messenger API requires a source identity only to reject
+// self-targeting. An empty ID can never collide with its validated printable
+// target IDs, so Lark keeps every archive/subagent/lookup fence without
+// requiring a synthetic Agent or a newer messenger export.
+const LARK_EXTERNAL_SOURCE_ID = SessionId('')
+const resolveLarkSession = (ctx: Context, sessionId: string): Promise<Agent> =>
+  resolveOrdinaryTargetForSource(ctx, LARK_EXTERNAL_SOURCE_ID, sessionId)
 
 type UnknownRecord = Record<string, unknown>
 const asRecord = (value: unknown): UnknownRecord | undefined =>
@@ -216,7 +225,7 @@ export async function apply(ctx: Context, base: Config = {}): Promise<void> {
       }))
     },
     resolveOrdinarySession: async (sessionId) => {
-      const agent = await resolveOrdinarySession(ctx, sessionId)
+      const agent = await resolveLarkSession(ctx, sessionId)
       return {
         id: agent.id,
         ...(agent.session.header.cwd === undefined ? {} : { cwd: agent.session.header.cwd }),
@@ -235,7 +244,7 @@ export async function apply(ctx: Context, base: Config = {}): Promise<void> {
       put: async (row) => { await inboxTable.put(row.id, row) },
     },
     getBinding: () => Promise.resolve(bindings.get('owner')),
-    resolveAgent: async sessionId => agentAdapter(await resolveOrdinarySession(ctx, sessionId)),
+    resolveAgent: async sessionId => agentAdapter(await resolveLarkSession(ctx, sessionId)),
   })
   const attachments = new LarkAttachmentService({
     imageStore: ctx.attachments,
