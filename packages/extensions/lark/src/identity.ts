@@ -25,6 +25,7 @@ export interface CardActionValue {
   nonce: string
   action: CallbackAction
   generation: number
+  data?: Record<string, string>
 }
 
 interface IdentityOptions {
@@ -84,8 +85,13 @@ export class IdentityService {
     }
     if (owner.openId !== input.senderOpenId || owner.chatId !== input.chatId) return { kind: 'rejected' }
     if (await this.store.hasEvent(input.eventId)) return { kind: 'rejected' }
-    await this.store.markEvent(input.eventId)
     return { kind: 'owner' }
+  }
+
+  /** Commit a fast-path command event before performing its external effect. */
+  async commitEvent(eventId: string): Promise<void> {
+    if (await this.store.hasEvent(eventId)) throw new Error('Lark event was already handled')
+    await this.store.markEvent(eventId)
   }
 
   async pairOwner(code: string): Promise<OwnerRecord> {
@@ -104,16 +110,26 @@ export class IdentityService {
     return owner
   }
 
-  async issueAction(action: CallbackAction, generation: number, ttlMs = 5 * 60_000): Promise<CardActionValue> {
+  owner(): Promise<OwnerRecord | undefined> {
+    return this.store.getOwner()
+  }
+
+  async issueAction(
+    action: CallbackAction,
+    generation: number,
+    ttlMs = 5 * 60_000,
+    data?: Record<string, string>,
+  ): Promise<CardActionValue> {
     const owner = await this.requireOwner()
     if (owner.generation !== generation) throw new Error('Lark card generation is stale')
     const now = this.now()
     const record: CallbackNonceRecord = {
       id: this.nonce(), ownerOpenId: owner.openId, chatId: owner.chatId,
       generation, action, createdAt: now, expiresAt: now + ttlMs,
+      ...(data === undefined ? {} : { data }),
     }
     await this.store.putNonce(record)
-    return { nonce: record.id, action, generation }
+    return { nonce: record.id, action, generation, ...(data === undefined ? {} : { data }) }
   }
 
   async admitAction(input: {
@@ -127,6 +143,9 @@ export class IdentityService {
     const record = await this.store.getNonce(input.value.nonce)
     if (record === undefined || record.action !== input.value.action || record.generation !== input.value.generation) {
       throw new Error('Lark card action nonce mismatch')
+    }
+    if (JSON.stringify(record.data ?? {}) !== JSON.stringify(input.value.data ?? {})) {
+      throw new Error('Lark card action payload mismatch')
     }
     if (record.usedAt !== undefined) throw new Error('Lark card action nonce was already used')
     if (record.expiresAt <= this.now()) throw new Error('Lark card action expired')

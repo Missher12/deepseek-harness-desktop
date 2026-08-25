@@ -4,6 +4,9 @@ export interface AdmittedMessage {
   openId: string
   chatId: string
   text: string
+  senderType?: string
+  chatType?: string
+  appId?: string
 }
 
 type Admission =
@@ -23,7 +26,10 @@ interface CommandDependencies {
     steer(text: string, message?: AdmittedMessage): Promise<void>
     stop(message: AdmittedMessage): Promise<void>
   }
-  identity: { admit(message: AdmittedMessage): Promise<Admission> }
+  identity: {
+    admit(message: AdmittedMessage): Promise<Admission>
+    commitEvent?(eventId: string): Promise<void>
+  }
 }
 
 const HELP = '命令：/ 进入项目 · /切换 · /解绑 · /状态 · /插话 <内容> · /停止 · /帮助'
@@ -45,42 +51,56 @@ export class CommandRouter {
   async menuAction(input: AdmittedMessage): Promise<void> {
     const admission = await this.deps.identity.admit(input)
     if (admission.kind !== 'owner') return
-    if (input.text === '进入项目') await this.deps.cards.sendProjectCard(input)
+    if (input.text === '进入项目') {
+      await this.commit(input.eventId)
+      await this.deps.cards.sendProjectCard(input)
+    }
   }
 
   private async routeOwner(message: AdmittedMessage): Promise<void> {
     const text = message.text.trim()
     if (text === '/' || text === '/进入' || text === '/切换') {
+      await this.commit(message.eventId)
       await this.deps.cards.sendProjectCard(message)
       return
     }
     if (text === '/解绑') {
+      await this.commit(message.eventId)
       await this.deps.binding.unbind(message)
       await this.deps.transport.sendText(message.chatId, '已解绑当前会话。')
       return
     }
     if (text === '/状态') {
+      await this.commit(message.eventId)
       await this.deps.transport.sendText(message.chatId, await this.deps.binding.statusText(message))
       return
     }
     if (text === '/帮助') {
+      await this.commit(message.eventId)
       await this.deps.transport.sendText(message.chatId, HELP)
       return
     }
     if (text.startsWith('/插话 ')) {
+      await this.commit(message.eventId)
       const body = text.slice('/插话 '.length).trim()
       if (body.length > 0) await this.deps.inbox.steer(body)
       else await this.deps.transport.sendText(message.chatId, '用法：/插话 <内容>')
       return
     }
     if (text === '/停止') {
+      await this.commit(message.eventId)
       await this.deps.inbox.stop(message)
       return
     }
     if (text.startsWith('/')) {
+      await this.commit(message.eventId)
       await this.deps.transport.sendText(message.chatId, HELP)
       return
     }
     await this.deps.inbox.enqueue(message)
+  }
+
+  private async commit(eventId: string): Promise<void> {
+    await this.deps.identity.commitEvent?.(eventId)
   }
 }

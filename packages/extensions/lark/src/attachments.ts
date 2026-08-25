@@ -86,6 +86,19 @@ export class LarkAttachmentService {
     return removed
   }
 
+  async clear(): Promise<number> {
+    let removed = 0
+    for (const record of await this.options.files.list()) {
+      if (!this.owns(record.path)) continue
+      await unlink(record.path).catch((error: unknown) => {
+        if (!isMissing(error)) throw error
+      })
+      await this.options.files.delete(record.id)
+      removed += 1
+    }
+    return removed
+  }
+
   private owns(path: string): boolean {
     const candidate = resolve(path)
     const child = relative(this.root, candidate)

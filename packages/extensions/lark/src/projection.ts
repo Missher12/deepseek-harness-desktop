@@ -18,6 +18,8 @@ export interface ProjectedApproval {
   rpcId?: string
   toolName: string
   status: 'pending' | 'resolved'
+  allowValue?: unknown
+  denyValue?: unknown
 }
 
 export interface TurnProjectionState {
@@ -104,6 +106,12 @@ export class TurnProjection {
 
   snapshot(): TurnProjectionState {
     return structuredClone(this.state)
+  }
+
+  setApprovalActions(approvalId: string, allowValue: unknown, denyValue: unknown): TurnProjectionState {
+    this.state.approvals = this.state.approvals.map(item =>
+      item.approvalId === approvalId ? { ...item, allowValue, denyValue } : item)
+    return this.snapshot()
   }
 
   private addUsage(value: UnknownRecord): void {

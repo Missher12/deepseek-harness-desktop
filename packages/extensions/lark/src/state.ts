@@ -21,6 +21,12 @@ export const ownerRecordSchema = z.object({
 })
 export type OwnerRecord = z.infer<typeof ownerRecordSchema>
 
+export const eventRecordSchema = z.object({
+  id: opaqueId,
+  receivedAt: safeTime,
+})
+export type EventRecord = z.infer<typeof eventRecordSchema>
+
 export const bindingRecordSchema = z.object({
   id: z.literal('owner'),
   ownerOpenId: opaqueId,
@@ -92,6 +98,8 @@ export const callbackNonceRecordSchema = z.object({
   chatId: opaqueId,
   generation,
   action: z.enum(['select-project', 'select-session', 'approve-once', 'deny', 'resume', 'clear']),
+  data: z.record(z.string().max(64), z.string().max(512))
+    .refine(value => Object.keys(value).length <= 4).optional(),
   expiresAt: safeTime,
   createdAt: safeTime,
   usedAt: safeTime.optional(),
@@ -115,6 +123,7 @@ export const larkDomainSpec = defineDomain({
   version: 1,
   tables: {
     owners: domainTable<string, OwnerRecord>(ownerRecordSchema),
+    events: domainTable<string, EventRecord>(eventRecordSchema),
     bindings: domainTable<string, BindingRecord>(bindingRecordSchema),
     inbox: domainTable<string, QueueRecord>(queueRecordSchema),
     cards: domainTable<string, CardRecord>(cardRecordSchema),

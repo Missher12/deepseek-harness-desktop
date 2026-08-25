@@ -1,4 +1,7 @@
 import type { TurnProjectionState } from './projection.ts'
+import type { AdmittedMessage } from './commands.ts'
+import type { BindingController, SessionRow } from './binding.ts'
+import type { CardActionValue, IdentityService } from './identity.ts'
 
 interface CardTransport {
   sendCard(chatId: string, card: unknown): Promise<{ messageId: string; chatId: string }>
@@ -29,9 +32,9 @@ const usageTotal = (state: TurnProjectionState): number | undefined => {
 export function renderTurnCard(state: TurnProjectionState): unknown {
   const toolLines = state.tools.map(tool =>
     `${tool.status === 'running' ? '◌' : tool.status === 'completed' ? '✓' : '✕'} ${tool.title}`)
-  const approvals = state.approvals
+  const pendingApprovals = state.approvals
     .filter(approval => approval.status === 'pending')
-    .map(approval => `待确认：${approval.toolName}`)
+  const approvals = pendingApprovals.map(approval => `待确认：${approval.toolName}`)
   const tokenTotal = usageTotal(state)
   const details = `耗时 ${elapsed(state.elapsedMs)} · Token ${tokenTotal ?? '暂不可用'}`
   const content = [
@@ -46,7 +49,17 @@ export function renderTurnCard(state: TurnProjectionState): unknown {
       template: state.status === 'failed' ? 'red' : state.status === 'completed' ? 'green' : 'blue',
       title: { tag: 'plain_text', content: `DeepSeek Harness · ${statusText[state.status]}` },
     },
-    elements: [{ tag: 'markdown', content }],
+    elements: [
+      { tag: 'markdown', content },
+      ...pendingApprovals.flatMap(approval => approval.allowValue === undefined || approval.denyValue === undefined
+        ? []
+        : [{
+          tag: 'action', layout: 'bisected', actions: [
+            { tag: 'button', type: 'primary', text: { tag: 'plain_text', content: '允许一次' }, value: approval.allowValue },
+            { tag: 'button', type: 'danger', text: { tag: 'plain_text', content: '拒绝' }, value: approval.denyValue },
+          ],
+        }]),
+    ],
   }
 }
 
@@ -106,3 +119,77 @@ export class StreamingCardController {
     return new TurnCardStream(this.resolved, chatId, sent.messageId, structuredClone(initial))
   }
 }
+
+interface SelectionTransport {
+  sendCard(chatId: string, card: unknown): Promise<unknown>
+  sendText(chatId: string, text: string): Promise<unknown>
+}
+
+/** No-model project/session picker with state-backed, one-use action values. */
+export class SelectionCardService {
+  constructor(
+    private readonly binding: BindingController,
+    private readonly identity: IdentityService,
+    private readonly transport: SelectionTransport,
+  ) {}
+
+  async sendProjectCard(message: AdmittedMessage): Promise<void> {
+    const owner = await this.identity.owner()
+    if (owner === undefined) throw new Error('Lark owner is not paired')
+    const projects = await this.binding.listProjects()
+    const actions = await Promise.all(projects.map(async project => ({
+      tag: 'button',
+      text: { tag: 'plain_text', content: project.title },
+      type: 'primary',
+      value: await this.identity.issueAction(
+        'select-project', owner.generation, 5 * 60_000, { workspaceId: project.workspaceId },
+      ),
+    })))
+    const paths = projects.map(project => `**${project.title}**\n${project.path}`).join('\n\n') || '没有可选项目。'
+    await this.transport.sendCard(message.chatId, selectionCard('进入项目', paths, actions))
+  }
+
+  async handleAction(input: { openId: string; value: CardActionValue }): Promise<void> {
+    const owner = await this.identity.owner()
+    if (owner === undefined) throw new Error('Lark owner is not paired')
+    const action = await this.identity.admitAction({
+      openId: input.openId, chatId: owner.chatId, value: input.value,
+    })
+    const workspaceId = action.data?.workspaceId
+    if (action.action === 'select-project' && workspaceId !== undefined) {
+      await this.sendSessionCard(owner.chatId, owner.generation, workspaceId)
+      return
+    }
+    const sessionId = action.data?.sessionId
+    if (action.action === 'select-session' && workspaceId !== undefined && sessionId !== undefined) {
+      const bound = await this.binding.bind(workspaceId, sessionId)
+      await this.transport.sendText(owner.chatId, `已进入 ${bound.projectPath}\n会话 ${bound.sessionId}`)
+    }
+  }
+
+  private async sendSessionCard(chatId: string, generation: number, workspaceId: string): Promise<void> {
+    const sessions = await this.binding.listSessions(workspaceId)
+    const actions = await Promise.all(sessions.map(async session => ({
+      tag: 'button',
+      text: { tag: 'plain_text', content: session.running ? `运行中 · ${session.sessionId}` : session.sessionId },
+      type: session.running ? 'primary' : 'default',
+      value: await this.identity.issueAction(
+        'select-session', generation, 5 * 60_000, { workspaceId, sessionId: session.sessionId },
+      ),
+    })))
+    const summary = sessions.length === 0 ? '没有可选的普通会话。' : sessions.map(sessionSummary).join('\n')
+    await this.transport.sendCard(chatId, selectionCard('选择会话', summary, actions))
+  }
+}
+
+const sessionSummary = (session: SessionRow): string =>
+  `${session.running ? '🟢' : '⚪'} ${session.sessionId}`
+
+const selectionCard = (title: string, markdown: string, actions: unknown[]): unknown => ({
+  config: { wide_screen_mode: true, enable_forward: false },
+  header: { template: 'blue', title: { tag: 'plain_text', content: title } },
+  elements: [
+    { tag: 'markdown', content: markdown },
+    ...(actions.length === 0 ? [] : [{ tag: 'action', actions, layout: 'flow' }]),
+  ],
+})

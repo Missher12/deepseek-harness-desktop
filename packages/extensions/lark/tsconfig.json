@@ -16,6 +16,8 @@
     { "path": "../../settings/settings" },
     { "path": "../../storage/storage-domain" },
     { "path": "../../host/webserver" },
+    { "path": "../../host/apiproxy" },
+    { "path": "../../util/home-paths" },
     { "path": "../../client/locale" },
     { "path": "../../client/runtime" },
     { "path": "../../client/ui-primitives" },
@@ -25,6 +27,8 @@
     { "path": "../../llm/llm" },
     { "path": "../../core/session" },
     { "path": "../session-messenger" },
+    { "path": "../../typert/registry" },
+    { "path": "../../workspace/workspace" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

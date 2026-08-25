@@ -16,7 +16,7 @@ describe('dsh-lark durable state v1', () => {
     expect(larkDomainSpec.name).toBe('dsh_lark')
     expect(larkDomainSpec.version).toBe(1)
     expect(Object.keys(larkDomainSpec.tables).sort()).toEqual([
-      'bindings', 'cards', 'files', 'inbox', 'nonces', 'owners',
+      'bindings', 'cards', 'events', 'files', 'inbox', 'nonces', 'owners',
     ])
     expect(JSON.stringify(larkDomainSpec).toLowerCase()).not.toContain('secret')
   })

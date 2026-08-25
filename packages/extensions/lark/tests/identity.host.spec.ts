@@ -47,6 +47,7 @@ describe('owner identity fence', () => {
     await identity.admit(dm())
     await identity.pairOwner('ABCD-1234')
     await expect(identity.admit(dm({ eventId: 'evt_2' }))).resolves.toMatchObject({ kind: 'owner' })
+    await identity.commitEvent('evt_2')
     await expect(identity.admit(dm({ eventId: 'evt_3', chatId: 'oc_other' }))).resolves.toEqual({ kind: 'rejected' })
     await expect(identity.admit(dm({ eventId: 'evt_2' }))).resolves.toEqual({ kind: 'rejected' })
   })

@@ -1,0 +1,7 @@
+.root { display: grid; gap: 20px; max-width: 760px; }
+.grid { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(220px, 2fr); gap: 10px 18px; }
+.credentials { display: grid; gap: 12px; }
+.credentials label { display: grid; gap: 6px; }
+.credentials input { min-height: 34px; padding: 0 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: transparent; color: inherit; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.actions button, .credentials button { min-height: 34px; padding: 0 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-module-platform); color: inherit; }
