@@ -13,7 +13,8 @@ function harness(admission: 'owner' | 'unpaired' | 'rejected' = 'owner') {
     statusText: vi.fn(async () => '已绑定 /project · session-1'),
   }
   const inbox = {
-    enqueue: vi.fn(async () => {}), steer: vi.fn(async () => {}), stop: vi.fn(async () => {}),
+    enqueue: vi.fn(async (): Promise<'accepted' | 'duplicate' | 'unbound'> => 'accepted'),
+    steer: vi.fn(async () => {}), stop: vi.fn(async () => {}),
   }
   const identity = {
     admit: vi.fn(async () => admission === 'owner'
@@ -66,6 +67,19 @@ describe('exact slash routing', () => {
     const h = harness()
     await h.router.message(message('continue development'))
     expect(h.inbox.enqueue).toHaveBeenCalledWith(message('continue development'))
+  })
+
+  test('ordinary text before Session binding receives actionable guidance', async () => {
+    const h = harness()
+    h.inbox.enqueue.mockResolvedValueOnce('unbound')
+    h.binding.statusText.mockResolvedValueOnce('尚未绑定项目和会话。发送 / 进入选择。')
+
+    await h.router.message(message('continue development'))
+
+    expect(h.transport.sendText).toHaveBeenCalledWith(
+      'oc_dm',
+      '尚未绑定项目和会话。发送 / 进入选择。',
+    )
   })
 
   test('prepares media only after owner admission and before durable enqueue', async () => {

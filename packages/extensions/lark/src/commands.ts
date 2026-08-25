@@ -27,7 +27,7 @@ interface CommandDependencies {
     statusText(message: AdmittedMessage): Promise<string>
   }
   inbox: {
-    enqueue(message: AdmittedMessage): Promise<void>
+    enqueue(message: AdmittedMessage): Promise<'accepted' | 'duplicate' | 'unbound'>
     steer(text: string, message?: AdmittedMessage): Promise<void>
     stop(message: AdmittedMessage): Promise<void>
   }
@@ -114,7 +114,10 @@ export class CommandRouter {
       await this.deps.transport.sendText(message.chatId, HELP)
       return
     }
-    await this.deps.inbox.enqueue(message)
+    const result = await this.deps.inbox.enqueue(message)
+    if (result === 'unbound') {
+      await this.deps.transport.sendText(message.chatId, await this.deps.binding.statusText(message))
+    }
   }
 
   private async commit(eventId: string): Promise<void> {

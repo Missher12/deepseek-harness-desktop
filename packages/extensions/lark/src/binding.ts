@@ -160,6 +160,9 @@ export class BindingController {
   async statusText(_message?: unknown): Promise<string> {
     const binding = await this.store.get()
     if (binding === undefined) return '尚未绑定项目和会话。发送 / 进入选择。'
-    return `${binding.state === 'active' ? '已绑定' : '已暂停'} ${binding.projectPath} · ${binding.sessionId}`
+    if (binding.state === 'paused') {
+      return `已暂停 ${binding.projectPath} · ${binding.sessionId}。发送 / 重新选择。`
+    }
+    return `已绑定 ${binding.projectPath} · ${binding.sessionId}`
   }
 }

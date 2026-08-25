@@ -87,5 +87,6 @@ describe('project and ordinary Session binding', () => {
     h.archivedSessionIds.push('run')
     await expect(h.controller.recover()).resolves.toMatchObject({ state: 'paused' })
     expect(h.saved()).toMatchObject({ state: 'paused' })
+    await expect(h.controller.statusText()).resolves.toMatch(/发送 \/ 重新选择/)
   })
 })

@@ -48,12 +48,14 @@ export class DurableLarkInbox {
   /**
    * Write-ahead persist and schedule one admitted Feishu message.
    * @param input - Owner-gated normalized message.
+   * @returns Whether the message was accepted, duplicated, or lacked an active binding.
    */
-  enqueue(input: AdmittedMessage): Promise<void> {
+  enqueue(input: AdmittedMessage): Promise<'accepted' | 'duplicate' | 'unbound'> {
     return this.serial(async () => {
       const records = await this.options.store.list()
-      if (records.some(record => record.eventId === input.eventId)) return
-      const binding = await this.requireActiveBinding()
+      if (records.some(record => record.eventId === input.eventId)) return 'duplicate'
+      const binding = await this.options.getBinding()
+      if (binding === undefined || binding.state !== 'active') return 'unbound'
       const now = this.now()
       const record: QueueRecord = {
         id: input.eventId,
@@ -72,6 +74,7 @@ export class DurableLarkInbox {
       // Write-ahead is the acknowledgement boundary: delivery happens only after this resolves.
       await this.options.store.put(record)
       await this.pump()
+      return 'accepted'
     })
   }
 

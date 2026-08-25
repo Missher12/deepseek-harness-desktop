@@ -72,4 +72,33 @@ describe('owner identity fence', () => {
     now = 2000
     await expect(identity.admitAction({ openId: 'ou_owner', chatId: 'oc_dm', value: second })).rejects.toThrow(/expired/)
   })
+
+  test('accepts an exact card payload regardless of object key order', async () => {
+    const store = memoryStore()
+    const identity = new IdentityService(store, {
+      pairingCode: () => 'ABCD-1234', nonce: () => 'nonce-1', now: () => 1000,
+    })
+    await identity.admit(dm())
+    await identity.pairOwner('ABCD-1234')
+    const value = await identity.issueAction('select-session', 1, 500, {
+      workspaceId: 'workspace-1', sessionId: 'session-1',
+    })
+
+    await expect(identity.admitAction({
+      openId: 'ou_owner',
+      chatId: 'oc_dm',
+      value: {
+        ...value,
+        data: { sessionId: 'session-other', workspaceId: 'workspace-1' },
+      },
+    })).rejects.toThrow(/payload/)
+    await expect(identity.admitAction({
+      openId: 'ou_owner',
+      chatId: 'oc_dm',
+      value: {
+        ...value,
+        data: { sessionId: 'session-1', workspaceId: 'workspace-1' },
+      },
+    })).resolves.toMatchObject({ action: 'select-session' })
+  })
 })

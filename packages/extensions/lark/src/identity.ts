@@ -51,6 +51,17 @@ const defaultPairingCode = (): string => {
   return `${code.slice(0, 4)}-${code.slice(4)}`
 }
 
+const sameActionData = (
+  left: Record<string, string> | undefined,
+  right: Record<string, string> | undefined,
+): boolean => {
+  const expected = left ?? {}
+  const actual = right ?? {}
+  const keys = Object.keys(expected)
+  return keys.length === Object.keys(actual).length
+    && keys.every(key => Object.hasOwn(actual, key) && actual[key] === expected[key])
+}
+
 /** One-owner admission and state-backed, one-use card-action authorization. */
 export class IdentityService {
   private readonly now: () => number
@@ -177,7 +188,7 @@ export class IdentityService {
     if (record === undefined || record.action !== input.value.action || record.generation !== input.value.generation) {
       throw new Error('Lark card action nonce mismatch')
     }
-    if (JSON.stringify(record.data ?? {}) !== JSON.stringify(input.value.data ?? {})) {
+    if (!sameActionData(record.data, input.value.data)) {
       throw new Error('Lark card action payload mismatch')
     }
     if (record.usedAt !== undefined) throw new Error('Lark card action nonce was already used')

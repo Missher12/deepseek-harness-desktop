@@ -29,6 +29,8 @@ Send exact `/`, `/进入`, `/切换`, or use the `进入项目` menu item. This 
 
 Ordinary text then becomes one remote Harness turn in that exact Session. Every accepted Feishu event is write-ahead persisted with a pre-created Harness Message ID. Messages are delivered in original Feishu order, one at a time; item N+1 is not submitted until item N is claimed by the selected Session and its exact `turn/end` is observed. Restart recovery reconciles the existing inbox and Session history before reusing that same Message ID, so it does not intentionally duplicate an indeterminate delivery.
 
+Before an active binding exists, ordinary text is not accepted into the durable queue. The bot replies with the current binding status and directs the owner to `/` instead of failing the Feishu callback.
+
 Images are downloaded only after owner admission, validated by the Harness AttachmentStore, and committed as durable image references. Generic files are limited to 30 MiB, stored with mode `0600` under `$DSH_HOME/lark/files`, described to the Agent by a private temporary path plus SHA-256, and retained for seven days by default. No attachment is written into the selected project automatically.
 
 ## Commands and output

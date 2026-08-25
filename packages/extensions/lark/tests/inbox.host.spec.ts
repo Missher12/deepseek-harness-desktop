@@ -9,7 +9,7 @@ const binding: BindingRecord = {
   state: 'active', boundAt: 1, updatedAt: 1,
 }
 
-function harness(seed: QueueRecord[] = []) {
+function harness(seed: QueueRecord[] = [], currentBinding: BindingRecord | null = binding) {
   const records = new Map(seed.map(record => [record.id, record]))
   const pending: UserMessage[] = []
   const followup = vi.fn((message: UserMessage) => { pending.push(message) })
@@ -33,7 +33,7 @@ function harness(seed: QueueRecord[] = []) {
   let id = 0
   let now = 1000
   const inbox = new DurableLarkInbox({
-    store, getBinding: async () => binding, resolveAgent: async () => agent,
+    store, getBinding: async () => currentBinding ?? undefined, resolveAgent: async () => agent,
     messageId: () => `harness-${++id}`, now: () => ++now,
   })
   return { inbox, agent, records, pending, followup, steer, cancel, remove }
@@ -73,6 +73,15 @@ describe('strict durable Feishu FIFO', () => {
     await h.inbox.enqueue(inbound('next'))
     expect(h.records.size).toBe(2)
     expect([...h.records.values()].map(record => record.sequence)).toEqual([1, 2])
+  })
+
+  test('reports an inactive binding without accepting the message', async () => {
+    const h = harness([], null)
+
+    await expect(h.inbox.enqueue(inbound('unbound'))).resolves.toBe('unbound')
+
+    expect(h.records.size).toBe(0)
+    expect(h.followup).not.toHaveBeenCalled()
   })
 
   test('preserves durable image references and private staged-file facts in the Harness turn', async () => {
