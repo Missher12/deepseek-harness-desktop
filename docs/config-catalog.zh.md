@@ -924,6 +924,36 @@ export interface Config {
 
 来源：[`packages/jobs/jobs-local/src/index.ts:31`](../packages/jobs/jobs-local/src/index.ts)
 
+<a id="deepseek-aidsh-lark"></a>
+
+## `@deepseek-ai/dsh-lark`
+
+需要：`settings` · `credentials` · `storageDomain` · `apiProxy` · `attachments` · `workspaceRegistry` · `typert` · `agents` · `webServer`
+
+```ts config-catalog
+/** Credential references and bounded runtime settings for the Lark plugin. */
+export interface Config {
+  /** Whether the receiver and Session projection are locally enabled. */
+  enabled?: boolean
+  /** Official API domain used by the self-built app. */
+  domain?: 'feishu' | 'lark'
+  /** Credential-store reference containing the App ID. */
+  appIdRef?: string
+  /** Credential-store reference containing the App Secret. */
+  appSecretRef?: string
+  /** Minimum interval between streamed card updates. */
+  streamThrottleMs?: number
+  /** Maximum bytes accepted for one inbound image or file. */
+  maxMediaBytes?: number
+  /** Retention time for plugin-owned generic-file staging. */
+  fileRetentionMs?: number
+  /** Maximum wait for the official SDK connection-ready callback. */
+  handshakeTimeoutMs?: number
+}
+```
+
+来源：[`packages/extensions/lark/src/config.ts:14`](../packages/extensions/lark/src/config.ts)
+
 <a id="deepseek-aidsh-llm-deepseek"></a>
 
 ## `@deepseek-ai/dsh-llm-deepseek`

@@ -69,6 +69,18 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- The 2026-08-25 source candidate adds the independently installable
+  `@deepseek-ai/dsh-lark` Bundle. One locally paired Feishu/Lark private-chat
+  owner can use `/` to select a full-path project and an existing ordinary
+  Session, then submit durable strict-FIFO turns to that Session's existing
+  Agent. One monotonic card streams visible text, safe tool status, elapsed
+  time, and real token usage; desktop/Feishu approvals share the existing
+  single-winner record. Owner admission precedes project reads and media
+  downloads; images use AttachmentStore, while generic files stay private
+  under `$DSH_HOME/lark/files`. Disable closes transport/mux resources and
+  pauses undispatched work; local resume is explicit, and uninstall leaves
+  ordinary Sessions untouched. The package is intentionally absent from the
+  immutable Desktop default patch and has no OpenClaw runtime dependency.
 - Version 0.4.0 is the active release candidate. It gives each Desktop-managed
   built-in an explicit mapping from its market-facing package name to the exact
   Loader entry that implements it. Plugin Market now reports Memory, MSE, and

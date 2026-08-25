@@ -1,0 +1,4 @@
+# Independently removable Feishu/Lark remote-session bundle.
+- insert:
+    - id: lark
+      name: '@deepseek-ai/dsh-lark'
