@@ -480,7 +480,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     <option value="off">{t('modelReasoningDisabled')}</option>
                     <option value="only-high">{t('modelReasoningOnlyHigh')}</option>
                     {REASONING_LEVELS.map(level => (
-                      <option key={level} value={level}>{level === 'xhigh' ? 'XHigh' : `${level[0]?.toUpperCase() ?? ''}${level.slice(1)}`}</option>
+                      <option key={level} value={level}>{level === 'xhigh' ? 'XHigh' : `${level.charAt(0).toUpperCase()}${level.slice(1)}`}</option>
                     ))}
                   </select>
                 </label>

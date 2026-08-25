@@ -217,6 +217,38 @@ describe('model list editing', () => {
     })
   })
 
+  it('round-trips disabled and unknown reasoning declarations through explicit choices', async () => {
+    const { mutate } = await mountSection({
+      providers: {
+        openai: {
+          baseURL: 'https://proxy.example/v1',
+          models: [
+            { id: 'disabled', reasoningEfforts: false },
+            { id: 'unknown', reasoningEfforts: { custom: 'custom' } },
+          ],
+        },
+      },
+    })
+    openEditor('openai')
+    expandModel(1)
+    expandModel(2)
+
+    const disabled = screen.getByLabelText<HTMLSelectElement>(`${en.modelReasoningCeiling} 1`)
+    const unknown = screen.getByLabelText<HTMLSelectElement>(`${en.modelReasoningCeiling} 2`)
+    expect(disabled.value).toBe('off')
+    expect(unknown.value).toBe('')
+
+    fireEvent.change(disabled, { target: { value: '' } })
+    fireEvent.change(unknown, { target: { value: 'off' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([
+      { id: 'disabled' },
+      { id: 'unknown', reasoningEfforts: false },
+    ])
+  })
+
   it('names a duplicate model id in the edit flow too', async () => {
     const { mutate } = await mountSection({
       providers: { openai: { baseURL: 'https://proxy.example/v1', models: [{ id: 'dup' }] } },
