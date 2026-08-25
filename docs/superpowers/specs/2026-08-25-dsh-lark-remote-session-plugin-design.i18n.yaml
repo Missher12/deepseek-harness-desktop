@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/superpowers/specs/2026-08-25-dsh-lark-remote-session-plugin-design.md
+2026-08-25-dsh-lark-remote-session-plugin-design.md: 81e88d5d2dd6fa1bc8616d188c2f93e67f909a87
+2026-08-25-dsh-lark-remote-session-plugin-design.zh.md: 1ef2d687a31f051d388ecb8459f368fc84d2d221
