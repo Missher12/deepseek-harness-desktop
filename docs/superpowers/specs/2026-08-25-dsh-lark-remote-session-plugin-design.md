@@ -4,7 +4,7 @@ English | [中文](2026-08-25-dsh-lark-remote-session-plugin-design.zh.md)
 
 **Date:** 2026-08-25
 
-**Status:** Product direction approved; awaiting written specification review
+**Status:** Approved for implementation
 
 **Implementation baseline:** Desktop 0.4.0 from `origin/main` (`e171dd2d45`), Harness package version `0.1.1-rc.2`
 
