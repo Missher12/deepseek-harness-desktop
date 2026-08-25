@@ -388,7 +388,7 @@ describe('WorkspaceBrowser', () => {
 
       await waitFor(() => { expect(writeText).toHaveBeenCalledWith('session-id-exact') })
       expect(open).not.toHaveBeenCalled()
-      expect(screen.getByRole('alert').textContent).toBe('会话 ID 已复制')
+      await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('会话 ID 已复制') })
     } finally {
       restoreClipboard()
     }
