@@ -9,7 +9,7 @@ overrides:
   '@deepseek-ai/schemastery': link:vendor/schemastery
 
 patchedDependencies:
-  dshmarket@1.10.1: a52633be0ed7ecd2a28e992c351f73caae9482c0c46948545142f4ff02db9973
+  dshmarket@1.10.1: ebf1c45fd656e5f84bc322c890d881bacf020c7332a55d9684024ce8ac15fb3f
   node-pty@1.2.0-beta.15: 88fd1642f61a07e1f2f750e566e801b5f6870ad8bb7012ff86e6803db01a5739
 
 importers:
@@ -1030,7 +1030,7 @@ importers:
         version: https://github.com/Missher12/dsh-missher-memory/releases/download/v0.2.0/dsh-missher-memory-0.2.0.tgz(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-agent-loop@packages+core+agent-loop)(@deepseek-ai/dsh-agent@packages+core+agent)(@deepseek-ai/dsh-api-remotes@packages+api+remotes)(@deepseek-ai/dsh-client-locale@packages+client+locale)(@deepseek-ai/dsh-client-runtime@packages+client+runtime)(@deepseek-ai/dsh-client-ui-settings@packages+client+ui-settings)(@deepseek-ai/dsh-client-ui-slots@packages+client+ui-slots)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-session@packages+core+session)(@deepseek-ai/dsh-tools@packages+core+tools)(@deepseek-ai/dsh-typert-protocol@packages+typert+protocol)(@deepseek-ai/schemastery@vendor+schemastery)(react@18.3.1)(zod@4.4.3)
       dshmarket:
         specifier: 1.10.1
-        version: 1.10.1(patch_hash=a52633be0ed7ecd2a28e992c351f73caae9482c0c46948545142f4ff02db9973)(@deepseek-ai/cordis@vendor+cordis)
+        version: 1.10.1(patch_hash=ebf1c45fd656e5f84bc322c890d881bacf020c7332a55d9684024ce8ac15fb3f)(@deepseek-ai/cordis@vendor+cordis)
       pnpm:
         specifier: 11.7.0
         version: 11.7.0
@@ -20024,7 +20024,7 @@ snapshots:
       '@deepseek-ai/dsh-typert-protocol': link:packages/typert/protocol
       '@deepseek-ai/schemastery': link:vendor/schemastery
 
-  dshmarket@1.10.1(patch_hash=a52633be0ed7ecd2a28e992c351f73caae9482c0c46948545142f4ff02db9973)(@deepseek-ai/cordis@vendor+cordis):
+  dshmarket@1.10.1(patch_hash=ebf1c45fd656e5f84bc322c890d881bacf020c7332a55d9684024ce8ac15fb3f)(@deepseek-ai/cordis@vendor+cordis):
     dependencies:
       '@deepseek-ai/cordis': link:vendor/cordis
 

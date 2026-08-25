@@ -61,6 +61,8 @@
               en: 'External-brain coordinator for project memory and experience rules, with bounded fail-open recall and no user-memory storage.'
           - name: 'dsh-missher-memory'
             spec: 'builtin:0.2.0'
+            runtimeNames:
+              - '@deepseek-ai/dsh-desktop-managed-memory'
             owner: 'Missher12'
             url: 'https://github.com/Missher12/dsh-missher-memory'
             category: 'memory'
@@ -69,6 +71,8 @@
               en: 'Reviewed local memory for long projects, with project isolation, full-text search, reversible consolidation, and built-in read-only legacy compatibility.'
           - name: 'dsh-missher-evolution'
             spec: 'builtin:0.1.1'
+            runtimeNames:
+              - '@deepseek-ai/dsh-desktop-managed-evolution'
             owner: 'Missher12'
             url: 'https://github.com/Missher12/dsh-missher-evolution'
             category: 'agent'
