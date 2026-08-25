@@ -69,6 +69,14 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- Version 0.3.9 is the active release candidate. It lets manually declared
+  models advertise an explicit reasoning capability, including a distinct
+  High-only shape that does not invent Low or Medium wire values. The six-step
+  Desktop slider keeps the user's visual choice while safely mapping requests
+  to an actual Host-advertised effort; up to 64 exact session/provider/model
+  visual positions persist in the plugin-owned local profile section across
+  remounts, random listener ports, and application restarts. Mac Intel and
+  Windows x64 artifacts must originate from the same public merge commit.
 - The Desktop 0.3.8 local external brain implements the bounded local scope recorded in
   `.agents/notes/implemented/architecture/2026-08-24-local-external-brain.md`. It keeps project facts in
   `dsh-missher-memory`, procedural learning in the Harness-native
@@ -86,7 +94,7 @@ The repository is based on the pinned official source and adds the desktop appli
   and exercises a real plugin-market transaction before accepting the build.
   The Mac and Windows native packaging plus public artifact verification must all
   originate from the same final shared commit.
-- Version 0.3.8 is the active release candidate; 0.3.7 is the previous public baseline. Version 0.3.7 upgrades the managed memory
+- Version 0.3.8 is the previous public baseline. Version 0.3.7 upgrades the managed memory
   fallback to `dsh-missher-memory@0.1.3`, separates ready built-in project memory
   from the optional legacy `vectors.db` source on fresh Desktop installs, and
   preserves the zero-write-before-binding boundary. Usage Insights

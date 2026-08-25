@@ -945,7 +945,7 @@ async function exerciseReasoningEffort(
   await expect.poll(() => slider.getAttribute('aria-valuetext'), { timeout: 15_000 }).toBe('Ultra')
   expect(await popup.getByText(/(?:actual High|实际 High)/u).count()).toBe(0)
   await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 15_000 }).toMatch(
-    /^(?:Select model, current Native Smoke Thinker, reasoning effort High|选择模型，当前 Native Smoke Thinker，推理等级 High)$/u,
+    /^(?:Select model, current Native Smoke Thinker, reasoning effort Ultra|选择模型，当前 Native Smoke Thinker，推理等级 Ultra)$/u,
   )
   await expect.poll(() => slider.evaluate((element) => {
     const track = element.parentElement
@@ -965,6 +965,13 @@ async function exerciseReasoningEffort(
   })
   await page.keyboard.press('Escape')
   await popup.waitFor({ state: 'detached', timeout: 15_000 })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  const restoredTrigger = page.locator('button[aria-haspopup="dialog"]')
+    .filter({ hasText: 'Native Smoke Thinker' })
+  await restoredTrigger.waitFor({ state: 'visible', timeout: 30_000 })
+  await expect.poll(() => restoredTrigger.getAttribute('aria-label'), { timeout: 15_000 }).toMatch(
+    /^(?:Select model, current Native Smoke Thinker, reasoning effort Ultra|选择模型，当前 Native Smoke Thinker，推理等级 Ultra)$/u,
+  )
 }
 
 async function exerciseSessionMessenger(
@@ -1287,7 +1294,7 @@ async function exercisePersonalization(
 
   let section = settingsDialog.locator('[data-personalization-section]')
   await section.waitFor({ state: 'visible', timeout: 15_000 })
-  const instructions = `desktop-0.3.8-personalization-${platform}`
+  const instructions = `desktop-0.3.9-personalization-${platform}`
   const editor = section.locator('#dsh-personalization-instructions')
   await expect.poll(() => editor.isEnabled(), { timeout: 15_000 }).toBe(true)
   await editor.fill(instructions)

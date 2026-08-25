@@ -8,7 +8,7 @@ import {
   settingsNamespace,
   type SettingsNamespace,
 } from '@deepseek-ai/dsh-settings'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   PREFERENCE_CAPABILITY_HEADER,
   PREFERENCE_PATH,
@@ -98,8 +98,8 @@ function validHeaders(method: 'GET' | 'PUT'): Record<string, string> {
   }
 }
 
-function handlerHarness(initial = false) {
-  let value = { chibiThumb: initial }
+function handlerHarness(initial: unknown = false) {
+  let value: unknown = typeof initial === 'boolean' ? { chibiThumb: initial } : initial
   let writes = 0
   const handler = createPreferenceHttpHandler({
     port: PORT,
@@ -107,7 +107,7 @@ function handlerHarness(initial = false) {
     read: () => value,
     write: async (next) => {
       writes += 1
-      value = { ...next }
+      value = structuredClone(next)
     },
   })
   return { handler, read: () => value, writes: () => writes }
@@ -130,7 +130,7 @@ describe('reasoning-effort preference HTTP fence', () => {
     const state = await invoke(handler, 'GET', validHeaders('GET'))
 
     expect(state.status).toBe(200)
-    expect(JSON.parse(state.body)).toEqual({ chibiThumb: true })
+    expect(JSON.parse(state.body)).toEqual({ chibiThumb: true, visualEfforts: {} })
     expect(state.headers['content-type']).toBe('application/json; charset=utf-8')
     expect(Object.keys(state.headers)).not.toContain('access-control-allow-origin')
   })
@@ -172,7 +172,7 @@ describe('reasoning-effort preference HTTP fence', () => {
     }
   })
 
-  it('persists exactly one boolean and returns the accepted value', async () => {
+  it('persists exactly one character patch and returns the complete accepted value', async () => {
     const harness = handlerHarness()
     const state = await invoke(
       harness.handler,
@@ -182,16 +182,111 @@ describe('reasoning-effort preference HTTP fence', () => {
     )
 
     expect(state.status).toBe(200)
-    expect(JSON.parse(state.body)).toEqual({ chibiThumb: true })
-    expect(harness.read()).toEqual({ chibiThumb: true })
+    expect(JSON.parse(state.body)).toEqual({ chibiThumb: true, visualEfforts: {} })
+    expect(harness.read()).toEqual({ chibiThumb: true, visualEfforts: {} })
     expect(harness.writes()).toBe(1)
     expect(Object.keys(state.headers)).not.toContain('access-control-allow-origin')
+  })
+
+  it('persists one exact session/model visual route without changing the character choice', async () => {
+    const harness = handlerHarness(true)
+    const route = JSON.stringify(['session-a', 'deepseek', 'chat'])
+    const state = await invoke(
+      harness.handler,
+      'PUT',
+      validHeaders('PUT'),
+      JSON.stringify({ visualEffort: { route, index: 5 } }),
+    )
+
+    expect(state.status).toBe(200)
+    expect(JSON.parse(state.body)).toEqual({ chibiThumb: true, visualEfforts: { [route]: 5 } })
+    expect(harness.read()).toEqual({ chibiThumb: true, visualEfforts: { [route]: 5 } })
+    expect(harness.writes()).toBe(1)
+  })
+
+  it('bounds visual routes and evicts the oldest route before adding a new one', async () => {
+    const routes = Object.fromEntries(Array.from({ length: 64 }, (_unused, index) => [
+      JSON.stringify([`session-${String(index)}`, 'deepseek', 'chat']),
+      index % 6,
+    ]))
+    const oldest = JSON.stringify(['session-0', 'deepseek', 'chat'])
+    const newest = JSON.stringify(['session-new', 'deepseek', 'chat'])
+    const harness = handlerHarness({ chibiThumb: false, visualEfforts: routes })
+    const state = await invoke(
+      harness.handler,
+      'PUT',
+      validHeaders('PUT'),
+      JSON.stringify({ visualEffort: { route: newest, index: 5 } }),
+    )
+
+    expect(state.status).toBe(200)
+    const accepted = JSON.parse(state.body) as { visualEfforts: Record<string, number> }
+    expect(Object.keys(accepted.visualEfforts)).toHaveLength(64)
+    expect(accepted.visualEfforts).not.toHaveProperty(oldest)
+    expect(accepted.visualEfforts[newest]).toBe(5)
+  })
+
+  it('serializes concurrent narrow patches so neither preference is lost', async () => {
+    let value: unknown = { chibiThumb: false, visualEfforts: {} }
+    const route = JSON.stringify(['session-a', 'deepseek', 'chat'])
+    const handler = createPreferenceHttpHandler({
+      port: PORT,
+      capability: CAPABILITY,
+      read: () => value,
+      write: async (next) => {
+        await Promise.resolve()
+        value = structuredClone(next)
+      },
+    })
+
+    await Promise.all([
+      invoke(handler, 'PUT', validHeaders('PUT'), JSON.stringify({ chibiThumb: true })),
+      invoke(handler, 'PUT', validHeaders('PUT'), JSON.stringify({ visualEffort: { route, index: 5 } })),
+    ])
+
+    expect(value).toEqual({ chibiThumb: true, visualEfforts: { [route]: 5 } })
+  })
+
+  it('holds GET behind an in-flight write so a remount cannot read stale visual state', async () => {
+    let value: unknown = { chibiThumb: false, visualEfforts: {} }
+    let releaseWrite: (() => void) | undefined
+    let writeStarted = false
+    const gate = new Promise<void>((resolve) => { releaseWrite = resolve })
+    const route = JSON.stringify(['session-a', 'deepseek', 'chat'])
+    const handler = createPreferenceHttpHandler({
+      port: PORT,
+      capability: CAPABILITY,
+      read: () => value,
+      write: async (next) => {
+        writeStarted = true
+        await gate
+        value = structuredClone(next)
+      },
+    })
+    const put = invoke(
+      handler,
+      'PUT',
+      validHeaders('PUT'),
+      JSON.stringify({ visualEffort: { route, index: 5 } }),
+    )
+    await vi.waitFor(() => { expect(writeStarted).toBe(true) })
+    let getSettled = false
+    const get = invoke(handler, 'GET', validHeaders('GET')).finally(() => { getSettled = true })
+    await Promise.resolve()
+    expect(getSettled).toBe(false)
+
+    releaseWrite?.()
+    await put
+    const state = await get
+    expect(JSON.parse(state.body)).toEqual({ chibiThumb: false, visualEfforts: { [route]: 5 } })
   })
 
   it.each([
     ['missing field', {}],
     ['extra field', { chibiThumb: true, extra: false }],
     ['wrong type', { chibiThumb: 'true' }],
+    ['bad visual route', { visualEffort: { route: 'not-json', index: 5 } }],
+    ['bad visual index', { visualEffort: { route: '["session","provider","model"]', index: 6 } }],
     ['array', [true]],
   ])('rejects a PUT with %s', async (_label, body) => {
     const harness = handlerHarness()
@@ -267,7 +362,7 @@ describe('reasoning-effort Host registration', () => {
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const resolved = ctx.settings.get(settingsNamespace(REASONING_EFFORT_SETTINGS_NAMESPACE))
-    expect(resolved).toEqual({ chibiThumb: false })
+    expect(resolved).toEqual({ chibiThumb: false, visualEfforts: {} })
     expect(Object.isFrozen(resolved)).toBe(true)
     expect(routes).toHaveLength(2)
     expect(routes[1]).toMatchObject({ kind: 'exact', path: PREFERENCE_PATH })
@@ -285,7 +380,7 @@ describe('reasoning-effort Host registration', () => {
     }, '{"chibiThumb":true}')
     expect(put.status).toBe(200)
     expect(ctx.settings.get(settingsNamespace(REASONING_EFFORT_SETTINGS_NAMESPACE)))
-      .toEqual({ chibiThumb: true })
+      .toEqual({ chibiThumb: true, visualEfforts: {} })
     expect((ctx.settings as MemorySettings).writes).toHaveLength(1)
 
     await fiber.dispose()
@@ -338,7 +433,7 @@ describe('reasoning-effort Host registration', () => {
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(ctx.settings.get(settingsNamespace(REASONING_EFFORT_SETTINGS_NAMESPACE)))
-      .toEqual({ chibiThumb: false })
+      .toEqual({ chibiThumb: false, visualEfforts: {} })
     expect(routes).toHaveLength(1)
     expect(taps).toHaveLength(1)
 
@@ -348,7 +443,7 @@ describe('reasoning-effort Host registration', () => {
       [PREFERENCE_CAPABILITY_HEADER]: capability!,
     })
     expect(get.status).toBe(200)
-    expect(JSON.parse(get.body)).toEqual({ chibiThumb: false })
+    expect(JSON.parse(get.body)).toEqual({ chibiThumb: false, visualEfforts: {} })
     await fiber.dispose()
   })
 })

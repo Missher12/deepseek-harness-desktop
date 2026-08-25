@@ -42,7 +42,7 @@ export function apply(ctx: ClientContext): void {
       if (ctx.sessions.subagentAddress(sessionId) !== undefined) {
         return { available: false, controller: null }
       }
-      return { available: true, controller: ctx.modelDirectories.directoryFor(sessionId) }
+      return { available: true, controller: ctx.modelDirectories.directoryFor(sessionId), sessionId }
     },
   }, EffortControl))
 }

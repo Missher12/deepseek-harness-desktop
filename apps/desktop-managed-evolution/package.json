@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-desktop-managed-evolution",
   "description": "Desktop-owned dual-face entrypoint for Missher Evolution",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "private": true,
   "repository": {
     "type": "git",

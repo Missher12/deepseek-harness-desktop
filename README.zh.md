@@ -6,13 +6,13 @@ DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的�
 
 它采用**一切皆插件**的架构，并由 [Cordis](https://github.com/cordiverse/cordis) 驱动，其设计参见论文 [_A Programming Paradigm for Spatiotemporal Composability_](https://github.com/cordiverse/paper)。
 
-## 非官方 Intel macOS 桌面发行版
+## 非官方桌面发行版
 
-这个社区仓库保留官方源码，并在 [`apps/desktop`](apps/desktop/README.zh.md) 下增加非官方 Intel macOS 桌面应用。它不是 DeepSeek 官方桌面版。应用在原生 Electron 窗口中内置现有 Harness Web 运行时，自主管理随机回环端口，并使用用户提供的鲸鱼图标。
+这个社区仓库保留官方源码，并在 [`apps/desktop`](apps/desktop/README.zh.md) 下增加非官方 Intel macOS 与 Windows x64 桌面应用。它不是 DeepSeek 官方桌面版。应用在原生 Electron 窗口中内置现有 Harness Web 运行时，自主管理随机回环端口，并使用用户提供的鲸鱼图标。
 
-请从本仓库的 [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases) 下载 DMG。当前本机构建未签名、未公证；首次启动时，macOS 可能要求在 Finder 右键菜单中选择“打开”。
+请从本仓库的 [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases) 下载 DMG 或 Setup 安装程序。当前成品未签名；首次启动时，macOS 可能要求在 Finder 右键菜单中选择“打开”，Windows 可能显示 SmartScreen 提示。
 
-Desktop 0.3.3 为 Intel macOS 内置了经过适配测试的官方 Harness `0.1.1-rc.2` 核心。Windows 在完成独立的原生验收前仍保留在已验证的 Desktop 0.3.2 版本。
+Desktop 0.3.9 从同一份经过测试的 Harness `0.1.1-rc.2` 源码提交构建 Intel macOS DMG 与 Windows x64 Setup。Windows 目前仍通过安装程序更新；应用内更新暂只支持 Intel macOS。
 
 ## 开发者预览
 

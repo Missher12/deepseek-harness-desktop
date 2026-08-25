@@ -64,8 +64,24 @@
             - text: acme-large
           - textbox "显示名称 1":
             - /placeholder: 显示名称
-          - button "容量 1"
+          - button "模型详情 1" [expanded]
           - button "删除模型 1"
+          - text: 上下文窗口
+          - textbox "上下文窗口 1":
+            - /placeholder: 256K
+          - text: 最大输出 token
+          - textbox "最大输出 token 1":
+            - /placeholder: 32K
+          - text: 推理能力
+          - combobox "推理能力 1":
+            - option "自动（使用模型目录能力）"
+            - option "不支持推理调节"
+            - option "仅 High"
+            - option "Low"
+            - option "Medium"
+            - option "High" [selected]
+            - option "XHigh"
+            - option "Max"
           - button "添加模型"
       - button "取消"
       - button "保存"

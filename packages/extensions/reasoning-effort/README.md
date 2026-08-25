@@ -12,7 +12,7 @@ A removable Harness-native replacement for the single model-selection seat. It k
 - The optional character thumb is off for absent or corrupt settings and becomes profile-persistent only after an explicit opt-in.
 - With the character off, the ordinary 28-pixel thumb reserves its radius at both endpoints, so the minimum and maximum selections stay inside the track.
 - Keyboard, pointer, touch, Escape focus return, outside-click close, theme switching, zoom, and live Host directory refresh remain supported.
-- Addressed subagent sessions stay hidden. Every adjustable model receives the stable `Low / Medium / High / XHigh / Max / Ultra` six-stop ladder; each visual stop maps to the strongest Host-advertised effort that does not exceed it, and stops above the model limit converge on that real limit (for example, Max and Ultra both submit High on a High-only model). The selected value shows only the clean visual label, while the separate model-limit line still reports the strongest advertised capability. Only a model with no positive reasoning capability hides the slider; an advertised Off remains reachable from the Low end.
+- Addressed subagent sessions stay hidden. Every adjustable model receives the stable `Low / Medium / High / XHigh / Max / Ultra` six-stop ladder; each visual stop maps to the strongest Host-advertised effort that does not exceed it, and stops above the model limit converge on that real limit (for example, Max and Ultra both submit High on a High-only model). The slider and collapsed trigger retain the selected visual label, so choosing Ultra continues to read Ultra even when the provider receives High or Max; the separate model-limit line still reports the strongest advertised capability. Only a model with no positive reasoning capability hides the slider; an advertised Off remains reachable from the Low end.
 
 ## Installation and fallback
 
@@ -30,7 +30,7 @@ The retained Canvas implementation and `chibi-runner-strip.png` come from [`Hana
 
 ## Preference and data boundary
 
-The Host half owns one profile-scoped `chibiThumb` boolean and one exact loopback preference route authenticated by a generation-scoped capability. It exposes no generic settings access and enables no CORS. Disabling the plugin does not modify sessions or provider settings and does not promise to erase the harmless stored opt-in; re-enabling may reuse it.
+The Host half owns one profile-scoped `chibiThumb` boolean plus at most 64 visual positions keyed by the exact session/provider/model route, and one exact loopback preference endpoint authenticated by a generation-scoped capability. The bounded map contains no prompt or response text. It exposes no generic settings access, enables no CORS, and accepts only the two narrow patch shapes it owns. This makes an Ultra visual choice survive control remounts, session switching, random Desktop ports, and application restarts while the real Host effort remains the mapped supported value. Disabling the plugin does not modify sessions or provider settings and does not promise to erase these inert local preferences; re-enabling may reuse them.
 
 ## Model Experience
 
@@ -51,5 +51,5 @@ The plugin does not rewrite conversation history, so it creates no cache-prefix 
 ## Known Limitations and Deferred Work
 
 - Compatibility is verified only against the repository's `0.1.0-rc.8` contract; a Harness upgrade requires a fresh peer, service, staged-profile, and visual review.
-- The profile-scoped character preference is intentionally small but is not an uninstall scrubber; removing the plugin may leave that inert boolean for a later reinstall.
+- The bounded profile-scoped preferences are not an uninstall scrubber; removing the plugin may leave the inert character opt-in and visual route positions for a later reinstall.
 - Native-seat fallback covers a replacement component that reached the slot and then crashed. Pre-registration failures instead keep the Web graph unactivated and require the reported module, peer, service, or `apply` problem to be fixed.

@@ -29,7 +29,12 @@ files:
   # future dependency or staging change accidentally places one in the tree.
   - "!**/.env"
   - "!**/.env.*"
+  - "!**/.npmrc"
   - "!**/.credentials.yaml"
+  - "!**/credentials.json"
+  - "!**/*.pem"
+  - "!**/*.key"
+  - "!**/*.p12"
   - "!**/.dsh/**"
   # The telemetry package accepts resources 2.x and the deployed graph already
   # carries a compatible top-level copy. Avoid a duplicate deeply nested tree.

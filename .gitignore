@@ -1,5 +1,12 @@
 CLAUDE.local.md
 .env
+.env.*
+!.env.example
+.npmrc
+credentials.json
+*.pem
+*.key
+*.p12
 node_modules/
 lib/
 *.tsbuildinfo

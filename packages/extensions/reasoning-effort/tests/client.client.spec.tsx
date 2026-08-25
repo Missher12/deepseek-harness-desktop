@@ -78,11 +78,16 @@ function makeController(sequence: SessionModels[] = [models()]) {
   }
 }
 
-function renderControl(controller: ModelDirectory, locked = false) {
+function renderControl(
+  controller: ModelDirectory,
+  locked = false,
+  sessionId = 'reasoning-effort-test-session' as SessionId,
+) {
   return render(<EffortControl
     locked={locked}
     available
     controller={controller}
+    sessionId={sessionId}
     t={t as never}
   />)
 }
@@ -181,6 +186,14 @@ describe('reasoning-effort Client registration', () => {
     const hidden = render(<EffortControl locked={false} {...inject(addressed)} t={t as never} />)
     expect(hidden.container.childElementCount).toBe(0)
     expect(directoryFor).not.toHaveBeenCalled()
+    const topLevel = 'top-level' as SessionId
+    const topLevelInjection = inject(topLevel)
+    expect(topLevelInjection.available).toBe(true)
+    if (topLevelInjection.available) {
+      expect(topLevelInjection.sessionId).toBe(topLevel)
+      expect(topLevelInjection.controller).toBeTruthy()
+    }
+    expect(directoryFor).toHaveBeenCalledWith(topLevel)
   })
 })
 
@@ -380,6 +393,63 @@ describe('EffortControl', () => {
     expect(slider.getAttribute('aria-valuetext')).toBe('Ultra')
     expect(screen.queryByText(/实际 High/)).toBeNull()
     expect(screen.getAllByRole('button', { name: /DeepSeek Chat/ })).toHaveLength(2)
+
+    fireEvent.keyDown(slider, { key: 'Escape' })
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    const ultraTrigger = screen.getByRole('button', { name: /选择模型.*DeepSeek Chat.*Ultra/ })
+    expect(ultraTrigger).toBeTruthy()
+    fireEvent.click(ultraTrigger)
+    await flushFrames()
+    expect((await screen.findByRole('slider', { name: '推理等级' })).getAttribute('aria-valuetext')).toBe('Ultra')
+  })
+
+  it('restores a persisted Ultra visual choice after the session control remounts', async () => {
+    const oneEffort = models({
+      groups: [{
+        id: 'deepseek',
+        name: 'DeepSeek',
+        models: [{
+          id: 'chat',
+          name: 'DeepSeek Chat',
+          reasoning: { efforts: [{ id: 'high', name: 'High' }], defaultEffort: 'high' },
+        }],
+      }],
+    })
+    const route = JSON.stringify(['session-a', 'deepseek', 'chat'])
+    ;(window as { __DSH_REASONING_EFFORT__?: unknown }).__DSH_REASONING_EFFORT__ = {
+      preferencePath: '/plugins/dsh-reasoning-effort/preference',
+      capabilityHeader: 'x-dsh-reasoning-effort-capability',
+      capability: 'test-capability',
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ chibiThumb: false, visualEfforts: {} }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ chibiThumb: false, visualEfforts: { [route]: 5 } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ chibiThumb: false, visualEfforts: { [route]: 5 } }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+    const b = makeController([oneEffort])
+    const first = renderControl(b.controller, false, 'session-a' as SessionId)
+    await waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(1) })
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
+    await flushFrames()
+    fireEvent.keyDown(await screen.findByRole('slider', { name: '推理等级' }), { key: 'End' })
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(fetchMock).toHaveBeenNthCalledWith(2, '/plugins/dsh-reasoning-effort/preference', expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ visualEffort: { route, index: 5 } }),
+      }))
+    })
+
+    first.unmount()
+    renderControl(b.controller, false, 'session-a' as SessionId)
+
+    expect(await screen.findByRole('button', { name: /选择模型.*DeepSeek Chat.*Ultra/ })).toBeTruthy()
   })
 
   it('keeps an advertised Off reachable at Low while retaining the six visual stops', async () => {
@@ -478,8 +548,8 @@ describe('EffortControl', () => {
       capability: 'test-capability',
     }
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ chibiThumb: false }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ chibiThumb: true }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ chibiThumb: false, visualEfforts: {} }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ chibiThumb: true, visualEfforts: {} }) })
     vi.stubGlobal('fetch', fetchMock)
     const storageSpy = vi.spyOn(Storage.prototype, 'setItem')
     const b = makeController()
