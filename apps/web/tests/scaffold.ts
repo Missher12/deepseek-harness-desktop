@@ -924,6 +924,10 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
       /(?:Weekday peak|Weekday off-peak|Weekend off-peak|工作日高峰价|工作日低谷价|周末低谷价)/g,
       '{{pricing tier}}',
     )
+    // The displayed estimates use the same live tier as the label above. Keep
+    // browser goldens stable across peak/off-peak boundaries while unit tests
+    // continue to pin the exact price table and formatting behavior.
+    .replace(/((?:Turn|Session) est\. ¥)<?\d+(?:\.\d+)?/g, '$1{{price}}')
     // Session summaries and Message IconActions clocks cross calendar
     // boundaries; collapse every shape so goldens stay stable across them.
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, '{{timestamp}}')
