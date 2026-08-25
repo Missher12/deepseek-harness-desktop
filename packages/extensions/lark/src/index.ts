@@ -7,6 +7,7 @@ import type { MuxFrame } from '@deepseek-ai/dsh-host-apiproxy/api/events'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { resolveOrdinarySession } from '@deepseek-ai/dsh-session-messenger'
 import type { MessageId } from '@deepseek-ai/dsh-llm'
+import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-host-apiproxy'
 import type {} from '@deepseek-ai/dsh-typert-registry'
@@ -20,10 +21,9 @@ import {
 } from './cards.ts'
 import { CommandRouter, type AdmittedMessage } from './commands.ts'
 import {
-  Config as LarkConfigSchema,
+  Config,
   LARK_APP_ID_REF,
   LARK_APP_SECRET_REF,
-  type Config as LarkConfig,
 } from './config.ts'
 import {
   createLarkCapability,
@@ -52,9 +52,9 @@ export * from './projection.ts'
 export * from './runtime.ts'
 export * from './state.ts'
 export * from './transport.ts'
+export { Config } from './config.ts'
 
 export const name = 'lark'
-export const Config = LarkConfigSchema
 export const inject = [
   'settings', 'credentials', 'storageDomain', 'apiProxy', 'attachments',
   'workspaceRegistry', 'typert', 'agents', 'webServer',
@@ -64,12 +64,33 @@ type UnknownRecord = Record<string, unknown>
 const asRecord = (value: unknown): UnknownRecord | undefined =>
   typeof value === 'object' && value !== null ? value as UnknownRecord : undefined
 
-const textContent = (message: UnknownRecord): string | undefined => {
-  if (message.message_type !== 'text') return undefined
+const parseMessageContent = (
+  message: UnknownRecord,
+): { text: string; media?: AdmittedMessage['media'] } | undefined => {
   try {
-    const content: unknown = JSON.parse(String(message.content ?? ''))
-    const value = asRecord(content)?.text
-    return typeof value === 'string' ? value : undefined
+    if (typeof message.content !== 'string') return undefined
+    const content: unknown = JSON.parse(message.content)
+    const record = asRecord(content)
+    if (message.message_type === 'text') {
+      const value = record?.text
+      return typeof value === 'string' ? { text: value } : undefined
+    }
+    if (message.message_type === 'image' && typeof record?.image_key === 'string') {
+      return {
+        text: '请查看并处理这张图片。',
+        media: { kind: 'image', key: record.image_key, name: 'feishu-image' },
+      }
+    }
+    if (message.message_type === 'file' && typeof record?.file_key === 'string') {
+      return {
+        text: '请查看并处理这个文件。',
+        media: {
+          kind: 'file', key: record.file_key,
+          name: typeof record.file_name === 'string' ? record.file_name : 'feishu-file',
+        },
+      }
+    }
+    return undefined
   } catch {
     return undefined
   }
@@ -84,15 +105,16 @@ function parseInboundMessage(value: unknown, expectedAppId: string): AdmittedMes
   const openId = senderId?.open_id
   const messageId = message?.message_id
   const chatId = message?.chat_id
-  const text = message === undefined ? undefined : textContent(message)
+  const content = message === undefined ? undefined : parseMessageContent(message)
   if (typeof openId !== 'string' || typeof messageId !== 'string'
-    || typeof chatId !== 'string' || text === undefined) return undefined
+    || typeof chatId !== 'string' || content === undefined) return undefined
   return {
     eventId: typeof data.event_id === 'string' ? data.event_id : messageId,
     messageId,
     openId,
     chatId,
-    text,
+    text: content.text,
+    ...(content.media === undefined ? {} : { media: content.media }),
     senderType: typeof sender?.sender_type === 'string' ? sender.sender_type : '',
     chatType: typeof message?.chat_type === 'string' ? message.chat_type : '',
     ...(typeof data.app_id === 'string' ? { appId: data.app_id } : {}),
@@ -151,8 +173,8 @@ interface ActiveTurn {
 }
 
 /** Install the complete Host half over existing Harness services. */
-export async function apply(ctx: Context, base: LarkConfig = {}): Promise<void> {
-  const settings = ctx.settings.register(settingsNamespace('lark'), LarkConfigSchema, { base })
+export async function apply(ctx: Context, base: Config = {}): Promise<void> {
+  const settings = ctx.settings.register(settingsNamespace('lark'), Config, { base })
   const domain = await ctx.storageDomain.open(larkDomainSpec)
   const owners = domain.table('owners')
   const events = domain.table('events')
@@ -163,12 +185,12 @@ export async function apply(ctx: Context, base: LarkConfig = {}): Promise<void> 
   const files = domain.table('files')
 
   const identity = new IdentityService({
-    getOwner: async () => owners.get('owner'),
+    getOwner: () => Promise.resolve(owners.get('owner')),
     putOwner: async (owner) => { await owners.put('owner', owner) },
-    hasEvent: async eventId => events.get(eventId) !== undefined
-      || [...inboxTable.entries()].some(([, row]) => row.eventId === eventId),
+    hasEvent: eventId => Promise.resolve(events.get(eventId) !== undefined
+      || [...inboxTable.entries()].some(([, row]) => row.eventId === eventId)),
     markEvent: async (eventId) => { await events.put(eventId, { id: eventId, receivedAt: Date.now() }) },
-    getNonce: async id => nonces.get(id),
+    getNonce: id => Promise.resolve(nonces.get(id)),
     putNonce: async (nonce) => { await nonces.put(nonce.id, nonce) },
   })
 
@@ -202,24 +224,24 @@ export async function apply(ctx: Context, base: LarkConfig = {}): Promise<void> 
     },
   }
   const binding = new BindingController(catalog, {
-    get: async () => bindings.get('owner'),
+    get: () => Promise.resolve(bindings.get('owner')),
     put: async (value) => { await bindings.put('owner', value) },
     delete: async () => { await bindings.delete('owner') },
   }, () => identity.owner())
 
   const queue = new DurableLarkInbox({
     store: {
-      list: async () => [...inboxTable.entries()].map(([, row]) => row),
+      list: () => Promise.resolve([...inboxTable.entries()].map(([, row]) => row)),
       put: async (row) => { await inboxTable.put(row.id, row) },
     },
-    getBinding: async () => bindings.get('owner'),
+    getBinding: () => Promise.resolve(bindings.get('owner')),
     resolveAgent: async sessionId => agentAdapter(await resolveOrdinarySession(ctx, sessionId)),
   })
   const attachments = new LarkAttachmentService({
     imageStore: ctx.attachments,
     stagingRoot: dshHomePath('lark', 'files'),
     files: {
-      list: async () => [...files.entries()].map(([, row]) => row),
+      list: () => Promise.resolve([...files.entries()].map(([, row]) => row)),
       put: async (row) => { await files.put(row.id, row) },
       delete: async (id) => { await files.delete(id) },
     },
@@ -228,6 +250,7 @@ export async function apply(ctx: Context, base: LarkConfig = {}): Promise<void> 
   })
 
   let transport: LarkTransport | undefined
+  let transportConnected = false
   const transportFacade = {
     sendText: async (chatId: string, text: string) => requireTransport(transport).sendText(chatId, text),
     sendCard: async (chatId: string, card: unknown) => requireTransport(transport).sendCard(chatId, card),
@@ -251,6 +274,32 @@ export async function apply(ctx: Context, base: LarkConfig = {}): Promise<void> 
     binding,
     inbox: queue,
     identity: commandIdentity,
+    prepareOwnerMessage: async (message) => {
+      if (message.media === undefined) return message
+      const config = settings.get()
+      const resource = await requireTransport(transport).downloadMessageResource(
+        message.messageId,
+        message.media.key,
+        message.media.kind,
+        config.maxMediaBytes,
+      )
+      if (message.media.kind === 'image') {
+        const mediaType = detectImageMediaType(resource.data, resource.contentType)
+        const [attachment] = await attachments.saveImages([{
+          data: resource.data, mediaType, name: message.media.name,
+        }])
+        if (attachment === undefined) throw new Error('Harness did not persist the Lark image')
+        return { ...message, attachments: [{ kind: 'image', attachment }] }
+      }
+      const staged = await attachments.stageFile({ name: message.media.name, data: resource.data })
+      return {
+        ...message,
+        attachments: [{
+          kind: 'file', id: staged.id, path: staged.path, name: staged.name,
+          size: staged.size, sha256: staged.sha256, expiresAt: staged.expiresAt,
+        }],
+      }
+    },
   })
 
   const approval = new ApprovalBridge(ctx.apiProxy)
@@ -306,7 +355,7 @@ export async function apply(ctx: Context, base: LarkConfig = {}): Promise<void> 
   }
 
   const mux = {
-    start: async () => {
+    start: () => {
       muxAbort = new AbortController()
       const signal = muxAbort.signal
       muxTask = (async () => {
@@ -319,6 +368,7 @@ export async function apply(ctx: Context, base: LarkConfig = {}): Promise<void> 
         }
       })()
       void muxTask.catch(() => {})
+      return Promise.resolve()
     },
     stop: async () => {
       muxAbort?.abort()
@@ -340,6 +390,8 @@ export async function apply(ctx: Context, base: LarkConfig = {}): Promise<void> 
         appId: appId.value,
         appSecret: appSecret.value,
         domain: config.domain ?? 'feishu',
+        ...(config.handshakeTimeoutMs === undefined ? {} : { handshakeTimeoutMs: config.handshakeTimeoutMs }),
+        onConnectionChange: (connected) => { transportConnected = connected },
       })
       ingressAbort = new AbortController()
       transport = next
@@ -376,6 +428,7 @@ export async function apply(ctx: Context, base: LarkConfig = {}): Promise<void> 
       transport?.stop()
       ingressAbort = undefined
       transport = undefined
+      transportConnected = false
     },
   }
 
@@ -384,6 +437,7 @@ export async function apply(ctx: Context, base: LarkConfig = {}): Promise<void> 
     mux,
     inbox: queue,
     cleanup: () => attachments.cleanup(),
+    connectionStatus: () => transportConnected,
   })
 
   const clearTable = async <T>(table: { keys(): IterableIterator<string>; delete(key: string): Promise<T> }) => {
@@ -419,9 +473,9 @@ export async function apply(ctx: Context, base: LarkConfig = {}): Promise<void> 
     pair: async (code) => { await identity.pairOwner(code) },
     repair: async () => { await runtime.disable(); await resetOwnedState(); await settings.update({ enabled: false }) },
     cleanup: () => attachments.cleanup(),
-    test: async () => {
+    test: () => {
       const status = runtime.status()
-      return { ok: status.connected, connected: status.connected }
+      return Promise.resolve({ ok: status.connected, connected: status.connected })
     },
     setCredentials: async (appId, appSecret) => {
       const config = settings.get()
@@ -472,3 +526,15 @@ const frameTurn = (frame: MuxFrame): number | undefined => {
 
 const turnOutcome = (reason: { kind: string }): 'completed' | 'cancelled' | 'failed' =>
   reason.kind === 'completed' ? 'completed' : reason.kind === 'aborted' || reason.kind === 'disposed' ? 'cancelled' : 'failed'
+
+const detectImageMediaType = (data: Uint8Array, declared?: string): ImageMediaType => {
+  if (declared === 'image/png' || declared === 'image/jpeg' || declared === 'image/webp' || declared === 'image/gif') {
+    return declared
+  }
+  if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) return 'image/png'
+  if (data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return 'image/jpeg'
+  if (String.fromCharCode(...data.slice(0, 4)) === 'GIF8') return 'image/gif'
+  if (String.fromCharCode(...data.slice(0, 4)) === 'RIFF'
+    && String.fromCharCode(...data.slice(8, 12)) === 'WEBP') return 'image/webp'
+  throw new Error('Unsupported Lark image format')
+}

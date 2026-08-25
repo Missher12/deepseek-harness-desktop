@@ -5,6 +5,7 @@ import type { ImageAttachmentRef, SaveImageAttachment } from '@deepseek-ai/dsh-a
 import type { StagedFileRecord } from './state.ts'
 import { DEFAULT_FILE_RETENTION_MS, DEFAULT_MAX_MEDIA_BYTES } from './config.ts'
 
+/** Persistence surface for plugin-owned expiring generic files. */
 export interface StagedFileStore {
   list(): Promise<StagedFileRecord[]>
   put(record: StagedFileRecord): Promise<void>
@@ -37,10 +38,20 @@ export class LarkAttachmentService {
     this.id = options.id ?? randomUUID
   }
 
+  /**
+   * Persist admitted images through the Harness AttachmentStore.
+   * @param inputs - Validated image bytes and metadata.
+   * @returns Durable Harness image references.
+   */
   saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]> {
     return this.options.imageStore.saveImages(inputs)
   }
 
+  /**
+   * Atomically stage one bounded generic file outside the selected project.
+   * @param input - Original safe display name and file bytes.
+   * @returns Private staged-file metadata.
+   */
   async stageFile(input: { name: string; data: Uint8Array }): Promise<StagedFileRecord> {
     if (input.data.byteLength > this.maxBytes) throw new Error('Lark file exceeds the configured 30 MiB limit')
     await mkdir(this.root, { recursive: true, mode: 0o700 })
@@ -73,6 +84,10 @@ export class LarkAttachmentService {
     }
   }
 
+  /**
+   * Remove expired plugin-owned files.
+   * @returns The number of expired plugin-owned files removed.
+   */
   async cleanup(): Promise<number> {
     let removed = 0
     for (const record of await this.options.files.list()) {
@@ -86,6 +101,10 @@ export class LarkAttachmentService {
     return removed
   }
 
+  /**
+   * Remove every plugin-owned staged file.
+   * @returns The number of plugin-owned files removed.
+   */
   async clear(): Promise<number> {
     let removed = 0
     for (const record of await this.options.files.list()) {

@@ -22,10 +22,14 @@ function harness() {
     { sessionId: 'archived', updatedAt: 6, running: false, blank: false, cwd: '/Users/missher/Other' },
   ]
   const archivedSessionIds = ['archived']
+  const resolveOrdinarySession = vi.fn(async (id: string) => {
+    const cwd = sessions.find(row => row.sessionId === id)?.cwd
+    return { id, ...(cwd === undefined ? {} : { cwd }) }
+  })
   const catalog: BindingCatalog = {
     listWorkspaces: vi.fn(async () => ({ items: workspaces, archivedSessionIds })),
     listSessions: vi.fn(async () => sessions),
-    resolveOrdinarySession: vi.fn(async id => ({ id, cwd: sessions.find(row => row.sessionId === id)?.cwd })),
+    resolveOrdinarySession,
   }
   const store: BindingStore = {
     get: async () => saved,
@@ -33,7 +37,7 @@ function harness() {
     delete: async () => { saved = undefined },
   }
   return {
-    catalog, store, workspaces, sessions, archivedSessionIds,
+    catalog, store, workspaces, sessions, archivedSessionIds, resolveOrdinarySession,
     controller: new BindingController(catalog, store, async () => owner, () => 2000),
     saved: () => saved,
   }
@@ -65,7 +69,7 @@ describe('project and ordinary Session binding', () => {
     })
     await h.controller.bind('w1', 'idle')
     expect(h.saved()).toMatchObject({ sessionId: 'idle', generation: 2 })
-    expect(h.catalog.resolveOrdinarySession).toHaveBeenLastCalledWith('idle')
+    expect(h.resolveOrdinarySession).toHaveBeenLastCalledWith('idle')
   })
 
   test('rejects stale, archived, subagent, blank, and cwd-mismatched actions', async () => {

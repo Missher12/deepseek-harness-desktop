@@ -67,7 +67,11 @@ export function assertTargetStillOrdinaryAndUnarchived(ctx: Context, target: Age
   }
 }
 
-/** Source-free ordinary-session fence for external control surfaces. */
+/**
+ * Apply the source-free ordinary-session fence for external control surfaces.
+ * @param ctx - Cordis context exposing workspace and Agent ownership state.
+ * @param target - Resolved target Agent to validate.
+ */
 export function assertOrdinarySession(ctx: Context, target: Agent): void {
   assertTargetStillOrdinaryAndUnarchived(ctx, target)
 }
@@ -75,6 +79,9 @@ export function assertOrdinarySession(ctx: Context, target: Agent): void {
 /**
  * Resolve one ordinary Session through the Host-owned lookup without creating
  * a synthetic caller and without invoking the Agent registry directly.
+ * @param ctx - Cordis context providing the Host-owned Typert lookup.
+ * @param raw - Untrusted copied target Session ID.
+ * @returns The resolved ordinary, unarchived target Agent.
  */
 export async function resolveOrdinarySession(ctx: Context, raw: string): Promise<Agent> {
   const requestedId = parseTargetSessionId(raw)

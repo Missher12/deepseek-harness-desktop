@@ -5224,9 +5224,6 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
-      '@larksuiteoapi/node-sdk':
-        specifier: ^1.64.0
-        version: 1.73.0
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -5291,6 +5288,9 @@ importers:
       '@deepseek-ai/dsh-workspace':
         specifier: workspace:^
         version: link:../../workspace/workspace
+      '@larksuiteoapi/node-sdk':
+        specifier: ^1.64.0
+        version: 1.73.0
       '@testing-library/react':
         specifier: ^16.1.0
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)

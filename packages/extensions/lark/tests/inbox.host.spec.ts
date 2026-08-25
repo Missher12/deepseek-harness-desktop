@@ -75,6 +75,34 @@ describe('strict durable Feishu FIFO', () => {
     expect([...h.records.values()].map(record => record.sequence)).toEqual([1, 2])
   })
 
+  test('preserves durable image references and private staged-file facts in the Harness turn', async () => {
+    const h = harness()
+    await h.inbox.enqueue({
+      ...inbound('media', 'inspect these'),
+      attachments: [
+        {
+          kind: 'image', attachment: {
+            attachmentId: 'att-1', mediaType: 'image/png', bytes: 4, width: 1, height: 1,
+          },
+        },
+        {
+          kind: 'file', id: 'file-1', path: '/private/dsh/lark/files/file-1.bin',
+          name: 'spec.pdf', size: 8, sha256: 'a'.repeat(64), expiresAt: 2_000,
+        },
+      ],
+    })
+    const sent = h.followup.mock.calls[0]?.[0]
+    const text = sent?.content[0]
+    const image = sent?.content[1]
+    expect(text?.type).toBe('text')
+    if (text?.type !== 'text') throw new Error('expected a text content part')
+    expect(text.text).toContain('/private/dsh/lark/files/file-1.bin')
+    expect(image?.type).toBe('image')
+    if (image?.type !== 'image') throw new Error('expected an image content part')
+    expect(image.attachment.attachmentId).toBe('att-1')
+    expect(h.records.get('media')?.attachments).toHaveLength(2)
+  })
+
   test('/插话 uses only steer with a plugin-owned immutable message', async () => {
     const h = harness()
     await h.inbox.steer('urgent correction')

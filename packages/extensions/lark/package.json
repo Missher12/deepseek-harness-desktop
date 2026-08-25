@@ -61,7 +61,6 @@
   "dependencies": {
     "@deepseek-ai/dsh-settings": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
-    "@larksuiteoapi/node-sdk": "^1.64.0",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
@@ -89,6 +88,7 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@larksuiteoapi/node-sdk": "^1.64.0",
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-api-remotes": "workspace:^",

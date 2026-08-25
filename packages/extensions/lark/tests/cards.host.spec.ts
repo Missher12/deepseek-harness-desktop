@@ -10,8 +10,8 @@ const state = (text: string, status: TurnProjectionState['status'] = 'streaming'
 describe('monotonic streaming card', () => {
   test('paints one stable placeholder, then grows text and final metrics', async () => {
     const sendCard = vi.fn(async () => ({ messageId: 'om_card', chatId: 'oc_dm' }))
-    const updateCard = vi.fn(async () => {})
-    const sendText = vi.fn(async () => ({}))
+    const updateCard = vi.fn(async (_messageId: string, _card: unknown) => {})
+    const sendText = vi.fn(async (_chatId: string, _text: string) => ({}))
     let now = 1000
     const controller = new StreamingCardController({
       sendCard, updateCard, sendText, throttleMs: 100,
@@ -35,10 +35,10 @@ describe('monotonic streaming card', () => {
   })
 
   test('ignores shrinking or stale revisions', async () => {
-    const updateCard = vi.fn(async () => {})
+    const updateCard = vi.fn(async (_messageId: string, _card: unknown) => {})
     const controller = new StreamingCardController({
       sendCard: vi.fn(async () => ({ messageId: 'om_card', chatId: 'oc_dm' })),
-      updateCard, sendText: vi.fn(async () => ({})), throttleMs: 0,
+      updateCard, sendText: vi.fn(async (_chatId: string, _text: string) => ({})), throttleMs: 0,
     })
     const stream = await controller.open('oc_dm', state('Hello'))
     await stream.update(state('Hel'))
@@ -48,10 +48,10 @@ describe('monotonic streaming card', () => {
   })
 
   test('falls back to bounded text after card update failure', async () => {
-    const sendText = vi.fn(async () => ({}))
+    const sendText = vi.fn(async (_chatId: string, _text: string) => ({}))
     const controller = new StreamingCardController({
       sendCard: vi.fn(async () => ({ messageId: 'om_card', chatId: 'oc_dm' })),
-      updateCard: vi.fn(async () => { throw new Error('card unavailable') }),
+      updateCard: vi.fn(async (_messageId: string, _card: unknown) => { throw new Error('card unavailable') }),
       sendText, throttleMs: 0,
     })
     const stream = await controller.open('oc_dm', state(''))

@@ -28,7 +28,11 @@ const usageTotal = (state: TurnProjectionState): number | undefined => {
     + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
 }
 
-/** One Feishu card payload; it contains visible answer text and safe summaries only. */
+/**
+ * Build one Feishu card payload containing visible answer text and safe summaries only.
+ * @param state - Current safe turn projection.
+ * @returns An official interactive-card payload.
+ */
 export function renderTurnCard(state: TurnProjectionState): unknown {
   const toolLines = state.tools.map(tool =>
     `${tool.status === 'running' ? '◌' : tool.status === 'completed' ? '✓' : '✕'} ${tool.title}`)
@@ -114,6 +118,12 @@ export class StreamingCardController {
     }
   }
 
+  /**
+   * Create the stable placeholder card for one turn.
+   * @param chatId - Exact paired private-chat identifier.
+   * @param initial - Initial safe turn projection.
+   * @returns The monotonic stream controller for the created card.
+   */
   async open(chatId: string, initial: TurnProjectionState): Promise<TurnCardStream> {
     const sent = await this.resolved.sendCard(chatId, renderTurnCard(initial))
     return new TurnCardStream(this.resolved, chatId, sent.messageId, structuredClone(initial))
@@ -133,6 +143,10 @@ export class SelectionCardService {
     private readonly transport: SelectionTransport,
   ) {}
 
+  /**
+   * Send the no-model project selector to an admitted owner.
+   * @param message - Owner-gated inbound message.
+   */
   async sendProjectCard(message: AdmittedMessage): Promise<void> {
     const owner = await this.identity.owner()
     if (owner === undefined) throw new Error('Lark owner is not paired')
@@ -149,6 +163,10 @@ export class SelectionCardService {
     await this.transport.sendCard(message.chatId, selectionCard('进入项目', paths, actions))
   }
 
+  /**
+   * Revalidate and execute one signed project or Session selection.
+   * @param input - Acting owner and signed one-use action value.
+   */
   async handleAction(input: { openId: string; value: CardActionValue }): Promise<void> {
     const owner = await this.identity.owner()
     if (owner === undefined) throw new Error('Lark owner is not paired')

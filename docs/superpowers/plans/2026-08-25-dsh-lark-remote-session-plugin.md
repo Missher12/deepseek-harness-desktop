@@ -49,11 +49,7 @@ English | [中文](2026-08-25-dsh-lark-remote-session-plugin.zh.md)
 
 Assert public package name/version, `dsh.bundle.patch`, web Client injection, one `lark` patch row, no OpenClaw dependency/import/state path, and exact v1 records for owner, binding, queue, card, callback nonce, and staged file.
 
-```ts ignore-check
-expect(manifest.name).toBe('@deepseek-ai/dsh-lark')
-expect(JSON.stringify(manifest)).not.toContain('openclaw')
-expect(queueRecordSchema.parse(record)).toMatchObject({ status: 'prepared', sequence: 1 })
-```
+Representative assertions check `manifest.name === '@deepseek-ai/dsh-lark'`, reject `openclaw` anywhere in the serialized manifest, and parse a `prepared` queue record with sequence `1`.
 
 - [ ] **Step 2: Confirm RED**
 
@@ -65,13 +61,7 @@ Expected: FAIL because the package and schemas do not exist.
 
 Use repository version `0.1.1-rc.2`, official SDK dependency `^1.64.0`, Harness workspace peers, `clientBundle()`, and `defineDomain({ name: 'dsh_lark', version: 1, ... })`. Store only credential references; never App Secret values.
 
-```ts ignore-check
-export const LARK_APP_SECRET_REF = credentialRef('DSH_LARK_APP_SECRET')
-export const larkDomainSpec = defineDomain({
-  name: 'dsh_lark', version: 1,
-  tables: { owner: domainTable(), binding: domainTable(), inbox: domainTable(), cards: domainTable() },
-})
-```
+Define `LARK_APP_SECRET_REF` with `credentialRef('DSH_LARK_APP_SECRET')` and define `larkDomainSpec` as the version-1 `dsh_lark` domain owning the owner, binding, inbox, and card tables.
 
 - [ ] **Step 4: Run GREEN and commit**
 
@@ -91,7 +81,7 @@ Commit: `feat: define dsh lark bundle state`
 - Create: `packages/extensions/lark/tests/transport.host.spec.ts`
 - Create: `packages/extensions/lark/tests/commands.host.spec.ts`
 - Create: `packages/extensions/lark/LICENSE`
-- Create: `packages/extensions/lark/THIRD_PARTY_NOTICES.md`
+- Modify: `packages/extensions/lark/LICENSE`
 
 - [ ] **Step 1: Write RED transport and identity tests**
 
@@ -101,11 +91,7 @@ Cover missing credentials, Feishu/Lark domain selection, SDK startup/forced clos
 
 The exact texts `/`, `/进入`, and menu action `进入项目` must call `sendProjectCard()` without `Agent.followup`, `Agent.steer`, model APIs, or session mutation. Cover `/切换`, `/解绑`, `/状态`, and `/帮助`; an unpaired user gets only a short pairing code and no project facts, while unknown slash commands receive bounded help.
 
-```ts ignore-check
-await router.message(ownerDm('/'))
-expect(transport.sendProjectCard).toHaveBeenCalledOnce()
-expect(agent.followup).not.toHaveBeenCalled()
-```
+The core assertion sends `ownerDm('/')`, expects exactly one `sendProjectCard()` call, and expects no `Agent.followup()` call.
 
 - [ ] **Step 3: Confirm RED**
 
@@ -156,10 +142,7 @@ Expected: FAIL on the new public resolver and binding controller.
 
 Mint ApiProxy `RpcId`s per list call, reject failed RPC results, join session summaries to workspace accounts, and call the promoted Typert resolver before commit. Restart recovery must compare owner, chat, canonical cwd, archive set, source, and generation.
 
-```ts ignore-check
-const target = await resolveOrdinarySession(ctx, SessionId(action.sessionId))
-await bindings.replace({ ...candidate, generation: previousGeneration + 1 })
-```
+Resolve the selected target through `resolveOrdinarySession(ctx, SessionId(action.sessionId))`, then persist the candidate with `generation: previousGeneration + 1`.
 
 - [ ] **Step 5: Run GREEN and commit**
 
@@ -242,7 +225,7 @@ Commit: `feat: stream harness turns to lark cards`
 **Files:**
 - Create: `packages/extensions/lark/src/attachments.ts`
 - Create: `packages/extensions/lark/tests/attachments.host.spec.ts`
-- Create: `packages/extensions/lark/tests/approvals.host.spec.ts`
+- Create: `packages/extensions/lark/tests/approval.host.spec.ts`
 - Modify: `packages/extensions/lark/src/projection.ts`
 - Modify: `packages/extensions/lark/src/commands.ts`
 
@@ -256,7 +239,7 @@ Capture `approval/requested` rpcId/approvalId from the existing mux. Feishu acti
 
 - [ ] **Step 3: Confirm RED**
 
-Run: `pnpm exec vitest run packages/extensions/lark/tests/attachments.host.spec.ts packages/extensions/lark/tests/approvals.host.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/lark/tests/attachments.host.spec.ts packages/extensions/lark/tests/approval.host.spec.ts`
 
 Expected: FAIL because these adapters are missing.
 
@@ -266,7 +249,7 @@ Keep image bytes in AttachmentStore and generic files in the plugin staging root
 
 - [ ] **Step 5: Run GREEN and commit**
 
-Run: `pnpm exec vitest run packages/extensions/lark/tests/attachments.host.spec.ts packages/extensions/lark/tests/approvals.host.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/lark/tests/attachments.host.spec.ts packages/extensions/lark/tests/approval.host.spec.ts`
 
 Expected: PASS.
 

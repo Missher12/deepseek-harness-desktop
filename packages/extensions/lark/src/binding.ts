@@ -1,5 +1,6 @@
 import type { BindingRecord, OwnerRecord } from './state.ts'
 
+/** Workspace catalog fact safe to expose to the paired owner. */
 export interface WorkspaceRow {
   workspaceId: string
   title: string
@@ -7,6 +8,7 @@ export interface WorkspaceRow {
   sessionIds: string[]
 }
 
+/** Session catalog fact used to select only ordinary matching Sessions. */
 export interface SessionRow {
   sessionId: string
   updatedAt: number
@@ -17,12 +19,14 @@ export interface SessionRow {
   cwd?: string
 }
 
+/** Harness catalog and resolver surface required by the binding controller. */
 export interface BindingCatalog {
   listWorkspaces(): Promise<{ items: WorkspaceRow[]; archivedSessionIds: string[] }>
   listSessions(): Promise<SessionRow[]>
   resolveOrdinarySession(sessionId: string): Promise<{ id: string; cwd?: string }>
 }
 
+/** Durable single-owner binding persistence surface. */
 export interface BindingStore {
   get(): Promise<BindingRecord | undefined>
   put(binding: BindingRecord): Promise<void>
@@ -40,11 +44,20 @@ export class BindingController {
     private readonly now: () => number = Date.now,
   ) {}
 
+  /**
+   * List the current Harness projects.
+   * @returns Current projects in Harness catalog order with full paths.
+   */
   async listProjects(): Promise<Array<{ workspaceId: string; title: string; path: string }>> {
     const { items } = await this.catalog.listWorkspaces()
     return items.map(({ workspaceId, title, path }) => ({ workspaceId, title, path }))
   }
 
+  /**
+   * List selectable ordinary Sessions for one project.
+   * @param workspaceId - Exact current workspace identifier.
+   * @returns Revalidated Sessions with running entries first.
+   */
   async listSessions(workspaceId: string): Promise<SessionRow[]> {
     const [workspaces, sessions] = await Promise.all([
       this.catalog.listWorkspaces(), this.catalog.listSessions(),
@@ -65,6 +78,12 @@ export class BindingController {
       .sort((left, right) => Number(right.running) - Number(left.running))
   }
 
+  /**
+   * Persist a revalidated owner/project/Session binding.
+   * @param workspaceId - Exact selected workspace identifier.
+   * @param sessionId - Exact selected ordinary Session identifier.
+   * @returns The new durable binding generation.
+   */
   async bind(workspaceId: string, sessionId: string): Promise<BindingRecord> {
     const owner = await this.getOwner()
     if (owner === undefined) throw new Error('Lark owner is not paired')
@@ -91,6 +110,10 @@ export class BindingController {
     return binding
   }
 
+  /**
+   * Revalidate a persisted binding during startup.
+   * @returns The recovered binding, paused when its target no longer validates.
+   */
   async recover(): Promise<BindingRecord | undefined> {
     const binding = await this.store.get()
     if (binding === undefined) return undefined
@@ -121,10 +144,19 @@ export class BindingController {
     }
   }
 
+  /**
+   * Remove the current binding without touching its Session.
+   * @param _message - Optional command payload retained for router compatibility.
+   */
   async unbind(_message?: unknown): Promise<void> {
     await this.store.delete()
   }
 
+  /**
+   * Render the current binding status for the paired owner.
+   * @param _message - Optional command payload retained for router compatibility.
+   * @returns A bounded owner-facing status line.
+   */
   async statusText(_message?: unknown): Promise<string> {
     const binding = await this.store.get()
     if (binding === undefined) return '尚未绑定项目和会话。发送 / 进入选择。'

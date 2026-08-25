@@ -2,11 +2,16 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 
+/** Exact loopback settings-control route. */
 export const LARK_CONTROL_PATH = '/plugins/dsh-lark/control'
+/** Per-process capability header accepted by the settings route. */
 export const LARK_CONTROL_HEADER = 'x-dsh-lark-capability'
+/** Browser bootstrap global carrying the route capability. */
 export const LARK_BOOTSTRAP_GLOBAL = '__DSH_LARK__'
+/** Maximum accepted settings action body size. */
 export const MAX_CONTROL_BODY_BYTES = 64 * 1024
 
+/** Lifecycle and status actions available only through the local capability. */
 export interface LarkControlPort {
   status(): Promise<unknown>
   enable(): Promise<void>
@@ -20,6 +25,7 @@ export interface LarkControlPort {
   setCredentials(appId: string, appSecret: string): Promise<void>
 }
 
+/** Pure request facts used by the settings dispatcher. */
 export interface LarkControlRequest {
   method: string
   host: string | undefined
@@ -28,11 +34,16 @@ export interface LarkControlRequest {
   body: Uint8Array
 }
 
+/** Status and JSON body returned by the settings dispatcher. */
 export interface LarkControlResponse {
   status: number
   body: unknown
 }
 
+/**
+ * Generate one unguessable process-local settings capability.
+ * @returns A URL-safe random capability.
+ */
 export const createLarkCapability = (): string => randomBytes(32).toString('base64url')
 
 const capabilityMatches = (candidate: string | undefined, expected: string): boolean => {
@@ -53,7 +64,14 @@ const parseBody = (body: Uint8Array): Record<string, unknown> | undefined => {
   }
 }
 
-/** Pure same-origin/capability dispatcher shared by HTTP and lifecycle tests. */
+/**
+ * Dispatch one same-origin capability-authenticated settings action.
+ * @param request - Normalized HTTP request facts.
+ * @param port - Runtime lifecycle control surface.
+ * @param capability - Exact process-local capability.
+ * @param serverPort - Active loopback web-server port.
+ * @returns A bounded JSON response.
+ */
 export async function dispatchLarkControl(
   request: LarkControlRequest,
   port: LarkControlPort,
@@ -106,6 +124,13 @@ export async function dispatchLarkControl(
   }
 }
 
+/**
+ * Adapt the pure control dispatcher to the Harness web-server route.
+ * @param port - Runtime lifecycle control surface.
+ * @param capability - Exact process-local capability.
+ * @param serverPort - Active loopback web-server port.
+ * @returns A Harness web-route handler.
+ */
 export function createLarkControlHandler(
   port: LarkControlPort,
   capability: string,
@@ -141,6 +166,12 @@ export function createLarkControlHandler(
   }
 }
 
+/**
+ * Inject the process-local capability into the served Harness shell.
+ * @param html - Original Harness index document.
+ * @param capability - Exact process-local capability.
+ * @returns The index document with one escaped bootstrap script.
+ */
 export function injectLarkCapability(html: string, capability: string): string {
   const bootstrap = JSON.stringify({
     path: LARK_CONTROL_PATH,

@@ -1,9 +1,14 @@
+import type { QueueAttachment } from './state.ts'
+
+/** Normalized Feishu message facts consumed after identity admission. */
 export interface AdmittedMessage {
   eventId: string
   messageId: string
   openId: string
   chatId: string
   text: string
+  media?: { kind: 'image' | 'file'; key: string; name: string }
+  attachments?: readonly QueueAttachment[]
   senderType?: string
   chatType?: string
   appId?: string
@@ -30,6 +35,7 @@ interface CommandDependencies {
     admit(message: AdmittedMessage): Promise<Admission>
     commitEvent?(eventId: string): Promise<void>
   }
+  prepareOwnerMessage?(message: AdmittedMessage): Promise<AdmittedMessage>
 }
 
 const HELP = '命令：/ 进入项目 · /切换 · /解绑 · /状态 · /插话 <内容> · /停止 · /帮助'
@@ -38,6 +44,10 @@ const HELP = '命令：/ 进入项目 · /切换 · /解绑 · /状态 · /插�
 export class CommandRouter {
   constructor(private readonly deps: CommandDependencies) {}
 
+  /**
+   * Admit and route one normalized Feishu message.
+   * @param input - Inbound message and exact identity facts.
+   */
   async message(input: AdmittedMessage): Promise<void> {
     const admission = await this.deps.identity.admit(input)
     if (admission.kind === 'rejected') return
@@ -45,9 +55,16 @@ export class CommandRouter {
       await this.deps.transport.sendText(admission.chatId, `配对码：${admission.pairingCode}`)
       return
     }
-    await this.routeOwner(input)
+    const prepared = this.deps.prepareOwnerMessage === undefined
+      ? input
+      : await this.deps.prepareOwnerMessage(input)
+    await this.routeOwner(prepared)
   }
 
+  /**
+   * Route the fixed bot-menu project entry action.
+   * @param input - Inbound menu event normalized as a message.
+   */
   async menuAction(input: AdmittedMessage): Promise<void> {
     const admission = await this.deps.identity.admit(input)
     if (admission.kind !== 'owner') return

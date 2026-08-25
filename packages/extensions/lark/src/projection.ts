@@ -1,3 +1,4 @@
+/** Safe token counters projected from Harness usage events. */
 export interface ProjectedUsage {
   inputTokens: number
   outputTokens: number
@@ -6,6 +7,7 @@ export interface ProjectedUsage {
   reasoningTokens?: number
 }
 
+/** Safe tool title, kind, and lifecycle status. */
 export interface ProjectedTool {
   callId: string
   title: string
@@ -13,6 +15,7 @@ export interface ProjectedTool {
   status: 'running' | 'completed' | 'failed'
 }
 
+/** Pending or resolved approval facts safe for the paired owner. */
 export interface ProjectedApproval {
   approvalId: string
   rpcId?: string
@@ -22,6 +25,7 @@ export interface ProjectedApproval {
   denyValue?: unknown
 }
 
+/** Complete redacted state rendered into one Feishu turn card. */
 export interface TurnProjectionState {
   sessionId: string
   turn?: number
@@ -54,6 +58,11 @@ export class TurnProjection {
     }
   }
 
+  /**
+   * Fold one mux frame when it belongs to the exact bound Session.
+   * @param input - Untrusted mux frame.
+   * @returns A cloned safe projection snapshot.
+   */
   apply(input: unknown): TurnProjectionState {
     const frame = record(input)
     if (frame === undefined || frame.sessionId !== this.sessionId) return this.snapshot()
@@ -104,10 +113,21 @@ export class TurnProjection {
     return this.snapshot()
   }
 
+  /**
+   * Read the current projection without sharing mutable state.
+   * @returns A cloned safe projection snapshot.
+   */
   snapshot(): TurnProjectionState {
     return structuredClone(this.state)
   }
 
+  /**
+   * Attach state-backed actions to one pending projected approval.
+   * @param approvalId - Exact pending approval identifier.
+   * @param allowValue - Signed allow-once action value.
+   * @param denyValue - Signed deny action value.
+   * @returns A cloned safe projection snapshot.
+   */
   setApprovalActions(approvalId: string, allowValue: unknown, denyValue: unknown): TurnProjectionState {
     this.state.approvals = this.state.approvals.map(item =>
       item.approvalId === approvalId ? { ...item, allowValue, denyValue } : item)

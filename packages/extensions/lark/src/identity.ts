@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { CallbackNonceRecord, OwnerRecord } from './state.ts'
 
+/** Durable owner, event-deduplication, and one-use nonce store. */
 export interface IdentityStore {
   getOwner(): Promise<OwnerRecord | undefined>
   putOwner(owner: OwnerRecord): Promise<void>
@@ -10,6 +11,7 @@ export interface IdentityStore {
   putNonce(nonce: CallbackNonceRecord): Promise<void>
 }
 
+/** Identity facts extracted from one inbound Feishu event. */
 export interface InboundIdentity {
   eventId: string
   messageId: string
@@ -21,6 +23,7 @@ export interface InboundIdentity {
 
 type CallbackAction = CallbackNonceRecord['action']
 
+/** Signed state-backed action value sent inside an interactive card. */
 export interface CardActionValue {
   nonce: string
   action: CallbackAction
@@ -63,6 +66,11 @@ export class IdentityService {
     this.pairingTtlMs = options.pairingTtlMs ?? 10 * 60_000
   }
 
+  /**
+   * Admit the exact paired private-chat owner or issue a pending pairing code.
+   * @param input - Normalized sender, chat, and event facts.
+   * @returns Owner, unpaired, or rejected admission state.
+   */
   async admit(input: InboundIdentity): Promise<
     | { kind: 'owner' }
     | { kind: 'unpaired'; chatId: string; pairingCode: string }
@@ -88,12 +96,20 @@ export class IdentityService {
     return { kind: 'owner' }
   }
 
-  /** Commit a fast-path command event before performing its external effect. */
+  /**
+   * Commit a fast-path command event before performing its external effect.
+   * @param eventId - Exact Feishu event identifier.
+   */
   async commitEvent(eventId: string): Promise<void> {
     if (await this.store.hasEvent(eventId)) throw new Error('Lark event was already handled')
     await this.store.markEvent(eventId)
   }
 
+  /**
+   * Confirm the current pending owner from a local Harness action.
+   * @param code - Short pairing code shown only in the candidate private chat.
+   * @returns The newly persisted owner record.
+   */
   async pairOwner(code: string): Promise<OwnerRecord> {
     if (await this.store.getOwner() !== undefined) throw new Error('Lark owner is already paired')
     const pending = this.pending
@@ -110,10 +126,22 @@ export class IdentityService {
     return owner
   }
 
+  /**
+   * Read the current paired owner.
+   * @returns The currently paired owner, when one exists.
+   */
   owner(): Promise<OwnerRecord | undefined> {
     return this.store.getOwner()
   }
 
+  /**
+   * Persist and issue one expiring card action.
+   * @param action - Bounded action kind.
+   * @param generation - Exact current owner generation.
+   * @param ttlMs - Action lifetime in milliseconds.
+   * @param data - Small action-specific string payload.
+   * @returns The card-safe action value.
+   */
   async issueAction(
     action: CallbackAction,
     generation: number,
@@ -132,6 +160,11 @@ export class IdentityService {
     return { nonce: record.id, action, generation, ...(data === undefined ? {} : { data }) }
   }
 
+  /**
+   * Atomically consume one owner-bound, generation-bound card action.
+   * @param input - Acting identity and returned card value.
+   * @returns The consumed durable nonce record.
+   */
   async admitAction(input: {
     openId: string
     chatId: string

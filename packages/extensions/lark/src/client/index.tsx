@@ -24,6 +24,9 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section', id: 'lark', order: 40,
     label: () => t('section'), locale: NS,
-    inject: (): LarkSettingsInjected => ({ load: store.load, action: store.action }),
+    inject: (): LarkSettingsInjected => ({
+      load: () => store.load(),
+      action: body => store.action(body),
+    }),
   }, LarkSettingsSection))
 }

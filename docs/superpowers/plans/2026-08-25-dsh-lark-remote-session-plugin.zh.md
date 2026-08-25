@@ -49,11 +49,7 @@
 
 验证公开包名/版本、`dsh.bundle.patch`、Web Client 注入、唯一 `lark` patch 行、无 OpenClaw 依赖/import/状态路径，以及 owner、binding、queue、card、callback nonce、staged file 的精确 v1 记录。
 
-```ts ignore-check
-expect(manifest.name).toBe('@deepseek-ai/dsh-lark')
-expect(JSON.stringify(manifest)).not.toContain('openclaw')
-expect(queueRecordSchema.parse(record)).toMatchObject({ status: 'prepared', sequence: 1 })
-```
+代表性断言会检查 `manifest.name === '@deepseek-ai/dsh-lark'`，拒绝序列化 manifest 中出现任何 `openclaw`，并解析 sequence 为 `1` 的 `prepared` 队列记录。
 
 - [ ] **步骤 2：确认 RED**
 
@@ -65,13 +61,7 @@ expect(queueRecordSchema.parse(record)).toMatchObject({ status: 'prepared', sequ
 
 使用仓库版本 `0.1.1-rc.2`、官方 SDK 依赖 `^1.64.0`、Harness workspace peers、`clientBundle()` 和 `defineDomain({ name: 'dsh_lark', version: 1, ... })`。只存凭据引用，绝不存 App Secret 内容。
 
-```ts ignore-check
-export const LARK_APP_SECRET_REF = credentialRef('DSH_LARK_APP_SECRET')
-export const larkDomainSpec = defineDomain({
-  name: 'dsh_lark', version: 1,
-  tables: { owner: domainTable(), binding: domainTable(), inbox: domainTable(), cards: domainTable() },
-})
-```
+用 `credentialRef('DSH_LARK_APP_SECRET')` 定义 `LARK_APP_SECRET_REF`，并把 `larkDomainSpec` 定义为拥有 owner、binding、inbox 和 card 表的 v1 `dsh_lark` domain。
 
 - [ ] **步骤 4：运行 GREEN 并提交**
 
@@ -89,7 +79,7 @@ export const larkDomainSpec = defineDomain({
 - 新建：`packages/extensions/lark/tests/transport.host.spec.ts`
 - 新建：`packages/extensions/lark/tests/commands.host.spec.ts`
 - 新建：`packages/extensions/lark/LICENSE`
-- 新建：`packages/extensions/lark/THIRD_PARTY_NOTICES.md`
+- 修改：`packages/extensions/lark/LICENSE`
 
 - [ ] **步骤 1：先写传输与身份失败测试**
 
@@ -99,11 +89,7 @@ export const larkDomainSpec = defineDomain({
 
 精确 `/`、`/进入` 和菜单 `进入项目` 必须调用 `sendProjectCard()`，不得触发 `Agent.followup`、`Agent.steer`、模型 API 或 Session 变更。覆盖 `/切换`、`/解绑`、`/状态` 和 `/帮助`；未配对用户只能得到短配对码，不能得到任何项目事实；未知 slash 命令返回有界帮助。
 
-```ts ignore-check
-await router.message(ownerDm('/'))
-expect(transport.sendProjectCard).toHaveBeenCalledOnce()
-expect(agent.followup).not.toHaveBeenCalled()
-```
+核心断言发送 `ownerDm('/')`，要求 `sendProjectCard()` 恰好调用一次，并要求 `Agent.followup()` 完全不调用。
 
 - [ ] **步骤 3：确认 RED**
 
@@ -152,10 +138,7 @@ expect(agent.followup).not.toHaveBeenCalled()
 
 每次 ApiProxy list 调用生成 `RpcId`，拒绝失败 RPC；把 Session summary 与 Workspace 账户连接；提交前调用提升后的 Typert resolver。重启恢复比较 owner、chat、canonical cwd、archive set、source 和 generation。
 
-```ts ignore-check
-const target = await resolveOrdinarySession(ctx, SessionId(action.sessionId))
-await bindings.replace({ ...candidate, generation: previousGeneration + 1 })
-```
+通过 `resolveOrdinarySession(ctx, SessionId(action.sessionId))` 解析所选目标，再用 `generation: previousGeneration + 1` 持久化 candidate。
 
 - [ ] **步骤 5：运行 GREEN 并提交**
 
@@ -232,7 +215,7 @@ await bindings.replace({ ...candidate, generation: previousGeneration + 1 })
 **文件：**
 - 新建：`packages/extensions/lark/src/attachments.ts`
 - 新建：`packages/extensions/lark/tests/attachments.host.spec.ts`
-- 新建：`packages/extensions/lark/tests/approvals.host.spec.ts`
+- 新建：`packages/extensions/lark/tests/approval.host.spec.ts`
 - 修改：`packages/extensions/lark/src/projection.ts`
 - 修改：`packages/extensions/lark/src/commands.ts`
 
@@ -246,7 +229,7 @@ await bindings.replace({ ...candidate, generation: previousGeneration + 1 })
 
 - [ ] **步骤 3：确认 RED**
 
-运行：`pnpm exec vitest run packages/extensions/lark/tests/attachments.host.spec.ts packages/extensions/lark/tests/approvals.host.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/lark/tests/attachments.host.spec.ts packages/extensions/lark/tests/approval.host.spec.ts`
 
 预期：适配器尚缺，测试失败。
 
@@ -256,7 +239,7 @@ await bindings.replace({ ...candidate, generation: previousGeneration + 1 })
 
 - [ ] **步骤 5：运行 GREEN 并提交**
 
-运行：`pnpm exec vitest run packages/extensions/lark/tests/attachments.host.spec.ts packages/extensions/lark/tests/approvals.host.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/lark/tests/attachments.host.spec.ts packages/extensions/lark/tests/approval.host.spec.ts`
 
 预期：通过。提交：`feat: add lark attachments and approvals`
 

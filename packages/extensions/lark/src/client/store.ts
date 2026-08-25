@@ -1,3 +1,4 @@
+/** Browser-safe status returned by the local capability route. */
 export interface LarkSettingsStatus {
   enabled: boolean
   connected: boolean
@@ -8,9 +9,10 @@ export interface LarkSettingsStatus {
   binding?: { projectPath: string; sessionId: string } | null
 }
 
+/** Same-origin client for Lark status and lifecycle actions. */
 export interface LarkSettingsStore {
-  load(): Promise<LarkSettingsStatus>
-  action(body: Record<string, unknown>): Promise<unknown>
+  load: () => Promise<LarkSettingsStatus>
+  action: (body: Record<string, unknown>) => Promise<unknown>
 }
 
 interface Bootstrap { path: string; header: string; capability: string }
@@ -28,6 +30,10 @@ const bootstrap = (): Bootstrap => {
   return value
 }
 
+/**
+ * Create the browser-side settings transport.
+ * @returns A settings client bound to the page-injected capability.
+ */
 export function createLarkSettingsStore(): LarkSettingsStore {
   const call = async (body?: Record<string, unknown>): Promise<unknown> => {
     const value = bootstrap()

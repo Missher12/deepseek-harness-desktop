@@ -2,13 +2,20 @@ import { mkdtemp, readFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test, vi } from 'vitest'
+import {
+  AttachmentId,
+  type ImageAttachmentRef,
+  type SaveImageAttachment,
+} from '@deepseek-ai/dsh-attachment'
 import { LarkAttachmentService, type StagedFileStore } from '../src/attachments.ts'
 import type { StagedFileRecord } from '../src/state.ts'
 
 describe('Lark attachment boundaries', () => {
   test('routes images through the Harness AttachmentStore', async () => {
-    const saveImages = vi.fn(async inputs => inputs.map((_input: unknown, index: number) => ({
-      attachmentId: `a${index}`, mediaType: 'image/png', bytes: 4, width: 1, height: 1,
+    const saveImages = vi.fn(async (
+      inputs: readonly SaveImageAttachment[],
+    ): Promise<readonly ImageAttachmentRef[]> => inputs.map((_input, index) => ({
+      attachmentId: AttachmentId(`a${index}`), mediaType: 'image/png', bytes: 4, width: 1, height: 1,
     })))
     const service = new LarkAttachmentService({
       imageStore: { saveImages }, stagingRoot: '/unused', files: memoryFiles(),

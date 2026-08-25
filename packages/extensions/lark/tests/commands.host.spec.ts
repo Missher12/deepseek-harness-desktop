@@ -6,7 +6,7 @@ function message(text: string): AdmittedMessage {
 }
 
 function harness(admission: 'owner' | 'unpaired' | 'rejected' = 'owner') {
-  const transport = { sendText: vi.fn(async () => ({ messageId: 'om_1', chatId: 'oc_dm' })) }
+  const transport = { sendText: vi.fn(async (_chatId: string, _text: string) => ({ messageId: 'om_1', chatId: 'oc_dm' })) }
   const cards = { sendProjectCard: vi.fn(async () => {}) }
   const binding = {
     unbind: vi.fn(async () => {}),
@@ -22,7 +22,13 @@ function harness(admission: 'owner' | 'unpaired' | 'rejected' = 'owner') {
         ? { kind: 'unpaired' as const, chatId: 'oc_dm', pairingCode: 'ABCD-1234' }
         : { kind: 'rejected' as const }),
   }
-  return { router: new CommandRouter({ transport, cards, binding, inbox, identity }), transport, cards, binding, inbox }
+  const prepareOwnerMessage = vi.fn(async (input: AdmittedMessage) => input.media === undefined
+    ? input
+    : { ...input, text: `${input.text}:prepared` })
+  return {
+    router: new CommandRouter({ transport, cards, binding, inbox, identity, prepareOwnerMessage }),
+    transport, cards, binding, inbox, prepareOwnerMessage,
+  }
 }
 
 describe('exact slash routing', () => {
@@ -62,12 +68,23 @@ describe('exact slash routing', () => {
     expect(h.inbox.enqueue).toHaveBeenCalledWith(message('continue development'))
   })
 
+  test('prepares media only after owner admission and before durable enqueue', async () => {
+    const h = harness()
+    const input: AdmittedMessage = {
+      ...message('image'), media: { kind: 'image', key: 'img_1', name: 'image.png' },
+    }
+    await h.router.message(input)
+    expect(h.prepareOwnerMessage).toHaveBeenCalledWith(input)
+    expect(h.inbox.enqueue).toHaveBeenCalledWith({ ...input, text: 'image:prepared' })
+  })
+
   test('an unpaired private user receives only a short pairing response', async () => {
     const h = harness('unpaired')
     await h.router.message(message('/'))
     expect(h.transport.sendText).toHaveBeenCalledWith('oc_dm', expect.stringMatching(/ABCD-1234/))
     expect(h.transport.sendText.mock.calls[0]![1]).not.toMatch(/project|session|Users|项目|会话/)
     expect(h.cards.sendProjectCard).not.toHaveBeenCalled()
+    expect(h.prepareOwnerMessage).not.toHaveBeenCalled()
   })
 
   test('rejected events produce no output', async () => {
@@ -75,5 +92,6 @@ describe('exact slash routing', () => {
     await h.router.message(message('/'))
     expect(h.transport.sendText).not.toHaveBeenCalled()
     expect(h.cards.sendProjectCard).not.toHaveBeenCalled()
+    expect(h.prepareOwnerMessage).not.toHaveBeenCalled()
   })
 })

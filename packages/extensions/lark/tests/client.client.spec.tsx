@@ -5,8 +5,9 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
-import { apply, NS } from '../src/client/index.ts'
+import { apply, NS } from '../src/client/index.tsx'
 import { LarkSettingsSection, type LarkSettingsInjected } from '../src/client/LarkSettingsSection.tsx'
+import type { LarkSettingsStatus } from '../src/client/store.ts'
 
 afterEach(cleanup)
 
@@ -30,8 +31,8 @@ describe('Harness Lark settings section', () => {
   })
 
   test('paints placeholders first, never echoes secrets, and confirms destructive actions', async () => {
-    let resolveStatus!: (value: unknown) => void
-    const load = vi.fn(() => new Promise((resolve) => { resolveStatus = resolve }))
+    let resolveStatus!: (value: LarkSettingsStatus) => void
+    const load = vi.fn(() => new Promise<LarkSettingsStatus>((resolve) => { resolveStatus = resolve }))
     const action = vi.fn(async () => ({}))
     const props: LarkSettingsInjected = { load, action }
     render(<LarkSettingsSection {...props} t={(key: string) => key} />)
@@ -43,6 +44,10 @@ describe('Harness Lark settings section', () => {
     fireEvent.click(screen.getByText('saveCredentials'))
     expect(action).toHaveBeenCalledWith({ action: 'set-credentials', appId: 'cli_value', appSecret: 'secret-value' })
     expect(screen.queryByDisplayValue('secret-value')).toBeNull()
+    fireEvent.change(screen.getByLabelText('pairingCode'), { target: { value: 'ABCD-1234' } })
+    fireEvent.click(screen.getByText('pair'))
+    expect(action).toHaveBeenCalledWith({ action: 'pair', code: 'ABCD-1234' })
+    expect(screen.queryByDisplayValue('ABCD-1234')).toBeNull()
     expect(action).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'clear' }))
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     fireEvent.click(screen.getByText('clear'))
