@@ -56,7 +56,6 @@
         "@electron/rebuild",
         "dsh-missher-evolution",
         "dsh-missher-memory",
-        "dshmarket",
         "pnpm"
       ]
     },

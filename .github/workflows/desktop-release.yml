@@ -7,7 +7,7 @@ on:
         description: Existing draft desktop release tag to publish
         required: true
         type: string
-        default: desktop-v0.3.9
+        default: desktop-v0.4.0
 
 permissions:
   contents: write

@@ -1814,7 +1814,7 @@ index 1cf8ccc4a2329a159f68789205722df219c9ab70..065362de3637add103ae39f5cdd3657e
   * Loader entry ids a newly added package would collide on with bundles the
   * profile ALREADY loads (#122).
 diff --git a/lib/routes.js b/lib/routes.js
-index aa24d0047097e8729353082f6c659aa720197099..baf78b24caaea65e96e057bbfaa65a115dccabcf 100644
+index aa24d0047097e8729353082f6c659aa720197099..c568fef1533d904432d742c723ddec0e0bb79235 100644
 --- a/lib/routes.js
 +++ b/lib/routes.js
 @@ -14,7 +14,7 @@ import { cleanHotDir, hotMount, hotUnmount, listHotMounts, mountClientOnlyDeps,
@@ -1826,11 +1826,15 @@ index aa24d0047097e8729353082f6c659aa720197099..baf78b24caaea65e96e057bbfaa65a11
  import { findInstalledAlias, gitAllowBuildsKey, installTargetFor } from './sources.js';
  import { isStaleUpdate, parseIgnoredBuilds, parsePrepareNotAllowed, RELEASE_AGE_OVERRIDE, retargetCollections, validateAddedPlugins, withHoistRecovery } from './install.js';
  import { checkUpdates, fetchNpmLatest, invalidateUpdates, isUpgrade, latestPublishedRecently } from './updates.js';
-@@ -23,6 +23,14 @@ import { readJsonBody, sameOrigin, sendJson } from './http.js';
+@@ -23,6 +23,18 @@ import { readJsonBody, sameOrigin, sendJson } from './http.js';
  import { restartAllowed, scheduleRestart, trustedRestartRequest, trustedDownloadRequest } from './restart.js';
  import { verifyActivation } from './verify.js';
  import { createProfileBackup, downloadWebdav, MAX_BACKUP_BYTES, restoreProfileBackup, uploadWebdav, } from './backup.js';
 +const MARKET_PACKAGE_NAMES = new Set(['dsh-market', 'dshmarket']);
++/** Resolve a market-facing built-in through its exact live Loader identities. */
++export function builtinIsLive(name, plugin, live) {
++    return [name, ...(plugin.runtimeNames ?? [])].some(runtimeName => live.has(runtimeName));
++}
 +/** The active marketplace may not mutate the package that is serving it. */
 +function isMarketPackage(name) {
 +    return MARKET_PACKAGE_NAMES.has(name);
@@ -1841,13 +1845,18 @@ index aa24d0047097e8729353082f6c659aa720197099..baf78b24caaea65e96e057bbfaa65a11
  const PROFILE_RE = /^[A-Za-z0-9_-]+$/;
  /**
   * Packages whose build scripts pnpm refused to run, from any of its three
-@@ -54,6 +62,31 @@ export function mountMarketRoutes(host, config, commandRuntime) {
+@@ -54,6 +66,36 @@ export function mountMarketRoutes(host, config, commandRuntime) {
          throw new Error(`dsh-market: invalid profile name: ${config.profile}`);
      }
      const activeProfileDir = profileDir(config.profile, config.profileDirectory);
 +    const builtins = new Map();
 +    for (const plugin of config.builtins ?? []) {
-+        if (plugin.name.trim() === '' || plugin.spec.trim() === '' || builtins.has(plugin.name)) {
++        const runtimeNames = plugin.runtimeNames ?? [];
++        if (plugin.name.trim() === ''
++            || plugin.spec.trim() === ''
++            || !Array.isArray(runtimeNames)
++            || runtimeNames.some(name => typeof name !== 'string' || name.trim() === '')
++            || builtins.has(plugin.name)) {
 +            throw new Error(`dsh-market: invalid or duplicate built-in plugin: ${plugin.name}`);
 +        }
 +        builtins.set(plugin.name, plugin);
@@ -1862,7 +1871,7 @@ index aa24d0047097e8729353082f6c659aa720197099..baf78b24caaea65e96e057bbfaa65a11
 +        if (builtins.size === 0)
 +            return registry;
 +        const names = new Set(builtins.keys());
-+        const injected = [...builtins.values()].map(({ spec: _spec, ...plugin }) => ({
++        const injected = [...builtins.values()].map(({ spec: _spec, runtimeNames: _runtimeNames, ...plugin }) => ({
 +            ...plugin,
 +            install: '',
 +            added: registry.updated,
@@ -1873,7 +1882,7 @@ index aa24d0047097e8729353082f6c659aa720197099..baf78b24caaea65e96e057bbfaa65a11
      const commands = commandRuntime ?? { runPlugin: runDshPlugin, probePnpm, provisionPnpm, cancelActive };
      // Boot-time wipe: stale hot-mount inputs from a previous session must never
      // survive into a composition where the bundle layer already covers them.
-@@ -346,7 +379,7 @@ export function mountMarketRoutes(host, config, commandRuntime) {
+@@ -346,7 +388,7 @@ export function mountMarketRoutes(host, config, commandRuntime) {
                  }
                  try {
                      const { registry, source } = await loadRegistry();
@@ -1882,7 +1891,7 @@ index aa24d0047097e8729353082f6c659aa720197099..baf78b24caaea65e96e057bbfaa65a11
                  }
                  catch (error) {
                      sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) });
-@@ -363,25 +396,82 @@ export function mountMarketRoutes(host, config, commandRuntime) {
+@@ -363,25 +405,82 @@ export function mountMarketRoutes(host, config, commandRuntime) {
                      return;
                  }
                  await dropStaleHotMounts();
@@ -1900,8 +1909,8 @@ index aa24d0047097e8729353082f6c659aa720197099..baf78b24caaea65e96e057bbfaa65a11
 +                for (const name of Object.keys(profileInstalled)) {
                      activation[name] = verifyActivation(config.profile, name, live, activeProfileDir);
                  }
-+                for (const name of builtins.keys()) {
-+                    const isLive = live.has(name);
++                for (const [name, plugin] of builtins) {
++                    const isLive = builtinIsLive(name, plugin, live);
 +                    activation[name] = {
 +                        state: isLive ? 'live' : 'restart',
 +                        reasons: [isLive
@@ -1968,7 +1977,7 @@ index aa24d0047097e8729353082f6c659aa720197099..baf78b24caaea65e96e057bbfaa65a11
          host.webServer.register({
              kind: 'exact',
              path: '/dsh-market/use-skin',
-@@ -432,8 +522,8 @@ export function mountMarketRoutes(host, config, commandRuntime) {
+@@ -432,8 +531,8 @@ export function mountMarketRoutes(host, config, commandRuntime) {
                      const body = (await readJsonBody(request));
                      const name = typeof body.name === 'string' ? body.name : '';
                      const enabled = body.enabled === true;
@@ -1979,7 +1988,7 @@ index aa24d0047097e8729353082f6c659aa720197099..baf78b24caaea65e96e057bbfaa65a11
                          return;
                      }
                      if (readInstalled(config.profile, activeProfileDir)[name] === undefined) {
-@@ -647,13 +737,17 @@ export function mountMarketRoutes(host, config, commandRuntime) {
+@@ -647,13 +746,17 @@ export function mountMarketRoutes(host, config, commandRuntime) {
                      sendJson(response, 403, { error: 'untrusted origin' });
                      return;
                  }
@@ -2001,7 +2010,7 @@ index aa24d0047097e8729353082f6c659aa720197099..baf78b24caaea65e96e057bbfaa65a11
                      const force = body.force === true;
                      const spec = readInstalled(config.profile, activeProfileDir)[name];
                      if (spec === undefined) {
-@@ -695,17 +789,12 @@ export function mountMarketRoutes(host, config, commandRuntime) {
+@@ -695,17 +798,12 @@ export function mountMarketRoutes(host, config, commandRuntime) {
                          // force: the user chose to install a fresh release without the
                          // default one-day safety wait; scoped to this single command.
                          const addArgs = force ? ['add', RELEASE_AGE_OVERRIDE, target] : ['add', target];
@@ -2023,7 +2032,7 @@ index aa24d0047097e8729353082f6c659aa720197099..baf78b24caaea65e96e057bbfaa65a11
                          let ok = result.exitCode === 0 && !result.timedOut && !cancelled;
                          let stale = false;
                          let activation;
-@@ -738,6 +827,11 @@ export function mountMarketRoutes(host, config, commandRuntime) {
+@@ -738,6 +836,11 @@ export function mountMarketRoutes(host, config, commandRuntime) {
                                  ? '这个新版本刚发布不久。为了安全，系统默认会等它发布满一天后再安装——刚发布的版本偶尔会被发现问题然后撤回。可以明天再试，或点「立即更新」不再等待。 / This version was just released; for safety, installs normally wait about a day after a release. Try again tomorrow, or click "Update now" to install it right away.'
                                  : '更新命令执行完成，但版本没有变化，原因未能确认。点「立即更新」重试通常能解决；若仍不行，请导出日志反馈。 / The update command completed but the version did not change; the cause could not be confirmed. Clicking "Update now" to retry usually resolves it — if not, export the log and report it.';
                          const cancelDiff = cancelled ? changedSince(beforeInstalled) : null;
@@ -2035,7 +2044,7 @@ index aa24d0047097e8729353082f6c659aa720197099..baf78b24caaea65e96e057bbfaa65a11
                          // Build-script blocks hit updates too (#69): a leftover invalid
                          // allowBuilds entry (pnpm's placeholder bug, #56) or a newly
                          // build-required dep fails the add with ERR_PNPM_IGNORED_BUILDS.
-@@ -953,15 +1047,15 @@ export function mountMarketRoutes(host, config, commandRuntime) {
+@@ -953,15 +1056,15 @@ export function mountMarketRoutes(host, config, commandRuntime) {
                      sendJson(response, 403, { error: 'untrusted origin' });
                      return;
                  }
@@ -2057,7 +2066,7 @@ index aa24d0047097e8729353082f6c659aa720197099..baf78b24caaea65e96e057bbfaa65a11
                          return;
                      }
                      if (readInstalled(config.profile, activeProfileDir)[name] === undefined) {
-@@ -1120,19 +1214,12 @@ export function mountMarketRoutes(host, config, commandRuntime) {
+@@ -1120,19 +1223,12 @@ export function mountMarketRoutes(host, config, commandRuntime) {
                          const before = new Set(Object.keys(beforeSpecs));
                          if (retryAlias !== null)
                              before.delete(retryAlias);
@@ -2081,7 +2090,7 @@ index aa24d0047097e8729353082f6c659aa720197099..baf78b24caaea65e96e057bbfaa65a11
                          let ok = result.exitCode === 0 && !result.timedOut && !cancelled;
                          const cancelDiff = cancelled ? changedSince(beforeSpecs) : null;
                          if (ok)
-@@ -1167,6 +1254,11 @@ export function mountMarketRoutes(host, config, commandRuntime) {
+@@ -1167,6 +1263,11 @@ export function mountMarketRoutes(host, config, commandRuntime) {
                                  ok = true;
                              }
                          }
@@ -3755,7 +3764,7 @@ index 32a7618c21e581893c84d27e9acd5ddad47c8e5b..9e63c0d809bf4f324cc5fff7e0f81ea8
   * Loader entry ids a newly added package would collide on with bundles the
   * profile ALREADY loads (#122).
 diff --git a/src/routes.ts b/src/routes.ts
-index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46251ea9d2 100644
+index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..cc8459a00e9ba1d840c8d63b12a084ea161cf92f 100644
 --- a/src/routes.ts
 +++ b/src/routes.ts
 @@ -11,7 +11,7 @@
@@ -3780,7 +3789,7 @@ index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46
  import { findInstalledAlias, gitAllowBuildsKey, installTargetFor } from './sources.ts'
  import { isStaleUpdate, parseIgnoredBuilds, parsePrepareNotAllowed, RELEASE_AGE_OVERRIDE, retargetCollections, validateAddedPlugins, withHoistRecovery } from './install.ts'
  import { checkUpdates, fetchNpmLatest, invalidateUpdates, isUpgrade, latestPublishedRecently } from './updates.ts'
-@@ -60,8 +64,29 @@ export interface MarketConfig {
+@@ -60,8 +64,40 @@ export interface MarketConfig {
    profileDirectory?: string
    /** Detached self-restart is unsafe under systemd/launchd/pm2; operators can disable it (#14). */
    allowRestart?: boolean
@@ -3795,6 +3804,17 @@ index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46
 +export interface BuiltinPlugin extends Omit<RegistryPlugin, 'install' | 'added'> {
 +  /** Human-readable immutable application version, e.g. `builtin:0.1.1`. */
 +  spec: string
++  /** Loader entry names that implement this display package at runtime. */
++  runtimeNames?: string[]
++}
++
++/** Resolve a market-facing built-in through its exact live Loader identities. */
++export function builtinIsLive(
++  name: string,
++  plugin: Pick<BuiltinPlugin, 'runtimeNames'>,
++  live: ReadonlySet<string>,
++): boolean {
++  return [name, ...(plugin.runtimeNames ?? [])].some(runtimeName => live.has(runtimeName))
 +}
 +
 +const MARKET_PACKAGE_NAMES = new Set(['dsh-market', 'dshmarket'])
@@ -3810,13 +3830,20 @@ index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46
  const PROFILE_RE = /^[A-Za-z0-9_-]+$/
  
  /**
-@@ -97,6 +122,30 @@ export function mountMarketRoutes(
+@@ -97,6 +133,37 @@ export function mountMarketRoutes(
      throw new Error(`dsh-market: invalid profile name: ${config.profile}`)
    }
    const activeProfileDir = profileDir(config.profile, config.profileDirectory)
 +  const builtins = new Map<string, BuiltinPlugin>()
 +  for (const plugin of config.builtins ?? []) {
-+    if (plugin.name.trim() === '' || plugin.spec.trim() === '' || builtins.has(plugin.name)) {
++    const runtimeNames = plugin.runtimeNames ?? []
++    if (
++      plugin.name.trim() === ''
++      || plugin.spec.trim() === ''
++      || !Array.isArray(runtimeNames)
++      || runtimeNames.some(name => typeof name !== 'string' || name.trim() === '')
++      || builtins.has(plugin.name)
++    ) {
 +      throw new Error(`dsh-market: invalid or duplicate built-in plugin: ${plugin.name}`)
 +    }
 +    builtins.set(plugin.name, plugin)
@@ -3830,7 +3857,7 @@ index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46
 +  const withBuiltinRegistry = (registry: Registry): Registry => {
 +    if (builtins.size === 0) return registry
 +    const names = new Set(builtins.keys())
-+    const injected = [...builtins.values()].map(({ spec: _spec, ...plugin }) => ({
++    const injected = [...builtins.values()].map(({ spec: _spec, runtimeNames: _runtimeNames, ...plugin }) => ({
 +      ...plugin,
 +      install: '',
 +      added: registry.updated,
@@ -3841,7 +3868,7 @@ index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46
    const commands = commandRuntime ?? { runPlugin: runDshPlugin, probePnpm, provisionPnpm, cancelActive }
    // Boot-time wipe: stale hot-mount inputs from a previous session must never
    // survive into a composition where the bundle layer already covers them.
-@@ -376,7 +425,7 @@ export function mountMarketRoutes(
+@@ -376,7 +443,7 @@ export function mountMarketRoutes(
          }
          try {
            const { registry, source } = await loadRegistry()
@@ -3850,7 +3877,7 @@ index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46
          } catch (error) {
            sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) })
          }
-@@ -393,28 +442,83 @@ export function mountMarketRoutes(
+@@ -393,28 +460,83 @@ export function mountMarketRoutes(
            return
          }
          await dropStaleHotMounts()
@@ -3868,8 +3895,8 @@ index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46
 +        for (const name of Object.keys(profileInstalled)) {
            activation[name] = verifyActivation(config.profile, name, live, activeProfileDir)
          }
-+        for (const name of builtins.keys()) {
-+          const isLive = live.has(name)
++        for (const [name, plugin] of builtins) {
++          const isLive = builtinIsLive(name, plugin, live)
 +          activation[name] = {
 +            state: isLive ? 'live' : 'restart',
 +            reasons: [isLive
@@ -3937,7 +3964,7 @@ index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46
      host.webServer.register({
        kind: 'exact',
        path: '/dsh-market/use-skin',
-@@ -465,8 +569,8 @@ export function mountMarketRoutes(
+@@ -465,8 +587,8 @@ export function mountMarketRoutes(
            const body = (await readJsonBody(request)) as { name?: unknown; enabled?: unknown }
            const name = typeof body.name === 'string' ? body.name : ''
            const enabled = body.enabled === true
@@ -3948,7 +3975,7 @@ index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46
              return
            }
            if (readInstalled(config.profile, activeProfileDir)[name] === undefined) {
-@@ -681,13 +785,17 @@ export function mountMarketRoutes(
+@@ -681,13 +803,17 @@ export function mountMarketRoutes(
            sendJson(response, 403, { error: 'untrusted origin' })
            return
          }
@@ -3970,7 +3997,7 @@ index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46
            const force = body.force === true
            const spec = readInstalled(config.profile, activeProfileDir)[name]
            if (spec === undefined) {
-@@ -729,16 +837,12 @@ export function mountMarketRoutes(
+@@ -729,16 +855,12 @@ export function mountMarketRoutes(
              // force: the user chose to install a fresh release without the
              // default one-day safety wait; scoped to this single command.
              const addArgs = force ? ['add', RELEASE_AGE_OVERRIDE, target] : ['add', target]
@@ -3991,7 +4018,7 @@ index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46
              let ok = result.exitCode === 0 && !result.timedOut && !cancelled
              let stale = false
              let activation: Record<string, ReturnType<typeof verifyActivation>> | undefined
-@@ -770,6 +874,10 @@ export function mountMarketRoutes(
+@@ -770,6 +892,10 @@ export function mountMarketRoutes(
                  ? '这个新版本刚发布不久。为了安全，系统默认会等它发布满一天后再安装——刚发布的版本偶尔会被发现问题然后撤回。可以明天再试，或点「立即更新」不再等待。 / This version was just released; for safety, installs normally wait about a day after a release. Try again tomorrow, or click "Update now" to install it right away.'
                  : '更新命令执行完成，但版本没有变化，原因未能确认。点「立即更新」重试通常能解决；若仍不行，请导出日志反馈。 / The update command completed but the version did not change; the cause could not be confirmed. Clicking "Update now" to retry usually resolves it — if not, export the log and report it.'
              const cancelDiff = cancelled ? changedSince(beforeInstalled) : null
@@ -4002,7 +4029,7 @@ index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46
              // Build-script blocks hit updates too (#69): a leftover invalid
              // allowBuilds entry (pnpm's placeholder bug, #56) or a newly
              // build-required dep fails the add with ERR_PNPM_IGNORED_BUILDS.
-@@ -984,15 +1092,15 @@ export function mountMarketRoutes(
+@@ -984,15 +1110,15 @@ export function mountMarketRoutes(
            sendJson(response, 403, { error: 'untrusted origin' })
            return
          }
@@ -4024,7 +4051,7 @@ index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46
              return
            }
            if (readInstalled(config.profile, activeProfileDir)[name] === undefined) {
-@@ -1150,18 +1258,12 @@ export function mountMarketRoutes(
+@@ -1150,18 +1276,12 @@ export function mountMarketRoutes(
              const beforeSpecs = readInstalled(config.profile, activeProfileDir)
              const before = new Set(Object.keys(beforeSpecs))
              if (retryAlias !== null) before.delete(retryAlias)
@@ -4047,7 +4074,7 @@ index 5957ba5fd714ad9b455d70dbf6fdef83969a6ccd..f7d3a6572a44108b0dc63543191bab46
              let ok = result.exitCode === 0 && !result.timedOut && !cancelled
              const cancelDiff = cancelled ? changedSince(beforeSpecs) : null
              if (ok) invalidateUpdates()
-@@ -1194,6 +1296,10 @@ export function mountMarketRoutes(
+@@ -1194,6 +1314,10 @@ export function mountMarketRoutes(
                  ok = true
                }
              }

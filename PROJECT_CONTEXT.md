@@ -69,7 +69,13 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
-- Version 0.3.9 is the active release candidate. It lets manually declared
+- Version 0.4.0 is the active release candidate. It gives each Desktop-managed
+  built-in an explicit mapping from its market-facing package name to the exact
+  Loader entry that implements it. Plugin Market now reports Memory, MSE, and
+  the External Brain coordinator as live only when their real fibers are up;
+  an absent or merely similar Loader name remains restart-required. Packaged
+  smoke verifies all three statuses against the same-origin installed endpoint
+  on both platforms. Version 0.3.9 previously let manually declared
   models advertise an explicit reasoning capability, including a distinct
   High-only shape that does not invent Low or Medium wire values. The six-step
   Desktop slider keeps the user's visual choice while safely mapping requests

@@ -1163,6 +1163,17 @@ async function exercisePluginMarket(
   await builtinBrain.waitFor({ state: 'visible', timeout: 30_000 })
   await builtinMemory.waitFor({ state: 'visible', timeout: 30_000 })
   await builtinEvolution.waitFor({ state: 'visible', timeout: 30_000 })
+  const builtinActivation = await page.evaluate(async () => {
+    const response = await fetch('/dsh-market/installed', { cache: 'no-store' })
+    if (!response.ok) throw new Error(`market installed status failed: ${response.status}`)
+    const body = await response.json() as {
+      activation?: Record<string, { state?: string; hot?: boolean; reasons?: string[] }>
+    }
+    return body.activation ?? {}
+  })
+  expect(builtinActivation['@deepseek-ai/dsh-missher-brain']).toMatchObject({ state: 'live', hot: true })
+  expect(builtinActivation['dsh-missher-memory']).toMatchObject({ state: 'live', hot: true })
+  expect(builtinActivation['dsh-missher-evolution']).toMatchObject({ state: 'live', hot: true })
   expect(await installedRail.evaluate(element => getComputedStyle(element).overflowX)).toBe('auto')
   // The shell and its controls mount before the same-origin registry request
   // resolves. Wait for the categorized content, not merely the outer shell.
@@ -1294,7 +1305,7 @@ async function exercisePersonalization(
 
   let section = settingsDialog.locator('[data-personalization-section]')
   await section.waitFor({ state: 'visible', timeout: 15_000 })
-  const instructions = `desktop-0.3.9-personalization-${platform}`
+  const instructions = `desktop-0.4.0-personalization-${platform}`
   const editor = section.locator('#dsh-personalization-instructions')
   await expect.poll(() => editor.isEnabled(), { timeout: 15_000 }).toBe(true)
   await editor.fill(instructions)
