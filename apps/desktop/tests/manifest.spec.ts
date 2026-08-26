@@ -57,7 +57,7 @@ describe('desktop package manifest', () => {
 
     expect(manifest).toMatchObject({
       name: '@deepseek-ai/dsh-desktop',
-      version: '0.4.0',
+      version: '0.4.1',
       packageManager: 'pnpm@11.7.0',
       private: true,
       main: 'lib/main.js',
