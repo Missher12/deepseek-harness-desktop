@@ -89,6 +89,16 @@ The repository is based on the pinned official source and adds the desktop appli
   ordinary Sessions untouched. The package is intentionally absent from the
   immutable Desktop default patch, reuses the existing ordinary-Session
   resolver, and has no OpenClaw runtime dependency or Harness core patch.
+- The optimized Lark command-center candidate keeps the repository-native
+  `0.1.1-rc.2` package version because every dsh release member is version-locked
+  to the Harness root; it must not masquerade as an independently bumped
+  `rc.3` or trigger a whole-family Harness release. Its immutable GitHub build
+  asset is `deepseek-ai-dsh-lark-0.1.1-rc.2-release-20260826.1.tgz` (606,506
+  bytes, SHA-256 `a63849d4168f893c2a01ef3f7fddb0651034a98e55c20c0caeaaea7354a42dba`).
+  The Lark-only Client build sanitizer prevents local worktree paths from
+  entering the tarball; package-path, symlink, manifest, checksum, isolated
+  `plugin add`, `--dump-config`, and `plugin remove` acceptance all pass. Public
+  GitHub re-download remains the final release gate.
 - Version 0.4.0 is the active release candidate. It gives each Desktop-managed
   built-in an explicit mapping from its market-facing package name to the exact
   Loader entry that implements it. Plugin Market now reports Memory, MSE, and
