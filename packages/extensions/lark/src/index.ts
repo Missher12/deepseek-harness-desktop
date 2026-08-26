@@ -11,8 +11,11 @@ import type { MessageId } from '@deepseek-ai/dsh-llm'
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-host-apiproxy'
+import type {} from '@deepseek-ai/dsh-commands'
+import type {} from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-jobs'
 import type {} from '@deepseek-ai/dsh-typert-registry'
-import type {} from '@deepseek-ai/dsh-workspace'
+import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { ApprovalBridge } from './approval.ts'
 import { LarkAttachmentService } from './attachments.ts'
 import { BindingController, type BindingCatalog } from './binding.ts'
@@ -21,6 +24,10 @@ import {
   StreamingCardController,
 } from './cards.ts'
 import { CommandRouter, type AdmittedMessage } from './commands.ts'
+import {
+  CommandCenterService,
+  foldSessionUsage,
+} from './command-center.ts'
 import {
   Config,
   LARK_APP_ID_REF,
@@ -45,6 +52,7 @@ export * from './attachments.ts'
 export * from './binding.ts'
 export * from './cards.ts'
 export * from './commands.ts'
+export * from './command-center.ts'
 export * from './config.ts'
 export * from './http.ts'
 export * from './identity.ts'
@@ -266,6 +274,116 @@ export async function apply(ctx: Context, base: Config = {}): Promise<void> {
     updateCard: async (messageId: string, card: unknown) => requireTransport(transport).updateCard(messageId, card),
   }
   const selection = new SelectionCardService(binding, identity, transportFacade)
+  const commandCenter = new CommandCenterService({
+    transport: transportFacade,
+    identity,
+    binding,
+    commitEvent: eventId => identity.commitEvent(eventId),
+    openProject: message => selection.sendProjectCard(message),
+    harness: {
+      createSession: async (workspaceId) => {
+        const value = responseValue(
+          await ctx.apiProxy.sessions.create(request({ workspaceId: WorkspaceId(workspaceId) })),
+          'session.create',
+        )
+        return { sessionId: value.sessionId }
+      },
+      renameSession: async (sessionId, title) => {
+        const value = responseValue(
+          await ctx.apiProxy.sessions.rename(request({ sessionId: SessionId(sessionId), title })),
+          'session.rename',
+        )
+        return { title: value.title }
+      },
+      models: async sessionId => responseValue(
+        await ctx.apiProxy.sessions.models(request({ sessionId: SessionId(sessionId) })),
+        'session.models',
+      ),
+      selectModel: async (sessionId, provider, model, reasoningEffort) => {
+        const value = responseValue(await ctx.apiProxy.sessions.selectModel(request({
+          sessionId: SessionId(sessionId), provider, model,
+          ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+        })), 'session.selectModel')
+        return value.selected
+      },
+      executeNative: async (sessionId, line) => {
+        const name = /^\/([a-z][a-z0-9_-]*)(?=$|\s)/u.exec(line)?.[1]
+        if (name === undefined || !['compact', 'goal', 'plan', 'permission'].includes(name)) {
+          return { matched: false }
+        }
+        const agent = await resolveLarkSession(ctx, sessionId)
+        const commands = agent.ctx.get('commands') ?? ctx.get('commands')
+        if (commands === undefined) return { matched: false }
+        const execution = await commands.execute(agent, line, [], new AbortController().signal)
+        if (execution === undefined) return { matched: false }
+        return {
+          matched: true,
+          kind: execution.result.kind,
+          ...(execution.result.text === undefined ? {} : { text: execution.result.text }),
+        }
+      },
+      skills: async (sessionId) => {
+        const value = responseValue(
+          await ctx.apiProxy.skills.list(request({ sessionId: SessionId(sessionId) })),
+          'skill.list',
+        )
+        return value.skills.map(skill => ({ ...skill }))
+      },
+      tools: async (sessionId) => {
+        const agent = await resolveLarkSession(ctx, sessionId)
+        const tools = agent.ctx.get('tools') ?? ctx.get('tools')
+        return tools?.schemas(agent).map(schema => schema.name).sort() ?? []
+      },
+      tasks: async (sessionId) => {
+        const agent = await resolveLarkSession(ctx, sessionId)
+        const jobs = agent.ctx.get('jobs') ?? ctx.get('jobs')
+        const catalog = responseValue(
+          await ctx.apiProxy.subagents.list(request({ parentSessionId: SessionId(sessionId) })),
+          'subagent.list',
+        )
+        return {
+          jobs: jobs?.list(agent).map(job => ({
+            id: String(job.id), kind: job.kind, label: job.label, status: job.status,
+            startedAt: job.startedAt,
+            ...(job.finishedAt === undefined ? {} : { finishedAt: job.finishedAt }),
+            ...(job.detail === undefined ? {} : { detail: job.detail }),
+          })) ?? [],
+          subagents: catalog.entries.map(entry => entry.kind === 'diagnostic'
+            ? { id: String(entry.id), mode: 'diagnostic' as const, reason: entry.reason }
+            : {
+              id: String(entry.id), mode: entry.mode, activity: entry.activity,
+              ...entry.label === undefined ? {} : { label: entry.label },
+            }),
+        }
+      },
+      usage: async sessionId => foldSessionUsage(
+        (await resolveLarkSession(ctx, sessionId)).session.events,
+      ),
+      diagnostics: async (sessionId) => {
+        const agent = await resolveLarkSession(ctx, sessionId)
+        const [models, skills, subagents] = await Promise.all([
+          ctx.apiProxy.sessions.models(request({ sessionId: SessionId(sessionId) })),
+          ctx.apiProxy.skills.list(request({ sessionId: SessionId(sessionId) })),
+          ctx.apiProxy.subagents.list(request({ parentSessionId: SessionId(sessionId) })),
+        ])
+        const commands = agent.ctx.get('commands') ?? ctx.get('commands')
+        const tools = agent.ctx.get('tools') ?? ctx.get('tools')
+        const jobs = agent.ctx.get('jobs') ?? ctx.get('jobs')
+        return {
+          connected: transportConnected,
+          queueDepth: [...inboxTable.entries()].filter(([, row]) =>
+            !['terminal', 'cancelled'].includes(row.status)).length,
+          agentStatus: agent.status,
+          routable: responseValue(models, 'session.models').routable,
+          commandCount: commands?.list(agent).length ?? 0,
+          skillCount: responseValue(skills, 'skill.list').skills.length,
+          toolCount: tools?.schemas(agent).length ?? 0,
+          jobCount: jobs?.list(agent).length ?? 0,
+          subagentCount: responseValue(subagents, 'subagent.list').entries.length,
+        }
+      },
+    },
+  })
   const commandIdentity = {
     admit: async (message: AdmittedMessage) => identity.admit({
       eventId: message.eventId,
@@ -280,6 +398,7 @@ export async function apply(ctx: Context, base: Config = {}): Promise<void> {
   const router = new CommandRouter({
     transport: transportFacade,
     cards: selection,
+    commandCenter,
     binding,
     inbox: queue,
     identity: commandIdentity,
@@ -420,6 +539,13 @@ export async function apply(ctx: Context, base: Config = {}): Promise<void> {
           if (input === undefined) return
           if (input.value.action === 'select-project' || input.value.action === 'select-session') {
             await selection.handleAction(input)
+            return
+          }
+          if (input.value.action === 'command-action'
+            || input.value.action === 'select-model-provider'
+            || input.value.action === 'select-model'
+            || input.value.action === 'select-reasoning') {
+            await commandCenter.handleAction(input)
             return
           }
           if (input.value.action === 'approve-once' || input.value.action === 'deny') {

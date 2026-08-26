@@ -22,6 +22,10 @@ type Admission =
 interface CommandDependencies {
   transport: { sendText(chatId: string, text: string): Promise<unknown> }
   cards: { sendProjectCard(message: AdmittedMessage): Promise<void> }
+  commandCenter: {
+    send(message: AdmittedMessage): Promise<void>
+    handleText(message: AdmittedMessage, text: string): Promise<'handled' | 'enqueue' | 'unknown'>
+  }
   binding: {
     unbind(message: AdmittedMessage): Promise<void>
     statusText(message: AdmittedMessage): Promise<string>
@@ -38,7 +42,7 @@ interface CommandDependencies {
   prepareOwnerMessage?(message: AdmittedMessage): Promise<AdmittedMessage>
 }
 
-const HELP = '命令：/ 进入项目 · /切换 · /解绑 · /状态 · /插话 <内容> · /停止 · /帮助'
+const HELP = '发送 / 查看完整 Harness 命令中心。'
 
 /** Exact command fast path; ordinary text alone reaches the durable Harness inbox. */
 export class CommandRouter {
@@ -76,7 +80,12 @@ export class CommandRouter {
 
   private async routeOwner(message: AdmittedMessage): Promise<void> {
     const text = message.text.trim()
-    if (text === '/' || text === '/进入' || text === '/切换') {
+    if (text === '/') {
+      await this.commit(message.eventId)
+      await this.deps.commandCenter.send(message)
+      return
+    }
+    if (text === '/进入' || text === '/切换') {
       await this.commit(message.eventId)
       await this.deps.cards.sendProjectCard(message)
       return
@@ -94,7 +103,7 @@ export class CommandRouter {
     }
     if (text === '/帮助') {
       await this.commit(message.eventId)
-      await this.deps.transport.sendText(message.chatId, HELP)
+      await this.deps.commandCenter.send(message)
       return
     }
     if (text.startsWith('/插话 ')) {
@@ -110,8 +119,16 @@ export class CommandRouter {
       return
     }
     if (text.startsWith('/')) {
-      await this.commit(message.eventId)
-      await this.deps.transport.sendText(message.chatId, HELP)
+      const result = await this.deps.commandCenter.handleText(message, text)
+      if (result === 'enqueue') {
+        const queued = await this.deps.inbox.enqueue(message)
+        if (queued === 'unbound') {
+          await this.deps.transport.sendText(message.chatId, await this.deps.binding.statusText(message))
+        }
+      } else if (result === 'unknown') {
+        await this.commit(message.eventId)
+        await this.deps.transport.sendText(message.chatId, HELP)
+      }
       return
     }
     const result = await this.deps.inbox.enqueue(message)

@@ -134,7 +134,11 @@ export const callbackNonceRecordSchema = z.object({
   ownerOpenId: opaqueId,
   chatId: opaqueId,
   generation,
-  action: z.enum(['select-project', 'select-session', 'approve-once', 'deny', 'resume', 'clear']),
+  action: z.enum([
+    'select-project', 'select-session',
+    'command-action', 'select-model-provider', 'select-model', 'select-reasoning',
+    'approve-once', 'deny', 'resume', 'clear',
+  ]),
   data: z.record(z.string().max(64), z.string().max(512))
     .refine(value => Object.keys(value).length <= 4).optional(),
   expiresAt: safeTime,

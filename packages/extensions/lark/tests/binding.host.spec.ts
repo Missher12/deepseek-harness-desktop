@@ -72,6 +72,23 @@ describe('project and ordinary Session binding', () => {
     expect(h.resolveOrdinarySession).toHaveBeenLastCalledWith('idle')
   })
 
+  test('binds only an exact newly created ordinary Session in the selected workspace', async () => {
+    const h = harness()
+    await expect(h.controller.bindCreated('w1', 'blank')).resolves.toMatchObject({
+      workspaceId: 'w1', sessionId: 'blank', projectPath: '/Users/missher/Harness', state: 'active',
+    })
+    expect(h.resolveOrdinarySession).toHaveBeenCalledWith('blank')
+
+    h.workspaces[0]!.sessionIds.push('created-child', 'created-wrong')
+    h.sessions.push(
+      { sessionId: 'created-child', updatedAt: 10, running: false, blank: true, origin: 'subagent' as const, cwd: '/Users/missher/Harness' },
+      { sessionId: 'created-wrong', updatedAt: 11, running: false, blank: true, cwd: '/tmp/wrong' },
+    )
+    await expect(h.controller.bindCreated('w1', 'created-child')).rejects.toThrow(/ordinary/)
+    await expect(h.controller.bindCreated('w1', 'created-wrong')).rejects.toThrow(/directory/)
+    await expect(h.controller.bindCreated('w2', 'blank')).rejects.toThrow(/workspace/)
+  })
+
   test('rejects stale, archived, subagent, blank, and cwd-mismatched actions', async () => {
     const h = harness()
     await expect(h.controller.bind('w1', 'blank')).rejects.toThrow(/not selectable/)

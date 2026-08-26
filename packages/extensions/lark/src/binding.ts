@@ -98,16 +98,52 @@ export class BindingController {
       || canonical(resolved.cwd) !== canonical(workspace.path)) {
       throw new Error('Lark Session working directory changed')
     }
-    const previous = await this.store.get()
-    const now = this.now()
-    const binding: BindingRecord = {
-      id: 'owner', ownerOpenId: owner.openId, chatId: owner.chatId,
-      workspaceId, projectPath: workspace.path, sessionId,
-      generation: (previous?.generation ?? 0) + 1,
-      state: 'active', boundAt: now, updatedAt: now,
+    return this.persist(owner, workspace, sessionId)
+  }
+
+  /**
+   * Bind the exact ordinary Session just committed by the Host create API.
+   * Unlike the user picker, a newly created Session may still be blank.
+   * @param workspaceId - Workspace passed to the successful create request.
+   * @param sessionId - Exact Session identity returned by that request.
+   * @returns The new durable binding generation.
+   */
+  async bindCreated(workspaceId: string, sessionId: string): Promise<BindingRecord> {
+    const owner = await this.getOwner()
+    if (owner === undefined) throw new Error('Lark owner is not paired')
+    const [workspaces, sessions] = await Promise.all([
+      this.catalog.listWorkspaces(), this.catalog.listSessions(),
+    ])
+    const workspace = workspaces.items.find(item => item.workspaceId === workspaceId)
+    if (workspace === undefined) throw new Error('Lark project is no longer available')
+    if (!workspace.sessionIds.includes(sessionId)) {
+      throw new Error('Created Lark Session is not attached to the selected workspace')
     }
-    await this.store.put(binding)
-    return binding
+    if (workspaces.archivedSessionIds.includes(sessionId)) {
+      throw new Error('Created Lark Session is archived')
+    }
+    const selected = sessions.find(item => item.sessionId === sessionId)
+    if (selected === undefined || selected.origin === 'subagent' || selected.parentSessionId !== undefined) {
+      throw new Error('Created Lark Session is not ordinary')
+    }
+    if (selected.cwd === undefined || canonical(selected.cwd) !== canonical(workspace.path)) {
+      throw new Error('Created Lark Session working directory changed')
+    }
+    const resolved = await this.catalog.resolveOrdinarySession(sessionId)
+    if (resolved.id !== sessionId || resolved.cwd === undefined
+      || canonical(resolved.cwd) !== canonical(workspace.path)) {
+      throw new Error('Created Lark Session working directory changed')
+    }
+    return this.persist(owner, workspace, sessionId)
+  }
+
+  /**
+   * Read and revalidate the current active binding.
+   * @returns The active binding, or undefined when absent or paused.
+   */
+  async active(): Promise<BindingRecord | undefined> {
+    const binding = await this.recover()
+    return binding?.state === 'active' ? binding : undefined
   }
 
   /**
@@ -129,7 +165,13 @@ export class BindingController {
       if (workspace === undefined || canonical(workspace.path) !== canonical(binding.projectPath)) {
         throw new Error('project changed')
       }
-      if (!(await this.listSessions(workspaceId)).some(item => item.sessionId === binding.sessionId)) {
+      const sessions = await this.catalog.listSessions()
+      const archived = new Set(workspaces.archivedSessionIds)
+      const selected = sessions.find(item => item.sessionId === binding.sessionId)
+      if (!workspace.sessionIds.includes(binding.sessionId) || archived.has(binding.sessionId)
+        || selected === undefined || selected.origin === 'subagent'
+        || selected.parentSessionId !== undefined || selected.cwd === undefined
+        || canonical(selected.cwd) !== canonical(binding.projectPath)) {
         throw new Error('session changed')
       }
       const target = await this.catalog.resolveOrdinarySession(binding.sessionId)
@@ -164,5 +206,22 @@ export class BindingController {
       return `已暂停 ${binding.projectPath} · ${binding.sessionId}。发送 / 重新选择。`
     }
     return `已绑定 ${binding.projectPath} · ${binding.sessionId}`
+  }
+
+  private async persist(
+    owner: OwnerRecord,
+    workspace: WorkspaceRow,
+    sessionId: string,
+  ): Promise<BindingRecord> {
+    const previous = await this.store.get()
+    const now = this.now()
+    const binding: BindingRecord = {
+      id: 'owner', ownerOpenId: owner.openId, chatId: owner.chatId,
+      workspaceId: workspace.workspaceId, projectPath: workspace.path, sessionId,
+      generation: (previous?.generation ?? 0) + 1,
+      state: 'active', boundAt: now, updatedAt: now,
+    }
+    await this.store.put(binding)
+    return binding
   }
 }

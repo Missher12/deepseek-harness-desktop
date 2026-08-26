@@ -71,9 +71,14 @@ The repository is based on the pinned official source and adds the desktop appli
 
 - The 2026-08-25 source candidate adds the independently installable
   `@deepseek-ai/dsh-lark` Bundle. One locally paired Feishu/Lark private-chat
-  owner can use `/` to select a full-path project and an existing ordinary
-  Session, then submit durable strict-FIFO turns to that Session's existing
-  Agent. One monotonic card streams visible text, safe tool status, elapsed
+  owner can send `/` for a complete signed Harness command center, use
+  `/进入` to select a full-path project and an existing ordinary Session, then
+  create/rename Sessions, select the current model and advertised reasoning
+  effort, execute a fixed allowlist of current Harness commands, inspect
+  user-invocable skills, scoped tools, owner-visible jobs/subagents, completed
+  token usage, and redacted diagnostics. Exact skill invocations and ordinary
+  development text remain durable strict-FIFO visible user turns in that
+  Session's existing Agent. One monotonic card streams visible text, safe tool status, elapsed
   time, and real token usage; intermediate projections coalesce into one
   timer and one in-flight write, while the final state bypasses pending
   throttle delay. Desktop/Feishu approvals share the existing single-winner

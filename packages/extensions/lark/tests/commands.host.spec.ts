@@ -8,6 +8,10 @@ function message(text: string): AdmittedMessage {
 function harness(admission: 'owner' | 'unpaired' | 'rejected' = 'owner') {
   const transport = { sendText: vi.fn(async (_chatId: string, _text: string) => ({ messageId: 'om_1', chatId: 'oc_dm' })) }
   const cards = { sendProjectCard: vi.fn(async () => {}) }
+  const commandCenter = {
+    send: vi.fn(async () => {}),
+    handleText: vi.fn(async (): Promise<'handled' | 'enqueue' | 'unknown'> => 'unknown'),
+  }
   const binding = {
     unbind: vi.fn(async () => {}),
     statusText: vi.fn(async () => '已绑定 /project · session-1'),
@@ -27,18 +31,27 @@ function harness(admission: 'owner' | 'unpaired' | 'rejected' = 'owner') {
     ? input
     : { ...input, text: `${input.text}:prepared` })
   return {
-    router: new CommandRouter({ transport, cards, binding, inbox, identity, prepareOwnerMessage }),
-    transport, cards, binding, inbox, prepareOwnerMessage,
+    router: new CommandRouter({ transport, cards, commandCenter, binding, inbox, identity, prepareOwnerMessage }),
+    transport, cards, commandCenter, binding, inbox, prepareOwnerMessage,
   }
 }
 
 describe('exact slash routing', () => {
-  test.each(['/', '/进入'])('%s opens project selection without touching the Agent inbox', async (text) => {
+  test('exact / opens the complete command center without touching the Agent inbox', async () => {
+    const h = harness()
+    await h.router.message(message('/'))
+    expect(h.commandCenter.send).toHaveBeenCalledOnce()
+    expect(h.cards.sendProjectCard).not.toHaveBeenCalled()
+    expect(h.inbox.enqueue).not.toHaveBeenCalled()
+    expect(h.inbox.steer).not.toHaveBeenCalled()
+  })
+
+  test.each(['/进入', '/切换'])('%s opens project selection without touching the Agent inbox', async (text) => {
     const h = harness()
     await h.router.message({ ...message(text), text })
     expect(h.cards.sendProjectCard).toHaveBeenCalledOnce()
+    expect(h.commandCenter.send).not.toHaveBeenCalled()
     expect(h.inbox.enqueue).not.toHaveBeenCalled()
-    expect(h.inbox.steer).not.toHaveBeenCalled()
   })
 
   test('menu 进入项目 takes the same no-model fast path', async () => {
@@ -48,19 +61,33 @@ describe('exact slash routing', () => {
     expect(h.inbox.enqueue).not.toHaveBeenCalled()
   })
 
-  test('supports switch, unbind, status, help, steer, and stop', async () => {
+  test('supports unbind, status, command-center help, steer, and stop', async () => {
     const h = harness()
-    await h.router.message({ ...message('/切换'), text: '/切换' })
     await h.router.message({ ...message('/解绑'), text: '/解绑' })
     await h.router.message({ ...message('/状态'), text: '/状态' })
     await h.router.message({ ...message('/帮助'), text: '/帮助' })
     await h.router.message({ ...message('/插话 fix now'), text: '/插话 fix now' })
     await h.router.message({ ...message('/停止'), text: '/停止' })
-    expect(h.cards.sendProjectCard).toHaveBeenCalledOnce()
     expect(h.binding.unbind).toHaveBeenCalledOnce()
     expect(h.binding.statusText).toHaveBeenCalledOnce()
+    expect(h.commandCenter.send).toHaveBeenCalledOnce()
     expect(h.inbox.steer).toHaveBeenCalledWith('fix now')
     expect(h.inbox.stop).toHaveBeenCalledOnce()
+  })
+
+  test('delegates supported Harness commands and durably enqueues an admitted skill invocation', async () => {
+    const h = harness()
+    h.commandCenter.handleText
+      .mockResolvedValueOnce('handled')
+      .mockResolvedValueOnce('enqueue')
+    const model = { ...message('/模型'), text: '/模型' }
+    const skill = { ...message('/review-code now'), text: '/review-code now' }
+    await h.router.message(model)
+    await h.router.message(skill)
+    expect(h.commandCenter.handleText).toHaveBeenNthCalledWith(1, model, '/模型')
+    expect(h.commandCenter.handleText).toHaveBeenNthCalledWith(2, skill, '/review-code now')
+    expect(h.inbox.enqueue).toHaveBeenCalledOnce()
+    expect(h.inbox.enqueue).toHaveBeenCalledWith(skill)
   })
 
   test('ordinary text is queued as its own durable turn', async () => {
@@ -106,6 +133,7 @@ describe('exact slash routing', () => {
     await h.router.message(message('/'))
     expect(h.transport.sendText).not.toHaveBeenCalled()
     expect(h.cards.sendProjectCard).not.toHaveBeenCalled()
+    expect(h.commandCenter.send).not.toHaveBeenCalled()
     expect(h.prepareOwnerMessage).not.toHaveBeenCalled()
   })
 })

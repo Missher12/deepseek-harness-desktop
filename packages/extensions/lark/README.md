@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-An independently installable DeepSeek Harness Bundle that lets one explicitly paired Feishu or Lark owner enter an existing ordinary Harness Session from a private chat and continue developing in it. It reuses the Session's existing Agent, approval policy, sandbox, tools, model, history, and project directory. It does not embed OpenClaw, create a second Agent runtime, or expose project data to unpaired users.
+An independently installable DeepSeek Harness Bundle that gives one explicitly paired Feishu or Lark owner a private-chat Harness command center and lets that owner continue developing in an ordinary Harness Session. It reuses the Session's existing Agent, approval policy, sandbox, tools, model, history, and project directory. It does not embed OpenClaw, create a second Agent runtime, or expose project data to unpaired users.
 
 ## Install
 
@@ -17,7 +17,7 @@ Create a self-built app, enable its bot, and use WebSocket/long-connection event
 - `im.message.receive_v1`
 - `card.action.trigger`
 
-Grant the application permission to receive and send bot messages (`im:message`). Grant `im:resource` when image/file input is required. Publish an app version and make the bot available only to the intended owner account. A bot menu item named `进入项目` is optional; it uses the same fast path as `/`.
+Grant the application permission to receive and send bot messages (`im:message`). Grant `im:resource` when image/file input is required. Publish an app version and make the bot available only to the intended owner account. A bot menu item named `进入项目` is optional; it uses the same fast path as `/进入`.
 
 In Harness Settings → Lark Remote Development, enter the App ID and App Secret. Secret values are written only to the Harness credential store and are never returned to the browser, plugin state, logs, or cards. Select Feishu or Lark as the domain in the plugin configuration when needed, then enable the plugin.
 
@@ -25,23 +25,27 @@ The first accepted private DM receives a short pairing code. Enter that code loc
 
 ## Enter a project and Session
 
-Send exact `/`, `/进入`, `/切换`, or use the `进入项目` menu item. This opens a no-model project card. Select the full project path, then select an existing ordinary unarchived Session. Running Sessions are listed first. Archived, deleted, blank, subagent, and project-mismatched Sessions are excluded and revalidated when clicked. The final owner/chat/project/Session binding is durable across restart.
+Send exact `/` to open the complete no-model Harness command center. Send `/进入`, `/切换`, or use the `进入项目` menu item to open the no-model project card. Select the full project path, then select an existing ordinary unarchived Session. Running Sessions are listed first. Archived, deleted, blank, subagent, and project-mismatched Sessions are excluded and revalidated when clicked. The final owner/chat/project/Session binding is durable across restart.
+
+`/新建` creates one ordinary Session inside the currently bound workspace and immediately enters the exact returned Session after revalidating workspace membership, ordinary ownership, and cwd. A newly created blank Session is valid only through this exact create receipt; the picker still hides unrelated blank Sessions.
 
 Ordinary text then becomes one remote Harness turn in that exact Session and appears in conversation history as the same visible user message produced by the local composer. Every accepted Feishu event is write-ahead persisted with a pre-created Harness Message ID. Messages are delivered in original Feishu order, one at a time; item N+1 is not submitted until item N is claimed by the selected Session and its exact `turn/end` is observed. Restart recovery reconciles the existing inbox and Session history before reusing that same Message ID, so it does not intentionally duplicate an indeterminate delivery.
 
-Before an active binding exists, ordinary text is not accepted into the durable queue. The bot replies with the current binding status and directs the owner to `/` instead of failing the Feishu callback.
+Before an active binding exists, ordinary text is not accepted into the durable queue. The bot replies with the current binding status and directs the owner to `/进入` instead of failing the Feishu callback.
 
 Images are downloaded only after owner admission, validated by the Harness AttachmentStore, and committed as durable image references. Generic files are limited to 30 MiB, stored with mode `0600` under `$DSH_HOME/lark/files`, described to the Agent by a private temporary path plus SHA-256, and retained for seven days by default. No attachment is written into the selected project automatically.
 
 ## Commands and output
 
-- `/` or `/进入`: choose project and Session without invoking a model.
-- `/切换`: reopen project selection.
-- `/解绑`: remove the current Session binding.
-- `/状态`: show the paired owner's current binding.
-- `/插话 <内容>`: steer the currently running Session through its existing Agent.
-- `/停止`: cancel the active remote turn, remove only unclaimed `dsh-lark` messages, and retain unrelated inbox work.
-- `/帮助`: show bounded command help.
+- `/` or `/帮助`: show the complete signed Harness command-center card without invoking a model.
+- `/进入` or `/切换`: choose a full-path project and ordinary Session.
+- `/新建`; `/重命名 <标题>`: create and enter a Session in the bound workspace, or rename the current Session through the Host API.
+- `/模型`; `/推理`: open signed selectors backed by the current Session's fresh provider/model/reasoning directory.
+- `/压缩`; `/目标 <内容>`; `/计划 [内容|off]`; `/权限 [预设]`: execute only the matching currently registered Harness commands. The native aliases `/compact`, `/goal`, `/plan`, and `/permission` are also accepted.
+- `/技能`; `/工具`; `/任务`; `/用量`; `/诊断`: show bounded current skill, scoped tool, owner-visible job/subagent, completed-message token, and redacted capability views.
+- `/解绑`; `/状态`; `/插话 <内容>`; `/停止`: manage the exact binding, steer the existing Agent, or cancel the active remote turn while retaining unrelated inbox work.
+
+A typed `/skill-name ...` is enqueued only when `skill-name` exactly matches the current Session's user-invocable skill catalog. It remains an ordinary visible durable user message; the Harness skill pre-step, not the Lark transport, owns invocation. Unknown slash names never pass through to the Agent, and browser-only export, arbitrary tool execution, shell shortcuts, administrative restart/configuration, and OpenClaw-only commands are not exposed.
 
 Each Harness turn owns one Feishu interactive card. It paints a stable placeholder first, then streams visible assistant text with a typewriter effect, safe tool titles/status, elapsed time, the exact model ID/provider/reasoning effort, and real Harness input/output/cache token usage when available. Intermediate projections coalesce to the latest state within the configured interval instead of queuing one Feishu patch per model chunk; a terminal projection cancels the pending timer and waits for at most one card request already in flight. The route comes from the selected Session's durable request header and is corrected by the actual assistant message, so a model switch is reflected in the same card. Reasoning content, system messages, environment values, raw tool arguments/results, secrets, and unrestricted logs are not projected. A bounded text reply is used once if card creation or update fails.
 
@@ -57,7 +61,7 @@ Restart Harness after removal. The package dependency and bundle layer disappear
 
 ## Verification boundary and attribution
 
-Offline tests cover owner gates, signed actions, ordinary-Session validation, durable FIFO/restart reconciliation, cards, approvals, attachments, settings lifecycle, Loader composition, and Profile removal. A real Feishu acceptance requires App credentials entered by the user in Harness; tests must never import credentials from OpenClaw or Hermes.
+Offline tests cover owner gates, signed actions, command-center routing, created-Session validation, model/reasoning revalidation, fixed native-command admission, skill admission, bounded diagnostics, durable FIFO/restart reconciliation, cards, approvals, attachments, settings lifecycle, Loader composition, and Profile removal. A real Feishu acceptance requires App credentials entered by the user in Harness; tests must never import credentials from OpenClaw or Hermes.
 
 The implementation uses the official `@larksuiteoapi/node-sdk`. WebSocket lifecycle and the coalescing card-flush scheduler were informed by the MIT-licensed `@larksuite/openclaw-lark` version `2026.7.16`; this package is an independent Harness implementation and neither bundles nor depends on OpenClaw-Lark. See [LICENSE](LICENSE#third-party-notices).
 
@@ -67,7 +71,7 @@ The implementation uses the official `@larksuiteoapi/node-sdk`. WebSocket lifecy
 
 #### What the model sees
 
-The plugin registers no model tool, system prompt, or hidden instruction. Each accepted ordinary Feishu message becomes one ordinary visible user-role turn in the selected Session with `source.kind=user`; the paired-owner and transport facts remain in plugin-owned storage rather than model context. Admitted images appear as durable Harness image attachments; admitted generic files add only the owner text plus their private staged path, display name, SHA-256, and expiry. Feishu identity values, pairing codes, credentials, card action values, transport diagnostics, raw tool payloads, and reasoning are never added to model context.
+The plugin registers no model tool, system prompt, or hidden instruction. Each accepted ordinary Feishu message, including an admitted `/skill-name ...` invocation, becomes one ordinary visible user-role turn in the selected Session with `source.kind=user`; the paired-owner and transport facts remain in plugin-owned storage rather than model context. Command-center operations run through Host services or the current command registry and do not become model messages. Admitted images appear as durable Harness image attachments; admitted generic files add only the owner text plus their private staged path, display name, SHA-256, and expiry. Feishu identity values, pairing codes, credentials, card action values, transport diagnostics, raw tool payloads, and reasoning are never added to model context.
 
 #### Token effect
 
@@ -82,4 +86,4 @@ Enabling this plugin does not change the model's static prompt or tool-definitio
 - One plugin instance supports one paired owner, one exact private chat, and one active project/Session binding; group chat, multiple owners, concurrent bindings, broadcasts, and public-network control are intentionally unsupported.
 - A real Feishu/Lark acceptance still requires a user-created self-built app, published permissions, and credentials entered locally in Harness; the package never imports legacy OpenClaw or Hermes credentials.
 - Generic files use a private temporary path available only on the Harness host and expire after the configured retention period; the plugin does not upload arbitrary local project files back to Feishu or automatically copy received files into a project.
-- Feishu exposes only Allow once and Deny for an existing Harness approval. Persistent permission changes, always-allow authority, Session creation, archived/subagent selection, and autonomous background development are not implemented.
+- Feishu exposes only Allow once and Deny for an existing Harness approval. Always-allow approval authority, arbitrary command/tool passthrough, archived/subagent binding, host-file upload, and autonomous background development are not implemented. `/权限` can only invoke the permission command already registered by the exact Session's Harness composition.
