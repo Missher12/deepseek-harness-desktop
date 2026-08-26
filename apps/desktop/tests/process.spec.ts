@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 import { HarnessProcess, type HarnessProcessOptions } from '../src/harness/process.ts'
+import type { DesktopStartupMilestone } from '../src/startup-timeline.ts'
 
 class FakeChild extends EventEmitter {
   readonly pid = 4321
@@ -19,7 +20,7 @@ class FakeChild extends EventEmitter {
 describe('HarnessProcess', () => {
   it('prepares the Desktop-owned module fallback before spawning the CLI', async () => {
     const order: string[] = []
-    const markStartup = vi.fn()
+    const markStartup = vi.fn<(milestone: DesktopStartupMilestone) => void>()
     const child = new FakeChild()
     const prepare = vi.fn(() => { order.push('prepare') })
     const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(() => {

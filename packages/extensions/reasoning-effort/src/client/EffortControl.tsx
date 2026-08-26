@@ -610,7 +610,10 @@ function ActiveEffortControl({ locked, controller, sessionId, t }: ActiveEffortC
 
   const refresh = useCallback(async (freshForMs = 0): Promise<void> => {
     const pending = pendingLoadRef.current
-    if (pending?.controller === controller) return await pending.promise
+    if (pending?.controller === controller) {
+      await pending.promise
+      return
+    }
     const successful = successfulLoadRef.current
     if (successful?.controller === controller && performance.now() - successful.at <= freshForMs) return
     setError(null)

@@ -5,6 +5,7 @@ import {
   type DesktopWindow,
   type RuntimeController,
 } from '../src/application.ts'
+import type { DesktopStartupMilestone } from '../src/startup-timeline.ts'
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -68,7 +69,7 @@ describe('DesktopApplication', () => {
     const loading = deferred<undefined>()
     window.loadLoading.mockReturnValueOnce(loading.promise)
     const runtime = createRuntime()
-    const markStartup = vi.fn()
+    const markStartup = vi.fn<(milestone: DesktopStartupMilestone) => void>()
     const controller = new DesktopApplication({
       app,
       createWindow: async () => window,
