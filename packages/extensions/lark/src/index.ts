@@ -383,11 +383,12 @@ export async function apply(ctx: Context, base: Config = {}): Promise<void> {
       return Promise.resolve()
     },
     stop: async () => {
+      for (const active of activeTurns.values()) active.stream.stop()
+      activeTurns.clear()
       muxAbort?.abort()
       await muxTask?.catch(() => {})
       muxAbort = undefined
       muxTask = undefined
-      activeTurns.clear()
     },
   }
 

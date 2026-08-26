@@ -68,44 +68,6 @@ export function assertTargetStillOrdinaryAndUnarchived(ctx: Context, target: Age
 }
 
 /**
- * Apply the source-free ordinary-session fence for external control surfaces.
- * @param ctx - Cordis context exposing workspace and Agent ownership state.
- * @param target - Resolved target Agent to validate.
- */
-export function assertOrdinarySession(ctx: Context, target: Agent): void {
-  assertTargetStillOrdinaryAndUnarchived(ctx, target)
-}
-
-/**
- * Resolve one ordinary Session through the Host-owned lookup without creating
- * a synthetic caller and without invoking the Agent registry directly.
- * @param ctx - Cordis context providing the Host-owned Typert lookup.
- * @param raw - Untrusted copied target Session ID.
- * @returns The resolved ordinary, unarchived target Agent.
- */
-export async function resolveOrdinarySession(ctx: Context, raw: string): Promise<Agent> {
-  const requestedId = parseTargetSessionId(raw)
-  if (ctx.workspaceRegistry.archivedSessionIds.includes(requestedId)) {
-    throw messengerError('target-archived', 'target session is archived')
-  }
-
-  const lookup = ctx.typert.lookups.get('agent')
-  if (lookup === undefined) {
-    throw messengerError('target-lookup-unavailable', 'Host Agent lookup is unavailable')
-  }
-
-  let target: Agent | undefined
-  try {
-    target = await lookup.resolve(requestedId) as Agent | undefined
-  } catch (error: unknown) {
-    throw normalizeLookupError(error)
-  }
-  if (target === undefined) throw messengerError('target-not-found', 'target session was not found')
-  assertOrdinarySession(ctx, target)
-  return target
-}
-
-/**
  * Resolve a copied identity only through the ApiProxy-configured Typert Agent
  * lookup. This preserves cold-resume deduplication, recorded presets, and Host
  * ownership policy; the plugin never calls `ctx.agents.resume()`.
@@ -136,8 +98,24 @@ export async function resolveOrdinaryTargetForSource(
 ): Promise<Agent> {
   const requestedId = parseTargetSessionId(raw)
   if (requestedId === sourceSessionId) throw messengerError('self-target', 'cannot message the calling session')
-  const target = await resolveOrdinarySession(ctx, raw)
+  if (ctx.workspaceRegistry.archivedSessionIds.includes(requestedId)) {
+    throw messengerError('target-archived', 'target session is archived')
+  }
+
+  const lookup = ctx.typert.lookups.get('agent')
+  if (lookup === undefined) {
+    throw messengerError('target-lookup-unavailable', 'Host Agent lookup is unavailable')
+  }
+
+  let target: Agent | undefined
+  try {
+    target = await lookup.resolve(requestedId) as Agent | undefined
+  } catch (error: unknown) {
+    throw normalizeLookupError(error)
+  }
+  if (target === undefined) throw messengerError('target-not-found', 'target session was not found')
   if (target.id === sourceSessionId) throw messengerError('self-target', 'cannot message the calling session')
+  assertTargetStillOrdinaryAndUnarchived(ctx, target)
   return target
 }
 

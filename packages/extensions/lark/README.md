@@ -43,7 +43,7 @@ Images are downloaded only after owner admission, validated by the Harness Attac
 - `/停止`: cancel the active remote turn, remove only unclaimed `dsh-lark` messages, and retain unrelated inbox work.
 - `/帮助`: show bounded command help.
 
-Each Harness turn owns one Feishu interactive card. It paints a stable placeholder first, then streams visible assistant text with a typewriter effect, safe tool titles/status, elapsed time, the exact model ID/provider/reasoning effort, and real Harness input/output/cache token usage when available. The route comes from the selected Session's durable request header and is corrected by the actual assistant message, so a model switch is reflected in the same card. Reasoning content, system messages, environment values, raw tool arguments/results, secrets, and unrestricted logs are not projected. A bounded text reply is used if card creation or update fails.
+Each Harness turn owns one Feishu interactive card. It paints a stable placeholder first, then streams visible assistant text with a typewriter effect, safe tool titles/status, elapsed time, the exact model ID/provider/reasoning effort, and real Harness input/output/cache token usage when available. Intermediate projections coalesce to the latest state within the configured interval instead of queuing one Feishu patch per model chunk; a terminal projection cancels the pending timer and waits for at most one card request already in flight. The route comes from the selected Session's durable request header and is corrected by the actual assistant message, so a model switch is reflected in the same card. Reasoning content, system messages, environment values, raw tool arguments/results, secrets, and unrestricted logs are not projected. A bounded text reply is used once if card creation or update fails.
 
 Harness approval requests use the existing ApiProxy approval record. Feishu exposes only Allow once and Deny; the first valid desktop or Feishu response wins. No always-allow authority is added.
 
@@ -59,7 +59,7 @@ Restart Harness after removal. The package dependency and bundle layer disappear
 
 Offline tests cover owner gates, signed actions, ordinary-Session validation, durable FIFO/restart reconciliation, cards, approvals, attachments, settings lifecycle, Loader composition, and Profile removal. A real Feishu acceptance requires App credentials entered by the user in Harness; tests must never import credentials from OpenClaw or Hermes.
 
-The implementation uses the official `@larksuiteoapi/node-sdk`. WebSocket lifecycle and serialized card-flush patterns were informed by the MIT-licensed `@larksuite/openclaw-lark` version `2026.7.16`; this package is an independent Harness implementation and neither bundles nor depends on OpenClaw-Lark. See [LICENSE](LICENSE#third-party-notices).
+The implementation uses the official `@larksuiteoapi/node-sdk`. WebSocket lifecycle and the coalescing card-flush scheduler were informed by the MIT-licensed `@larksuite/openclaw-lark` version `2026.7.16`; this package is an independent Harness implementation and neither bundles nor depends on OpenClaw-Lark. See [LICENSE](LICENSE#third-party-notices).
 
 ## Model Experience
 

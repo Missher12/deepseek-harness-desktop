@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-26-lark-stream-coalescing.md
+2026-08-26-lark-stream-coalescing.md: a05b6eecd66b2f355a4101c02cedacc2b6fa9ae9
+2026-08-26-lark-stream-coalescing.zh.md: 79a2c901ea48dcd2729d788bba0e3ed01c66c67d

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-08-26-dsh-lark-stream-coalescing.md
+2026-08-26-dsh-lark-stream-coalescing.md: 49630a267486d5017daa0040e003a0e21d9c3099
+2026-08-26-dsh-lark-stream-coalescing.zh.md: 7db050363fb9f4f33862f4ae9ea4040450e07e0a

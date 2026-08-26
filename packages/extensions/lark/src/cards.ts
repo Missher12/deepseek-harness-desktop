@@ -12,8 +12,13 @@ interface CardTransport {
 interface StreamingCardOptions extends CardTransport {
   throttleMs: number
   now?: () => number
-  sleep?: (ms: number) => Promise<void>
+  setTimer?: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>
+  clearTimer?: (timer: ReturnType<typeof setTimeout>) => void
 }
+
+type ResolvedStreamingCardOptions = Required<Pick<
+  StreamingCardOptions, 'throttleMs' | 'now' | 'setTimer' | 'clearTimer'
+>> & CardTransport
 
 const statusText: Record<TurnProjectionState['status'], string> = {
   placeholder: '准备中', streaming: '开发中', completed: '已完成', cancelled: '已停止', failed: '失败',
@@ -99,10 +104,16 @@ class TurnCardStream {
   private current: TurnProjectionState
   private lastFlush: number
   private failed = false
-  private tail = Promise.resolve()
+  private stopped = false
+  private dirty = false
+  private finalRequested = false
+  private timer: ReturnType<typeof setTimeout> | undefined
+  private inFlight: Promise<void> | undefined
+  private finalPromise: Promise<void> | undefined
+  private resolveFinal: (() => void) | undefined
 
   constructor(
-    private readonly options: Required<Pick<StreamingCardOptions, 'throttleMs' | 'now' | 'sleep'>> & CardTransport,
+    private readonly options: ResolvedStreamingCardOptions,
     private readonly chatId: string,
     private readonly messageId: string,
     initial: TurnProjectionState,
@@ -112,37 +123,107 @@ class TurnCardStream {
   }
 
   update(next: TurnProjectionState, final = false): Promise<void> {
-    if (next.text.length < this.current.text.length || !next.text.startsWith(this.current.text)) return Promise.resolve()
+    if (this.stopped || this.failed) return this.inFlight ?? Promise.resolve()
+    if (next.text.length < this.current.text.length || !next.text.startsWith(this.current.text)) {
+      return final ? this.requestFinal() : Promise.resolve()
+    }
     this.current = structuredClone(next)
-    const operation = this.tail.then(() => this.flush(final), () => this.flush(final))
-    this.tail = operation.then(() => undefined, () => undefined)
-    return operation
+    this.dirty = true
+    if (final) return this.requestFinal()
+    this.pump()
+    return Promise.resolve()
   }
 
-  private async flush(final: boolean): Promise<void> {
-    if (this.failed) return
-    const wait = final ? 0 : Math.max(0, this.options.throttleMs - (this.options.now() - this.lastFlush))
-    if (wait > 0) await this.options.sleep(wait)
+  stop(): void {
+    this.stopped = true
+    this.dirty = false
+    this.cancelTimer()
+    this.settleFinal()
+  }
+
+  private requestFinal(): Promise<void> {
+    this.finalRequested = true
+    this.cancelTimer()
+    this.finalPromise ??= new Promise((resolve) => { this.resolveFinal = resolve })
+    this.pump()
+    return this.finalPromise
+  }
+
+  private pump(): void {
+    if (this.stopped || this.failed) {
+      this.settleFinal()
+      return
+    }
+    if (this.inFlight !== undefined || this.timer !== undefined) return
+    if (!this.dirty) {
+      if (this.finalRequested) {
+        this.stopped = true
+        this.settleFinal()
+      }
+      return
+    }
+    if (!this.finalRequested) {
+      const wait = Math.max(0, this.options.throttleMs - (this.options.now() - this.lastFlush))
+      if (wait > 0) {
+        this.timer = this.options.setTimer(() => {
+          this.timer = undefined
+          this.pump()
+        }, wait)
+        return
+      }
+    }
+    this.dirty = false
+    const snapshot = structuredClone(this.current)
+    const operation = this.flush(snapshot)
+    this.inFlight = operation
+    void operation.finally(() => {
+      this.inFlight = undefined
+      this.pump()
+    })
+  }
+
+  private async flush(snapshot: TurnProjectionState): Promise<void> {
     try {
-      await this.options.updateCard(this.messageId, renderTurnCard(this.current))
+      await this.options.updateCard(this.messageId, renderTurnCard(snapshot))
       this.lastFlush = this.options.now()
     } catch {
       this.failed = true
+      this.dirty = false
+      this.cancelTimer()
       const suffix = this.current.text.length > 4000 ? '…' : ''
-      await this.options.sendText(this.chatId, `${this.current.text.slice(0, 4000 - suffix.length)}${suffix}`)
+      try {
+        await this.options.sendText(this.chatId, `${this.current.text.slice(0, 4000 - suffix.length)}${suffix}`)
+      } catch {
+        // Both bounded Feishu delivery paths failed; the shared mux must keep serving later turns.
+      }
     }
+  }
+
+  private cancelTimer(): void {
+    if (this.timer === undefined) return
+    this.options.clearTimer(this.timer)
+    this.timer = undefined
+  }
+
+  private settleFinal(): void {
+    this.finalRequested = false
+    const resolve = this.resolveFinal
+    this.resolveFinal = undefined
+    this.finalPromise = undefined
+    resolve?.()
   }
 }
 
 /** Creates exactly one message card per turn and owns its monotonic updates. */
 export class StreamingCardController {
-  private readonly resolved: Required<Pick<StreamingCardOptions, 'throttleMs' | 'now' | 'sleep'>> & CardTransport
+  private readonly resolved: ResolvedStreamingCardOptions
 
   constructor(options: StreamingCardOptions) {
     this.resolved = {
       ...options,
       now: options.now ?? Date.now,
-      sleep: options.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms))),
+      setTimer: options.setTimer ?? ((callback, ms) => setTimeout(callback, ms)),
+      clearTimer: options.clearTimer ?? ((timer) => { clearTimeout(timer) }),
     }
   }
 

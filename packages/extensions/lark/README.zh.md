@@ -43,7 +43,7 @@
 - `/停止`：取消当前远程 turn，只移除尚未领取的 `dsh-lark` 消息，保留其他 inbox 工作。
 - `/帮助`：显示精简命令帮助。
 
-每个 Harness turn 只对应一张飞书交互卡片。卡片先稳定显示占位内容，再以打字机效果流式更新可见回复、安全的工具名称/状态、耗时、精确的模型 ID/提供方/推理档位，以及可用时的真实 Harness 输入/输出/缓存 token 用量。模型路由先取自所选 Session 的持久 request header，再由实际 assistant 消息校正，因此中途切换模型也会反映到同一张卡片。思考内容、system 消息、环境变量、原始工具参数/结果、密钥和无限制日志不会投影到飞书。建卡或更新失败时会降级为有长度上限的文本回复。
+每个 Harness turn 只对应一张飞书交互卡片。卡片先稳定显示占位内容，再以打字机效果流式更新可见回复、安全的工具名称/状态、耗时、精确的模型 ID/提供方/推理档位，以及可用时的真实 Harness 输入/输出/缓存 token 用量。中间投影会在已配置间隔内合并为最新状态，不会为每个模型分片排队一次飞书 patch；终态投影会取消待触发计时器，并且最多只等待一个已经在途的卡片请求。模型路由先取自所选 Session 的持久 request header，再由实际 assistant 消息校正，因此中途切换模型也会反映到同一张卡片。思考内容、system 消息、环境变量、原始工具参数/结果、密钥和无限制日志不会投影到飞书。建卡或更新失败时只会降级一次有长度上限的文本回复。
 
 Harness 审批复用现有 ApiProxy 审批记录。飞书端只提供“允许一次”和“拒绝”，桌面端或飞书端第一个合法响应获胜，不增加“始终允许”权限。
 
@@ -59,7 +59,7 @@ Harness 审批复用现有 ApiProxy 审批记录。飞书端只提供“允许�
 
 离线测试覆盖所有者门禁、签名操作、普通 Session 校验、持久 FIFO/重启对账、卡片、审批、附件、设置生命周期、Loader 组合和 Profile 移除。真实飞书验收必须使用用户在 Harness 内输入的 App 凭据；测试不得从 OpenClaw 或 Hermes 导入凭据。
 
-实现使用官方 `@larksuiteoapi/node-sdk`。WebSocket 生命周期和串行卡片刷新模式参考了采用 MIT 许可证的 `@larksuite/openclaw-lark` `2026.7.16`；本包是独立的 Harness 实现，不打包也不依赖 OpenClaw-Lark。参见 [LICENSE](LICENSE#third-party-notices)。
+实现使用官方 `@larksuiteoapi/node-sdk`。WebSocket 生命周期和合并式卡片刷新调度器参考了采用 MIT 许可证的 `@larksuite/openclaw-lark` `2026.7.16`；本包是独立的 Harness 实现，不打包也不依赖 OpenClaw-Lark。参见 [LICENSE](LICENSE#third-party-notices)。
 
 ## 模型体验
 

@@ -4,9 +4,7 @@ import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
 import { describe, expect, it, vi } from 'vitest'
 import {
   assertTargetStillOrdinaryAndUnarchived,
-  assertOrdinarySession,
   resolveOrdinaryOperatorSource,
-  resolveOrdinarySession,
   resolveOrdinaryTarget,
 } from '../src/target-resolver.ts'
 
@@ -193,33 +191,6 @@ describe('assertTargetStillOrdinaryAndUnarchived', () => {
     h.ctx.workspaceRegistry.archivedSessionIds.push(target.id)
     expect(() => { assertTargetStillOrdinaryAndUnarchived(h.ctx as never, target) })
       .toThrow(expect.objectContaining({ code: 'target-archived' }))
-  })
-})
-
-describe('source-free ordinary-session policy', () => {
-  it('resolves an ordinary Session without inventing a caller or resuming directly', async () => {
-    const target = agent('remote-session')
-    const h = harness(() => target)
-
-    await expect(resolveOrdinarySession(h.ctx as never, 'remote-session')).resolves.toBe(target)
-    expect(() => { assertOrdinarySession(h.ctx as never, target) }).not.toThrow()
-    expect(h.resolve).toHaveBeenCalledWith(SessionId('remote-session'))
-    expect(h.resume).not.toHaveBeenCalled()
-  })
-
-  it('retains archive, missing, subagent, and lookup-failure fences', async () => {
-    const archived = harness(() => agent('archived'), [SessionId('archived')])
-    await expect(resolveOrdinarySession(archived.ctx as never, 'archived'))
-      .rejects.toMatchObject({ code: 'target-archived' })
-    const missing = harness(() => undefined)
-    await expect(resolveOrdinarySession(missing.ctx as never, 'missing'))
-      .rejects.toMatchObject({ code: 'target-not-found' })
-    const child = harness(() => agent('child', { origin: 'subagent' }))
-    await expect(resolveOrdinarySession(child.ctx as never, 'child'))
-      .rejects.toMatchObject({ code: 'target-subagent' })
-    const broken = harness(() => { throw new Error('lookup failed') })
-    await expect(resolveOrdinarySession(broken.ctx as never, 'broken'))
-      .rejects.toMatchObject({ code: 'target-lookup-failed' })
   })
 })
 
