@@ -100,6 +100,16 @@ function rect(left: number, top: number, width: number, height: number): DOMRect
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 let frames: Map<number, FrameRequestCallback>
 
 beforeEach(() => {
@@ -218,6 +228,54 @@ describe('EffortControl', () => {
       name: /选择模型.*DeepSeek Chat.*High/,
     })).toBeTruthy()
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('coalesces an in-flight model load and skips only an immediately repeated successful refresh', async () => {
+    let now = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    const next = models()
+    const pending = deferred<SessionModels>()
+    const store = createSnapshotStore<ModelDirectoryState>({
+      current: null,
+      routable: false,
+      groups: [],
+      failures: [],
+      status: 'idle',
+      error: null,
+    })
+    const load = vi.fn(async () => {
+      const value = await pending.promise
+      store.set(stateOf(value))
+      return value
+    })
+    const controller = {
+      store,
+      load,
+      select: vi.fn(async () => undefined),
+    } as unknown as ModelDirectory
+    renderControl(controller)
+    await waitFor(() => { expect(load).toHaveBeenCalledTimes(1) })
+
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
+    expect(load).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      pending.resolve(next)
+      await pending.promise
+    })
+    await flushFrames()
+    await screen.findByRole('slider', { name: '推理等级' })
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    now = 749
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
+    expect(load).toHaveBeenCalledTimes(1)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    now = 751
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
+    await waitFor(() => { expect(load).toHaveBeenCalledTimes(2) })
   })
 
   it('resyncs from Host effort and model updates instead of retaining an old accepted ID', async () => {

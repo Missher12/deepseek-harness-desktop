@@ -532,6 +532,8 @@ function ActiveEffortControl({ locked, controller, sessionId, t }: ActiveEffortC
   const preferredVisualIndexRef = useRef<number | null>(null)
   const routeRef = useRef<string | null>(null)
   const committingRef = useRef(false)
+  const pendingLoadRef = useRef<{ controller: ModelDirectory; promise: Promise<void> } | null>(null)
+  const successfulLoadRef = useRef<{ controller: ModelDirectory; at: number } | null>(null)
   const id = useId()
   const preference = useReasoningEffortPreference()
   const choice = currentModel(state)
@@ -606,13 +608,22 @@ function ActiveEffortControl({ locked, controller, sessionId, t }: ActiveEffortC
     if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
   }, [])
 
-  const refresh = useCallback(async (): Promise<void> => {
+  const refresh = useCallback(async (freshForMs = 0): Promise<void> => {
+    const pending = pendingLoadRef.current
+    if (pending?.controller === controller) return await pending.promise
+    const successful = successfulLoadRef.current
+    if (successful?.controller === controller && performance.now() - successful.at <= freshForMs) return
     setError(null)
-    try {
-      await controller.load()
-    } catch (cause) {
-      setError(t('error.action', { message: cause instanceof Error ? cause.message : String(cause) }))
-    }
+    const promise = controller.load()
+      .then(() => { successfulLoadRef.current = { controller, at: performance.now() } })
+      .catch((cause: unknown) => {
+        setError(t('error.action', { message: cause instanceof Error ? cause.message : String(cause) }))
+      })
+      .finally(() => {
+        if (pendingLoadRef.current?.promise === promise) pendingLoadRef.current = null
+      })
+    pendingLoadRef.current = { controller, promise }
+    await promise
   }, [controller, t])
 
   useEffect(() => {
@@ -621,7 +632,7 @@ function ActiveEffortControl({ locked, controller, sessionId, t }: ActiveEffortC
 
   const show = (): void => {
     setOpen(true)
-    void refresh()
+    void refresh(750)
   }
 
   useEffect(() => {
