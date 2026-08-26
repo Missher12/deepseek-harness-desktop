@@ -70,6 +70,25 @@ export interface HistoryEntry {
   view?: ToolEventView
 }
 
+/** Maximum Unicode code points exposed by one prompt-rail label. */
+export const PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS = 48
+
+/** Lightweight all-history index carried only by an ordinary session's tail page. */
+export interface PromptAnchor {
+  /** Exact user/message event seq used for reveal and safe fork admission. */
+  seq: number
+  /** Owning turn number. */
+  turn: number
+  /** Durable event timestamp. */
+  time: number
+  /** The first human message opens a turn; later human messages steer it. */
+  kind: 'turn-opening' | 'steering'
+  /** Normalized text-only preview; images and non-text context are excluded. */
+  preview: string
+  /** Whether the owning turn has a durable turn/end event in this same cut. */
+  completed: boolean
+}
+
 /**
  * The projection baseline riding the history tail page: one synchronous cut
  * over every registered projection unit, read from the registry's watermark
@@ -101,6 +120,9 @@ export interface ModelSelection {
   /** Adapter-owned reasoning effort; absence preserves adapter/provider default behavior. */
   reasoningEffort?: string
 }
+
+/** Which side of the addressed turn a fork preserves. */
+export type SessionForkPosition = 'through-turn' | 'before-turn'
 
 /** One adapter-owned reasoning effort displayed for an exact model route. */
 export interface ModelReasoningEffort {
@@ -292,7 +314,12 @@ export interface SessionsApi {
    * never resumes or publishes an Agent.
    */
   history(request: RpcRequest<{ sessionId: SessionId; beforeSeq?: number; maxMessages?: number }>):
-  Promise<RpcResponse<{ events: HistoryEntry[]; hasMore: boolean; projections?: SessionProjectionsBlock }>>
+  Promise<RpcResponse<{
+    events: HistoryEntry[]
+    hasMore: boolean
+    projections?: SessionProjectionsBlock
+    promptAnchors?: PromptAnchor[]
+  }>>
 
   /**
    * Reads a fresh advisory model directory for an ordinary session. Provider
@@ -335,18 +362,23 @@ export interface SessionsApi {
   /**
    * Forks a new session from a completed-turn prefix of the source. `atSeq`
    * anchors the cut: the boundary is the first `turn/end` at or after it
-   * (a message's fork button passes the message seq, so the fork includes
-   * that whole turn); a boundary past the log end, or an omitted `atSeq`,
-   * falls back to the source's last completed turn. An in-log anchor whose
-   * turn is still open fails with `fork-unavailable` instead of clipping to
-   * an earlier turn. The child inherits the source cwd, latest logged model
+   * (a message's fork button passes the message seq, so a `through-turn` fork
+   * includes that whole turn). A `before-turn` fork requires the exact first
+   * human message of a completed turn and excludes that entire turn; running,
+   * steering, missing, and incomplete anchors fail closed. A boundary past
+   * the log end, or an omitted `atSeq`, falls back to the source's last
+   * completed turn. The child inherits the source cwd, latest logged model
    * target and `parentSessionId` lineage; the seed prefix carries the source
    * title. Reading the source uses attached state or persistence inspection
    * without acquiring an Agent. Workspace attachment follows the source
    * directly, or the nearest workspace-owning ancestor when the source is a
    * subagent.
    */
-  fork(request: RpcRequest<{ sessionId: SessionId; atSeq?: number }>):
+  fork(request: RpcRequest<{
+    sessionId: SessionId
+    atSeq?: number
+    position?: SessionForkPosition
+  }>):
   Promise<RpcResponse<{ sessionId: SessionId }>>
 
   /**

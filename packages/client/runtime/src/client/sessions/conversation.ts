@@ -12,7 +12,7 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { LlmRetryEventData } from '@deepseek-ai/dsh-llm-retry/types'
 import type { TodoItem } from '@deepseek-ai/dsh-session/types'
 import type {
-  RpcError, SessionId, SubagentAddress, ToolCallView, ToolResultView,
+  PromptAnchor, RpcError, SessionId, SubagentAddress, ToolCallView, ToolResultView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PendingInteraction } from './pending.ts'
 import type { ContextProvenanceView, KnownContextForm } from './context-provenance.ts'
@@ -436,6 +436,8 @@ export const EMPTY_CHAT_SNAPSHOT: ChatSnapshot = {
 /** The immutable snapshot contract Session hands to uSES (see the web client architecture RFC). */
 export interface ConversationSnapshot {
   sessionId: SessionId
+  /** Lightweight all-history human-prompt index used by the right-side rail. */
+  promptAnchors?: readonly PromptAnchor[]
   /** Registered target snapshots assembled from Session events. */
   views: ConversationViewSnapshotStore
   /** Final Chat target assembled from independently registered business Definitions. */

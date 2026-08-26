@@ -7,10 +7,15 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
+- navigation "Previous prompts":
+  - 'button "Go to prompt 1: Use the read tool twice in one assistant message"'
+  - 'button "Go to prompt 2: Now give the final answer."'
 - text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. 7/25 {{clock}}"
 - button "Copy":
   - img
 - tooltip "Copy"
+- button "Edit and continue from here":
+  - img
 - button "Think The user wants me to read a.txt and b.txt, then reply with \"DONE\". Let me do both reads in parallel.":
   - img
   - img
@@ -41,6 +46,8 @@
   - text: Think Both files have been read. a.txt contains "alpha" and b.txt contains "beta". I'll now reply with DONE as instructed.
 - text: Stopped Now give the final answer. 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: DONE
 - button "Copy":

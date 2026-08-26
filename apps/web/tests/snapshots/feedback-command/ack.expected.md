@@ -12,6 +12,8 @@
 - text: Reply with the single word LIGHTHOUSE and stop. {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - button "Context injection @deepseek-ai/dsh-system-prompt":
   - img
   - img

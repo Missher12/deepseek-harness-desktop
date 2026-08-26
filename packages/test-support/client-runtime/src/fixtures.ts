@@ -48,6 +48,7 @@ export interface SessionFixture {
 export function conversationSnapshot(sessionId: SessionId): ConversationSnapshot {
   return {
     sessionId,
+    promptAnchors: [],
     views: EMPTY_CONVERSATION_VIEWS,
     chat: EMPTY_CHAT_SNAPSHOT,
     nodes: [],

@@ -14,7 +14,7 @@
 // lifecycle updates replace only their own row without remounting it.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationTimelineSnapshot, PromptAnchor } from '@deepseek-ai/dsh-client-runtime/client'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
@@ -23,6 +23,8 @@ import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
+const PROMPT_RAIL_WINDOW = 120
+const EMPTY_PROMPT_ANCHORS: readonly PromptAnchor[] = []
 
 /** Active column host when present; otherwise the view-local scroller. */
 function scrollerOf(from: HTMLElement): HTMLElement {
@@ -115,6 +117,29 @@ function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | 
   return latest
 }
 
+/** Bound the rendered rail while keeping the active region and both ends reachable. */
+function promptRailWindow(anchors: readonly PromptAnchor[], activeSeq: number | null): readonly PromptAnchor[] {
+  if (anchors.length <= PROMPT_RAIL_WINDOW) return anchors
+  const activeIndex = activeSeq === null
+    ? anchors.length - 1
+    : Math.max(0, anchors.findIndex(anchor => anchor.seq === activeSeq))
+  const start = Math.max(0, Math.min(
+    anchors.length - PROMPT_RAIL_WINDOW,
+    activeIndex - Math.floor(PROMPT_RAIL_WINDOW / 2),
+  ))
+  const windowed = anchors.slice(start, start + PROMPT_RAIL_WINDOW)
+  // The fixed-size active window keeps rendering cheap, while permanent end
+  // caps let a reader cross an arbitrarily long session in one jump. Selecting
+  // either cap recentres the following render around that prompt.
+  const first = anchors[0]
+  if (start > 0 && first !== undefined) windowed[0] = first
+  const last = anchors.at(-1)
+  if (start + PROMPT_RAIL_WINDOW < anchors.length && last !== undefined) {
+    windowed[windowed.length - 1] = last
+  }
+  return windowed
+}
+
 /** Turn-level model activity label retained across first-token, tool, and streaming phases. */
 function TurnStatus({ startTime, t }: {
   /** The running turn's logged `turn/start` time; null falls back to mount
@@ -156,8 +181,8 @@ function TurnStatus({ startTime, t }: {
  * ordered business Node crosses the keyed renderer seat.
  */
 export function ChatView({
-  useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
-  fileMentions, t,
+  useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, revealHistorySeq, loadImage,
+  inspectCall, chatScroll, forkAt, editFrom, fileMentions, t,
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
@@ -170,9 +195,13 @@ export function ChatView({
   const openError = useSession(s => s.openError)
   const hasMore = useSession(s => s.hasMore)
   const loadingOlder = useSession(s => s.loadingOlder)
+  const promptAnchors = useSession(s => s.promptAnchors ?? EMPTY_PROMPT_ANCHORS)
   const selectedCallId = useStore(s => s.selection?.callId)
   const [fileOpenError, setFileOpenError] = useState<{ path: string; message: string } | null>(null)
   const [fileOpenBusy, setFileOpenBusy] = useState(false)
+  const [activePromptSeq, setActivePromptSeq] = useState<number | null>(
+    () => promptAnchors.at(-1)?.seq ?? null,
+  )
   // Close/retry must ignore a settlement that started before the latest
   // gesture; otherwise a cancelled in-flight refusal reopens the dialog.
   const fileOpenRequest = useRef(0)
@@ -363,6 +392,43 @@ export function ChatView({
     }
   }, [])
 
+  useEffect(() => {
+    const local = listRef.current
+    if (local === null || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter(entry => entry.isIntersecting)
+        .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top)
+      const row = visible[0]?.target
+      if (!(row instanceof HTMLElement)) return
+      const seq = Number(row.dataset.userMessageSeq)
+      if (Number.isInteger(seq)) setActivePromptSeq(seq)
+    }, { threshold: 0.2 })
+    for (const row of local.querySelectorAll<HTMLElement>('[data-user-message-seq]')) observer.observe(row)
+    return () => { observer.disconnect() }
+  }, [order, promptAnchors])
+
+  const railAnchors = useMemo(
+    () => promptRailWindow(promptAnchors, activePromptSeq),
+    [activePromptSeq, promptAnchors],
+  )
+  const revealPrompt = useCallback((seq: number) => {
+    setActivePromptSeq(seq)
+    void revealHistorySeq(seq).then(() => {
+      requestAnimationFrame(() => {
+        const local = listRef.current
+        if (local === null) return
+        const row = [...local.querySelectorAll<HTMLElement>('[data-user-message-seq]')]
+          .find(element => Number(element.dataset.userMessageSeq) === seq)
+        if (row === undefined) return
+        const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+        row.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' })
+      })
+    }).catch(() => {
+      // History remains untouched; the source session is still usable.
+    })
+  }, [revealHistorySeq])
+
   // The ref starts null and is assigned every render, so the placeholder
   // initializer a function initial value would need never exists.
   const followRef = useRef<(() => void) | null>(null)
@@ -415,6 +481,29 @@ export function ChatView({
   return (
     <div className={css.root}>
       <div ref={listRef} className={css.scroll}>
+        {railAnchors.length > 1 && (
+          <nav className={css.promptRail} aria-label={t('promptRail.aria')}>
+            <div className={css.promptRailTrack}>
+              {railAnchors.map((anchor, index) => (
+                <button
+                  key={anchor.seq}
+                  type="button"
+                  className={css.promptRailMark}
+                  data-active={anchor.seq === activePromptSeq || undefined}
+                  data-steering={anchor.kind === 'steering' || undefined}
+                  aria-label={t('promptRail.jump', {
+                    index: promptAnchors.indexOf(anchor) + 1,
+                    preview: anchor.preview || t('promptRail.imageOnly'),
+                  })}
+                  title={anchor.preview || t('promptRail.imageOnly')}
+                  onClick={() => { revealPrompt(anchor.seq) }}
+                >
+                  <span aria-hidden>{index + 1}</span>
+                </button>
+              ))}
+            </div>
+          </nav>
+        )}
         <div ref={columnRef} className={css.column} data-chat-flow="">
           {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}
           {openState === 'error' && openError !== null && (
@@ -439,6 +528,7 @@ export function ChatView({
               openFile={requestOpenFile}
               inspectCall={inspectCall}
               forkAt={forkAt}
+              editFrom={editFrom}
               renderMessageImages={renderMessageImages}
               fileMentions={fileMentions}
               renderSlot={renderSlot}

@@ -16,7 +16,7 @@
  */
 import type { Context, Fiber } from '@deepseek-ai/cordis'
 import type {
-  IApiClient, RpcError, RpcResult, SessionId, SubagentAddress, JobView, WorkspaceId,
+  IApiClient, RpcError, RpcResult, SessionForkPosition, SessionId, SubagentAddress, JobView, WorkspaceId,
 } from '@deepseek-ai/dsh-api-remotes/client'
 // Value import from the inline-safe wire layer (not the connection plugin):
 // plugin-to-plugin value imports are a bundle purity error.
@@ -507,13 +507,11 @@ export class SessionRuntime implements ISessions {
   }
 
   /**
-   * Fork a session from a completed-turn prefix of the source (same
+   * Fork a session through a completed turn or before its opening prompt (same
    * synchronous-addressability guarantee as {@link SessionRuntime.create}:
    * on resolution the child is in the list store and open() can target it).
-   * @param opts - source session id, the optional event seq anchoring the
-   *   cut (the boundary is the first turn/end at or after it; an in-log
-   *   anchor in an open turn is unavailable rather than clipped backward),
-   *   and whether to increment an inherited durable title before resolving.
+   * @param opts - source session id, optional event seq, cut position, and
+   *   whether to increment an inherited durable title before resolving.
    *   A fractional anchor floors to a real event seq: the frozen nodes of an
    *   interrupted turn carry flow-ordering seqs between two events, and the
    *   wire takes integers only.
@@ -524,6 +522,7 @@ export class SessionRuntime implements ISessions {
   async fork(opts: {
     sessionId: SessionId
     atSeq?: number
+    position?: SessionForkPosition
     increaseTitle?: boolean
   }): Promise<SessionId> {
     const sourceTitle = opts.increaseTitle
@@ -531,10 +530,10 @@ export class SessionRuntime implements ISessions {
       : undefined
     const result = await this.manager.fork({
       sessionId: opts.sessionId,
-      // Flooring lands inside the anchor's own turn (every turn opens with a
-      // turn/start), so the host's first-turn/end-at-or-after cut still ends
-      // on that turn — never clipped back to the previous one.
+      // Flooring lands on the caller's durable event. Host admission then
+      // interprets it according to `position` without trusting UI state.
       ...(opts.atSeq === undefined ? {} : { atSeq: Math.floor(opts.atSeq) }),
+      ...(opts.position === undefined ? {} : { position: opts.position }),
     })
     if (!result.ok) throw new SessionForkError(result.error, opts.sessionId)
     this.projectList()

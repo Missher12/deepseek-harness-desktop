@@ -1305,7 +1305,7 @@ async function exercisePersonalization(
 
   let section = settingsDialog.locator('[data-personalization-section]')
   await section.waitFor({ state: 'visible', timeout: 15_000 })
-  const instructions = `desktop-0.4.1-personalization-${platform}`
+  const instructions = `desktop-0.4.2-personalization-${platform}`
   const editor = section.locator('#dsh-personalization-instructions')
   await expect.poll(() => editor.isEnabled(), { timeout: 15_000 }).toBe(true)
   await editor.fill(instructions)

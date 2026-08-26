@@ -69,14 +69,20 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
-- Version 0.4.1 is the active release candidate. Long reasoning model lists
-  scroll independently from the fixed preference footer, immediate model
-  directory reads are coalesced, and Desktop warm startup reuses the module
-  fallback only after validating the install key, root manifest, every linked
-  package manifest, and every managed symlink. Window preferences and bounds
-  load concurrently, while fixed non-sensitive lifecycle milestones make
-  regressions measurable. NewAPI/provider capability behavior is intentionally
-  unchanged in this release. Version 0.4.0 gave each Desktop-managed
+- Version 0.4.2 is the active release candidate. The Chat view now carries a
+  bounded Codex-style rail built from the tail history response's lightweight
+  all-history human-prompt index. Navigation pages backwards only until the
+  selected seq is present. A completed turn-opening prompt can be restored into
+  a new child draft: the Host enforces a `before-turn` fork, refuses running or
+  steering anchors, preserves the source tail, and the Client restores text and
+  durable images before opening the child without auto-sending. Version 0.4.1
+  made long reasoning model lists scroll independently from the fixed
+  preference footer, coalesced immediate model-directory reads, and reused the
+  Desktop warm-start module fallback only after validating the install key,
+  root manifest, every linked package manifest, and every managed symlink.
+  Window preferences and bounds load concurrently, while fixed non-sensitive
+  lifecycle milestones make regressions measurable. NewAPI/provider capability
+  behavior remains intentionally unchanged. Version 0.4.0 gave each Desktop-managed
   built-in an explicit mapping from its market-facing package name to the exact
   Loader entry that implements it. Plugin Market now reports Memory, MSE, and
   the External Brain coordinator as live only when their real fibers are up;

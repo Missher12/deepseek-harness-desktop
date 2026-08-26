@@ -13,6 +13,8 @@
 - button "Copy":
   - img
 - tooltip "Copy"
+- button "Edit and continue from here" [disabled]:
+  - img
 - button "Context injection @deepseek-ai/dsh-system-prompt":
   - img
   - img

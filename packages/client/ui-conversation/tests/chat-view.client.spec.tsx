@@ -49,7 +49,7 @@ type RoutedChatNodeOwner = ChatNodeOwnerProps & { readonly node: ChatNode }
 
 function snapshotBase(): ConversationSnapshot {
   return {
-    sessionId: SID, views: EMPTY_CONVERSATION_VIEWS, chat: chatSnapshotFixture(), nodes: [],
+    sessionId: SID, promptAnchors: [], views: EMPTY_CONVERSATION_VIEWS, chat: chatSnapshotFixture(), nodes: [],
     turnTimings: new Map(), turnEnds: new Map(), partial: null, runningCalls: [],
     pending: [], queue: [], running: false, composerPhase: 'active', removed: false, openState: 'open', openError: null,
     hasMore: false, loadingOlder: false, promptError: null, blank: false, subagent: null, lastAgentError: null,
@@ -162,6 +162,8 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     read: () => savedScroll,
   }
   const forkAt = vi.fn()
+  const editFrom = vi.fn().mockResolvedValue(undefined)
+  const revealHistorySeq = vi.fn().mockResolvedValue(undefined)
   // Selection rides the REAL chat store (same construction path as
   // production; the view reads it through the PropsStore useStore share).
   const chat = createChatStore().create()
@@ -287,6 +289,8 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     inspectCall,
     chatScroll,
     forkAt,
+    editFrom,
+    revealHistorySeq,
     // Absent-service default; mention tests override with a real resolver.
     fileMentions: () => undefined,
     // Mirrors the real lookup chain (conversation namespace, then common).
@@ -295,7 +299,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
   return {
     set, ChatView, props, openDetails, openFile, loadOlder, inspectCall,
-    chatScroll, forkAt, setSelection, toolOwners,
+    chatScroll, forkAt, editFrom, revealHistorySeq, setSelection, toolOwners,
   }
 }
 
@@ -377,6 +381,62 @@ describe('Chat node rendering', () => {
 })
 
 describe('ChatView', () => {
+  it('renders a compact prompt rail and reveals the addressed historical message on demand', async () => {
+    const h = makeHarness({
+      nodes: [user(1, '第一条'), user(7, '第二条')],
+      promptAnchors: [
+        { seq: 1, turn: 1, time: 1_000, kind: 'turn-opening', preview: '第一条', completed: true },
+        { seq: 7, turn: 2, time: 7_000, kind: 'turn-opening', preview: '第二条', completed: true },
+      ],
+    })
+    const scrollIntoView = vi.fn()
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
+    HTMLElement.prototype.scrollIntoView = scrollIntoView
+    const view = render(<h.ChatView {...h.props} />)
+
+    expect(view.getByRole('navigation', { name: '过往发言' })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: '转到第 1 条发言：第一条' }))
+
+    await waitFor(() => { expect(h.revealHistorySeq).toHaveBeenCalledWith(1) })
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' })
+  })
+
+  it('keeps both ends reachable when a long prompt rail is bounded', () => {
+    const promptAnchors = Array.from({ length: 130 }, (_, index) => ({
+      seq: index + 1,
+      turn: index + 1,
+      time: 1_000 + index,
+      kind: 'turn-opening' as const,
+      preview: `发言 ${String(index + 1)}`,
+      completed: true,
+    }))
+    const h = makeHarness({ promptAnchors })
+    const view = render(<h.ChatView {...h.props} />)
+    const rail = within(view.getByRole('navigation', { name: '过往发言' }))
+
+    expect(rail.getAllByRole('button')).toHaveLength(120)
+    expect(rail.getByRole('button', { name: '转到第 1 条发言：发言 1' })).toBeTruthy()
+    expect(rail.getByRole('button', { name: '转到第 130 条发言：发言 130' })).toBeTruthy()
+  })
+
+  it('offers edit-and-continue only on a completed turn-opening user prompt', async () => {
+    const original = user(1, '改这里')
+    const h = makeHarness({
+      nodes: [original],
+      promptAnchors: [{
+        seq: 1, turn: 1, time: 1_000, kind: 'turn-opening', preview: '改这里', completed: true,
+      }],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+
+    fireEvent.click(view.getByRole('button', { name: '编辑并从这里继续' }))
+
+    await waitFor(() => { expect(h.editFrom).toHaveBeenCalledWith(1, original.content) })
+  })
+
   it('hands a windowless tool result to the Tool seat with an empty tool name', () => {
     const h = makeHarness({
       nodes: [{ ...toolResult(3, 'w1'), call: null }],
