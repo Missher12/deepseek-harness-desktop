@@ -240,6 +240,7 @@ function physicalSymlinkTarget(target: string): string {
  * present.
  * @param installAnchor - absolute path of the dsh app's package.json.
  * @param home - the Harness home; defaults to {@link resolveDshHome}.
+ * @returns the physical package links verified or repaired by this pass.
  */
 export function healProfilesModuleFallback(
   installAnchor: string,

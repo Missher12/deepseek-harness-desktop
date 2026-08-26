@@ -36,6 +36,7 @@ interface FallbackCache {
   links: CachedLink[]
 }
 
+/** Whether Desktop reused a fully verified cache or ran the authoritative healer. */
 export type ProfileModuleFallbackCacheResult = 'verified-cache' | 'rebuilt'
 
 function sha256File(path: string): string {
@@ -140,6 +141,10 @@ function writeCache(
 /**
  * Heal the installation fallback, or reuse a fully verified Desktop cache.
  * Any malformed, stale, or partially written cache is treated as a miss.
+ * @param installAnchorInput - Absolute or working-directory-relative Desktop package manifest.
+ * @param home - Isolated Harness home that owns the managed profile fallback.
+ * @param installKey - Desktop version or equivalent caller-controlled installation identity.
+ * @returns Whether the verified cache was reused or the authoritative healer rebuilt the state.
  */
 export function healProfilesModuleFallbackCached(
   installAnchorInput: string,

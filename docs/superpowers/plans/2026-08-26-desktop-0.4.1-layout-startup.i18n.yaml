@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-08-26-desktop-0.4.1-layout-startup.md
-2026-08-26-desktop-0.4.1-layout-startup.md: c0b8b4e42101de535898481ef88b9742c4b44c08
-2026-08-26-desktop-0.4.1-layout-startup.zh.md: f21c151e63451aa9193f898f0937c62893fa39cb
+2026-08-26-desktop-0.4.1-layout-startup.md: a08ef8236e218297e26aedd3b6298e241c54119d
+2026-08-26-desktop-0.4.1-layout-startup.zh.md: 7050ce9b3863b02854262d49dd60e8b7bbfcff4b
