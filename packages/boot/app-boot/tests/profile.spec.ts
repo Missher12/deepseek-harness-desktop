@@ -4,13 +4,16 @@
  * empty-root composition, and the installation module-fallback healing.
  */
 
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, unlinkSync, writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   composeEntries,
   healProfilesModuleFallback,
+  healProfilesModuleFallbackCached,
   initProfile,
   loadProfile,
   PROFILE_PATCH_FILENAME,
@@ -318,5 +321,34 @@ describe('healProfilesModuleFallback', () => {
     healProfilesModuleFallback(anchor, home) // second healer sees the correct link
     const fallback = join(home, 'profiles', 'node_modules')
     expect(lstatSync(join(fallback, 'dsh-app')).isSymbolicLink()).toBe(true)
+  })
+
+  it('uses a verified Desktop cache and rebuilds it when a linked package changes', () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+    const home = tmp()
+
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.1')).toBe('rebuilt')
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.1')).toBe('verified-cache')
+
+    const dependencyManifest = join(dirname(anchor), 'node_modules', 'bundle-a', 'package.json')
+    const changed = JSON.parse(readFileSync(dependencyManifest, 'utf8')) as Record<string, unknown>
+    changed.description = 'changed after the cache was written'
+    writeFileSync(dependencyManifest, JSON.stringify(changed))
+
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.1')).toBe('rebuilt')
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.1')).toBe('verified-cache')
+  })
+
+  it('rejects a stale fallback link even when its cache JSON still parses', () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.1')).toBe('rebuilt')
+
+    const link = join(home, 'profiles', 'node_modules', 'dsh-app')
+    unlinkSync(link)
+    symlinkSync(tmp(), link, 'junction')
+
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.1')).toBe('rebuilt')
+    expect(readlinkSync(link)).toBe(dirname(anchor))
   })
 })

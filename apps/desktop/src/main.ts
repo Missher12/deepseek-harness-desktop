@@ -14,7 +14,7 @@ import {
   type IpcMainInvokeEvent,
 } from 'electron'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { healProfilesModuleFallback } from '@deepseek-ai/dsh-app-boot'
+import { healProfilesModuleFallbackCached } from '@deepseek-ai/dsh-app-boot'
 import {
   DesktopApplication,
   type AppFacade,
@@ -127,7 +127,10 @@ const updateService = new DesktopUpdateService({
 const runtime = new HarnessProcess({
   cli: resolveCliPath(),
   patch: desktopPatchPath,
-  prepare: () => { healProfilesModuleFallback(desktopInstallAnchorPath, dshHome) },
+  prepare: () => {
+    const result = healProfilesModuleFallbackCached(desktopInstallAnchorPath, dshHome, app.getVersion())
+    record(`module fallback: ${result}`)
+  },
   onOutput: (source, output) => {
     record(`Harness ${source}: ${output}`)
   },

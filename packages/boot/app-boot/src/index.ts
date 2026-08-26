@@ -47,7 +47,13 @@ export {
   type Profile,
   type ProfileLayer,
   type ProfileManifest,
+  type ProfileModuleFallbackLink,
 } from './profile.ts'
+
+export {
+  healProfilesModuleFallbackCached,
+  type ProfileModuleFallbackCacheResult,
+} from './profile-fallback-cache.ts'
 
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for

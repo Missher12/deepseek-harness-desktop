@@ -81,6 +81,14 @@ export interface ProfileLayer {
   patches: PatchOptions[]
 }
 
+/** One physical installation package exposed through the flat profile fallback. */
+export interface ProfileModuleFallbackLink {
+  /** npm package name used below `profiles/node_modules`. */
+  packageName: string
+  /** Absolute physical package directory targeted by the managed symlink. */
+  target: string
+}
+
 /** A loaded profile: resolved bundle layers plus the user's own patch layer. */
 export interface Profile {
   /** The profile name (its directory basename). */
@@ -233,7 +241,10 @@ function physicalSymlinkTarget(target: string): string {
  * @param installAnchor - absolute path of the dsh app's package.json.
  * @param home - the Harness home; defaults to {@link resolveDshHome}.
  */
-export function healProfilesModuleFallback(installAnchor: string, home: string = resolveDshHome()): void {
+export function healProfilesModuleFallback(
+  installAnchor: string,
+  home: string = resolveDshHome(),
+): ProfileModuleFallbackLink[] {
   const profilesDir = join(home, PROFILES_DIR)
   const modulesDir = join(profilesDir, 'node_modules')
   mkdirSync(modulesDir, { recursive: true })
@@ -260,11 +271,15 @@ export function healProfilesModuleFallback(installAnchor: string, home: string =
       queue.push({ anchor: manifestPath, manifest: JSON.parse(readFileSync(manifestPath, 'utf8')) as ProfileManifest })
     }
   }
+  const result: ProfileModuleFallbackLink[] = []
   for (const [packageName, target] of links) {
     const link = join(modulesDir, packageName)
+    const physicalTarget = physicalSymlinkTarget(target)
     mkdirSync(dirname(link), { recursive: true })
-    ensureSymlink(link, physicalSymlinkTarget(target))
+    ensureSymlink(link, physicalTarget)
+    result.push({ packageName, target: physicalTarget })
   }
+  return result
 }
 
 /**
