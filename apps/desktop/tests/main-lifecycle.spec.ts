@@ -68,12 +68,14 @@ describe('DesktopApplication', () => {
     const loading = deferred<undefined>()
     window.loadLoading.mockReturnValueOnce(loading.promise)
     const runtime = createRuntime()
+    const markStartup = vi.fn()
     const controller = new DesktopApplication({
       app,
       createWindow: async () => window,
       runtime,
       findConflict: async () => undefined,
       workspace: '/workspace',
+      markStartup,
     })
 
     const running = controller.run()
@@ -84,6 +86,11 @@ describe('DesktopApplication', () => {
 
     expect(window.show).toHaveBeenCalledOnce()
     expect(window.loadHarness).toHaveBeenCalledWith('http://127.0.0.1:45678/?surface=desktop')
+    expect(markStartup.mock.calls.map(([milestone]) => milestone)).toEqual([
+      'app-ready',
+      'loading-visible',
+      'desktop-running',
+    ])
   })
 
   it('overlaps the loading surface with conflict detection and safe runtime startup', async () => {

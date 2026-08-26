@@ -3,6 +3,7 @@ import { isAbsolute } from 'node:path'
 import { readHarnessUrl } from './startup-url.ts'
 import { waitForHarness as probeHarness } from './readiness.ts'
 import { terminateProcessTree, type TerminationMode } from './process-tree.ts'
+import type { DesktopStartupMilestone } from '../startup-timeline.ts'
 
 const MAX_STARTUP_OUTPUT_BYTES = 64 * 1024
 const DEFAULT_STOP_TIMEOUT_MS = 3_000
@@ -29,6 +30,7 @@ export interface HarnessProcessOptions {
   stopTimeoutMs?: number
   onOutput?: (source: 'stdout' | 'stderr', text: string) => void
   onExit?: (state: ExitState) => void
+  markStartup?: (milestone: DesktopStartupMilestone) => void
 }
 
 function describeExit(state: ExitState): string {
@@ -57,7 +59,7 @@ function settledWithin(promise: Promise<unknown>, timeoutMs: number): Promise<bo
 export class HarnessProcess {
   private readonly options: Required<Pick<HarnessProcessOptions,
     'executable' | 'spawn' | 'waitForHarness' | 'platform' | 'terminateTree' | 'stopTimeoutMs'>>
-    & Pick<HarnessProcessOptions, 'cli' | 'patch' | 'prepare' | 'onOutput' | 'onExit'>
+    & Pick<HarnessProcessOptions, 'cli' | 'patch' | 'prepare' | 'onOutput' | 'onExit' | 'markStartup'>
   private child: ChildProcess | undefined
   private exitPromise: Promise<ExitState> | undefined
   private detachOutput: (() => void) | undefined
@@ -95,6 +97,7 @@ export class HarnessProcess {
   async start(workspace: string): Promise<string> {
     if (this.child !== undefined) throw new Error('Harness process is already running.')
     this.options.prepare?.()
+    this.options.markStartup?.('fallback-ready')
     const child = this.options.spawn(this.options.executable, [
       // Electron's Node mode does not expose the internal ESM resolver through
       // node-addon-require-builtin. Loader needs this flag so bare plugin names
@@ -182,7 +185,9 @@ export class HarnessProcess {
 
     try {
       const url = await Promise.race([startupUrl, exitedBeforeReady()])
+      this.options.markStartup?.('url-reported')
       await Promise.race([this.options.waitForHarness(url), exitedBeforeReady()])
+      this.options.markStartup?.('harness-ready')
       return url
     } catch (error) {
       detachStartup()

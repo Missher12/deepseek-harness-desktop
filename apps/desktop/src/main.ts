@@ -46,6 +46,8 @@ import { createMenuTemplate } from './window/menu.ts'
 import { createWindowOptions, desktopRendererUrl } from './window/options.ts'
 import { desktopPlatformBehavior } from './window/platform.ts'
 import { readWindowBounds, writeWindowBounds } from './window/state.ts'
+import { readDesktopWindowPrerequisites } from './window/prerequisites.ts'
+import { DesktopStartupTimeline } from './startup-timeline.ts'
 
 const PRODUCT_NAME = 'DeepSeek Harness'
 const require = createRequire(import.meta.url)
@@ -123,6 +125,7 @@ const updateService = new DesktopUpdateService({
   includedHarness: resolveHarnessVersion(),
   userData,
 })
+const startupTimeline = new DesktopStartupTimeline(record)
 
 const runtime = new HarnessProcess({
   cli: resolveCliPath(),
@@ -135,6 +138,7 @@ const runtime = new HarnessProcess({
     record(`Harness ${source}: ${output}`)
   },
   onExit: () => { void lifecycle.controller?.runtimeExited() },
+  markStartup: (milestone) => { startupTimeline.mark(milestone) },
 })
 
 function record(message: string): void {
@@ -248,9 +252,12 @@ function createStateWriter(window: BrowserWindow): () => void {
 }
 
 async function createDesktopWindow(): Promise<DesktopWindow> {
-  await preferencesReady
   const displays = screen.getAllDisplays().map(display => display.workArea)
-  const bounds = await readWindowBounds(windowStatePath, displays)
+  const bounds = await readDesktopWindowPrerequisites(
+    preferencesReady,
+    async () => await readWindowBounds(windowStatePath, displays),
+  )
+  startupTimeline.mark('window-prerequisites')
   const window = new BrowserWindow(createWindowOptions(bounds, preloadPath, process.platform))
   nativeWindow = window
   workbenchBrowser = new WorkbenchBrowserController(window, (snapshot) => {
@@ -310,6 +317,7 @@ const controller = new DesktopApplication({
   workspace: resolveWorkspace(),
   openLogs: () => { shell.showItemInFolder(logPath) },
   log: message => logger.write(message),
+  markStartup: (milestone) => { startupTimeline.mark(milestone) },
 })
 lifecycle.controller = controller
 

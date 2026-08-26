@@ -1,5 +1,6 @@
 import type { HarnessConflict } from './harness/ownership.ts'
 import type { DesktopCommand, RecoveryAction } from './preload-api.ts'
+import type { DesktopStartupMilestone } from './startup-timeline.ts'
 
 /** Closed reasons rendered by the local failure page. */
 export type FailureReason = 'runtime-conflict' | 'startup' | 'renderer' | 'runtime-exit'
@@ -38,6 +39,7 @@ export interface DesktopApplicationOptions {
   workspace: string
   openLogs?: () => void
   log?: (message: string) => void | Promise<void>
+  markStartup?: (milestone: DesktopStartupMilestone) => void
 }
 
 type ApplicationState = 'idle' | 'starting' | 'running' | 'failure' | 'shutting-down'
@@ -81,6 +83,7 @@ export class DesktopApplication {
     }
     this.installHandlers()
     await this.options.app.whenReady()
+    this.options.markStartup?.('app-ready')
     await this.launch()
   }
 
@@ -143,6 +146,7 @@ export class DesktopApplication {
     this.window ??= await this.options.createWindow()
     await this.window.loadLoading()
     this.window.show()
+    this.options.markStartup?.('loading-visible')
     return this.window
   }
 
@@ -175,6 +179,7 @@ export class DesktopApplication {
       ])
       await window.loadHarness(desktopUrl(root))
       this.state = 'running'
+      this.options.markStartup?.('desktop-running')
     } catch (error) {
       let window: DesktopWindow
       try {

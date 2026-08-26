@@ -19,6 +19,7 @@ class FakeChild extends EventEmitter {
 describe('HarnessProcess', () => {
   it('prepares the Desktop-owned module fallback before spawning the CLI', async () => {
     const order: string[] = []
+    const markStartup = vi.fn()
     const child = new FakeChild()
     const prepare = vi.fn(() => { order.push('prepare') })
     const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(() => {
@@ -28,6 +29,7 @@ describe('HarnessProcess', () => {
     const owned = new HarnessProcess({
       cli: '/app/node_modules/@deepseek-ai/dsh/lib/bin.js',
       prepare,
+      markStartup,
       spawn,
       waitForHarness: async () => undefined,
       terminateTree: vi.fn(),
@@ -39,6 +41,11 @@ describe('HarnessProcess', () => {
 
     await expect(pending).resolves.toBe('http://127.0.0.1:45678/')
     expect(order).toEqual(['prepare', 'spawn'])
+    expect(markStartup.mock.calls.map(([milestone]) => milestone)).toEqual([
+      'fallback-ready',
+      'url-reported',
+      'harness-ready',
+    ])
   })
 
   it('starts the built CLI on loopback port zero and returns its ready URL', async () => {
