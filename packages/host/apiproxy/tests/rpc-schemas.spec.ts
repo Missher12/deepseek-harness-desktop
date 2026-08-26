@@ -7,7 +7,7 @@ import {
 import { z } from 'zod'
 import {
   contentBlockSchema, sessionCancelRequestSchema, sessionCancelValueSchema, sessionCreateRequestSchema,
-  sessionCreateValueSchema, sessionEventSchema, sessionHistoryRequestSchema, sessionHistoryValueSchema,
+  sessionCreateValueSchema, sessionEventSchema, sessionForkRequestSchema, sessionHistoryRequestSchema, sessionHistoryValueSchema,
   sessionIdSchema, sessionListRequestSchema, sessionListValueSchema, sessionModelsRequestSchema,
   sessionModelsValueSchema, sessionPromptRequestSchema, sessionPromptValueSchema,
   sessionSearchRequestSchema, sessionSearchValueSchema, sessionSelectModelRequestSchema,
@@ -236,8 +236,17 @@ describe('sessions domain schemas', () => {
     expect(sessionHistoryValueSchema.parse({
       events: [],
       hasMore: false,
+      promptAnchors: [{
+        seq: 0, turn: 0, time: 1, kind: 'turn-opening', preview: 'legacy first prompt', completed: true,
+      }],
       modelSelection: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
-    }).hasMore).toBe(false)
+    }).promptAnchors?.[0]?.turn).toBe(0)
+    expect(sessionForkRequestSchema.parse({
+      sessionId: 's1', atSeq: 2, position: 'before-turn',
+    }).position).toBe('before-turn')
+    expect(() => sessionForkRequestSchema.parse({
+      sessionId: 's1', atSeq: 2, position: 'after-message',
+    })).toThrow()
     expect(sessionModelsRequestSchema.parse({ sessionId: 's1' }).sessionId).toBe('s1')
     expect(sessionModelsValueSchema.parse({
       current: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max' },

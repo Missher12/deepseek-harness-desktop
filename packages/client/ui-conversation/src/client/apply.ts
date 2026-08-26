@@ -436,6 +436,11 @@ export function apply(ctx: Context): void {
           return workspaces.openPath(resolveWorkspacePath(cwd, path))
         },
         loadOlder: () => { void scoped.loadOlder() },
+        revealHistorySeq: async (seq) => {
+          const session = sessions.binding(sessionId)?.session
+          if (session === undefined) throw new Error(`ui-conversation: session "${sessionId}" is unavailable`)
+          await session.revealHistorySeq(seq)
+        },
         loadImage: attachment => conversation.resolveImage(sessionId, attachment),
         // Unregistered 'trajectory' id is safe: the tab ring falls back to
         // the first view, and the untouched inspect target stays inert.
@@ -456,6 +461,64 @@ export function apply(ctx: Context): void {
             .catch(() => {
               // Fork or child-rename failure keeps the source view untouched.
             })
+        },
+        editFrom: async (seq, content) => {
+          const source = sessions.binding(sessionId)?.session
+          if (source === undefined) throw new Error(`ui-conversation: session "${sessionId}" is unavailable`)
+          const text = content
+            .filter((part): part is Extract<typeof part, { type: 'text' }> => part.type === 'text')
+            .map(part => part.text)
+            .join('')
+          const imageRefs = content
+            .filter((part): part is Extract<typeof part, { type: 'image' }> => part.type === 'image')
+            .map(part => part.attachment)
+          const reportFailure = (error: unknown): void => {
+            const message = error instanceof Error ? error.message : String(error)
+            inputHub.shell(sessionId).notify('error', t('message.editFailed', { message }))
+          }
+          let files: File[]
+          try {
+            files = await Promise.all(imageRefs.map(async (attachment, index) => {
+              const loaded = await source.readAttachment(attachment.attachmentId)
+              if (!loaded.ok) throw new Error(`${loaded.error.code}: ${loaded.error.message}`)
+              const bytes = Uint8Array.from(loaded.value.data)
+              const fallbackExtension = loaded.value.attachment.mediaType.split('/')[1] ?? 'png'
+              return new File(
+                [bytes.buffer],
+                loaded.value.attachment.name ?? `image-${String(index + 1)}.${fallbackExtension}`,
+                { type: loaded.value.attachment.mediaType },
+              )
+            }))
+          } catch (error: unknown) {
+            reportFailure(error)
+            throw error
+          }
+          const drafts = conversation.createDraftImages(files)
+          const draftIds = drafts.map(draft => draft.id)
+          let childInput: ReturnType<typeof inputHub.shell> | undefined
+          let imagesStaged = false
+          try {
+            const childId = await sessions.fork({
+              sessionId,
+              atSeq: seq,
+              position: 'before-turn',
+              increaseTitle: true,
+            })
+            childInput = inputHub.shell(childId)
+            if (!childInput.addImages(draftIds)) {
+              throw new Error('the child composer is not ready for restored images')
+            }
+            imagesStaged = true
+            childInput.setDraft(text)
+            sessions.open(childId)
+          } catch (error: unknown) {
+            if (imagesStaged && childInput !== undefined) {
+              for (const id of draftIds) childInput.removeImage(id)
+            }
+            conversation.releaseDraftImages(drafts)
+            reportFailure(error)
+            throw error
+          }
         },
       }
     },

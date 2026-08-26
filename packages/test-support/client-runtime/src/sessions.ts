@@ -131,6 +131,14 @@ export class FixtureSession implements SessionFace {
   }
 
   /**
+   * Fail-loud stub; supply `revealHistorySeq` on the fixture's session face to exercise it.
+   * @returns never — always throws.
+   */
+  revealHistorySeq(): never {
+    throw new Error(`test session "${this.sessionId}": revealHistorySeq is not stubbed — supply it on the fixture's session face`)
+  }
+
+  /**
    * Fail-loud stub; supply `rename` on the fixture's session face to exercise it.
    * @returns never — always throws.
    */
@@ -487,10 +495,15 @@ export class TestSessions implements ISessions {
   /**
    * Recorded fork stub: no child materializes (benches asserting the full
    * fork flow drive the production service; this face only proves the call).
-   * @param opts - source session id, optional cut anchor, and client title policy.
+   * @param opts - source session id, optional cut anchor/position, and client title policy.
    * @returns the source id (no child record is created).
    */
-  fork(opts: { sessionId: SessionId; atSeq?: number; increaseTitle?: boolean }): Promise<SessionId> {
+  fork(opts: {
+    sessionId: SessionId
+    atSeq?: number
+    position?: 'through-turn' | 'before-turn'
+    increaseTitle?: boolean
+  }): Promise<SessionId> {
     this.calls.push({ method: 'fork', args: [opts] })
     return Promise.resolve(opts.sessionId)
   }

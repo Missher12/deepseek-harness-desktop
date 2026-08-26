@@ -49,6 +49,86 @@
   gap: 16px;
 }
 
+/* Codex-like prompt rail: an overlay in the transcript's right gutter. It
+   never changes the message column width and renders only a bounded window. */
+.promptRail {
+  position: sticky;
+  top: 76px;
+  z-index: 6;
+  height: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  pointer-events: none;
+}
+
+.promptRailTrack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  max-height: min(58vh, 480px);
+  padding: 6px 4px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 72%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--dsw-alias-bg-l1) 86%, transparent);
+  box-shadow: var(--dsw-shadow-lv1);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+  flex: 0 0 auto;
+  pointer-events: auto;
+}
+
+.promptRailMark {
+  width: 15px;
+  height: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--dsw-alias-label-quaternary);
+  opacity: 0.54;
+  cursor: pointer;
+  transition: width 120ms ease, opacity 120ms ease, background 120ms ease;
+}
+
+.promptRailMark > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.promptRailMark[data-steering] {
+  width: 10px;
+  opacity: 0.38;
+}
+
+.promptRailMark:hover,
+.promptRailMark:focus-visible {
+  width: 22px;
+  opacity: 0.92;
+  outline: none;
+}
+
+.promptRailMark[data-active] {
+  width: 24px;
+  background: var(--dsw-static-deepseek-500);
+  opacity: 1;
+}
+
+@media (max-width: 760px) {
+  .promptRail {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .promptRailMark {
+    transition: none;
+  }
+}
+
 /* Settled-flow identity boundary. It is neutral today and becomes the natural
    measurement/mount unit for a virtualizer without changing the column gap. */
 .flowItem {

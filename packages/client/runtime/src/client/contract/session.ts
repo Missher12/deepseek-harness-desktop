@@ -77,6 +77,11 @@ export interface ISession {
    */
   loadOlder(): Promise<void>
   /**
+   * Ensure the history window contains an exact event seq, paging backwards
+   * on demand without triggering background transcript loading.
+   */
+  revealHistorySeq(seq: number): Promise<void>
+  /**
    * Execute one slash-command line against this session's agent — pure
    * admission semantics (the host executor durably logs the lifecycle).
    * @param line - the full command line, leading slash included.

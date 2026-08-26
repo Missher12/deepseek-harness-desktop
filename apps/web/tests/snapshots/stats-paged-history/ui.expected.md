@@ -7,8 +7,39 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
+- navigation "Previous prompts":
+  - 'button "Go to prompt 1: m1"'
+  - 'button "Go to prompt 2: m2"'
+  - 'button "Go to prompt 3: m3"'
+  - 'button "Go to prompt 4: m4"'
+  - 'button "Go to prompt 5: m5"'
+  - 'button "Go to prompt 6: m6"'
+  - 'button "Go to prompt 7: m7"'
+  - 'button "Go to prompt 8: m8"'
+  - 'button "Go to prompt 9: m9"'
+  - 'button "Go to prompt 10: m10"'
+  - 'button "Go to prompt 11: m11"'
+  - 'button "Go to prompt 12: m12"'
+  - 'button "Go to prompt 13: m13"'
+  - 'button "Go to prompt 14: m14"'
+  - 'button "Go to prompt 15: m15"'
+  - 'button "Go to prompt 16: m16"'
+  - 'button "Go to prompt 17: m17"'
+  - 'button "Go to prompt 18: m18"'
+  - 'button "Go to prompt 19: m19"'
+  - 'button "Go to prompt 20: m20"'
+  - 'button "Go to prompt 21: m21"'
+  - 'button "Go to prompt 22: m22"'
+  - 'button "Go to prompt 23: m23"'
+  - 'button "Go to prompt 24: m24"'
+  - 'button "Go to prompt 25: m25"'
+  - 'button "Go to prompt 26: m26"'
+  - 'button "Go to prompt 27: m27"'
+  - 'button "Go to prompt 28: m28"'
 - text: m1 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: r1
 - button "Copy":
@@ -22,6 +53,8 @@
 - text: 7/25 {{clock}} Ran for {{duration}} m2 7/25 {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - paragraph: r2
 - button "Copy":
   - img
@@ -33,6 +66,8 @@
   - img
 - text: 7/25 {{clock}} Ran for {{duration}} m3 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: r3
 - button "Copy":
@@ -46,6 +81,8 @@
 - text: 7/25 {{clock}} Ran for {{duration}} m4 7/25 {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - paragraph: r4
 - button "Copy":
   - img
@@ -57,6 +94,8 @@
   - img
 - text: 7/25 {{clock}} Ran for {{duration}} m5 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: r5
 - button "Copy":
@@ -70,6 +109,8 @@
 - text: 7/25 {{clock}} Ran for {{duration}} m6 7/25 {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - paragraph: r6
 - button "Copy":
   - img
@@ -81,6 +122,8 @@
   - img
 - text: 7/25 {{clock}} Ran for {{duration}} m7 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: r7
 - button "Copy":
@@ -94,6 +137,8 @@
 - text: 7/25 {{clock}} Ran for {{duration}} m8 7/25 {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - paragraph: r8
 - button "Copy":
   - img
@@ -105,6 +150,8 @@
   - img
 - text: 7/25 {{clock}} Ran for {{duration}} m9 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: r9
 - button "Copy":
@@ -118,6 +165,8 @@
 - text: 7/25 {{clock}} Ran for {{duration}} m10 7/25 {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - paragraph: r10
 - button "Copy":
   - img
@@ -129,6 +178,8 @@
   - img
 - text: 7/25 {{clock}} Ran for {{duration}} m11 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: r11
 - button "Copy":
@@ -142,6 +193,8 @@
 - text: 7/25 {{clock}} Ran for {{duration}} m12 7/25 {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - paragraph: r12
 - button "Copy":
   - img
@@ -153,6 +206,8 @@
   - img
 - text: 7/25 {{clock}} Ran for {{duration}} m13 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: r13
 - button "Copy":
@@ -166,6 +221,8 @@
 - text: 7/25 {{clock}} Ran for {{duration}} m14 7/25 {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - paragraph: r14
 - button "Copy":
   - img
@@ -177,6 +234,8 @@
   - img
 - text: 7/25 {{clock}} Ran for {{duration}} m15 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: r15
 - button "Copy":
@@ -190,6 +249,8 @@
 - text: 7/25 {{clock}} Ran for {{duration}} m16 7/25 {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - paragraph: r16
 - button "Copy":
   - img
@@ -201,6 +262,8 @@
   - img
 - text: 7/25 {{clock}} Ran for {{duration}} m17 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: r17
 - button "Copy":
@@ -214,6 +277,8 @@
 - text: 7/25 {{clock}} Ran for {{duration}} m18 7/25 {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - paragraph: r18
 - button "Copy":
   - img
@@ -225,6 +290,8 @@
   - img
 - text: 7/25 {{clock}} Ran for {{duration}} m19 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: r19
 - button "Copy":
@@ -238,6 +305,8 @@
 - text: 7/25 {{clock}} Ran for {{duration}} m20 7/25 {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - paragraph: r20
 - button "Copy":
   - img
@@ -249,6 +318,8 @@
   - img
 - text: 7/25 {{clock}} Ran for {{duration}} m21 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: r21
 - button "Copy":
@@ -262,6 +333,8 @@
 - text: 7/25 {{clock}} Ran for {{duration}} m22 7/25 {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - paragraph: r22
 - button "Copy":
   - img
@@ -273,6 +346,8 @@
   - img
 - text: 7/25 {{clock}} Ran for {{duration}} m23 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: r23
 - button "Copy":
@@ -286,6 +361,8 @@
 - text: 7/25 {{clock}} Ran for {{duration}} m24 7/25 {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - paragraph: r24
 - button "Copy":
   - img
@@ -297,6 +374,8 @@
   - img
 - text: 7/25 {{clock}} Ran for {{duration}} m25 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: r25
 - button "Copy":
@@ -310,6 +389,8 @@
 - text: 7/25 {{clock}} Ran for {{duration}} m26 7/25 {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - paragraph: r26
 - button "Copy":
   - img
@@ -322,6 +403,8 @@
 - text: 7/25 {{clock}} Ran for {{duration}} m27 7/25 {{clock}}
 - button "Copy":
   - img
+- button "Edit and continue from here":
+  - img
 - paragraph: r27
 - button "Copy":
   - img
@@ -333,6 +416,8 @@
   - img
 - text: 7/25 {{clock}} Ran for {{duration}} m28 7/25 {{clock}}
 - button "Copy":
+  - img
+- button "Edit and continue from here":
   - img
 - paragraph: r28
 - button "Copy":

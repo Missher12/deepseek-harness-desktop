@@ -39,10 +39,12 @@ import type {} from '@deepseek-ai/dsh-tools'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
   ModelCatalogFailure, ModelProviderGroup,
-  ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
+  ModelReasoning, MuxFrame, PromptAnchor, PromptContentPart, QuestionResponsePayload, SessionListMetadata,
+  SessionProjectionsBlock, SessionSearchItem,
   QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
   WorkspaceId, WorkspaceView,
 } from './api/index.ts'
+import { PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS } from './api/index.ts'
 import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   flushLiveSessionLog,
@@ -1528,6 +1530,46 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return { events, ...projections === undefined ? {} : { projections } }
   }
 
+  /** Fold a text-only prompt index from the same immutable history cut served to the caller. */
+  function promptAnchorsOf(events: readonly SessionEvent[]): PromptAnchor[] {
+    const completedTurns = new Set<number>()
+    for (const event of events) {
+      if (event.type === 'turn/end') completedTurns.add(event.data.turn)
+    }
+
+    const anchors: PromptAnchor[] = []
+    let currentTurn: number | undefined
+    let humanMessagesInTurn = 0
+    for (const event of events) {
+      if (event.type === 'turn/start') {
+        currentTurn = event.data.turn
+        humanMessagesInTurn = 0
+        continue
+      }
+      if (event.type === 'turn/end') {
+        if (currentTurn === event.data.turn) currentTurn = undefined
+        continue
+      }
+      if (event.type !== 'user/message' || event.data.source.kind !== 'user' || currentTurn === undefined) continue
+      const text = event.data.content
+        .filter((part): part is Extract<typeof part, { type: 'text' }> => part.type === 'text')
+        .map(part => part.text)
+        .join(' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+      anchors.push({
+        seq: event.seq,
+        turn: currentTurn,
+        time: event.time,
+        kind: humanMessagesInTurn === 0 ? 'turn-opening' : 'steering',
+        preview: truncateUnicodeCodePoints(text, PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS),
+        completed: completedTurns.has(currentTurn),
+      })
+      humanMessagesInTurn++
+    }
+    return anchors
+  }
+
   /**
    * The registry view scope a transcript's presenters resolve in.
    *
@@ -2241,6 +2283,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             events: page.events,
             hasMore: page.hasMore,
             ...cut.projections === undefined ? {} : { projections: cut.projections },
+            ...beforeSeq === undefined ? { promptAnchors: promptAnchorsOf(cut.events) } : {},
           })
         } catch (error: unknown) {
           if (error instanceof SessionNotFound) {
@@ -2334,7 +2377,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async fork(request) {
-        const { sessionId, atSeq } = request.payload
+        const { sessionId, atSeq, position = 'through-turn' } = request.payload
         let source: SessionReadState
         try {
           source = await readSessionState(sessionId)
@@ -2349,32 +2392,92 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           })
         }
         const events = source.events
-        // An in-log anchor belongs to the turn containing it and must never
-        // clip backward to an earlier completed turn. Omitted and past-end
-        // anchors retain the last-completed-turn shortcut.
-        const lastSeq = events.at(-1)?.seq ?? -1
-        const anchoredBoundary = atSeq === undefined
-          ? undefined
-          : events.find(e => e.type === 'turn/end' && e.seq >= atSeq)
-        const boundary = anchoredBoundary
-          ?? (atSeq === undefined || atSeq > lastSeq
-            ? events.findLast(e => e.type === 'turn/end')
-            : undefined)
-        if (boundary === undefined) {
-          return err(request, {
-            code: 'fork-unavailable',
-            message: atSeq !== undefined && atSeq <= lastSeq
-              ? `session "${sessionId}" has not completed the turn containing event ${String(atSeq)}`
-              : `session "${sessionId}" has no completed turn to fork from`,
-            details: { sessionId },
-          })
+        let cut: number
+        let beforeTurnSelection: ModelSelection | undefined
+        if (position === 'before-turn') {
+          if (atSeq === undefined || ctx.agents.get(sessionId)?.status === 'running') {
+            return err(request, {
+              code: 'fork-unavailable',
+              message: atSeq === undefined
+                ? `session "${sessionId}" requires a user-message anchor for before-turn fork`
+                : `session "${sessionId}" cannot rewind while its agent is running`,
+              details: { sessionId },
+            })
+          }
+          const targetIndex = events.findIndex(event => event.seq === atSeq)
+          const target = events[targetIndex]
+          if (targetIndex < 0 || target?.type !== 'user/message' || target.data.source.kind !== 'user') {
+            return err(request, {
+              code: 'fork-unavailable',
+              message: `event ${String(atSeq)} is not a user message in session "${sessionId}"`,
+              details: { sessionId },
+            })
+          }
+          let turnStartIndex = targetIndex - 1
+          while (turnStartIndex >= 0 && events[turnStartIndex]?.type !== 'turn/start') turnStartIndex--
+          const turnStart = events[turnStartIndex]
+          if (turnStartIndex < 0 || turnStart?.type !== 'turn/start') {
+            return err(request, {
+              code: 'fork-unavailable',
+              message: `event ${String(atSeq)} has no owning turn in session "${sessionId}"`,
+              details: { sessionId },
+            })
+          }
+          const firstUserIndex = events.findIndex((event, index) => index > turnStartIndex
+            && index <= targetIndex
+            && event.type === 'user/message'
+            && event.data.source.kind === 'user')
+          const turnEndIndex = events.findIndex((event, index) => index > targetIndex
+            && event.type === 'turn/end'
+            && event.data.turn === turnStart.data.turn)
+          if (firstUserIndex !== targetIndex || turnEndIndex < 0) {
+            return err(request, {
+              code: 'fork-unavailable',
+              message: firstUserIndex !== targetIndex
+                ? `event ${String(atSeq)} is not the opening user message of its turn`
+                : `session "${sessionId}" has not completed the turn containing event ${String(atSeq)}`,
+              details: { sessionId },
+            })
+          }
+          const routed = events.slice(turnStartIndex, turnEndIndex + 1)
+            .find(event => event.type === 'request/header')
+          if (routed?.type === 'request/header') {
+            const config = routed.data.header.config
+            beforeTurnSelection = {
+              provider: config.provider,
+              model: config.model,
+              ...config.reasoningEffort === undefined ? {} : { reasoningEffort: config.reasoningEffort },
+            }
+          }
+          cut = turnStartIndex
+        } else {
+          // An in-log anchor belongs to the turn containing it and must never
+          // clip backward to an earlier completed turn. Omitted and past-end
+          // anchors retain the last-completed-turn shortcut.
+          const lastSeq = events.at(-1)?.seq ?? -1
+          const anchoredBoundary = atSeq === undefined
+            ? undefined
+            : events.find(e => e.type === 'turn/end' && e.seq >= atSeq)
+          const boundary = anchoredBoundary
+            ?? (atSeq === undefined || atSeq > lastSeq
+              ? events.findLast(e => e.type === 'turn/end')
+              : undefined)
+          if (boundary === undefined) {
+            return err(request, {
+              code: 'fork-unavailable',
+              message: atSeq !== undefined && atSeq <= lastSeq
+                ? `session "${sessionId}" has not completed the turn containing event ${String(atSeq)}`
+                : `session "${sessionId}" has no completed turn to fork from`,
+              details: { sessionId },
+            })
+          }
+          // Extend the cut through trailing out-of-band appends (session/title,
+          // injections) up to the next turn/start: they are standalone events, so
+          // the seed stays balanced, and the child inherits a title generated
+          // right after the boundary turn.
+          cut = boundary.seq + 1
+          while (cut < events.length && events[cut]?.type !== 'turn/start') cut++
         }
-        // Extend the cut through trailing out-of-band appends (session/title,
-        // injections) up to the next turn/start: they are standalone events, so
-        // the seed stays balanced, and the child inherits a title generated
-        // right after the boundary turn.
-        let cut = boundary.seq + 1
-        while (cut < events.length && events[cut]?.type !== 'turn/start') cut++
         let workspace: Workspace | undefined
         try {
           workspace = await forkWorkspace(source)
@@ -2407,6 +2510,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             agentOptions: agentOptions(),
             setup: forkComposition.setup,
           })
+          if (beforeTurnSelection !== undefined) selectionFor(handle.agent).current = beforeTurnSelection
           ownedAgentHandles.set(childId, handle)
         } catch (error: unknown) {
           return err(request, {
