@@ -573,6 +573,7 @@ function ActiveEffortControl({ locked, controller, sessionId, t }: ActiveEffortC
   const modelName = choice?.name ?? state.current?.model ?? t('trigger.fallback')
   const busy = committing || state.status === 'selecting'
   const modelCap = actualLevels.at(-1)
+  const preferenceAvailable = validBootstrap(window.__DSH_REASONING_EFFORT__) !== undefined
 
   const bindTrigger = useCallback((node: HTMLButtonElement | null): void => {
     triggerRef.current = node
@@ -779,77 +780,84 @@ function ActiveEffortControl({ locked, controller, sessionId, t }: ActiveEffortC
             triggerRef.current?.focus()
           }}
         >
-          {levels.length > 0
-            ? <EffortSlider
-              levels={levels}
-              acceptedIndex={acceptedIndex}
-              previewIndex={previewIndex}
-              {...modelCap === undefined ? {} : { capName: modelCap.name }}
-              disabled={busy}
-              dragging={dragging}
-              chibiThumb={preference.enabled}
-              error={error}
-              t={t}
-              onPreview={setPreviewIndex}
-              onCommit={(index) => { void commitEffort(index) }}
-              onDraggingChange={setDragging}
-            />
-            : <div className={css.empty}>{t('effort.unavailable')}</div>}
-
-          <div className={css.separator} />
-          <div className={css.sectionTitle}>{t('model.title')}</div>
-          {state.status === 'loading' && state.groups.length === 0
-            ? <div className={css.empty}>{t('model.loading')}</div>
-            : null}
-          <div className={css.modelList}>
-            {state.groups.map(group => (
-              <section key={group.id} className={css.modelGroup} aria-label={group.name}>
-                <div className={css.groupTitle}>{group.name}</div>
-                {group.models.map((model) => {
-                  const selectedModel = state.current?.provider === group.id && state.current.model === model.id
-                  return (
-                    <button
-                      type="button"
-                      className={css.modelOption}
-                      key={`${group.id}/${model.id}`}
-                      disabled={busy}
-                      aria-pressed={selectedModel}
-                      onClick={() => { void chooseModel(group.id, model.id, model.reasoning?.defaultEffort) }}
-                    >
-                      <span className={css.modelCopy}>
-                        <span className={css.modelName}>{model.name}</span>
-                        {model.description === undefined ? null : <span className={css.description}>{model.description}</span>}
-                      </span>
-                      <span className={css.check}>{selectedModel ? <IconCheckOutline16 /> : null}</span>
-                    </button>
-                  )
-                })}
-              </section>
-            ))}
+          <div className={css.effortPane}>
+            {levels.length > 0
+              ? <EffortSlider
+                levels={levels}
+                acceptedIndex={acceptedIndex}
+                previewIndex={previewIndex}
+                {...modelCap === undefined ? {} : { capName: modelCap.name }}
+                disabled={busy}
+                dragging={dragging}
+                chibiThumb={preference.enabled}
+                error={error}
+                t={t}
+                onPreview={setPreviewIndex}
+                onCommit={(index) => { void commitEffort(index) }}
+                onDraggingChange={setDragging}
+              />
+              : <div className={css.empty}>{t('effort.unavailable')}</div>}
+            {levels.length < 2 && error !== null ? <div className={css.error} role="alert">{error}</div> : null}
+            <div className={css.separator} />
           </div>
-          {state.status === 'ready' && state.groups.every(group => group.models.length === 0)
-            ? <div className={css.empty}>{t('model.empty')}</div>
-            : null}
-
-          {validBootstrap(window.__DSH_REASONING_EFFORT__) === undefined ? null : (
-            <button
-              type="button"
-              role="switch"
-              aria-checked={preference.enabled}
-              className={css.characterToggle}
-              disabled={preference.pending}
-              onClick={() => {
-                setError(null)
-                void preference.toggle().then((accepted) => {
-                  if (!accepted) setError(t('character.failed'))
-                })
-              }}
-            >
-              <span>{t('character.label')}</span>
-              <span>{preference.enabled ? t('character.on') : t('character.off')}</span>
-            </button>
-          )}
-          {levels.length < 2 && error !== null ? <div className={css.error} role="alert">{error}</div> : null}
+          <div
+            className={css.modelViewport}
+            data-testid="reasoning-model-scroll"
+          >
+            <div className={css.sectionTitle}>{t('model.title')}</div>
+            {state.status === 'loading' && state.groups.length === 0
+              ? <div className={css.empty}>{t('model.loading')}</div>
+              : null}
+            <div className={css.modelList}>
+              {state.groups.map(group => (
+                <section key={group.id} className={css.modelGroup} aria-label={group.name}>
+                  <div className={css.groupTitle}>{group.name}</div>
+                  {group.models.map((model) => {
+                    const selectedModel = state.current?.provider === group.id && state.current.model === model.id
+                    return (
+                      <button
+                        type="button"
+                        className={css.modelOption}
+                        key={`${group.id}/${model.id}`}
+                        disabled={busy}
+                        aria-pressed={selectedModel}
+                        onClick={() => { void chooseModel(group.id, model.id, model.reasoning?.defaultEffort) }}
+                      >
+                        <span className={css.modelCopy}>
+                          <span className={css.modelName}>{model.name}</span>
+                          {model.description === undefined ? null : <span className={css.description}>{model.description}</span>}
+                        </span>
+                        <span className={css.check}>{selectedModel ? <IconCheckOutline16 /> : null}</span>
+                      </button>
+                    )
+                  })}
+                </section>
+              ))}
+            </div>
+            {state.status === 'ready' && state.groups.every(group => group.models.length === 0)
+              ? <div className={css.empty}>{t('model.empty')}</div>
+              : null}
+          </div>
+          {preferenceAvailable ? (
+            <div className={css.preferenceFooter} data-testid="reasoning-preference-footer">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={preference.enabled}
+                className={css.characterToggle}
+                disabled={preference.pending}
+                onClick={() => {
+                  setError(null)
+                  void preference.toggle().then((accepted) => {
+                    if (!accepted) setError(t('character.failed'))
+                  })
+                }}
+              >
+                <span>{t('character.label')}</span>
+                <span>{preference.enabled ? t('character.on') : t('character.off')}</span>
+              </button>
+            </div>
+          ) : null}
         </div>,
         document.body,
       )}

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelSelection, SessionId, SessionModels } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -282,6 +282,37 @@ describe('EffortControl', () => {
       expect(b.load).toHaveBeenCalledTimes(2)
       expect(b.select).toHaveBeenCalledWith({ provider: 'deepseek', model: 'chat', reasoningEffort: 'max' })
     })
+  })
+
+  it('keeps the character preference in a fixed footer outside an overflowing model catalog', async () => {
+    ;(window as { __DSH_REASONING_EFFORT__?: unknown }).__DSH_REASONING_EFFORT__ = {
+      preferencePath: '/plugins/dsh-reasoning-effort/preference',
+      capabilityHeader: 'x-dsh-reasoning-effort-capability',
+      capability: 'layout-test-capability',
+    }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      chibiThumb: false,
+      visualEfforts: {},
+    }), { status: 200, headers: { 'content-type': 'application/json' } })))
+    const catalog = Array.from({ length: 40 }, (_value, index) => ({
+      id: `model-${String(index + 1)}`,
+      name: `Model ${String(index + 1)}`,
+      reasoning: { efforts, defaultEffort: 'high' },
+    }))
+    const b = makeController([models({
+      current: { provider: 'many', model: 'model-1', reasoningEffort: 'high' },
+      groups: [{ id: 'many', name: 'Many Models', models: catalog }],
+    })])
+    renderControl(b.controller)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
+    await flushFrames()
+
+    const scroll = await screen.findByTestId('reasoning-model-scroll')
+    const footer = screen.getByTestId('reasoning-preference-footer')
+    expect(within(scroll).getAllByRole('button')).toHaveLength(40)
+    expect(scroll.nextElementSibling).toBe(footer)
+    expect(within(footer).getByRole('switch', { name: /角色滑块/ })).toBeTruthy()
   })
 
   it('rejects a stale model route without selecting and restores the accepted value', async () => {
