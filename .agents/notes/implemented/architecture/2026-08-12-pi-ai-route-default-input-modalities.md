@@ -22,7 +22,7 @@ The assumption was justified in the source as the adapter's real capability rath
 
 **An entry's empty list means the same as an absent one; the route's is refused.** `[]` describes a model that accepts nothing and could serve no request, so it states no answer and resolution continues past it. That reading is not cosmetic: the config schema materializes `[]` for an absent array, so treating it as "accepts nothing" would silently strip images from every catalog vision model a `models` list happens to name. The route value has nothing below it to answer instead, so its empty list is refused where it is written. The route's `models` list already resolves absent-and-empty the same way for the same reason.
 
-**No configuration surface edits `input`.** It joins `compat`, `reasoningEfforts`, `thinkingBudgets`, and `headers` as a settings-document field, and the model-list editor stays a hand-written form over id, name, and the two capacities. This costs nothing durable because that card was already built to carry fields it does not edit: its row patch spreads the stored row before applying changes, and adoption keeps an existing row over a rediscovered candidate, so a hand-written `input` survives both.
+**The Models surface edits `input` through one conservative tri-state control.** [The custom-model input capability surface](../bug-fix/2026-08-27-custom-model-input-capability-surface.md) supersedes the earlier settings-document-only decision after the product's own custom-provider flow made that omission a user-visible false negative. Automatic still omits the field and follows this note's resolution chain; the two explicit choices write text-only or text-and-image declarations. Fields the curated form does not edit still survive row patches and rediscovery.
 
 The direct DeepSeek adapter owns a separate exact-model catalog. Its supported vision entry declares image input, while its text models and unlisted pass-through ids remain text-only.
 
@@ -38,7 +38,7 @@ The direct DeepSeek adapter owns a separate exact-model catalog. Its supported v
 
 ## Consequences
 
-A vision model on a custom provider costs one line, `input: [text, image]`, written in the settings document — or one line at the route when every model it lists takes images. That is the whole of the fix: the three admission points then admit images on it and `read_image` works. A deployment that writes nothing keeps exactly the behavior it had, so no existing route changes what it reports.
+A vision model on a custom provider can be declared from the Models surface or with one line, `input: [text, image]`, in the settings document — or one line at the route when every model it lists takes images. The three admission points then admit images on it and `read_image` works. A deployment that writes nothing keeps exactly the behavior it had, so no existing route changes what it reports.
 
 The image-admission gate keeps its meaning everywhere, because every modality it reads is now either recorded by the installed catalog or written by a person. Nothing claims a capability on a deployment's behalf.
 

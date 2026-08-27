@@ -69,14 +69,19 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
-- Version 0.4.1 is the active release candidate. Long reasoning model lists
-  scroll independently from the fixed preference footer, immediate model
-  directory reads are coalesced, and Desktop warm startup reuses the module
-  fallback only after validating the install key, root manifest, every linked
-  package manifest, and every managed symlink. Window preferences and bounds
-  load concurrently, while fixed non-sensitive lifecycle milestones make
-  regressions measurable. NewAPI/provider capability behavior is intentionally
-  unchanged in this release. Version 0.4.0 gave each Desktop-managed
+- Version 0.4.2 is the active release candidate. A navigation-only prompt
+  ruler indexes every user-message boundary from the immutable history tail,
+  renders a bounded left-side rail, reveals localized prompt summaries on
+  pointer hover or keyboard focus, and fetches older pages only when an exact
+  sequence is selected. It does not delete, edit, rewind, resend, or fork
+  history. Custom pi-ai model rows now expose an explicit input-capability
+  choice: inherit the catalog or route default, text only, or text plus images.
+  OpenAI-compatible discovery adopts only modalities explicitly reported by
+  the endpoint and never guesses from a model id or display name. Version 0.4.1
+  previously made long reasoning model lists scroll independently from the
+  fixed preference footer, coalesced immediate model-directory reads, and
+  allowed Desktop warm startup to reuse the module fallback only after
+  validating its complete install shape. Version 0.4.0 gave each Desktop-managed
   built-in an explicit mapping from its market-facing package name to the exact
   Loader entry that implements it. Plugin Market now reports Memory, MSE, and
   the External Brain coordinator as live only when their real fibers are up;
