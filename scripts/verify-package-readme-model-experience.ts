@@ -42,6 +42,8 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
  * blocks. A package moves on or off this list with its context behavior.
  */
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+  'packages/control/browser-control': { kind: 'indirect', reason: 'The service delegates model rendering to a later Browser Control tool Consumer.' },
+  'packages/control/computer-control': { kind: 'indirect', reason: 'The service delegates model rendering to a later Computer Control tool Consumer.' },
   'packages/control/desktop-control-protocol': { kind: 'none', reason: 'Pure wire library; later service and tool consumers own every model-visible effect.' },
   'packages/attachment/attachment': { kind: 'indirect', reason: 'The storage seam delegates model request rendering to provider adapters.' },
   'packages/attachment/attachment-local': { kind: 'indirect', reason: 'The local backend delegates model request rendering to provider adapters.' },

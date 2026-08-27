@@ -1,0 +1,29 @@
+# @deepseek-ai/dsh-browser-control
+
+[English](README.md) | 中文
+
+Browser Control Service Definition 为 Desktop 所有的可见浏览器 surface 注册唯一一个 `ctx.browserControl` 提供方。它使用 [`dsh-desktop-control-protocol`](../desktop-control-protocol/README.zh.md) 的封闭 request／result DTO，不定义第二套 wire 词汇。
+
+## 约定
+
+- `snapshot(request, signal)` 返回当前 surface 的有界语义和可选图片描述符。
+- `act(request, signal)` 只接受协议中的导航、语义引用、按键、选择、滚动与等待操作。浏览器坐标操作不存在。
+- `revokeSession(sessionId)` 等待恰好一个会话的拆卸完成；surface 的独占生命周期和引用失效由实现负责。
+- `bindBrowserReference()` 与 `assertBrowserReferenceCurrent()` 把不透明 ref 绑定到官方会话、surface 身份、mount generation 和 snapshot revision。所有权先于新鲜度检查，避免外来会话探测 surface。
+- `freezeBrowserSnapshot()` 分离并深度冻结提供方输出，同时执行协议的语义集合与 UTF-8 上限。`assertBrowserActionCount()` 执行服务的每轮次 64 次操作上限；Electron 创建的 lease quota 可以更窄。
+
+页面文本始终不受信任，不能授权操作。此 seam 不声称 accessibility 语义能够证明恶意页面 JavaScript 不会产生外部副作用。surface、debugger、URL／redirect 验证、lease 和原生审批挑战均由 Electron 适配器负责。
+
+## 模型体验
+
+通过后续 Browser Control 工具 Consumer 间接影响；这些 Consumer 渲染有界 snapshot 与封闭操作结果，此 Service Definition 本身不注册 prompt 或工具。
+
+#### KV Cache 影响
+
+不会直接影响；任何模型可见 schema 或结果变化由 Consumer 负责。
+
+## 已知限制与暂缓事项
+
+- 本包是约定与验证层，不是浏览器后端、Electron bridge、UI 或模型工具。
+- 提供方仍须在权威边界拒绝陈旧导航竞态、外来 debugger、私网目标、文件输入、下载、popup 和不支持的权限。
+- 固定的每轮次操作上限只作补充，不能替代更短的 Electron lease 及其 quota。

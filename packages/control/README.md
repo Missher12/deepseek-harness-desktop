@@ -7,5 +7,7 @@ This group owns the closed process protocol and the Browser Control and Computer
 | Package | Role | Form |
 |---|---|---|
 | [`desktop-control-protocol/`](desktop-control-protocol/README.md) | Strict protocol v1 DTOs, manifest, JSON/PNG codec, and helper stream framing | library |
+| [`browser-control/`](browser-control/README.md) | Semantic browser Service Definition, owner-bound refs, and immutable bounds | service definition |
+| [`computer-control/`](computer-control/README.md) | Native control Service Definition, owner-bound refs, and fail-closed policy | service definition |
 
-Later packages in this group reuse the protocol types rather than redeclaring cross-process actions, results, or identifiers.
+Providers and Consumers in this group reuse the protocol types rather than redeclaring cross-process actions, results, or identifiers.

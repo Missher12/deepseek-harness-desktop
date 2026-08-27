@@ -7,5 +7,7 @@
 | 包 | 职责 | 形式 |
 |---|---|---|
 | [`desktop-control-protocol/`](desktop-control-protocol/README.zh.md) | 严格的 protocol v1 DTO、manifest、JSON／PNG codec 与 helper 流分帧 | 库 |
+| [`browser-control/`](browser-control/README.zh.md) | 语义浏览器 Service Definition、所有者绑定 ref 与不可变上限 | Service Definition |
+| [`computer-control/`](computer-control/README.zh.md) | 原生控制 Service Definition、所有者绑定 ref 与遇疑即拒策略 | Service Definition |
 
-本组后续包复用这些协议类型，不重新声明跨进程操作、结果或标识符。
+本组的提供方与 Consumer 复用这些协议类型，不重新声明跨进程操作、结果或标识符。
