@@ -9,29 +9,62 @@ const stylesheet = readFileSync(
 
 type NearestPromptIndex = (input: { y: number; top: number; height: number; count: number }) => number
 const nearestPromptIndex = (promptRail as { nearestPromptIndex?: NearestPromptIndex }).nearestPromptIndex
-const activeTickPattern = [
-  '\\.promptRailMark\\[data-active\\][^{]*\\.promptRailTick\\s*\\{',
-  '[^}]*width:\\s*(24|25)px;',
-  '[^}]*background:\\s*var\\(--dsw-static-deepseek-500\\)',
-].join('')
+
+function ruleBlock(selector: string): string {
+  const start = stylesheet.indexOf(`${selector} {`)
+  if (start < 0) throw new Error(`Missing CSS rule: ${selector}`)
+  const end = stylesheet.indexOf('}', start)
+  if (end < 0) throw new Error(`Unclosed CSS rule: ${selector}`)
+  return stylesheet.slice(start, end + 1)
+}
 
 describe('PromptRail presentation', () => {
   it('uses defined neutral-label tokens with a fallback and reserves pointer hits for the track', () => {
-    expect(stylesheet).not.toContain('--dsw-alias-label-quaternary')
-    expect(stylesheet).toMatch(/var\(--dsw-alias-label-tertiary,\s*[^)]+\)/)
-    expect(stylesheet).toMatch(/\.promptRailMark\s*\{[^}]*pointer-events:\s*none;/s)
+    const tick = ruleBlock('.promptRailTick')
+    const mark = ruleBlock('.promptRailMark')
+    const count = ruleBlock('.promptRailCount')
+    expect(tick).not.toContain('--dsw-alias-label-quaternary')
+    expect(tick).toContain('background: var(--dsw-alias-label-tertiary, #8c8c8c);')
+    expect(mark).toContain('pointer-events: none;')
+    expect(count).toContain('pointer-events: none;')
   })
 
   it('draws the selected prompt as a DeepSeek-blue line with a hollow dot', () => {
-    expect(stylesheet).toMatch(new RegExp(activeTickPattern, 's'))
-    expect(stylesheet).toMatch(/\.promptRailActiveDot\s*\{[^}]*border:.*var\(--dsw-static-deepseek-500\)/s)
-    expect(stylesheet).not.toMatch(/\.promptRailActiveDot\s*\{[^}]*background:\s*var\(--dsw-alias-tooltip-bg\)/s)
-    expect(stylesheet).toMatch(/\.promptRailActiveDot\s*\{[^}]*background:\s*var\(--dsw-alias-bg-base,\s*#fff\)/s)
+    const activeTick = ruleBlock('.promptRailMark[data-active] .promptRailTick')
+    const dot = ruleBlock('.promptRailActiveDot')
+    expect(activeTick).toContain('width: 25px;')
+    expect(activeTick).toContain('height: 2px;')
+    expect(activeTick).toContain('background: var(--dsw-static-deepseek-500);')
+    expect(dot).toContain('width: 14px;')
+    expect(dot).toContain('height: 14px;')
+    expect(dot).toContain('border: 2px solid var(--dsw-static-deepseek-500);')
+    expect(dot).toContain('border-radius: 50%;')
+    expect(dot).toContain('background: var(--dsw-alias-bg-base, #fff);')
+    expect(dot).not.toContain('--dsw-alias-tooltip-bg')
+  })
+
+  it('keeps tick centers on the rail endpoints and only clamps edge tooltips', () => {
+    expect(ruleBlock('.promptRailMark')).toContain('transform: translateY(-50%);')
+    expect(stylesheet).not.toContain(".promptRailMark[data-edge='start'] {")
+    expect(stylesheet).not.toContain(".promptRailMark[data-edge='end'] {")
+    expect(ruleBlock(".promptRailMark[data-edge='start'] .promptRailTooltip")).toContain('top: 50%;')
+    expect(ruleBlock(".promptRailMark[data-edge='start'] .promptRailTooltip")).toContain('transform: none;')
+    expect(ruleBlock(".promptRailMark[data-edge='end'] .promptRailTooltip")).toContain('top: 50%;')
+    expect(ruleBlock(".promptRailMark[data-edge='end'] .promptRailTooltip")).toContain('transform: translateY(-100%);')
   })
 
   it('selects the nearest prompt index from a clamped rail coordinate', () => {
     expect(nearestPromptIndex).toBeTypeOf('function')
     expect(nearestPromptIndex?.({ y: 260, top: 0, height: 520, count: 120 })).toBe(60)
+    expect(nearestPromptIndex?.({ y: 20, top: 20, height: 180, count: 120 })).toBe(0)
+    expect(nearestPromptIndex?.({ y: 200, top: 20, height: 180, count: 120 })).toBe(119)
+    expect(nearestPromptIndex?.({ y: 20 + 180 * 59.49 / 119, top: 20, height: 180, count: 120 })).toBe(59)
+    expect(nearestPromptIndex?.({ y: 20 + 180 * 59.51 / 119, top: 20, height: 180, count: 120 })).toBe(60)
+    expect(nearestPromptIndex?.({ y: 89.9, top: 0, height: 180, count: 2 })).toBe(0)
+    expect(nearestPromptIndex?.({ y: 90, top: 0, height: 180, count: 2 })).toBe(1)
+    expect(nearestPromptIndex?.({ y: 30, top: 20, height: 0, count: 120 })).toBe(0)
+    expect(nearestPromptIndex?.({ y: 30, top: 20, height: 180, count: 1 })).toBe(0)
+    expect(nearestPromptIndex?.({ y: 30, top: 20, height: 180, count: 0 })).toBe(-1)
     expect(nearestPromptIndex?.({ y: -20, top: 0, height: 520, count: 120 })).toBe(0)
     expect(nearestPromptIndex?.({ y: 600, top: 0, height: 520, count: 120 })).toBe(119)
   })

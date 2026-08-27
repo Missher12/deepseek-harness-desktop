@@ -54,10 +54,16 @@ export interface PromptRailProps {
 /** Codex-style prompt timeline: navigation only, with no rewind semantics. */
 export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProps) {
   const [tooltipSeq, setTooltipSeq] = useState<number | null>(null)
-  const visible = useMemo(() => visiblePromptAnchors(anchors, activeSeq), [activeSeq, anchors])
   const indexBySeq = useMemo(
     () => new Map(anchors.map((anchor, index) => [anchor.seq, index] as const)),
     [anchors],
+  )
+  const effectiveActiveSeq = activeSeq !== null && indexBySeq.has(activeSeq)
+    ? activeSeq
+    : anchors.at(-1)?.seq ?? null
+  const visible = useMemo(
+    () => visiblePromptAnchors(anchors, effectiveActiveSeq),
+    [anchors, effectiveActiveSeq],
   )
 
   useEffect(() => {
@@ -65,7 +71,9 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
   }, [anchors, tooltipSeq])
 
   if (visible.length < 2) return null
-  const activeIndex = activeSeq === null ? anchors.length - 1 : indexBySeq.get(activeSeq) ?? anchors.length - 1
+  const activeIndex = effectiveActiveSeq === null
+    ? anchors.length - 1
+    : indexBySeq.get(effectiveActiveSeq) ?? anchors.length - 1
   const current = Math.max(1, activeIndex + 1)
   const nearestAnchor = (clientY: number, track: HTMLElement): PromptAnchor | undefined => {
     const rect = track.getBoundingClientRect()
@@ -80,7 +88,8 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
         data-prompt-rail-track=""
         onPointerMove={(event) => { setTooltipSeq(nearestAnchor(event.clientY, event.currentTarget)?.seq ?? null) }}
         onPointerLeave={() => { setTooltipSeq(null) }}
-        onPointerDown={(event) => {
+        onClick={(event) => {
+          if (event.button !== 0 || event.target !== event.currentTarget) return
           const anchor = nearestAnchor(event.clientY, event.currentTarget)
           if (anchor !== undefined) onActivate(anchor.seq)
         }}
@@ -97,10 +106,10 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
               type="button"
               className={css.promptRailMark}
               style={{ '--dsh-prompt-position': `${String(position)}%` } as CSSProperties}
-              data-active={anchor.seq === activeSeq || undefined}
+              data-active={anchor.seq === effectiveActiveSeq || undefined}
               data-steering={anchor.kind === 'steering' || undefined}
               data-edge={edge}
-              aria-current={anchor.seq === activeSeq ? 'true' : undefined}
+              aria-current={anchor.seq === effectiveActiveSeq ? 'true' : undefined}
               aria-label={t('promptRail.jump', { index: absoluteIndex + 1, preview: label })}
               aria-describedby={tooltipVisible ? `prompt-rail-tip-${String(anchor.seq)}` : undefined}
               onFocus={() => { setTooltipSeq(anchor.seq) }}
@@ -108,7 +117,7 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
               onClick={() => { onActivate(anchor.seq) }}
             >
               <span className={css.promptRailTick} aria-hidden />
-              {anchor.seq === activeSeq && <span className={css.promptRailActiveDot} aria-hidden />}
+              {anchor.seq === effectiveActiveSeq && <span className={css.promptRailActiveDot} aria-hidden />}
               {tooltipVisible && (
                 <span id={`prompt-rail-tip-${String(anchor.seq)}`} className={css.promptRailTooltip} role="tooltip">
                   <span className={css.promptRailTooltipIndex}>
@@ -123,7 +132,7 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
             </button>
           )
         })}
-        <span className={css.promptRailCount} aria-hidden>
+        <span className={css.promptRailCount} data-prompt-rail-count="" aria-hidden>
           {t('promptRail.count', { current, total: anchors.length })}
         </span>
       </div>

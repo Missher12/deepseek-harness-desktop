@@ -31,7 +31,8 @@ import {
   TurnMaxTokensNodeView, UnknownNodeView, UserMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
 import { TurnTailNodeView } from '../src/client/chat/TurnTailNodeView.tsx'
-import { formatRunDuration } from '../src/client/chat/message-chrome.ts'
+import { formatMessageClock, formatRunDuration } from '../src/client/chat/message-chrome.ts'
+import { PromptRail } from '../src/client/chat/PromptRail.tsx'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 
 afterEach(() => {
@@ -301,6 +302,29 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   }
 }
 
+function promptRailAnchors(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    seq: 1_000 + index * 7,
+    turn: index + 1,
+    time: 1_000 + index,
+    kind: 'turn-opening' as const,
+    preview: `发言 ${String(index + 1)}`,
+  }))
+}
+
+function promptRailTrack(rail: HTMLElement): HTMLElement {
+  const track = rail.querySelector<HTMLElement>('[data-prompt-rail-track]')
+  if (track === null) throw new Error('Missing prompt rail track')
+  return track
+}
+
+function setPromptRailBounds(track: HTMLElement, top: number, height: number): void {
+  Object.defineProperty(track, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ top, height }),
+  })
+}
+
 /** Simulate reader input (any device): a delivered position that deviates
  * from the observed-top ledger of programmatic writes. */
 function readerScroll(element: HTMLElement, top: number): void {
@@ -410,12 +434,19 @@ describe('ChatView', () => {
       value: () => ({ top: 0, height: 520 }),
     })
     fireEvent.pointerMove(track!, { clientY: 0 })
-    expect(view.getByRole('tooltip').textContent).toContain('第 1 条发言')
-    expect(view.getByRole('tooltip').textContent).toContain('第一条')
-    fireEvent.pointerDown(track!, { clientY: 0 })
+    const tooltip = view.getByRole('tooltip')
+    expect(tooltip.children).toHaveLength(2)
+    expect(tooltip.children[0]?.textContent).toBe(`第 1 条发言 · ${formatMessageClock(1_000, h.props.t)}`)
+    expect(tooltip.children[1]?.textContent).toBe('第一条')
+    fireEvent.click(track!, { button: 0, clientY: 0 })
 
     await waitFor(() => { expect(h.revealHistorySeq).toHaveBeenCalledWith(1) })
+    expect(h.revealHistorySeq).toHaveBeenCalledTimes(1)
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' })
+    expect(h.forkAt).not.toHaveBeenCalled()
+    expect(h.openFile).not.toHaveBeenCalled()
+    expect(h.loadOlder).not.toHaveBeenCalled()
+    expect(h.inspectCall).not.toHaveBeenCalled()
   })
 
   it('keeps the first and last prompts reachable when a long rail is bounded', () => {
@@ -433,6 +464,100 @@ describe('ChatView', () => {
     expect(rail.getAllByRole('button')).toHaveLength(120)
     expect(rail.getByRole('button', { name: '转到第 1 条发言：发言 1' })).toBeTruthy()
     expect(rail.getByRole('button', { name: '转到第 130 条发言：发言 130' })).toBeTruthy()
+  })
+
+  it('maps 120 prompt ticks to the exact endpoints and midpoint of the 180px rail', () => {
+    const promptAnchors = promptRailAnchors(120)
+    const h = makeHarness({ promptAnchors })
+    const view = render(<h.ChatView {...h.props} />)
+    const rail = view.getByRole('navigation', { name: '过往发言' })
+    const track = promptRailTrack(rail)
+    setPromptRailBounds(track, 20, 180)
+    const buttons = within(rail).getAllByRole('button')
+    expect(buttons).toHaveLength(120)
+    expect(buttons[0]?.style.getPropertyValue('--dsh-prompt-position')).toBe('0%')
+    expect(buttons.at(-1)?.style.getPropertyValue('--dsh-prompt-position')).toBe('100%')
+
+    fireEvent.click(track, { button: 0, clientY: 20 })
+    fireEvent.click(track, { button: 0, clientY: 110 })
+    fireEvent.click(track, { button: 0, clientY: 200 })
+
+    expect(h.revealHistorySeq.mock.calls).toEqual([
+      [promptAnchors[0]?.seq],
+      [promptAnchors[60]?.seq],
+      [promptAnchors[119]?.seq],
+    ])
+  })
+
+  it('navigates only from a released primary click on the rail itself', () => {
+    const promptAnchors = promptRailAnchors(3)
+    const h = makeHarness({ promptAnchors })
+    const view = render(<h.ChatView {...h.props} />)
+    const rail = view.getByRole('navigation', { name: '过往发言' })
+    const track = promptRailTrack(rail)
+    setPromptRailBounds(track, 20, 180)
+    const count = rail.querySelector<HTMLElement>('[data-prompt-rail-count]')
+    const second = within(rail).getByRole('button', { name: '转到第 2 条发言：发言 2' })
+    expect(count).not.toBeNull()
+
+    fireEvent.pointerDown(track, { button: 0, clientY: 20 })
+    fireEvent.click(track, { button: 2, clientY: 20 })
+    fireEvent.click(track, { button: 1, clientY: 20 })
+    fireEvent.click(count!, { button: 0, clientY: 20 })
+    expect(h.revealHistorySeq).not.toHaveBeenCalled()
+
+    fireEvent.click(second, { button: 0, detail: 0 })
+    expect(h.revealHistorySeq).toHaveBeenCalledTimes(1)
+    expect(h.revealHistorySeq).toHaveBeenLastCalledWith(promptAnchors[1]?.seq)
+
+    fireEvent.click(track, { button: 0, clientY: 110 })
+    expect(h.revealHistorySeq).toHaveBeenCalledTimes(2)
+    expect(h.revealHistorySeq).toHaveBeenLastCalledWith(promptAnchors[1]?.seq)
+  })
+
+  for (const total of [120, 121, 130]) {
+    it(`keeps the bounded ${String(total)}-prompt rail accurate across head, middle, and tail selection`, () => {
+      const promptAnchors = promptRailAnchors(total)
+      const h = makeHarness({ promptAnchors })
+      const view = render(<h.ChatView {...h.props} />)
+      const rail = within(view.getByRole('navigation', { name: '过往发言' }))
+      const middle = Math.floor(total / 2)
+      const activate = (index: number): void => {
+        fireEvent.click(rail.getByRole('button', { name: `转到第 ${String(index + 1)} 条发言：发言 ${String(index + 1)}` }), {
+          button: 0,
+          detail: 0,
+        })
+        expect(h.revealHistorySeq).toHaveBeenLastCalledWith(promptAnchors[index]?.seq)
+        expect(rail.getByRole('button', { name: `转到第 ${String(index + 1)} 条发言：发言 ${String(index + 1)}` })
+          .getAttribute('aria-current')).toBe('true')
+        expect(rail.getByText(`${String(index + 1)} / ${String(total)}`)).toBeTruthy()
+      }
+
+      expect(rail.getAllByRole('button')).toHaveLength(120)
+      activate(total - 1)
+      expect(rail.getByRole('button', { name: '转到第 1 条发言：发言 1' })).toBeTruthy()
+      activate(0)
+      expect(rail.getByRole('button', { name: `转到第 ${String(total)} 条发言：发言 ${String(total)}` })).toBeTruthy()
+      activate(middle)
+      activate(total - 1)
+    })
+  }
+
+  it('uses the last prompt consistently when a direct rail selection is invalid or null', () => {
+    const promptAnchors = promptRailAnchors(3)
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(<PromptRail anchors={promptAnchors} activeSeq={999} onActivate={onActivate} t={t} />)
+    const lastName = '转到第 3 条发言：发言 3'
+
+    expect(view.getByText('3 / 3')).toBeTruthy()
+    expect(view.getByRole('button', { name: lastName }).getAttribute('aria-current')).toBe('true')
+    expect(view.container.querySelectorAll('[data-active]')).toHaveLength(1)
+
+    view.rerender(<PromptRail anchors={promptAnchors} activeSeq={null} onActivate={onActivate} t={t} />)
+    expect(view.getByText('3 / 3')).toBeTruthy()
+    expect(view.getByRole('button', { name: lastName }).getAttribute('aria-current')).toBe('true')
+    expect(view.container.querySelectorAll('[data-active]')).toHaveLength(1)
   })
 
   it('reports an unavailable historical prompt without changing the transcript', async () => {
