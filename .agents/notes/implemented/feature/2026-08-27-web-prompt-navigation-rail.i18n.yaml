@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-27-web-prompt-navigation-rail.md
-2026-08-27-web-prompt-navigation-rail.md: 0c6342c6ee0b2bb30e80b7d8f1b75e0d77aaba2c
-2026-08-27-web-prompt-navigation-rail.zh.md: 34a527c186603827b5ab41cd718cde0d166c8446
+2026-08-27-web-prompt-navigation-rail.md: d3155a2d9f1dcdd3a5a556ba76d604ce59fcfe4a
+2026-08-27-web-prompt-navigation-rail.zh.md: a445bc1b945a709b47ef7f2b7e1b65f7fd38c6e8

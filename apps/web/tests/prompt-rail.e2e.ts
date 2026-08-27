@@ -23,9 +23,10 @@ const FIXTURE = createChatScrollFixture({
 })
 // Three targeted replay calibrations (three light and three dark captures
 // each) measured 0–63 changed pixels. The per-tick raster assertion below
-// separately protects every fully drawable tick, so this budget covers only
-// known one-channel edge-compositing noise rather than an interior line loss.
+// separately protects every required tick, including clipped endpoints, so
+// this budget covers only known one-channel edge-compositing noise.
 const MAX_RAIL_PIXEL_DIFFERENCE = 63
+const RAIL_RASTER_PADDING = 4
 
 /** Record only under the explicit snapshot refresh mode; replay never heals a missing visual baseline. */
 interface PngPixels {
@@ -94,49 +95,36 @@ interface PromptTickBounds {
   readonly y: number
 }
 
+interface RailRasterCapture {
+  readonly image: Buffer
+  readonly clip: Readonly<{ x: number; y: number; width: number; height: number }>
+  readonly ticks: readonly PromptTickBounds[]
+}
+
 function imageRgb(pixels: PngPixels, x: number, y: number): readonly [number, number, number] {
   const start = (y * pixels.width + x) * 4
   return [pixels.data[start]!, pixels.data[start + 1]!, pixels.data[start + 2]!]
 }
 
-/** Verify the actual captured rails retain each fully drawable tick. */
-async function expectRailTicksPainted(page: Page, image: Buffer): Promise<void> {
-  const [pixels, ticks] = await Promise.all([
-    pngPixels(page, image),
-    page.locator('[data-prompt-rail-mark] [class*="promptRailTick"]').evaluateAll((nodes) => {
-      const track = document.querySelector<HTMLElement>('[data-prompt-rail-track]')
-      if (track === null) throw new Error('prompt rail track is missing')
-      const trackRect = track.getBoundingClientRect()
-      return nodes.map((node) => {
-        const rect = (node as HTMLElement).getBoundingClientRect()
-        return {
-          active: node.closest('[data-prompt-rail-mark]')?.hasAttribute('data-active') ?? false,
-          height: rect.height,
-          width: rect.width,
-          x: rect.left - trackRect.left,
-          y: rect.top - trackRect.top,
-        }
-      })
-    }),
-  ])
+/** Verify the actual raster capture retains every required tick. */
+async function expectRailTicksPainted(page: Page, capture: RailRasterCapture): Promise<void> {
+  const pixels = await pngPixels(page, capture.image)
+  const ticks = capture.ticks
   expect(ticks).toHaveLength(FIXTURE.turns)
-  const track = await page.locator('[data-prompt-rail-track]').boundingBox()
-  if (track === null) throw new Error('prompt rail track has no bounding box')
-  const scaleX = pixels.width / track.width
-  const scaleY = pixels.height / track.height
+  const scaleX = pixels.width / capture.clip.width
+  const scaleY = pixels.height / capture.clip.height
   let drawableTicks = 0
-  for (const tick of ticks as PromptTickBounds[]) {
-    // End marks are centered on the rail endpoints by design, leaving half of
-    // their one-pixel line outside the screenshot clip. The two interior marks
-    // are full raster targets; endpoint geometry remains covered by the golden.
-    if (tick.y < 0 || tick.y + tick.height > track.height) continue
+  for (const tick of ticks) {
     drawableTicks += 1
+    // Clamp the CSS rect to the overscanned screenshot's visible intersection.
+    // End marks are deliberately centered on the track edge, so their raster
+    // must contribute a candidate rather than being skipped.
     // The active dot covers the first 8px of its tick. Its exposed tail is
     // still a genuine 17px-wide raster target; neutral ticks use their whole line.
-    const left = Math.max(0, Math.ceil((tick.x + (tick.active ? 8 : 0)) * scaleX))
-    const right = Math.min(pixels.width, Math.floor((tick.x + tick.width) * scaleX))
-    const top = Math.max(0, Math.floor(tick.y * scaleY))
-    const bottom = Math.min(pixels.height, Math.ceil((tick.y + tick.height) * scaleY))
+    const left = Math.min(pixels.width, Math.max(0, Math.floor((tick.x + (tick.active ? 8 : 0)) * scaleX)))
+    const right = Math.min(pixels.width, Math.max(0, Math.ceil((tick.x + tick.width) * scaleX)))
+    const top = Math.min(pixels.height, Math.max(0, Math.floor(tick.y * scaleY)))
+    const bottom = Math.min(pixels.height, Math.max(0, Math.ceil((tick.y + tick.height) * scaleY)))
     const candidatePixels = (right - left) * (bottom - top)
     expect(candidatePixels).toBeGreaterThan(0)
     const centerY = Math.max(0, Math.min(pixels.height - 1, Math.round((tick.y + tick.height / 2) * scaleY)))
@@ -151,14 +139,15 @@ async function expectRailTicksPainted(page: Page, image: Buffer): Promise<void> 
         }
       }
     }
-    // Fractional top positions may spread a 1px tick over two device rows.
-    // Half the candidate box requires one complete visible raster row; a missing tick is zero.
-    const required = Math.ceil(candidatePixels * 0.5)
+    // Fractional positions can spread a 1px tick over two rows. Twenty percent
+    // covers real anti-aliased paint while a hidden tick has no contrast against
+    // its same-column background sample.
+    const required = Math.max(1, Math.ceil(candidatePixels * 0.2))
     if (painted < required) {
       throw new Error(`prompt rail tick raster is missing: ${JSON.stringify({ tick, candidatePixels, painted, required })}`)
     }
   }
-  expect(drawableTicks).toBe(FIXTURE.turns - 2)
+  expect(drawableTicks).toBe(FIXTURE.turns)
 }
 
 async function openSeed(page: Page): Promise<void> {
@@ -182,6 +171,47 @@ async function railImage(page: Page): Promise<Buffer> {
   return await track.screenshot()
 }
 
+/** Overscan the gutter only for primitive raster checks; approved golden PNGs remain tightly clipped. */
+async function railRasterCapture(page: Page): Promise<RailRasterCapture> {
+  const track = page.locator('[data-prompt-rail-track]')
+  await track.waitFor({ timeout: 30_000 })
+  const [box, viewport] = await Promise.all([
+    track.boundingBox(),
+    page.evaluate(() => ({
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    })),
+  ])
+  if (box === null) throw new Error('prompt rail track has no bounding box')
+  const left = Math.max(viewport.scrollX, Math.floor(box.x + viewport.scrollX - RAIL_RASTER_PADDING))
+  const top = Math.max(viewport.scrollY, Math.floor(box.y + viewport.scrollY - RAIL_RASTER_PADDING))
+  const right = Math.min(
+    viewport.scrollX + viewport.width,
+    Math.ceil(box.x + viewport.scrollX + box.width + RAIL_RASTER_PADDING),
+  )
+  const bottom = Math.min(
+    viewport.scrollY + viewport.height,
+    Math.ceil(box.y + viewport.scrollY + box.height + RAIL_RASTER_PADDING),
+  )
+  const clip = { x: left, y: top, width: right - left, height: bottom - top }
+  if (clip.width <= 0 || clip.height <= 0) throw new Error('prompt rail raster clip is empty')
+  const ticks = await page.locator('[data-prompt-rail-mark] [class*="promptRailTick"]').evaluateAll((nodes, screenshotClip) => {
+    return nodes.map((node) => {
+      const rect = (node as HTMLElement).getBoundingClientRect()
+      return {
+        active: node.closest('[data-prompt-rail-mark]')?.hasAttribute('data-active') ?? false,
+        height: rect.height,
+        width: rect.width,
+        x: rect.left + window.scrollX - screenshotClip.x,
+        y: rect.top + window.scrollY - screenshotClip.y,
+      }
+    })
+  }, clip)
+  return { clip, ticks, image: await page.screenshot({ clip }) }
+}
+
 async function expectFocused(locator: Locator): Promise<void> {
   await expect.poll(
     () => locator.evaluate(element => document.activeElement === element),
@@ -195,6 +225,8 @@ async function installScrollProbe(page: Page): Promise<void> {
     type Probe = {
       original: NativeScrollIntoView
       calls: Array<{ seq: string; behavior: string | null; block: string | null }>
+      markClicks: string[]
+      onMarkClick: (event: MouseEvent) => void
     }
     const target = window as typeof window & { __dshPromptRailScrollProbe?: Probe }
     if (target.__dshPromptRailScrollProbe !== undefined) {
@@ -202,7 +234,14 @@ async function installScrollProbe(page: Page): Promise<void> {
     }
     const original: NativeScrollIntoView = Reflect.get(Element.prototype, 'scrollIntoView')
     const calls: Probe['calls'] = []
-    target.__dshPromptRailScrollProbe = { original, calls }
+    const markClicks: string[] = []
+    const onMarkClick = (event: MouseEvent): void => {
+      if (!(event.target instanceof Element)) return
+      const mark = event.target.closest<HTMLElement>('[data-prompt-rail-mark]')
+      if (mark !== null) markClicks.push(mark.getAttribute('aria-label') ?? '')
+    }
+    document.addEventListener('click', onMarkClick, true)
+    target.__dshPromptRailScrollProbe = { original, calls, markClicks, onMarkClick }
     Element.prototype.scrollIntoView = function scrollIntoViewProbe(options?: boolean | ScrollIntoViewOptions): void {
       if (this instanceof HTMLElement && this.dataset.userMessageSeq !== undefined) {
         const normalized = typeof options === 'object' && options !== null ? options : undefined
@@ -219,8 +258,11 @@ async function installScrollProbe(page: Page): Promise<void> {
 
 async function clearScrollProbe(page: Page): Promise<void> {
   await page.evaluate(() => {
-    const target = window as typeof window & { __dshPromptRailScrollProbe?: { calls: unknown[] } }
+    const target = window as typeof window & {
+      __dshPromptRailScrollProbe?: { calls: unknown[]; markClicks: unknown[] }
+    }
     target.__dshPromptRailScrollProbe?.calls.splice(0)
+    target.__dshPromptRailScrollProbe?.markClicks.splice(0)
   })
 }
 
@@ -232,13 +274,25 @@ async function readScrollProbe(page: Page): Promise<readonly PromptScrollCall[]>
   })
 }
 
+async function readMarkClickProbe(page: Page): Promise<readonly string[]> {
+  return await page.evaluate(() => {
+    type Probe = { markClicks: string[] }
+    const target = window as typeof window & { __dshPromptRailScrollProbe?: Probe }
+    return target.__dshPromptRailScrollProbe?.markClicks ?? []
+  })
+}
+
 async function restoreScrollProbe(page: Page): Promise<void> {
   await page.evaluate(() => {
-    type Probe = { original: typeof Element.prototype.scrollIntoView }
+    type Probe = {
+      original: typeof Element.prototype.scrollIntoView
+      onMarkClick: (event: MouseEvent) => void
+    }
     const target = window as typeof window & { __dshPromptRailScrollProbe?: Probe }
     const probe = target.__dshPromptRailScrollProbe
     if (probe === undefined) return
     Element.prototype.scrollIntoView = probe.original
+    document.removeEventListener('click', probe.onMarkClick, true)
     delete target.__dshPromptRailScrollProbe
   })
 }
@@ -289,14 +343,14 @@ describe('web e2e: prompt rail stays reachable outside the desktop gutter', () =
     const lightCaptures: Buffer[] = []
     for (let sample = 0; sample < 3; sample += 1) lightCaptures.push(await railImage(page))
     for (const image of lightCaptures) {
-      await expectRailTicksPainted(page, image)
+      await expectRailTicksPainted(page, await railRasterCapture(page))
       await compareVisualGolden(LIGHT_SNAPSHOT, image, page)
     }
     await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
     const darkCaptures: Buffer[] = []
     for (let sample = 0; sample < 3; sample += 1) darkCaptures.push(await railImage(page))
     for (const image of darkCaptures) {
-      await expectRailTicksPainted(page, image)
+      await expectRailTicksPainted(page, await railRasterCapture(page))
       await compareVisualGolden(DARK_SNAPSHOT, image, page)
     }
     const [lightPixels, darkPixels] = await Promise.all([
@@ -304,6 +358,26 @@ describe('web e2e: prompt rail stays reachable outside the desktop gutter', () =
       pngPixels(page, darkCaptures[0]!),
     ])
     expect(darkPixels.data.some((channel, index) => channel !== lightPixels.data[index])).toBe(true)
+  })
+
+  it.skipIf(MODE === 'record')('rejects either endpoint tick being removed even within snapshot tolerance', async () => {
+    await expectRailTicksPainted(page, await railRasterCapture(page))
+    const ticks = page.locator('[data-prompt-rail-mark] [class*="promptRailTick"]')
+    expect(await ticks.count()).toBe(FIXTURE.turns)
+    for (const index of [0, FIXTURE.turns - 1]) {
+      const tick = ticks.nth(index)
+      await tick.evaluate((element) => { element.style.setProperty('visibility', 'hidden', 'important') })
+      try {
+        await expect(expectRailTicksPainted(page, await railRasterCapture(page))).rejects.toThrow('prompt rail tick raster is missing')
+      } finally {
+        await tick.evaluate((element) => { element.style.removeProperty('visibility') })
+        await page.evaluate(async () => {
+          await new Promise<void>(resolve => requestAnimationFrame(() => {
+            requestAnimationFrame(() => { resolve() })
+          }))
+        })
+      }
+    }
   })
 
   it.skipIf(MODE === 'record')('maps forced-colors rail primitives to distinct system colors', async () => {
@@ -383,10 +457,12 @@ describe('web e2e: prompt rail stays reachable outside the desktop gutter', () =
     await clearScrollProbe(page)
     await page.keyboard.press('Enter')
     await expectOneScrollTo(page, userSeqs[3]!)
+    expect(await readMarkClickProbe(page)).toEqual([])
     await marks.nth(3).focus()
     await clearScrollProbe(page)
     await page.keyboard.press('Space')
     await expectOneScrollTo(page, userSeqs[3]!)
+    expect(await readMarkClickProbe(page)).toEqual([])
   })
 
   it.skipIf(MODE === 'record')('restores compact selection focus and transfers it across breakpoint changes', async () => {

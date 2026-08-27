@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, FocusEvent, KeyboardEvent } from 'react'
+import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties, KeyboardEvent, RefObject } from 'react'
 import type { PromptAnchor } from '@deepseek-ai/dsh-client-connection/client'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import css from './ChatView.module.css'
@@ -73,24 +73,32 @@ export interface PromptRailProps {
 const COMPACT_PROMPT_RAIL_QUERY = '(max-width: 860px)'
 
 /** Replace the dense desktop ruler with compact navigation on narrow layouts. */
-function useCompactPromptRail(onBeforeModeChange?: (nextCompact: boolean) => void): boolean {
+function useCompactPromptRail(
+  onBeforeModeChange?: (nextCompact: boolean, willChangeCommittedMode: boolean) => void,
+): boolean {
   const [compact, setCompact] = useState(() => (
     typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
     && window.matchMedia(COMPACT_PROMPT_RAIL_QUERY).matches
   ))
   const compactRef = useRef(compact)
+  const committedCompactRef = useRef(compact)
   const onBeforeModeChangeRef = useRef(onBeforeModeChange)
   onBeforeModeChangeRef.current = onBeforeModeChange
+
+  useLayoutEffect(() => {
+    committedCompactRef.current = compact
+  }, [compact])
 
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return
     const media = window.matchMedia(COMPACT_PROMPT_RAIL_QUERY)
     const update = () => {
-      if (compactRef.current === media.matches) return
-      onBeforeModeChangeRef.current?.(media.matches)
-      compactRef.current = media.matches
-      setCompact(media.matches)
+      const nextCompact = media.matches
+      if (compactRef.current === nextCompact) return
+      onBeforeModeChangeRef.current?.(nextCompact, committedCompactRef.current !== nextCompact)
+      compactRef.current = nextCompact
+      setCompact(nextCompact)
     }
     update()
     media.addEventListener('change', update)
@@ -98,6 +106,28 @@ function useCompactPromptRail(onBeforeModeChange?: (nextCompact: boolean) => voi
   }, [])
 
   return compact
+}
+
+interface PromptRailReplacementFocusSnapshotProps {
+  readonly anchors: readonly PromptAnchor[]
+  readonly onBeforeAnchorReplacement: (ownsRailFocus: boolean) => void
+  readonly railRef: RefObject<HTMLElement | null>
+}
+
+/** Capture ownership before a replacement can unmount a focused keyed mark. */
+class PromptRailReplacementFocusSnapshot extends Component<PromptRailReplacementFocusSnapshotProps> {
+  override getSnapshotBeforeUpdate(previousProps: Readonly<PromptRailReplacementFocusSnapshotProps>): null {
+    if (previousProps.anchors !== this.props.anchors) {
+      this.props.onBeforeAnchorReplacement(
+        this.props.railRef.current?.contains(document.activeElement) === true,
+      )
+    }
+    return null
+  }
+
+  override componentDidUpdate(): void {}
+
+  override render(): null { return null }
 }
 
 /** Codex-style prompt timeline: navigation only, with no rewind semantics. */
@@ -109,14 +139,14 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
   const compactPopoverRef = useRef<HTMLDivElement>(null)
   const markRefs = useRef(new Map<number, HTMLButtonElement>())
   const railRef = useRef<HTMLElement>(null)
-  const compactFocusWithinRef = useRef(false)
-  const pendingCompactTriggerFocusRef = useRef(false)
-  const pendingDesktopMarkFocusRef = useRef(false)
+  const pendingModeFocusRef = useRef<'compact-trigger' | 'desktop-mark' | null>(null)
+  const replacementOwnedRailFocusRef = useRef(false)
   const previousAnchorsRef = useRef<readonly PromptAnchor[] | null>(null)
-  const compact = useCompactPromptRail((nextCompact) => {
-    const railHasFocus = railRef.current?.contains(document.activeElement) ?? false
-    if (nextCompact && railHasFocus) pendingCompactTriggerFocusRef.current = true
-    if (!nextCompact && railHasFocus) pendingDesktopMarkFocusRef.current = true
+  const compact = useCompactPromptRail((nextCompact, willChangeCommittedMode) => {
+    const ownsRail = railRef.current?.contains(document.activeElement) === true
+    pendingModeFocusRef.current = willChangeCommittedMode && ownsRail
+      ? nextCompact ? 'compact-trigger' : 'desktop-mark'
+      : null
   })
   const indexBySeq = useMemo(
     () => new Map(anchors.map((anchor, index) => [anchor.seq, index] as const)),
@@ -130,7 +160,7 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
     [anchors, effectiveActiveSeq],
   )
   const previousEffectiveActiveSeqRef = useRef(effectiveActiveSeq)
-  const wasCompactRef = useRef(compact)
+  const canRenderRail = visible.length >= 2
   const focusedSeq = focusSeq !== null && visible.some(anchor => anchor.seq === focusSeq)
     ? focusSeq
     : effectiveActiveSeq
@@ -139,43 +169,52 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
     if (restoreFocus) compactTriggerRef.current?.focus()
   }
 
-  useEffect(() => {
-    if (!compact || !pendingCompactTriggerFocusRef.current) return
-    pendingCompactTriggerFocusRef.current = false
-    compactTriggerRef.current?.focus()
-  }, [compact])
-
-  useEffect(() => {
-    const wasCompact = wasCompactRef.current
-    wasCompactRef.current = compact
-    if (compact || !wasCompact) return
-    const railHasFocus = railRef.current?.contains(document.activeElement) ?? false
-    const dialogFocusWasLost = compactOpen && document.activeElement === document.body
-    const transferFocus = railHasFocus || compactFocusWithinRef.current || pendingDesktopMarkFocusRef.current || dialogFocusWasLost
+  useLayoutEffect(() => {
+    if (canRenderRail) return
+    pendingModeFocusRef.current = null
+    replacementOwnedRailFocusRef.current = false
     setCompactOpen(false)
-    compactFocusWithinRef.current = false
-    pendingDesktopMarkFocusRef.current = false
-    if (transferFocus && focusedSeq !== null) markRefs.current.get(focusedSeq)?.focus()
-  }, [compact, compactOpen, focusedSeq])
+    setTooltipSeq(null)
+    setFocusSeq(null)
+  }, [canRenderRail])
+
+  useLayoutEffect(() => {
+    if (!compact) setCompactOpen(false)
+    const pendingModeFocus = pendingModeFocusRef.current
+    pendingModeFocusRef.current = null
+    if (!canRenderRail) return
+    if (pendingModeFocus === 'compact-trigger' && compact) {
+      compactTriggerRef.current?.focus()
+      return
+    }
+    if (pendingModeFocus === 'desktop-mark' && !compact && focusedSeq !== null) {
+      markRefs.current.get(focusedSeq)?.focus()
+    }
+  }, [canRenderRail, compact, focusedSeq])
 
   useEffect(() => {
     if (compactOpen) compactPopoverRef.current?.focus()
   }, [compactOpen])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previous = previousAnchorsRef.current
+    if (previous === anchors) return
     previousAnchorsRef.current = anchors
-    if (previous !== null && !extendsPromptAnchorSet(previous, anchors)) {
-      const focusWasWithinRail = railRef.current?.contains(document.activeElement) ?? false
-      setTooltipSeq(null)
-      setFocusSeq(null)
-      closeCompact(compact && compactOpen && visible.length >= 2)
-      if (!compact && focusWasWithinRail) {
-        const nextSeq = effectiveActiveSeq ?? visible.at(-1)?.seq
-        if (nextSeq !== undefined) markRefs.current.get(nextSeq)?.focus()
-      }
+    const focusWasWithinRail = replacementOwnedRailFocusRef.current
+      || railRef.current?.contains(document.activeElement) === true
+    replacementOwnedRailFocusRef.current = false
+    if (previous === null || extendsPromptAnchorSet(previous, anchors)) return
+    setTooltipSeq(null)
+    setFocusSeq(null)
+    setCompactOpen(false)
+    if (!canRenderRail || !focusWasWithinRail) return
+    if (compact) {
+      compactTriggerRef.current?.focus()
+      return
     }
-  }, [anchors, compact, compactOpen, effectiveActiveSeq, visible])
+    const nextSeq = effectiveActiveSeq ?? anchors.at(-1)?.seq
+    if (nextSeq !== undefined) markRefs.current.get(nextSeq)?.focus()
+  }, [anchors, canRenderRail, compact, effectiveActiveSeq])
 
   useEffect(() => {
     const activeChanged = previousEffectiveActiveSeqRef.current !== effectiveActiveSeq
@@ -189,7 +228,7 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
     if (tooltipSeq !== null && !anchors.some(anchor => anchor.seq === tooltipSeq)) setTooltipSeq(null)
   }, [anchors, tooltipSeq])
 
-  if (visible.length < 2) return null
+  if (!canRenderRail) return null
   const activeIndex = effectiveActiveSeq === null
     ? anchors.length - 1
     : indexBySeq.get(effectiveActiveSeq) ?? anchors.length - 1
@@ -229,18 +268,12 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
       className={css.promptRail}
       aria-label={t('promptRail.aria')}
       data-side="left"
-      onFocusCapture={() => {
-        if (compact) compactFocusWithinRef.current = true
-      }}
-      onBlurCapture={(event: FocusEvent<HTMLElement>) => {
-        if (event.currentTarget.contains(event.relatedTarget)) return
-        compactFocusWithinRef.current = false
-        const viewportCompact = typeof window.matchMedia === 'function'
-          && window.matchMedia(COMPACT_PROMPT_RAIL_QUERY).matches
-        if (compact && !viewportCompact) pendingDesktopMarkFocusRef.current = true
-        if (!compact && viewportCompact) pendingCompactTriggerFocusRef.current = true
-      }}
     >
+      <PromptRailReplacementFocusSnapshot
+        anchors={anchors}
+        railRef={railRef}
+        onBeforeAnchorReplacement={(ownsRailFocus) => { replacementOwnedRailFocusRef.current = ownsRailFocus }}
+      />
       {!compact && (
         <div
           className={css.promptRailTrack}

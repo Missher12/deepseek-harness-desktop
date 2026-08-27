@@ -198,10 +198,6 @@
   white-space: nowrap;
 }
 
-.promptRailCompact {
-  display: none;
-}
-
 .promptRailCompactTrigger {
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 999px;

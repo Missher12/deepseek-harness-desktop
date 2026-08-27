@@ -15,7 +15,7 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   createSnapshotStore, EMPTY_CONVERSATION_VIEWS, PendingWait,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
+import { RpcId, type PromptAnchor } from '@deepseek-ai/dsh-client-connection/client'
 import type {
   ChatNode, ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps, SelectionTarget, UseChatNodeTurnData,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -638,6 +638,33 @@ describe('ChatView', () => {
     expect(view.getByRole('tooltip').textContent).toContain(replacement[1]!.preview)
   })
 
+  it('restores owned desktop focus when a replacement changes mark keys', () => {
+    vi.stubGlobal('matchMedia', () => ({
+      matches: false,
+      media: '(max-width: 860px)',
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const replacement = promptAnchors.map((anchor, index) => ({
+      ...anchor,
+      seq: anchor.seq + 10,
+      time: anchor.time + 10_000,
+      preview: `替换发言 ${String(index + 1)}`,
+    }))
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(<PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />)
+    const rail = view.getByRole('navigation', { name: '过往发言' })
+    const marks = [...rail.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')]
+
+    marks[1]!.focus()
+    view.rerender(<PromptRail anchors={replacement} activeSeq={replacement[1]!.seq} onActivate={onActivate} t={t} />)
+
+    const replacementMarks = [...rail.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')]
+    expect(document.activeElement).toBe(replacementMarks[1])
+  })
+
   it('opens a localized compact prompt list and returns focus after Escape', () => {
     const listeners = new Set<(event: MediaQueryListEvent) => void>()
     vi.stubGlobal('matchMedia', () => ({
@@ -688,6 +715,39 @@ describe('ChatView', () => {
     expect(document.activeElement).toBe(trigger)
   })
 
+  it('does not steal composer focus when replacement closes an open compact dialog', () => {
+    vi.stubGlobal('matchMedia', () => ({
+      matches: true,
+      media: '(max-width: 860px)',
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const replacement = promptAnchors.map(anchor => ({ ...anchor, time: anchor.time + 10_000 }))
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(
+      <>
+        <button type="button">会话输入框</button>
+        <PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />
+      </>,
+    )
+    const composer = view.getByRole('button', { name: '会话输入框' })
+    fireEvent.click(view.getByRole('button', { name: '发言导航（2 / 3）' }))
+    expect(view.getByRole('dialog', { name: '发言导航' })).toBeTruthy()
+
+    composer.focus()
+    view.rerender(
+      <>
+        <button type="button">会话输入框</button>
+        <PromptRail anchors={replacement} activeSeq={replacement[1]!.seq} onActivate={onActivate} t={t} />
+      </>,
+    )
+
+    expect(view.queryByRole('dialog', { name: '发言导航' })).toBeNull()
+    expect(document.activeElement).toBe(composer)
+  })
+
   it('hands compact focus to the active desktop mark when the viewport expands', () => {
     let compact = true
     const listeners = new Set<(event: MediaQueryListEvent) => void>()
@@ -732,7 +792,6 @@ describe('ChatView', () => {
     trigger.focus()
     compact = false
     act(() => {
-      trigger.blur()
       for (const listener of listeners) listener(new Event('change') as MediaQueryListEvent)
     })
 
@@ -818,6 +877,44 @@ describe('ChatView', () => {
     expect(view.getByRole('button', { name: '发言导航（2 / 3）' }).getAttribute('aria-expanded')).toBe('false')
     expect(view.queryByRole('dialog', { name: '发言导航' })).toBeNull()
     expect(view.getByRole('button', { name: '发言导航（2 / 3）' }).tabIndex).toBe(0)
+  })
+
+  it('clears rail ownership after it disappears before a later desktop breakpoint change', () => {
+    let compact = true
+    const listeners = new Set<(event: MediaQueryListEvent) => void>()
+    vi.stubGlobal('matchMedia', () => ({
+      get matches() { return compact },
+      media: '(max-width: 860px)',
+      addEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.add(listener) },
+      removeEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.delete(listener) },
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const replacement = promptRailAnchors(3).map(anchor => ({ ...anchor, time: anchor.time + 10_000 }))
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const renderRail = (anchors: readonly PromptAnchor[], activeSeq: number) => (
+      <>
+        <button type="button">会话输入框</button>
+        <PromptRail anchors={anchors} activeSeq={activeSeq} onActivate={onActivate} t={t} />
+      </>
+    )
+    const view = render(renderRail(promptAnchors, promptAnchors[1]!.seq))
+    const composer = view.getByRole('button', { name: '会话输入框' })
+
+    fireEvent.click(view.getByRole('button', { name: '发言导航（2 / 3）' }))
+    expect(document.activeElement).toBe(view.getByRole('dialog', { name: '发言导航' }))
+    view.rerender(renderRail([promptAnchors[0]!], promptAnchors[0]!.seq))
+    expect(view.queryByRole('navigation', { name: '过往发言' })).toBeNull()
+
+    composer.focus()
+    view.rerender(renderRail(replacement, replacement[1]!.seq))
+    expect(view.queryByRole('dialog', { name: '发言导航' })).toBeNull()
+    compact = false
+    act(() => {
+      for (const listener of listeners) listener(new Event('change') as MediaQueryListEvent)
+    })
+
+    expect(document.activeElement).toBe(composer)
   })
 
   it('reports an unavailable historical prompt without changing the transcript', async () => {

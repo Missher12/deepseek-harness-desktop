@@ -62,6 +62,11 @@ describe('PromptRail presentation', () => {
     expect(stylesheet).toContain('@media (prefers-reduced-motion: reduce) {\n  .promptRailTick {\n    transition: none;')
   })
 
+  it('leaves the conditionally mounted compact control visible until its mode handoff commits', () => {
+    expect(ruleBlock('.promptRailCompact')).not.toContain('display: none;')
+    expect(stylesheet).toContain('.promptRailCompact {\n    position: relative;\n    display: flex;')
+  })
+
   it('selects the nearest prompt index from a clamped rail coordinate', () => {
     expect(nearestPromptIndex).toBeTypeOf('function')
     expect(nearestPromptIndex?.({ y: 260, top: 0, height: 520, count: 120 })).toBe(60)
