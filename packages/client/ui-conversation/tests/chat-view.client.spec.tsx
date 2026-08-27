@@ -156,6 +156,8 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   const openFile = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined)
   const loadOlder = vi.fn()
   const inspectCall = vi.fn<(callId: string) => void>()
+  const setDraft = vi.fn<ChatViewSlotProps['inputActions']['setDraft']>()
+  const submit = vi.fn<ChatViewSlotProps['inputActions']['submit']>()
   // In-memory scroll memory matching the apply.ts per-session map contract.
   let savedScroll: ReturnType<ChatViewSlotProps['chatScroll']['read']> = null
   const chatScroll: ChatViewSlotProps['chatScroll'] = {
@@ -272,11 +274,11 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     useProjection: (() => undefined),
     useInput: (() => { throw new Error('unused') }),
     inputActions: {
-      setDraft: () => {},
+      setDraft,
       addImages: () => true,
       removeImage: () => {},
       pruneImages: () => {},
-      submit: () => {},
+      submit,
     },
     useStore: bindSnapshotSelector(chat),
     actions: chat.actions,
@@ -298,7 +300,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
   return {
     set, ChatView, props, openDetails, openFile, loadOlder, inspectCall,
-    chatScroll, forkAt, revealHistorySeq, setSelection, toolOwners,
+    chatScroll, forkAt, revealHistorySeq, setDraft, setSelection, submit, toolOwners,
   }
 }
 
@@ -447,6 +449,8 @@ describe('ChatView', () => {
     expect(h.openFile).not.toHaveBeenCalled()
     expect(h.loadOlder).not.toHaveBeenCalled()
     expect(h.inspectCall).not.toHaveBeenCalled()
+    expect(h.setDraft).not.toHaveBeenCalled()
+    expect(h.submit).not.toHaveBeenCalled()
   })
 
   it('keeps the first and last prompts reachable when a long rail is bounded', () => {
