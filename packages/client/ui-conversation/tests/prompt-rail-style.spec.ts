@@ -25,6 +25,8 @@ describe('PromptRail presentation', () => {
   it('draws the selected prompt as a DeepSeek-blue line with a hollow dot', () => {
     expect(stylesheet).toMatch(new RegExp(activeTickPattern, 's'))
     expect(stylesheet).toMatch(/\.promptRailActiveDot\s*\{[^}]*border:.*var\(--dsw-static-deepseek-500\)/s)
+    expect(stylesheet).not.toMatch(/\.promptRailActiveDot\s*\{[^}]*background:\s*var\(--dsw-alias-tooltip-bg\)/s)
+    expect(stylesheet).toMatch(/\.promptRailActiveDot\s*\{[^}]*background:\s*var\(--dsw-alias-bg-base,\s*#fff\)/s)
   })
 
   it('selects the nearest prompt index from a clamped rail coordinate', () => {

@@ -141,7 +141,7 @@
   height: 14px;
   border: 2px solid var(--dsw-static-deepseek-500);
   border-radius: 50%;
-  background: var(--dsw-alias-tooltip-bg);
+  background: var(--dsw-alias-bg-base, #fff);
   transform: translateY(-50%);
 }
 
