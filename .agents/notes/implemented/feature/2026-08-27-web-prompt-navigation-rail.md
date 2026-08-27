@@ -16,7 +16,7 @@ Pointer hover and keyboard focus reveal a localized tooltip containing the promp
 
 Selecting a mark asks the session runtime to reveal that exact sequence. The runtime serializes navigation requests, fetches only the older pages needed to materialize the target, and then scrolls the exact message row to the viewport center. Reduced-motion users receive an immediate scroll. A stale or unavailable target reports a local non-destructive status instead of navigating to an approximate message.
 
-The rail renders at most 120 marks while keeping the first and last prompt reachable. It remains hidden below the supported content width rather than overlapping the composer or message column. Live user messages append anchors locally, while a resync replaces the index from the new immutable tail cut.
+The rail renders at most 120 marks while keeping the first and last prompt reachable. Below the supported content width, the desktop ruler becomes a compact localized Prompt Navigation trigger with the current and total counts, rather than overlapping the composer or message column. Its lightweight dialog list exposes the same exact anchors, activates the selected sequence once, closes after selection, and returns focus to the trigger on Escape. Live user messages append anchors locally, while a resync replaces the index from the new immutable tail cut.
 
 The rail does not delete, edit, rewind, resend, branch, or fork a session. Existing explicit session-fork actions remain separate and unchanged.
 
@@ -36,4 +36,4 @@ Users can return to an exact earlier instruction from a compact visual landmark,
 
 ## Testing
 
-Host history tests cover tail-only index delivery, normalized previews, long history, and immutable cuts. Session runtime tests cover exact target loading, request serialization, live-anchor updates, and resync. Conversation tests cover left placement, long and short marks, bounded first/last reachability, localized hover and focus tooltips, reduced motion, exact scrolling, narrow-view hiding, and unavailable-target status.
+Host history tests cover tail-only index delivery, normalized previews, long history, and immutable cuts. Session runtime tests cover exact target loading, request serialization, live-anchor updates, and resync. Conversation tests cover left placement, long and short marks, bounded first/last reachability, localized hover and focus tooltips, roving keyboard focus and activation, reduced motion, exact scrolling, compact narrow-view navigation and Escape focus return, forced-colors visibility, and unavailable-target status. Light and dark browser snapshots cover the approved desktop ruler.

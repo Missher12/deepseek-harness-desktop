@@ -44,6 +44,22 @@ function visiblePromptAnchors(
   return windowed
 }
 
+function samePromptAnchorIdentity(left: PromptAnchor, right: PromptAnchor): boolean {
+  return left.seq === right.seq && left.time === right.time && left.kind === right.kind
+}
+
+/** Appending live prompts preserves interaction state; a replaced index does not. */
+function extendsPromptAnchorSet(
+  previous: readonly PromptAnchor[],
+  next: readonly PromptAnchor[],
+): boolean {
+  if (next.length < previous.length) return false
+  return previous.every((anchor, index) => {
+    const candidate = next[index]
+    return candidate !== undefined && samePromptAnchorIdentity(anchor, candidate)
+  })
+}
+
 export interface PromptRailProps {
   readonly anchors: readonly PromptAnchor[]
   readonly activeSeq: number | null
@@ -53,7 +69,7 @@ export interface PromptRailProps {
 
 const COMPACT_PROMPT_RAIL_QUERY = '(max-width: 860px)'
 
-/** Keep the dense desktop ruler out of narrow transcript layouts. */
+/** Replace the dense desktop ruler with compact navigation on narrow layouts. */
 function useCompactPromptRail(): boolean {
   const [compact, setCompact] = useState(() => (
     typeof window !== 'undefined'
@@ -81,6 +97,7 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
   const compactTriggerRef = useRef<HTMLButtonElement>(null)
   const compactPopoverRef = useRef<HTMLDivElement>(null)
   const markRefs = useRef(new Map<number, HTMLButtonElement>())
+  const previousAnchorsRef = useRef<readonly PromptAnchor[] | null>(null)
   const compact = useCompactPromptRail()
   const indexBySeq = useMemo(
     () => new Map(anchors.map((anchor, index) => [anchor.seq, index] as const)),
@@ -93,6 +110,7 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
     () => visiblePromptAnchors(anchors, effectiveActiveSeq),
     [anchors, effectiveActiveSeq],
   )
+  const previousEffectiveActiveSeqRef = useRef(effectiveActiveSeq)
 
   useEffect(() => {
     if (!compact) setCompactOpen(false)
@@ -103,8 +121,21 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
   }, [compactOpen])
 
   useEffect(() => {
-    if (focusSeq !== null && visible.some(anchor => anchor.seq === focusSeq)) return
-    setFocusSeq(effectiveActiveSeq)
+    const previous = previousAnchorsRef.current
+    previousAnchorsRef.current = anchors
+    if (previous !== null && !extendsPromptAnchorSet(previous, anchors)) {
+      setTooltipSeq(null)
+      setFocusSeq(null)
+      setCompactOpen(false)
+    }
+  }, [anchors])
+
+  useEffect(() => {
+    const activeChanged = previousEffectiveActiveSeqRef.current !== effectiveActiveSeq
+    previousEffectiveActiveSeqRef.current = effectiveActiveSeq
+    if (activeChanged || (focusSeq !== null && !visible.some(anchor => anchor.seq === focusSeq))) {
+      setFocusSeq(effectiveActiveSeq)
+    }
   }, [effectiveActiveSeq, focusSeq, visible])
 
   useEffect(() => {

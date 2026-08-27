@@ -592,6 +592,47 @@ describe('ChatView', () => {
     expect(onActivate.mock.calls).toEqual([[promptAnchors[2]!.seq], [promptAnchors[2]!.seq]])
   })
 
+  it('moves the roving tab owner to an externally changed active prompt', () => {
+    const promptAnchors = promptRailAnchors(4)
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(<PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />)
+    const rail = view.getByRole('navigation', { name: '过往发言' })
+    const marks = [...rail.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')]
+
+    marks[1]!.focus()
+    fireEvent.keyDown(marks[1]!, { key: 'ArrowDown' })
+    expect(marks.map(mark => mark.tabIndex)).toEqual([-1, -1, 0, -1])
+
+    view.rerender(<PromptRail anchors={promptAnchors} activeSeq={promptAnchors[3]!.seq} onActivate={onActivate} t={t} />)
+    expect([...rail.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')].map(mark => mark.tabIndex))
+      .toEqual([-1, -1, -1, 0])
+  })
+
+  it('resets rail focus and tooltip state when prompt anchors are replaced', () => {
+    vi.stubGlobal('matchMedia', () => ({
+      matches: false,
+      media: '(max-width: 860px)',
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const replacement = promptAnchors.map(anchor => ({ ...anchor, time: anchor.time + 10_000 }))
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(<PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />)
+    const rail = view.getByRole('navigation', { name: '过往发言' })
+    const marks = [...rail.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')]
+
+    fireEvent.focus(marks[0]!)
+    expect(view.getByRole('tooltip')).toBeTruthy()
+
+    view.rerender(<PromptRail anchors={replacement} activeSeq={replacement[1]!.seq} onActivate={onActivate} t={t} />)
+    expect(view.queryByRole('tooltip')).toBeNull()
+    expect([...rail.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')].map(mark => mark.tabIndex))
+      .toEqual([-1, 0, -1])
+  })
+
   it('opens a localized compact prompt list and returns focus after Escape', () => {
     const listeners = new Set<(event: MediaQueryListEvent) => void>()
     vi.stubGlobal('matchMedia', () => ({
@@ -617,6 +658,30 @@ describe('ChatView', () => {
     fireEvent.click(within(view.getByRole('dialog')).getByRole('button', { name: '转到第 1 条发言：发言 1' }))
     expect(onActivate.mock.calls).toEqual([[promptAnchors[0]!.seq]])
     expect(view.queryByRole('dialog')).toBeNull()
+  })
+
+  it('does not reopen the compact list after the anchor set drops below two prompts', () => {
+    vi.stubGlobal('matchMedia', () => ({
+      matches: true,
+      media: '(max-width: 860px)',
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const replacement = promptRailAnchors(3).map(anchor => ({ ...anchor, time: anchor.time + 10_000 }))
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(<PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />)
+    const trigger = view.getByRole('button', { name: '发言导航（2 / 3）' })
+
+    fireEvent.click(trigger)
+    expect(view.getByRole('dialog', { name: '发言导航' })).toBeTruthy()
+    view.rerender(<PromptRail anchors={[promptAnchors[0]!]} activeSeq={promptAnchors[0]!.seq} onActivate={onActivate} t={t} />)
+    expect(view.queryByRole('navigation', { name: '过往发言' })).toBeNull()
+
+    view.rerender(<PromptRail anchors={replacement} activeSeq={replacement[1]!.seq} onActivate={onActivate} t={t} />)
+    expect(view.getByRole('button', { name: '发言导航（2 / 3）' }).getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByRole('dialog', { name: '发言导航' })).toBeNull()
   })
 
   it('reports an unavailable historical prompt without changing the transcript', async () => {
