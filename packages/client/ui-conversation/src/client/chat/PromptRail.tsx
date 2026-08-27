@@ -3,8 +3,24 @@ import type { CSSProperties } from 'react'
 import type { PromptAnchor } from '@deepseek-ai/dsh-client-connection/client'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import css from './ChatView.module.css'
+import { formatMessageClock } from './message-chrome.ts'
 
 const MAX_RENDERED_PROMPTS = 120
+
+export interface PromptRailPoint {
+  readonly y: number
+  readonly top: number
+  readonly height: number
+  readonly count: number
+}
+
+/** Return the nearest rendered prompt, keeping pointer positions inside the rail. */
+export function nearestPromptIndex({ y, top, height, count }: PromptRailPoint): number {
+  if (count <= 0) return -1
+  if (count === 1 || height <= 0) return 0
+  const ratio = Math.min(1, Math.max(0, (y - top) / height))
+  return Math.round(ratio * (count - 1))
+}
 
 /** Keep rendering bounded while retaining both chronological ends. */
 function visiblePromptAnchors(
@@ -49,9 +65,26 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
   }, [anchors, tooltipSeq])
 
   if (visible.length < 2) return null
+  const activeIndex = activeSeq === null ? anchors.length - 1 : indexBySeq.get(activeSeq) ?? anchors.length - 1
+  const current = Math.max(1, activeIndex + 1)
+  const nearestAnchor = (clientY: number, track: HTMLElement): PromptAnchor | undefined => {
+    const rect = track.getBoundingClientRect()
+    const index = nearestPromptIndex({ y: clientY, top: rect.top, height: rect.height, count: visible.length })
+    return index < 0 ? undefined : visible[index]
+  }
+
   return (
     <nav className={css.promptRail} aria-label={t('promptRail.aria')} data-side="left">
-      <div className={css.promptRailTrack}>
+      <div
+        className={css.promptRailTrack}
+        data-prompt-rail-track=""
+        onPointerMove={(event) => { setTooltipSeq(nearestAnchor(event.clientY, event.currentTarget)?.seq ?? null) }}
+        onPointerLeave={() => { setTooltipSeq(null) }}
+        onPointerDown={(event) => {
+          const anchor = nearestAnchor(event.clientY, event.currentTarget)
+          if (anchor !== undefined) onActivate(anchor.seq)
+        }}
+      >
         {visible.map((anchor, visibleIndex) => {
           const absoluteIndex = indexBySeq.get(anchor.seq) ?? 0
           const label = anchor.preview || t('promptRail.imageOnly')
@@ -70,22 +103,29 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
               aria-current={anchor.seq === activeSeq ? 'true' : undefined}
               aria-label={t('promptRail.jump', { index: absoluteIndex + 1, preview: label })}
               aria-describedby={tooltipVisible ? `prompt-rail-tip-${String(anchor.seq)}` : undefined}
-              onMouseEnter={() => { setTooltipSeq(anchor.seq) }}
-              onMouseLeave={() => { setTooltipSeq(current => current === anchor.seq ? null : current) }}
               onFocus={() => { setTooltipSeq(anchor.seq) }}
               onBlur={() => { setTooltipSeq(current => current === anchor.seq ? null : current) }}
               onClick={() => { onActivate(anchor.seq) }}
             >
               <span className={css.promptRailTick} aria-hidden />
+              {anchor.seq === activeSeq && <span className={css.promptRailActiveDot} aria-hidden />}
               {tooltipVisible && (
                 <span id={`prompt-rail-tip-${String(anchor.seq)}`} className={css.promptRailTooltip} role="tooltip">
-                  <span className={css.promptRailTooltipIndex}>{t('promptRail.index', { index: absoluteIndex + 1 })}</span>
+                  <span className={css.promptRailTooltipIndex}>
+                    {t('promptRail.tooltip', {
+                      index: absoluteIndex + 1,
+                      time: formatMessageClock(anchor.time, t),
+                    })}
+                  </span>
                   <span className={css.promptRailTooltipText}>{label}</span>
                 </span>
               )}
             </button>
           )
         })}
+        <span className={css.promptRailCount} aria-hidden>
+          {t('promptRail.count', { current, total: anchors.length })}
+        </span>
       </div>
     </nav>
   )

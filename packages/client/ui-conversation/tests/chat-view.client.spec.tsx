@@ -397,14 +397,22 @@ describe('ChatView', () => {
 
     const rail = view.getByRole('navigation', { name: '过往发言' })
     expect(rail.getAttribute('data-side')).toBe('left')
+    expect(within(rail).getByText('2 / 2')).toBeTruthy()
     const first = within(rail).getByRole('button', { name: '转到第 1 条发言：第一条' })
     const second = within(rail).getByRole('button', { name: '转到第 2 条发言：第二条' })
+    expect(first).toBeTruthy()
     expect(second.hasAttribute('data-steering')).toBe(true)
     expect(second.getAttribute('aria-current')).toBe('true')
 
-    fireEvent.mouseEnter(first)
+    const track = rail.querySelector<HTMLElement>('[data-prompt-rail-track]')
+    expect(track).not.toBeNull()
+    Object.defineProperty(track!, 'getBoundingClientRect', {
+      value: () => ({ top: 0, height: 520 }),
+    })
+    fireEvent.pointerMove(track!, { clientY: 0 })
+    expect(view.getByRole('tooltip').textContent).toContain('第 1 条发言')
     expect(view.getByRole('tooltip').textContent).toContain('第一条')
-    fireEvent.click(first)
+    fireEvent.pointerDown(track!, { clientY: 0 })
 
     await waitFor(() => { expect(h.revealHistorySeq).toHaveBeenCalledWith(1) })
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' })

@@ -65,7 +65,7 @@
 .promptRailTrack {
   position: absolute;
   right: calc(100% + 12px);
-  width: 28px;
+  width: 30px;
   height: min(62vh, 520px);
   min-height: 180px;
   pointer-events: auto;
@@ -88,7 +88,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  cursor: pointer;
+  pointer-events: none;
   transform: translateY(-50%);
 }
 
@@ -107,7 +107,7 @@
   width: 10px;
   height: 1px;
   border-radius: 999px;
-  background: var(--dsw-alias-label-quaternary);
+  background: var(--dsw-alias-label-tertiary, #8c8c8c);
   opacity: 0.7;
   transform: translateY(-50%);
   transition: width 120ms ease, height 120ms ease, opacity 120ms ease, background 120ms ease;
@@ -125,10 +125,24 @@
 }
 
 .promptRailMark[data-active] .promptRailTick {
-  width: 22px;
+  width: 25px;
   height: 2px;
   background: var(--dsw-static-deepseek-500);
   opacity: 1;
+}
+
+.promptRailActiveDot {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--dsw-static-deepseek-500);
+  border-radius: 50%;
+  background: var(--dsw-alias-tooltip-bg);
+  transform: translateY(-50%);
 }
 
 .promptRailMark:focus-visible {
@@ -177,6 +191,17 @@
   font-size: 12px;
   line-height: 18px;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.promptRailCount {
+  position: absolute;
+  top: calc(100% + 18px);
+  left: 0;
+  color: var(--dsw-alias-label-tertiary, #8c8c8c);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
   white-space: nowrap;
 }
 
