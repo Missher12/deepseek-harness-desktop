@@ -222,6 +222,7 @@ describe('draft-provider model discovery', () => {
           { id: 'nested', architecture: { input_modalities: ['text'] } },
           { id: 'vision-in-name-only' },
           { id: 'malformed', input_modalities: 'image' },
+          { id: 'unsupported-only', input_modalities: ['audio'] },
         ],
       }),
     })
@@ -233,6 +234,7 @@ describe('draft-provider model discovery', () => {
       { id: 'nested', inputModalities: ['text'] },
       { id: 'vision-in-name-only' },
       { id: 'malformed' },
+      { id: 'unsupported-only' },
     ])
   })
 

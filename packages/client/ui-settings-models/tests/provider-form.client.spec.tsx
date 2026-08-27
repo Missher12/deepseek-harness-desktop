@@ -258,6 +258,7 @@ describe('model list editing', () => {
             { id: 'automatic' },
             { id: 'text', input: ['text'] },
             { id: 'vision', input: ['text', 'image'] },
+            { id: 'unknown', input: ['audio'] },
           ],
         },
       },
@@ -266,11 +267,13 @@ describe('model list editing', () => {
     expandModel(1)
     expandModel(2)
     expandModel(3)
+    expandModel(4)
 
     const automatic = screen.getByLabelText<HTMLSelectElement>(`${en.modelInputCapability} 1`)
     const text = screen.getByLabelText<HTMLSelectElement>(`${en.modelInputCapability} 2`)
     const vision = screen.getByLabelText<HTMLSelectElement>(`${en.modelInputCapability} 3`)
-    expect([automatic.value, text.value, vision.value]).toEqual(['', 'text', 'image'])
+    const unknown = screen.getByLabelText<HTMLSelectElement>(`${en.modelInputCapability} 4`)
+    expect([automatic.value, text.value, vision.value, unknown.value]).toEqual(['', 'text', 'image', ''])
 
     fireEvent.change(automatic, { target: { value: 'image' } })
     fireEvent.change(text, { target: { value: '' } })
@@ -282,6 +285,7 @@ describe('model list editing', () => {
       { id: 'automatic', input: ['text', 'image'] },
       { id: 'text' },
       { id: 'vision', input: ['text'] },
+      { id: 'unknown', input: ['audio'] },
     ])
   })
 

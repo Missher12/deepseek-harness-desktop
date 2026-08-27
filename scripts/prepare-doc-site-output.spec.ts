@@ -30,7 +30,9 @@ describe('prepareDocSiteOutput', () => {
     roots.push(root, outside)
     symlinkSync(outside, join(root, 'website'))
 
-    expect(() => prepareDocSiteOutput(root)).toThrow('refusing output through a linked website directory')
+    expect(() => {
+      prepareDocSiteOutput(root)
+    }).toThrow('refusing output through a linked website directory')
     expect(existsSync(outside)).toBe(true)
   })
 })

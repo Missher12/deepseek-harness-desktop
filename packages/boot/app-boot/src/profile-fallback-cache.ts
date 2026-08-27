@@ -130,7 +130,9 @@ function writeCache(
     } catch {
       // Windows cannot atomically replace an existing file. The cache is an
       // optional acceleration layer, so a short absent-cache window is safe.
+      /* v8 ignore next -- Windows-only replacement fallback; the native Windows Setup smoke exercises it. */
       rmSync(cachePath, { force: true })
+      /* v8 ignore next -- same Windows-only fallback. */
       renameSync(tempPath, cachePath)
     }
   } finally {
