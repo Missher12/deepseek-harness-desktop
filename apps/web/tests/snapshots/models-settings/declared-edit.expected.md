@@ -82,6 +82,11 @@
             - option "High" [selected]
             - option "XHigh"
             - option "Max"
+          - text: 输入能力
+          - combobox "输入能力 1":
+            - option "自动（模型目录或提供方默认）" [selected]
+            - option "仅文本"
+            - option "文本和图片"
           - button "添加模型"
       - button "取消"
       - button "保存"

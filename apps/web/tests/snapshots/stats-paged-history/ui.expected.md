@@ -7,6 +7,35 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
+- navigation "Previous prompts":
+  - 'button "Go to prompt 1: m1"'
+  - 'button "Go to prompt 2: m2"'
+  - 'button "Go to prompt 3: m3"'
+  - 'button "Go to prompt 4: m4"'
+  - 'button "Go to prompt 5: m5"'
+  - 'button "Go to prompt 6: m6"'
+  - 'button "Go to prompt 7: m7"'
+  - 'button "Go to prompt 8: m8"'
+  - 'button "Go to prompt 9: m9"'
+  - 'button "Go to prompt 10: m10"'
+  - 'button "Go to prompt 11: m11"'
+  - 'button "Go to prompt 12: m12"'
+  - 'button "Go to prompt 13: m13"'
+  - 'button "Go to prompt 14: m14"'
+  - 'button "Go to prompt 15: m15"'
+  - 'button "Go to prompt 16: m16"'
+  - 'button "Go to prompt 17: m17"'
+  - 'button "Go to prompt 18: m18"'
+  - 'button "Go to prompt 19: m19"'
+  - 'button "Go to prompt 20: m20"'
+  - 'button "Go to prompt 21: m21"'
+  - 'button "Go to prompt 22: m22"'
+  - 'button "Go to prompt 23: m23"'
+  - 'button "Go to prompt 24: m24"'
+  - 'button "Go to prompt 25: m25"'
+  - 'button "Go to prompt 26: m26"'
+  - 'button "Go to prompt 27: m27"'
+  - 'button "Go to prompt 28: m28"'
 - text: m1 7/25 {{clock}}
 - button "Copy":
   - img
