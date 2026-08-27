@@ -249,6 +249,42 @@ describe('model list editing', () => {
     ])
   })
 
+  it('round-trips automatic, text-only, and image-capable model input choices', async () => {
+    const { mutate } = await mountSection({
+      providers: {
+        openai: {
+          baseURL: 'https://proxy.example/v1',
+          models: [
+            { id: 'automatic' },
+            { id: 'text', input: ['text'] },
+            { id: 'vision', input: ['text', 'image'] },
+          ],
+        },
+      },
+    })
+    openEditor('openai')
+    expandModel(1)
+    expandModel(2)
+    expandModel(3)
+
+    const automatic = screen.getByLabelText<HTMLSelectElement>(`${en.modelInputCapability} 1`)
+    const text = screen.getByLabelText<HTMLSelectElement>(`${en.modelInputCapability} 2`)
+    const vision = screen.getByLabelText<HTMLSelectElement>(`${en.modelInputCapability} 3`)
+    expect([automatic.value, text.value, vision.value]).toEqual(['', 'text', 'image'])
+
+    fireEvent.change(automatic, { target: { value: 'image' } })
+    fireEvent.change(text, { target: { value: '' } })
+    fireEvent.change(vision, { target: { value: 'text' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([
+      { id: 'automatic', input: ['text', 'image'] },
+      { id: 'text' },
+      { id: 'vision', input: ['text'] },
+    ])
+  })
+
   it('names a duplicate model id in the edit flow too', async () => {
     const { mutate } = await mountSection({
       providers: { openai: { baseURL: 'https://proxy.example/v1', models: [{ id: 'dup' }] } },
@@ -501,7 +537,10 @@ describe('endpoint interrogation', () => {
 
   it('adopts only the picked candidates, keeping a row the user already tuned', async () => {
     const discover = vi.fn(() => Promise.resolve(ok({
-      models: [{ id: 'kept', contextWindow: 999 }, { id: 'fresh', contextWindow: 4096, name: 'Fresh' }],
+      models: [
+        { id: 'kept', contextWindow: 999, inputModalities: ['text', 'image'] },
+        { id: 'fresh', contextWindow: 4096, name: 'Fresh', inputModalities: ['text', 'image'] },
+      ],
     })))
     const { mutate } = await mountSection({
       discover,
@@ -520,7 +559,7 @@ describe('endpoint interrogation', () => {
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
     expect(firstMutate(mutate).ops[0]?.value).toEqual([
       { id: 'kept', contextWindow: 111 },
-      { id: 'fresh', contextWindow: 4096, name: 'Fresh' },
+      { id: 'fresh', contextWindow: 4096, name: 'Fresh', input: ['text', 'image'] },
     ])
   })
 

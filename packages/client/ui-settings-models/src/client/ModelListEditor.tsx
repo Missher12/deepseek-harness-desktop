@@ -37,6 +37,7 @@ const REASONING_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 
 type ReasoningLevel = typeof REASONING_LEVELS[number]
 type ReasoningChoice = '' | 'off' | 'only-high' | ReasoningLevel
+type InputChoice = '' | 'text' | 'image'
 
 /** The highest standard level described by a model draft. */
 function reasoningChoiceOf(model: ModelDraft): ReasoningChoice {
@@ -57,6 +58,15 @@ function reasoningChoiceOf(model: ModelDraft): ReasoningChoice {
 function reasoningEffortsThrough(ceiling: ReasoningLevel): Partial<Record<ReasoningLevel, string>> {
   const last = REASONING_LEVELS.indexOf(ceiling)
   return Object.fromEntries(REASONING_LEVELS.slice(0, last + 1).map(level => [level, level]))
+}
+
+/** Resolve the three UI states without interpreting unknown hand-written values. */
+function inputChoiceOf(model: ModelDraft): InputChoice {
+  const input = model['input']
+  if (!Array.isArray(input)) return ''
+  if (input.includes('image')) return 'image'
+  if (input.includes('text')) return 'text'
+  return ''
 }
 
 /** A row's text field, or the empty string when unset or not a string. */
@@ -177,6 +187,7 @@ function adopt(candidate: DiscoveredModelView): ModelDraft {
     ...candidate.name === undefined ? {} : { name: candidate.name },
     ...candidate.contextWindow === undefined ? {} : { contextWindow: candidate.contextWindow },
     ...candidate.maxTokens === undefined ? {} : { maxTokens: candidate.maxTokens },
+    ...candidate.inputModalities === undefined ? {} : { input: [...candidate.inputModalities] },
   }
 }
 
@@ -482,6 +493,29 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     {REASONING_LEVELS.map(level => (
                       <option key={level} value={level}>{level === 'xhigh' ? 'XHigh' : `${level.charAt(0).toUpperCase()}${level.slice(1)}`}</option>
                     ))}
+                  </select>
+                </label>
+                <label className={styles['modelField']}>
+                  <span className={styles['modelFieldLabel']}>{t('modelInputCapability')}</span>
+                  <select
+                    className={`${styles['input']} ${styles['selectInput']}`}
+                    value={inputChoiceOf(model)}
+                    aria-label={`${t('modelInputCapability')} ${index + 1}`}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      const choice = event.target.value as InputChoice
+                      patch(index, {
+                        input: choice === ''
+                          ? undefined
+                          : choice === 'text'
+                            ? ['text']
+                            : ['text', 'image'],
+                      })
+                    }}
+                  >
+                    <option value="">{t('modelInputAutomatic')}</option>
+                    <option value="text">{t('modelInputText')}</option>
+                    <option value="image">{t('modelInputImages')}</option>
                   </select>
                 </label>
               </div>
