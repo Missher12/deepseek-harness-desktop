@@ -130,6 +130,11 @@ export class FixtureSession implements SessionFace {
     throw new Error(`test session "${this.sessionId}": loadOlder is not stubbed — supply it on the fixture's session face`)
   }
 
+  /** Fail-loud stub; supply revealHistorySeq on the fixture face when needed. */
+  revealHistorySeq(): never {
+    throw new Error(`test session "${this.sessionId}": revealHistorySeq is not stubbed — supply it on the fixture's session face`)
+  }
+
   /**
    * Fail-loud stub; supply `rename` on the fixture's session face to exercise it.
    * @returns never — always throws.

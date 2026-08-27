@@ -4,12 +4,12 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
-  HistoryEntry, IApiClient, MessageId, MuxFrame, PromptContentPart, QueueAction, RpcError,
+  HistoryEntry, IApiClient, MessageId, MuxFrame, PromptAnchor, PromptContentPart, QueueAction, RpcError,
   RpcId, RpcResponse, RpcResult, SessionId, SubagentAddress, ToolEventView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 // Value import from the inline-safe wire layer (not the connection plugin):
 // plugin-to-plugin value imports are a bundle purity error.
-import { transportError } from '@deepseek-ai/dsh-host-apiproxy/api'
+import { PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS, transportError } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { SessionFace } from '../contract/session.ts'
 import { ConversationNodeAssembler } from './conversation-assembler.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
@@ -78,6 +78,8 @@ export class Session implements SessionFace {
    *  passes drop all writes once the generation moves on. */
   private openGeneration = 0
   private loadingOlder = false
+  /** Serializes explicit rail navigation so concurrent clicks cannot duplicate pages. */
+  private revealTail: Promise<void> = Promise.resolve()
   private pending = new Map<string, PendingInteraction>()
   private pendingRev = 0
   private pendingCache: { rev: number; value: PendingInteraction[] } | null = null
@@ -101,6 +103,8 @@ export class Session implements SessionFace {
   private removed = false
   private promptError: PromptError | null = null
   private lastAgentError: string | null = null
+  /** Tail-page all-history prompt index, incrementally extended by live events. */
+  private promptAnchors: PromptAnchor[] = []
   /** Live events buffered during open/resync and stitched by sequence once history lands. */
   private liveBuffer: { event: SessionEvent; view: ToolEventView | undefined }[] = []
   /** Gap repair in flight; live events detour to the buffer until the tail page lands. */
@@ -413,6 +417,21 @@ export class Session implements SessionFace {
     }
   }
 
+  /** Load only the older pages required to reveal one exact prompt event. */
+  revealHistorySeq(seq: number): Promise<void> {
+    const target = Math.max(0, Math.floor(seq))
+    const reveal = this.revealTail.then(async () => {
+      await this.open()
+      while (this.openState === 'open' && this.baseSeq > target && this.hasMore) {
+        const before = this.baseSeq
+        await this.loadOlder()
+        if (this.baseSeq >= before) break
+      }
+    })
+    this.revealTail = reveal.catch(() => undefined)
+    return reveal
+  }
+
   /** Reconnect rebuild (manager calls this on onConnected for instances that were opened):
    *  reset the window and rerun open; pending waits for the baseline replay. Invalidates any
    *  in-flight open first — its history request rode the dead connection and must not settle
@@ -430,6 +449,7 @@ export class Session implements SessionFace {
     this.openError = null
     this.events = []
     this.views = []
+    this.promptAnchors = []
     this.baseSeq = 0
     // Superseded, not settled: the baseline replay re-sends still-pending requested frames verbatim
     // (same rpcId), re-minting fresh waits; a stale reference's respond() still reaches the host.
@@ -627,13 +647,13 @@ export class Session implements SessionFace {
         this.openError = result.error
         return
       }
-      this.installWindow(result.value.events, result.value.hasMore, result.value.projections)
+      this.installWindow(result.value.events, result.value.hasMore, result.value.projections, result.value.promptAnchors)
       // Gap detection: baseline past the window tail and liveBuffer did not cover it -> pull the tail page once more.
       const tailSeq = this.windowTailSeq()
       if (this.subscribedLastSeq !== null && tailSeq !== null && this.subscribedLastSeq > tailSeq) {
         result = (await this.history({ maxMessages: PAGE_MESSAGES })).result
         if (generation !== this.openGeneration) return
-        if (result.ok) this.installWindow(result.value.events, result.value.hasMore, result.value.projections)
+        if (result.ok) this.installWindow(result.value.events, result.value.hasMore, result.value.projections, result.value.promptAnchors)
       }
       this.openState = 'open'
     } catch (error) {
@@ -654,7 +674,12 @@ export class Session implements SessionFace {
    *  A carried projections block seeds the value store (higher seq wins, so a stale
    *  baseline cannot overwrite a newer push frame); the window events themselves are
    *  never folded — the host is the only computation site. */
-  private installWindow(entries: HistoryEntry[], hasMore: boolean, projections?: ProjectionsBaseline): void {
+  private installWindow(
+    entries: HistoryEntry[],
+    hasMore: boolean,
+    projections?: ProjectionsBaseline,
+    promptAnchors?: PromptAnchor[],
+  ): void {
     this.events = entries.map(e => e.event)
     this.views = entries.map(e => e.view)
     this.baseSeq = this.events[0]?.seq ?? 0
@@ -662,6 +687,7 @@ export class Session implements SessionFace {
     if (this.events.some(event => event.type === 'turn/start')) this.firstPromptPendingTurn = false
     this.conversation.replaceWindow(entries.map(conversationInput), hasMore)
     if (projections !== undefined) this.projections.seed(projections)
+    if (promptAnchors !== undefined) this.promptAnchors = [...promptAnchors]
     const buffered = this.liveBuffer
     this.liveBuffer = []
     for (const item of buffered) this.appendLive(item.event, item.view)
@@ -674,6 +700,7 @@ export class Session implements SessionFace {
     if (tailSeq !== null && event.seq <= tailSeq) return 'none' // replay overlap, drop
     this.events.push(event)
     this.views.push(view)
+    this.acceptPromptAnchorEvent(event)
     if (event.type === 'turn/start') this.firstPromptPendingTurn = false
     const queueChanged = this.queueMirror.acceptDurable(event)
     const publication = this.conversation.append({ event, view })
@@ -700,6 +727,36 @@ export class Session implements SessionFace {
     this.scheduleConversation(this.appendLive(event, view))
   }
 
+  /** Extend the prompt index for accepted live human messages without refetching history. */
+  private acceptPromptAnchorEvent(event: SessionEvent): void {
+    if (event.type !== 'user/message' || event.data.source.kind !== 'user') return
+    if (this.promptAnchors.some(anchor => anchor.seq === event.seq)) return
+
+    let turn: number | undefined
+    for (let index = this.events.length - 2; index >= 0; index--) {
+      const prior = this.events[index]
+      if (prior?.type === 'turn/end') break
+      if (prior?.type === 'turn/start') {
+        turn = prior.data.turn
+        break
+      }
+    }
+    if (turn === undefined) return
+    const preview = event.data.content
+      .filter((part): part is Extract<typeof part, { type: 'text' }> => part.type === 'text')
+      .map(part => part.text)
+      .join(' ')
+      .replace(/\s+/gu, ' ')
+      .trim()
+    this.promptAnchors = [...this.promptAnchors, {
+      seq: event.seq,
+      turn,
+      time: event.time,
+      kind: this.promptAnchors.some(anchor => anchor.turn === turn) ? 'steering' : 'turn-opening',
+      preview: Array.from(preview).slice(0, PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS).join(''),
+    }]
+  }
+
   /** Route assembler cadence into the Session's existing microtask/RAF notifier. */
   private scheduleConversation(publication: ConversationPublication): void {
     if (publication === 'immediate') this.notifier.markDirty()
@@ -718,7 +775,7 @@ export class Session implements SessionFace {
       const { result } = await this.history({ maxMessages: PAGE_MESSAGES })
       // Failure or superseded by a full resync: drop — the resync path rebuilds and clears the buffer itself.
       if (result.ok && generation === this.openGeneration && this.openState === 'open') {
-        this.installWindow(result.value.events, result.value.hasMore, result.value.projections)
+        this.installWindow(result.value.events, result.value.hasMore, result.value.projections, result.value.promptAnchors)
       }
     } catch (error) {
       console.error('[web-runtime] gap repair failed:', error)
@@ -740,6 +797,7 @@ export class Session implements SessionFace {
     const legacy = chat.legacy
     return {
       sessionId: this.sessionId,
+      promptAnchors: this.promptAnchors,
       views: this.conversation,
       chat,
       nodes: legacy.nodes,
@@ -776,6 +834,7 @@ export class Session implements SessionFace {
     events: HistoryEntry[]
     hasMore: boolean
     projections?: ProjectionsBaseline
+    promptAnchors?: PromptAnchor[]
   }>> {
     return this.address === undefined
       ? this.api.sessions.history({ sessionId: this.sessionId, ...payload })

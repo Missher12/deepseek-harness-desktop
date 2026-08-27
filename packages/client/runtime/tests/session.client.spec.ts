@@ -170,9 +170,13 @@ function chatSeqs(snapshot: ConversationSnapshot): number[] {
   return chatEvents(snapshot).map(item => item.event.seq)
 }
 
-function histResponse(events: SessionEvent[], hasMore = false) {
+function histResponse(events: SessionEvent[], hasMore = false, promptAnchors?: readonly unknown[]) {
   // history returns HistoryEntry[] ({event, view?}); these tests are view-less.
-  return Promise.resolve(ok({ events: entries(events) as never[], hasMore }))
+  return Promise.resolve(ok({
+    events: entries(events) as never[],
+    hasMore,
+    ...(promptAnchors === undefined ? {} : { promptAnchors }),
+  } as never))
 }
 
 describe('open', () => {
@@ -201,6 +205,38 @@ describe('open', () => {
       endTime: 1_700_000_000_015,
     })
     expect(snapshot.turnEnds.get(3)).toBe(15)
+  })
+
+  it('installs the prompt index and appends opening and steering anchors from live events', async () => {
+    const { api, session } = makeSession()
+    api.onHistory = () => histResponse(plainTurn(0, 1, '问', '答'), true, [{
+      seq: 1,
+      turn: 1,
+      time: 1_700_000_000_001,
+      kind: 'turn-opening',
+      preview: '问',
+    }])
+    await session.open()
+    expect(session.getSnapshot()).toMatchObject({
+      promptAnchors: [{ seq: 1, turn: 1, kind: 'turn-opening', preview: '问' }],
+    })
+
+    session.handleMuxEnvelope('r6' as never, {
+      type: 'session/event', sessionId: SID, event: ev.turnStart(6, 2),
+    })
+    session.handleMuxEnvelope('r7' as never, {
+      type: 'session/event', sessionId: SID, event: ev.user(7, '新问题'),
+    })
+    session.handleMuxEnvelope('r8' as never, {
+      type: 'session/event', sessionId: SID, event: ev.user(8, '补充说明'),
+    })
+    expect(session.getSnapshot()).toMatchObject({
+      promptAnchors: [
+        { seq: 1, turn: 1, kind: 'turn-opening', preview: '问' },
+        { seq: 7, turn: 2, kind: 'turn-opening', preview: '新问题' },
+        { seq: 8, turn: 2, kind: 'steering', preview: '补充说明' },
+      ],
+    })
   })
 
   it('is idempotent: concurrent opens share one history call, reopening when open is a no-op', async () => {
@@ -388,6 +424,48 @@ describe('paging', () => {
     expect(api.callsOf('session.history')).toMatchObject([{}, { beforeSeq: 6 }].map(p => ({ sessionId: SID, ...p })))
     expect(snapshot.hasMore).toBe(false)
     expect(snapshot.nodes.map(n => n.seq)).toEqual([1, 3, 7, 9])
+  })
+
+  it('does not wipe the tail prompt index when an older page omits it', async () => {
+    const older = plainTurn(0, 0, '旧问', '旧答')
+    const newer = plainTurn(6, 1, '新问', '新答')
+    const { api, session } = makeSession()
+    api.onHistory = payload => payload.beforeSeq === undefined
+      ? histResponse(newer, true, [
+        { seq: 1, turn: 0, time: 1, kind: 'turn-opening', preview: '旧问' },
+        { seq: 7, turn: 1, time: 7, kind: 'turn-opening', preview: '新问' },
+      ])
+      : histResponse(older, false)
+
+    await session.open()
+    await session.loadOlder()
+
+    expect(session.getSnapshot()).toMatchObject({
+      promptAnchors: [{ seq: 1 }, { seq: 7 }],
+    })
+  })
+
+  it('reveals an exact historical seq through one serialized paging chain', async () => {
+    const page0 = plainTurn(0, 0, '最早', '答')
+    const page1 = plainTurn(6, 1, '中间', '答')
+    const page2 = plainTurn(12, 2, '最新', '答')
+    const { api, session } = makeSession()
+    api.onHistory = (payload) => {
+      if (payload.beforeSeq === undefined) return histResponse(page2, true)
+      if (payload.beforeSeq === 12) return histResponse(page1, true)
+      if (payload.beforeSeq === 6) return histResponse(page0, false)
+      throw new Error(`unexpected beforeSeq: ${String(payload.beforeSeq)}`)
+    }
+    await session.open()
+
+    await Promise.all([session.revealHistorySeq(1), session.revealHistorySeq(1)])
+
+    expect(api.callsOf('session.history')).toMatchObject([
+      { sessionId: SID },
+      { sessionId: SID, beforeSeq: 12 },
+      { sessionId: SID, beforeSeq: 6 },
+    ])
+    expect(session.getSnapshot().nodes.map(node => node.seq)).toEqual([1, 3, 7, 9, 13, 15])
   })
 
   it('installs a page without interpreting business replacement metadata', async () => {

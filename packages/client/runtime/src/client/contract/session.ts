@@ -76,6 +76,8 @@ export interface ISession {
    * @returns completion; failures land in snapshot.openState/loadingOlder.
    */
   loadOlder(): Promise<void>
+  /** Ensure the loaded history window contains the exact event sequence. */
+  revealHistorySeq(seq: number): Promise<void>
   /**
    * Execute one slash-command line against this session's agent — pure
    * admission semantics (the host executor durably logs the lifecycle).
