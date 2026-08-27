@@ -46,6 +46,9 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       data-chat-anchor-key={routedNode.key}
       data-chat-flow-key={routedNode.key}
       data-chat-flow-kind={routedNode.kind}
+      data-user-message-seq={routedNode.kind === 'user' || routedNode.kind === 'steering'
+        ? routedNode.data.seq
+        : undefined}
     >
       {renderSlot('conversation.chat.node', routedOwner, {
         entryKey: routedNode.kind,

@@ -436,6 +436,11 @@ export function apply(ctx: Context): void {
           return workspaces.openPath(resolveWorkspacePath(cwd, path))
         },
         loadOlder: () => { void scoped.loadOlder() },
+        revealHistorySeq: async (seq) => {
+          const session = sessions.binding(sessionId)?.session
+          if (session === undefined) throw new Error(`ui-conversation: session "${sessionId}" is unavailable`)
+          await session.revealHistorySeq(seq)
+        },
         loadImage: attachment => conversation.resolveImage(sessionId, attachment),
         // Unregistered 'trajectory' id is safe: the tab ring falls back to
         // the first view, and the untouched inspect target stays inert.

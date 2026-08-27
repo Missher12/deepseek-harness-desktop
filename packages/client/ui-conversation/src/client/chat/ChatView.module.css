@@ -49,6 +49,166 @@
   gap: 16px;
 }
 
+/* Prompt timeline lives in the transcript's left gutter, matching Codex's
+   quiet ruler treatment without changing the centered message width. */
+.promptRail {
+  position: sticky;
+  top: 72px;
+  z-index: 6;
+  width: 100%;
+  max-width: var(--dsh-chat-content-width);
+  height: 0;
+  margin: 0 auto;
+  pointer-events: none;
+}
+
+.promptRailTrack {
+  position: absolute;
+  right: calc(100% + 12px);
+  width: 28px;
+  height: min(62vh, 520px);
+  min-height: 180px;
+  pointer-events: auto;
+}
+
+.promptRailTrack::before {
+  position: absolute;
+  inset: 0 auto 0 7px;
+  width: 1px;
+  background: color-mix(in srgb, var(--dsw-alias-border-l2) 68%, transparent);
+  content: '';
+}
+
+.promptRailMark {
+  position: absolute;
+  top: var(--dsh-prompt-position);
+  left: 0;
+  width: 30px;
+  height: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.promptRailMark[data-edge='start'] {
+  transform: none;
+}
+
+.promptRailMark[data-edge='end'] {
+  transform: translateY(-100%);
+}
+
+.promptRailTick {
+  position: absolute;
+  top: 50%;
+  left: 7px;
+  width: 10px;
+  height: 1px;
+  border-radius: 999px;
+  background: var(--dsw-alias-label-quaternary);
+  opacity: 0.7;
+  transform: translateY(-50%);
+  transition: width 120ms ease, height 120ms ease, opacity 120ms ease, background 120ms ease;
+}
+
+.promptRailMark[data-steering] .promptRailTick {
+  width: 6px;
+  opacity: 0.5;
+}
+
+.promptRailMark:hover .promptRailTick,
+.promptRailMark:focus-visible .promptRailTick {
+  width: 18px;
+  opacity: 1;
+}
+
+.promptRailMark[data-active] .promptRailTick {
+  width: 22px;
+  height: 2px;
+  background: var(--dsw-static-deepseek-500);
+  opacity: 1;
+}
+
+.promptRailMark:focus-visible {
+  outline: 1.5px solid var(--dsw-alias-button-info-fill);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+.promptRailTooltip {
+  position: absolute;
+  top: 50%;
+  left: 34px;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  max-width: min(320px, 42vw);
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-3);
+  box-shadow: var(--dsw-shadow-lv2);
+  text-align: left;
+  transform: translateY(-50%);
+}
+
+.promptRailMark[data-edge='start'] .promptRailTooltip {
+  top: 0;
+  transform: none;
+}
+
+.promptRailMark[data-edge='end'] .promptRailTooltip {
+  top: 100%;
+  transform: translateY(-100%);
+}
+
+.promptRailTooltipIndex {
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.promptRailTooltipText {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.promptRailNotice {
+  position: sticky;
+  top: 20px;
+  z-index: 7;
+  width: fit-content;
+  max-width: min(320px, 70vw);
+  margin: 0 auto;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-3);
+  box-shadow: var(--dsw-shadow-lv1);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+@media (max-width: 860px) {
+  .promptRail {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .promptRailTick {
+    transition: none;
+  }
+}
+
 /* Settled-flow identity boundary. It is neutral today and becomes the natural
    measurement/mount unit for a virtualizer without changing the column gap. */
 .flowItem {

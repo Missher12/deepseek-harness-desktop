@@ -19,10 +19,12 @@ import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client
 import type { ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
+import { PromptRail } from './PromptRail.tsx'
 import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
+const EMPTY_PROMPT_ANCHORS: readonly never[] = []
 
 /** Active column host when present; otherwise the view-local scroller. */
 function scrollerOf(from: HTMLElement): HTMLElement {
@@ -156,8 +158,8 @@ function TurnStatus({ startTime, t }: {
  * ordered business Node crosses the keyed renderer seat.
  */
 export function ChatView({
-  useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
-  fileMentions, t,
+  useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, revealHistorySeq, loadImage,
+  inspectCall, chatScroll, forkAt, fileMentions, t,
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
@@ -170,12 +172,16 @@ export function ChatView({
   const openError = useSession(s => s.openError)
   const hasMore = useSession(s => s.hasMore)
   const loadingOlder = useSession(s => s.loadingOlder)
+  const promptAnchors = useSession(s => s.promptAnchors ?? EMPTY_PROMPT_ANCHORS)
   const selectedCallId = useStore(s => s.selection?.callId)
   const [fileOpenError, setFileOpenError] = useState<{ path: string; message: string } | null>(null)
   const [fileOpenBusy, setFileOpenBusy] = useState(false)
+  const [activePromptSeq, setActivePromptSeq] = useState<number | null>(() => promptAnchors.at(-1)?.seq ?? null)
+  const [unavailablePromptSeq, setUnavailablePromptSeq] = useState<number | null>(null)
   // Close/retry must ignore a settlement that started before the latest
   // gesture; otherwise a cancelled in-flight refusal reopens the dialog.
   const fileOpenRequest = useRef(0)
+  const revealRequest = useRef(0)
 
   const requestOpenFile = useCallback((path: string) => {
     const id = ++fileOpenRequest.current
@@ -363,6 +369,56 @@ export function ChatView({
     }
   }, [])
 
+  useEffect(() => {
+    if (promptAnchors.length === 0) {
+      setActivePromptSeq(null)
+      return
+    }
+    setActivePromptSeq(current => promptAnchors.some(anchor => anchor.seq === current)
+      ? current
+      : promptAnchors.at(-1)?.seq ?? null)
+  }, [promptAnchors])
+
+  useEffect(() => {
+    const local = listRef.current
+    if (local === null || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter(entry => entry.isIntersecting)
+        .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top)
+      const row = visible[0]?.target
+      if (!(row instanceof HTMLElement)) return
+      const seq = Number(row.dataset.userMessageSeq)
+      if (Number.isInteger(seq)) setActivePromptSeq(seq)
+    }, { threshold: 0.2 })
+    for (const row of local.querySelectorAll<HTMLElement>('[data-user-message-seq]')) observer.observe(row)
+    return () => { observer.disconnect() }
+  }, [order])
+
+  const revealPrompt = useCallback((seq: number) => {
+    const request = ++revealRequest.current
+    setActivePromptSeq(seq)
+    setUnavailablePromptSeq(null)
+    void revealHistorySeq(seq).then(() => {
+      requestAnimationFrame(() => {
+        if (request !== revealRequest.current) return
+        const local = listRef.current
+        const row = local === null
+          ? undefined
+          : [...local.querySelectorAll<HTMLElement>('[data-user-message-seq]')]
+            .find(element => Number(element.dataset.userMessageSeq) === seq)
+        if (row === undefined) {
+          setUnavailablePromptSeq(seq)
+          return
+        }
+        const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+        row.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' })
+      })
+    }).catch(() => {
+      if (request === revealRequest.current) setUnavailablePromptSeq(seq)
+    })
+  }, [revealHistorySeq])
+
   // The ref starts null and is assigned every render, so the placeholder
   // initializer a function initial value would need never exists.
   const followRef = useRef<(() => void) | null>(null)
@@ -415,6 +471,10 @@ export function ChatView({
   return (
     <div className={css.root}>
       <div ref={listRef} className={css.scroll}>
+        <PromptRail anchors={promptAnchors} activeSeq={activePromptSeq} onActivate={revealPrompt} t={t} />
+        {unavailablePromptSeq !== null && (
+          <div className={css.promptRailNotice} role="status">{t('promptRail.unavailable')}</div>
+        )}
         <div ref={columnRef} className={css.column} data-chat-flow="">
           {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}
           {openState === 'error' && openError !== null && (

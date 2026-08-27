@@ -49,7 +49,7 @@ type RoutedChatNodeOwner = ChatNodeOwnerProps & { readonly node: ChatNode }
 
 function snapshotBase(): ConversationSnapshot {
   return {
-    sessionId: SID, views: EMPTY_CONVERSATION_VIEWS, chat: chatSnapshotFixture(), nodes: [],
+    sessionId: SID, promptAnchors: [], views: EMPTY_CONVERSATION_VIEWS, chat: chatSnapshotFixture(), nodes: [],
     turnTimings: new Map(), turnEnds: new Map(), partial: null, runningCalls: [],
     pending: [], queue: [], running: false, composerPhase: 'active', removed: false, openState: 'open', openError: null,
     hasMore: false, loadingOlder: false, promptError: null, blank: false, subagent: null, lastAgentError: null,
@@ -162,6 +162,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     read: () => savedScroll,
   }
   const forkAt = vi.fn()
+  const revealHistorySeq = vi.fn<(seq: number) => Promise<void>>().mockResolvedValue(undefined)
   // Selection rides the REAL chat store (same construction path as
   // production; the view reads it through the PropsStore useStore share).
   const chat = createChatStore().create()
@@ -287,6 +288,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     inspectCall,
     chatScroll,
     forkAt,
+    revealHistorySeq,
     // Absent-service default; mention tests override with a real resolver.
     fileMentions: () => undefined,
     // Mirrors the real lookup chain (conversation namespace, then common).
@@ -295,7 +297,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
   return {
     set, ChatView, props, openDetails, openFile, loadOlder, inspectCall,
-    chatScroll, forkAt, setSelection, toolOwners,
+    chatScroll, forkAt, revealHistorySeq, setSelection, toolOwners,
   }
 }
 
@@ -377,6 +379,74 @@ describe('Chat node rendering', () => {
 })
 
 describe('ChatView', () => {
+  it('renders a left prompt rail with styled previews and reveals an exact historical message', async () => {
+    const h = makeHarness({
+      nodes: [user(1, '第一条'), user(7, '第二条')],
+      promptAnchors: [
+        { seq: 1, turn: 1, time: 1_000, kind: 'turn-opening', preview: '第一条' },
+        { seq: 7, turn: 2, time: 7_000, kind: 'steering', preview: '第二条' },
+      ],
+    })
+    const scrollIntoView = vi.fn()
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
+    HTMLElement.prototype.scrollIntoView = scrollIntoView
+    const view = render(<h.ChatView {...h.props} />)
+
+    const rail = view.getByRole('navigation', { name: '过往发言' })
+    expect(rail.getAttribute('data-side')).toBe('left')
+    const first = within(rail).getByRole('button', { name: '转到第 1 条发言：第一条' })
+    const second = within(rail).getByRole('button', { name: '转到第 2 条发言：第二条' })
+    expect(second.hasAttribute('data-steering')).toBe(true)
+    expect(second.getAttribute('aria-current')).toBe('true')
+
+    fireEvent.mouseEnter(first)
+    expect(view.getByRole('tooltip').textContent).toContain('第一条')
+    fireEvent.click(first)
+
+    await waitFor(() => { expect(h.revealHistorySeq).toHaveBeenCalledWith(1) })
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' })
+  })
+
+  it('keeps the first and last prompts reachable when a long rail is bounded', () => {
+    const promptAnchors = Array.from({ length: 130 }, (_, index) => ({
+      seq: index + 1,
+      turn: index + 1,
+      time: 1_000 + index,
+      kind: 'turn-opening' as const,
+      preview: `发言 ${String(index + 1)}`,
+    }))
+    const h = makeHarness({ promptAnchors })
+    const view = render(<h.ChatView {...h.props} />)
+    const rail = within(view.getByRole('navigation', { name: '过往发言' }))
+
+    expect(rail.getAllByRole('button')).toHaveLength(120)
+    expect(rail.getByRole('button', { name: '转到第 1 条发言：发言 1' })).toBeTruthy()
+    expect(rail.getByRole('button', { name: '转到第 130 条发言：发言 130' })).toBeTruthy()
+  })
+
+  it('reports an unavailable historical prompt without changing the transcript', async () => {
+    const h = makeHarness({
+      nodes: [user(7, '仍保留')],
+      promptAnchors: [
+        { seq: 1, turn: 1, time: 1_000, kind: 'turn-opening', preview: '已清理的旧发言' },
+        { seq: 7, turn: 2, time: 7_000, kind: 'turn-opening', preview: '仍保留' },
+      ],
+    })
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
+    const view = render(<h.ChatView {...h.props} />)
+
+    fireEvent.click(view.getByRole('button', { name: '转到第 1 条发言：已清理的旧发言' }))
+
+    expect((await view.findByRole('status')).textContent).toContain('这条历史发言暂时无法定位')
+    expect(view.getByText('仍保留')).toBeTruthy()
+  })
+
   it('hands a windowless tool result to the Tool seat with an empty tool name', () => {
     const h = makeHarness({
       nodes: [{ ...toolResult(3, 'w1'), call: null }],
