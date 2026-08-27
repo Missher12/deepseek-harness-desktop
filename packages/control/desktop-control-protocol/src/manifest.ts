@@ -19,7 +19,11 @@ const LIMIT_NAMES = Object.freeze([
   'identifierBytes', 'sha256Bytes', 'appIdBytes', 'windowIdBytes', 'agentIdBytes', 'urlBytes',
   'keyBytes', 'selectValueBytes', 'semanticRoleBytes', 'semanticNameBytes',
   'appNameBytes', 'windowTitleBytes', 'browserTitleBytes', 'surfaceIdBytes',
-  'stringListItemBytes', 'maxSafeInteger', 'maxStringListItems', 'maxModifiers', 'maxCoordinate',
+  'stringListItemBytes', 'minNonEmptyStringBytes', 'minSafeInteger', 'maxSafeInteger', 'minRevision',
+  'minCoordinate', 'minDeadlineUnixMs', 'minWaitDurationMs', 'minLeaseQuota',
+  'minLeaseDurationMs', 'minPngBytes', 'minPngDimension', 'minOuterFrameBytes',
+  'minJsonFrameBytes', 'minPngFrameBytes', 'minPngStructureBytes',
+  'maxStringListItems', 'maxModifiers', 'maxCoordinate',
   'maxWaitDurationMs', 'maxLeaseCapabilities', 'maxLeaseQuota',
   'maxIdleExpiresAfterMs', 'maxHardExpiresAfterMs', 'maxPngDimension',
   'maxSemanticRefs', 'maxGrantableApps', 'maxGrantableWindowsPerApp',
@@ -50,7 +54,21 @@ interface ProtocolLimits {
   readonly browserTitleBytes: number
   readonly surfaceIdBytes: number
   readonly stringListItemBytes: number
+  readonly minNonEmptyStringBytes: number
+  readonly minSafeInteger: number
   readonly maxSafeInteger: number
+  readonly minRevision: number
+  readonly minCoordinate: number
+  readonly minDeadlineUnixMs: number
+  readonly minWaitDurationMs: number
+  readonly minLeaseQuota: number
+  readonly minLeaseDurationMs: number
+  readonly minPngBytes: number
+  readonly minPngDimension: number
+  readonly minOuterFrameBytes: number
+  readonly minJsonFrameBytes: number
+  readonly minPngFrameBytes: number
+  readonly minPngStructureBytes: number
   readonly maxStringListItems: number
   readonly maxModifiers: number
   readonly maxCoordinate: number
@@ -125,8 +143,8 @@ function limitsValue(value: unknown): ProtocolLimits {
   exactObjectKeys(limits, LIMIT_NAMES, 'limits')
   for (const key of LIMIT_NAMES) {
     const limit = own(limits, key)
-    if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || Object.is(limit, -0) || limit <= 0) {
-      throw new Error(`limit ${key} must be a positive safe integer`)
+    if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || Object.is(limit, -0) || limit < 0) {
+      throw new Error(`limit ${key} must be a non-negative safe integer`)
     }
   }
   return limits as ProtocolLimits

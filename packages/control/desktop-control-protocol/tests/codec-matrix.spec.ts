@@ -187,7 +187,9 @@ describe('hostile syntax and cross-field combinations', () => {
     ['ref and coordinates', bridge('computer.click', { ...target, ref: computerRef, x: 1, y: 2, button: 'left' }), /exactly one/i],
     ['bad button', bridge('computer.drag', { ...target, fromX: 1, fromY: 2, toX: 3, toY: 4, button: 'back' }), /button/i],
     ['duration on navigation wait', bridge('browser.wait', { ...lease, mode: 'navigation', durationMs: 1 }), /only valid/i],
+    ['negative wait', bridge('browser.wait', { ...lease, mode: 'duration', durationMs: -1 }), /durationMs/i],
     ['oversized duration', bridge('computer.wait', { ...target, durationMs: 10_001 }), /durationMs/i],
+    ['negative coordinate', bridge('computer.click', { ...target, x: -1, y: 2, button: 'left' }), /finite/i],
     ['negative zero coordinate', bridge('computer.drag', { ...target, fromX: -0, fromY: 2, toX: 3, toY: 4, button: 'left' }), /finite/i],
   ])('rejects %s', (_name, value, message) => {
     expect(() => encodeJsonFrame(value)).toThrow(message)
@@ -229,6 +231,10 @@ describe('hostile syntax and cross-field combinations', () => {
     expect(() => validateProtocolManifest({ ...PROTOCOL_MANIFEST, bridgeRequestKinds: [1] })).toThrow(/string array/i)
     expect(() => validateProtocolManifest({ ...PROTOCOL_MANIFEST, protocolVersion: 2 })).toThrow(/version/i)
     expect(() => validateProtocolManifest({ ...PROTOCOL_MANIFEST, limits: { ...PROTOCOL_MANIFEST.limits, spare: 1 } })).toThrow(/limits/i)
+    expect(() => validateProtocolManifest({
+      ...PROTOCOL_MANIFEST,
+      limits: { ...PROTOCOL_MANIFEST.limits, minRevision: -1 },
+    })).toThrow(/non-negative/i)
     expect(() => validateProtocolManifest({ ...PROTOCOL_MANIFEST, controlFields: { ...PROTOCOL_MANIFEST.controlFields, 'parent.shutdown': 'none' } })).toThrow(/string array/i)
     expect(() => validateProtocolManifest({
       ...PROTOCOL_MANIFEST,

@@ -100,8 +100,10 @@ function keys(value: object, required: readonly string[], optional: readonly str
 }
 
 function stringValue(value: unknown, label: string, maxBytes: number, allowEmpty = false): string {
-  if (typeof value !== 'string' || (!allowEmpty && value.length === 0)) fail(`${label} must be a ${allowEmpty ? '' : 'non-empty '}string`)
-  if (byteLength(value) > maxBytes) fail(`${label} exceeds ${maxBytes} UTF-8 bytes`)
+  if (typeof value !== 'string') fail(`${label} must be a ${allowEmpty ? '' : 'non-empty '}string`)
+  const bytes = byteLength(value)
+  if (!allowEmpty && bytes < PROTOCOL_LIMITS.minNonEmptyStringBytes) fail(`${label} must be a non-empty string`)
+  if (bytes > maxBytes) fail(`${label} exceeds ${maxBytes} UTF-8 bytes`)
   return value
 }
 
@@ -110,7 +112,12 @@ function booleanValue(value: unknown, label: string): boolean {
   return value
 }
 
-function safeInteger(value: unknown, label: string, minimum = 0, maximum = PROTOCOL_LIMITS.maxSafeInteger): number {
+function safeInteger(
+  value: unknown,
+  label: string,
+  minimum = PROTOCOL_LIMITS.minSafeInteger,
+  maximum = PROTOCOL_LIMITS.maxSafeInteger,
+): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || isNegativeZero(value) || value < minimum || value > maximum) {
     fail(`${label} must be a safe integer from ${minimum} through ${maximum}`)
   }
@@ -140,14 +147,14 @@ function sessionId(value: unknown): SessionId {
 
 function leaseFields(value: object): void {
   ControlLeaseId(stringValue(at(value, 'leaseId'), 'leaseId', PROTOCOL_LIMITS.identifierBytes))
-  safeInteger(at(value, 'leaseRevision'), 'leaseRevision', 1)
+  safeInteger(at(value, 'leaseRevision'), 'leaseRevision', PROTOCOL_LIMITS.minRevision)
 }
 
 function targetFields(value: object): void {
   leaseFields(value)
   stringValue(at(value, 'appId'), 'appId', PROTOCOL_LIMITS.appIdBytes)
   stringValue(at(value, 'windowId'), 'windowId', PROTOCOL_LIMITS.windowIdBytes)
-  safeInteger(at(value, 'snapshotRevision'), 'snapshotRevision', 1)
+  safeInteger(at(value, 'snapshotRevision'), 'snapshotRevision', PROTOCOL_LIMITS.minRevision)
 }
 
 function pointerLocation(value: object): void {
@@ -157,8 +164,8 @@ function pointerLocation(value: object): void {
   if (refPresent) ComputerRef(stringValue(at(value, 'ref'), 'ref', PROTOCOL_LIMITS.identifierBytes))
   else {
     if (!has(value, 'x') || !has(value, 'y')) fail('x and y must appear together')
-    finiteNumber(at(value, 'x'), 'x', 0, PROTOCOL_LIMITS.maxCoordinate)
-    finiteNumber(at(value, 'y'), 'y', 0, PROTOCOL_LIMITS.maxCoordinate)
+    finiteNumber(at(value, 'x'), 'x', PROTOCOL_LIMITS.minCoordinate, PROTOCOL_LIMITS.maxCoordinate)
+    finiteNumber(at(value, 'y'), 'y', PROTOCOL_LIMITS.minCoordinate, PROTOCOL_LIMITS.maxCoordinate)
   }
 }
 
@@ -219,7 +226,7 @@ function requestBase(value: object, bridge: boolean): void {
   if (at(value, 'messageKind') !== 'request') fail('messageKind must be request')
   RequestId(stringValue(at(value, 'requestId'), 'requestId', PROTOCOL_LIMITS.identifierBytes))
   sessionId(at(value, 'sessionId'))
-  if (bridge) safeInteger(at(value, 'deadlineUnixMs'), 'deadlineUnixMs', 0)
+  if (bridge) safeInteger(at(value, 'deadlineUnixMs'), 'deadlineUnixMs', PROTOCOL_LIMITS.minDeadlineUnixMs)
   else safeInteger(at(value, 'timeoutMs'), 'timeoutMs', PROTOCOL_LIMITS.minHelperTimeoutMs, PROTOCOL_LIMITS.maxHelperTimeoutMs)
 }
 
@@ -268,7 +275,7 @@ function validateBridgeRequest(value: object, kind: typeof BRIDGE_REQUEST_KINDS[
       bridgeKeys(value, kind, ['durationMs'])
       browserLease(value)
       const mode = literal<string>(at(value, 'mode'), new Set(['duration', 'navigation', 'loading-idle']), 'mode')
-      if (mode === 'duration') safeInteger(at(value, 'durationMs'), 'durationMs', 0, PROTOCOL_LIMITS.maxWaitDurationMs)
+      if (mode === 'duration') safeInteger(at(value, 'durationMs'), 'durationMs', PROTOCOL_LIMITS.minWaitDurationMs, PROTOCOL_LIMITS.maxWaitDurationMs)
       else if (has(value, 'durationMs')) fail('durationMs is only valid for duration waits')
       break
     }
@@ -289,7 +296,9 @@ function validateBridgeRequest(value: object, kind: typeof BRIDGE_REQUEST_KINDS[
     case 'computer.drag':
       bridgeKeys(value, kind)
       targetFields(value)
-      for (const field of ['fromX', 'fromY', 'toX', 'toY']) finiteNumber(at(value, field), field, 0, PROTOCOL_LIMITS.maxCoordinate)
+      for (const field of ['fromX', 'fromY', 'toX', 'toY']) {
+        finiteNumber(at(value, field), field, PROTOCOL_LIMITS.minCoordinate, PROTOCOL_LIMITS.maxCoordinate)
+      }
       literal(at(value, 'button'), BUTTONS, 'button')
       break
     case 'computer.type':
@@ -308,7 +317,7 @@ function validateBridgeRequest(value: object, kind: typeof BRIDGE_REQUEST_KINDS[
       break
     case 'computer.wait':
       bridgeKeys(value, kind)
-      targetFields(value); safeInteger(at(value, 'durationMs'), 'durationMs', 0, PROTOCOL_LIMITS.maxWaitDurationMs)
+      targetFields(value); safeInteger(at(value, 'durationMs'), 'durationMs', PROTOCOL_LIMITS.minWaitDurationMs, PROTOCOL_LIMITS.maxWaitDurationMs)
       break
     /* v8 ignore next -- the closed roster check rejects this before dispatch. */
     default: return fail('unknown bridge request kind')
@@ -321,7 +330,9 @@ function helperTargetAction(value: object, kind: string): void {
   if (kind === 'click' || kind === 'double-click') {
     pointerLocation(value); literal(at(value, 'button'), BUTTONS, 'button')
   } else if (kind === 'drag') {
-    for (const field of ['fromX', 'fromY', 'toX', 'toY']) finiteNumber(at(value, field), field, 0, PROTOCOL_LIMITS.maxCoordinate)
+    for (const field of ['fromX', 'fromY', 'toX', 'toY']) {
+      finiteNumber(at(value, field), field, PROTOCOL_LIMITS.minCoordinate, PROTOCOL_LIMITS.maxCoordinate)
+    }
     literal(at(value, 'button'), BUTTONS, 'button')
   } else if (kind === 'type') {
     ComputerRef(stringValue(at(value, 'ref'), 'ref', PROTOCOL_LIMITS.identifierBytes)); stringValue(at(value, 'text'), 'text', PROTOCOL_LIMITS.semanticTextBytes, true)
@@ -332,7 +343,7 @@ function helperTargetAction(value: object, kind: string): void {
     finiteNumber(at(value, 'deltaX'), 'deltaX', -PROTOCOL_LIMITS.maxCoordinate, PROTOCOL_LIMITS.maxCoordinate)
     finiteNumber(at(value, 'deltaY'), 'deltaY', -PROTOCOL_LIMITS.maxCoordinate, PROTOCOL_LIMITS.maxCoordinate)
   } else if (kind === 'wait') {
-    safeInteger(at(value, 'durationMs'), 'durationMs', 0, PROTOCOL_LIMITS.maxWaitDurationMs)
+    safeInteger(at(value, 'durationMs'), 'durationMs', PROTOCOL_LIMITS.minWaitDurationMs, PROTOCOL_LIMITS.maxWaitDurationMs)
   }
 }
 
@@ -371,10 +382,10 @@ function validateHelperRequest(value: object, kind: typeof HELPER_REQUEST_KINDS[
       const quotas = asObject(at(value, 'quotas'), 'quotas')
       keys(quotas, ['snapshots', 'pointerActions', 'keyActions', 'textBytes'])
       for (const field of ['snapshots', 'pointerActions', 'keyActions', 'textBytes']) {
-        safeInteger(at(quotas, field), field, 0, PROTOCOL_LIMITS.maxLeaseQuota)
+        safeInteger(at(quotas, field), field, PROTOCOL_LIMITS.minLeaseQuota, PROTOCOL_LIMITS.maxLeaseQuota)
       }
-      safeInteger(at(value, 'idleExpiresAfterMs'), 'idleExpiresAfterMs', 1, PROTOCOL_LIMITS.maxIdleExpiresAfterMs)
-      safeInteger(at(value, 'hardExpiresAfterMs'), 'hardExpiresAfterMs', 1, PROTOCOL_LIMITS.maxHardExpiresAfterMs)
+      safeInteger(at(value, 'idleExpiresAfterMs'), 'idleExpiresAfterMs', PROTOCOL_LIMITS.minLeaseDurationMs, PROTOCOL_LIMITS.maxIdleExpiresAfterMs)
+      safeInteger(at(value, 'hardExpiresAfterMs'), 'hardExpiresAfterMs', PROTOCOL_LIMITS.minLeaseDurationMs, PROTOCOL_LIMITS.maxHardExpiresAfterMs)
       break
     }
     case 'input.release':
@@ -392,11 +403,11 @@ function imageMetadata(value: unknown): PngMetadata {
   const image = asObject(value, 'image')
   keys(image, ['transferId', 'byteLength', 'sha256', 'width', 'height'])
   const transferId = PngTransferId(stringValue(at(image, 'transferId'), 'transferId', PROTOCOL_LIMITS.identifierBytes))
-  const byteLength = safeInteger(at(image, 'byteLength'), 'byteLength', 1, PROTOCOL_LIMITS.pngBytes)
+  const byteLength = safeInteger(at(image, 'byteLength'), 'byteLength', PROTOCOL_LIMITS.minPngBytes, PROTOCOL_LIMITS.pngBytes)
   const sha256 = stringValue(at(image, 'sha256'), 'sha256', PROTOCOL_LIMITS.sha256Bytes)
   if (!SHA256.test(sha256)) fail('sha256 must be lower-case hexadecimal')
-  const width = safeInteger(at(image, 'width'), 'width', 1, PROTOCOL_LIMITS.maxPngDimension)
-  const height = safeInteger(at(image, 'height'), 'height', 1, PROTOCOL_LIMITS.maxPngDimension)
+  const width = safeInteger(at(image, 'width'), 'width', PROTOCOL_LIMITS.minPngDimension, PROTOCOL_LIMITS.maxPngDimension)
+  const height = safeInteger(at(image, 'height'), 'height', PROTOCOL_LIMITS.minPngDimension, PROTOCOL_LIMITS.maxPngDimension)
   return { transferId, byteLength, sha256, width, height }
 }
 
@@ -443,13 +454,13 @@ function appsResult(value: unknown): readonly GrantableApplication[] {
 function actionResult(value: object, kind: keyof DesktopControlResultMap | keyof HelperResultMap): void {
   resultKeys(value, kind)
   if (at(value, 'acted') !== true) fail('acted must be true')
-  safeInteger(at(value, 'snapshotRevision'), 'snapshotRevision', 1)
+  safeInteger(at(value, 'snapshotRevision'), 'snapshotRevision', PROTOCOL_LIMITS.minRevision)
 }
 
 function waitResult(value: object, kind: keyof DesktopControlResultMap | keyof HelperResultMap): void {
   resultKeys(value, kind)
   if (at(value, 'waited') !== true) fail('waited must be true')
-  safeInteger(at(value, 'snapshotRevision'), 'snapshotRevision', 1)
+  safeInteger(at(value, 'snapshotRevision'), 'snapshotRevision', PROTOCOL_LIMITS.minRevision)
 }
 
 function statusResult(value: object, kind: keyof DesktopControlResultMap | keyof HelperResultMap): void {
@@ -468,11 +479,11 @@ function validateResult(value: unknown, kind: keyof DesktopControlResultMap | ke
     case 'browser.snapshot':
       resultKeys(result, kind, ['image'])
       stringValue(at(result, 'surfaceId'), 'surfaceId', PROTOCOL_LIMITS.surfaceIdBytes); stringValue(at(result, 'url'), 'url', PROTOCOL_LIMITS.urlBytes); stringValue(at(result, 'title'), 'title', PROTOCOL_LIMITS.browserTitleBytes, true)
-      safeInteger(at(result, 'snapshotRevision'), 'snapshotRevision', 1); semanticText(at(result, 'semanticText')); semanticRefs(at(result, 'refs'), true)
+      safeInteger(at(result, 'snapshotRevision'), 'snapshotRevision', PROTOCOL_LIMITS.minRevision); semanticText(at(result, 'semanticText')); semanticRefs(at(result, 'refs'), true)
       if (has(result, 'image')) imageMetadata(at(result, 'image'))
       break
     case 'browser.navigate': case 'browser.back': case 'browser.forward': case 'browser.reload':
-      resultKeys(result, kind); stringValue(at(result, 'url'), 'url', PROTOCOL_LIMITS.urlBytes); safeInteger(at(result, 'snapshotRevision'), 'snapshotRevision', 1); break
+      resultKeys(result, kind); stringValue(at(result, 'url'), 'url', PROTOCOL_LIMITS.urlBytes); safeInteger(at(result, 'snapshotRevision'), 'snapshotRevision', PROTOCOL_LIMITS.minRevision); break
     case 'browser.click': case 'browser.type': case 'browser.key': case 'browser.select': case 'browser.scroll':
     case 'computer.focus': case 'computer.click': case 'computer.double-click': case 'computer.drag': case 'computer.type': case 'computer.key': case 'computer.scroll':
     case 'focus': case 'click': case 'double-click': case 'drag': case 'type': case 'key': case 'scroll': actionResult(result, kind); break
@@ -484,11 +495,11 @@ function validateResult(value: unknown, kind: keyof DesktopControlResultMap | ke
     case 'computer.snapshot': case 'snapshot':
       resultKeys(result, kind, ['image'])
       stringValue(at(result, 'appId'), 'appId', PROTOCOL_LIMITS.appIdBytes); stringValue(at(result, 'windowId'), 'windowId', PROTOCOL_LIMITS.windowIdBytes)
-      safeInteger(at(result, 'snapshotRevision'), 'snapshotRevision', 1); semanticText(at(result, 'semanticText')); semanticRefs(at(result, 'refs'), false)
+      safeInteger(at(result, 'snapshotRevision'), 'snapshotRevision', PROTOCOL_LIMITS.minRevision); semanticText(at(result, 'semanticText')); semanticRefs(at(result, 'refs'), false)
       if (has(result, 'image')) imageMetadata(at(result, 'image'))
       break
     case 'lease.install':
-      resultKeys(result, kind); if (at(result, 'installed') !== true) fail('installed must be true'); safeInteger(at(result, 'leaseRevision'), 'leaseRevision', 1); break
+      resultKeys(result, kind); if (at(result, 'installed') !== true) fail('installed must be true'); safeInteger(at(result, 'leaseRevision'), 'leaseRevision', PROTOCOL_LIMITS.minRevision); break
     case 'input.release': resultKeys(result, kind); if (at(result, 'released') !== true) fail('released must be true'); break
     /* v8 ignore next -- the closed response roster rejects this before dispatch. */
     default: fail('result does not match requestKind')
@@ -678,7 +689,7 @@ class StrictJsonParser {
  * @returns the detached immutable message.
  */
 export function decodeJsonFrame(frame: Uint8Array): DesktopControlMessage {
-  if (frame.byteLength < 2 || frame[0] !== JSON_TAG) fail('JSON frame tag is invalid')
+  if (frame.byteLength < PROTOCOL_LIMITS.minJsonFrameBytes || frame[0] !== JSON_TAG) fail('JSON frame tag is invalid')
   const bytes = frame.subarray(1)
   if (bytes.byteLength > PROTOCOL_LIMITS.jsonPayloadBytes) fail('JSON frame exceeds the payload limit')
   let text: string
@@ -709,7 +720,7 @@ export function encodeJsonFrame(message: DesktopControlMessage): Uint8Array {
  * @param nowUnixMs - Caller-owned current Unix time in milliseconds.
  */
 export function assertBridgeDeadline(request: BridgeRequest, nowUnixMs: number): void {
-  safeInteger(nowUnixMs, 'nowUnixMs', 0)
+  safeInteger(nowUnixMs, 'nowUnixMs', PROTOCOL_LIMITS.minDeadlineUnixMs)
   if (request.deadlineUnixMs < nowUnixMs || request.deadlineUnixMs > nowUnixMs + PROTOCOL_LIMITS.maxDeadlineAheadMs) {
     fail('deadlineUnixMs must be current and no more than 30 seconds ahead')
   }
@@ -728,12 +739,12 @@ function bytesUuid(bytes: Uint8Array): PngTransferId {
 }
 
 function pngDimensions(bytes: Uint8Array): { width: number; height: number } {
-  if (bytes.byteLength < 24 || !PNG_SIGNATURE.every((value, index) => bytes[index] === value)) fail('PNG signature is invalid')
+  if (bytes.byteLength < PROTOCOL_LIMITS.minPngStructureBytes || !PNG_SIGNATURE.every((value, index) => bytes[index] === value)) fail('PNG signature is invalid')
   if (String.fromCharCode(...bytes.subarray(12, 16)) !== 'IHDR') fail('PNG IHDR is missing')
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const width = view.getUint32(16)
   const height = view.getUint32(20)
-  if (width === 0 || height === 0) fail('PNG dimensions are invalid')
+  if (width < PROTOCOL_LIMITS.minPngDimension || height < PROTOCOL_LIMITS.minPngDimension) fail('PNG dimensions are invalid')
   return { width, height }
 }
 
@@ -773,7 +784,7 @@ export interface DecodedPngFrame {
  */
 export function encodePngFrame(transferId: PngTransferId, png: Uint8Array): Uint8Array {
   if (!UUID.test(transferId)) fail('transferId has an invalid format')
-  if (png.byteLength === 0 || png.byteLength > PROTOCOL_LIMITS.pngBytes) fail('PNG exceeds the byte limit')
+  if (png.byteLength < PROTOCOL_LIMITS.minPngBytes || png.byteLength > PROTOCOL_LIMITS.pngBytes) fail('PNG exceeds the byte limit')
   pngDimensions(png)
   const frame = new Uint8Array(17 + png.byteLength)
   frame[0] = PNG_TAG
@@ -788,7 +799,7 @@ export function encodePngFrame(transferId: PngTransferId, png: Uint8Array): Uint
  * @returns the transfer identifier and immutable byte owner.
  */
 export function decodePngFrame(frame: Uint8Array): DecodedPngFrame {
-  if (frame.byteLength < 18 || frame[0] !== PNG_TAG) fail('PNG frame tag or body is invalid')
+  if (frame.byteLength < PROTOCOL_LIMITS.minPngFrameBytes || frame[0] !== PNG_TAG) fail('PNG frame tag or body is invalid')
   if (frame.byteLength > PROTOCOL_LIMITS.pngFrameBytes) fail('PNG frame exceeds the byte limit')
   const transferId = bytesUuid(frame.subarray(1, 17))
   const pngBytes = new Uint8Array(frame.subarray(17))
@@ -857,11 +868,11 @@ export class DesktopControlFrameDecoder {
   }
 }
 
-function frameLimit(frame: Uint8Array): number {
-  if (frame.byteLength === 0) return 0
+function frameLimit(frame: Uint8Array): number | undefined {
+  if (frame.byteLength < PROTOCOL_LIMITS.minOuterFrameBytes) return undefined
   if (frame[0] === JSON_TAG) return PROTOCOL_LIMITS.jsonFrameBytes
   if (frame[0] === PNG_TAG) return PROTOCOL_LIMITS.pngFrameBytes
-  return 0
+  return undefined
 }
 
 /**
@@ -871,7 +882,7 @@ function frameLimit(frame: Uint8Array): number {
  */
 export function encodeLengthPrefixedFrame(frame: Uint8Array): Uint8Array {
   const limit = frameLimit(frame)
-  if (limit === 0 || frame.byteLength > limit) fail('frame tag or length is invalid')
+  if (limit === undefined || frame.byteLength > limit) fail('frame tag or length is invalid')
   const output = new Uint8Array(4 + frame.byteLength)
   new DataView(output.buffer).setUint32(0, frame.byteLength)
   output.set(frame, 4)
@@ -904,7 +915,7 @@ export class LengthPrefixedFrameDecoder {
           offset += count
           if (this.headerBytes < 4) continue
           const length = new DataView(this.header.buffer).getUint32(0)
-          if (length === 0 || length > PROTOCOL_LIMITS.outerFrameBytes) fail('frame length prefix is invalid')
+          if (length < PROTOCOL_LIMITS.minOuterFrameBytes || length > PROTOCOL_LIMITS.outerFrameBytes) fail('frame length prefix is invalid')
           this.body = new Uint8Array(length)
           this.bodyBytes = 0
         }
@@ -915,7 +926,7 @@ export class LengthPrefixedFrameDecoder {
         if (this.bodyBytes === this.body.byteLength) {
           const complete = this.body
           const limit = frameLimit(complete)
-          if (limit === 0 || complete.byteLength > limit) fail('frame tag or length is invalid')
+          if (limit === undefined || complete.byteLength > limit) fail('frame tag or length is invalid')
           frames.push(complete)
           this.body = undefined
           this.bodyBytes = 0
