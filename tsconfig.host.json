@@ -296,6 +296,7 @@
     { "path": "./packages/extensions/desktop-workbench/tsconfig.host.json" },
     { "path": "./packages/extensions/tool-cordis" },
     { "path": "./packages/hooks/hook-protocol" },
+    { "path": "./packages/control/desktop-control-protocol" },
     { "path": "./packages/hooks/hooks-claude-code" },
     { "path": "./packages/hooks/hooks-codex" },
     { "path": "./packages/mcp/mcp-client" },

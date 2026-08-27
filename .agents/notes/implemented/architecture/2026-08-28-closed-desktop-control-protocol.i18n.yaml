@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-28-closed-desktop-control-protocol.md
+2026-08-28-closed-desktop-control-protocol.md: 0be549a6dce986c38f2ff787367034290f052b20
+2026-08-28-closed-desktop-control-protocol.zh.md: 23dc34be16b67c6161986018695f37c0db50a63b
