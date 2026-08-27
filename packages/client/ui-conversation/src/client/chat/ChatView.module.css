@@ -303,19 +303,31 @@
 }
 
 @media (forced-colors: active) {
-  .promptRailTrack::before,
+  .promptRailTick,
+  .promptRailActiveDot {
+    forced-color-adjust: none;
+  }
+
+  .promptRailTrack::before {
+    background-color: CanvasText !important;
+  }
+
+  /* Chromium keeps a button descendant's author background in forced colors.
+   * Paint the one- and two-pixel ticks as explicit system-color borders instead. */
   .promptRailTick {
-    background: CanvasText;
+    height: 0;
+    border-top: 1px solid CanvasText !important;
     opacity: 1;
   }
 
   .promptRailMark[data-active] .promptRailTick {
-    background: Highlight;
+    border-top-color: Highlight !important;
+    border-top-width: 2px;
   }
 
   .promptRailActiveDot {
     border-color: Highlight;
-    background: Canvas;
+    background-color: Canvas !important;
   }
 
   .promptRailMark:focus-visible,

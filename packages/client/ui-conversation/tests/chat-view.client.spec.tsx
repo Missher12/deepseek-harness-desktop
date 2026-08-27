@@ -624,13 +624,18 @@ describe('ChatView', () => {
     const rail = view.getByRole('navigation', { name: '过往发言' })
     const marks = [...rail.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')]
 
-    fireEvent.focus(marks[0]!)
+    act(() => {
+      marks[0]!.focus()
+      fireEvent.focus(marks[0]!)
+    })
     expect(view.getByRole('tooltip')).toBeTruthy()
 
     view.rerender(<PromptRail anchors={replacement} activeSeq={replacement[1]!.seq} onActivate={onActivate} t={t} />)
-    expect(view.queryByRole('tooltip')).toBeNull()
-    expect([...rail.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')].map(mark => mark.tabIndex))
+    const replacementMarks = [...rail.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')]
+    expect(replacementMarks.map(mark => mark.tabIndex))
       .toEqual([-1, 0, -1])
+    expect(document.activeElement).toBe(replacementMarks[1])
+    expect(view.getByRole('tooltip').textContent).toContain(replacement[1]!.preview)
   })
 
   it('opens a localized compact prompt list and returns focus after Escape', () => {
@@ -658,6 +663,136 @@ describe('ChatView', () => {
     fireEvent.click(within(view.getByRole('dialog')).getByRole('button', { name: '转到第 1 条发言：发言 1' }))
     expect(onActivate.mock.calls).toEqual([[promptAnchors[0]!.seq]])
     expect(view.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('returns focus to the compact trigger when a replacement closes its dialog', () => {
+    vi.stubGlobal('matchMedia', () => ({
+      matches: true,
+      media: '(max-width: 860px)',
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const replacement = promptAnchors.map(anchor => ({ ...anchor, time: anchor.time + 10_000 }))
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(<PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />)
+    const trigger = view.getByRole('button', { name: '发言导航（2 / 3）' })
+
+    fireEvent.click(trigger)
+    expect(view.getByRole('dialog', { name: '发言导航' })).toBeTruthy()
+    view.rerender(<PromptRail anchors={replacement} activeSeq={replacement[1]!.seq} onActivate={onActivate} t={t} />)
+
+    expect(view.queryByRole('dialog', { name: '发言导航' })).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('hands compact focus to the active desktop mark when the viewport expands', () => {
+    let compact = true
+    const listeners = new Set<(event: MediaQueryListEvent) => void>()
+    vi.stubGlobal('matchMedia', () => ({
+      get matches() { return compact },
+      media: '(max-width: 860px)',
+      addEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.add(listener) },
+      removeEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.delete(listener) },
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(<PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />)
+    const trigger = view.getByRole('button', { name: '发言导航（2 / 3）' })
+
+    fireEvent.click(trigger)
+    expect(document.activeElement).toBe(view.getByRole('dialog', { name: '发言导航' }))
+    compact = false
+    act(() => {
+      for (const listener of listeners) listener(new Event('change') as MediaQueryListEvent)
+    })
+
+    const marks = view.container.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')
+    expect(document.activeElement).toBe(marks[1])
+  })
+
+  it('hands compact trigger focus to the active desktop mark when the viewport expands', () => {
+    let compact = true
+    const listeners = new Set<(event: MediaQueryListEvent) => void>()
+    vi.stubGlobal('matchMedia', () => ({
+      get matches() { return compact },
+      media: '(max-width: 860px)',
+      addEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.add(listener) },
+      removeEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.delete(listener) },
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(<PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />)
+    const trigger = view.getByRole('button', { name: '发言导航（2 / 3）' })
+
+    trigger.focus()
+    compact = false
+    act(() => {
+      trigger.blur()
+      for (const listener of listeners) listener(new Event('change') as MediaQueryListEvent)
+    })
+
+    const marks = view.container.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')
+    expect(document.activeElement).toBe(marks[1])
+  })
+
+  it('hands desktop mark focus to the compact trigger when the viewport narrows', () => {
+    let compact = false
+    const listeners = new Set<(event: MediaQueryListEvent) => void>()
+    vi.stubGlobal('matchMedia', () => ({
+      get matches() { return compact },
+      media: '(max-width: 860px)',
+      addEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.add(listener) },
+      removeEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.delete(listener) },
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(<PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />)
+    const marks = view.container.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')
+
+    marks[1]!.focus()
+    compact = true
+    act(() => {
+      for (const listener of listeners) listener(new Event('change') as MediaQueryListEvent)
+    })
+
+    expect(document.activeElement).toBe(view.getByRole('button', { name: '发言导航（2 / 3）' }))
+  })
+
+  it('does not move transcript focus into the desktop rail as the viewport expands', () => {
+    let compact = true
+    const listeners = new Set<(event: MediaQueryListEvent) => void>()
+    vi.stubGlobal('matchMedia', () => ({
+      get matches() { return compact },
+      media: '(max-width: 860px)',
+      addEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.add(listener) },
+      removeEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.delete(listener) },
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(
+      <>
+        <button type="button">会话输入框</button>
+        <PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />
+      </>,
+    )
+    const composer = view.getByRole('button', { name: '会话输入框' })
+    fireEvent.click(view.getByRole('button', { name: '发言导航（2 / 3）' }))
+    expect(view.getByRole('dialog', { name: '发言导航' })).toBeTruthy()
+
+    composer.focus()
+    compact = false
+    act(() => {
+      for (const listener of listeners) listener(new Event('change') as MediaQueryListEvent)
+    })
+
+    expect(document.activeElement).toBe(composer)
   })
 
   it('does not reopen the compact list after the anchor set drops below two prompts', () => {
@@ -682,6 +817,7 @@ describe('ChatView', () => {
     view.rerender(<PromptRail anchors={replacement} activeSeq={replacement[1]!.seq} onActivate={onActivate} t={t} />)
     expect(view.getByRole('button', { name: '发言导航（2 / 3）' }).getAttribute('aria-expanded')).toBe('false')
     expect(view.queryByRole('dialog', { name: '发言导航' })).toBeNull()
+    expect(view.getByRole('button', { name: '发言导航（2 / 3）' }).tabIndex).toBe(0)
   })
 
   it('reports an unavailable historical prompt without changing the transcript', async () => {

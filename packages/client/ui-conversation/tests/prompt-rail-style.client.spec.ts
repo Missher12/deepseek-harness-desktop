@@ -53,6 +53,15 @@ describe('PromptRail presentation', () => {
     expect(ruleBlock(".promptRailMark[data-edge='end'] .promptRailTooltip")).toContain('transform: translateY(-100%);')
   })
 
+  it('pins forced-colors marks to system colors and disables tick motion when requested', () => {
+    expect(stylesheet).toContain('.promptRailTick,\n  .promptRailActiveDot {\n    forced-color-adjust: none;')
+    expect(stylesheet).toContain('.promptRailTrack::before {\n    background-color: CanvasText !important;')
+    expect(stylesheet).toContain('.promptRailTick {\n    height: 0;\n    border-top: 1px solid CanvasText !important;')
+    expect(stylesheet).toContain('.promptRailMark[data-active] .promptRailTick {\n    border-top-color: Highlight !important;\n    border-top-width: 2px;')
+    expect(stylesheet).toContain('.promptRailActiveDot {\n    border-color: Highlight;\n    background-color: Canvas !important;')
+    expect(stylesheet).toContain('@media (prefers-reduced-motion: reduce) {\n  .promptRailTick {\n    transition: none;')
+  })
+
   it('selects the nearest prompt index from a clamped rail coordinate', () => {
     expect(nearestPromptIndex).toBeTypeOf('function')
     expect(nearestPromptIndex?.({ y: 260, top: 0, height: 520, count: 120 })).toBe(60)
