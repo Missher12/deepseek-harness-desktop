@@ -12,8 +12,7 @@ import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 import type {
   HistoryEntry, ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,
-  ModelReasoningEffort, ModelSelection, PromptAnchor, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
-  SessionSummary,
+  ModelReasoningEffort, ModelSelection, PromptAnchor, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionSummary,
 } from './sessions.ts'
 import { PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS } from './sessions.ts'
 import type { ToolEventView } from './events.ts'
@@ -143,7 +142,6 @@ export const sessionRenameValueSchema = z.object({
 export const sessionForkRequestSchema = z.object({
   sessionId: sessionIdSchema,
   atSeq: z.number().int().nonnegative().optional(),
-  position: z.enum(['through-turn', 'before-turn']).optional(),
 }) satisfies z.ZodType<Wire<RequestPayload<'session.fork'>>>
 
 /** session.fork response value (the child session id). */
@@ -217,7 +215,7 @@ export const historyEntrySchema: z.ZodType<Wire<HistoryEntry>> = z.object({
   view: toolEventViewSchema.optional(),
 }) as unknown as z.ZodType<Wire<HistoryEntry>>
 
-/** One text-only prompt-rail anchor. */
+/** One bounded prompt navigation entry from the all-history tail index. */
 export const promptAnchorSchema = z.object({
   seq: z.number().int().nonnegative(),
   turn: z.number().int().nonnegative(),
@@ -225,9 +223,8 @@ export const promptAnchorSchema = z.object({
   kind: z.enum(['turn-opening', 'steering']),
   preview: z.string().refine(
     preview => truncateUnicodeCodePoints(preview, PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS) === preview,
-    { message: `prompt anchor preview must contain at most ${PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS} Unicode code points` },
+    { message: `prompt preview must contain at most ${PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS} Unicode code points` },
   ),
-  completed: z.boolean(),
 }) satisfies z.ZodType<Wire<PromptAnchor>>
 
 /**

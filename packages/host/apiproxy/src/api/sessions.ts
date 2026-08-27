@@ -70,12 +70,12 @@ export interface HistoryEntry {
   view?: ToolEventView
 }
 
-/** Maximum Unicode code points exposed by one prompt-rail label. */
+/** Maximum Unicode code points exposed by one prompt-rail preview. */
 export const PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS = 48
 
-/** Lightweight all-history index carried only by an ordinary session's tail page. */
+/** Lightweight all-history navigation entry carried only by the tail page. */
 export interface PromptAnchor {
-  /** Exact user/message event seq used for reveal and safe fork admission. */
+  /** Exact user/message event sequence used for history reveal. */
   seq: number
   /** Owning turn number. */
   turn: number
@@ -83,10 +83,8 @@ export interface PromptAnchor {
   time: number
   /** The first human message opens a turn; later human messages steer it. */
   kind: 'turn-opening' | 'steering'
-  /** Normalized text-only preview; images and non-text context are excluded. */
+  /** Normalized, length-bounded text; empty when the prompt contains only images. */
   preview: string
-  /** Whether the owning turn has a durable turn/end event in this same cut. */
-  completed: boolean
 }
 
 /**
@@ -120,9 +118,6 @@ export interface ModelSelection {
   /** Adapter-owned reasoning effort; absence preserves adapter/provider default behavior. */
   reasoningEffort?: string
 }
-
-/** Which side of the addressed turn a fork preserves. */
-export type SessionForkPosition = 'through-turn' | 'before-turn'
 
 /** One adapter-owned reasoning effort displayed for an exact model route. */
 export interface ModelReasoningEffort {
@@ -310,6 +305,8 @@ export interface SessionsApi {
    * the client needs a fresh baseline already pulls the tail page, and
    * loadOlder (the only beforeSeq path) is the only path that never needs one.
    * A deployment without the registry serves histories without the block.
+   * The same immutable tail cut carries `promptAnchors`, a compact index of
+   * every human-authored prompt used only for transcript navigation.
    * Reading history uses an attached Session or persistence inspection and
    * never resumes or publishes an Agent.
    */
@@ -362,23 +359,18 @@ export interface SessionsApi {
   /**
    * Forks a new session from a completed-turn prefix of the source. `atSeq`
    * anchors the cut: the boundary is the first `turn/end` at or after it
-   * (a message's fork button passes the message seq, so a `through-turn` fork
-   * includes that whole turn). A `before-turn` fork requires the exact first
-   * human message of a completed turn and excludes that entire turn; running,
-   * steering, missing, and incomplete anchors fail closed. A boundary past
-   * the log end, or an omitted `atSeq`, falls back to the source's last
-   * completed turn. The child inherits the source cwd, latest logged model
+   * (a message's fork button passes the message seq, so the fork includes
+   * that whole turn); a boundary past the log end, or an omitted `atSeq`,
+   * falls back to the source's last completed turn. An in-log anchor whose
+   * turn is still open fails with `fork-unavailable` instead of clipping to
+   * an earlier turn. The child inherits the source cwd, latest logged model
    * target and `parentSessionId` lineage; the seed prefix carries the source
    * title. Reading the source uses attached state or persistence inspection
    * without acquiring an Agent. Workspace attachment follows the source
    * directly, or the nearest workspace-owning ancestor when the source is a
    * subagent.
    */
-  fork(request: RpcRequest<{
-    sessionId: SessionId
-    atSeq?: number
-    position?: SessionForkPosition
-  }>):
+  fork(request: RpcRequest<{ sessionId: SessionId; atSeq?: number }>):
   Promise<RpcResponse<{ sessionId: SessionId }>>
 
   /**

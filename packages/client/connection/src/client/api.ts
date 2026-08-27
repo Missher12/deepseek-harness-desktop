@@ -6,8 +6,7 @@
 // The ./api and ./client subpath exports are the browser-safe channels.
 
 export type {
-  ApiProxy, SessionsApi, SessionForkPosition, SessionSearchItem, SessionSummary, PromptAnchor, PromptContentPart,
-  HostApi, EventsApi, MuxFrame, HostFrame,
+  ApiProxy, SessionsApi, SessionSearchItem, SessionSummary, PromptAnchor, PromptContentPart, HostApi, EventsApi, MuxFrame, HostFrame,
   ApprovalResponsePayload, QuestionResponsePayload, HistoryEntry, ToolEventView,
   DirectoryEntry, DirectoryListing,
   ResponseValue, WorkspaceApi, WorkspaceId, WorkspaceView,

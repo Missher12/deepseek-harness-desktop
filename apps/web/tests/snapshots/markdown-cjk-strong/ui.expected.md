@@ -10,8 +10,6 @@
 - text: Render adjacent CJK strong emphasis. {{clock}}
 - button "Copy":
   - img
-- button "Edit and continue from here":
-  - img
 - heading "CJK strong emphasis" [level=2]
 - paragraph:
   - strong: 注意：

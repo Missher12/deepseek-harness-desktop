@@ -605,7 +605,11 @@ function ActiveEffortControl({ locked, controller, sessionId, t }: ActiveEffortC
   const close = useCallback((restoreFocus = false): void => {
     setOpen(false)
     setDragging(false)
-    if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
+    if (restoreFocus) {
+      queueMicrotask(() => {
+        triggerRef.current?.focus()
+      })
+    }
   }, [])
 
   const refresh = useCallback(async (freshForMs = 0): Promise<void> => {

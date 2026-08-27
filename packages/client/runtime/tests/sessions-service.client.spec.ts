@@ -589,24 +589,6 @@ describe('fork', () => {
     expect(b.api.callsOf('session.fork')).toEqual([{ sessionId: 'source', atSeq: 41 }])
   })
 
-  it('forwards the safe before-turn fork position without changing title policy', async () => {
-    const b = bench()
-    await feedList(b, [{ id: 'source', cwd: '/work' }])
-    b.api.onFork = () => Promise.resolve(ok({ sessionId: sid('child') }))
-
-    await expect(b.svc.fork({
-      sessionId: sid('source'),
-      atSeq: 7,
-      position: 'before-turn',
-    })).resolves.toBe('child')
-
-    expect(b.api.callsOf('session.fork')).toEqual([{
-      sessionId: 'source',
-      atSeq: 7,
-      position: 'before-turn',
-    }])
-  })
-
   it('does not rename without the title policy or a durable source title', async () => {
     const b = bench()
     await feedList(b, [{ id: 'source', cwd: '/work' }])

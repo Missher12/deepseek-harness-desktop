@@ -40,20 +40,7 @@ function sessionFakeFor() {
   return {
     open: vi.fn(() => Promise.resolve()),
     loadOlder: vi.fn<ISession['loadOlder']>(() => Promise.resolve()),
-    readAttachment: vi.fn<ISession['readAttachment']>(() => Promise.resolve({
-      ok: true,
-      value: {
-        attachment: {
-          attachmentId: 'att-1' as never,
-          mediaType: 'image/png',
-          bytes: 3,
-          width: 1,
-          height: 1,
-          name: 'source.png',
-        },
-        data: Uint8Array.of(1, 2, 3),
-      },
-    })),
+    revealHistorySeq: vi.fn<ISession['revealHistorySeq']>(() => Promise.resolve()),
     prompt: vi.fn<ISession['prompt']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
     cancel: vi.fn<ISession['cancel']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
   } satisfies SessionBehaviorOverrides
@@ -126,7 +113,7 @@ async function bench() {
   const inputApi = (id: SessionId) => {
     const info = runtime.sessions.provideInfo(id)!
     const state = info.hooks['input'] as {
-      getSnapshot: () => { draft: string; imageIds: readonly string[] }
+      getSnapshot: () => { draft: string }
       subscribe: (fn: () => void) => () => void
     }
     const actions = info.props['inputActions'] as {
@@ -154,6 +141,8 @@ describe('conversation slot inject API', () => {
     const chatView = b.chatViewApi(ROOT)
     chatView.injected.loadOlder()
     expect(b.sessionFake.loadOlder).toHaveBeenCalledTimes(1)
+    await chatView.injected.revealHistorySeq(9)
+    expect(b.sessionFake.revealHistorySeq).toHaveBeenCalledWith(9)
     chatView.injected.forkAt(17)
     await vi.waitFor(() => {
       expect(b.runtime.sessions.calls).toContainEqual({ method: 'open', args: [ROOT] })
@@ -245,63 +234,6 @@ describe('conversation slot inject API', () => {
     const conv = b.conversationApi(ROOT)
     expect(conv.instance).toBe(instance)
     await b.runtime.dispose()
-  })
-
-  it('forks before a historical user prompt and places its text in the child draft without sending', async () => {
-    const b = await bench()
-    const { injected } = b.chatViewApi(ROOT)
-    const editFrom = (injected as unknown as {
-      editFrom: (seq: number, content: readonly unknown[]) => Promise<void>
-    }).editFrom
-
-    await editFrom(17, [{ type: 'text', text: '修改后的需求' }])
-
-    expect(b.runtime.sessions.calls).toContainEqual({
-      method: 'fork',
-      args: [{ sessionId: ROOT, atSeq: 17, position: 'before-turn', increaseTitle: true }],
-    })
-    expect(b.inputApi(ROOT).state.getSnapshot().draft).toBe('修改后的需求')
-    expect(b.sessionFake.prompt).not.toHaveBeenCalled()
-    await b.runtime.dispose()
-  })
-
-  it('restores historical images before forking and never creates a child when image loading fails', async () => {
-    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:restored') })
-    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
-    const b = await bench()
-    const { injected } = b.chatViewApi(ROOT)
-    const image = {
-      type: 'image' as const,
-      attachment: {
-        attachmentId: 'att-1' as never,
-        mediaType: 'image/png' as const,
-        bytes: 3,
-        width: 1,
-        height: 1,
-        name: 'source.png',
-      },
-    }
-
-    await injected.editFrom(17, [image] as never)
-
-    expect(b.sessionFake.readAttachment).toHaveBeenCalledWith('att-1')
-    expect(b.inputApi(ROOT).state.getSnapshot().imageIds).toHaveLength(1)
-    expect(b.sessionFake.prompt).not.toHaveBeenCalled()
-
-    const callsBeforeFailure = b.runtime.sessions.calls.filter(call => call.method === 'fork').length
-    b.sessionFake.readAttachment.mockResolvedValueOnce({
-      ok: false,
-      error: { code: 'internal', message: 'missing', details: {} },
-    })
-    await expect(injected.editFrom(23, [image] as never)).rejects.toThrow('missing')
-    expect(b.runtime.sessions.calls.filter(call => call.method === 'fork')).toHaveLength(callsBeforeFailure)
-    expect(b.composerApi(ROOT).hooks.notices.getSnapshot()).toMatchObject({
-      level: 'error',
-      text: '无法从这里继续：internal: missing',
-    })
-    await b.runtime.dispose()
-    delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL
-    delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL
   })
 
   it('openFile (chat view face) resolves against session cwd and calls workspaces.openPath', async () => {

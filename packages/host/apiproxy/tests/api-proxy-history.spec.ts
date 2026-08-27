@@ -46,7 +46,7 @@ const api = (ctx: Context) => createApiProxy(ctx, {
 })
 
 describe('session.history prompt anchors', () => {
-  it('projects human opening and steering prompts from one synchronous tail cut', async () => {
+  it('projects opening and steering prompts from the immutable tail cut', async () => {
     const { ctx, session } = await harness()
     session.append('turn/start', { turn: 1 })
     appendUser(session, '  first\n\tprompt  ')
@@ -59,13 +59,13 @@ describe('session.history prompt anchors', () => {
 
     expect(response.result.ok).toBe(true)
     if (!response.result.ok) return
-    expect(response.result.value).toMatchObject({
-      promptAnchors: [
-        { seq: 1, turn: 1, kind: 'turn-opening', preview: 'first prompt', completed: true },
-        { seq: 2, turn: 1, kind: 'steering', preview: 'steer this turn', completed: true },
-        { seq: 5, turn: 2, kind: 'turn-opening', preview: '鲸'.repeat(48), completed: false },
-      ],
-    })
+    const promptAnchors = response.result.value.promptAnchors
+    expect(promptAnchors?.map(({ time: _time, ...anchor }) => anchor)).toEqual([
+      { seq: 1, turn: 1, kind: 'turn-opening', preview: 'first prompt' },
+      { seq: 2, turn: 1, kind: 'steering', preview: 'steer this turn' },
+      { seq: 5, turn: 2, kind: 'turn-opening', preview: '鲸'.repeat(48) },
+    ])
+    expect(promptAnchors?.every(anchor => Number.isFinite(anchor.time))).toBe(true)
     await ctx.fiber.dispose()
   })
 

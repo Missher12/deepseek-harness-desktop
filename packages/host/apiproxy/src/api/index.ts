@@ -45,9 +45,8 @@ export interface ApiProxy {
 export type {
   HistoryEntry, ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,
   ModelReasoningEffort, ModelSelection, PromptAnchor, PromptContentPart, QueueAction, SessionModels,
-  SessionForkPosition, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionsApi, SessionSummary,
+  SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionsApi, SessionSummary,
 } from './sessions.ts'
-export { PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS } from './sessions.ts'
 export type { DirectoryEntry, DirectoryListing, HostApi } from './host.ts'
 export type {
   SubagentAddress, SubagentCatalog, SubagentInterruptReceipt, SubagentListEntry,
@@ -93,6 +92,10 @@ export {
 } from './rpc.schema.ts'
 
 // ---- Fixed session-search product bounds ----
+export {
+  PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS,
+} from './sessions.ts'
+
 export {
   SESSION_SEARCH_RESULT_LIMIT,
   SESSION_SEARCH_SNIPPET_MAX_CODE_POINTS,

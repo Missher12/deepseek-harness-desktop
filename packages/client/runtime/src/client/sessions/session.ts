@@ -103,7 +103,7 @@ export class Session implements SessionFace {
   private removed = false
   private promptError: PromptError | null = null
   private lastAgentError: string | null = null
-  /** Tail-page all-history index, incrementally maintained by subsequent live events. */
+  /** Tail-page all-history prompt index, incrementally extended by live events. */
   private promptAnchors: PromptAnchor[] = []
   /** Live events buffered during open/resync and stitched by sequence once history lands. */
   private liveBuffer: { event: SessionEvent; view: ToolEventView | undefined }[] = []
@@ -417,7 +417,7 @@ export class Session implements SessionFace {
     }
   }
 
-  /** Load only as many older pages as needed to bring one anchor seq into the window. */
+  /** Load only the older pages required to reveal one exact prompt event. */
   revealHistorySeq(seq: number): Promise<void> {
     const target = Math.max(0, Math.floor(seq))
     const reveal = this.revealTail.then(async () => {
@@ -449,6 +449,7 @@ export class Session implements SessionFace {
     this.openError = null
     this.events = []
     this.views = []
+    this.promptAnchors = []
     this.baseSeq = 0
     // Superseded, not settled: the baseline replay re-sends still-pending requested frames verbatim
     // (same rpcId), re-minting fresh waits; a stale reference's respond() still reaches the host.
@@ -646,23 +647,13 @@ export class Session implements SessionFace {
         this.openError = result.error
         return
       }
-      this.installWindow(
-        result.value.events,
-        result.value.hasMore,
-        result.value.projections,
-        result.value.promptAnchors,
-      )
+      this.installWindow(result.value.events, result.value.hasMore, result.value.projections, result.value.promptAnchors)
       // Gap detection: baseline past the window tail and liveBuffer did not cover it -> pull the tail page once more.
       const tailSeq = this.windowTailSeq()
       if (this.subscribedLastSeq !== null && tailSeq !== null && this.subscribedLastSeq > tailSeq) {
         result = (await this.history({ maxMessages: PAGE_MESSAGES })).result
         if (generation !== this.openGeneration) return
-        if (result.ok) this.installWindow(
-          result.value.events,
-          result.value.hasMore,
-          result.value.projections,
-          result.value.promptAnchors,
-        )
+        if (result.ok) this.installWindow(result.value.events, result.value.hasMore, result.value.projections, result.value.promptAnchors)
       }
       this.openState = 'open'
     } catch (error) {
@@ -736,15 +727,8 @@ export class Session implements SessionFace {
     this.scheduleConversation(this.appendLive(event, view))
   }
 
-  /** Incrementally maintain the tail page's all-history prompt index. */
+  /** Extend the prompt index for accepted live human messages without refetching history. */
   private acceptPromptAnchorEvent(event: SessionEvent): void {
-    if (event.type === 'turn/end') {
-      this.promptAnchors = this.promptAnchors.map((anchor) => {
-        if (anchor.turn !== event.data.turn || anchor.completed) return anchor
-        return { ...anchor, completed: true }
-      })
-      return
-    }
     if (event.type !== 'user/message' || event.data.source.kind !== 'user') return
     if (this.promptAnchors.some(anchor => anchor.seq === event.seq)) return
 
@@ -770,7 +754,6 @@ export class Session implements SessionFace {
       time: event.time,
       kind: this.promptAnchors.some(anchor => anchor.turn === turn) ? 'steering' : 'turn-opening',
       preview: Array.from(preview).slice(0, PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS).join(''),
-      completed: false,
     }]
   }
 
@@ -792,12 +775,7 @@ export class Session implements SessionFace {
       const { result } = await this.history({ maxMessages: PAGE_MESSAGES })
       // Failure or superseded by a full resync: drop — the resync path rebuilds and clears the buffer itself.
       if (result.ok && generation === this.openGeneration && this.openState === 'open') {
-        this.installWindow(
-          result.value.events,
-          result.value.hasMore,
-          result.value.projections,
-          result.value.promptAnchors,
-        )
+        this.installWindow(result.value.events, result.value.hasMore, result.value.projections, result.value.promptAnchors)
       }
     } catch (error) {
       console.error('[web-runtime] gap repair failed:', error)

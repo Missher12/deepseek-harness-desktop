@@ -207,7 +207,7 @@ describe('open', () => {
     expect(snapshot.turnEnds.get(3)).toBe(15)
   })
 
-  it('installs the all-history prompt index and updates its completion from live events', async () => {
+  it('installs the prompt index and appends opening and steering anchors from live events', async () => {
     const { api, session } = makeSession()
     api.onHistory = () => histResponse(plainTurn(0, 1, '问', '答'), true, [{
       seq: 1,
@@ -215,11 +215,10 @@ describe('open', () => {
       time: 1_700_000_000_001,
       kind: 'turn-opening',
       preview: '问',
-      completed: true,
     }])
     await session.open()
     expect(session.getSnapshot()).toMatchObject({
-      promptAnchors: [{ seq: 1, turn: 1, kind: 'turn-opening', completed: true }],
+      promptAnchors: [{ seq: 1, turn: 1, kind: 'turn-opening', preview: '问' }],
     })
 
     session.handleMuxEnvelope('r6' as never, {
@@ -228,19 +227,14 @@ describe('open', () => {
     session.handleMuxEnvelope('r7' as never, {
       type: 'session/event', sessionId: SID, event: ev.user(7, '新问题'),
     })
-    expect(session.getSnapshot()).toMatchObject({
-      promptAnchors: [
-        { seq: 1, turn: 1, kind: 'turn-opening', completed: true },
-        { seq: 7, turn: 2, kind: 'turn-opening', preview: '新问题', completed: false },
-      ],
-    })
     session.handleMuxEnvelope('r8' as never, {
-      type: 'session/event', sessionId: SID, event: ev.turnEnd(8, 2),
+      type: 'session/event', sessionId: SID, event: ev.user(8, '补充说明'),
     })
     expect(session.getSnapshot()).toMatchObject({
       promptAnchors: [
-        { seq: 1, completed: true },
-        { seq: 7, completed: true },
+        { seq: 1, turn: 1, kind: 'turn-opening', preview: '问' },
+        { seq: 7, turn: 2, kind: 'turn-opening', preview: '新问题' },
+        { seq: 8, turn: 2, kind: 'steering', preview: '补充说明' },
       ],
     })
   })
@@ -438,8 +432,8 @@ describe('paging', () => {
     const { api, session } = makeSession()
     api.onHistory = payload => payload.beforeSeq === undefined
       ? histResponse(newer, true, [
-        { seq: 1, turn: 0, time: 1, kind: 'turn-opening', preview: '旧问', completed: true },
-        { seq: 7, turn: 1, time: 7, kind: 'turn-opening', preview: '新问', completed: true },
+        { seq: 1, turn: 0, time: 1, kind: 'turn-opening', preview: '旧问' },
+        { seq: 7, turn: 1, time: 7, kind: 'turn-opening', preview: '新问' },
       ])
       : histResponse(older, false)
 
@@ -451,7 +445,7 @@ describe('paging', () => {
     })
   })
 
-  it('reveals an exact historical seq by paging backwards serially until it is in-window', async () => {
+  it('reveals an exact historical seq through one serialized paging chain', async () => {
     const page0 = plainTurn(0, 0, '最早', '答')
     const page1 = plainTurn(6, 1, '中间', '答')
     const page2 = plainTurn(12, 2, '最新', '答')

@@ -14,8 +14,6 @@
 - text: Explain event sourcing in one sentence. {{clock}}
 - button "Copy":
   - img
-- button "Edit and continue from here" [disabled]:
-  - img
 - button "Context injection @deepseek-ai/dsh-system-prompt":
   - img
   - img

@@ -12,8 +12,6 @@
 - text: "Use the bash tool to run exactly: echo WEB_E2E_OK. Then reply with the single word DONE and stop. {{clock}}"
 - button "Copy":
   - img
-- button "Edit and continue from here":
-  - img
 - button "Context injection @deepseek-ai/dsh-system-prompt":
   - img
   - img

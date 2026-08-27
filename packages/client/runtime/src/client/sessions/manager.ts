@@ -610,14 +610,13 @@ export class SessionManager {
    * @returns the fork result (the child session id).
    */
   async fork(
-    opts: { sessionId: SessionId; atSeq?: number; position?: 'through-turn' | 'before-turn' },
+    opts: { sessionId: SessionId; atSeq?: number },
   ): Promise<RpcResult<{ sessionId: SessionId }>> {
     try {
       const source = this.summaries.find(s => s.sessionId === opts.sessionId)
       const { result } = await this.api.sessions.fork({
         sessionId: opts.sessionId,
         ...opts.atSeq === undefined ? {} : { atSeq: opts.atSeq },
-        ...opts.position === undefined ? {} : { position: opts.position },
       })
       const childId = result.ok
         ? result.value.sessionId

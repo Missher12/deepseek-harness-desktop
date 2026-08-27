@@ -7,7 +7,7 @@ import {
 import { z } from 'zod'
 import {
   contentBlockSchema, sessionCancelRequestSchema, sessionCancelValueSchema, sessionCreateRequestSchema,
-  sessionCreateValueSchema, sessionEventSchema, sessionForkRequestSchema, sessionHistoryRequestSchema, sessionHistoryValueSchema,
+  sessionCreateValueSchema, sessionEventSchema, sessionHistoryRequestSchema, sessionHistoryValueSchema,
   sessionIdSchema, sessionListRequestSchema, sessionListValueSchema, sessionModelsRequestSchema,
   sessionModelsValueSchema, sessionPromptRequestSchema, sessionPromptValueSchema,
   sessionSearchRequestSchema, sessionSearchValueSchema, sessionSelectModelRequestSchema,
@@ -43,6 +43,7 @@ import {
   settingsPersonalizationWriteRequestSchema,
   settingsPersonalizationWriteValueSchema,
 } from '../src/api/settings.schema.ts'
+import { discoveredModelViewSchema } from '../src/api/llm.schema.ts'
 
 describe('RpcId', () => {
   it('brands a raw string at zero runtime cost', () => {
@@ -87,6 +88,15 @@ describe('personalization settings schemas', () => {
     expect(() => settingsPersonalizationWriteRequestSchema.parse({
       instructions: 'x'.repeat(49_153), style: 'default', expectedRevision: revision,
     })).toThrow()
+  })
+})
+
+describe('model discovery schemas', () => {
+  it('carries only recognized explicit input modalities', () => {
+    const model = { id: 'vision', inputModalities: ['text', 'image'] } as const
+    expect(discoveredModelViewSchema.parse(model)).toEqual(model)
+    expect(() => discoveredModelViewSchema.parse({ id: 'audio', inputModalities: ['audio'] })).toThrow()
+    expect(() => discoveredModelViewSchema.parse({ id: 'empty', inputModalities: [] })).toThrow()
   })
 })
 
@@ -237,16 +247,30 @@ describe('sessions domain schemas', () => {
       events: [],
       hasMore: false,
       promptAnchors: [{
-        seq: 0, turn: 0, time: 1, kind: 'turn-opening', preview: 'legacy first prompt', completed: true,
+        seq: 1,
+        turn: 1,
+        time: 10,
+        kind: 'turn-opening',
+        preview: 'first',
       }],
-      modelSelection: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
-    }).promptAnchors?.[0]?.turn).toBe(0)
-    expect(sessionForkRequestSchema.parse({
-      sessionId: 's1', atSeq: 2, position: 'before-turn',
-    }).position).toBe('before-turn')
-    expect(() => sessionForkRequestSchema.parse({
-      sessionId: 's1', atSeq: 2, position: 'after-message',
-    })).toThrow()
+    }).promptAnchors).toEqual([{
+      seq: 1,
+      turn: 1,
+      time: 10,
+      kind: 'turn-opening',
+      preview: 'first',
+    }])
+    expect(() => sessionHistoryValueSchema.parse({
+      events: [],
+      hasMore: false,
+      promptAnchors: [{
+        seq: 1,
+        turn: 1,
+        time: 10,
+        kind: 'turn-opening',
+        preview: '鲸'.repeat(49),
+      }],
+    })).toThrow(/at most 48/)
     expect(sessionModelsRequestSchema.parse({ sessionId: 's1' }).sessionId).toBe('s1')
     expect(sessionModelsValueSchema.parse({
       current: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max' },

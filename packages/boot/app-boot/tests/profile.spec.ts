@@ -351,4 +351,47 @@ describe('healProfilesModuleFallback', () => {
     expect(healProfilesModuleFallbackCached(anchor, home, '0.4.1')).toBe('rebuilt')
     expect(readlinkSync(link)).toBe(dirname(anchor))
   })
+
+  it('treats malformed, oversized, and partially missing Desktop caches as misses', () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+    const home = tmp()
+    const cachePath = join(home, 'profiles', '.module-fallback-cache.json')
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.2')).toBe('rebuilt')
+
+    const valid = JSON.parse(readFileSync(cachePath, 'utf8')) as Record<string, unknown>
+    const links = valid.links as Array<Record<string, unknown>>
+    const link = links[0] ?? {}
+    const miss = (value: unknown): void => {
+      writeFileSync(cachePath, JSON.stringify(value))
+      expect(healProfilesModuleFallbackCached(anchor, home, '0.4.2')).toBe('rebuilt')
+    }
+
+    miss(null)
+    miss({ ...valid, format: 2 })
+    miss({ ...valid, installKey: 'another-install' })
+    miss({ ...valid, installAnchor: `${anchor}.moved` })
+    miss({ ...valid, rootManifestSha256: '0'.repeat(64) })
+    miss({ ...valid, links: null })
+    miss({ ...valid, links: Array.from({ length: 4097 }, () => link) })
+    miss({ ...valid, links: [null] })
+
+    for (const packageName of ['', 'bad\\name', 'bad\0name', '@scope', '@/pkg', '@scope/..', 'bad/name', '.', '..']) {
+      miss({ ...valid, links: [{ ...link, packageName }] })
+    }
+    miss({ ...valid, links: [{ ...link, packageName: '@scope/pkg' }] })
+    miss({ ...valid, links: [{ ...link, target: 'relative-target' }] })
+    miss({ ...valid, links: [{ ...link, manifestSha256: null }] })
+    miss({ ...valid, links: [{ ...link, manifestSha256: 'not-a-sha' }] })
+
+    writeFileSync(cachePath, 'x'.repeat(4 * 1024 * 1024 + 1))
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.2')).toBe('rebuilt')
+
+    const fallbackLink = join(home, 'profiles', 'node_modules', 'dsh-app')
+    unlinkSync(fallbackLink)
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.2')).toBe('rebuilt')
+
+    rmSync(fallbackLink)
+    mkdirSync(fallbackLink)
+    expect(() => healProfilesModuleFallbackCached(anchor, home, '0.4.2')).toThrow('is not a symlink')
+  })
 })

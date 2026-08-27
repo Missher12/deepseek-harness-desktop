@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import {
-  IconBranchOutline16, IconCheckOutline16, IconCopyOutline16, IconEditOutline16, Tooltip, writeClipboard,
+  IconBranchOutline16, IconCheckOutline16, IconCopyOutline16, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { formatLatencySeconds, formatMessageClock, formatRunDuration, formatTokensPerSecond } from './message-chrome.ts'
@@ -27,10 +27,6 @@ export interface MessageIconActionsProps {
   onBranch?: (() => void) | undefined
   /** The message is not a completed transcript tail, so branch stays visible but unavailable. */
   branchUnavailable?: boolean | undefined
-  /** Edit this historical human prompt into a safe child-session draft. */
-  onEdit?: (() => Promise<void>) | undefined
-  /** The owning turn is running, incomplete, steering, or otherwise unsafe. */
-  editUnavailable?: boolean | undefined
   /** Parent layout class composed onto the actions row. */
   className?: string | undefined
   /**
@@ -49,21 +45,18 @@ export interface MessageIconActionsProps {
  */
 export function MessageIconActions({
   text, time, runMs, ttftMs, tokensPerSecond, clock, onBranch, branchUnavailable = false, className,
-  onEdit, editUnavailable = false, extraActions, t,
+  extraActions, t,
 }: MessageIconActionsProps) {
   const day = useCalendarDay()
   const reasonId = useId()
   // Same success chrome as CodeBlock: a short check swap after the write,
   // gated so re-clicks during the window neither re-copy nor stack timers.
   const [copied, setCopied] = useState(false)
-  const [editPending, setEditPending] = useState(false)
   const copyPending = useRef(false)
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const copyEpoch = useRef(0)
-  const editEpoch = useRef(0)
   useEffect(() => () => {
     copyEpoch.current += 1
-    editEpoch.current += 1
     copyPending.current = false
     if (copyTimer.current !== null) clearTimeout(copyTimer.current)
   }, [])
@@ -82,16 +75,6 @@ export function MessageIconActions({
       }, 1000)
     })
   }, [copied, text])
-  const onEditClick = useCallback(() => {
-    if (onEdit === undefined || editUnavailable || editPending) return
-    const epoch = editEpoch.current
-    setEditPending(true)
-    void onEdit()
-      .catch(() => undefined)
-      .finally(() => {
-        if (epoch === editEpoch.current) setEditPending(false)
-      })
-  }, [editPending, editUnavailable, onEdit])
   // The dot is decorative and stays hidden, but its margins separate the
   // readings only on screen: without the flanking spaces a reader hears one
   // run-on string ("Ran for 13sTTFT 0.2s12 tok/s") instead of three facts.
@@ -133,21 +116,6 @@ export function MessageIconActions({
         </button>
       </Tooltip>
       {extraActions}
-      {onEdit !== undefined && (
-        <Tooltip label={editUnavailable ? t('message.editUnavailable') : t('message.editFrom')} side="bottom">
-          <button
-            type="button"
-            className={css.action}
-            aria-label={t('message.editFrom')}
-            aria-disabled={editUnavailable || editPending || undefined}
-            aria-busy={editPending || undefined}
-            data-unavailable={editUnavailable || undefined}
-            onClick={onEditClick}
-          >
-            <IconEditOutline16 />
-          </button>
-        </Tooltip>
-      )}
       {onBranch !== undefined && (
         <Tooltip label={branchUnavailable ? t('message.branchUnavailable') : t('message.branch')} side="bottom">
           {/* Native disabled buttons do not deliver the hover/focus events Tooltip needs. */}

@@ -436,7 +436,7 @@ export const EMPTY_CHAT_SNAPSHOT: ChatSnapshot = {
 /** The immutable snapshot contract Session hands to uSES (see the web client architecture RFC). */
 export interface ConversationSnapshot {
   sessionId: SessionId
-  /** Lightweight all-history human-prompt index used by the right-side rail. */
+  /** Lightweight all-history human-prompt index used by the transcript rail. */
   promptAnchors?: readonly PromptAnchor[]
   /** Registered target snapshots assembled from Session events. */
   views: ConversationViewSnapshotStore
