@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { useEffect } from 'react'
+import { startTransition, useEffect } from 'react'
 import type {
   AssistantMessageNode, CommandNode, CompactionSummaryNode, ConversationNode, ConversationSnapshot,
   ModelRetryNode, RunningToolCall, SessionId, SessionListState, ToolCallBlock, ToolResultNode, TurnErrorNode,
@@ -821,6 +821,124 @@ describe('ChatView', () => {
     })
 
     expect(document.activeElement).toBe(view.getByRole('button', { name: '发言导航（2 / 3）' }))
+  })
+
+  it('does not steal composer focus when a pending desktop-to-compact handoff commits', () => {
+    let compact = false
+    const listeners = new Set<(event: MediaQueryListEvent) => void>()
+    vi.stubGlobal('matchMedia', () => ({
+      get matches() { return compact },
+      media: '(max-width: 860px)',
+      addEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.add(listener) },
+      removeEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.delete(listener) },
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(
+      <>
+        <button type="button">会话输入框</button>
+        <PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />
+      </>,
+    )
+    const composer = view.getByRole('button', { name: '会话输入框' })
+    const marks = view.container.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')
+
+    marks[1]!.focus()
+    compact = true
+    act(() => {
+      for (const listener of listeners) listener(new Event('change') as MediaQueryListEvent)
+      composer.focus()
+    })
+
+    expect(document.activeElement).toBe(composer)
+  })
+
+  it('does not steal composer focus when a pending compact-to-desktop handoff commits', () => {
+    let compact = true
+    const listeners = new Set<(event: MediaQueryListEvent) => void>()
+    vi.stubGlobal('matchMedia', () => ({
+      get matches() { return compact },
+      media: '(max-width: 860px)',
+      addEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.add(listener) },
+      removeEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.delete(listener) },
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(
+      <>
+        <button type="button">会话输入框</button>
+        <PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />
+      </>,
+    )
+    const composer = view.getByRole('button', { name: '会话输入框' })
+    const trigger = view.getByRole('button', { name: '发言导航（2 / 3）' })
+
+    trigger.focus()
+    compact = false
+    act(() => {
+      for (const listener of listeners) listener(new Event('change') as MediaQueryListEvent)
+      composer.focus()
+    })
+
+    expect(document.activeElement).toBe(composer)
+  })
+
+  it('keeps a pending handoff until its target mode commits after an old-mode roving update', async () => {
+    let compact = false
+    const listeners = new Set<(event: MediaQueryListEvent) => void>()
+    vi.stubGlobal('matchMedia', () => ({
+      get matches() { return compact },
+      media: '(max-width: 860px)',
+      addEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.add(listener) },
+      removeEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.delete(listener) },
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(<PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />)
+    const marks = view.container.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')
+
+    marks[1]!.focus()
+    compact = true
+    startTransition(() => {
+      for (const listener of listeners) listener(new Event('change') as MediaQueryListEvent)
+    })
+    marks[0]!.focus()
+    expect(view.container.querySelectorAll('[data-prompt-rail-mark]')).toHaveLength(3)
+
+    await act(async () => {})
+
+    expect(document.activeElement).toBe(view.getByRole('button', { name: '发言导航（2 / 3）' }))
+  })
+
+  it('cancels a pending handoff when media returns to its committed mode before commit', async () => {
+    let compact = false
+    const listeners = new Set<(event: MediaQueryListEvent) => void>()
+    vi.stubGlobal('matchMedia', () => ({
+      get matches() { return compact },
+      media: '(max-width: 860px)',
+      addEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.add(listener) },
+      removeEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.delete(listener) },
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(<PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />)
+    const marks = view.container.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')
+
+    marks[1]!.focus()
+    act(() => {
+      compact = true
+      for (const listener of listeners) listener(new Event('change') as MediaQueryListEvent)
+      compact = false
+      for (const listener of listeners) listener(new Event('change') as MediaQueryListEvent)
+    })
+    await act(async () => {})
+
+    expect(view.container.querySelectorAll('[data-prompt-rail-mark]')).toHaveLength(3)
+    expect(document.activeElement).toBe(marks[1])
   })
 
   it('does not move transcript focus into the desktop rail as the viewport expands', () => {

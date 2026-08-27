@@ -72,6 +72,8 @@ export interface PromptRailProps {
 
 const COMPACT_PROMPT_RAIL_QUERY = '(max-width: 860px)'
 
+type PendingModeFocus = 'compact-trigger' | 'desktop-mark'
+
 /** Replace the dense desktop ruler with compact navigation on narrow layouts. */
 function useCompactPromptRail(
   onBeforeModeChange?: (nextCompact: boolean, willChangeCommittedMode: boolean) => void,
@@ -110,15 +112,23 @@ function useCompactPromptRail(
 
 interface PromptRailReplacementFocusSnapshotProps {
   readonly anchors: readonly PromptAnchor[]
+  readonly compact: boolean
   readonly onBeforeAnchorReplacement: (ownsRailFocus: boolean) => void
+  readonly onBeforeModeCommit: (nextCompact: boolean, ownsRailFocus: boolean) => void
   readonly railRef: RefObject<HTMLElement | null>
 }
 
-/** Capture ownership before a replacement can unmount a focused keyed mark. */
+/** Capture ownership before a replacement or mode switch can remove its focused control. */
 class PromptRailReplacementFocusSnapshot extends Component<PromptRailReplacementFocusSnapshotProps> {
   override getSnapshotBeforeUpdate(previousProps: Readonly<PromptRailReplacementFocusSnapshotProps>): null {
     if (previousProps.anchors !== this.props.anchors) {
       this.props.onBeforeAnchorReplacement(
+        this.props.railRef.current?.contains(document.activeElement) === true,
+      )
+    }
+    if (previousProps.compact !== this.props.compact) {
+      this.props.onBeforeModeCommit(
+        this.props.compact,
         this.props.railRef.current?.contains(document.activeElement) === true,
       )
     }
@@ -139,7 +149,7 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
   const compactPopoverRef = useRef<HTMLDivElement>(null)
   const markRefs = useRef(new Map<number, HTMLButtonElement>())
   const railRef = useRef<HTMLElement>(null)
-  const pendingModeFocusRef = useRef<'compact-trigger' | 'desktop-mark' | null>(null)
+  const pendingModeFocusRef = useRef<PendingModeFocus | null>(null)
   const replacementOwnedRailFocusRef = useRef(false)
   const previousAnchorsRef = useRef<readonly PromptAnchor[] | null>(null)
   const compact = useCompactPromptRail((nextCompact, willChangeCommittedMode) => {
@@ -181,13 +191,14 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
   useLayoutEffect(() => {
     if (!compact) setCompactOpen(false)
     const pendingModeFocus = pendingModeFocusRef.current
-    pendingModeFocusRef.current = null
     if (!canRenderRail) return
-    if (pendingModeFocus === 'compact-trigger' && compact) {
+    if (pendingModeFocus === null || (pendingModeFocus === 'compact-trigger') !== compact) return
+    pendingModeFocusRef.current = null
+    if (pendingModeFocus === 'compact-trigger') {
       compactTriggerRef.current?.focus()
       return
     }
-    if (pendingModeFocus === 'desktop-mark' && !compact && focusedSeq !== null) {
+    if (focusedSeq !== null) {
       markRefs.current.get(focusedSeq)?.focus()
     }
   }, [canRenderRail, compact, focusedSeq])
@@ -271,8 +282,17 @@ export function PromptRail({ anchors, activeSeq, onActivate, t }: PromptRailProp
     >
       <PromptRailReplacementFocusSnapshot
         anchors={anchors}
+        compact={compact}
         railRef={railRef}
         onBeforeAnchorReplacement={(ownsRailFocus) => { replacementOwnedRailFocusRef.current = ownsRailFocus }}
+        onBeforeModeCommit={(nextCompact, ownsRailFocus) => {
+          const pendingModeFocus = pendingModeFocusRef.current
+          if (
+            pendingModeFocus === null
+            || (pendingModeFocus === 'compact-trigger') !== nextCompact
+            || !ownsRailFocus
+          ) pendingModeFocusRef.current = null
+        }}
       />
       {!compact && (
         <div
