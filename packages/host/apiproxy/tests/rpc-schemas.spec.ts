@@ -43,6 +43,7 @@ import {
   settingsPersonalizationWriteRequestSchema,
   settingsPersonalizationWriteValueSchema,
 } from '../src/api/settings.schema.ts'
+import { discoveredModelViewSchema } from '../src/api/llm.schema.ts'
 
 describe('RpcId', () => {
   it('brands a raw string at zero runtime cost', () => {
@@ -87,6 +88,15 @@ describe('personalization settings schemas', () => {
     expect(() => settingsPersonalizationWriteRequestSchema.parse({
       instructions: 'x'.repeat(49_153), style: 'default', expectedRevision: revision,
     })).toThrow()
+  })
+})
+
+describe('model discovery schemas', () => {
+  it('carries only recognized explicit input modalities', () => {
+    const model = { id: 'vision', inputModalities: ['text', 'image'] } as const
+    expect(discoveredModelViewSchema.parse(model)).toEqual(model)
+    expect(() => discoveredModelViewSchema.parse({ id: 'audio', inputModalities: ['audio'] })).toThrow()
+    expect(() => discoveredModelViewSchema.parse({ id: 'empty', inputModalities: [] })).toThrow()
   })
 })
 
