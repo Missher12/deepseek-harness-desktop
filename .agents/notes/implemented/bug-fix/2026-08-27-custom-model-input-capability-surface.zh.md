@@ -14,7 +14,7 @@ pi-ai 适配器已经接受显式的逐模型输入模态，但 Models 页面无
 
 每个 pi-ai 模型的高级详情都会公开一个包含三种状态的输入能力选择器。自动会省略 `input`，保留既有的“条目 → catalog → 路由”回退。仅文本会存储 `input: [text]`。文本和图片会存储 `input: [text, image]`。精选表单以外的既有字段会在无关编辑中保留，过去手写的未知值在用户主动修改该选择器之前也保持不变。
 
-模型发现会从 OpenAI 兼容列表响应的显式 `input_modalities`、`modalities` 或 `architecture.input_modalities` 声明以及已安装 pi-ai catalog 传递能力。它只接受已知的 `text` 与 `image`，按来源顺序去重，并忽略空、格式错误或未知的声明。界面会把发现到的声明采纳到新选择的模型，但不会覆盖已配置的既有行。
+模型发现会从 OpenAI 兼容列表响应的显式 `input_modalities`、`modalities` 或 `architecture.input_modalities` 声明以及已安装 pi-ai catalog 传递能力。它只接受已知的 `text` 与 `image`，按来源顺序去重，并忽略空、格式错误或未知的声明。Host 线视图会保留运行时的只读模态契约；界面会把采纳的声明复制到新选择的模型，但不会覆盖已配置的既有行。
 
 图片支持绝不会根据模型 id 或显示名称推断。即使模型名为 `vision`，在 catalog、路由默认值、端点响应或用户显式选择声明能力之前仍属于未知。
 

@@ -88,5 +88,5 @@ export interface DiscoveredModelView {
   /** Maximum output tokens, when disclosed. */
   maxTokens?: number
   /** Explicit accepted request modalities, when disclosed. */
-  inputModalities?: ModelModality[]
+  inputModalities?: readonly ModelModality[]
 }

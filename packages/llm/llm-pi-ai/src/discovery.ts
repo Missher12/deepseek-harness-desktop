@@ -85,7 +85,7 @@ function inputModalities(...candidates: readonly unknown[]): ModelModality[] | u
   for (const candidate of candidates) {
     if (!Array.isArray(candidate)) continue
     const modalities: ModelModality[] = []
-    for (const raw of candidate) {
+    for (const raw of candidate as readonly unknown[]) {
       if (raw !== 'text' && raw !== 'image') continue
       if (!modalities.includes(raw)) modalities.push(raw)
     }

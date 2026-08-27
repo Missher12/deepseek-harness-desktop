@@ -14,7 +14,7 @@ This note supersedes only the earlier decision that no configuration surface edi
 
 Each pi-ai model's advanced details expose one input-capability selector with three states. Automatic omits `input` and preserves the existing entry → catalog → route fallback. Text only stores `input: [text]`. Text and images stores `input: [text, image]`. Existing fields outside the curated form survive unrelated edits, and previously hand-written unknown values remain untouched until the user changes this selector.
 
-Model discovery carries explicit `input_modalities`, `modalities`, or `architecture.input_modalities` declarations from OpenAI-compatible list responses and the installed pi-ai catalog. It accepts only the known `text` and `image` values, deduplicates them in source order, and ignores empty, malformed, or unknown declarations. The UI adopts a discovered declaration into a newly selected model but does not overwrite an existing configured row.
+Model discovery carries explicit `input_modalities`, `modalities`, or `architecture.input_modalities` declarations from OpenAI-compatible list responses and the installed pi-ai catalog. It accepts only the known `text` and `image` values, deduplicates them in source order, and ignores empty, malformed, or unknown declarations. The Host wire view preserves the runtime's read-only modality contract, and the UI clones an adopted declaration into a newly selected model without overwriting an existing configured row.
 
 No model id or display name is used to infer image support. A model called `vision` remains unknown unless its catalog, route default, endpoint response, or explicit user choice declares the capability.
 
