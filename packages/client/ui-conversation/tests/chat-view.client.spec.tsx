@@ -564,6 +564,61 @@ describe('ChatView', () => {
     expect(view.container.querySelectorAll('[data-active]')).toHaveLength(1)
   })
 
+  it('keeps one prompt mark in the tab order and roves focus without navigating until activation', () => {
+    const promptAnchors = promptRailAnchors(4)
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(<PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />)
+    const rail = view.getByRole('navigation', { name: '过往发言' })
+    const marks = [...rail.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')]
+
+    expect(marks.map(mark => mark.tabIndex)).toEqual([-1, 0, -1, -1])
+    marks[1]!.focus()
+    fireEvent.keyDown(marks[1]!, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(marks[2])
+    expect(marks.map(mark => mark.tabIndex)).toEqual([-1, -1, 0, -1])
+    expect(onActivate).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(marks[2]!, { key: 'Home' })
+    expect(document.activeElement).toBe(marks[0])
+    fireEvent.keyDown(marks[0]!, { key: 'End' })
+    expect(document.activeElement).toBe(marks[3])
+    fireEvent.keyDown(marks[3]!, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(marks[2])
+    expect(onActivate).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(marks[2]!, { key: 'Enter' })
+    fireEvent.keyDown(marks[2]!, { key: ' ' })
+    expect(onActivate.mock.calls).toEqual([[promptAnchors[2]!.seq], [promptAnchors[2]!.seq]])
+  })
+
+  it('opens a localized compact prompt list and returns focus after Escape', () => {
+    const listeners = new Set<(event: MediaQueryListEvent) => void>()
+    vi.stubGlobal('matchMedia', () => ({
+      matches: true,
+      media: '(max-width: 860px)',
+      addEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.add(listener) },
+      removeEventListener: (_type: 'change', listener: (event: MediaQueryListEvent) => void) => { listeners.delete(listener) },
+    }))
+    const promptAnchors = promptRailAnchors(3)
+    const t = makeTranslate(zh, commonZh)
+    const onActivate = vi.fn()
+    const view = render(<PromptRail anchors={promptAnchors} activeSeq={promptAnchors[1]!.seq} onActivate={onActivate} t={t} />)
+    const trigger = view.getByRole('button', { name: '发言导航（2 / 3）' })
+
+    fireEvent.click(trigger)
+    const dialog = view.getByRole('dialog', { name: '发言导航' })
+    expect(within(dialog).getByRole('list')).toBeTruthy()
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(view.queryByRole('dialog', { name: '发言导航' })).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+
+    fireEvent.click(trigger)
+    fireEvent.click(within(view.getByRole('dialog')).getByRole('button', { name: '转到第 1 条发言：发言 1' }))
+    expect(onActivate.mock.calls).toEqual([[promptAnchors[0]!.seq]])
+    expect(view.queryByRole('dialog')).toBeNull()
+  })
+
   it('reports an unavailable historical prompt without changing the transcript', async () => {
     const h = makeHarness({
       nodes: [user(7, '仍保留')],
