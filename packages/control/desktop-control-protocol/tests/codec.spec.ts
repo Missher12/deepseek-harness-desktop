@@ -78,6 +78,50 @@ describe('closed protocol manifest', () => {
     expect(Object.isFrozen(CONTROL_KINDS)).toBe(true)
   })
 
+  it('publishes every wire acceptance limit exactly once', () => {
+    expect(PROTOCOL_LIMITS).toEqual({
+      semanticTextBytes: 49_152,
+      jsonPayloadBytes: 65_536,
+      jsonFrameBytes: 65_537,
+      pngBytes: 4_194_304,
+      pngFrameBytes: 4_194_321,
+      outerFrameBytes: 4_194_321,
+      errorMessageBytes: 512,
+      sessionIdBytes: 128,
+      identifierBytes: 64,
+      sha256Bytes: 64,
+      appIdBytes: 256,
+      windowIdBytes: 256,
+      agentIdBytes: 256,
+      urlBytes: 8_192,
+      keyBytes: 64,
+      selectValueBytes: 8_192,
+      semanticRoleBytes: 128,
+      semanticNameBytes: 1_024,
+      appNameBytes: 256,
+      windowTitleBytes: 1_024,
+      browserTitleBytes: 2_048,
+      surfaceIdBytes: 256,
+      stringListItemBytes: 256,
+      maxSafeInteger: Number.MAX_SAFE_INTEGER,
+      maxStringListItems: 64,
+      maxModifiers: 4,
+      maxCoordinate: 1_000_000,
+      maxWaitDurationMs: 10_000,
+      maxLeaseCapabilities: 3,
+      maxLeaseQuota: 1_000_000,
+      maxIdleExpiresAfterMs: 300_000,
+      maxHardExpiresAfterMs: 1_200_000,
+      maxPngDimension: 100_000,
+      maxSemanticRefs: 300,
+      maxGrantableApps: 128,
+      maxGrantableWindowsPerApp: 256,
+      maxDeadlineAheadMs: 30_000,
+      minHelperTimeoutMs: 1,
+      maxHelperTimeoutMs: 30_000,
+    })
+  })
+
   it('keeps brands non-interchangeable and reuses SessionId', () => {
     expectTypeOf<RequestId>().not.toEqualTypeOf<ControlLeaseId>()
     expectTypeOf<BrowserRef>().not.toEqualTypeOf<ComputerRef>()
@@ -93,6 +137,58 @@ describe('closed protocol manifest', () => {
     expectTypeOf<Extract<BridgeRequest, { requestKind: 'input.release' }>>().toBeNever()
     expectTypeOf<Extract<BridgeRequest, { requestKind: 'lease.install' }>>().toBeNever()
     expectTypeOf<Extract<HelperRequest, { requestKind: 'input.release' }>>().not.toBeNever()
+  })
+
+  it('rejects invalid wait and pointer combinations at the type boundary', () => {
+    type InvalidDurationWait = {
+      protocolVersion: 1
+      messageKind: 'request'
+      requestKind: 'browser.wait'
+      requestId: typeof REQUEST_ID
+      sessionId: typeof SESSION_ID
+      deadlineUnixMs: number
+      leaseId: typeof LEASE_ID
+      leaseRevision: number
+      mode: 'duration'
+    }
+    type InvalidPointer = {
+      protocolVersion: 1
+      messageKind: 'request'
+      requestKind: 'computer.click'
+      requestId: typeof REQUEST_ID
+      sessionId: typeof SESSION_ID
+      deadlineUnixMs: number
+      leaseId: typeof LEASE_ID
+      leaseRevision: number
+      appId: string
+      windowId: string
+      snapshotRevision: number
+      ref: typeof COMPUTER_REF
+      x: number
+      y: number
+      button: 'left'
+    }
+    type InvalidHelperPointer = {
+      protocolVersion: 1
+      messageKind: 'request'
+      requestKind: 'scroll'
+      requestId: typeof REQUEST_ID
+      sessionId: typeof SESSION_ID
+      timeoutMs: number
+      leaseId: typeof LEASE_ID
+      leaseRevision: number
+      appId: string
+      windowId: string
+      snapshotRevision: number
+      ref: typeof COMPUTER_REF
+      x: number
+      y: number
+      deltaX: number
+      deltaY: number
+    }
+    expectTypeOf<InvalidDurationWait>().not.toExtend<BridgeRequest>()
+    expectTypeOf<InvalidPointer>().not.toExtend<BridgeRequest>()
+    expectTypeOf<InvalidHelperPointer>().not.toExtend<HelperRequest>()
   })
 })
 
@@ -131,6 +227,12 @@ describe('strict JSON codec', () => {
     ['dangerous key', '{"protocolVersion":1,"messageKind":"request","requestKind":"desktop.status","requestId":"00000000-0000-4000-8000-000000000001","sessionId":"s","deadlineUnixMs":1,"__proto__":{}}'],
   ])('rejects %s before last-wins parsing', (_name, text) => {
     expect(() => decodeJsonFrame(jsonFrame(text))).toThrow(/duplicate|dangerous/i)
+  })
+
+  it('accepts only the four RFC 8259 whitespace bytes', () => {
+    const encoded = new TextDecoder().decode(encodeJsonFrame(statusRequest()).subarray(1))
+    expect(() => decodeJsonFrame(jsonFrame(`{\u00a0${encoded.slice(1)}`))).toThrow()
+    expect(() => decodeJsonFrame(jsonFrame(`{\t\r\n ${encoded.slice(1)}`))).not.toThrow()
   })
 
   it.each([
@@ -379,7 +481,7 @@ describe('published fixtures and forbidden vocabulary', () => {
   })
 
   it('contains no generic escape vocabulary in protocol source or manifest', async () => {
-    const files = ['brand.ts', 'bridge.ts', 'helper.ts', 'codec.ts', 'index.ts', '../protocol-v1.json']
+    const files = ['brand.ts', 'bridge.ts', 'helper.ts', 'fields.ts', 'codec.ts', 'index.ts', '../protocol-v1.json']
     const forbidden = [
       'command', 'script', 'selector', 'javascript', 'method', 'args', 'env',
       'cwd', 'path', 'channel', 'ipc', 'payload: unknown', 'data: unknown',

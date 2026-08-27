@@ -5,26 +5,72 @@ import {
   ERROR_CODES,
   PROTOCOL_VERSION,
 } from './bridge.ts'
+import {
+  BRIDGE_REQUEST_FIELDS,
+  CONTROL_FIELDS,
+  HELPER_REQUEST_FIELDS,
+  RESULT_FIELDS,
+} from './fields.ts'
 import { HELPER_REQUEST_KINDS } from './helper.ts'
 
-/** Fixed protocol size and duration limits. */
-export const PROTOCOL_LIMITS = Object.freeze({
-  semanticTextBytes: 49_152,
-  jsonPayloadBytes: 65_536,
-  jsonFrameBytes: 65_537,
-  pngBytes: 4_194_304,
-  pngFrameBytes: 4_194_321,
-  outerFrameBytes: 4_194_321,
-  errorMessageBytes: 512,
-  sessionIdBytes: 128,
-  maxDeadlineAheadMs: 30_000,
-  minHelperTimeoutMs: 1,
-  maxHelperTimeoutMs: 30_000,
-} as const)
+const LIMIT_NAMES = Object.freeze([
+  'semanticTextBytes', 'jsonPayloadBytes', 'jsonFrameBytes', 'pngBytes',
+  'pngFrameBytes', 'outerFrameBytes', 'errorMessageBytes', 'sessionIdBytes',
+  'identifierBytes', 'sha256Bytes', 'appIdBytes', 'windowIdBytes', 'agentIdBytes', 'urlBytes',
+  'keyBytes', 'selectValueBytes', 'semanticRoleBytes', 'semanticNameBytes',
+  'appNameBytes', 'windowTitleBytes', 'browserTitleBytes', 'surfaceIdBytes',
+  'stringListItemBytes', 'maxSafeInteger', 'maxStringListItems', 'maxModifiers', 'maxCoordinate',
+  'maxWaitDurationMs', 'maxLeaseCapabilities', 'maxLeaseQuota',
+  'maxIdleExpiresAfterMs', 'maxHardExpiresAfterMs', 'maxPngDimension',
+  'maxSemanticRefs', 'maxGrantableApps', 'maxGrantableWindowsPerApp',
+  'maxDeadlineAheadMs', 'minHelperTimeoutMs', 'maxHelperTimeoutMs',
+] as const)
+
+interface ProtocolLimits {
+  readonly semanticTextBytes: number
+  readonly jsonPayloadBytes: number
+  readonly jsonFrameBytes: number
+  readonly pngBytes: number
+  readonly pngFrameBytes: number
+  readonly outerFrameBytes: number
+  readonly errorMessageBytes: number
+  readonly sessionIdBytes: number
+  readonly identifierBytes: number
+  readonly sha256Bytes: number
+  readonly appIdBytes: number
+  readonly windowIdBytes: number
+  readonly agentIdBytes: number
+  readonly urlBytes: number
+  readonly keyBytes: number
+  readonly selectValueBytes: number
+  readonly semanticRoleBytes: number
+  readonly semanticNameBytes: number
+  readonly appNameBytes: number
+  readonly windowTitleBytes: number
+  readonly browserTitleBytes: number
+  readonly surfaceIdBytes: number
+  readonly stringListItemBytes: number
+  readonly maxSafeInteger: number
+  readonly maxStringListItems: number
+  readonly maxModifiers: number
+  readonly maxCoordinate: number
+  readonly maxWaitDurationMs: number
+  readonly maxLeaseCapabilities: number
+  readonly maxLeaseQuota: number
+  readonly maxIdleExpiresAfterMs: number
+  readonly maxHardExpiresAfterMs: number
+  readonly maxPngDimension: number
+  readonly maxSemanticRefs: number
+  readonly maxGrantableApps: number
+  readonly maxGrantableWindowsPerApp: number
+  readonly maxDeadlineAheadMs: number
+  readonly minHelperTimeoutMs: number
+  readonly maxHelperTimeoutMs: number
+}
 
 interface ProtocolManifest {
   readonly protocolVersion: number
-  readonly limits: object
+  readonly limits: ProtocolLimits
   readonly bridgeRequestKinds: readonly unknown[]
   readonly helperRequestKinds: readonly unknown[]
   readonly controlKinds: readonly unknown[]
@@ -74,6 +120,18 @@ function copiedObject(value: unknown, label: string): object {
   return Object.freeze(result)
 }
 
+function limitsValue(value: unknown): ProtocolLimits {
+  const limits = copiedObject(value, 'limits')
+  exactObjectKeys(limits, LIMIT_NAMES, 'limits')
+  for (const key of LIMIT_NAMES) {
+    const limit = own(limits, key)
+    if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || Object.is(limit, -0) || limit <= 0) {
+      throw new Error(`limit ${key} must be a positive safe integer`)
+    }
+  }
+  return limits as ProtocolLimits
+}
+
 function fieldSection(value: unknown, label: string): object {
   const source = objectValue(value, label)
   const result = {}
@@ -101,6 +159,17 @@ function exactObjectKeys(value: object, expected: readonly string[], label: stri
   if (!same(keys, sorted)) throw new Error(`${label} keys do not match the request roster`)
 }
 
+function exactFieldMatrix(actual: object, expected: object, label: string): void {
+  exactObjectKeys(actual, Object.keys(expected), label)
+  for (const key of Object.keys(expected)) {
+    const actualFields = own(actual, key)
+    const expectedFields = own(expected, key)
+    if (!Array.isArray(actualFields) || !Array.isArray(expectedFields) || !same(actualFields, expectedFields)) {
+      throw new Error(`${label} field matrix mismatch for ${key}`)
+    }
+  }
+}
+
 function parseManifest(value: unknown): ProtocolManifest {
   const root = objectValue(value, 'protocol manifest')
   const expectedRoot = [
@@ -111,7 +180,7 @@ function parseManifest(value: unknown): ProtocolManifest {
   exactObjectKeys(root, expectedRoot, 'protocol manifest')
   const manifest: ProtocolManifest = {
     protocolVersion: own(root, 'protocolVersion') as number,
-    limits: copiedObject(own(root, 'limits'), 'limits'),
+    limits: limitsValue(own(root, 'limits')),
     bridgeRequestKinds: stringArray(own(root, 'bridgeRequestKinds'), 'bridgeRequestKinds'),
     helperRequestKinds: stringArray(own(root, 'helperRequestKinds'), 'helperRequestKinds'),
     controlKinds: stringArray(own(root, 'controlKinds'), 'controlKinds'),
@@ -130,14 +199,14 @@ function assertParsedManifest(manifest: ProtocolManifest): void {
   if (!same(manifest.helperRequestKinds as readonly string[], HELPER_REQUEST_KINDS)) throw new Error('helper roster mismatch')
   if (!same(manifest.controlKinds as readonly string[], CONTROL_KINDS)) throw new Error('control roster mismatch')
   if (!same(manifest.errorCodes as readonly string[], ERROR_CODES)) throw new Error('error roster mismatch')
-  exactObjectKeys(manifest.limits, Object.keys(PROTOCOL_LIMITS), 'limits')
+  exactObjectKeys(manifest.limits, LIMIT_NAMES, 'limits')
   for (const [key, limit] of Object.entries(PROTOCOL_LIMITS)) {
     if (own(manifest.limits, key) !== limit) throw new Error(`limit mismatch for ${key}`)
   }
-  exactObjectKeys(manifest.bridgeRequestFields, BRIDGE_REQUEST_KINDS, 'bridge request fields')
-  exactObjectKeys(manifest.helperRequestFields, HELPER_REQUEST_KINDS, 'helper request fields')
-  exactObjectKeys(manifest.controlFields, CONTROL_KINDS, 'control fields')
-  exactObjectKeys(manifest.resultFields, [...BRIDGE_REQUEST_KINDS, ...HELPER_REQUEST_KINDS], 'result fields')
+  exactFieldMatrix(manifest.bridgeRequestFields, BRIDGE_REQUEST_FIELDS, 'bridge request fields')
+  exactFieldMatrix(manifest.helperRequestFields, HELPER_REQUEST_FIELDS, 'helper request fields')
+  exactFieldMatrix(manifest.controlFields, CONTROL_FIELDS, 'control fields')
+  exactFieldMatrix(manifest.resultFields, RESULT_FIELDS, 'result fields')
 }
 
 /**
@@ -150,6 +219,9 @@ export function validateProtocolManifest(value: unknown): void {
 
 /** Parsed machine-readable v1 manifest. */
 export const PROTOCOL_MANIFEST = parseManifest(loaded)
+
+/** Fixed wire acceptance limits read from the machine-readable manifest. */
+export const PROTOCOL_LIMITS: ProtocolLimits = PROTOCOL_MANIFEST.limits
 
 /** Assert that TypeScript rosters and limits match the machine-readable v1 manifest. */
 export function assertProtocolManifest(): void {

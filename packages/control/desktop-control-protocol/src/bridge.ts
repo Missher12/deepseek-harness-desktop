@@ -86,7 +86,10 @@ export type BrowserSelectRequest = BridgeRequestBase<'browser.select'> & LeaseFi
 /** Scroll the browser or one current semantic reference. */
 export type BrowserScrollRequest = BridgeRequestBase<'browser.scroll'> & LeaseFields & { readonly ref?: BrowserRef; readonly deltaX: number; readonly deltaY: number }
 /** Wait for a bounded browser condition. */
-export type BrowserWaitRequest = BridgeRequestBase<'browser.wait'> & LeaseFields & { readonly mode: 'duration' | 'navigation' | 'loading-idle'; readonly durationMs?: number }
+export type BrowserWaitRequest = BridgeRequestBase<'browser.wait'> & LeaseFields & (
+  | { readonly mode: 'duration'; readonly durationMs: number }
+  | { readonly mode: 'navigation' | 'loading-idle'; readonly durationMs?: never }
+)
 /** Move through browser history or refresh it. */
 export type BrowserNavigationRequest = BridgeRequestBase<'browser.back' | 'browser.forward' | 'browser.reload'> & LeaseFields
 /** Stop the active browser takeover for this session. */
@@ -100,7 +103,10 @@ export type ComputerSnapshotRequest = BridgeRequestBase<'computer.snapshot'> & T
 /** Focus one authorized application window. */
 export type ComputerFocusRequest = BridgeRequestBase<'computer.focus'> & TargetFields
 /** Click by semantic reference or model-eligible coordinates. */
-export type ComputerClickRequest = BridgeRequestBase<'computer.click' | 'computer.double-click'> & TargetFields & { readonly ref?: ComputerRef; readonly x?: number; readonly y?: number; readonly button: PointerButton }
+export type ComputerClickRequest = BridgeRequestBase<'computer.click' | 'computer.double-click'> & TargetFields & (
+  | { readonly ref: ComputerRef; readonly x?: never; readonly y?: never; readonly button: PointerButton }
+  | { readonly ref?: never; readonly x: number; readonly y: number; readonly button: PointerButton }
+)
 /** Drag between two coordinates in an authorized window. */
 export type ComputerDragRequest = BridgeRequestBase<'computer.drag'> & TargetFields & { readonly fromX: number; readonly fromY: number; readonly toX: number; readonly toY: number; readonly button: PointerButton }
 /** Enter text into an authorized accessibility element. */
@@ -108,7 +114,10 @@ export type ComputerTypeRequest = BridgeRequestBase<'computer.type'> & TargetFie
 /** Send one closed native key chord. */
 export type ComputerKeyRequest = BridgeRequestBase<'computer.key'> & TargetFields & { readonly key: string; readonly modifiers: readonly KeyModifier[] }
 /** Scroll an authorized window or accessibility element. */
-export type ComputerScrollRequest = BridgeRequestBase<'computer.scroll'> & TargetFields & { readonly ref?: ComputerRef; readonly x?: number; readonly y?: number; readonly deltaX: number; readonly deltaY: number }
+export type ComputerScrollRequest = BridgeRequestBase<'computer.scroll'> & TargetFields & (
+  | { readonly ref: ComputerRef; readonly x?: never; readonly y?: never; readonly deltaX: number; readonly deltaY: number }
+  | { readonly ref?: never; readonly x: number; readonly y: number; readonly deltaX: number; readonly deltaY: number }
+)
 /** Wait for a bounded native target interval. */
 export type ComputerWaitRequest = BridgeRequestBase<'computer.wait'> & TargetFields & { readonly durationMs: number }
 /** Stop all native control for this session. */

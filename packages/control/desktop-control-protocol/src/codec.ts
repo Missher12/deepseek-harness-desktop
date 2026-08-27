@@ -28,6 +28,12 @@ import {
   type HelperRequest,
   type HelperResultMap,
 } from './helper.ts'
+import {
+  BRIDGE_REQUEST_FIELDS,
+  CONTROL_FIELDS,
+  HELPER_REQUEST_FIELDS,
+  RESULT_FIELDS,
+} from './fields.ts'
 import { PROTOCOL_LIMITS } from './manifest.ts'
 
 const JSON_TAG = 0x01
@@ -93,7 +99,7 @@ function keys(value: object, required: readonly string[], optional: readonly str
   for (const key of required) if (!has(value, key)) fail(`missing field ${key}`)
 }
 
-function stringValue(value: unknown, label: string, maxBytes = 4_096, allowEmpty = false): string {
+function stringValue(value: unknown, label: string, maxBytes: number, allowEmpty = false): string {
   if (typeof value !== 'string' || (!allowEmpty && value.length === 0)) fail(`${label} must be a ${allowEmpty ? '' : 'non-empty '}string`)
   if (byteLength(value) > maxBytes) fail(`${label} exceeds ${maxBytes} UTF-8 bytes`)
   return value
@@ -104,7 +110,7 @@ function booleanValue(value: unknown, label: string): boolean {
   return value
 }
 
-function safeInteger(value: unknown, label: string, minimum = 0, maximum = Number.MAX_SAFE_INTEGER): number {
+function safeInteger(value: unknown, label: string, minimum = 0, maximum = PROTOCOL_LIMITS.maxSafeInteger): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || isNegativeZero(value) || value < minimum || value > maximum) {
     fail(`${label} must be a safe integer from ${minimum} through ${maximum}`)
   }
@@ -123,9 +129,9 @@ function literal<T extends string>(value: unknown, allowed: ReadonlySet<string>,
   return value as T
 }
 
-function stringList(value: unknown, label: string, maximum = 64): readonly string[] {
+function stringList(value: unknown, label: string, maximum = PROTOCOL_LIMITS.maxStringListItems): readonly string[] {
   if (!Array.isArray(value) || value.length > maximum) fail(`${label} must be a bounded array`)
-  return value.map((item, index) => stringValue(item, `${label}[${index}]`, 256))
+  return value.map((item, index) => stringValue(item, `${label}[${index}]`, PROTOCOL_LIMITS.stringListItemBytes))
 }
 
 function sessionId(value: unknown): SessionId {
@@ -133,14 +139,14 @@ function sessionId(value: unknown): SessionId {
 }
 
 function leaseFields(value: object): void {
-  ControlLeaseId(stringValue(at(value, 'leaseId'), 'leaseId', 64))
+  ControlLeaseId(stringValue(at(value, 'leaseId'), 'leaseId', PROTOCOL_LIMITS.identifierBytes))
   safeInteger(at(value, 'leaseRevision'), 'leaseRevision', 1)
 }
 
 function targetFields(value: object): void {
   leaseFields(value)
-  stringValue(at(value, 'appId'), 'appId', 256)
-  stringValue(at(value, 'windowId'), 'windowId', 256)
+  stringValue(at(value, 'appId'), 'appId', PROTOCOL_LIMITS.appIdBytes)
+  stringValue(at(value, 'windowId'), 'windowId', PROTOCOL_LIMITS.windowIdBytes)
   safeInteger(at(value, 'snapshotRevision'), 'snapshotRevision', 1)
 }
 
@@ -148,16 +154,16 @@ function pointerLocation(value: object): void {
   const refPresent = has(value, 'ref')
   const coordinatePresent = has(value, 'x') || has(value, 'y')
   if (refPresent === coordinatePresent) fail('exactly one semantic ref or coordinate pair is required')
-  if (refPresent) ComputerRef(stringValue(at(value, 'ref'), 'ref', 64))
+  if (refPresent) ComputerRef(stringValue(at(value, 'ref'), 'ref', PROTOCOL_LIMITS.identifierBytes))
   else {
     if (!has(value, 'x') || !has(value, 'y')) fail('x and y must appear together')
-    finiteNumber(at(value, 'x'), 'x', 0, 1_000_000)
-    finiteNumber(at(value, 'y'), 'y', 0, 1_000_000)
+    finiteNumber(at(value, 'x'), 'x', 0, PROTOCOL_LIMITS.maxCoordinate)
+    finiteNumber(at(value, 'y'), 'y', 0, PROTOCOL_LIMITS.maxCoordinate)
   }
 }
 
 function modifiers(value: unknown): void {
-  if (!Array.isArray(value) || value.length > 4) fail('modifiers must be a bounded array')
+  if (!Array.isArray(value) || value.length > PROTOCOL_LIMITS.maxModifiers) fail('modifiers must be a bounded array')
   const seen = new Set<string>()
   for (const item of value) {
     const modifier = literal<string>(item, MODIFIERS, 'modifier')
@@ -170,10 +176,48 @@ const REQUEST_BASE = ['protocolVersion', 'messageKind', 'requestKind', 'requestI
 const BRIDGE_BASE = [...REQUEST_BASE, 'deadlineUnixMs'] as const
 const HELPER_BASE = [...REQUEST_BASE, 'timeoutMs'] as const
 
+function matrixKeys(
+  value: object,
+  base: readonly string[],
+  fields: readonly string[],
+  optional: readonly string[] = [],
+): void {
+  const optionalSet = new Set(optional)
+  keys(value, [...base, ...fields.filter(field => !optionalSet.has(field))], optional)
+}
+
+function bridgeKeys(
+  value: object,
+  kind: typeof BRIDGE_REQUEST_KINDS[number],
+  optional: readonly string[] = [],
+): void {
+  matrixKeys(value, BRIDGE_BASE, BRIDGE_REQUEST_FIELDS[kind], optional)
+}
+
+function helperKeys(
+  value: object,
+  kind: typeof HELPER_REQUEST_KINDS[number],
+  optional: readonly string[] = [],
+): void {
+  matrixKeys(value, HELPER_BASE, HELPER_REQUEST_FIELDS[kind], optional)
+}
+
+function controlKeys(value: object, kind: typeof CONTROL_KINDS[number]): void {
+  matrixKeys(value, ['protocolVersion', 'messageKind', 'controlKind'], CONTROL_FIELDS[kind])
+}
+
+function resultKeys(
+  value: object,
+  kind: keyof DesktopControlResultMap | keyof HelperResultMap,
+  optional: readonly string[] = [],
+): void {
+  matrixKeys(value, [], RESULT_FIELDS[kind], optional)
+}
+
 function requestBase(value: object, bridge: boolean): void {
   if (at(value, 'protocolVersion') !== 1) fail('protocolVersion must be 1')
   if (at(value, 'messageKind') !== 'request') fail('messageKind must be request')
-  RequestId(stringValue(at(value, 'requestId'), 'requestId', 64))
+  RequestId(stringValue(at(value, 'requestId'), 'requestId', PROTOCOL_LIMITS.identifierBytes))
   sessionId(at(value, 'sessionId'))
   if (bridge) safeInteger(at(value, 'deadlineUnixMs'), 'deadlineUnixMs', 0)
   else safeInteger(at(value, 'timeoutMs'), 'timeoutMs', PROTOCOL_LIMITS.minHelperTimeoutMs, PROTOCOL_LIMITS.maxHelperTimeoutMs)
@@ -187,84 +231,84 @@ function validateBridgeRequest(value: object, kind: typeof BRIDGE_REQUEST_KINDS[
   requestBase(value, true)
   switch (kind) {
     case 'desktop.status': case 'browser.stop': case 'computer.status': case 'computer.list': case 'computer.stop':
-      keys(value, BRIDGE_BASE)
+      bridgeKeys(value, kind)
       break
     case 'browser.snapshot':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'includeImage'])
+      bridgeKeys(value, kind)
       browserLease(value); booleanValue(at(value, 'includeImage'), 'includeImage')
       break
     case 'browser.navigate':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'url'])
-      browserLease(value); stringValue(at(value, 'url'), 'url', 8_192)
+      bridgeKeys(value, kind)
+      browserLease(value); stringValue(at(value, 'url'), 'url', PROTOCOL_LIMITS.urlBytes)
       break
     case 'browser.click':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'ref'])
-      browserLease(value); BrowserRef(stringValue(at(value, 'ref'), 'ref', 64))
+      bridgeKeys(value, kind)
+      browserLease(value); BrowserRef(stringValue(at(value, 'ref'), 'ref', PROTOCOL_LIMITS.identifierBytes))
       break
     case 'browser.type':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'ref', 'text'])
-      browserLease(value); BrowserRef(stringValue(at(value, 'ref'), 'ref', 64)); stringValue(at(value, 'text'), 'text', PROTOCOL_LIMITS.semanticTextBytes, true)
+      bridgeKeys(value, kind)
+      browserLease(value); BrowserRef(stringValue(at(value, 'ref'), 'ref', PROTOCOL_LIMITS.identifierBytes)); stringValue(at(value, 'text'), 'text', PROTOCOL_LIMITS.semanticTextBytes, true)
       break
     case 'browser.key':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'key', 'modifiers'])
-      browserLease(value); stringValue(at(value, 'key'), 'key', 64); modifiers(at(value, 'modifiers'))
+      bridgeKeys(value, kind)
+      browserLease(value); stringValue(at(value, 'key'), 'key', PROTOCOL_LIMITS.keyBytes); modifiers(at(value, 'modifiers'))
       break
     case 'browser.select':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'ref', 'value'])
-      browserLease(value); BrowserRef(stringValue(at(value, 'ref'), 'ref', 64)); stringValue(at(value, 'value'), 'value', 8_192, true)
+      bridgeKeys(value, kind)
+      browserLease(value); BrowserRef(stringValue(at(value, 'ref'), 'ref', PROTOCOL_LIMITS.identifierBytes)); stringValue(at(value, 'value'), 'value', PROTOCOL_LIMITS.selectValueBytes, true)
       break
     case 'browser.scroll':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'deltaX', 'deltaY'], ['ref'])
+      bridgeKeys(value, kind, ['ref'])
       browserLease(value)
-      if (has(value, 'ref')) BrowserRef(stringValue(at(value, 'ref'), 'ref', 64))
-      finiteNumber(at(value, 'deltaX'), 'deltaX', -1_000_000, 1_000_000)
-      finiteNumber(at(value, 'deltaY'), 'deltaY', -1_000_000, 1_000_000)
+      if (has(value, 'ref')) BrowserRef(stringValue(at(value, 'ref'), 'ref', PROTOCOL_LIMITS.identifierBytes))
+      finiteNumber(at(value, 'deltaX'), 'deltaX', -PROTOCOL_LIMITS.maxCoordinate, PROTOCOL_LIMITS.maxCoordinate)
+      finiteNumber(at(value, 'deltaY'), 'deltaY', -PROTOCOL_LIMITS.maxCoordinate, PROTOCOL_LIMITS.maxCoordinate)
       break
     case 'browser.wait': {
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'mode'], ['durationMs'])
+      bridgeKeys(value, kind, ['durationMs'])
       browserLease(value)
       const mode = literal<string>(at(value, 'mode'), new Set(['duration', 'navigation', 'loading-idle']), 'mode')
-      if (mode === 'duration') safeInteger(at(value, 'durationMs'), 'durationMs', 0, 10_000)
+      if (mode === 'duration') safeInteger(at(value, 'durationMs'), 'durationMs', 0, PROTOCOL_LIMITS.maxWaitDurationMs)
       else if (has(value, 'durationMs')) fail('durationMs is only valid for duration waits')
       break
     }
     case 'browser.back': case 'browser.forward': case 'browser.reload':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision']); browserLease(value)
+      bridgeKeys(value, kind); browserLease(value)
       break
     case 'computer.snapshot':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'appId', 'windowId', 'snapshotRevision', 'includeImage'])
+      bridgeKeys(value, kind)
       targetFields(value); booleanValue(at(value, 'includeImage'), 'includeImage')
       break
     case 'computer.focus':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'appId', 'windowId', 'snapshotRevision']); targetFields(value)
+      bridgeKeys(value, kind); targetFields(value)
       break
     case 'computer.click': case 'computer.double-click':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'appId', 'windowId', 'snapshotRevision', 'button'], ['ref', 'x', 'y'])
+      bridgeKeys(value, kind, ['ref', 'x', 'y'])
       targetFields(value); pointerLocation(value); literal(at(value, 'button'), BUTTONS, 'button')
       break
     case 'computer.drag':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'appId', 'windowId', 'snapshotRevision', 'fromX', 'fromY', 'toX', 'toY', 'button'])
+      bridgeKeys(value, kind)
       targetFields(value)
-      for (const field of ['fromX', 'fromY', 'toX', 'toY']) finiteNumber(at(value, field), field, 0, 1_000_000)
+      for (const field of ['fromX', 'fromY', 'toX', 'toY']) finiteNumber(at(value, field), field, 0, PROTOCOL_LIMITS.maxCoordinate)
       literal(at(value, 'button'), BUTTONS, 'button')
       break
     case 'computer.type':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'appId', 'windowId', 'snapshotRevision', 'ref', 'text'])
-      targetFields(value); ComputerRef(stringValue(at(value, 'ref'), 'ref', 64)); stringValue(at(value, 'text'), 'text', PROTOCOL_LIMITS.semanticTextBytes, true)
+      bridgeKeys(value, kind)
+      targetFields(value); ComputerRef(stringValue(at(value, 'ref'), 'ref', PROTOCOL_LIMITS.identifierBytes)); stringValue(at(value, 'text'), 'text', PROTOCOL_LIMITS.semanticTextBytes, true)
       break
     case 'computer.key':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'appId', 'windowId', 'snapshotRevision', 'key', 'modifiers'])
-      targetFields(value); stringValue(at(value, 'key'), 'key', 64); modifiers(at(value, 'modifiers'))
+      bridgeKeys(value, kind)
+      targetFields(value); stringValue(at(value, 'key'), 'key', PROTOCOL_LIMITS.keyBytes); modifiers(at(value, 'modifiers'))
       break
     case 'computer.scroll':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'appId', 'windowId', 'snapshotRevision', 'deltaX', 'deltaY'], ['ref', 'x', 'y'])
+      bridgeKeys(value, kind, ['ref', 'x', 'y'])
       targetFields(value); pointerLocation(value)
-      finiteNumber(at(value, 'deltaX'), 'deltaX', -1_000_000, 1_000_000)
-      finiteNumber(at(value, 'deltaY'), 'deltaY', -1_000_000, 1_000_000)
+      finiteNumber(at(value, 'deltaX'), 'deltaX', -PROTOCOL_LIMITS.maxCoordinate, PROTOCOL_LIMITS.maxCoordinate)
+      finiteNumber(at(value, 'deltaY'), 'deltaY', -PROTOCOL_LIMITS.maxCoordinate, PROTOCOL_LIMITS.maxCoordinate)
       break
     case 'computer.wait':
-      keys(value, [...BRIDGE_BASE, 'leaseId', 'leaseRevision', 'appId', 'windowId', 'snapshotRevision', 'durationMs'])
-      targetFields(value); safeInteger(at(value, 'durationMs'), 'durationMs', 0, 10_000)
+      bridgeKeys(value, kind)
+      targetFields(value); safeInteger(at(value, 'durationMs'), 'durationMs', 0, PROTOCOL_LIMITS.maxWaitDurationMs)
       break
     /* v8 ignore next -- the closed roster check rejects this before dispatch. */
     default: return fail('unknown bridge request kind')
@@ -277,46 +321,47 @@ function helperTargetAction(value: object, kind: string): void {
   if (kind === 'click' || kind === 'double-click') {
     pointerLocation(value); literal(at(value, 'button'), BUTTONS, 'button')
   } else if (kind === 'drag') {
-    for (const field of ['fromX', 'fromY', 'toX', 'toY']) finiteNumber(at(value, field), field, 0, 1_000_000)
+    for (const field of ['fromX', 'fromY', 'toX', 'toY']) finiteNumber(at(value, field), field, 0, PROTOCOL_LIMITS.maxCoordinate)
     literal(at(value, 'button'), BUTTONS, 'button')
   } else if (kind === 'type') {
-    ComputerRef(stringValue(at(value, 'ref'), 'ref', 64)); stringValue(at(value, 'text'), 'text', PROTOCOL_LIMITS.semanticTextBytes, true)
+    ComputerRef(stringValue(at(value, 'ref'), 'ref', PROTOCOL_LIMITS.identifierBytes)); stringValue(at(value, 'text'), 'text', PROTOCOL_LIMITS.semanticTextBytes, true)
   } else if (kind === 'key') {
-    stringValue(at(value, 'key'), 'key', 64); modifiers(at(value, 'modifiers'))
+    stringValue(at(value, 'key'), 'key', PROTOCOL_LIMITS.keyBytes); modifiers(at(value, 'modifiers'))
   } else if (kind === 'scroll') {
     pointerLocation(value)
-    finiteNumber(at(value, 'deltaX'), 'deltaX', -1_000_000, 1_000_000)
-    finiteNumber(at(value, 'deltaY'), 'deltaY', -1_000_000, 1_000_000)
-  } else if (kind === 'wait') safeInteger(at(value, 'durationMs'), 'durationMs', 0, 10_000)
+    finiteNumber(at(value, 'deltaX'), 'deltaX', -PROTOCOL_LIMITS.maxCoordinate, PROTOCOL_LIMITS.maxCoordinate)
+    finiteNumber(at(value, 'deltaY'), 'deltaY', -PROTOCOL_LIMITS.maxCoordinate, PROTOCOL_LIMITS.maxCoordinate)
+  } else if (kind === 'wait') {
+    safeInteger(at(value, 'durationMs'), 'durationMs', 0, PROTOCOL_LIMITS.maxWaitDurationMs)
+  }
 }
 
 function validateHelperRequest(value: object, kind: typeof HELPER_REQUEST_KINDS[number]): HelperRequest {
   requestBase(value, false)
-  const target = ['leaseId', 'leaseRevision', 'appId', 'windowId', 'snapshotRevision'] as const
   switch (kind) {
-    case 'status': case 'list': keys(value, HELPER_BASE); break
+    case 'status': case 'list': helperKeys(value, kind); break
     case 'snapshot':
-      keys(value, [...HELPER_BASE, ...target, 'includeImage']); targetFields(value); booleanValue(at(value, 'includeImage'), 'includeImage'); break
-    case 'focus': keys(value, [...HELPER_BASE, ...target]); targetFields(value); break
+      helperKeys(value, kind); targetFields(value); booleanValue(at(value, 'includeImage'), 'includeImage'); break
+    case 'focus': helperKeys(value, kind); targetFields(value); break
     case 'click': case 'double-click':
-      keys(value, [...HELPER_BASE, ...target, 'button'], ['ref', 'x', 'y']); helperTargetAction(value, kind); break
+      helperKeys(value, kind, ['ref', 'x', 'y']); helperTargetAction(value, kind); break
     case 'drag':
-      keys(value, [...HELPER_BASE, ...target, 'fromX', 'fromY', 'toX', 'toY', 'button']); helperTargetAction(value, kind); break
+      helperKeys(value, kind); helperTargetAction(value, kind); break
     case 'type':
-      keys(value, [...HELPER_BASE, ...target, 'ref', 'text']); helperTargetAction(value, kind); break
+      helperKeys(value, kind); helperTargetAction(value, kind); break
     case 'key':
-      keys(value, [...HELPER_BASE, ...target, 'key', 'modifiers']); helperTargetAction(value, kind); break
+      helperKeys(value, kind); helperTargetAction(value, kind); break
     case 'scroll':
-      keys(value, [...HELPER_BASE, ...target, 'deltaX', 'deltaY'], ['ref', 'x', 'y']); helperTargetAction(value, kind); break
+      helperKeys(value, kind, ['ref', 'x', 'y']); helperTargetAction(value, kind); break
     case 'wait':
-      keys(value, [...HELPER_BASE, ...target, 'durationMs']); helperTargetAction(value, kind); break
-    case 'stop': keys(value, [...HELPER_BASE, 'leaseId', 'leaseRevision']); leaseFields(value); break
+      helperKeys(value, kind); helperTargetAction(value, kind); break
+    case 'stop': helperKeys(value, kind); leaseFields(value); break
     case 'lease.install': {
-      keys(value, [...HELPER_BASE, 'leaseId', 'leaseRevision', 'agentId', 'apps', 'windows', 'capabilities', 'quotas', 'idleExpiresAfterMs', 'hardExpiresAfterMs'])
-      leaseFields(value); stringValue(at(value, 'agentId'), 'agentId', 256)
+      helperKeys(value, kind)
+      leaseFields(value); stringValue(at(value, 'agentId'), 'agentId', PROTOCOL_LIMITS.agentIdBytes)
       stringList(at(value, 'apps'), 'apps'); stringList(at(value, 'windows'), 'windows')
       const capabilities = at(value, 'capabilities')
-      if (!Array.isArray(capabilities) || capabilities.length > 3) fail('capabilities must be a bounded array')
+      if (!Array.isArray(capabilities) || capabilities.length > PROTOCOL_LIMITS.maxLeaseCapabilities) fail('capabilities must be a bounded array')
       const capabilitySet = new Set<string>()
       for (const item of capabilities) {
         const capability = literal<string>(item, new Set(['observe', 'pointer', 'keyboard']), 'capability')
@@ -325,14 +370,16 @@ function validateHelperRequest(value: object, kind: typeof HELPER_REQUEST_KINDS[
       }
       const quotas = asObject(at(value, 'quotas'), 'quotas')
       keys(quotas, ['snapshots', 'pointerActions', 'keyActions', 'textBytes'])
-      for (const field of ['snapshots', 'pointerActions', 'keyActions', 'textBytes']) safeInteger(at(quotas, field), field, 0, 1_000_000)
-      safeInteger(at(value, 'idleExpiresAfterMs'), 'idleExpiresAfterMs', 1, 300_000)
-      safeInteger(at(value, 'hardExpiresAfterMs'), 'hardExpiresAfterMs', 1, 1_200_000)
+      for (const field of ['snapshots', 'pointerActions', 'keyActions', 'textBytes']) {
+        safeInteger(at(quotas, field), field, 0, PROTOCOL_LIMITS.maxLeaseQuota)
+      }
+      safeInteger(at(value, 'idleExpiresAfterMs'), 'idleExpiresAfterMs', 1, PROTOCOL_LIMITS.maxIdleExpiresAfterMs)
+      safeInteger(at(value, 'hardExpiresAfterMs'), 'hardExpiresAfterMs', 1, PROTOCOL_LIMITS.maxHardExpiresAfterMs)
       break
     }
     case 'input.release':
-      keys(value, [...HELPER_BASE, 'keys', 'buttons'])
-      stringList(at(value, 'keys'), 'keys', 64)
+      helperKeys(value, kind)
+      stringList(at(value, 'keys'), 'keys', PROTOCOL_LIMITS.maxStringListItems)
       if (!Array.isArray(at(value, 'buttons')) || (at(value, 'buttons') as unknown[]).some(item => typeof item !== 'string' || !BUTTONS.has(item))) fail('buttons are invalid')
       break
     /* v8 ignore next -- the closed roster check rejects this before dispatch. */
@@ -344,23 +391,23 @@ function validateHelperRequest(value: object, kind: typeof HELPER_REQUEST_KINDS[
 function imageMetadata(value: unknown): PngMetadata {
   const image = asObject(value, 'image')
   keys(image, ['transferId', 'byteLength', 'sha256', 'width', 'height'])
-  const transferId = PngTransferId(stringValue(at(image, 'transferId'), 'transferId', 64))
+  const transferId = PngTransferId(stringValue(at(image, 'transferId'), 'transferId', PROTOCOL_LIMITS.identifierBytes))
   const byteLength = safeInteger(at(image, 'byteLength'), 'byteLength', 1, PROTOCOL_LIMITS.pngBytes)
-  const sha256 = stringValue(at(image, 'sha256'), 'sha256', 64)
+  const sha256 = stringValue(at(image, 'sha256'), 'sha256', PROTOCOL_LIMITS.sha256Bytes)
   if (!SHA256.test(sha256)) fail('sha256 must be lower-case hexadecimal')
-  const width = safeInteger(at(image, 'width'), 'width', 1, 100_000)
-  const height = safeInteger(at(image, 'height'), 'height', 1, 100_000)
+  const width = safeInteger(at(image, 'width'), 'width', 1, PROTOCOL_LIMITS.maxPngDimension)
+  const height = safeInteger(at(image, 'height'), 'height', 1, PROTOCOL_LIMITS.maxPngDimension)
   return { transferId, byteLength, sha256, width, height }
 }
 
 function semanticRefs(value: unknown, browser: boolean): readonly (BrowserSemanticRef | ComputerSemanticRef)[] {
-  if (!Array.isArray(value) || value.length > 300) fail('refs must be a bounded array')
+  if (!Array.isArray(value) || value.length > PROTOCOL_LIMITS.maxSemanticRefs) fail('refs must be a bounded array')
   return value.map((item, index) => {
     const ref = asObject(item, `refs[${index}]`)
     keys(ref, ['ref', 'role', 'name'])
-    const raw = stringValue(at(ref, 'ref'), `refs[${index}].ref`, 64)
-    const role = stringValue(at(ref, 'role'), `refs[${index}].role`, 128)
-    const name = stringValue(at(ref, 'name'), `refs[${index}].name`, 1_024, true)
+    const raw = stringValue(at(ref, 'ref'), `refs[${index}].ref`, PROTOCOL_LIMITS.identifierBytes)
+    const role = stringValue(at(ref, 'role'), `refs[${index}].role`, PROTOCOL_LIMITS.semanticRoleBytes)
+    const name = stringValue(at(ref, 'name'), `refs[${index}].name`, PROTOCOL_LIMITS.semanticNameBytes, true)
     return browser
       ? { ref: BrowserRef(raw), role, name }
       : { ref: ComputerRef(raw), role, name }
@@ -372,41 +419,41 @@ function semanticText(value: unknown): string {
 }
 
 function appsResult(value: unknown): readonly GrantableApplication[] {
-  if (!Array.isArray(value) || value.length > 128) fail('apps must be a bounded array')
+  if (!Array.isArray(value) || value.length > PROTOCOL_LIMITS.maxGrantableApps) fail('apps must be a bounded array')
   return value.map((item, appIndex) => {
     const app = asObject(item, `apps[${appIndex}]`)
     keys(app, ['appId', 'name', 'windows'])
     const windows = at(app, 'windows')
-    if (!Array.isArray(windows) || windows.length > 256) fail('windows must be a bounded array')
+    if (!Array.isArray(windows) || windows.length > PROTOCOL_LIMITS.maxGrantableWindowsPerApp) fail('windows must be a bounded array')
     return {
-      appId: stringValue(at(app, 'appId'), 'appId', 256),
-      name: stringValue(at(app, 'name'), 'name', 256),
+      appId: stringValue(at(app, 'appId'), 'appId', PROTOCOL_LIMITS.appIdBytes),
+      name: stringValue(at(app, 'name'), 'name', PROTOCOL_LIMITS.appNameBytes),
       windows: windows.map((item, windowIndex) => {
         const window = asObject(item, `windows[${windowIndex}]`)
         keys(window, ['windowId', 'title'])
         return {
-          windowId: stringValue(at(window, 'windowId'), 'windowId', 256),
-          title: stringValue(at(window, 'title'), 'title', 1_024, true),
+          windowId: stringValue(at(window, 'windowId'), 'windowId', PROTOCOL_LIMITS.windowIdBytes),
+          title: stringValue(at(window, 'title'), 'title', PROTOCOL_LIMITS.windowTitleBytes, true),
         }
       }),
     }
   })
 }
 
-function actionResult(value: object): void {
-  keys(value, ['acted', 'snapshotRevision'])
+function actionResult(value: object, kind: keyof DesktopControlResultMap | keyof HelperResultMap): void {
+  resultKeys(value, kind)
   if (at(value, 'acted') !== true) fail('acted must be true')
   safeInteger(at(value, 'snapshotRevision'), 'snapshotRevision', 1)
 }
 
-function waitResult(value: object): void {
-  keys(value, ['waited', 'snapshotRevision'])
+function waitResult(value: object, kind: keyof DesktopControlResultMap | keyof HelperResultMap): void {
+  resultKeys(value, kind)
   if (at(value, 'waited') !== true) fail('waited must be true')
   safeInteger(at(value, 'snapshotRevision'), 'snapshotRevision', 1)
 }
 
-function statusResult(value: object): void {
-  keys(value, ['viewing', 'assistive', 'supported'])
+function statusResult(value: object, kind: keyof DesktopControlResultMap | keyof HelperResultMap): void {
+  resultKeys(value, kind)
   literal(at(value, 'viewing'), PERMISSION_STATES, 'viewing')
   literal(at(value, 'assistive'), PERMISSION_STATES, 'assistive')
   booleanValue(at(value, 'supported'), 'supported')
@@ -416,33 +463,33 @@ function validateResult(value: unknown, kind: keyof DesktopControlResultMap | ke
   const result = asObject(value, 'result')
   switch (kind) {
     case 'desktop.status':
-      keys(result, ['browserSupported', 'computerSupported'])
+      resultKeys(result, kind)
       booleanValue(at(result, 'browserSupported'), 'browserSupported'); booleanValue(at(result, 'computerSupported'), 'computerSupported'); break
     case 'browser.snapshot':
-      keys(result, ['surfaceId', 'url', 'title', 'snapshotRevision', 'semanticText', 'refs'], ['image'])
-      stringValue(at(result, 'surfaceId'), 'surfaceId', 256); stringValue(at(result, 'url'), 'url', 8_192); stringValue(at(result, 'title'), 'title', 2_048, true)
+      resultKeys(result, kind, ['image'])
+      stringValue(at(result, 'surfaceId'), 'surfaceId', PROTOCOL_LIMITS.surfaceIdBytes); stringValue(at(result, 'url'), 'url', PROTOCOL_LIMITS.urlBytes); stringValue(at(result, 'title'), 'title', PROTOCOL_LIMITS.browserTitleBytes, true)
       safeInteger(at(result, 'snapshotRevision'), 'snapshotRevision', 1); semanticText(at(result, 'semanticText')); semanticRefs(at(result, 'refs'), true)
       if (has(result, 'image')) imageMetadata(at(result, 'image'))
       break
     case 'browser.navigate': case 'browser.back': case 'browser.forward': case 'browser.reload':
-      keys(result, ['url', 'snapshotRevision']); stringValue(at(result, 'url'), 'url', 8_192); safeInteger(at(result, 'snapshotRevision'), 'snapshotRevision', 1); break
+      resultKeys(result, kind); stringValue(at(result, 'url'), 'url', PROTOCOL_LIMITS.urlBytes); safeInteger(at(result, 'snapshotRevision'), 'snapshotRevision', 1); break
     case 'browser.click': case 'browser.type': case 'browser.key': case 'browser.select': case 'browser.scroll':
     case 'computer.focus': case 'computer.click': case 'computer.double-click': case 'computer.drag': case 'computer.type': case 'computer.key': case 'computer.scroll':
-    case 'focus': case 'click': case 'double-click': case 'drag': case 'type': case 'key': case 'scroll': actionResult(result); break
-    case 'browser.wait': case 'computer.wait': case 'wait': waitResult(result); break
+    case 'focus': case 'click': case 'double-click': case 'drag': case 'type': case 'key': case 'scroll': actionResult(result, kind); break
+    case 'browser.wait': case 'computer.wait': case 'wait': waitResult(result, kind); break
     case 'browser.stop': case 'computer.stop': case 'stop':
-      keys(result, ['stopped']); if (at(result, 'stopped') !== true) fail('stopped must be true'); break
-    case 'computer.status': case 'status': statusResult(result); break
-    case 'computer.list': case 'list': keys(result, ['apps']); appsResult(at(result, 'apps')); break
+      resultKeys(result, kind); if (at(result, 'stopped') !== true) fail('stopped must be true'); break
+    case 'computer.status': case 'status': statusResult(result, kind); break
+    case 'computer.list': case 'list': resultKeys(result, kind); appsResult(at(result, 'apps')); break
     case 'computer.snapshot': case 'snapshot':
-      keys(result, ['appId', 'windowId', 'snapshotRevision', 'semanticText', 'refs'], ['image'])
-      stringValue(at(result, 'appId'), 'appId', 256); stringValue(at(result, 'windowId'), 'windowId', 256)
+      resultKeys(result, kind, ['image'])
+      stringValue(at(result, 'appId'), 'appId', PROTOCOL_LIMITS.appIdBytes); stringValue(at(result, 'windowId'), 'windowId', PROTOCOL_LIMITS.windowIdBytes)
       safeInteger(at(result, 'snapshotRevision'), 'snapshotRevision', 1); semanticText(at(result, 'semanticText')); semanticRefs(at(result, 'refs'), false)
       if (has(result, 'image')) imageMetadata(at(result, 'image'))
       break
     case 'lease.install':
-      keys(result, ['installed', 'leaseRevision']); if (at(result, 'installed') !== true) fail('installed must be true'); safeInteger(at(result, 'leaseRevision'), 'leaseRevision', 1); break
-    case 'input.release': keys(result, ['released']); if (at(result, 'released') !== true) fail('released must be true'); break
+      resultKeys(result, kind); if (at(result, 'installed') !== true) fail('installed must be true'); safeInteger(at(result, 'leaseRevision'), 'leaseRevision', 1); break
+    case 'input.release': resultKeys(result, kind); if (at(result, 'released') !== true) fail('released must be true'); break
     /* v8 ignore next -- the closed response roster rejects this before dispatch. */
     default: fail('result does not match requestKind')
   }
@@ -451,7 +498,7 @@ function validateResult(value: unknown, kind: keyof DesktopControlResultMap | ke
 function validateResponse(value: object): DesktopControlOkResponse | DesktopControlErrorResponse | HelperOkResponse | HelperErrorResponse {
   if (at(value, 'protocolVersion') !== 1) fail('protocolVersion must be 1')
   if (at(value, 'messageKind') !== 'response') fail('messageKind must be response')
-  RequestId(stringValue(at(value, 'requestId'), 'requestId', 64))
+  RequestId(stringValue(at(value, 'requestId'), 'requestId', PROTOCOL_LIMITS.identifierBytes))
   const rawKind = at(value, 'requestKind')
   const allKinds = new Set<string>([...BRIDGE_REQUEST_KINDS, ...HELPER_REQUEST_KINDS])
   const kind = literal<keyof DesktopControlResultMap | keyof HelperResultMap>(rawKind, allKinds, 'requestKind')
@@ -475,14 +522,14 @@ function validateControl(value: object): DesktopControlControl {
   if (at(value, 'messageKind') !== 'control') fail('messageKind must be control')
   const kind = literal<typeof CONTROL_KINDS[number]>(at(value, 'controlKind'), new Set(CONTROL_KINDS), 'controlKind')
   if (kind === 'request.cancel') {
-    keys(value, ['protocolVersion', 'messageKind', 'controlKind', 'sessionId', 'requestId'])
-    sessionId(at(value, 'sessionId')); RequestId(stringValue(at(value, 'requestId'), 'requestId', 64))
+    controlKeys(value, kind)
+    sessionId(at(value, 'sessionId')); RequestId(stringValue(at(value, 'requestId'), 'requestId', PROTOCOL_LIMITS.identifierBytes))
   } else if (kind === 'session.revoke') {
-    keys(value, ['protocolVersion', 'messageKind', 'controlKind', 'sessionId']); sessionId(at(value, 'sessionId'))
+    controlKeys(value, kind); sessionId(at(value, 'sessionId'))
   } else if (kind === 'lease.revoke') {
-    keys(value, ['protocolVersion', 'messageKind', 'controlKind', 'sessionId', 'leaseId', 'leaseRevision'])
+    controlKeys(value, kind)
     sessionId(at(value, 'sessionId')); leaseFields(value)
-  } else keys(value, ['protocolVersion', 'messageKind', 'controlKind'])
+  } else controlKeys(value, kind)
   return value as DesktopControlControl
 }
 
@@ -525,7 +572,11 @@ class StrictJsonParser {
   }
 
   private space(): void {
-    while (/\s/u.test(this.source[this.offset] ?? '')) this.offset += 1
+    while (true) {
+      const code = this.source.charCodeAt(this.offset)
+      if (code !== 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) return
+      this.offset += 1
+    }
   }
 
   private value(): unknown {

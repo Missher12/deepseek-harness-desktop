@@ -230,6 +230,10 @@ describe('hostile syntax and cross-field combinations', () => {
     expect(() => validateProtocolManifest({ ...PROTOCOL_MANIFEST, protocolVersion: 2 })).toThrow(/version/i)
     expect(() => validateProtocolManifest({ ...PROTOCOL_MANIFEST, limits: { ...PROTOCOL_MANIFEST.limits, spare: 1 } })).toThrow(/limits/i)
     expect(() => validateProtocolManifest({ ...PROTOCOL_MANIFEST, controlFields: { ...PROTOCOL_MANIFEST.controlFields, 'parent.shutdown': 'none' } })).toThrow(/string array/i)
+    expect(() => validateProtocolManifest({
+      ...PROTOCOL_MANIFEST,
+      controlFields: { ...PROTOCOL_MANIFEST.controlFields, 'parent.shutdown': ['leaseId'] },
+    })).toThrow(/field matrix/i)
   })
 })
 

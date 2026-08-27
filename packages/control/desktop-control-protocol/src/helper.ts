@@ -57,7 +57,10 @@ export type HelperSnapshotRequest = HelperRequestBase<'snapshot'> & HelperTarget
 /** Focus one authorized native target. */
 export type HelperFocusRequest = HelperRequestBase<'focus'> & HelperTargetFields
 /** Click one semantic ref or coordinate in an authorized target. */
-export type HelperClickRequest = HelperRequestBase<'click' | 'double-click'> & HelperTargetFields & { readonly ref?: ComputerRef; readonly x?: number; readonly y?: number; readonly button: PointerButton }
+export type HelperClickRequest = HelperRequestBase<'click' | 'double-click'> & HelperTargetFields & (
+  | { readonly ref: ComputerRef; readonly x?: never; readonly y?: never; readonly button: PointerButton }
+  | { readonly ref?: never; readonly x: number; readonly y: number; readonly button: PointerButton }
+)
 /** Drag between two coordinates in an authorized target. */
 export type HelperDragRequest = HelperRequestBase<'drag'> & HelperTargetFields & { readonly fromX: number; readonly fromY: number; readonly toX: number; readonly toY: number; readonly button: PointerButton }
 /** Enter text through one authorized accessibility element. */
@@ -65,7 +68,10 @@ export type HelperTypeRequest = HelperRequestBase<'type'> & HelperTargetFields &
 /** Send one closed key chord to an authorized target. */
 export type HelperKeyRequest = HelperRequestBase<'key'> & HelperTargetFields & { readonly key: string; readonly modifiers: readonly KeyModifier[] }
 /** Scroll an authorized target. */
-export type HelperScrollRequest = HelperRequestBase<'scroll'> & HelperTargetFields & { readonly ref?: ComputerRef; readonly x?: number; readonly y?: number; readonly deltaX: number; readonly deltaY: number }
+export type HelperScrollRequest = HelperRequestBase<'scroll'> & HelperTargetFields & (
+  | { readonly ref: ComputerRef; readonly x?: never; readonly y?: never; readonly deltaX: number; readonly deltaY: number }
+  | { readonly ref?: never; readonly x: number; readonly y: number; readonly deltaX: number; readonly deltaY: number }
+)
 /** Wait for a bounded native target interval. */
 export type HelperWaitRequest = HelperRequestBase<'wait'> & HelperTargetFields & { readonly durationMs: number }
 /** Stop work associated with one installed lease. */
