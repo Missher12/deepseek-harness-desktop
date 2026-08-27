@@ -39,10 +39,12 @@ import type {} from '@deepseek-ai/dsh-tools'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
   ModelCatalogFailure, ModelProviderGroup,
-  ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
+  ModelReasoning, MuxFrame, PromptAnchor, PromptContentPart, QuestionResponsePayload,
+  SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
   QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
   WorkspaceId, WorkspaceView,
 } from './api/index.ts'
+import { PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS } from './api/sessions.ts'
 import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   flushLiveSessionLog,
@@ -1528,6 +1530,40 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return { events, ...projections === undefined ? {} : { projections } }
   }
 
+  /** Fold the human prompt index from the same immutable history cut served to the caller. */
+  function promptAnchorsOf(events: readonly SessionEvent[]): PromptAnchor[] {
+    const anchors: PromptAnchor[] = []
+    let currentTurn: number | undefined
+    let humanMessagesInTurn = 0
+    for (const event of events) {
+      if (event.type === 'turn/start') {
+        currentTurn = event.data.turn
+        humanMessagesInTurn = 0
+        continue
+      }
+      if (event.type === 'turn/end') {
+        if (currentTurn === event.data.turn) currentTurn = undefined
+        continue
+      }
+      if (event.type !== 'user/message' || event.data.source.kind !== 'user' || currentTurn === undefined) continue
+      const text = event.data.content
+        .filter((part): part is Extract<typeof part, { type: 'text' }> => part.type === 'text')
+        .map(part => part.text)
+        .join(' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+      anchors.push({
+        seq: event.seq,
+        turn: currentTurn,
+        time: event.time,
+        kind: humanMessagesInTurn === 0 ? 'turn-opening' : 'steering',
+        preview: truncateUnicodeCodePoints(text, PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS),
+      })
+      humanMessagesInTurn++
+    }
+    return anchors
+  }
+
   /**
    * The registry view scope a transcript's presenters resolve in.
    *
@@ -2241,6 +2277,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             events: page.events,
             hasMore: page.hasMore,
             ...cut.projections === undefined ? {} : { projections: cut.projections },
+            ...beforeSeq === undefined ? { promptAnchors: promptAnchorsOf(cut.events) } : {},
           })
         } catch (error: unknown) {
           if (error instanceof SessionNotFound) {

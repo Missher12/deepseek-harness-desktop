@@ -236,8 +236,31 @@ describe('sessions domain schemas', () => {
     expect(sessionHistoryValueSchema.parse({
       events: [],
       hasMore: false,
-      modelSelection: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
-    }).hasMore).toBe(false)
+      promptAnchors: [{
+        seq: 1,
+        turn: 1,
+        time: 10,
+        kind: 'turn-opening',
+        preview: 'first',
+      }],
+    }).promptAnchors).toEqual([{
+      seq: 1,
+      turn: 1,
+      time: 10,
+      kind: 'turn-opening',
+      preview: 'first',
+    }])
+    expect(() => sessionHistoryValueSchema.parse({
+      events: [],
+      hasMore: false,
+      promptAnchors: [{
+        seq: 1,
+        turn: 1,
+        time: 10,
+        kind: 'turn-opening',
+        preview: '鲸'.repeat(49),
+      }],
+    })).toThrow(/at most 48/)
     expect(sessionModelsRequestSchema.parse({ sessionId: 's1' }).sessionId).toBe('s1')
     expect(sessionModelsValueSchema.parse({
       current: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max' },

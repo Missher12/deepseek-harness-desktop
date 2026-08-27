@@ -12,8 +12,9 @@ import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 import type {
   HistoryEntry, ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,
-  ModelReasoningEffort, ModelSelection, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionSummary,
+  ModelReasoningEffort, ModelSelection, PromptAnchor, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionSummary,
 } from './sessions.ts'
+import { PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS } from './sessions.ts'
 import type { ToolEventView } from './events.ts'
 import type { AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { WorkspaceId } from './workspace.ts'
@@ -214,6 +215,18 @@ export const historyEntrySchema: z.ZodType<Wire<HistoryEntry>> = z.object({
   view: toolEventViewSchema.optional(),
 }) as unknown as z.ZodType<Wire<HistoryEntry>>
 
+/** One bounded prompt navigation entry from the all-history tail index. */
+export const promptAnchorSchema = z.object({
+  seq: z.number().int().nonnegative(),
+  turn: z.number().int().nonnegative(),
+  time: z.number(),
+  kind: z.enum(['turn-opening', 'steering']),
+  preview: z.string().refine(
+    preview => truncateUnicodeCodePoints(preview, PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS) === preview,
+    { message: `prompt preview must contain at most ${PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS} Unicode code points` },
+  ),
+}) satisfies z.ZodType<Wire<PromptAnchor>>
+
 /**
  * Projection baseline passthrough: `values` stays a wide record — each value
  * was already parsed by its provider's own schema on the host side, and
@@ -250,6 +263,7 @@ export const sessionHistoryValueSchema: z.ZodType<Wire<ResponseValue<'session.hi
   events: z.array(historyEntrySchema),
   hasMore: z.boolean(),
   projections: sessionProjectionsBlockSchema.optional(),
+  promptAnchors: z.array(promptAnchorSchema).optional(),
 })
 
 /** session.models request payload. */

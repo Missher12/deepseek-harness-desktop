@@ -70,6 +70,23 @@ export interface HistoryEntry {
   view?: ToolEventView
 }
 
+/** Maximum Unicode code points exposed by one prompt-rail preview. */
+export const PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS = 48
+
+/** Lightweight all-history navigation entry carried only by the tail page. */
+export interface PromptAnchor {
+  /** Exact user/message event sequence used for history reveal. */
+  seq: number
+  /** Owning turn number. */
+  turn: number
+  /** Durable event timestamp. */
+  time: number
+  /** The first human message opens a turn; later human messages steer it. */
+  kind: 'turn-opening' | 'steering'
+  /** Normalized, length-bounded text; empty when the prompt contains only images. */
+  preview: string
+}
+
 /**
  * The projection baseline riding the history tail page: one synchronous cut
  * over every registered projection unit, read from the registry's watermark
@@ -288,11 +305,18 @@ export interface SessionsApi {
    * the client needs a fresh baseline already pulls the tail page, and
    * loadOlder (the only beforeSeq path) is the only path that never needs one.
    * A deployment without the registry serves histories without the block.
+   * The same immutable tail cut carries `promptAnchors`, a compact index of
+   * every human-authored prompt used only for transcript navigation.
    * Reading history uses an attached Session or persistence inspection and
    * never resumes or publishes an Agent.
    */
   history(request: RpcRequest<{ sessionId: SessionId; beforeSeq?: number; maxMessages?: number }>):
-  Promise<RpcResponse<{ events: HistoryEntry[]; hasMore: boolean; projections?: SessionProjectionsBlock }>>
+  Promise<RpcResponse<{
+    events: HistoryEntry[]
+    hasMore: boolean
+    projections?: SessionProjectionsBlock
+    promptAnchors?: PromptAnchor[]
+  }>>
 
   /**
    * Reads a fresh advisory model directory for an ordinary session. Provider
