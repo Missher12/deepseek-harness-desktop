@@ -616,8 +616,11 @@ function collectRust(): { name: string; version: string; license: string }[] {
     'computer-use-protocol',
   ])
   return packages.flatMap((value) => {
-    const name = String(value.name ?? '')
-    const version = String(value.version ?? '')
+    if (!isTomlTable(value)) {
+      throw new Error('gen-third-party-notices: native helper Cargo.lock package entry must be a table.')
+    }
+    const name = typeof value.name === 'string' ? value.name : ''
+    const version = typeof value.version === 'string' ? value.version : ''
     if (firstParty.has(name)) return []
     const license = RUST_LICENSES[name]
     if (name.length === 0 || version.length === 0 || license === undefined) {

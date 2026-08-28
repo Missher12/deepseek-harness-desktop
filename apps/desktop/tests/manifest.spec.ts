@@ -15,10 +15,14 @@ interface DesktopManifest {
 
 interface BuilderConfiguration {
   files?: string[]
-  mac?: { icon?: string }
+  mac?: {
+    icon?: string
+    extraResources?: Array<{ from?: string; to?: string }>
+  }
   win?: {
     icon?: string
     target?: Array<{ target?: string; arch?: string[] }>
+    extraResources?: Array<{ from?: string; to?: string }>
   }
   nsis?: {
     include?: string
