@@ -10,6 +10,7 @@ import {
 } from '@deepseek-ai/dsh-desktop-control-protocol'
 import {
   DesktopControlCoordinator,
+  type ControlSettingsAuthoritySnapshot,
   type DesktopControlSurfaceAdapter,
 } from '../src/control/control-coordinator.ts'
 import type {
@@ -218,6 +219,7 @@ function setup(options: {
   unclaimedSession?: boolean
   computerEnabled?: boolean
   ordinaryAppIds?: readonly string[]
+  getSettings?: () => ControlSettingsAuthoritySnapshot
 } = {}) {
   const dialog = options.dialog ?? new FakeDialog()
   const shortcuts = new FakeShortcutRegistrar()
@@ -235,15 +237,15 @@ function setup(options: {
       if (officialSession === sessionId) officialSession = undefined
     },
     getAgentDisplayName: () => 'Visible Agent only',
-    getSettings: () => ({
-      settings: {
+    getSettings: options.getSettings ?? (() => ({
+      settings: Object.freeze({
         ...DEFAULT_CONTROL_SETTINGS,
-        ordinaryAppIds: options.ordinaryAppIds ?? ['app.allowed'],
+        ordinaryAppIds: Object.freeze(options.ordinaryAppIds ?? ['app.allowed']),
         browserEnabled: true,
         computerEnabled: options.computerEnabled ?? true,
-      },
+      }),
       revision: 4,
-    }),
+    })),
     approval: {
       dialog,
       getOwnerWindow: () => new FakeWindow(),
@@ -335,6 +337,34 @@ describe('DesktopControlCoordinator', () => {
 
     await expect(pending).resolves.toMatchObject({
       message: { responseKind: 'error', error: { code: 'TARGET_CLOSED' } },
+    })
+  })
+
+  it('reports partial allowlist revocation as unauthorized, not target closed', async () => {
+    const computer = adapter('computer')
+    let settings: ControlSettingsAuthoritySnapshot = {
+      settings: Object.freeze({
+        ...DEFAULT_CONTROL_SETTINGS,
+        ordinaryAppIds: Object.freeze(['app.allowed', 'app.denied']),
+        browserEnabled: true,
+        computerEnabled: true,
+      }),
+      revision: 4,
+    }
+    const { coordinator, dialog } = setup({ computer, getSettings: () => settings })
+    const pending = coordinator.dispatch(acquire(), context())
+    await vi.waitFor(() => { expect(dialog.answers).toHaveLength(1) })
+    settings = {
+      settings: Object.freeze({
+        ...settings.settings,
+        ordinaryAppIds: Object.freeze(['app.allowed']),
+      }),
+      revision: 5,
+    }
+    dialog.answers[0]?.resolve({ response: 1 })
+
+    await expect(pending).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'TARGET_NOT_AUTHORIZED' } },
     })
   })
 

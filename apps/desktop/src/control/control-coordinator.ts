@@ -519,11 +519,12 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
         throw new ControlAuthorityError(code, 'native approval denied')
       }
 
-      const currentSettings = this.#settings()
       const current = await adapter.acquireFacts(request, controller.signal)
       this.#throwIfAborted(controller.signal)
+      const currentSettings = this.#settings()
+      this.#assertApprovalSettingsCurrent(approvalScope, currentSettings)
+      this.#assertApprovedNativeTargetsCurrent(approvalScope, current)
       const currentFacts = this.#leaseFacts(effectiveRequest, current, currentSettings)
-      this.#assertApprovedNativeTargetsCurrent(approvalScope, currentFacts)
       if (!this.#approvals.consumeBeforeDispatch(
         approval,
         approvalScope,
@@ -542,14 +543,12 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
         this.#throwIfAborted(controller.signal)
       }
 
-      const activationSettings = this.#settings()
       const latest = await adapter.acquireFacts(request, controller.signal)
       this.#throwIfAborted(controller.signal)
+      const activationSettings = this.#settings()
+      this.#assertApprovalSettingsCurrent(approvalScope, activationSettings)
+      this.#assertApprovedNativeTargetsCurrent(approvalScope, latest)
       const activationFacts = this.#leaseFacts(effectiveRequest, latest, activationSettings)
-      this.#assertApprovedNativeTargetsCurrent(approvalScope, activationFacts)
-      if (activationSettings.revision !== approvalScope.allowlistRevision) {
-        throw new ControlAuthorityError('POLICY_DENIED', 'allowlist changed before activation')
-      }
       this.#throwIfAborted(controller.signal)
       activationTransferred = true
       activationIdentity = descriptor
@@ -994,11 +993,24 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
 
   #assertApprovedNativeTargetsCurrent(
     scope: NativeApprovalScope,
-    facts: LeaseAcquisitionFacts,
+    facts: SurfaceAcquireFacts,
   ): void {
     if (scope.surfaceKind === 'native-application' && !targetsContained(scope.targets, facts.targets)) {
       throw new ControlAuthorityError('TARGET_CLOSED', 'an approved application target is no longer current')
     }
+  }
+
+  #assertApprovalSettingsCurrent(
+    scope: NativeApprovalScope,
+    settings: ControlSettingsAuthoritySnapshot,
+  ): void {
+    this.#assertSurfaceEnabled(scope.surfaceKind, settings.settings)
+    if (scope.allowlistRevision === settings.revision) return
+    if (scope.surfaceKind === 'native-application'
+      && scope.targets.some(target => !settings.settings.ordinaryAppIds.includes(target.appId))) {
+      throw new ControlAuthorityError('TARGET_NOT_AUTHORIZED', 'an approved application is no longer authorized')
+    }
+    throw new ControlAuthorityError('INTERNAL', 'control settings changed during approval')
   }
 
   #actionApprovalCurrent(
