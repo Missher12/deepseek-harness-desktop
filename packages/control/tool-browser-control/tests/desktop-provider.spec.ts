@@ -13,6 +13,7 @@ import {
 import {
   DesktopControlIpcError,
   installDesktopControlHost,
+  type DesktopControlHostRuntime,
   type DesktopControlRequester,
 } from '@deepseek-ai/dsh-desktop-control-host'
 import * as BrowserTools from '../src/index.ts'
@@ -58,12 +59,32 @@ function actionEnvelope(request: BridgeRequest): DecodedDesktopControlEnvelope {
   }
 }
 
+function snapshotEnvelope(request: BridgeRequest): DecodedDesktopControlEnvelope {
+  return {
+    message: {
+      protocolVersion: 1,
+      messageKind: 'response',
+      responseKind: 'ok',
+      requestId: request.requestId,
+      requestKind: 'browser.snapshot',
+      result: {
+        surfaceId: 'surface-1',
+        url: 'https://example.test/',
+        title: 'Example',
+        snapshotRevision: 9,
+        semanticText: 'Example page',
+        refs: [],
+      },
+    },
+  }
+}
+
 async function setup(requester: DesktopControlRequester) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(BrowserTools)
-  let mounted: ReturnType<typeof installDesktopControlHost> = undefined
+  let mounted: DesktopControlHostRuntime | undefined
   await ctx.plugin((hostCtx: Context) => {
     mounted = installDesktopControlHost(hostCtx, { requester })
   })
@@ -144,11 +165,12 @@ describe('DesktopBrowserControl composition', () => {
         }),
         revokeSession: vi.fn(async () => undefined),
       }
-      const { ctx } = await setup(requester)
+      const { ctx, mounted } = await setup(requester)
 
       const first = await call(ctx, 'browser_click', { ref: REF })
       expect(first.isError).toBe(true)
       expect(text(first)).not.toContain(raw)
+      expect(mounted.leaseCache.peek(SESSION)).toBeUndefined()
       const second = await call(ctx, 'browser_click', { ref: REF })
       expect(second.isError).toBe(false)
       expect({ acquireCount, actionCount, actionLeases }).toEqual({
@@ -156,6 +178,45 @@ describe('DesktopBrowserControl composition', () => {
         actionCount: 2,
         actionLeases: [1, 2],
       })
+      expect(mounted.leaseCache.peek(SESSION)?.leaseRevision).toBe(2)
+    },
+  )
+
+  it.each(['LEASE_EXPIRED', 'LEASE_REVOKED'] as const)(
+    'forgets a %s snapshot lease so the next tool call reacquires exactly once',
+    async (code: DesktopControlErrorCode) => {
+      const raw = `SENSITIVE ${code} SNAPSHOT DETAIL`
+      let acquireCount = 0
+      let snapshotCount = 0
+      const snapshotLeases: number[] = []
+      const requester: DesktopControlRequester = {
+        request: vi.fn<DesktopControlRequester['request']>(async (request) => {
+          if (request.requestKind === 'control.lease.acquire') {
+            acquireCount += 1
+            return leaseEnvelope(request, acquireCount)
+          }
+          if (request.requestKind !== 'browser.snapshot') throw new Error('unexpected request')
+          snapshotCount += 1
+          snapshotLeases.push(request.leaseRevision)
+          if (snapshotCount === 1) throw new DesktopControlIpcError(code, raw)
+          return snapshotEnvelope(request)
+        }),
+        revokeSession: vi.fn(async () => undefined),
+      }
+      const { ctx, mounted } = await setup(requester)
+
+      const first = await call(ctx, 'browser_snapshot', {})
+      expect(first.isError).toBe(true)
+      expect(text(first)).not.toContain(raw)
+      expect(mounted.leaseCache.peek(SESSION)).toBeUndefined()
+      const second = await call(ctx, 'browser_snapshot', {})
+      expect(second.isError).toBe(false)
+      expect({ acquireCount, snapshotCount, snapshotLeases }).toEqual({
+        acquireCount: 2,
+        snapshotCount: 2,
+        snapshotLeases: [1, 2],
+      })
+      expect(mounted.leaseCache.peek(SESSION)?.leaseRevision).toBe(2)
     },
   )
 })

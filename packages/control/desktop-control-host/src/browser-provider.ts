@@ -42,6 +42,25 @@ function rethrowBrowserProviderError(error: unknown, signal?: AbortSignal): neve
   throw new BrowserControlError(error.code, `Desktop browser control failed (${error.code}).`)
 }
 
+type LeaseBoundBrowserRequest = Pick<
+  BrowserSnapshotRequest,
+  'sessionId' | 'leaseId' | 'leaseRevision'
+>
+
+/** Remove only the exact cached lease that Electron has declared terminal. */
+function forgetMatchingTerminalLease(
+  cache: ControlLeaseCache,
+  request: LeaseBoundBrowserRequest,
+  error: unknown,
+): void {
+  if (!(error instanceof DesktopControlIpcError)
+    || (error.code !== 'LEASE_EXPIRED' && error.code !== 'LEASE_REVOKED')) return
+  const cached = cache.peek(request.sessionId)
+  if (cached?.leaseId === request.leaseId && cached.leaseRevision === request.leaseRevision) {
+    cache.take(request.sessionId)
+  }
+}
+
 /** Desktop Host provider forwarding BrowserControl through the one owned-child IPC client. */
 export class DesktopBrowserControl extends BrowserControl {
   /** Create the browser provider over the process-wide requester and cache. */
@@ -82,6 +101,7 @@ export class DesktopBrowserControl extends BrowserControl {
         ...(envelope.png === undefined ? {} : { png: envelope.png }),
       })
     } catch (error: unknown) {
+      forgetMatchingTerminalLease(this.leaseCache, request, error)
       rethrowBrowserProviderError(error, signal)
     }
   }
@@ -92,6 +112,7 @@ export class DesktopBrowserControl extends BrowserControl {
       const message = exactOk(await this.requester.request(request, signal), request.requestKind)
       return message.result as BrowserActionResult
     } catch (error: unknown) {
+      forgetMatchingTerminalLease(this.leaseCache, request, error)
       rethrowBrowserProviderError(error, signal)
     }
   }

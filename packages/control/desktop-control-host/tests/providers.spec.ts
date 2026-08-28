@@ -93,6 +93,33 @@ describe('Desktop control Host providers', () => {
     expect((thrown as Error).message).not.toContain(raw)
   })
 
+  it.each(['LEASE_EXPIRED', 'LEASE_REVOKED'] as const)(
+    'does not evict a newer cached lease for a nonmatching %s request failure',
+    async (code) => {
+      const ctx = new Context()
+      const requester: DesktopControlRequester = {
+        request: vi.fn(async () => {
+          throw new DesktopControlIpcError(code, 'old request detail')
+        }),
+        revokeSession: vi.fn(async () => undefined),
+      }
+      const provider = new DesktopBrowserControl(ctx, requester)
+      const current = provider.leaseCache.remember(SESSION, {
+        leaseId: ControlLeaseId('00000000-0000-4000-8000-000000000099'),
+        leaseRevision: 2,
+        surfaceKind: 'browser-ephemeral',
+        targets: [],
+        capabilities: ['observe'],
+        idleExpiresAfterMs: 300_000,
+        hardExpiresAfterMs: 1_200_000,
+      })
+
+      await expect(provider.snapshot(browserRequest(), new AbortController().signal))
+        .rejects.toMatchObject({ name: 'BrowserControlError', code })
+      expect(provider.leaseCache.peek(SESSION)).toBe(current)
+    },
+  )
+
   it('preserves the model-turn abort reason and unrelated programming failures', async () => {
     const ctx = new Context()
     const abortReason = new Error('official turn abort')
