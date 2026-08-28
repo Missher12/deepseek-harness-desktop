@@ -36,6 +36,8 @@ namespace DshWindowsSmoke
         private const uint SAFER_SCOPEID_USER = 2;
         private const uint SAFER_LEVELID_NORMALUSER = 0x00020000;
         private const uint SAFER_LEVEL_OPEN = 1;
+        private const int TokenIntegrityLevel = 25;
+        private const uint SE_GROUP_INTEGRITY = 0x20;
         private const uint CREATE_NO_WINDOW = 0x08000000;
         private const uint CREATE_UNICODE_ENVIRONMENT = 0x400;
         private const uint WAIT_OBJECT_0 = 0;
@@ -73,6 +75,19 @@ namespace DshWindowsSmoke
             public uint dwThreadId;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SID_AND_ATTRIBUTES
+        {
+            public IntPtr Sid;
+            public uint Attributes;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct TOKEN_MANDATORY_LABEL
+        {
+            public SID_AND_ATTRIBUTES Label;
+        }
+
         [DllImport("kernel32.dll")]
         private static extern IntPtr GetCurrentProcess();
 
@@ -87,6 +102,9 @@ namespace DshWindowsSmoke
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool TerminateProcess(IntPtr process, uint exitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr LocalFree(IntPtr memory);
 
         [DllImport("advapi32.dll", SetLastError = true)]
         private static extern bool OpenProcessToken(
@@ -112,6 +130,21 @@ namespace DshWindowsSmoke
 
         [DllImport("advapi32.dll", SetLastError = true)]
         private static extern bool SaferCloseLevel(IntPtr levelHandle);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool ConvertStringSidToSid(
+            string stringSid,
+            out IntPtr sid);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern uint GetLengthSid(IntPtr sid);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool SetTokenInformation(
+            IntPtr token,
+            int tokenInformationClass,
+            IntPtr tokenInformation,
+            uint tokenInformationLength);
 
         [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern bool CreateProcessWithTokenW(
@@ -159,6 +192,8 @@ namespace DshWindowsSmoke
             IntPtr saferLevel = IntPtr.Zero;
             IntPtr environment = IntPtr.Zero;
             IntPtr desktop = IntPtr.Zero;
+            IntPtr mediumSid = IntPtr.Zero;
+            IntPtr mandatoryLabel = IntPtr.Zero;
             PROCESS_INFORMATION process = new PROCESS_INFORMATION();
             try
             {
@@ -182,6 +217,30 @@ namespace DshWindowsSmoke
                     throw new Win32Exception(
                         Marshal.GetLastWin32Error(),
                         "SaferComputeTokenFromLevel failed");
+                if (!ConvertStringSidToSid("S-1-16-8192", out mediumSid))
+                    throw new Win32Exception(
+                        Marshal.GetLastWin32Error(),
+                        "ConvertStringSidToSid failed");
+                TOKEN_MANDATORY_LABEL label = new TOKEN_MANDATORY_LABEL
+                {
+                    Label = new SID_AND_ATTRIBUTES
+                    {
+                        Sid = mediumSid,
+                        Attributes = SE_GROUP_INTEGRITY,
+                    },
+                };
+                mandatoryLabel = Marshal.AllocHGlobal(Marshal.SizeOf<TOKEN_MANDATORY_LABEL>());
+                Marshal.StructureToPtr(label, mandatoryLabel, false);
+                uint labelLength = checked(
+                    (uint)Marshal.SizeOf<TOKEN_MANDATORY_LABEL>() + GetLengthSid(mediumSid));
+                if (!SetTokenInformation(
+                        limitedToken,
+                        TokenIntegrityLevel,
+                        mandatoryLabel,
+                        labelLength))
+                    throw new Win32Exception(
+                        Marshal.GetLastWin32Error(),
+                        "SetTokenInformation(TokenIntegrityLevel) failed");
 
                 STARTUPINFO startup = new STARTUPINFO();
                 startup.cb = (uint)Marshal.SizeOf<STARTUPINFO>();
@@ -247,6 +306,8 @@ namespace DshWindowsSmoke
                 if (process.hProcess != IntPtr.Zero) CloseHandle(process.hProcess);
                 if (environment != IntPtr.Zero) DestroyEnvironmentBlock(environment);
                 if (desktop != IntPtr.Zero) Marshal.FreeHGlobal(desktop);
+                if (mandatoryLabel != IntPtr.Zero) Marshal.FreeHGlobal(mandatoryLabel);
+                if (mediumSid != IntPtr.Zero) LocalFree(mediumSid);
                 if (saferLevel != IntPtr.Zero) SaferCloseLevel(saferLevel);
                 if (limitedToken != IntPtr.Zero) CloseHandle(limitedToken);
                 if (sourceToken != IntPtr.Zero) CloseHandle(sourceToken);

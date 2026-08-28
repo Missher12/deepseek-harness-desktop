@@ -18,6 +18,7 @@ describe('Windows installed Computer Use acceptance', () => {
     expect(source).toContain('SaferCreateLevel')
     expect(source).toContain('SaferComputeTokenFromLevel')
     expect(source).toContain('SAFER_LEVELID_NORMALUSER')
+    expect(source).toContain('SetTokenInformation')
     expect(source).toContain('CREATE_NO_WINDOW')
     expect(source).toContain('CreateEnvironmentBlock')
     expect(source).toContain('winsta0\\\\default')
