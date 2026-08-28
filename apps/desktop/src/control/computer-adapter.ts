@@ -335,13 +335,18 @@ export class ComputerDesktopControlAdapter implements DesktopControlSurfaceAdapt
       || request.requestKind === 'computer.list'
       || request.requestKind === 'computer.snapshot'
       || request.requestKind === 'computer.wait'
+    const targetless = request.requestKind === 'computer.status'
+      || request.requestKind === 'computer.list'
     return Promise.resolve(Object.freeze({
       surfaceKind: 'native-application',
       targets: target,
       capabilities: this.#capabilities.includes(capability)
         ? Object.freeze([capability])
         : Object.freeze([]),
-      policy: adapterPolicyFacts('ordinary', readOnly ? 'read-only' : 'local-interaction'),
+      policy: adapterPolicyFacts(
+        targetless ? 'not-applicable' : 'ordinary',
+        readOnly ? 'read-only' : 'local-interaction',
+      ),
     }))
   }
 

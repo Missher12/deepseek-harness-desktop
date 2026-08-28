@@ -232,6 +232,18 @@ describe('ComputerDesktopControlAdapter', () => {
     }])
   })
 
+  it('classifies targetless status and list as not-applicable read-only operations', async () => {
+    const computer = adapter(new FakeHelper())
+
+    for (const request of [requestBase('computer.status'), requestBase('computer.list')]) {
+      await expect(computer.operationFacts(request, new AbortController().signal)).resolves.toMatchObject({
+        surfaceKind: 'native-application',
+        targets: [],
+        policy: { sensitivity: 'not-applicable', effect: 'read-only' },
+      })
+    }
+  })
+
   it('maps the complete dispatched computer roster without leaking absolute deadlines or lease fields to status/list', async () => {
     const helper = new FakeHelper()
     const computer = adapter(helper)

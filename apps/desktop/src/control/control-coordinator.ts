@@ -46,6 +46,7 @@ import {
 } from './native-approval.ts'
 import {
   classifyAuthorityRequest,
+  controlRequestRule,
   type AdapterPolicyFacts,
 } from './policy.ts'
 import type { ControlSettings } from './settings-store.ts'
@@ -624,7 +625,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     let inFlight: InFlightDispatch | undefined
     try {
       let facts = await adapter.operationFacts(request, controller.signal)
-      let operationFacts = this.#operationFacts(facts)
+      let operationFacts = this.#operationFacts(request, facts)
       const active = this.#leases.activeSnapshot()
       let authorization: Parameters<ControlLeaseAuthority['prepareDispatch']>[2]
       if (classifyAuthorityRequest(request, facts.surfaceKind, facts.policy) === 'APPROVAL_REQUIRED'
@@ -651,7 +652,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
         if (approved === 'BUSY') throw new ControlAuthorityError('BUSY', 'another approval is pending')
         if (approved === 'DENIED') throw new ControlAuthorityError('POLICY_DENIED', 'action approval denied')
         facts = await adapter.operationFacts(request, controller.signal)
-        operationFacts = this.#operationFacts(facts)
+        operationFacts = this.#operationFacts(request, facts)
         const current = (): boolean => this.#actionApprovalCurrent(approvalScope, facts, grantScope)
         const grant = this.#actionGrants.issueFromApproval(
           grantScope,
@@ -911,14 +912,18 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     throw new ControlAuthorityError('POLICY_DENIED', 'surface authority facts are stale')
   }
 
-  #operationFacts(facts: SurfaceOperationFacts): OperationAuthorityFacts {
+  #operationFacts(request: BridgeRequest, facts: SurfaceOperationFacts): OperationAuthorityFacts {
+    const rule = controlRequestRule(request)
     const active = this.#leases.activeSnapshot()
-    const settings = this.#settings()
-    this.#assertSurfaceEnabled(facts.surfaceKind, settings.settings)
-    const targets = facts.surfaceKind === 'native-application'
-      ? facts.targets.filter(target => settings.settings.ordinaryAppIds.includes(target.appId))
-      : facts.targets
-    if (active !== null && active.surfaceKind !== facts.surfaceKind) {
+    let targets = facts.targets
+    if (rule.leaseScoped) {
+      const settings = this.#settings()
+      this.#assertSurfaceEnabled(facts.surfaceKind, settings.settings)
+      targets = facts.surfaceKind === 'native-application'
+        ? facts.targets.filter(target => settings.settings.ordinaryAppIds.includes(target.appId))
+        : facts.targets
+    }
+    if (rule.leaseScoped && active !== null && active.surfaceKind !== facts.surfaceKind) {
       throw new ControlAuthorityError('POLICY_DENIED', 'operation authority facts are stale')
     }
     return Object.freeze({

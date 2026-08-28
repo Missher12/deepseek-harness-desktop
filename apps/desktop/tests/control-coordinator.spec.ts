@@ -123,6 +123,12 @@ function status(sessionId = SESSION): Extract<BridgeRequest, { requestKind: 'des
   return { ...requestBase('desktop.status', sessionId) }
 }
 
+function computerStatus(
+  sessionId = SESSION,
+): Extract<BridgeRequest, { requestKind: 'computer.status' }> {
+  return { ...requestBase('computer.status', sessionId) }
+}
+
 function stop(
   requestKind: 'browser.stop' | 'computer.stop',
   sessionId = SESSION,
@@ -210,6 +216,7 @@ function setup(options: {
   revalidate?: (scope: NativeApprovalScope) => boolean | Promise<boolean>
   audit?: (action: string) => void | Promise<void>
   unclaimedSession?: boolean
+  computerEnabled?: boolean
 } = {}) {
   const dialog = options.dialog ?? new FakeDialog()
   const shortcuts = new FakeShortcutRegistrar()
@@ -232,7 +239,7 @@ function setup(options: {
         ...DEFAULT_CONTROL_SETTINGS,
         ordinaryAppIds: ['app.allowed'],
         browserEnabled: true,
-        computerEnabled: true,
+        computerEnabled: options.computerEnabled ?? true,
       },
       revision: 4,
     }),
@@ -260,6 +267,29 @@ async function approve(dialog: FakeDialog): Promise<void> {
 }
 
 describe('DesktopControlCoordinator', () => {
+  it('allows targetless computer status while native control is disabled', async () => {
+    const computer = adapter('computer')
+    computer.operationFacts = async () => ({
+      surfaceKind: 'native-application',
+      targets: [],
+      capabilities: ['observe'],
+      policy: adapterPolicyFacts('not-applicable', 'read-only'),
+    })
+    computer.dispatch = async request => ok(request, {
+      viewing: 'granted', assistive: 'granted', supported: true,
+    })
+    const dispatch = vi.spyOn(computer, 'dispatch')
+    const { coordinator } = setup({ computer, computerEnabled: false })
+
+    await expect(coordinator.dispatch(computerStatus(), context())).resolves.toMatchObject({
+      message: {
+        responseKind: 'ok',
+        result: { viewing: 'granted', assistive: 'granted', supported: true },
+      },
+    })
+    expect(dispatch).toHaveBeenCalledOnce()
+  })
+
   it('publishes active and fully stopped UI state without exposing lease authority', async () => {
     const { coordinator, dialog } = setup({ computer: adapter('computer') })
     const states: unknown[] = []
