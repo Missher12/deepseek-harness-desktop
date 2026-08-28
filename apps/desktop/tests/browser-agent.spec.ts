@@ -172,6 +172,29 @@ function adapterFor(
   })
 }
 
+function deferredPinnedTransport(): {
+  readonly transport: AgentBrowserPinnedNavigationTransport
+  readonly ready: Promise<void>
+  readonly resume: () => void
+} {
+  let markReady: (() => void) | undefined
+  let resume: (() => void) | undefined
+  const ready = new Promise<void>((resolve) => { markReady = resolve })
+  const gate = new Promise<void>((resolve) => { resume = resolve })
+  return {
+    transport: {
+      load: async (request) => {
+        await request.resolveAndValidate(request.url)
+        markReady?.()
+        await gate
+        await request.commit()
+      },
+    },
+    ready,
+    resume: () => { resume?.() },
+  }
+}
+
 function buttonNode(id = 1, name = 'Continue'): AxNode {
   return {
     nodeId: `node-${id}`,
@@ -723,6 +746,49 @@ describe('semantic Agent browser adapter', () => {
       expect(contents.loadedUrls).toEqual([])
     },
   )
+
+  it.each([
+    ['back active index', 'back', (contents: FakeWebContents) => { contents.historyActiveIndex = 2 }],
+    ['forward target URL', 'forward', (contents: FakeWebContents) => {
+      contents.historyEntries[2] = { url: 'https://changed.test/' }
+    }],
+  ] as const)('rejects %s drift while the pinned transport is pending', async (_label, kind, mutate) => {
+    const contents = new FakeWebContents()
+    installTree(contents, [])
+    const deferred = deferredPinnedTransport()
+    const adapter = adapterFor(contents, { pinnedNavigationTransport: deferred.transport })
+
+    const pending = adapter.act({ kind })
+    await deferred.ready
+    mutate(contents)
+    deferred.resume()
+
+    await expect(pending).rejects.toMatchObject({ code: 'STALE_REF' })
+    expect(contents.navigationHistory.goBack).not.toHaveBeenCalled()
+    expect(contents.navigationHistory.goForward).not.toHaveBeenCalled()
+    expect(contents.navigationHistory.goToIndex).not.toHaveBeenCalled()
+    expect(contents.reload).not.toHaveBeenCalled()
+    expect(contents.loadedUrls).toEqual([])
+  })
+
+  it.each([
+    ['current URL', (contents: FakeWebContents) => { contents.url = 'https://changed.test/' }],
+    ['navigation revision', (contents: FakeWebContents) => { contents.emit('did-navigate') }],
+  ] as const)('rejects reload when %s changes while the pinned transport is pending', async (_label, mutate) => {
+    const contents = new FakeWebContents()
+    installTree(contents, [])
+    const deferred = deferredPinnedTransport()
+    const adapter = adapterFor(contents, { pinnedNavigationTransport: deferred.transport })
+
+    const pending = adapter.act({ kind: 'reload' })
+    await deferred.ready
+    mutate(contents)
+    deferred.resume()
+
+    await expect(pending).rejects.toMatchObject({ code: 'STALE_REF' })
+    expect(contents.reload).not.toHaveBeenCalled()
+    expect(contents.loadedUrls).toEqual([])
+  })
 
   it('rejects a late native commit after the pinned transport has failed', async () => {
     const contents = new FakeWebContents()

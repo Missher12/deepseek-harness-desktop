@@ -37,7 +37,11 @@ export interface BrowserAdapterWebContents {
     canGoBack(): boolean
     canGoForward(): boolean
     getActiveIndex(): number
-    getEntryAtIndex(index: number): { readonly url: string } | null | undefined
+    getEntryAtIndex(index: number): {
+      readonly url: string
+      readonly title?: string
+      readonly pageState?: string
+    } | null | undefined
     goToIndex(index: number): void
   }
   isDestroyed(): boolean
@@ -125,6 +129,14 @@ interface BrowserReferenceBinding {
   readonly selectable: boolean
   readonly revision: number
   readonly epoch: number
+}
+
+interface BrowserHistorySnapshot {
+  readonly activeIndex: number
+  readonly targetIndex: number
+  readonly sourceUrl: string
+  readonly activeEntry: Readonly<{ url: string; title?: string; pageState?: string }>
+  readonly targetEntry: Readonly<{ url: string; title?: string; pageState?: string }>
 }
 
 interface CandidateReference {
@@ -417,28 +429,35 @@ export class CdpBrowserAdapter {
     }
     if (action.kind === 'back' || action.kind === 'forward') {
       const history = this.webContents.navigationHistory
-      const allowed = action.kind === 'back' ? history.canGoBack() : history.canGoForward()
+      const offset = action.kind === 'back' ? -1 : 1
+      const allowed = offset === -1 ? history.canGoBack() : history.canGoForward()
       if (!allowed) {
         this.invalidate()
         return Object.freeze({ url: this.webContents.getURL(), snapshotRevision: this.revision })
       }
-      const activeIndex = history.getActiveIndex()
-      const targetIndex = activeIndex + (action.kind === 'back' ? -1 : 1)
-      const entry = Number.isSafeInteger(activeIndex) ? history.getEntryAtIndex(targetIndex) : undefined
-      if (entry === undefined || entry === null || typeof entry.url !== 'string' || entry.url.length === 0) {
-        throw new AgentBrowserError('INTERNAL', 'browser history target is unavailable')
-      }
-      const target = await this.urlPolicy.authorize(entry.url, signal)
-      this.assertOpen()
+      const historySnapshot = this.captureHistorySnapshot(offset)
+      const authorizationRevision = this.revision
+      const target = await this.urlPolicy.authorize(historySnapshot.targetEntry.url, signal)
+      this.assertHistorySnapshot(historySnapshot, authorizationRevision, offset)
       this.invalidate()
-      await this.loadAuthorized(target, signal, () => { history.goToIndex(targetIndex) })
+      const commitRevision = this.revision
+      await this.loadAuthorized(target, signal, () => {
+        this.assertHistorySnapshot(historySnapshot, commitRevision, offset)
+        history.goToIndex(historySnapshot.targetIndex)
+      })
       return Object.freeze({ url: target, snapshotRevision: this.revision })
     }
     if (action.kind === 'reload') {
-      const target = await this.urlPolicy.authorize(this.webContents.getURL(), signal)
-      this.assertOpen()
+      const sourceUrl = this.webContents.getURL()
+      const authorizationRevision = this.revision
+      const target = await this.urlPolicy.authorize(sourceUrl, signal)
+      this.assertReloadState(sourceUrl, authorizationRevision)
       this.invalidate()
-      await this.loadAuthorized(target, signal, () => { this.webContents.reload() })
+      const commitRevision = this.revision
+      await this.loadAuthorized(target, signal, () => {
+        this.assertReloadState(sourceUrl, commitRevision)
+        this.webContents.reload()
+      })
       return Object.freeze({ url: target, snapshotRevision: this.revision })
     }
     if (action.kind === 'wait') {
@@ -1010,6 +1029,72 @@ export class CdpBrowserAdapter {
     } finally {
       if (this.approvedNavigation === target) this.approvedNavigation = undefined
     }
+  }
+
+  private captureHistorySnapshot(offset: -1 | 1): BrowserHistorySnapshot {
+    try {
+      const history = this.webContents.navigationHistory
+      const activeIndex = history.getActiveIndex()
+      const targetIndex = activeIndex + offset
+      const sourceUrl = this.webContents.getURL()
+      const activeEntry = Number.isSafeInteger(activeIndex) ? history.getEntryAtIndex(activeIndex) : undefined
+      const targetEntry = Number.isSafeInteger(targetIndex) ? history.getEntryAtIndex(targetIndex) : undefined
+      if (!this.validHistoryEntry(activeEntry) || !this.validHistoryEntry(targetEntry)
+        || activeEntry.url !== sourceUrl) {
+        throw new AgentBrowserError('INTERNAL', 'browser history target is unavailable')
+      }
+      return Object.freeze({
+        activeIndex,
+        targetIndex,
+        sourceUrl,
+        activeEntry: Object.freeze({ ...activeEntry }),
+        targetEntry: Object.freeze({ ...targetEntry }),
+      })
+    } catch (error) {
+      if (error instanceof AgentBrowserError) throw error
+      throw new AgentBrowserError('INTERNAL', 'browser history target is unavailable')
+    }
+  }
+
+  private assertHistorySnapshot(snapshot: BrowserHistorySnapshot, revision: number, offset: -1 | 1): void {
+    this.assertOpen()
+    try {
+      const history = this.webContents.navigationHistory
+      const activeEntry = history.getEntryAtIndex(snapshot.activeIndex)
+      const targetEntry = history.getEntryAtIndex(snapshot.targetIndex)
+      const allowed = offset === -1 ? history.canGoBack() : history.canGoForward()
+      if (this.revision !== revision || !allowed || history.getActiveIndex() !== snapshot.activeIndex
+        || this.webContents.getURL() !== snapshot.sourceUrl
+        || !this.sameHistoryEntry(activeEntry, snapshot.activeEntry)
+        || !this.sameHistoryEntry(targetEntry, snapshot.targetEntry)) {
+        throw new AgentBrowserError('STALE_REF', 'browser history changed before navigation commit')
+      }
+    } catch (error) {
+      if (error instanceof AgentBrowserError) throw error
+      throw new AgentBrowserError('STALE_REF', 'browser history changed before navigation commit')
+    }
+  }
+
+  private assertReloadState(sourceUrl: string, revision: number): void {
+    this.assertOpen()
+    if (this.revision !== revision || this.webContents.getURL() !== sourceUrl) {
+      throw new AgentBrowserError('STALE_REF', 'browser page changed before reload commit')
+    }
+  }
+
+  private validHistoryEntry(value: unknown): value is Readonly<{ url: string; title?: string; pageState?: string }> {
+    const source = record(value)
+    return typeof source?.url === 'string' && source.url.length > 0
+      && (source.title === undefined || typeof source.title === 'string')
+      && (source.pageState === undefined || typeof source.pageState === 'string')
+  }
+
+  private sameHistoryEntry(
+    value: unknown,
+    expected: Readonly<{ url: string; title?: string; pageState?: string }>,
+  ): boolean {
+    return this.validHistoryEntry(value) && value.url === expected.url
+      && value.title === expected.title && value.pageState === expected.pageState
   }
 
   private prevent(event: unknown): void {
