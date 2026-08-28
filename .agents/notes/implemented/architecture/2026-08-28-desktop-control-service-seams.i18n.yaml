@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-28-desktop-control-service-seams.md
-2026-08-28-desktop-control-service-seams.md: 06e94278663ff9fd22ab62b113c7bd08401ece78
-2026-08-28-desktop-control-service-seams.zh.md: c9ab2259d53ecaf630db67a9288d4b991795d55b
+2026-08-28-desktop-control-service-seams.md: 091bf327730bd18b96b6a4fccc621e0437bb995e
+2026-08-28-desktop-control-service-seams.zh.md: f16f23a61787a45afe5c4e1184d55cab07f41fef

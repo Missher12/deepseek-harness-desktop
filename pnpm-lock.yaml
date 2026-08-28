@@ -443,6 +443,9 @@ importers:
       '@deepseek-ai/dsh-brand':
         specifier: workspace:^
         version: link:../../packages/util/brand
+      '@deepseek-ai/dsh-browser-control':
+        specifier: workspace:^
+        version: link:../../packages/control/browser-control
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:^
         version: link:../../packages/client/connection
@@ -608,6 +611,9 @@ importers:
       '@deepseek-ai/dsh-compaction-tool-result-pruner':
         specifier: workspace:^
         version: link:../../packages/compaction/compaction-tool-result-pruner
+      '@deepseek-ai/dsh-computer-control':
+        specifier: workspace:^
+        version: link:../../packages/control/computer-control
       '@deepseek-ai/dsh-cordis-client-runner':
         specifier: workspace:^
         version: link:../../packages/extensions/cordis-client-runner
@@ -620,6 +626,12 @@ importers:
       '@deepseek-ai/dsh-credentials-local':
         specifier: workspace:^
         version: link:../../packages/credentials/credentials-local
+      '@deepseek-ai/dsh-desktop-control-host':
+        specifier: workspace:^
+        version: link:../../packages/control/desktop-control-host
+      '@deepseek-ai/dsh-desktop-control-protocol':
+        specifier: workspace:^
+        version: link:../../packages/control/desktop-control-protocol
       '@deepseek-ai/dsh-desktop-managed-evolution':
         specifier: workspace:^
         version: link:../desktop-managed-evolution
@@ -4517,6 +4529,30 @@ importers:
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+
+  packages/control/desktop-control-host:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-browser-control':
+        specifier: workspace:^
+        version: link:../browser-control
+      '@deepseek-ai/dsh-computer-control':
+        specifier: workspace:^
+        version: link:../computer-control
+      '@deepseek-ai/dsh-desktop-control-protocol':
+        specifier: workspace:^
+        version: link:../desktop-control-protocol
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
 
   packages/control/desktop-control-protocol:
     devDependencies:

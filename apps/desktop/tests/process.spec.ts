@@ -1,8 +1,15 @@
 import type { ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import { fileURLToPath } from 'node:url'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
-import { HarnessProcess, type HarnessProcessOptions } from '../src/harness/process.ts'
+import { RequestId, SessionId, encodeJsonFrame } from '@deepseek-ai/dsh-desktop-control-protocol'
+import {
+  HarnessProcess,
+  type HarnessControlChannel,
+  type HarnessControlLifecycle,
+  type HarnessProcessOptions,
+} from '../src/harness/process.ts'
 import type { DesktopStartupMilestone } from '../src/startup-timeline.ts'
 
 class FakeChild extends EventEmitter {
@@ -10,6 +17,19 @@ class FakeChild extends EventEmitter {
   readonly stdout = new PassThrough()
   readonly stderr = new PassThrough()
   exitCode: number | null = null
+  connected = true
+  readonly sent: Uint8Array[] = []
+
+  send(message: Uint8Array, callback?: (error: Error | null) => void): boolean {
+    this.sent.push(message)
+    queueMicrotask(() => { callback?.(null) })
+    return false
+  }
+
+  disconnect(): void {
+    this.connected = false
+    this.emit('disconnect')
+  }
 
   exit(code = 0): void {
     this.exitCode = code
@@ -88,6 +108,133 @@ describe('HarnessProcess', () => {
     expect(options.cwd).toBe('/workspace')
     expect(options.detached).toBe(true)
     expect(options.env?.ELECTRON_RUN_AS_NODE).toBe('1')
+    expect(options.stdio).toEqual(['ignore', 'pipe', 'pipe', 'ipc'])
+    expect(options.serialization).toBe('advanced')
+    expect(options.env).not.toHaveProperty('NODE_CHANNEL_FD')
+    expect(options.env).not.toHaveProperty('NODE_CHANNEL_SERIALIZATION_MODE')
+  })
+
+  it('exposes only a copied-frame IPC channel for the exact owned child', async () => {
+    const child = new FakeChild()
+    const attached: HarnessControlChannel[] = []
+    const detached: HarnessControlChannel[] = []
+    const lifecycle: HarnessControlLifecycle = {
+      attach: (channel) => { attached.push(channel) },
+      beforeStop: async () => undefined,
+      detach: (channel) => { detached.push(channel) },
+    }
+    const owned = new HarnessProcess({
+      spawn: () => child as unknown as ChildProcess,
+      executable: '/Electron',
+      cli: '/cli.js',
+      waitForHarness: async () => undefined,
+      terminateTree: () => { queueMicrotask(() => { child.exit() }) },
+      controlLifecycle: lifecycle,
+    })
+
+    const pending = owned.start('/workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await pending
+    expect(attached).toHaveLength(1)
+
+    const channel = attached[0]!
+    const source = Uint8Array.of(0x01, 0x02, 0x03)
+    await new Promise<void>((resolve, reject) => {
+      channel.send(source, (error) => { if (error === undefined) resolve(); else reject(error) })
+      source[1] = 0xff
+    })
+    expect([...child.sent[0]!]).toEqual([0x01, 0x02, 0x03])
+
+    const messages: Uint8Array[] = []
+    const stopListening = channel.onMessage((frame) => { messages.push(frame) })
+    const inbound = Uint8Array.of(0x01, 0x04)
+    child.emit('message', inbound)
+    inbound[1] = 0xee
+    expect([...messages[0]!]).toEqual([0x01, 0x04])
+    stopListening()
+
+    await owned.stop()
+    expect(detached).toEqual([channel])
+  })
+
+  it('round-trips one raw copied protocol frame through a real advanced-serialization child channel', async () => {
+    const attached: HarnessControlChannel[] = []
+    const lifecycle: HarnessControlLifecycle = {
+      attach: (channel) => { attached.push(channel) },
+      beforeStop: async () => undefined,
+      detach: () => undefined,
+    }
+    const fixture = fileURLToPath(new URL('./fixtures/harness-ipc-child.mjs', import.meta.url))
+    const owned = new HarnessProcess({
+      executable: process.execPath,
+      cli: fixture,
+      platform: 'win32',
+      waitForHarness: async () => undefined,
+      terminateTree: (pid) => { process.kill(pid, 'SIGTERM') },
+      controlLifecycle: lifecycle,
+    })
+
+    try {
+      await expect(owned.start(process.cwd())).resolves.toBe('http://127.0.0.1:45678/')
+      const channel = attached[0]!
+      const response = new Promise<Uint8Array>((resolve) => {
+        const detach = channel.onMessage((frame) => { detach(); resolve(frame) })
+      })
+      const source = encodeJsonFrame({
+        protocolVersion: 1,
+        messageKind: 'request',
+        requestKind: 'desktop.status',
+        requestId: RequestId('00000000-0000-4000-8000-000000000701'),
+        sessionId: SessionId('spawned-ipc-session'),
+        deadlineUnixMs: Date.now() + 30_000,
+      })
+      const expected = new Uint8Array(source)
+      await new Promise<void>((resolve, reject) => {
+        channel.send(source, (error) => { if (error === undefined) resolve(); else reject(error) })
+        source.fill(0xff)
+      })
+
+      const echoed = await response
+      expect(echoed[0]).toBe(0x01)
+      expect([...echoed]).toEqual([...expected])
+      channel.disconnect()
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(owned.pid).toBeTypeOf('number')
+    } finally {
+      await owned.stop()
+    }
+  })
+
+  it('awaits the control shutdown hook before terminating every owned child tree', async () => {
+    const order: string[] = []
+    const child = new FakeChild()
+    const lifecycle: HarnessControlLifecycle = {
+      attach: () => { order.push('attach') },
+      beforeStop: async () => {
+        order.push('before-stop:start')
+        await Promise.resolve()
+        order.push('before-stop:end')
+      },
+      detach: () => { order.push('detach') },
+    }
+    const owned = new HarnessProcess({
+      spawn: () => child as unknown as ChildProcess,
+      executable: '/Electron',
+      cli: '/cli.js',
+      waitForHarness: async () => undefined,
+      terminateTree: () => {
+        order.push('terminate')
+        queueMicrotask(() => { child.exit() })
+      },
+      controlLifecycle: lifecycle,
+    })
+    const pending = owned.start('/workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await pending
+
+    await owned.stop()
+
+    expect(order).toEqual(['attach', 'before-stop:start', 'before-stop:end', 'detach', 'terminate'])
   })
 
   it('accepts the Windows startup URL when the browser status shares its stdout chunk', async () => {

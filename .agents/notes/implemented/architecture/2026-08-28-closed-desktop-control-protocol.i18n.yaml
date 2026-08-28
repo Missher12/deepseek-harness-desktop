@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-28-closed-desktop-control-protocol.md
-2026-08-28-closed-desktop-control-protocol.md: a6e08e1215a60e577a98c25b6ef952fa7f0e9090
-2026-08-28-closed-desktop-control-protocol.zh.md: 40c5f05edb182ae1784e17ff88319266aec69910
+2026-08-28-closed-desktop-control-protocol.md: a8c1ac6685fb7c8a2bcbd8d058f2368e967b8c15
+2026-08-28-closed-desktop-control-protocol.zh.md: 27e5681e0beeae720da8f1ba1bc3cd387e7cdfc1

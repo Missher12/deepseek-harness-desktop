@@ -16,6 +16,18 @@
     },
     {
       "path": "../../packages/util/home-paths"
+    },
+    {
+      "path": "../../packages/control/desktop-control-protocol"
+    },
+    {
+      "path": "../../packages/control/browser-control"
+    },
+    {
+      "path": "../../packages/control/computer-control"
+    },
+    {
+      "path": "../../packages/control/desktop-control-host"
     }
   ]
 }

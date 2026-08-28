@@ -48,6 +48,10 @@ import { desktopPlatformBehavior } from './window/platform.ts'
 import { readWindowBounds, writeWindowBounds } from './window/state.ts'
 import { readDesktopWindowPrerequisites } from './window/prerequisites.ts'
 import { DesktopStartupTimeline } from './startup-timeline.ts'
+import {
+  DesktopControlBridgeServer,
+  unavailableDesktopControlBackend,
+} from './control/bridge-server.ts'
 
 const PRODUCT_NAME = 'DeepSeek Harness'
 const require = createRequire(import.meta.url)
@@ -126,6 +130,12 @@ const updateService = new DesktopUpdateService({
   userData,
 })
 const startupTimeline = new DesktopStartupTimeline(record)
+const controlBridge = new DesktopControlBridgeServer({
+  backend: unavailableDesktopControlBackend,
+  log: (event) => {
+    record(`desktop control ${event.direction} generation=${String(event.generation)} pending=${String(event.pending)} reason=${event.reason}`)
+  },
+})
 
 const runtime = new HarnessProcess({
   cli: resolveCliPath(),
@@ -139,6 +149,7 @@ const runtime = new HarnessProcess({
   },
   onExit: () => { void lifecycle.controller?.runtimeExited() },
   markStartup: (milestone) => { startupTimeline.mark(milestone) },
+  controlLifecycle: controlBridge,
 })
 
 function record(message: string): void {

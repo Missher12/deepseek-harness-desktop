@@ -2,13 +2,14 @@
 
 English | [中文](desktop-control.zh.md)
 
-Desktop Control defines the Host-side service seams used by later adapters for the visible Agent browser and user-authorized native applications. It does not provide Electron, browser-debugger, native-helper, UI, or model-tool implementations.
+Desktop Control defines the Host-side service seams and dedicated owned-child IPC providers used by later adapters for the visible Agent browser and user-authorized native applications. It does not yet provide lease authority, browser-debugger, native-helper, UI, or model-tool implementations.
 
 Sources:
 
 - [`packages/control/desktop-control-protocol`](../../packages/control/desktop-control-protocol)
 - [`packages/control/browser-control`](../../packages/control/browser-control)
 - [`packages/control/computer-control`](../../packages/control/computer-control)
+- [`packages/control/desktop-control-host`](../../packages/control/desktop-control-host)
 
 ## Protocol ownership
 
@@ -17,6 +18,14 @@ Sources:
 The closed protocol exposes no JavaScript, selector, command, generic payload, or raw operating-system escape. Optional PNG metadata is limited to transfer identity, byte length, lower-case SHA-256, width, and height. The PNG bytes travel in the protocol's separate bounded binary envelope. A transport-owned JSON validator runs before screenshot correlation, so a valid message from the wrong direction fails immediately without opening pending PNG state.
 
 Encoding rejects custom prototypes, `toJSON`, accessors, non-enumerable or symbol-keyed state, and shared or cyclic values before serialization, then strictly validates the exact emitted JSON frame. A direction validator receives only that detached JSON, must not return data, and permanently closes its decoder if it rejects or returns anything.
+
+## Owned-child Host bridge
+
+The Desktop-only `@deepseek-ai/dsh-desktop-control-host` plugin registers both service providers only when the Harness process has the exact Node IPC channel created by Electron. One process-wide client, lease cache, 32-entry pending ledger, 256-entry FIFO terminal tombstone set, and callback-driven envelope queue serve both providers. The Electron peer owns a separate ledger and queue. Every frame is copied and unprefixed on this Node channel; JSON and its optional verified PNG remain adjacent, and neither peer advances from the non-authoritative boolean return of `send()`.
+
+Harness-to-Electron accepts all 27 bridge requests plus only request cancellation and session revocation. Electron-to-Harness accepts matching responses plus only their immediately adjacent PNG, lease revocation, and parent shutdown. Both directions validate before image correlation, bind work to the exact child generation, require ID/kind/session and optional lease tuple matches, and close only the control link on malformed, wrong-direction, mismatched, or failed transport.
+
+Normal turn stopping synchronously invalidates the cached lease and awaits a bounded release with an independent cleanup signal. The post-commit `turn/end` listener is deliberately fire-and-forget and only queues a fallback; the awaited session flush drains that tail. Session disposal queues session revocation, and plugin/application teardown drains cleanup before disconnecting the exact IPC link and terminating the owned process tree. Until the later Electron authority is installed, requests fail closed with `NOT_SUPPORTED`; ordinary Harness startup and chat do not depend on this channel.
 
 ## Browser service seam
 

@@ -67,6 +67,10 @@ describe('desktop package manifest', () => {
     expect(manifest.dependencies['@deepseek-ai/dsh-web-frontend']).toBe('workspace:^')
     expect(manifest.dependencies['@deepseek-ai/dsh-reasoning-effort']).toBe('workspace:^')
     expect(manifest.dependencies['@deepseek-ai/dsh-session-messenger']).toBe('workspace:^')
+    expect(manifest.dependencies['@deepseek-ai/dsh-desktop-control-protocol']).toBe('workspace:^')
+    expect(manifest.dependencies['@deepseek-ai/dsh-browser-control']).toBe('workspace:^')
+    expect(manifest.dependencies['@deepseek-ai/dsh-computer-control']).toBe('workspace:^')
+    expect(manifest.dependencies['@deepseek-ai/dsh-desktop-control-host']).toBe('workspace:^')
     expect(manifest.devDependencies.electron).toBe('43.4.0')
     expect(manifest.devDependencies['electron-builder']).toBe('26.15.3')
     expect(manifest.devDependencies['@electron/rebuild']).toBe('4.2.0')
@@ -162,6 +166,25 @@ describe('desktop package manifest', () => {
       id: 'dsh-market',
       name: 'dshmarket',
     })
+  })
+
+  it('mounts one canonical internal Desktop control Host and externalizes the shared codec', () => {
+    const patches = yaml.load(
+      readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8'),
+    ) as DesktopPatch[]
+    const rows = patches.flatMap(patch => patch.insert ?? [])
+    const bundleConfig = readFileSync(new URL('../tsdown.config.ts', import.meta.url), 'utf8')
+    const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
+
+    expect(rows.filter(row => row.id === 'desktop-control-host'
+      || row.name === '@deepseek-ai/dsh-desktop-control-host')).toEqual([{
+      id: 'desktop-control-host',
+      name: '@deepseek-ai/dsh-desktop-control-host',
+    }])
+    expect(bundleConfig).toContain("'@deepseek-ai/dsh-desktop-control-protocol'")
+    expect(mainSource).toContain('new DesktopControlBridgeServer')
+    expect(mainSource).toContain('controlLifecycle: controlBridge')
+    expect(mainSource).toContain('backend: unavailableDesktopControlBackend')
   })
 
   it('ships one ordered default-on external-brain stack from immutable release archives', () => {

@@ -16,6 +16,7 @@ export default defineConfig([
         'electron',
         '@deepseek-ai/dsh-atomic-write',
         '@deepseek-ai/dsh-home-paths',
+        '@deepseek-ai/dsh-desktop-control-protocol',
       ],
     },
   },

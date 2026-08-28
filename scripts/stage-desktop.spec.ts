@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   desktopStagePnpmInvocation,
   stageDesktop,
+  validateDesktopControlHostPatch,
   validateReasoningEffortPatch,
   type StageDesktopDependencies,
 } from './stage-desktop.ts'
@@ -15,6 +16,8 @@ const VALID_DESKTOP_PATCH = `
       name: '@deepseek-ai/dsh-reasoning-effort'
     - id: session-messenger
       name: '@deepseek-ai/dsh-session-messenger'
+    - id: desktop-control-host
+      name: '@deepseek-ai/dsh-desktop-control-host'
     - id: dsh-market
       name: 'dshmarket'
     - id: desktop-system-update
@@ -109,6 +112,7 @@ describe('stageDesktop', () => {
 
     expect(dependencies.commands).toEqual([
       ['pnpm', ['--filter', '@deepseek-ai/dsh-desktop', 'deploy', '--legacy', DEFAULT_STAGE]],
+      [process.execPath, [join(REPO_ROOT, 'scripts/verify-desktop-stage-main-import.mjs'), DEFAULT_STAGE]],
     ])
     expect(dependencies.copies).toEqual([
       [join(REPO_ROOT, 'apps/desktop/lib'), join(DEFAULT_STAGE, 'lib')],
@@ -141,6 +145,20 @@ describe('stageDesktop', () => {
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-session-messenger/lib/index.js')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-session-messenger/lib/client.js')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-session-messenger/cordis.patch.yml')
+    expect(result.validatedFiles).toEqual(expect.arrayContaining([
+      'node_modules/@deepseek-ai/dsh-desktop-control-protocol/package.json',
+      'node_modules/@deepseek-ai/dsh-desktop-control-protocol/protocol-v1.json',
+      'node_modules/@deepseek-ai/dsh-desktop-control-protocol/lib/index.js',
+      'node_modules/@deepseek-ai/dsh-browser-control/package.json',
+      'node_modules/@deepseek-ai/dsh-browser-control/lib/index.js',
+      'node_modules/@deepseek-ai/dsh-browser-control/lib/invariant.js',
+      'node_modules/@deepseek-ai/dsh-computer-control/package.json',
+      'node_modules/@deepseek-ai/dsh-computer-control/lib/index.js',
+      'node_modules/@deepseek-ai/dsh-computer-control/lib/invariant.js',
+      'node_modules/@deepseek-ai/dsh-desktop-control-host/package.json',
+      'node_modules/@deepseek-ai/dsh-desktop-control-host/lib/index.js',
+      'node_modules/@deepseek-ai/dsh-desktop-control-host/lib/invariant.js',
+    ]))
     expect(result.validatedFiles).toContain('node_modules/pnpm/bin/pnpm.mjs')
     expect(result.validatedFiles).toContain('lib/preload.cjs')
     expect(result.validatedFiles).toContain('lib/update-helper.js')
@@ -188,6 +206,31 @@ describe('stageDesktop', () => {
     await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(/exactly one canonical session-messenger row/i)
     expect(dependencies.removed).toEqual([])
     expect(dependencies.commands).toEqual([])
+  })
+
+  it('rejects a duplicate or configured Desktop control Host row before mutation', async () => {
+    const duplicate = `
+- insert:
+    - id: reasoning-effort
+      name: '@deepseek-ai/dsh-reasoning-effort'
+    - id: session-messenger
+      name: '@deepseek-ai/dsh-session-messenger'
+    - id: desktop-control-host
+      name: '@deepseek-ai/dsh-desktop-control-host'
+      config: {}
+    - id: another-control-host
+      name: '@deepseek-ai/dsh-desktop-control-host'
+`
+    expect(() => { validateDesktopControlHostPatch(duplicate) }).toThrow(/exactly one canonical desktop-control-host row/i)
+    const dependencies = fakeDependencies(
+      true,
+      DEFAULT_NATIVE_BINARIES,
+      {},
+      DEFAULT_MARKET_PACKAGE_DIRECTORIES,
+      duplicate,
+    )
+    await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(/exactly one canonical desktop-control-host row/i)
+    expect(dependencies.removed).toEqual([])
   })
 
   it('rejects a later patch targeting the canonical messenger row before mutation', async () => {

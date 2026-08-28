@@ -9,6 +9,8 @@ import * as yaml from 'js-yaml'
 const DESKTOP_PACKAGE = '@deepseek-ai/dsh-desktop'
 const SESSION_MESSENGER_PACKAGE = '@deepseek-ai/dsh-session-messenger'
 const SESSION_MESSENGER_ROW_ID = 'session-messenger'
+const DESKTOP_CONTROL_HOST_PACKAGE = '@deepseek-ai/dsh-desktop-control-host'
+const DESKTOP_CONTROL_HOST_ROW_ID = 'desktop-control-host'
 
 /** OS seams injected by staging tests. */
 export interface StageDesktopDependencies {
@@ -173,6 +175,18 @@ function stageRelative(stageDir: string, path: string): string {
   return value.split(sep).join('/')
 }
 
+function flattenEntryRows(entries: EntryOptions[]): EntryOptions[] {
+  const rows: EntryOptions[] = []
+  const visit = (children: EntryOptions[]): void => {
+    for (const row of children) {
+      rows.push(row)
+      if (row.group && Array.isArray(row.config)) visit(row.config as EntryOptions[])
+    }
+  }
+  visit(entries)
+  return rows
+}
+
 function assertCanonicalSessionMessengerRow(content: string): void {
   let parsed: unknown
   try {
@@ -192,14 +206,7 @@ function assertCanonicalSessionMessengerRow(content: string): void {
     throw new Error('Desktop staging requires exactly one canonical session-messenger row.')
   }
   const entries = applyEntryPatches([], patches, () => {})
-  const rows: EntryOptions[] = []
-  const visit = (children: EntryOptions[]): void => {
-    for (const row of children) {
-      rows.push(row)
-      if (row.group && Array.isArray(row.config)) visit(row.config as EntryOptions[])
-    }
-  }
-  visit(entries)
+  const rows = flattenEntryRows(entries)
   const candidates = rows.filter(row => (
     row.id === SESSION_MESSENGER_ROW_ID || row.name === SESSION_MESSENGER_PACKAGE
   ))
@@ -210,6 +217,40 @@ function assertCanonicalSessionMessengerRow(content: string): void {
     || candidate.name !== SESSION_MESSENGER_PACKAGE
     || Object.keys(candidate).sort().join(',') !== 'id,name') {
     throw new Error('Desktop staging requires exactly one canonical session-messenger row.')
+  }
+}
+
+/** Fail closed unless the immutable overlay contains one unconfigured internal control Host row. */
+export function validateDesktopControlHostPatch(content: string): void {
+  let parsed: unknown
+  try {
+    parsed = yaml.load(content, { schema: entryListSchema })
+  } catch (error: unknown) {
+    throw new Error('Desktop staging requires exactly one canonical desktop-control-host row.', { cause: error })
+  }
+  if (!Array.isArray(parsed) || parsed.some(patch => (
+    typeof patch !== 'object' || patch === null || Array.isArray(patch)
+  ))) {
+    throw new Error('Desktop staging requires exactly one canonical desktop-control-host row.')
+  }
+  const patches = parsed as PatchOptions[]
+  if (patches.some(patch => (
+    patch.id === DESKTOP_CONTROL_HOST_ROW_ID || patch.name === DESKTOP_CONTROL_HOST_PACKAGE
+  ))) {
+    throw new Error('Desktop staging requires exactly one canonical desktop-control-host row.')
+  }
+  const entries = applyEntryPatches([], patches, () => {})
+  const rows = flattenEntryRows(entries)
+  const candidates = rows.filter(row => (
+    row.id === DESKTOP_CONTROL_HOST_ROW_ID || row.name === DESKTOP_CONTROL_HOST_PACKAGE
+  ))
+  const candidate = candidates[0]
+  if (candidates.length !== 1
+    || candidate === undefined
+    || candidate.id !== DESKTOP_CONTROL_HOST_ROW_ID
+    || candidate.name !== DESKTOP_CONTROL_HOST_PACKAGE
+    || Object.keys(candidate).sort().join(',') !== 'id,name') {
+    throw new Error('Desktop staging requires exactly one canonical desktop-control-host row.')
   }
 }
 
@@ -237,6 +278,7 @@ export async function stageDesktop(
   const desktopPatch = await dependencies.readText(join(desktopDir, 'desktop.cordis.patch.yml'))
   validateReasoningEffortPatch(desktopPatch)
   assertCanonicalSessionMessengerRow(desktopPatch)
+  validateDesktopControlHostPatch(desktopPatch)
   await dependencies.remove(stageDir)
   // pnpm 11's legacy deploy writes its dependency mode into the root workspace
   // state. Passing --prod there corrupts later root commands into production-
@@ -289,6 +331,19 @@ export async function stageDesktop(
     'node_modules/@deepseek-ai/dsh-session-messenger/lib/index.js',
     'node_modules/@deepseek-ai/dsh-session-messenger/lib/client.js',
     'node_modules/@deepseek-ai/dsh-session-messenger/cordis.patch.yml',
+    'node_modules/@deepseek-ai/dsh-desktop-control-protocol/package.json',
+    'node_modules/@deepseek-ai/dsh-desktop-control-protocol/protocol-v1.json',
+    'node_modules/@deepseek-ai/dsh-desktop-control-protocol/lib/index.js',
+    'node_modules/@deepseek-ai/dsh-desktop-control-protocol/lib/invariant.js',
+    'node_modules/@deepseek-ai/dsh-browser-control/package.json',
+    'node_modules/@deepseek-ai/dsh-browser-control/lib/index.js',
+    'node_modules/@deepseek-ai/dsh-browser-control/lib/invariant.js',
+    'node_modules/@deepseek-ai/dsh-computer-control/package.json',
+    'node_modules/@deepseek-ai/dsh-computer-control/lib/index.js',
+    'node_modules/@deepseek-ai/dsh-computer-control/lib/invariant.js',
+    'node_modules/@deepseek-ai/dsh-desktop-control-host/package.json',
+    'node_modules/@deepseek-ai/dsh-desktop-control-host/lib/index.js',
+    'node_modules/@deepseek-ai/dsh-desktop-control-host/lib/invariant.js',
     'node_modules/@deepseek-ai/dsh-client-ui-settings-system-update/lib/index.js',
     'node_modules/@deepseek-ai/dsh-client-ui-settings-system-update/lib/client.js',
     'node_modules/dshmarket/lib/index.js',
@@ -357,6 +412,12 @@ export async function stageDesktop(
 
   const nativeBinaries = await dependencies.findNativeBinaries(join(stageDir, 'node_modules'))
   if (nativeBinaries.length === 0) throw new Error('Desktop staging found no native .node modules.')
+
+  dependencies.run(
+    process.execPath,
+    [join(root, 'scripts', 'verify-desktop-stage-main-import.mjs'), stageDir],
+    root,
+  )
 
   return {
     stageDir,

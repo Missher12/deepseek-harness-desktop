@@ -18,6 +18,8 @@ Status: implemented
 
 二进制 envelope 将有界 UTF-8 JSON 与原始 PNG 字节分离。编码会先检查仅含 data descriptor 的普通值树，拒绝自定义序列化 hook 与非 data 状态，再严格解码并校验实际发出的 frame。Transport 可以注入受信 JSON 消息校验器；它只看到已分离的 JSON、不得返回数据，并在截图关联进入 pending 状态前运行，使每个 bridge 方向能够立即拒绝格式有效但方向错误的消息。截图元数据随后要求后续紧邻的 PNG，并绑定其 UUID、字节长度、SHA-256、宽度和高度。Decoder 输出与输入分离并深度冻结；图像字节只有一个不可变所有方，其 reader 返回副本。校验器拒绝或返回数据、畸形值或 frame 顺序只会关闭用于 Desktop 控制的 decoder。Bridge deadline 使用调用方的单次时间样本，且只接受 `(nowUnixMs, nowUnixMs + 30_000]` 区间。
 
+Desktop 所有的 Node IPC 两端现在会在关联前应用这些方向校验器：Harness 只发送 27 项 bridge request、cancel 与 session revoke；Electron 只发送匹配 response 及其可选紧邻 PNG、lease revoke 与 parent shutdown。每条 IPC 消息只包含一个复制后的无前缀 frame。Helper 的四字节流前缀仍只属于后续原生 helper transport。
+
 ## 考虑过的替代方案
 
 **将 DTO 复制到每个服务和适配器中。** 这会减少一个包依赖，但也会在最需要防漂移的信任边界产生相互独立的词汇。
@@ -28,4 +30,4 @@ Status: implemented
 
 ## 后果
 
-每个新操作或结果都需要一次经审查的 manifest 与 TypeScript 更新，并修改 fixture；后续本地实现还必须证明逐字节对等。原始 acquire／release frame 与 status、screenshot fixture 一同检入。本包定义 lease 生命周期消息，但刻意不创建 lease，也不负责授权、请求 ledger、进程 generation 或图像归一化；其运行时所有方使用它已校验的值。在仓库预发布阶段，protocol v1 不提供兼容性协商。
+每个新操作或结果都需要一次经审查的 manifest 与 TypeScript 更新，并修改 fixture；后续本地实现还必须证明逐字节对等。原始 acquire／release frame 与 status、screenshot fixture 一同检入。本包定义 lease 生命周期消息，但刻意不创建 lease，也不负责授权、请求 ledger、进程 generation 或图像归一化；Desktop Host 与 Electron bridge 拥有这些有状态 transport 事项，后续 authority 使用已校验值。在仓库预发布阶段，protocol v1 不提供兼容性协商。

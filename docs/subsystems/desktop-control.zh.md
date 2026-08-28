@@ -2,13 +2,14 @@
 
 [English](desktop-control.md) | 中文
 
-桌面控制定义 Host 侧 Service Definition，供后续适配器控制可见的 Agent 浏览器和用户授权的原生应用。它本身不提供 Electron、浏览器调试器、原生 helper、UI 或模型工具实现。
+桌面控制定义 Host 侧 Service Definition 与专用自有子进程 IPC provider，供后续适配器控制可见的 Agent 浏览器和用户授权的原生应用。它尚不提供 lease authority、浏览器调试器、原生 helper、UI 或模型工具实现。
 
 源码：
 
 - [`packages/control/desktop-control-protocol`](../../packages/control/desktop-control-protocol)
 - [`packages/control/browser-control`](../../packages/control/browser-control)
 - [`packages/control/computer-control`](../../packages/control/computer-control)
+- [`packages/control/desktop-control-host`](../../packages/control/desktop-control-host)
 
 ## 协议归属
 
@@ -17,6 +18,14 @@
 封闭协议不暴露 JavaScript、selector、命令、通用 payload 或原始操作系统逃逸口。可选 PNG 元数据只包含传输标识、字节长度、小写 SHA-256、宽度和高度；PNG 字节通过协议内独立且有界的二进制信封传输。Transport 所有的 JSON 校验器会在截图关联前运行，因此方向错误的有效消息会立即失败，不会打开 PNG pending 状态。
 
 编码会在序列化前拒绝自定义 prototype、`toJSON`、accessor、不可枚举或 symbol key 状态，以及共享或循环值，再严格校验实际发出的 JSON frame。方向校验器只能接收这份分离的 JSON、不得返回数据；拒绝消息或返回任何内容都会永久关闭其 decoder。
+
+## 自有子进程 Host bridge
+
+Desktop 专用 `@deepseek-ai/dsh-desktop-control-host` 插件只在 Harness 进程拥有 Electron 创建的准确 Node IPC 通道时注册两项 service provider。一个进程级 client、lease cache、32 项 pending ledger、256 项 FIFO 终态 tombstone 集与 callback 驱动 envelope queue 同时服务两个 provider。Electron peer 拥有独立 ledger 与 queue。该 Node channel 上的每个 frame 都经过复制且没有前缀；JSON 与其可选的已验证 PNG 保持相邻，任一 peer 都不会依据 `send()` 不具权威性的布尔返回值推进。
+
+Harness 到 Electron 接受全部 27 项 bridge request，另外只接受 request cancellation 与 session revocation。Electron 到 Harness 接受匹配 response，另外只接受其紧邻 PNG、lease revocation 与 parent shutdown。两个方向都在 image correlation 前完成验证，把工作绑定到准确子进程 generation，要求 ID／kind／session 与可选 lease tuple 匹配，并且在畸形、方向错误、不匹配或 transport 失败时只关闭 control link。
+
+正常 turn stopping 会同步让缓存 lease 失效，并用独立 cleanup signal 等待有界 release。提交后的 `turn/end` listener 按设计是 fire-and-forget，只排入 fallback；可等待的 session flush 会 drain 该 tail。Session disposal 会排入 session revocation，插件／应用 teardown 则在断开准确 IPC link、终止自有进程树前 drain cleanup。在后续 Electron authority 安装前，请求会以 `NOT_SUPPORTED` 遇疑即拒；普通 Harness 启动与聊天不依赖该通道。
 
 ## 浏览器服务 seam
 

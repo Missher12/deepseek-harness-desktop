@@ -16,6 +16,8 @@ Status: implemented
 
 未来工具 Consumer 推导官方 session，并填充 request ID、deadline、lease ID／revision 及所有 transport 字段。模型 schema 看不到 lease acquire、session 或 lease authority、approval、quota、clock 或 action digest。
 
+Desktop 专用 `@deepseek-ai/dsh-desktop-control-host` 现在是两条 seam 的首个具体 provider。其唯一进程级 IPC client 与不可变 lease descriptor cache 由两个服务共享；没有 Electron 所有的子进程 channel 时，它不会注册任一服务。Snapshot adapter 保留 service 层 metadata／PNG 同现同缺类型。Turn stopping 会在独立 cleanup signal 上等待有界 release；提交后的 turn end 只排入由 session flush drain 的 fallback；session disposal 排入 revoke，而插件 disposal 会 drain 每条 cleanup tail。
+
 这两个服务是特权内部权威，不是供模型编写动态包使用的扩展点。文档目录会保留其约定，供受信的第一方提供方与 Consumer 阅读；运行时模型目录会排除两个服务，以及只通过它们可达的所有类型。动态 Cordis façade 会拒绝两个键的已声明属性访问与 `ctx.get()`，`has` 也不会宣称它们存在；使用真实 Cordis Context 的普通静态第一方插件不受影响。
 
 共享的纯分类器与原生服务策略放在一起，只返回 `ALLOW`、`APPROVAL_REQUIRED` 或 `DENY`。它的运行时边界只接受普通对象和精确的 request kind、surface、sensitivity 与 effect 清单值；敌意或未知值会在不抛异常的情况下被拒绝。已知安全敏感目标，以及无法确定的敏感性／效果都会被拒绝。无目标的 status／list request 携带 `not-applicable`；匹配 surface 上的 Stop 只有在封闭清单校验后才无需目标分类并保持免审批。普通只读操作会获准。外部副作用与持久 human browser 变更需要后续 Electron 原生审批；模型输出与页面文本不能提供分类器所需的权威事实。
@@ -30,4 +32,4 @@ Status: implemented
 
 ## 后果
 
-Host 适配器可以依赖稳定、可替换的服务，而无需导入 Electron 或原生 helper 代码。提供方实现获得可复用的所有者／新鲜度检查与不可变结果检查；后续 bridge／helper 层仍负责真正授权、创建、缓存、撤销和清理 lease，以及权限、quota 与原生执行。保守分类可能会拒绝一部分看似安全的控件，直到适配器能够权威识别它们；这是遇疑即拒所刻意承担的代价。
+Host 适配器可以依赖稳定、可替换的服务，而无需导入 Electron 或原生 helper 代码。首个 Desktop provider 提供 transport correlation、共享 descriptor cache、生命周期 release tail 与不可变 snapshot mapping；后续 authority／browser／helper 层仍负责真正授权、创建、下游清理、权限、quota 与原生执行。保守分类可能会拒绝一部分看似安全的控件，直到适配器能够权威识别它们；这是遇疑即拒所刻意承担的代价。

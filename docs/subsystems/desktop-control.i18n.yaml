@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/desktop-control.md
-desktop-control.md: 88d365bc83b2bd576780a70eea001e97469b8c99
-desktop-control.zh.md: 7f6ad9c02bc0f193ae04d235a1d9d1122b34b89b
+desktop-control.md: 8f75a82c64106947d3188cef5cb76bad64f606a9
+desktop-control.zh.md: fd25e4e089a54b8ad1d1f437325a449470788977

@@ -20,6 +20,11 @@
     - id: session-messenger
       name: '@deepseek-ai/dsh-session-messenger'
 
+    # Internal Host-only bridge to the Electron-owned control channel. It is
+    # not a model tool and registers nothing outside an owned IPC child.
+    - id: desktop-control-host
+      name: '@deepseek-ai/dsh-desktop-control-host'
+
     - id: desktop-workbench
       name: '@deepseek-ai/dsh-desktop-workbench'
 

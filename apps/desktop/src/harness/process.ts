@@ -17,6 +17,32 @@ export interface ExitState {
 
 type SpawnHarness = (executable: string, args: readonly string[], options: SpawnOptions) => ChildProcess
 
+/** Narrow raw-frame IPC surface for the exact child owned by {@link HarnessProcess}. */
+export interface HarnessControlChannel {
+  /** Monotonic process generation assigned before listeners become active. */
+  readonly generation: number
+  /** Whether Node still reports the exact child IPC channel as connected. */
+  readonly connected: boolean
+  /** Send one copied, unprefixed protocol frame and settle from Node's send callback. */
+  send(frame: Uint8Array, callback: (error?: Error) => void): void
+  /** Subscribe to copied raw frames received from the exact child. */
+  onMessage(listener: (frame: Uint8Array) => void): () => void
+  /** Subscribe to loss of the exact child IPC channel. */
+  onDisconnect(listener: () => void): () => void
+  /** Disconnect only the exact owned IPC channel without terminating the child. */
+  disconnect(): void
+}
+
+/** Lifecycle consumer attached to each exact Harness child generation. */
+export interface HarnessControlLifecycle {
+  /** Attach transport listeners after the new generation has been assigned. */
+  attach(channel: HarnessControlChannel): void
+  /** Await bounded control shutdown before process-tree termination. */
+  beforeStop(channel: HarnessControlChannel): Promise<void>
+  /** Drop listeners for the exact generation before the process tree is signalled. */
+  detach(channel: HarnessControlChannel): void
+}
+
 /** Dependencies required to own one Harness child process. */
 export interface HarnessProcessOptions {
   cli: string
@@ -31,6 +57,7 @@ export interface HarnessProcessOptions {
   onOutput?: (source: 'stdout' | 'stderr', text: string) => void
   onExit?: (state: ExitState) => void
   markStartup?: (milestone: DesktopStartupMilestone) => void
+  controlLifecycle?: HarnessControlLifecycle
 }
 
 function describeExit(state: ExitState): string {
@@ -59,10 +86,13 @@ function settledWithin(promise: Promise<unknown>, timeoutMs: number): Promise<bo
 export class HarnessProcess {
   private readonly options: Required<Pick<HarnessProcessOptions,
     'executable' | 'spawn' | 'waitForHarness' | 'platform' | 'terminateTree' | 'stopTimeoutMs'>>
-    & Pick<HarnessProcessOptions, 'cli' | 'patch' | 'prepare' | 'onOutput' | 'onExit' | 'markStartup'>
+    & Pick<HarnessProcessOptions,
+      'cli' | 'patch' | 'prepare' | 'onOutput' | 'onExit' | 'markStartup' | 'controlLifecycle'>
   private child: ChildProcess | undefined
   private exitPromise: Promise<ExitState> | undefined
   private detachOutput: (() => void) | undefined
+  private controlChannel: HarnessControlChannel | undefined
+  private controlGeneration = 0
 
   /**
    * Create an idle process owner.
@@ -98,6 +128,10 @@ export class HarnessProcess {
     if (this.child !== undefined) throw new Error('Harness process is already running.')
     this.options.prepare?.()
     this.options.markStartup?.('fallback-ready')
+    const childEnv = { ...process.env }
+    delete childEnv.NODE_CHANNEL_FD
+    delete childEnv.NODE_CHANNEL_SERIALIZATION_MODE
+    childEnv.ELECTRON_RUN_AS_NODE = '1'
     const child = this.options.spawn(this.options.executable, [
       // Electron's Node mode does not expose the internal ESM resolver through
       // node-addon-require-builtin. Loader needs this flag so bare plugin names
@@ -114,8 +148,9 @@ export class HarnessProcess {
     ], {
       cwd: workspace,
       detached: this.options.platform !== 'win32',
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      env: childEnv,
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      serialization: 'advanced',
     })
     if (child.pid === undefined || child.pid <= 0 || child.stdout === null || child.stderr === null) {
       throw new Error('Harness child did not expose a valid PID and output streams.')
@@ -124,11 +159,19 @@ export class HarnessProcess {
     const stderr = child.stderr
 
     this.child = child
+    const generation = ++this.controlGeneration
+    const controlChannel = createHarnessControlChannel(child, generation)
+    this.controlChannel = controlChannel
+    this.options.controlLifecycle?.attach(controlChannel)
     const exitPromise = new Promise<ExitState>((resolve) => {
       child.once('exit', (code, signal) => { resolve({ code, signal }) })
       child.once('error', (error) => { resolve({ code: null, signal: null, error }) })
     }).then((state) => {
       if (this.child === child) {
+        if (this.controlChannel === controlChannel) {
+          this.options.controlLifecycle?.detach(controlChannel)
+          this.controlChannel = undefined
+        }
         this.detachOutput?.()
         this.detachOutput = undefined
         this.child = undefined
@@ -201,6 +244,17 @@ export class HarnessProcess {
     const child = this.child
     const exitPromise = this.exitPromise
     if (child === undefined || exitPromise === undefined) return
+    const controlChannel = this.controlChannel
+    if (controlChannel !== undefined) {
+      try {
+        await this.options.controlLifecycle?.beforeStop(controlChannel)
+      } finally {
+        if (this.controlChannel === controlChannel) {
+          this.options.controlLifecycle?.detach(controlChannel)
+          this.controlChannel = undefined
+        }
+      }
+    }
     this.detachOutput?.()
     this.detachOutput = undefined
     const pid = child.pid
@@ -216,4 +270,33 @@ export class HarnessProcess {
     }
     await exitPromise
   }
+}
+
+function createHarnessControlChannel(child: ChildProcess, generation: number): HarnessControlChannel {
+  return Object.freeze({
+    generation,
+    get connected() { return child.connected },
+    send(frame: Uint8Array, callback: (error?: Error) => void): void {
+      const copy = new Uint8Array(frame)
+      if (!child.connected) {
+        callback(new Error('Harness child IPC channel is disconnected.'))
+        return
+      }
+      child.send(copy, (error) => { callback(error ?? undefined) })
+    },
+    onMessage(listener: (frame: Uint8Array) => void): () => void {
+      const handle = (message: unknown): void => {
+        listener(message instanceof Uint8Array ? new Uint8Array(message) : new Uint8Array())
+      }
+      child.on('message', handle)
+      return () => { child.off('message', handle) }
+    },
+    onDisconnect(listener: () => void): () => void {
+      child.on('disconnect', listener)
+      return () => { child.off('disconnect', listener) }
+    },
+    disconnect(): void {
+      if (child.connected) child.disconnect()
+    },
+  })
 }
