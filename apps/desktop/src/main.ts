@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
+import { lstatSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,7 +18,7 @@ import {
   type IpcMainInvokeEvent,
 } from 'electron'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import type { SessionId } from '@deepseek-ai/dsh-desktop-control-protocol'
+import { RequestId, type SessionId } from '@deepseek-ai/dsh-desktop-control-protocol'
 import { healProfilesModuleFallbackCached } from '@deepseek-ai/dsh-app-boot'
 import {
   DesktopApplication,
@@ -76,6 +77,11 @@ import {
   DesktopControlBridgeServer,
 } from './control/bridge-server.ts'
 import { DesktopControlCoordinator } from './control/control-coordinator.ts'
+import {
+  ComputerDesktopControlAdapter,
+  resolveComputerHelperBinaryPath,
+} from './control/computer-adapter.ts'
+import { NativeHelperProcess } from './control/helper-process.ts'
 import {
   DEFAULT_CONTROL_SETTINGS,
   readControlSettings,
@@ -315,6 +321,33 @@ const browserControlAdapter = new BrowserDesktopControlAdapter({
   },
 })
 
+const computerHelperBinaryPath = process.platform === 'darwin' && process.arch === 'x64'
+  ? resolveComputerHelperBinaryPath({
+    platform: process.platform,
+    arch: process.arch,
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    desktopDirectory: resolve(import.meta.dirname, '..'),
+    lstat: lstatSync,
+  })
+  : undefined
+const computerHelper = computerHelperBinaryPath === undefined
+  ? undefined
+  : new NativeHelperProcess({
+    binaryPath: computerHelperBinaryPath,
+    onUnexpectedExit: () => {
+      void controlCoordinator.helperCrashed().catch((error: unknown) => {
+        record(`native helper crash cleanup failed: ${error instanceof Error ? error.message : String(error)}`)
+      })
+    },
+  })
+const computerControlAdapter = new ComputerDesktopControlAdapter({
+  helper: computerHelper,
+  available: computerHelper !== undefined,
+  capabilities: ['observe', 'pointer', 'keyboard'],
+  mintRequestId: () => RequestId(randomUUID()),
+})
+
 const controlCoordinator = new DesktopControlCoordinator({
   clock: {
     now: () => performance.now(),
@@ -355,6 +388,7 @@ const controlCoordinator = new DesktopControlCoordinator({
     unregister: (accelerator) => { globalShortcut.unregister(accelerator) },
   },
   browser: browserControlAdapter,
+  computer: computerControlAdapter,
   audit: {
     record: async (event) => { await (await getControlAudit())?.record(event) },
     flush: async () => {

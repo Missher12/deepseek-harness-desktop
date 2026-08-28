@@ -84,6 +84,7 @@ export interface SurfaceOperationFacts {
 }
 
 export interface PreparedLeaseInstall extends ControlLeaseAcquireResult {
+  readonly sessionId: SessionId
   readonly agentId: string
   readonly quotas: ControlLeaseQuotaSnapshot
 }
@@ -497,6 +498,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       const descriptor = this.#leases.preparedDescriptor(prepared)
       install = Object.freeze({
         ...descriptor,
+        sessionId: request.sessionId,
         agentId,
         quotas: Object.freeze({ ...DEFAULT_CONTROL_LEASE_QUOTAS }),
       })

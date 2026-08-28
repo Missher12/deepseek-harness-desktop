@@ -33,6 +33,7 @@ export interface NativeHelperProcessOptions {
   readonly binaryPath: string
   readonly spawn?: SpawnNativeHelper
   readonly shutdownTimeoutMs?: number
+  readonly onUnexpectedExit?: () => void
 }
 
 /** Bounded link-level failures; child stderr and raw provider errors are never exposed. */
@@ -305,8 +306,12 @@ export class NativeHelperProcess {
 
   private onExit(child: ChildProcessWithoutNullStreams): void {
     if (this.child !== child) return
+    const unexpected = this.spawnConfirmed && !this.closing
     if (!this.closing) this.rejectPending('DISCONNECTED')
     this.detachChild(child)
+    if (unexpected) {
+      try { this.options.onUnexpectedExit?.() } catch {}
+    }
   }
 
   private detachChild(child: ChildProcessWithoutNullStreams): void {

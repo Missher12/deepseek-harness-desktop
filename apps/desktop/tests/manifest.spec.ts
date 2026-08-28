@@ -44,6 +44,19 @@ interface DesktopPatch {
 }
 
 describe('desktop package manifest', () => {
+  it('wires the verified on-demand native helper into the computer coordinator surface', () => {
+    const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
+
+    expect(mainSource).toContain('resolveComputerHelperBinaryPath')
+    expect(mainSource).toContain('new NativeHelperProcess')
+    expect(mainSource).toContain('new ComputerDesktopControlAdapter')
+    expect(mainSource).toContain('onUnexpectedExit')
+    expect(mainSource).toContain('computer: computerControlAdapter')
+    expect(mainSource).toContain("capabilities: ['observe', 'pointer', 'keyboard']")
+    expect(mainSource).toContain('app.isPackaged')
+    expect(mainSource).toContain('process.resourcesPath')
+  })
+
   it('uses one rounded icon source with native macOS and Windows containers', () => {
     const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
 

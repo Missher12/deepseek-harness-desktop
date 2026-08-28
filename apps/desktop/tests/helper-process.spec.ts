@@ -302,4 +302,39 @@ describe('NativeHelperProcess', () => {
     child.closed()
     expect(helper.running).toBe(false)
   })
+
+  it('reports one unexpected confirmed-child exit but not idle, pre-spawn failure, or shutdown', async () => {
+    const first = new FakeChild()
+    const second = new FakeChild()
+    const third = new FakeChild()
+    const onUnexpectedExit = vi.fn()
+    const helper = new NativeHelperProcess({
+      binaryPath: '/verified/computer-use-helper',
+      spawn: vi.fn<SpawnNativeHelper>()
+        .mockReturnValueOnce(asChild(first))
+        .mockReturnValueOnce(asChild(second))
+        .mockReturnValueOnce(asChild(third)),
+      onUnexpectedExit,
+    })
+
+    expect(onUnexpectedExit).not.toHaveBeenCalled()
+    const preSpawn = helper.request(statusRequest())
+    first.emit('error', new Error('ENOENT'))
+    await expect(preSpawn).rejects.toEqual(expect.objectContaining({ code: 'DISCONNECTED' }))
+    expect(onUnexpectedExit).not.toHaveBeenCalled()
+
+    const crashed = helper.request(statusRequest('00000000-0000-4000-8000-000000000002'))
+    second.spawned()
+    second.exit(1)
+    await expect(crashed).rejects.toEqual(expect.objectContaining({ code: 'DISCONNECTED' }))
+    expect(onUnexpectedExit).toHaveBeenCalledOnce()
+
+    const shuttingDown = helper.request(statusRequest('00000000-0000-4000-8000-000000000003'))
+    third.spawned()
+    const shutdown = helper.shutdown()
+    await expect(shuttingDown).rejects.toEqual(expect.objectContaining({ code: 'CANCELLED' }))
+    third.exit()
+    await shutdown
+    expect(onUnexpectedExit).toHaveBeenCalledOnce()
+  })
 })
