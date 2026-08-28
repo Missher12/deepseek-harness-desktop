@@ -1,11 +1,19 @@
 param(
   [Parameter(Mandatory = $true)]
   [string]$HelperPath,
-  [switch]$MediumIntegrityChild
+  [switch]$MediumIntegrityChild,
+  [string]$ProgressPath = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+function Set-SmokeProgress {
+  param([Parameter(Mandatory = $true)][string]$State)
+  if ($ProgressPath.Length -gt 0) {
+    [IO.File]::WriteAllText($ProgressPath, $State, [Text.UTF8Encoding]::new($false))
+  }
+}
 
 function Invoke-MediumIntegritySmoke {
   param(
@@ -466,6 +474,7 @@ namespace DshWindowsSmoke
   $stagedHelper = Join-Path $stagingRoot 'computer-use-helper.exe'
   $wrapperPath = Join-Path $stagingRoot 'run-smoke.ps1'
   $resultPath = Join-Path $stagingRoot 'result.txt'
+  $progressPath = Join-Path $stagingRoot 'progress.txt'
   $createdUser = $false
 
   try {
@@ -485,10 +494,12 @@ namespace DshWindowsSmoke
     $scriptLiteral = $stagedScript.Replace("'", "''")
     $helperLiteral = $stagedHelper.Replace("'", "''")
     $resultLiteral = $resultPath.Replace("'", "''")
+    $progressLiteral = $progressPath.Replace("'", "''")
     $childSource = @"
 `$ErrorActionPreference = 'Stop'
 try {
-  & '$scriptLiteral' -HelperPath '$helperLiteral' -MediumIntegrityChild
+  [IO.File]::WriteAllText('$progressLiteral', 'wrapper-started', [Text.UTF8Encoding]::new(`$false))
+  & '$scriptLiteral' -HelperPath '$helperLiteral' -MediumIntegrityChild -ProgressPath '$progressLiteral'
   [IO.File]::WriteAllText('$resultLiteral', 'PASS', [Text.UTF8Encoding]::new(`$false))
   exit 0
 }
@@ -502,15 +513,25 @@ catch {
     [IO.File]::WriteAllText($wrapperPath, $childSource, [Text.UTF8Encoding]::new($false))
     $pwsh = (Get-Process -Id $PID).Path
     $commandLine = "`"$pwsh`" -NoLogo -NoProfile -NonInteractive -STA -File `"$wrapperPath`""
-    $exitCode = [DshWindowsSmoke.StandardUserProcess]::Run(
-      $userName,
-      $env:COMPUTERNAME,
-      $password,
-      $pwsh,
-      $commandLine,
-      $stagingRoot,
-      180000
-    )
+    try {
+      $exitCode = [DshWindowsSmoke.StandardUserProcess]::Run(
+        $userName,
+        $env:COMPUTERNAME,
+        $password,
+        $pwsh,
+        $commandLine,
+        $stagingRoot,
+        60000
+      )
+    }
+    catch {
+      $progress = if (Test-Path -LiteralPath $progressPath) {
+        (Get-Content -LiteralPath $progressPath -Raw).Trim()
+      } else {
+        'process-not-started'
+      }
+      throw "Standard-user smoke stalled at '$progress': $($_.Exception.Message)"
+    }
     $result = if (Test-Path -LiteralPath $resultPath) {
       (Get-Content -LiteralPath $resultPath -Raw).Trim()
     } else {
@@ -534,6 +555,8 @@ if (-not $MediumIntegrityChild) {
   Invoke-StandardUserSmoke -ScriptPath $PSCommandPath -ResolvedHelperPath $resolvedHelper
   return
 }
+
+Set-SmokeProgress 'child-entered'
 
 function Read-ExactBytes {
   param(
@@ -791,16 +814,19 @@ try {
     Start-FixtureWindow -Title 'DSH Computer Fixture Beta' -Kind button -Left 620
     Start-FixtureWindow -Title 'DSH Protected Fixture' -Kind protected -Left 360
   )
+  Set-SmokeProgress 'fixtures-started'
   $helper = [System.Diagnostics.Process]::Start($helperInfo)
   if ($null -eq $helper) {
     throw 'Windows did not start the packaged Computer Use helper.'
   }
+  Set-SmokeProgress 'helper-started'
   $inputStream = $helper.StandardInput.BaseStream
   $outputStream = $helper.StandardOutput.BaseStream
 
   $statusRequest = New-HelperRequest -RequestKind 'status' -SessionId $sessionId
   $status = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $statusRequest
   Assert-HelperSuccess $status
+  Set-SmokeProgress 'status-complete'
   if ($status.Response.result.supported -ne $true -or
       $status.Response.result.viewing -ne 'granted' -or
       $status.Response.result.assistive -ne 'granted') {
@@ -828,6 +854,7 @@ try {
     $appCount = @($listed.Response.result.apps).Count
     throw "Native Computer Use did not enumerate all exact fixture windows (apps=$appCount, alpha=$($null -ne $alpha), beta=$($null -ne $beta), protected=$($null -ne $protected))."
   }
+  Set-SmokeProgress 'fixtures-enumerated'
 
   $targets = @($alpha, $beta, $protected) | ForEach-Object {
     [ordered]@{ appId = $_.appId; windowIds = @($_.windowId) }
