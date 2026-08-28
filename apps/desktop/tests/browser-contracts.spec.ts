@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
-  isDesktopBrowserBounds, isDesktopBrowserRequest, normalizeBrowserTarget,
+  BROWSER_AGENT_LIMITS,
+  isAgentBrowserAction,
+  isDesktopBrowserBounds,
+  isDesktopBrowserRequest,
+  normalizeAgentBrowserTarget,
+  normalizeBrowserTarget,
 } from '../src/browser/contracts.ts'
 
 describe('workbench Browser contracts', () => {
@@ -15,5 +20,68 @@ describe('workbench Browser contracts', () => {
     expect(isDesktopBrowserRequest({ kind: 'navigate', value: 'file:///tmp/a' })).toBe(false)
     expect(isDesktopBrowserRequest({ kind: 'navigate', value: 'javascript:alert(1)' })).toBe(false)
     expect(normalizeBrowserTarget('deepseek.com')).toBe('https://deepseek.com/')
+  })
+
+  it('keeps the human Workbench target behavior while Agent URLs reject userinfo', () => {
+    expect(normalizeBrowserTarget('https://user:secret@example.com/path'))
+      .toBe('https://user:secret@example.com/path')
+    expect(normalizeAgentBrowserTarget('example.com/path')).toBe('https://example.com/path')
+    expect(normalizeAgentBrowserTarget('https://user:secret@example.com/path')).toBeUndefined()
+    expect(normalizeAgentBrowserTarget('search words')).toBeUndefined()
+    expect(normalizeAgentBrowserTarget('file:///tmp/a')).toBeUndefined()
+  })
+
+  it('pins every Agent browser resource limit to the frozen protocol and plan', () => {
+    expect(BROWSER_AGENT_LIMITS).toEqual({
+      rawNodes: 2_000,
+      depth: 32,
+      cdpCalls: 512,
+      wallMs: 2_000,
+      actionableNodes: 300,
+      semanticUtf8Bytes: 49_152,
+      encodedJsonBytes: 65_536,
+      pngBytes: 4_194_304,
+      screenshotEdge: 2_048,
+      screenshotPixels: 4_194_304,
+      screenshotAttempts: 3,
+      waitDurationMs: 10_000,
+    })
+    expect(Object.isFrozen(BROWSER_AGENT_LIMITS)).toBe(true)
+  })
+
+  it('accepts only the ref-based closed action roster', () => {
+    expect(isAgentBrowserAction({ kind: 'click', ref: 'browser:00000000000000000000000000000001' })).toBe(true)
+    expect(isAgentBrowserAction({
+      kind: 'type', ref: 'browser:00000000000000000000000000000001', text: 'hello',
+    })).toBe(true)
+    expect(isAgentBrowserAction({ kind: 'key', key: 'Enter', modifiers: ['Shift'] })).toBe(true)
+    expect(isAgentBrowserAction({
+      kind: 'select', ref: 'browser:00000000000000000000000000000001', value: 'one',
+    })).toBe(true)
+    expect(isAgentBrowserAction({ kind: 'scroll', deltaX: 0, deltaY: 120 })).toBe(true)
+    expect(isAgentBrowserAction({ kind: 'scroll', deltaX: 0.5, deltaY: -1.25 })).toBe(true)
+    expect(isAgentBrowserAction({
+      kind: 'scroll', ref: 'browser:00000000000000000000000000000001', deltaX: 0, deltaY: 120,
+    })).toBe(true)
+    expect(isAgentBrowserAction({ kind: 'wait', mode: 'duration', durationMs: 10_000 })).toBe(true)
+    expect(isAgentBrowserAction({ kind: 'wait', mode: 'navigation' })).toBe(true)
+    expect(isAgentBrowserAction({ kind: 'wait', mode: 'loading-idle' })).toBe(true)
+    expect(isAgentBrowserAction({ kind: 'navigate', url: 'https://example.com/' })).toBe(true)
+    expect(isAgentBrowserAction({ kind: 'back' })).toBe(true)
+    expect(isAgentBrowserAction({ kind: 'forward' })).toBe(true)
+    expect(isAgentBrowserAction({ kind: 'reload' })).toBe(true)
+    expect(isAgentBrowserAction({
+      kind: 'select', ref: 'browser:00000000000000000000000000000001', value: '',
+    })).toBe(true)
+
+    expect(isAgentBrowserAction({ kind: 'click', x: 10, y: 20 })).toBe(false)
+    expect(isAgentBrowserAction({
+      kind: 'click', ref: 'browser:00000000000000000000000000000001', selector: '#send',
+    })).toBe(false)
+    expect(isAgentBrowserAction({ kind: 'type', ref: 'not-a-ref', text: 'hello' })).toBe(false)
+    expect(isAgentBrowserAction({ kind: 'wait', mode: 'duration', durationMs: 10_001 })).toBe(false)
+    expect(isAgentBrowserAction({ kind: 'wait', mode: 'network-idle' })).toBe(false)
+    expect(isAgentBrowserAction({ kind: 'upload', path: '/tmp/a' })).toBe(false)
+    expect(isAgentBrowserAction(Object.assign(Object.create({ inherited: true }), { kind: 'back' }))).toBe(false)
   })
 })

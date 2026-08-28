@@ -1,6 +1,7 @@
 import { WebContentsView, type BrowserWindow, type Session } from 'electron'
 import {
-  normalizeBrowserTarget, type DesktopBrowserBounds, type DesktopBrowserRequest, type DesktopBrowserSnapshot,
+  normalizeBrowserTarget, WORKBENCH_BROWSER_PARTITION,
+  type DesktopBrowserBounds, type DesktopBrowserRequest, type DesktopBrowserSnapshot,
 } from './contracts.ts'
 
 export class WorkbenchBrowserController {
@@ -56,7 +57,7 @@ export class WorkbenchBrowserController {
     if (this.view !== undefined && !this.view.webContents.isDestroyed()) return this.view
     const view = new WebContentsView({ webPreferences: {
       sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true,
-      partition: 'persist:dsh-workbench-browser',
+      partition: WORKBENCH_BROWSER_PARTITION,
     } })
     this.view = view
     this.window.contentView.addChildView(view)
