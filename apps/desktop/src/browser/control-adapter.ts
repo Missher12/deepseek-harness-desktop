@@ -16,7 +16,7 @@ import type {
 } from '../control/control-coordinator.ts'
 import { adapterPolicyFacts } from '../control/policy.ts'
 import type { AgentBrowserAction, AgentBrowserSnapshotEnvelope } from './contracts.ts'
-import { AgentBrowserError } from './contracts.ts'
+import { AgentBrowserError, toAgentBrowserRef } from './contracts.ts'
 import type {
   BrowserFailedMountCleanupRequest,
   BrowserSurfaceManager,
@@ -87,13 +87,13 @@ function throwIfAborted(signal: AbortSignal): void {
 function browserAction(request: BridgeRequest): AgentBrowserAction {
   switch (request.requestKind) {
     case 'browser.navigate': return { kind: 'navigate', url: request.url }
-    case 'browser.click': return { kind: 'click', ref: request.ref }
-    case 'browser.type': return { kind: 'type', ref: request.ref, text: request.text }
+    case 'browser.click': return { kind: 'click', ref: toAgentBrowserRef(request.ref) }
+    case 'browser.type': return { kind: 'type', ref: toAgentBrowserRef(request.ref), text: request.text }
     case 'browser.key': return { kind: 'key', key: request.key, modifiers: request.modifiers }
-    case 'browser.select': return { kind: 'select', ref: request.ref, value: request.value }
+    case 'browser.select': return { kind: 'select', ref: toAgentBrowserRef(request.ref), value: request.value }
     case 'browser.scroll': return request.ref === undefined
       ? { kind: 'scroll', deltaX: request.deltaX, deltaY: request.deltaY }
-      : { kind: 'scroll', ref: request.ref, deltaX: request.deltaX, deltaY: request.deltaY }
+      : { kind: 'scroll', ref: toAgentBrowserRef(request.ref), deltaX: request.deltaX, deltaY: request.deltaY }
     case 'browser.wait': return request.mode === 'duration'
       ? { kind: 'wait', mode: 'duration', durationMs: request.durationMs }
       : { kind: 'wait', mode: request.mode }

@@ -106,6 +106,12 @@ function browserRef(value: unknown): value is AgentBrowserRef {
   return typeof value === 'string' && AGENT_BROWSER_REF.test(value)
 }
 
+/** Convert a protocol string into the local semantic browser reference type. */
+export function toAgentBrowserRef(value: string): AgentBrowserRef {
+  if (!browserRef(value)) throw new AgentBrowserError('STALE_REF', 'browser reference is invalid')
+  return value
+}
+
 function boundedString(value: unknown, bytes: number, allowEmpty = false): value is string {
   return typeof value === 'string' && (allowEmpty || value.length > 0) && utf8.encode(value).byteLength <= bytes
 }

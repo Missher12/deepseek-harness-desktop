@@ -6,9 +6,16 @@ import {
   isDesktopBrowserRequest,
   normalizeAgentBrowserTarget,
   normalizeBrowserTarget,
+  toAgentBrowserRef,
 } from '../src/browser/contracts.ts'
 
 describe('workbench Browser contracts', () => {
+  it('converts only canonical protocol references at the adapter boundary', () => {
+    expect(toAgentBrowserRef('browser:00000000000000000000000000000001'))
+      .toBe('browser:00000000000000000000000000000001')
+    expect(() => toAgentBrowserRef('not-a-ref')).toThrow('browser reference is invalid')
+  })
+
   it('accepts only finite visible bounds', () => {
     expect(isDesktopBrowserBounds({ x: 0, y: 0, width: 400, height: 300 })).toBe(true)
     expect(isDesktopBrowserBounds({ x: 0, y: 0, width: Number.NaN, height: 300 })).toBe(false)
