@@ -90,18 +90,22 @@ const PYTHON_METADATA: Record<string, { license: string; repo: string; role: str
 
 /** License metadata for every external crate statically linked into the helper. */
 const RUST_LICENSES: Readonly<Record<string, string>> = {
+  adler2: '0BSD OR MIT OR Apache-2.0',
   bitflags: 'MIT OR Apache-2.0',
   'block-buffer': 'MIT OR Apache-2.0',
   block2: 'MIT',
   'cfg-if': 'MIT OR Apache-2.0',
   cpufeatures: 'MIT OR Apache-2.0',
+  crc32fast: 'MIT OR Apache-2.0',
   'crypto-common': 'MIT OR Apache-2.0',
   digest: 'MIT OR Apache-2.0',
   dispatch2: 'Zlib OR Apache-2.0 OR MIT',
+  flate2: 'MIT OR Apache-2.0',
   'generic-array': 'MIT',
   itoa: 'MIT OR Apache-2.0',
   libc: 'MIT OR Apache-2.0',
   memchr: 'Unlicense OR MIT',
+  miniz_oxide: 'MIT OR Zlib OR Apache-2.0',
   objc2: 'MIT',
   'objc2-core-foundation': 'Zlib OR Apache-2.0 OR MIT',
   'objc2-encode': 'MIT',
@@ -113,10 +117,22 @@ const RUST_LICENSES: Readonly<Record<string, string>> = {
   serde_derive: 'MIT OR Apache-2.0',
   serde_json: 'MIT OR Apache-2.0',
   sha2: 'MIT OR Apache-2.0',
+  'simd-adler32': 'MIT',
   syn: 'MIT OR Apache-2.0',
   typenum: 'MIT OR Apache-2.0',
   'unicode-ident': 'MIT OR Apache-2.0',
   version_check: 'MIT OR Apache-2.0',
+  windows: 'MIT OR Apache-2.0',
+  'windows-collections': 'MIT OR Apache-2.0',
+  'windows-core': 'MIT OR Apache-2.0',
+  'windows-future': 'MIT OR Apache-2.0',
+  'windows-implement': 'MIT OR Apache-2.0',
+  'windows-interface': 'MIT OR Apache-2.0',
+  'windows-link': 'MIT OR Apache-2.0',
+  'windows-numerics': 'MIT OR Apache-2.0',
+  'windows-result': 'MIT OR Apache-2.0',
+  'windows-strings': 'MIT OR Apache-2.0',
+  'windows-threading': 'MIT OR Apache-2.0',
   zmij: 'MIT OR Apache-2.0',
 }
 
@@ -806,7 +822,7 @@ ${renderNpmTable(devDeps)}
 ${renderNonPermissiveNote(nonPermissiveDev)}
 ## Native Computer Use helper crates
 
-The shipped Rust helper statically links the following exact external crate closure. It opens no port and accepts only the closed Computer Use protocol. Platform observation and input remain bounded by the Electron-owned lease, target identity, capabilities, quotas, cancellation, and input-release lifecycle; unsupported or protected targets fail closed.
+The shipped Rust helper statically links the following exact external crate closure. It opens no port and accepts only the closed Computer Use protocol. Native application observation and input remain bounded by the Electron-owned lease, exact target identity, permission, capabilities, quotas, cancellation, and held-input release lifecycle; unsupported or protected targets fail closed.
 
 | Crate | Version | License |
 | --- | --- | --- |

@@ -4,11 +4,13 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Instant;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 use computer_use_core::NullObservationPlatform;
 use computer_use_core::{CancellationToken, ComputerUseCore, MonotonicClock, ObservationPlatform};
 #[cfg(target_os = "macos")]
 use computer_use_helper::platform::macos::MacObservationPlatform;
+#[cfg(target_os = "windows")]
+use computer_use_helper::platform::windows::observation_platform;
 use computer_use_protocol::{
     ControlMessage, Direction, EnvelopeDecoder, HelperInput, HelperRequest, LengthPrefixedDecoder,
     decode_helper_input, encode_json_value, encode_length_prefixed,
@@ -35,7 +37,9 @@ fn run() -> Result<(), ()> {
     let epoch = Instant::now();
     #[cfg(target_os = "macos")]
     let platform = MacObservationPlatform::new(epoch);
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    let platform = observation_platform(epoch);
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let platform = NullObservationPlatform;
     run_io(
         io::stdin(),

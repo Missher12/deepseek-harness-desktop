@@ -190,22 +190,26 @@ External packages **directly declared** only by repository tooling, test infrast
 
 ## Native Computer Use helper crates
 
-The shipped Rust helper statically links the following exact external crate closure. It opens no port and accepts only the closed Computer Use protocol. Platform observation and input remain bounded by the Electron-owned lease, target identity, capabilities, quotas, cancellation, and input-release lifecycle; unsupported or protected targets fail closed.
+The shipped Rust helper statically links the following exact external crate closure. It opens no port and accepts only the closed Computer Use protocol. Native application observation and input remain bounded by the Electron-owned lease, exact target identity, permission, capabilities, quotas, cancellation, and held-input release lifecycle; unsupported or protected targets fail closed.
 
 | Crate | Version | License |
 | --- | --- | --- |
+| [`adler2`](https://crates.io/crates/adler2) | 2.0.1 | 0BSD OR MIT OR Apache-2.0 |
 | [`bitflags`](https://crates.io/crates/bitflags) | 2.13.1 | MIT OR Apache-2.0 |
 | [`block-buffer`](https://crates.io/crates/block-buffer) | 0.10.4 | MIT OR Apache-2.0 |
 | [`block2`](https://crates.io/crates/block2) | 0.6.2 | MIT |
 | [`cfg-if`](https://crates.io/crates/cfg-if) | 1.0.4 | MIT OR Apache-2.0 |
 | [`cpufeatures`](https://crates.io/crates/cpufeatures) | 0.2.17 | MIT OR Apache-2.0 |
+| [`crc32fast`](https://crates.io/crates/crc32fast) | 1.5.0 | MIT OR Apache-2.0 |
 | [`crypto-common`](https://crates.io/crates/crypto-common) | 0.1.7 | MIT OR Apache-2.0 |
 | [`digest`](https://crates.io/crates/digest) | 0.10.7 | MIT OR Apache-2.0 |
 | [`dispatch2`](https://crates.io/crates/dispatch2) | 0.3.1 | Zlib OR Apache-2.0 OR MIT |
+| [`flate2`](https://crates.io/crates/flate2) | 1.1.9 | MIT OR Apache-2.0 |
 | [`generic-array`](https://crates.io/crates/generic-array) | 0.14.7 | MIT |
 | [`itoa`](https://crates.io/crates/itoa) | 1.0.18 | MIT OR Apache-2.0 |
 | [`libc`](https://crates.io/crates/libc) | 0.2.189 | MIT OR Apache-2.0 |
 | [`memchr`](https://crates.io/crates/memchr) | 2.8.3 | Unlicense OR MIT |
+| [`miniz_oxide`](https://crates.io/crates/miniz_oxide) | 0.8.9 | MIT OR Zlib OR Apache-2.0 |
 | [`objc2`](https://crates.io/crates/objc2) | 0.6.4 | MIT |
 | [`objc2-core-foundation`](https://crates.io/crates/objc2-core-foundation) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [`objc2-encode`](https://crates.io/crates/objc2-encode) | 4.1.0 | MIT |
@@ -217,10 +221,22 @@ The shipped Rust helper statically links the following exact external crate clos
 | [`serde_derive`](https://crates.io/crates/serde_derive) | 1.0.228 | MIT OR Apache-2.0 |
 | [`serde_json`](https://crates.io/crates/serde_json) | 1.0.151 | MIT OR Apache-2.0 |
 | [`sha2`](https://crates.io/crates/sha2) | 0.10.9 | MIT OR Apache-2.0 |
+| [`simd-adler32`](https://crates.io/crates/simd-adler32) | 0.3.10 | MIT |
 | [`syn`](https://crates.io/crates/syn) | 2.0.119 | MIT OR Apache-2.0 |
 | [`typenum`](https://crates.io/crates/typenum) | 1.20.1 | MIT OR Apache-2.0 |
 | [`unicode-ident`](https://crates.io/crates/unicode-ident) | 1.0.24 | MIT OR Apache-2.0 |
 | [`version_check`](https://crates.io/crates/version_check) | 0.9.5 | MIT OR Apache-2.0 |
+| [`windows`](https://crates.io/crates/windows) | 0.62.2 | MIT OR Apache-2.0 |
+| [`windows-collections`](https://crates.io/crates/windows-collections) | 0.3.2 | MIT OR Apache-2.0 |
+| [`windows-core`](https://crates.io/crates/windows-core) | 0.62.2 | MIT OR Apache-2.0 |
+| [`windows-future`](https://crates.io/crates/windows-future) | 0.3.2 | MIT OR Apache-2.0 |
+| [`windows-implement`](https://crates.io/crates/windows-implement) | 0.60.2 | MIT OR Apache-2.0 |
+| [`windows-interface`](https://crates.io/crates/windows-interface) | 0.59.3 | MIT OR Apache-2.0 |
+| [`windows-link`](https://crates.io/crates/windows-link) | 0.2.1 | MIT OR Apache-2.0 |
+| [`windows-numerics`](https://crates.io/crates/windows-numerics) | 0.3.1 | MIT OR Apache-2.0 |
+| [`windows-result`](https://crates.io/crates/windows-result) | 0.4.1 | MIT OR Apache-2.0 |
+| [`windows-strings`](https://crates.io/crates/windows-strings) | 0.5.1 | MIT OR Apache-2.0 |
+| [`windows-threading`](https://crates.io/crates/windows-threading) | 0.2.1 | MIT OR Apache-2.0 |
 | [`zmij`](https://crates.io/crates/zmij) | 1.0.23 | MIT OR Apache-2.0 |
 
 ## Python SDK dependencies (`python/`)
