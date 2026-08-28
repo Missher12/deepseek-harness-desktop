@@ -5,6 +5,8 @@ import {
   isDesktopPreferenceMutation,
   isDesktopPreferencesSnapshot,
   isBrowserTakeoverStatus,
+  isDesktopControlUiMutation,
+  isDesktopControlUiSnapshot,
   isRecoveryAction,
   supportsDesktopUpdates,
 } from '../src/preload-api.ts'
@@ -62,5 +64,31 @@ describe('desktop preload vocabulary', () => {
     expect(isBrowserTakeoverStatus({ phase: 'agent', signedInWarning: false })).toBe(false)
     expect(isBrowserTakeoverStatus({ phase: 'given', signedInWarning: true, sessionId: 'renderer' })).toBe(false)
     expect(isBrowserTakeoverStatus(Object.create({ phase: 'human', signedInWarning: true }))).toBe(false)
+  })
+
+  it('accepts only the path-free Desktop control UI snapshot', () => {
+    const snapshot = {
+      supported: true,
+      computerEnabled: true,
+      permissions: { screenViewing: 'granted', assistiveControl: 'denied' },
+      ordinaryApps: [{ appId: 'com.example.notes', name: 'Notes', allowed: true }],
+      emergencyAccelerator: 'CommandOrControl+Shift+F12',
+      active: { agentName: 'Agent', appName: 'Notes', action: 'Typing' },
+      stopping: false,
+    }
+    expect(isDesktopControlUiSnapshot(snapshot)).toBe(true)
+    expect(isDesktopControlUiSnapshot({ ...snapshot, sessionId: 'renderer' })).toBe(false)
+    expect(isDesktopControlUiSnapshot({ ...snapshot, permissions: { screenViewing: 'yes', assistiveControl: 'denied' } })).toBe(false)
+    expect(isDesktopControlUiSnapshot({ ...snapshot, active: { ...snapshot.active, leaseId: 'secret' } })).toBe(false)
+    expect(isDesktopControlUiSnapshot(Object.create(snapshot))).toBe(false)
+  })
+
+  it('accepts only non-authority Desktop control setting intents', () => {
+    expect(isDesktopControlUiMutation({ kind: 'set-computer-enabled', enabled: true })).toBe(true)
+    expect(isDesktopControlUiMutation({ kind: 'set-app-allowed', appId: 'com.example.notes', allowed: false })).toBe(true)
+    expect(isDesktopControlUiMutation({ kind: 'set-emergency-accelerator', accelerator: 'CommandOrControl+Shift+F11' })).toBe(true)
+    expect(isDesktopControlUiMutation({ kind: 'set-app-allowed', appId: 'com.example.notes', allowed: true, sessionId: 'renderer' })).toBe(false)
+    expect(isDesktopControlUiMutation({ kind: 'set-computer-enabled', enabled: 1 })).toBe(false)
+    expect(isDesktopControlUiMutation({ kind: 'set-app-allowed', appId: '../secret', allowed: true })).toBe(false)
   })
 })

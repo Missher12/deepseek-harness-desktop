@@ -62,6 +62,8 @@ function mountFrame() {
     if (key === 'conversation') return <div data-testid="center-content" />
     if (key === 'details') return <div data-testid="details-content" />
     if (key === 'layout.utility') return <div data-testid="utility-content" />
+    if (key === 'layout.status') return <div data-testid="status-content" />
+    if (key === 'shell.overlay') return <div data-testid="overlay-content" />
     if (key === 'conversation.empty') return <div data-testid="empty-content" />
     return <div data-testid="other-content" />
   }) as AppFrameProps['renderSlot']
@@ -141,6 +143,14 @@ describe('AppFrame', () => {
   it('renders three tracks from store state', () => {
     const { frame } = mountFrame()
     expect(tracks(frame)).toEqual([280, 0, 0])
+  })
+
+  it('renders the additive status seat outside the existing overlay seat', () => {
+    const { frame, getByTestId } = mountFrame()
+    expect(getByTestId('status-content')).toBeTruthy()
+    expect(getByTestId('overlay-content')).toBeTruthy()
+    expect(frame.querySelector('[data-layout-status]')?.contains(getByTestId('status-content'))).toBe(true)
+    expect(frame.querySelector('[data-shell-overlay]')?.contains(getByTestId('status-content'))).toBe(false)
   })
 
   it('renders the session pair with empty owner shares (sessionId is framework-standard)', () => {

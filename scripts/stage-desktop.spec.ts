@@ -22,6 +22,8 @@ const VALID_DESKTOP_PATCH = `
       name: 'dshmarket'
     - id: desktop-system-update
       name: '@deepseek-ai/dsh-client-ui-settings-system-update'
+    - id: desktop-control-ui
+      name: '@deepseek-ai/dsh-client-ui-desktop-control'
 `
 const REPO_ROOT = resolve('/repo')
 const DEFAULT_STAGE = join(REPO_ROOT, 'apps/desktop/.stage')
@@ -187,6 +189,13 @@ describe('stageDesktop', () => {
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-desktop-managed-evolution/lib/client.js')
     expect(result.validatedFiles).toContain('update-metadata.json')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-client-ui-settings-system-update/lib/client.js')
+    expect(result.validatedFiles).toEqual(expect.arrayContaining([
+      'node_modules/@deepseek-ai/dsh-client-ui-desktop-control/package.json',
+      'node_modules/@deepseek-ai/dsh-client-ui-desktop-control/lib/client.js',
+      'node_modules/@deepseek-ai/dsh-tool-computer-control/package.json',
+      'node_modules/@deepseek-ai/dsh-tool-computer-control/lib/index.js',
+      'node_modules/@deepseek-ai/dsh-tool-computer-control/lib/invariant.js',
+    ]))
     expect(result.validatedFiles).not.toContain('lib/preload.js')
     expect(result.validatedFiles).toContain('assets/icon-source.png')
     expect(result.validatedFiles).toContain('assets/icon.icns')

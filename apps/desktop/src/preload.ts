@@ -3,11 +3,14 @@ import {
   type DesktopApi,
   type BrowserTakeoverStatus,
   type DesktopUpdateSnapshot,
+  type DesktopControlUiSnapshot,
   isBrowserTakeoverStatus,
   isDesktopCommand,
   isDesktopPreferenceMutation,
   isDesktopPreferencesSnapshot,
   isDesktopUpdateSnapshot,
+  isDesktopControlUiMutation,
+  isDesktopControlUiSnapshot,
   isRecoveryAction,
   supportsDesktopUpdates,
 } from './preload-api.ts'
@@ -122,6 +125,31 @@ const api: DesktopApi = {
     }
     ipcRenderer.on('desktop:preferences-state', handler)
     return () => { ipcRenderer.off('desktop:preferences-state', handler) }
+  },
+  async getComputerControlStatus(...args: unknown[]) {
+    if (args.length !== 0) throw new TypeError('Computer control status accepts no arguments.')
+    const value: unknown = await ipcRenderer.invoke('desktop:computer-control-status')
+    if (!isDesktopControlUiSnapshot(value)) throw new Error('Invalid Computer control status.')
+    return value
+  },
+  async stopComputerControl(...args: unknown[]) {
+    if (args.length !== 0) throw new TypeError('Stop Computer control accepts no arguments.')
+    const value: unknown = await ipcRenderer.invoke('desktop:computer-control-stop')
+    if (!isDesktopControlUiSnapshot(value)) throw new Error('Invalid Computer control status.')
+    return value
+  },
+  async setComputerControlSetting(mutation) {
+    if (!isDesktopControlUiMutation(mutation)) throw new TypeError('Invalid Computer control setting intent.')
+    const value: unknown = await ipcRenderer.invoke('desktop:computer-control-setting', mutation)
+    if (!isDesktopControlUiSnapshot(value)) throw new Error('Invalid Computer control status.')
+    return value
+  },
+  onComputerControlStatus(listener: (snapshot: DesktopControlUiSnapshot) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      if (isDesktopControlUiSnapshot(value)) listener(value)
+    }
+    ipcRenderer.on('desktop:computer-control-state', handler)
+    return () => { ipcRenderer.off('desktop:computer-control-state', handler) }
   },
 }
 

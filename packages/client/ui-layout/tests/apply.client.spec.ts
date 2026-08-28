@@ -52,6 +52,8 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('conversation')).toEqual({ kind: 'single', scope: 'session-maybe' })
     expect(slots.spec('details')).toEqual({ kind: 'single', scope: 'session' })
     expect(slots.spec('layout.utility')).toEqual({ kind: 'single', scope: 'session' })
+    expect(slots.spec('layout.status')).toEqual({ kind: 'list', scope: 'root' })
+    expect(slots.spec('shell.overlay')).toEqual({ kind: 'list', scope: 'root' })
   })
 
   it('injects no business face and attaches the layout actions', async () => {

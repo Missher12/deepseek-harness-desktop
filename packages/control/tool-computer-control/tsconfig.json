@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
+  "include": ["src"],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../core/agent" },
+    { "path": "../../attachment/attachment" },
+    { "path": "../computer-control" },
+    { "path": "../desktop-control-protocol" },
+    { "path": "../../runtime-diagnostics/invariants" },
+    { "path": "../../llm/llm" },
+    { "path": "../../core/session" },
+    { "path": "../../core/tools" }
+  ]
+}

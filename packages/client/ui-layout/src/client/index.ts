@@ -75,6 +75,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'details': { kind: 'single'; scope: 'session'; owner: DetailsOwnerProps }
     /** Desktop workbench surface, mounted only while the utility panel is open. */
     'layout.utility': { kind: 'single'; scope: 'session'; owner: UtilityOwnerProps }
+    /** Additive, compact application-status surfaces rendered below shell overlays. */
+    'layout.status': { kind: 'list'; scope: 'root' }
     /**
      * Frame-wide floating layer, above every column and outside their scroll
      * containers. Deliberately generic and unowned by any feature: a badge, a
@@ -132,6 +134,7 @@ export function apply(ctx: ClientContext): void {
         'conversation': { kind: 'single', scope: 'session-maybe' },
         'details': { kind: 'single', scope: 'session' },
         'layout.utility': { kind: 'single', scope: 'session' },
+        'layout.status': { kind: 'list', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per

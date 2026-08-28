@@ -45,6 +45,92 @@ export interface BrowserTakeoverStatus {
   readonly signedInWarning: true
 }
 
+export type DesktopControlPermissionState = 'granted' | 'denied' | 'unknown'
+
+/** Renderer-visible status only; deliberately excludes sessions, leases, refs, and coordinates. */
+export interface DesktopControlUiSnapshot {
+  readonly supported: boolean
+  readonly computerEnabled: boolean
+  readonly permissions: {
+    readonly screenViewing: DesktopControlPermissionState
+    readonly assistiveControl: DesktopControlPermissionState
+  }
+  readonly ordinaryApps: readonly {
+    readonly appId: string
+    readonly name: string
+    readonly allowed: boolean
+  }[]
+  readonly emergencyAccelerator: string
+  readonly active: null | {
+    readonly agentName: string
+    readonly appName: string
+    readonly action: string
+  }
+  readonly stopping: boolean
+}
+
+/** Non-authoritative renderer intent; main validates and owns every resulting setting. */
+export type DesktopControlUiMutation =
+  | { readonly kind: 'set-computer-enabled'; readonly enabled: boolean }
+  | { readonly kind: 'set-app-allowed'; readonly appId: string; readonly allowed: boolean }
+  | { readonly kind: 'set-emergency-accelerator'; readonly accelerator: string }
+
+function plainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    && Object.getPrototypeOf(value) === Object.prototype
+}
+
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value)
+  return actual.length === keys.length && keys.every(key => Object.hasOwn(value, key))
+}
+
+function boundedText(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= max
+}
+
+export function isDesktopControlUiSnapshot(value: unknown): value is DesktopControlUiSnapshot {
+  if (!plainRecord(value) || !exactKeys(value, [
+    'supported', 'computerEnabled', 'permissions', 'ordinaryApps',
+    'emergencyAccelerator', 'active', 'stopping',
+  ])) return false
+  if (typeof value.supported !== 'boolean' || typeof value.computerEnabled !== 'boolean'
+    || typeof value.stopping !== 'boolean' || !boundedText(value.emergencyAccelerator, 128)
+    || !plainRecord(value.permissions)
+    || !exactKeys(value.permissions, ['screenViewing', 'assistiveControl'])) return false
+  const permissionStates: readonly unknown[] = ['granted', 'denied', 'unknown']
+  if (!permissionStates.includes(value.permissions.screenViewing)
+    || !permissionStates.includes(value.permissions.assistiveControl)) return false
+  if (!Array.isArray(value.ordinaryApps) || value.ordinaryApps.length > 128
+    || !value.ordinaryApps.every(app => plainRecord(app)
+      && exactKeys(app, ['appId', 'name', 'allowed'])
+      && boundedText(app.appId, 256) && boundedText(app.name, 256)
+      && typeof app.allowed === 'boolean')) return false
+  return value.active === null || plainRecord(value.active)
+    && exactKeys(value.active, ['agentName', 'appName', 'action'])
+    && boundedText(value.active.agentName, 128)
+    && boundedText(value.active.appName, 256)
+    && boundedText(value.active.action, 128)
+}
+
+const APP_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/
+const ACCELERATOR = /^[\x20-\x7e]{1,128}$/
+
+export function isDesktopControlUiMutation(value: unknown): value is DesktopControlUiMutation {
+  if (!plainRecord(value)) return false
+  if (value.kind === 'set-computer-enabled') {
+    return exactKeys(value, ['kind', 'enabled']) && typeof value.enabled === 'boolean'
+  }
+  if (value.kind === 'set-app-allowed') {
+    return exactKeys(value, ['kind', 'appId', 'allowed'])
+      && typeof value.appId === 'string' && APP_ID.test(value.appId)
+      && typeof value.allowed === 'boolean'
+  }
+  return value.kind === 'set-emergency-accelerator'
+    && exactKeys(value, ['kind', 'accelerator'])
+    && typeof value.accelerator === 'string' && ACCELERATOR.test(value.accelerator)
+}
+
 /** Validate the path-free renderer-visible browser takeover state. */
 export function isBrowserTakeoverStatus(value: unknown): value is BrowserTakeoverStatus {
   if (typeof value !== 'object' || value === null || Array.isArray(value)
@@ -143,6 +229,10 @@ export interface DesktopApi {
   getDesktopPreferences(): Promise<DesktopPreferencesSnapshot>
   setDesktopPreference(mutation: DesktopPreferenceMutation): Promise<DesktopPreferencesSnapshot>
   onDesktopPreferences(listener: (snapshot: DesktopPreferencesSnapshot) => void): () => void
+  getComputerControlStatus(): Promise<DesktopControlUiSnapshot>
+  stopComputerControl(): Promise<DesktopControlUiSnapshot>
+  setComputerControlSetting(mutation: DesktopControlUiMutation): Promise<DesktopControlUiSnapshot>
+  onComputerControlStatus(listener: (snapshot: DesktopControlUiSnapshot) => void): () => void
 }
 
 declare global {

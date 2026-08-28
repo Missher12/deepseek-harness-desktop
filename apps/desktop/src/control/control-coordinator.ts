@@ -141,6 +141,18 @@ export interface DesktopControlCoordinatorOptions {
   readonly onLeaseRevoked?: (event: ControlLeaseRevokedEvent) => void
 }
 
+/** Path-free state for native Desktop UI; lease/session/ref authority never crosses this seam. */
+export interface DesktopControlCoordinatorStatus {
+  readonly computerSupported: boolean
+  readonly active: null | {
+    readonly surfaceKind: ControlLeaseSurfaceKind
+    readonly agentName: string
+    readonly appId: string | null
+  }
+  readonly action: string | null
+  readonly stopping: boolean
+}
+
 interface InFlightDispatch {
   readonly generation: number
   readonly controller: AbortController
@@ -247,6 +259,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
   readonly #inFlight = new Set<InFlightDispatch>()
   readonly #cleanupByGeneration = new Map<number, Promise<void>>()
   readonly #released = new Map<string, Promise<void>>()
+  readonly #statusListeners = new Set<(snapshot: DesktopControlCoordinatorStatus) => void>()
   #cleanupTail: Promise<void> = Promise.resolve()
   #latestCleanup: Promise<void> = Promise.resolve()
   #shutdownPromise: Promise<void> | undefined
@@ -257,6 +270,8 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
   #cleanupPending = 0
   #cleanupFailed = false
   #resumeRequired = false
+  #stoppingLease: ActiveControlLease | null = null
+  #currentAction: { readonly generation: number; readonly requestKind: BridgeRequest['requestKind'] } | null = null
 
   constructor(options: DesktopControlCoordinatorOptions) {
     this.#options = options
@@ -284,6 +299,32 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
 
   activeLease(): ActiveControlLease | null {
     return this.#leases.activeSnapshot()
+  }
+
+  controlStatus(): DesktopControlCoordinatorStatus {
+    const active = this.#leases.activeSnapshot() ?? this.#stoppingLease
+    return Object.freeze({
+      computerSupported: this.#supported(this.#options.computer),
+      active: active === null ? null : Object.freeze({
+        surfaceKind: active.surfaceKind,
+        agentName: active.agentId,
+        appId: active.targets.length === 1 ? active.targets[0]?.appId ?? null : null,
+      }),
+      action: this.#currentAction?.requestKind ?? null,
+      stopping: this.#stoppingLease !== null,
+    })
+  }
+
+  subscribeStatus(listener: (snapshot: DesktopControlCoordinatorStatus) => void): () => void {
+    this.#statusListeners.add(listener)
+    listener(this.controlStatus())
+    return () => { this.#statusListeners.delete(listener) }
+  }
+
+  /** Atomically replace only this feature's active emergency accelerator. */
+  rebindEmergencyShortcut(accelerator: string): void {
+    if (this.#leases.activeSnapshot() === null) return
+    this.#shortcut.rebind(accelerator)
   }
 
   async dispatch(
@@ -521,6 +562,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
         outcome: 'granted',
       }) }).catch(() => undefined)
       this.#throwIfAborted(controller.signal)
+      this.#publishStatus()
       return result
     } catch (error) {
       if (acquisitionCompletion !== undefined) {
@@ -621,9 +663,17 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       const generation = this.#leases.activeSnapshot()?.generation ?? 0
       inFlight = { generation, controller, detach }
       this.#inFlight.add(inFlight)
+      this.#currentAction = { generation, requestKind: request.requestKind }
+      this.#publishStatus()
       return await adapter.dispatch(request, { ...context, signal: controller.signal })
     } finally {
-      if (inFlight !== undefined) this.#inFlight.delete(inFlight)
+      if (inFlight !== undefined) {
+        this.#inFlight.delete(inFlight)
+        if (this.#currentAction?.generation === inFlight.generation) {
+          this.#currentAction = null
+          this.#publishStatus()
+        }
+      }
       detach()
     }
   }
@@ -646,6 +696,9 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
 
   #leaseRevoked(event: ControlLeaseRevokedEvent): void {
     this.#admission = false
+    this.#stoppingLease = event.snapshot
+    this.#currentAction = null
+    this.#publishStatus()
     try { this.#shortcut.deactivate() } catch { this.#cleanupFailed = true }
     this.#actionGrants.revokeLease(
       event.snapshot.sessionId,
@@ -674,12 +727,23 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     void cleanup.finally(() => {
       this.#cleanupPending -= 1
       this.#cleanupByGeneration.delete(event.generation)
+      if (this.#stoppingLease?.generation === event.generation) {
+        this.#stoppingLease = null
+        this.#publishStatus()
+      }
       if (this.#transportOpen && !this.#closing && !this.#cleanupFailed
         && !this.#resumeRequired
         && this.#cleanupPending === 0
         && this.#leases.activeSnapshot() === null
         && this.#pendingAcquire === undefined) this.#admission = true
     }).catch(() => undefined)
+  }
+
+  #publishStatus(): void {
+    const snapshot = this.controlStatus()
+    for (const listener of this.#statusListeners) {
+      try { listener(snapshot) } catch { /* renderer status cannot affect authority */ }
+    }
   }
 
   async #cleanupLease(event: ControlLeaseRevokedEvent): Promise<void> {

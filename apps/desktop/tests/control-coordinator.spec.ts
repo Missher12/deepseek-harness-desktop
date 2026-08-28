@@ -260,6 +260,26 @@ async function approve(dialog: FakeDialog): Promise<void> {
 }
 
 describe('DesktopControlCoordinator', () => {
+  it('publishes active and fully stopped UI state without exposing lease authority', async () => {
+    const { coordinator, dialog } = setup({ computer: adapter('computer') })
+    const states: unknown[] = []
+    const off = coordinator.subscribeStatus((snapshot) => { states.push(snapshot) })
+    const pending = coordinator.dispatch(acquire(), context())
+    await approve(dialog)
+    await expect(pending).resolves.toMatchObject({ message: { responseKind: 'ok' } })
+    expect(coordinator.controlStatus()).toMatchObject({
+      computerSupported: true,
+      active: { agentName: 'Visible Agent only', appId: 'app.allowed' },
+      action: null,
+      stopping: false,
+    })
+    expect(Object.keys(coordinator.controlStatus())).not.toContain('leaseId')
+    await coordinator.dispatch(stop('computer.stop'), context())
+    expect(coordinator.controlStatus()).toMatchObject({ active: null, stopping: false })
+    expect(states.length).toBeGreaterThanOrEqual(2)
+    off()
+  })
+
   it('upgrades an ephemeral provider request only to a main-verified persistent Give surface', async () => {
     const browser = adapter('browser')
     browser.acquireFacts = async () => ({

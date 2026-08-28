@@ -30,10 +30,12 @@ import { findConflictingHarness } from './harness/ownership.ts'
 import { createLifecycleLogger } from './logging.ts'
 import {
   isDesktopPreferenceMutation,
+  isDesktopControlUiMutation,
   isRecoveryAction,
   supportsDesktopUpdates,
   type DesktopCommand,
   type DesktopPreferenceMutation,
+  type DesktopControlUiSnapshot,
 } from './preload-api.ts'
 import {
   defaultDesktopPreferences,
@@ -77,8 +79,10 @@ import { DesktopControlCoordinator } from './control/control-coordinator.ts'
 import {
   DEFAULT_CONTROL_SETTINGS,
   readControlSettings,
+  writeControlSettings,
   type ControlSettings,
 } from './control/settings-store.ts'
+import { ComputerControlUiAuthority } from './control/ui-authority.ts'
 import type {
   NativeApprovalDialogOptions,
 } from './control/native-approval.ts'
@@ -169,6 +173,8 @@ const updateService = new DesktopUpdateService({
 })
 const startupTimeline = new DesktopStartupTimeline(record)
 let controlSettings: ControlSettings = DEFAULT_CONTROL_SETTINGS
+let controlSettingsRevision = 1
+let controlSettingsMutationTail: Promise<void> = Promise.resolve()
 let officialControlSession: SessionId | undefined
 const controlSettingsReady = readControlSettings(controlSettingsPath).then((settings) => {
   controlSettings = settings
@@ -331,7 +337,7 @@ const controlCoordinator = new DesktopControlCoordinator({
     if (officialControlSession === sessionId) officialControlSession = undefined
   },
   getAgentDisplayName: () => 'Agent',
-  getSettings: () => ({ settings: controlSettings, revision: 1 }),
+  getSettings: () => ({ settings: controlSettings, revision: controlSettingsRevision }),
   approval: {
     dialog: {
       async showMessageBox(window, options: NativeApprovalDialogOptions) {
@@ -365,6 +371,66 @@ const controlCoordinator = new DesktopControlCoordinator({
       leaseRevision: event.snapshot.leaseRevision,
     })
   },
+})
+const computerControlUi = new ComputerControlUiAuthority({
+  getSettings: () => controlSettings,
+  writeSettings: async (next) => {
+    const task = controlSettingsMutationTail.then(async () => {
+      await controlSettingsReady
+      const previous = controlSettings
+      const rebind = next.emergencyAccelerator !== previous.emergencyAccelerator
+        && controlCoordinator.activeLease() !== null
+      if (rebind) controlCoordinator.rebindEmergencyShortcut(next.emergencyAccelerator)
+      try {
+        await writeControlSettings(controlSettingsPath, next)
+      } catch (error) {
+        if (rebind) {
+          try {
+            controlCoordinator.rebindEmergencyShortcut(previous.emergencyAccelerator)
+          } catch {
+            const active = controlCoordinator.activeLease()
+            if (active !== null) {
+              await controlCoordinator.revokeSession(active.sessionId, new AbortController().signal)
+            }
+          }
+        }
+        throw error
+      }
+      controlSettings = next
+      controlSettingsRevision += 1
+    })
+    controlSettingsMutationTail = task.catch(() => undefined)
+    await task
+  },
+  getControlStatus: () => controlCoordinator.controlStatus(),
+  stopActive: async () => {
+    const active = controlCoordinator.activeLease()
+    if (active !== null) {
+      await controlCoordinator.revokeSession(active.sessionId, new AbortController().signal)
+    }
+  },
+  confirmExpansion: async (mutation) => {
+    const owner = nativeWindow
+    if (owner === undefined || owner.isDestroyed() || !owner.isVisible()) return false
+    const detail = mutation.kind === 'set-app-allowed'
+      ? `Allow Computer Control to target ${mutation.appId}?`
+      : mutation.kind === 'set-computer-enabled'
+        ? 'Enable Computer Control for authorized ordinary applications?'
+        : `Change the emergency Stop shortcut to ${mutation.accelerator}?`
+    const result = await dialog.showMessageBox(owner, {
+      type: 'warning',
+      title: 'Computer Control setting',
+      message: 'Confirm this Desktop control change',
+      detail,
+      buttons: ['Cancel', 'Apply'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    })
+    return result.response === 1
+  },
+  // Task 11 injects the optional observation-only native status/list provider.
+  // Its absence is intentionally rendered as unavailable and never blocks startup.
 })
 app.on('login', (event, webContents, _details, authInfo, callback) => {
   browserProxyAuthentication.handle(webContents, authInfo, (username, password) => {
@@ -415,21 +481,55 @@ function showDesktopWindow(): void {
   controlCoordinator.resumeAdmission()
 }
 
+async function publishComputerControlStatus(
+  provided?: DesktopControlUiSnapshot,
+): Promise<DesktopControlUiSnapshot> {
+  const snapshot = provided ?? await computerControlUi.snapshot()
+  if (nativeWindow !== undefined && !nativeWindow.isDestroyed() && activeHarnessRoot !== undefined) {
+    nativeWindow.webContents.send('desktop:computer-control-state', snapshot)
+  }
+  return snapshot
+}
+
+function stopVisibleControl(): void {
+  void computerControlUi.stop()
+    .then(async (snapshot) => { await publishComputerControlStatus(snapshot) })
+    .catch((error: unknown) => {
+      record(`desktop control stop failed: ${error instanceof Error ? error.message : String(error)}`)
+    })
+}
+
+function syncApplicationMenu(): void {
+  const controlActive = controlCoordinator.controlStatus().active !== null
+  Menu.setApplicationMenu(Menu.buildFromTemplate(
+    createMenuTemplate(
+      PRODUCT_NAME,
+      (command) => { controller.sendCommand(command) },
+      process.platform,
+      { controlActive, stopControl: stopVisibleControl },
+    ),
+  ))
+}
+
 function syncWindowsTray(): void {
   if (process.platform !== 'win32' || desktopPreferences.closeBehavior !== 'keep-running') {
     tray?.destroy()
     tray = undefined
     return
   }
-  if (tray !== undefined) return
-  tray = new Tray(iconPath)
-  tray.setToolTip(PRODUCT_NAME)
+  if (tray === undefined) {
+    tray = new Tray(iconPath)
+    tray.setToolTip(PRODUCT_NAME)
+    tray.on('double-click', showDesktopWindow)
+  }
+  const controlActive = controlCoordinator.controlStatus().active !== null
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show DeepSeek Harness', click: showDesktopWindow },
     { type: 'separator' },
+    { label: 'Stop Computer Control', enabled: controlActive, click: stopVisibleControl },
+    { type: 'separator' },
     { label: 'Quit', click: () => { app.quit() } },
   ]))
-  tray.on('double-click', showDesktopWindow)
 }
 
 async function setDesktopPreference(
@@ -621,6 +721,31 @@ ipcMain.handle('desktop:preferences-set', async (event, value: unknown) => {
   return await setDesktopPreference(value)
 })
 
+ipcMain.handle('desktop:computer-control-status', async (event, ...args: unknown[]) => {
+  if (!isHarnessSender(event) || args.length !== 0) {
+    throw new Error('Untrusted Computer control status request.')
+  }
+  return await computerControlUi.snapshot()
+})
+
+ipcMain.handle('desktop:computer-control-stop', async (event, ...args: unknown[]) => {
+  if (!isHarnessSender(event) || args.length !== 0) {
+    throw new Error('Untrusted Computer control Stop request.')
+  }
+  const snapshot = await computerControlUi.stop()
+  syncApplicationMenu()
+  syncWindowsTray()
+  return await publishComputerControlStatus(snapshot)
+})
+
+ipcMain.handle('desktop:computer-control-setting', async (event, value: unknown, ...args: unknown[]) => {
+  if (!isHarnessSender(event) || args.length !== 0 || !isDesktopControlUiMutation(value)) {
+    throw new Error('Untrusted Computer control setting request.')
+  }
+  const snapshot = await computerControlUi.mutate(value)
+  return await publishComputerControlStatus(snapshot)
+})
+
 if (desktopUpdatesEnabled) {
   ipcMain.handle('desktop:update-status', (event) => {
     if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
@@ -694,9 +819,15 @@ const removeBrowserTakeoverIpc = installBrowserTakeoverIpc({
   authority: browserTakeover,
   isTrustedMainFrame: event => isHarnessSender(event as IpcMainInvokeEvent),
 })
+const removeControlStatus = controlCoordinator.subscribeStatus(() => {
+  syncApplicationMenu()
+  if (app.isReady()) syncWindowsTray()
+  void publishComputerControlStatus().catch(() => undefined)
+})
 
 
 app.on('before-quit', () => {
+  removeControlStatus()
   removeBrowserTakeoverIpc()
   updateService.dispose()
   tray?.destroy()
@@ -704,9 +835,7 @@ app.on('before-quit', () => {
   void workbenchBrowser?.hide()
 })
 
-Menu.setApplicationMenu(Menu.buildFromTemplate(
-  createMenuTemplate(PRODUCT_NAME, (command) => { controller.sendCommand(command) }, process.platform),
-))
+syncApplicationMenu()
 
 void controller.run().then(() => {
   if (platformBehavior.setDockIcon) app.dock?.setIcon(iconPath)

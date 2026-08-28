@@ -143,3 +143,7 @@
 # Registers nothing when the Desktop-owned BrowserControl provider is absent.
 - id: tool-browser-control
   name: '@deepseek-ai/dsh-tool-browser-control'
+
+# Registers nothing when the Desktop-owned ComputerControl provider is absent.
+- id: tool-computer-control
+  name: '@deepseek-ai/dsh-tool-computer-control'

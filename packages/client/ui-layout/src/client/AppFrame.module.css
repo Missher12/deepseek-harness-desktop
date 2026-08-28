@@ -161,6 +161,19 @@
   pointer-events: none;
 }
 
+.statusLayer {
+  position: absolute;
+  inset: calc(var(--dsh-native-titlebar-inset) + 12px) 16px auto;
+  z-index: 18;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.statusLayer > * {
+  pointer-events: auto;
+}
+
 .overlayLayer > * {
   pointer-events: auto;
 }

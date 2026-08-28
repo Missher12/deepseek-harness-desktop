@@ -12,7 +12,16 @@ export function createMenuTemplate(
   appName: string,
   sendCommand: (command: DesktopCommand) => void,
   platform: NodeJS.Platform = process.platform,
+  control: { readonly controlActive: boolean; readonly stopControl: () => void } = {
+    controlActive: false,
+    stopControl: () => {},
+  },
 ): MenuItemConstructorOptions[] {
+  const stopControl: MenuItemConstructorOptions = {
+    label: 'Stop Computer Control',
+    enabled: control.controlActive,
+    click: () => { control.stopControl() },
+  }
   const applicationMenu: MenuItemConstructorOptions = {
     label: appName,
     submenu: [
@@ -23,6 +32,7 @@ export function createMenuTemplate(
         accelerator: 'CmdOrCtrl+,',
         click: () => { sendCommand('open-settings') },
       },
+      stopControl,
       { type: 'separator' },
       { role: 'services' },
       { type: 'separator' },
@@ -41,6 +51,7 @@ export function createMenuTemplate(
         accelerator: 'CmdOrCtrl+N',
         click: () => { sendCommand('new-session') },
       },
+      stopControl,
       { type: 'separator' },
       ...(platform === 'darwin'
         ? [{ role: 'close' as const }]

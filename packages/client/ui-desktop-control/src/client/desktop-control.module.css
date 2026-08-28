@@ -1,0 +1,31 @@
+.capsule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(720px, calc(100vw - 64px));
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+  backdrop-filter: blur(16px);
+}
+
+.capsule span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent { font-weight: 650; }
+.action { color: var(--dsw-alias-label-secondary); }
+.capsule button { border: 0; border-radius: 999px; padding: 5px 11px; color: white; background: var(--dsw-alias-button-primary-fill); }
+.capsule button:disabled { opacity: 0.55; }
+
+.settings { display: grid; gap: 16px; }
+.settings header, .permissions p, .shortcut { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.settings h2, .settings p { margin: 0; }
+.settings fieldset { display: grid; gap: 8px; margin: 0; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; }
+.toggle, .settings fieldset label { display: flex; align-items: center; gap: 8px; }
+.permissions { display: grid; gap: 8px; }
+.guidance { color: var(--dsw-alias-label-secondary); }
+.shortcut input { min-width: 260px; }
+
+@media (forced-colors: active) {
+  .capsule { border: 1px solid CanvasText; background: Canvas; }
+}

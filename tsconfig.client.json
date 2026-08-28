@@ -99,6 +99,7 @@
     { "path": "./packages/client/ui-settings-usage" },
     { "path": "./packages/client/ui-settings-brain" },
     { "path": "./packages/client/ui-settings-system-update" },
+    { "path": "./packages/client/ui-desktop-control" },
     { "path": "./packages/client/ui-settings-personalization" },
     { "path": "./packages/client/locale" },
     { "path": "./packages/client/ui-renderer" },

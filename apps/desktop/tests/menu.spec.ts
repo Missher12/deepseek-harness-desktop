@@ -57,4 +57,26 @@ describe('createMenuTemplate', () => {
     expect(hasRole(template, 'quit')).toBe(true)
     expect(hasRole(template, 'hide')).toBe(false)
   })
+
+  it('mirrors approval-free Stop while control is active and never offers Pause', () => {
+    const stop = vi.fn()
+    const active = createMenuTemplate('DeepSeek Harness', vi.fn(), 'darwin', {
+      controlActive: true,
+      stopControl: stop,
+    })
+    const stopItem = active.flatMap(item => Array.isArray(item.submenu) ? item.submenu : [])
+      .find(item => item.label === 'Stop Computer Control')
+    expect(stopItem?.enabled).toBe(true)
+    stopItem?.click?.({} as MenuItem, undefined, {})
+    expect(stop).toHaveBeenCalledOnce()
+    expect(JSON.stringify(active)).not.toMatch(/pause/i)
+
+    const inactive = createMenuTemplate('DeepSeek Harness', vi.fn(), 'win32', {
+      controlActive: false,
+      stopControl: stop,
+    })
+    const disabled = inactive.flatMap(item => Array.isArray(item.submenu) ? item.submenu : [])
+      .find(item => item.label === 'Stop Computer Control')
+    expect(disabled?.enabled).toBe(false)
+  })
 })
