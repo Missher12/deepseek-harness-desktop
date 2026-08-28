@@ -507,6 +507,28 @@ struct ActiveLease {
     lease: Lease,
 }
 
+struct RevokedLeaseIdentity {
+    session_id: String,
+    lease_id: String,
+    revision: u64,
+}
+
+impl RevokedLeaseIdentity {
+    fn from_active(active: &ActiveLease) -> Self {
+        Self {
+            session_id: active.session_id.clone(),
+            lease_id: active.lease_id.clone(),
+            revision: active.lease.revision,
+        }
+    }
+
+    fn matches(&self, request: &HelperRequest) -> bool {
+        self.session_id == request.session_id()
+            && self.lease_id == required_string(request, "leaseId")
+            && self.revision == required_integer(request, "leaseRevision")
+    }
+}
+
 impl Lease {
     fn expired(&self, now_ms: u64) -> bool {
         now_ms.saturating_sub(self.last_activity_ms) >= self.idle_after_ms
@@ -529,6 +551,7 @@ pub struct ComputerUseCore<C, P> {
     clock: C,
     platform: P,
     active: Option<ActiveLease>,
+    last_revoked: Option<RevokedLeaseIdentity>,
     last_revision: u64,
     last_snapshot_revision: u64,
 }
@@ -545,6 +568,7 @@ where
             clock,
             platform,
             active: None,
+            last_revoked: None,
             last_revision: 0,
             last_snapshot_revision: 0,
         }
@@ -674,6 +698,7 @@ where
             hard_after_ms: required_integer(request, "hardExpiresAfterMs"),
         };
         self.last_revision = revision;
+        self.last_revoked = None;
         self.active = Some(ActiveLease {
             session_id: request.session_id().to_owned(),
             lease_id: lease_id.to_owned(),
@@ -729,10 +754,24 @@ where
         deadline_ms: u64,
         cancel: &CancellationToken,
     ) -> HelperResponse {
+        if self.active.is_none() {
+            if self
+                .last_revoked
+                .as_ref()
+                .is_some_and(|revoked| revoked.matches(request))
+            {
+                return match self.platform.release_all_input(deadline_ms, cancel) {
+                    Ok(()) => HelperResponse::ok(request, json!({"stopped":true})),
+                    Err(code) => HelperResponse::error(request, code, false),
+                };
+            }
+            return HelperResponse::error(request, "LEASE_REVOKED", false);
+        }
         if let Err(code) = self.active_lease_for(request, self.clock.now_ms()) {
             return HelperResponse::error(request, code, false);
         }
-        self.active = None;
+        let active = self.active.take().expect("active lease checked");
+        self.last_revoked = Some(RevokedLeaseIdentity::from_active(&active));
         match self.platform.release_all_input(deadline_ms, cancel) {
             Ok(()) => HelperResponse::ok(request, json!({"stopped":true})),
             Err(code) => HelperResponse::error(request, code, false),
@@ -886,7 +925,8 @@ where
                     .as_ref()
                     .is_some_and(|active| active.session_id == session_id)
                 {
-                    self.active = None;
+                    let active = self.active.take().expect("active lease checked");
+                    self.last_revoked = Some(RevokedLeaseIdentity::from_active(&active));
                     let cancel = CancellationToken::new();
                     let _ = self
                         .platform
@@ -908,7 +948,8 @@ where
                         && active.lease_id == lease_id
                         && active.lease.revision == revision
                 }) {
-                    self.active = None;
+                    let active = self.active.take().expect("active lease checked");
+                    self.last_revoked = Some(RevokedLeaseIdentity::from_active(&active));
                     let cancel = CancellationToken::new();
                     let _ = self
                         .platform
@@ -917,6 +958,7 @@ where
             }
             "parent.shutdown" => {
                 self.active = None;
+                self.last_revoked = None;
                 let cancel = CancellationToken::new();
                 let _ = self
                     .platform

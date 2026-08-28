@@ -16,6 +16,8 @@ A timed-out native challenge also left the first official Harness session claime
 
 Production Electron passed fractional `performance.now()` values into a lease authority that intentionally accepts only non-negative safe-integer monotonic milliseconds. Native approval and helper installation therefore succeeded, but every lease activation failed internally before the first snapshot or action; integer-only fake clocks hid the wiring defect.
 
+After lease activation was repaired, successful native work still failed during cleanup. Electron correctly sent the high-priority `lease.revoke` before the awaited `stop`, but the helper discarded the lease immediately and treated the following exact Stop as stale. The operation completed, yet the coordinator reported an internal cleanup failure.
+
 ## Decision
 
 The protocol error roster includes `CONTROL_DISABLED`, `TARGET_NOT_AUTHORIZED`, and `APPROVAL_DENIED`. Electron main emits each only at its owned decision point. A disabled native-application surface and a request with no allowlisted application fail before the native challenge; a cancelled native challenge fails afterward. `PERMISSION_DENIED` remains an operating-system result, `TARGET_CLOSED` describes an allowed target that is no longer current, and `POLICY_DENIED` remains the protected-target result. The Computer tool maps each code to bounded corrective text and never forwards provider diagnostics.
@@ -29,6 +31,8 @@ The macOS Accessibility binding now selects the only visible AX window in the al
 The main-owned global Stop path now revokes the active lease session when present, or the claimed official session when no lease became active. Revocation still awaits pending cleanup and keeps failed browser cleanup fail-closed; only a successful exact-session cleanup releases ownership for a later Harness session.
 
 Electron floors `performance.now()` at the clock boundary, preserving monotonic millisecond ordering while satisfying the lease authority's exact integer contract. The manifest wiring test locks this production boundary in addition to the authority's existing fractional-clock rejection tests.
+
+The helper remembers only the most recently revoked exact session, lease identifier, and revision while no newer lease is active. A matching Stop remains idempotent and releases held input again; a mismatched or older Stop still returns `LEASE_REVOKED`. Installing a newer lease clears the acknowledgement tombstone, so the exception cannot authorize stale work.
 
 ## Alternatives considered
 
@@ -49,3 +53,5 @@ Ordinary Chrome windows no longer fail solely because ScreenCaptureKit and Acces
 After a cancelled or timed-out native challenge, the visible Stop action also clears the orphaned session claim. A new task can then acquire control without restarting DeepSeek Harness, while a cleanup failure continues to block ownership transfer.
 
 Lease activation now reaches the native adapter instead of returning a generic `INTERNAL` after approval. The correction does not weaken expiry comparisons or replace the monotonic clock with wall time.
+
+Successful operations now complete their full revoke-and-Stop cleanup sequence without a false internal error. High-priority revocation remains first, and duplicate exact Stop requests remain safe during teardown retries.

@@ -540,6 +540,46 @@ fn exact_stop_and_expiry_release_the_process_wide_lease_for_a_new_revision() {
 }
 
 #[test]
+fn exact_stop_acknowledges_a_lease_already_revoked_by_the_priority_control_path() {
+    let clock = AtomicClock(Arc::new(AtomicU64::new(10)));
+    let mut core = ComputerUseCore::new(clock, NullObservationPlatform);
+    core.handle(decode_helper_input(install("session-1", LEASE_ID, 1)).expect("install"));
+    core.handle(
+        decode_helper_input(json!({
+            "protocolVersion":1,"messageKind":"control","controlKind":"lease.revoke",
+            "sessionId":"session-1","leaseId":LEASE_ID,"leaseRevision":1
+        }))
+        .expect("revoke"),
+    );
+
+    for _ in 0..2 {
+        let stopped = core
+            .handle(
+                decode_helper_input(request(
+                    "stop",
+                    json!({"leaseId":LEASE_ID,"leaseRevision":1}),
+                ))
+                .expect("stop"),
+            )
+            .expect("stop response")
+            .into_value();
+        assert_eq!(stopped.pointer("/result/stopped"), Some(&json!(true)));
+    }
+
+    let stale = core
+        .handle(
+            decode_helper_input(request(
+                "stop",
+                json!({"leaseId":OTHER_LEASE_ID,"leaseRevision":1}),
+            ))
+            .expect("stale stop"),
+        )
+        .expect("stale response")
+        .into_value();
+    assert_eq!(code(&stale), Some("LEASE_REVOKED"));
+}
+
+#[test]
 fn capability_and_quota_checks_precede_the_disabled_input_backend() {
     let clock = AtomicClock(Arc::new(AtomicU64::new(10)));
     let mut core = ComputerUseCore::new(clock, NullObservationPlatform);
