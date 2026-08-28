@@ -311,6 +311,23 @@ describe('DesktopControlCoordinator', () => {
     })
   })
 
+  it('retains a pending rollback failure when the adapter reports its slot is not cleared', async () => {
+    const browser = adapter('browser')
+    browser.rollbackLeaseInstall = vi.fn(async () => { throw new Error('rollback retained') })
+    const retryPendingCleanup = vi.fn(async () => false)
+    browser.retryPendingCleanup = retryPendingCleanup
+    const { coordinator, dialog } = setup({ browser })
+    const acquiring = coordinator.dispatch(acquire('browser-ephemeral'), context())
+    await vi.waitFor(() => { expect(dialog.answers).toHaveLength(1) })
+
+    await expect(coordinator.revokeSession(SESSION, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'INTERNAL' })
+    await expect(acquiring).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'CANCELLED' } },
+    })
+    expect(retryPendingCleanup).toHaveBeenCalledWith(SESSION, expect.any(AbortSignal))
+  })
+
   it('withholds an effective descriptor until native approval and helper install both succeed', async () => {
     const order: string[] = []
     const install = new Deferred<void>()

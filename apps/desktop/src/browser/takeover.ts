@@ -120,8 +120,8 @@ export class BrowserTakeoverAuthority implements BrowserSurfaceCoordinator {
   }
 
   /** Manager cleanup notification for the exact trusted owner session. */
-  revoke(sessionId: string, generation: number): Promise<void> {
-    if (this.ownerSession !== sessionId) return Promise.resolve()
+  revoke(sessionId: string, generation: number): Promise<boolean> {
+    if (this.ownerSession !== sessionId) return Promise.resolve(false)
     const revoking = this.revoking
     if (revoking !== undefined
       && (revoking.sessionId !== sessionId || revoking.generation !== generation)) {
@@ -129,7 +129,7 @@ export class BrowserTakeoverAuthority implements BrowserSurfaceCoordinator {
     }
     this.revoking ??= Object.freeze({ sessionId, generation })
     if (this.stopping === undefined) this.publish('stopping')
-    return Promise.resolve()
+    return Promise.resolve(true)
   }
 
   /** Clear the main-owned owner only after exact surface release reaches quiescence. */

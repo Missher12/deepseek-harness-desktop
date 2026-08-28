@@ -8,10 +8,21 @@ import {
   BrowserDesktopControlAdapter,
   type BrowserSemanticControl,
 } from '../src/browser/control-adapter.ts'
-import type { BrowserSurfaceMount, BrowserSurfaceToken } from '../src/browser/surface-manager.ts'
+import { AgentBrowserError, WORKBENCH_BROWSER_PARTITION } from '../src/browser/contracts.ts'
+import {
+  BrowserSurfaceManager,
+  type BrowserSurfaceMount,
+  type BrowserSurfaceResource,
+  type BrowserSurfaceToken,
+} from '../src/browser/surface-manager.ts'
+import { BrowserTakeoverAuthority } from '../src/browser/takeover.ts'
 
 const SESSION = 'official-session' as ControlLeaseAcquireRequest['sessionId']
 const LEASE = '00000000-0000-4000-8000-000000000001' as ActiveControlLease['leaseId']
+const idleFailedMountCleanup = {
+  failedMountCleanupFor: () => undefined,
+  retryFailedMountCleanup: async () => {},
+}
 
 function base<K extends BridgeRequest['requestKind']>(requestKind: K) {
   return {
@@ -113,7 +124,12 @@ describe('Browser Desktop control adapter', () => {
     const current = semantic()
     const acquireSurface = vi.fn(async () => mount(kind))
     const adapter = new BrowserDesktopControlAdapter({
-      surfaceManager: { acquire: acquireSurface, stop: vi.fn(async () => {}), release: vi.fn(async () => {}) },
+      surfaceManager: {
+        ...idleFailedMountCleanup,
+        acquire: acquireSurface,
+        stop: vi.fn(async () => {}),
+        release: vi.fn(async () => {}),
+      },
       activate: async () => ({ semantic: current, disposeTransport: async () => {} }),
     })
 
@@ -131,6 +147,7 @@ describe('Browser Desktop control adapter', () => {
     const current = semantic()
     const adapter = new BrowserDesktopControlAdapter({
       surfaceManager: {
+        ...idleFailedMountCleanup,
         acquire: async () => mount(), stop: vi.fn(async () => {}), release: vi.fn(async () => {}),
       },
       activate: async () => ({ semantic: current, disposeTransport: async () => {} }),
@@ -168,7 +185,12 @@ describe('Browser Desktop control adapter', () => {
     const stop = vi.fn(async (token: BrowserSurfaceToken) => { order.push(`surface:${token.mountToken}`) })
     const release = vi.fn(async (token: BrowserSurfaceToken) => { order.push(`release:${token.mountToken}`) })
     const adapter = new BrowserDesktopControlAdapter({
-      surfaceManager: { acquire: async () => mount('human-persistent'), stop, release },
+      surfaceManager: {
+        ...idleFailedMountCleanup,
+        acquire: async () => mount('human-persistent'),
+        stop,
+        release,
+      },
       activate: async () => ({
         semantic: current,
         disposeTransport: async () => { order.push('transport') },
@@ -197,7 +219,12 @@ describe('Browser Desktop control adapter', () => {
     const disposeTransport = vi.fn(async () => {})
     const stop = vi.fn(async () => {})
     const release = vi.fn(async () => {})
-    const surfaceManager = { acquire: async () => mount('human-persistent'), stop, release }
+    const surfaceManager = {
+      ...idleFailedMountCleanup,
+      acquire: async () => mount('human-persistent'),
+      stop,
+      release,
+    }
     const adapter = new BrowserDesktopControlAdapter({
       surfaceManager,
       activate: async () => ({ semantic: current, disposeTransport }),
@@ -224,7 +251,12 @@ describe('Browser Desktop control adapter', () => {
   it('fails closed for a foreign session without revealing or remounting the owner', async () => {
     const acquireSurface = vi.fn(async () => mount())
     const adapter = new BrowserDesktopControlAdapter({
-      surfaceManager: { acquire: acquireSurface, stop: vi.fn(async () => {}), release: vi.fn(async () => {}) },
+      surfaceManager: {
+        ...idleFailedMountCleanup,
+        acquire: acquireSurface,
+        stop: vi.fn(async () => {}),
+        release: vi.fn(async () => {}),
+      },
       activate: async () => ({ semantic: semantic(), disposeTransport: async () => {} }),
     })
     await adapter.acquireFacts(acquire(), new AbortController().signal)
@@ -232,5 +264,71 @@ describe('Browser Desktop control adapter', () => {
 
     await expect(adapter.acquireFacts(foreign, new AbortController().signal)).rejects.toMatchObject({ code: 'BUSY' })
     expect(acquireSurface).toHaveBeenCalledOnce()
+  })
+
+  it('routes Stop through the exact failed stale-Give mount cleanup before admitting another owner', async () => {
+    let disposeAttempts = 0
+    const releaseTransfer = vi.fn(async () => {})
+    const stalePersistent: BrowserSurfaceResource = {
+      surfaceId: 'human-surface',
+      partition: WORKBENCH_BROWSER_PARTITION,
+      kind: 'human-persistent',
+      installSecurityHandlers: () => ({ dispose: () => {
+        disposeAttempts += 1
+        if (disposeAttempts === 1) throw new Error('guard cleanup failed')
+      } }),
+      mount: async () => { throw new AgentBrowserError('STALE_REF', 'human view changed') },
+      commitTransfer: async () => {},
+      hide: async () => {},
+      detachDebugger: async () => {},
+      teardownView: async () => {},
+      clearStorage: async () => {},
+      releaseTransfer,
+    }
+    const adapterOwner: { current?: BrowserDesktopControlAdapter } = {}
+    const authority = new BrowserTakeoverAuthority({
+      source: {
+        captureVisiblePersistentIntent: () => ({ instanceId: 'human-surface', generation: 1 }),
+        consumeVisiblePersistentIntent: async () => stalePersistent,
+      },
+      stopActiveSession: async (sessionId) => {
+        const current = adapterOwner.current
+        if (current === undefined) throw new Error('browser adapter is unavailable')
+        await current.retryPendingCleanup(sessionId, new AbortController().signal)
+      },
+    })
+    const manager = new BrowserSurfaceManager({
+      coordinator: authority,
+      createEphemeral: async (request) => {
+        authority.claimEphemeralOwner(request.sessionId)
+        return {
+          ...stalePersistent,
+          surfaceId: 'replacement-surface',
+          partition: request.partition,
+          kind: 'ephemeral',
+          installSecurityHandlers: () => ({ dispose() {} }),
+          mount: async () => {},
+        }
+      },
+      createNonce: () => 'replacement',
+      createMountToken: generation => `mount-${String(generation)}`,
+    })
+    const adapter = new BrowserDesktopControlAdapter({
+      surfaceManager: manager,
+      activate: async () => ({ semantic: semantic(), disposeTransport: async () => {} }),
+    })
+    adapterOwner.current = adapter
+
+    await authority.give()
+    await expect(adapter.acquireFacts(acquire(), new AbortController().signal))
+      .rejects.toMatchObject({ code: 'INTERNAL' })
+    await expect(authority.stop()).resolves.toEqual({ phase: 'human', signedInWarning: true })
+    expect(disposeAttempts).toBe(2)
+    expect(releaseTransfer).toHaveBeenCalledOnce()
+
+    const next = { ...acquire(), sessionId: 'next-official-session' } as ControlLeaseAcquireRequest
+    await expect(adapter.acquireFacts(next, new AbortController().signal)).resolves.toMatchObject({
+      surfaceKind: 'browser-ephemeral',
+    })
   })
 })

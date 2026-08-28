@@ -1000,7 +1000,7 @@ describe('BrowserSurfaceManager', () => {
     const manager = new BrowserSurfaceManager({
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async () => undefined,
-        revoke: async (sessionId, generation) => { log.push(`revoke:${sessionId}:${generation}`) },
+        revoke: async (sessionId, generation) => { log.push(`revoke:${sessionId}:${generation}`); return true },
         release: async () => {},
       },
       createEphemeral: async (request) => {
@@ -1029,7 +1029,7 @@ describe('BrowserSurfaceManager', () => {
     const consume = vi.fn(async () => undefined)
     const create = vi.fn(async () => owner)
     const manager = new BrowserSurfaceManager({
-      coordinator: { consumeVerifiedPersistentGiveIntent: consume, revoke: async () => {}, release: async () => {} },
+      coordinator: { consumeVerifiedPersistentGiveIntent: consume, revoke: async () => true, release: async () => {} },
       createEphemeral: create,
       createNonce: () => 'owner',
       createMountToken: () => 'mount-owner',
@@ -1054,7 +1054,7 @@ describe('BrowserSurfaceManager', () => {
     const manager = new BrowserSurfaceManager({
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async () => { await intent; return undefined },
-        revoke: async () => {},
+        revoke: async () => true,
         release: async () => {},
       },
       createEphemeral: async () => surface,
@@ -1074,7 +1074,7 @@ describe('BrowserSurfaceManager', () => {
     const manager = new BrowserSurfaceManager({
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async () => undefined,
-        revoke: async () => {}, release: async () => {},
+        revoke: async () => true, release: async () => {},
       },
       createEphemeral: async () => surface,
       createNonce: () => 'owner',
@@ -1096,7 +1096,7 @@ describe('BrowserSurfaceManager', () => {
     const manager = new BrowserSurfaceManager({
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async sessionId => sessionId === 'official-session' ? persistent : undefined,
-        revoke: async () => {},
+        revoke: async () => true,
         release: async () => {},
       },
       createEphemeral: async () => { throw new Error('must not create ephemeral surface') },
@@ -1118,7 +1118,7 @@ describe('BrowserSurfaceManager', () => {
     const manager = new BrowserSurfaceManager({
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async () => undefined,
-        revoke: async () => {}, release: async () => {},
+        revoke: async () => true, release: async () => {},
       },
       createEphemeral: async (request) => {
         const surface = new FakeSurface(`surface-${request.generation}`, request.partition, 'ephemeral')
@@ -1148,7 +1148,7 @@ describe('BrowserSurfaceManager', () => {
     const manager = new BrowserSurfaceManager({
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async () => undefined,
-        revoke: async (sessionId, generation) => { log.push(`revoke:${sessionId}:${generation}`) },
+        revoke: async (sessionId, generation) => { log.push(`revoke:${sessionId}:${generation}`); return true },
         release: async () => {},
       },
       createEphemeral: async () => surface,
@@ -1186,7 +1186,7 @@ describe('BrowserSurfaceManager', () => {
     const manager = new BrowserSurfaceManager({
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async () => undefined,
-        revoke: async (sessionId, generation) => { log.push(`revoke:${sessionId}:${generation}`) },
+        revoke: async (sessionId, generation) => { log.push(`revoke:${sessionId}:${generation}`); return true },
         release: async () => {},
       },
       createEphemeral: async request => request.generation === 1
@@ -1235,7 +1235,7 @@ describe('BrowserSurfaceManager', () => {
     const manager = new BrowserSurfaceManager({
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async () => undefined,
-        revoke: async (sessionId, generation) => { log.push(`revoke:${sessionId}:${generation}`) },
+        revoke: async (sessionId, generation) => { log.push(`revoke:${sessionId}:${generation}`); return true },
         release: async () => {},
       },
       createEphemeral: async () => createCalls++ === 0 ? failed : replacement,
@@ -1272,14 +1272,16 @@ describe('BrowserSurfaceManager', () => {
   })
 
   it('revokes its reservation when ephemeral creation fails before returning a resource', async () => {
-    const revoke = vi.fn(async () => {})
+    const revoke = vi.fn(async () => false)
+    const release = vi.fn(async () => { throw new Error('no exact owner to release') })
     const manager = new BrowserSurfaceManager({
-      coordinator: { consumeVerifiedPersistentGiveIntent: async () => undefined, revoke, release: async () => {} },
+      coordinator: { consumeVerifiedPersistentGiveIntent: async () => undefined, revoke, release },
       createEphemeral: async () => { throw new Error('creation failed') },
       createNonce: () => 'owner',
     })
 
     await expect(manager.acquire({ sessionId: 'owner-session' })).rejects.toMatchObject({ code: 'INTERNAL' })
     expect(revoke).toHaveBeenCalledWith('owner-session', 1)
+    expect(release).not.toHaveBeenCalled()
   })
 })

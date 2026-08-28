@@ -18,6 +18,7 @@ import { adapterPolicyFacts } from '../control/policy.ts'
 import type { AgentBrowserAction, AgentBrowserSnapshotEnvelope } from './contracts.ts'
 import { AgentBrowserError } from './contracts.ts'
 import type {
+  BrowserFailedMountCleanupRequest,
   BrowserSurfaceManager,
   BrowserSurfaceMount,
 } from './surface-manager.ts'
@@ -45,7 +46,10 @@ export interface ActivatedBrowserControl {
 }
 
 export interface BrowserDesktopControlAdapterOptions {
-  readonly surfaceManager: Pick<BrowserSurfaceManager, 'acquire' | 'stop' | 'release'>
+  readonly surfaceManager: Pick<
+    BrowserSurfaceManager,
+    'acquire' | 'stop' | 'release' | 'failedMountCleanupFor' | 'retryFailedMountCleanup'
+  >
   readonly activate: (mount: BrowserSurfaceMount) => Promise<ActivatedBrowserControl>
 }
 
@@ -65,7 +69,8 @@ interface BrowserCleanupStep {
 }
 
 interface BrowserCleanupLedger {
-  readonly mount: BrowserSurfaceMount
+  readonly sessionId: string
+  readonly surfaceKind?: ControlLeaseSurfaceKind
   steps: readonly BrowserCleanupStep[]
   started: boolean
   pending?: Promise<void>
@@ -189,20 +194,21 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
     throwIfAborted(context.signal)
     const cleanup = this.cleanupLedger
     if (cleanup === undefined) return
-    if (surfaceKind(cleanup.mount) !== snapshot.surfaceKind) {
+    if (cleanup.surfaceKind !== undefined && cleanup.surfaceKind !== snapshot.surfaceKind) {
       throw new AgentBrowserError('STALE_REF', 'browser rollback surface no longer matches')
     }
     await this.cleanup(cleanup)
   }
 
-  async retryPendingCleanup(sessionId: string, signal: AbortSignal): Promise<void> {
+  async retryPendingCleanup(sessionId: string, signal: AbortSignal): Promise<boolean> {
     throwIfAborted(signal)
     const cleanup = this.cleanupLedger
-    if (cleanup === undefined) return
-    if (cleanup.mount.sessionId !== sessionId) {
+    if (cleanup === undefined) return false
+    if (cleanup.sessionId !== sessionId) {
       throw new AgentBrowserError('BUSY', 'another session owns browser cleanup')
     }
     await this.cleanup(cleanup)
+    return this.cleanupLedger !== cleanup
   }
 
   clearQueue(_snapshot: ActiveControlLease, signal: AbortSignal): Promise<void> {
@@ -213,8 +219,8 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
   async stopLease(snapshot: ActiveControlLease, _reason: string, signal: AbortSignal): Promise<void> {
     throwIfAborted(signal)
     const cleanup = this.cleanupLedger
-    if (cleanup === undefined || cleanup.mount.sessionId !== snapshot.sessionId) return
-    if (surfaceKind(cleanup.mount) !== snapshot.surfaceKind) {
+    if (cleanup === undefined || cleanup.sessionId !== snapshot.sessionId) return
+    if (cleanup.surfaceKind !== undefined && cleanup.surfaceKind !== snapshot.surfaceKind) {
       throw new AgentBrowserError('STALE_REF', 'browser lease surface no longer matches')
     }
     await this.cleanup(cleanup)
@@ -259,7 +265,16 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
   }
 
   private async activateSurface(sessionId: string, signal: AbortSignal): Promise<ActiveBrowserControl> {
-    const mount = await this.surfaceManager.acquire({ sessionId })
+    let mount: BrowserSurfaceMount
+    try {
+      mount = await this.surfaceManager.acquire({ sessionId })
+    } catch (error) {
+      const failed = this.surfaceManager.failedMountCleanupFor(sessionId)
+      if (failed !== undefined) {
+        this.cleanupLedger ??= this.createFailedMountCleanupLedger(failed)
+      }
+      throw error
+    }
     let activated: ActivatedBrowserControl | undefined
     let cleanup: BrowserCleanupLedger | undefined
     try {
@@ -297,7 +312,8 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
     activated: ActivatedBrowserControl | undefined,
   ): BrowserCleanupLedger {
     return {
-      mount,
+      sessionId: mount.sessionId,
+      surfaceKind: surfaceKind(mount),
       started: false,
       steps: [
         ...activated === undefined ? [] : [
@@ -307,6 +323,16 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
         { run: () => this.surfaceManager.stop(mount) },
         { release: true, run: () => this.surfaceManager.release(mount) },
       ],
+    }
+  }
+
+  private createFailedMountCleanupLedger(
+    failed: BrowserFailedMountCleanupRequest,
+  ): BrowserCleanupLedger {
+    return {
+      sessionId: failed.sessionId,
+      started: false,
+      steps: [{ run: () => this.surfaceManager.retryFailedMountCleanup(failed) }],
     }
   }
 

@@ -23,7 +23,7 @@ export interface BrowserSurfaceResource {
 /** Trusted coordinator seam; renderer state never enters this interface. */
 export interface BrowserSurfaceCoordinator {
   consumeVerifiedPersistentGiveIntent(sessionId: string): Promise<BrowserSurfaceResource | undefined>
-  revoke(sessionId: string, generation: number): Promise<void>
+  revoke(sessionId: string, generation: number): Promise<boolean>
   release(sessionId: string, generation: number): Promise<void>
 }
 
@@ -218,6 +218,13 @@ export class BrowserSurfaceManager {
     if (this.failedMountCleanup === failed) this.failedMountCleanup = undefined
   }
 
+  /** Return only the exact unpublished cleanup identity owned by this trusted session. */
+  failedMountCleanupFor(sessionId: string): BrowserFailedMountCleanupRequest | undefined {
+    const failed = this.failedMountCleanup
+    if (failed === undefined || failed.sessionId !== sessionId) return undefined
+    return Object.freeze({ sessionId: failed.sessionId, generation: failed.generation })
+  }
+
   private async createAndMount(sessionId: string, generation: number): Promise<BrowserSurfaceMount> {
     let resource: BrowserSurfaceResource | undefined
     let handlers: { dispose(): void } | undefined
@@ -266,6 +273,7 @@ export class BrowserSurfaceManager {
   }
 
   private createCleanupLedger(active: ActiveSurface): SurfaceCleanupLedger {
+    let ownerRevoked = false
     return {
       sessionId: active.mount.sessionId,
       generation: active.mount.generation,
@@ -278,12 +286,18 @@ export class BrowserSurfaceManager {
           : [],
         {
           phase: 'stop',
-          run: () => this.coordinator.revoke(active.mount.sessionId, active.mount.generation),
+          run: async () => {
+            ownerRevoked = await this.coordinator.revoke(active.mount.sessionId, active.mount.generation)
+          },
         },
         { phase: 'release', run: () => active.resource.releaseTransfer() },
         {
           phase: 'release',
-          run: () => this.coordinator.release(active.mount.sessionId, active.mount.generation),
+          run: async () => {
+            if (ownerRevoked) {
+              await this.coordinator.release(active.mount.sessionId, active.mount.generation)
+            }
+          },
         },
       ],
     }
@@ -295,6 +309,7 @@ export class BrowserSurfaceManager {
     sessionId: string,
     generation: number,
   ): SurfaceCleanupLedger {
+    let ownerRevoked = false
     return { sessionId, generation, operations: [
       ...handlers === undefined ? [] : [{
         phase: 'stop' as const,
@@ -307,12 +322,16 @@ export class BrowserSurfaceManager {
           ? [{ phase: 'stop' as const, run: () => resource.clearStorage() }]
           : [],
       ],
-      { phase: 'stop', run: () => this.coordinator.revoke(sessionId, generation) },
+      { phase: 'stop', run: async () => {
+        ownerRevoked = await this.coordinator.revoke(sessionId, generation)
+      } },
       ...resource === undefined ? [] : [{
         phase: 'release' as const,
         run: () => resource.releaseTransfer(),
       }],
-      { phase: 'release', run: () => this.coordinator.release(sessionId, generation) },
+      { phase: 'release', run: async () => {
+        if (ownerRevoked) await this.coordinator.release(sessionId, generation)
+      } },
     ] }
   }
 

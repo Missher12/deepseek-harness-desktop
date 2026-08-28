@@ -111,7 +111,7 @@ export interface DesktopControlSurfaceAdapter {
   ): Promise<DecodedDesktopControlEnvelope>
   installLease?(snapshot: PreparedLeaseInstall, context: ControlAdapterCallContext): Promise<void>
   rollbackLeaseInstall?(snapshot: PreparedLeaseInstall, context: ControlAdapterCallContext): Promise<void>
-  retryPendingCleanup?(sessionId: SessionId, signal: AbortSignal): Promise<void>
+  retryPendingCleanup?(sessionId: SessionId, signal: AbortSignal): Promise<boolean>
   clearQueue(snapshot: ActiveControlLease, signal: AbortSignal): Promise<void>
   stopLease(snapshot: ActiveControlLease, reason: string, signal: AbortSignal): Promise<void>
   releaseKnownInput?(snapshot: ActiveControlLease, signal: AbortSignal): Promise<void>
@@ -326,8 +326,8 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
         : new Error('control cleanup aborted', { cause: signal.reason })
     }
     if (pending?.adapter.retryPendingCleanup !== undefined) {
-      await pending.adapter.retryPendingCleanup(sessionId, signal)
-      pendingFailure = undefined
+      const cleared = await pending.adapter.retryPendingCleanup(sessionId, signal)
+      if (cleared) pendingFailure = undefined
     }
     if (pendingFailure !== undefined) {
       throw pendingFailure instanceof Error
