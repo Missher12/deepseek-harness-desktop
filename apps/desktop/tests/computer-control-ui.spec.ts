@@ -10,6 +10,7 @@ function setup(withProvider = true) {
   }
   const write = vi.fn(async (next: ControlSettings) => { settings = next })
   const stop = vi.fn(async () => undefined)
+  const confirm = vi.fn(async () => true)
   const authority = new ComputerControlUiAuthority({
     getSettings: () => settings,
     writeSettings: write,
@@ -20,7 +21,7 @@ function setup(withProvider = true) {
       stopping: false,
     }),
     stopActive: stop,
-    confirmExpansion: async () => true,
+    confirmExpansion: confirm,
     ...(withProvider ? { provider: {
       status: async () => ({ viewing: 'granted' as const, assistive: 'denied' as const, supported: true }),
       list: async () => ({ apps: [
@@ -29,7 +30,7 @@ function setup(withProvider = true) {
       ] }),
     } } : {}),
   })
-  return { authority, write, stop, getSettings: () => settings }
+  return { authority, write, stop, confirm, getSettings: () => settings }
 }
 
 describe('ComputerControlUiAuthority', () => {
@@ -38,6 +39,7 @@ describe('ComputerControlUiAuthority', () => {
     const snapshot = await authority.snapshot()
     expect(snapshot).toMatchObject({
       supported: true,
+      browserEnabled: false,
       permissions: { screenViewing: 'granted', assistiveControl: 'denied' },
       ordinaryApps: [
         { appId: 'app.notes', name: 'Notes', allowed: true },
@@ -46,6 +48,30 @@ describe('ComputerControlUiAuthority', () => {
       active: { agentName: 'Agent', appName: 'Notes', action: 'Type' },
     })
     expect(JSON.stringify(snapshot)).not.toMatch(/session|lease|windowId|ref/i)
+  })
+
+  it('persists browser enablement only after the main-owned confirmation', async () => {
+    const { authority, write, confirm, getSettings } = setup()
+    await authority.mutate({ kind: 'set-browser-enabled', enabled: true })
+
+    expect(confirm).toHaveBeenCalledWith({ kind: 'set-browser-enabled', enabled: true })
+    expect(getSettings().browserEnabled).toBe(true)
+
+    confirm.mockClear()
+    await authority.mutate({ kind: 'set-browser-enabled', enabled: false })
+    expect(confirm).not.toHaveBeenCalled()
+    expect(getSettings().browserEnabled).toBe(false)
+    expect(write).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps browser control disabled when native confirmation is declined', async () => {
+    const { authority, write, confirm, getSettings } = setup()
+    confirm.mockResolvedValueOnce(false)
+
+    await expect(authority.mutate({ kind: 'set-browser-enabled', enabled: true }))
+      .rejects.toThrow(/not confirmed/i)
+    expect(getSettings().browserEnabled).toBe(false)
+    expect(write).not.toHaveBeenCalled()
   })
 
   it('fails a provider-less startup locally and never blocks status rendering', async () => {

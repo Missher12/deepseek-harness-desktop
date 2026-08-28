@@ -453,9 +453,11 @@ const computerControlUi = new ComputerControlUiAuthority({
     if (owner === undefined || owner.isDestroyed() || !owner.isVisible()) return false
     const detail = mutation.kind === 'set-app-allowed'
       ? `Allow Computer Control to target ${mutation.appId}?`
-      : mutation.kind === 'set-computer-enabled'
-        ? 'Enable Computer Control for authorized ordinary applications?'
-        : `Change the emergency Stop shortcut to ${mutation.accelerator}?`
+      : mutation.kind === 'set-browser-enabled'
+        ? 'Enable Browser Agent control for the visible workbench browser?'
+        : mutation.kind === 'set-computer-enabled'
+          ? 'Enable Computer Control for authorized ordinary applications?'
+          : `Change the emergency Stop shortcut to ${mutation.accelerator}?`
     const result = await dialog.showMessageBox(owner, {
       type: 'warning',
       title: 'Computer Control setting',

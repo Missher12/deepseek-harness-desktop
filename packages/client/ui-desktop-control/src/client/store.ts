@@ -6,6 +6,7 @@ type DesktopControlUiActions = { sync: (draft: DesktopControlUiState, snapshot: 
 
 export const EMPTY_DESKTOP_CONTROL_SNAPSHOT: DesktopControlUiSnapshot = {
   supported: false,
+  browserEnabled: false,
   computerEnabled: false,
   permissions: { screenViewing: 'unknown', assistiveControl: 'unknown' },
   ordinaryApps: [],

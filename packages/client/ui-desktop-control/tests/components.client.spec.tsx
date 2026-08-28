@@ -5,11 +5,16 @@ import {
   DesktopControlCapsule,
   DesktopControlSettings,
 } from '../src/client/components.tsx'
-import type { DesktopControlUiSnapshot } from '../src/client/contracts.ts'
+import {
+  isDesktopControlUiSnapshot,
+  type DesktopControlUiSnapshot,
+} from '../src/client/contracts.ts'
 import { apply } from '../src/client/index.ts'
+import { zh } from '../src/client/locales.ts'
 
 const snapshot: DesktopControlUiSnapshot = {
   supported: true,
+  browserEnabled: false,
   computerEnabled: true,
   permissions: { screenViewing: 'granted', assistiveControl: 'denied' },
   ordinaryApps: [
@@ -47,6 +52,8 @@ describe('Desktop control UI', () => {
   it('shows both OS permission states, the ordinary allowlist, and shortcut setting', () => {
     const mutate = vi.fn()
     const view = render(<DesktopControlSettings snapshot={snapshot} onMutation={mutate} />)
+    fireEvent.click(view.getByRole('checkbox', { name: 'Browser control' }))
+    expect(mutate).toHaveBeenCalledWith({ kind: 'set-browser-enabled', enabled: true })
     expect(view.getByText('Screen Viewing')).toBeTruthy()
     expect(view.getByText('Assistive Control')).toBeTruthy()
     expect(view.getByText('Granted')).toBeTruthy()
@@ -55,6 +62,14 @@ describe('Desktop control UI', () => {
     expect(mutate).toHaveBeenCalledWith({ kind: 'set-app-allowed', appId: 'com.example.mail', allowed: true })
     fireEvent.change(view.getByLabelText('Emergency shortcut'), { target: { value: 'CommandOrControl+Shift+F11' } })
     expect(mutate).toHaveBeenCalledWith({ kind: 'set-emergency-accelerator', accelerator: 'CommandOrControl+Shift+F11' })
+  })
+
+  it('keeps browser enablement in the strict renderer snapshot and Chinese settings', () => {
+    expect(isDesktopControlUiSnapshot(snapshot)).toBe(true)
+    const mutate = vi.fn()
+    const view = render(<DesktopControlSettings snapshot={snapshot} onMutation={mutate} labels={zh} />)
+    fireEvent.click(view.getByRole('checkbox', { name: '浏览器控制' }))
+    expect(mutate).toHaveBeenCalledWith({ kind: 'set-browser-enabled', enabled: true })
   })
 
   it('keeps an unavailable provider as a local status instead of throwing', () => {

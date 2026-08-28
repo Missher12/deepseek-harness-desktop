@@ -69,6 +69,7 @@ describe('desktop preload vocabulary', () => {
   it('accepts only the path-free Desktop control UI snapshot', () => {
     const snapshot = {
       supported: true,
+      browserEnabled: false,
       computerEnabled: true,
       permissions: { screenViewing: 'granted', assistiveControl: 'denied' },
       ordinaryApps: [{ appId: 'com.example.notes', name: 'Notes', allowed: true }],
@@ -84,11 +85,13 @@ describe('desktop preload vocabulary', () => {
   })
 
   it('accepts only non-authority Desktop control setting intents', () => {
+    expect(isDesktopControlUiMutation({ kind: 'set-browser-enabled', enabled: true })).toBe(true)
     expect(isDesktopControlUiMutation({ kind: 'set-computer-enabled', enabled: true })).toBe(true)
     expect(isDesktopControlUiMutation({ kind: 'set-app-allowed', appId: 'com.example.notes', allowed: false })).toBe(true)
     expect(isDesktopControlUiMutation({ kind: 'set-emergency-accelerator', accelerator: 'CommandOrControl+Shift+F11' })).toBe(true)
     expect(isDesktopControlUiMutation({ kind: 'set-app-allowed', appId: 'com.example.notes', allowed: true, sessionId: 'renderer' })).toBe(false)
     expect(isDesktopControlUiMutation({ kind: 'set-computer-enabled', enabled: 1 })).toBe(false)
+    expect(isDesktopControlUiMutation({ kind: 'set-browser-enabled', enabled: true, leaseId: 'renderer' })).toBe(false)
     expect(isDesktopControlUiMutation({ kind: 'set-app-allowed', appId: '../secret', allowed: true })).toBe(false)
   })
 })

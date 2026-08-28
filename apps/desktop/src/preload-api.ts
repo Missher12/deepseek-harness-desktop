@@ -50,6 +50,7 @@ export type DesktopControlPermissionState = 'granted' | 'denied' | 'unknown'
 /** Renderer-visible status only; deliberately excludes sessions, leases, refs, and coordinates. */
 export interface DesktopControlUiSnapshot {
   readonly supported: boolean
+  readonly browserEnabled: boolean
   readonly computerEnabled: boolean
   readonly permissions: {
     readonly screenViewing: DesktopControlPermissionState
@@ -71,6 +72,7 @@ export interface DesktopControlUiSnapshot {
 
 /** Non-authoritative renderer intent; main validates and owns every resulting setting. */
 export type DesktopControlUiMutation =
+  | { readonly kind: 'set-browser-enabled'; readonly enabled: boolean }
   | { readonly kind: 'set-computer-enabled'; readonly enabled: boolean }
   | { readonly kind: 'set-app-allowed'; readonly appId: string; readonly allowed: boolean }
   | { readonly kind: 'set-emergency-accelerator'; readonly accelerator: string }
@@ -91,10 +93,11 @@ function boundedText(value: unknown, max: number): value is string {
 
 export function isDesktopControlUiSnapshot(value: unknown): value is DesktopControlUiSnapshot {
   if (!plainRecord(value) || !exactKeys(value, [
-    'supported', 'computerEnabled', 'permissions', 'ordinaryApps',
+    'supported', 'browserEnabled', 'computerEnabled', 'permissions', 'ordinaryApps',
     'emergencyAccelerator', 'active', 'stopping',
   ])) return false
-  if (typeof value.supported !== 'boolean' || typeof value.computerEnabled !== 'boolean'
+  if (typeof value.supported !== 'boolean' || typeof value.browserEnabled !== 'boolean'
+    || typeof value.computerEnabled !== 'boolean'
     || typeof value.stopping !== 'boolean' || !boundedText(value.emergencyAccelerator, 128)
     || !plainRecord(value.permissions)
     || !exactKeys(value.permissions, ['screenViewing', 'assistiveControl'])) return false
@@ -118,7 +121,7 @@ const ACCELERATOR = /^[\x20-\x7e]{1,128}$/
 
 export function isDesktopControlUiMutation(value: unknown): value is DesktopControlUiMutation {
   if (!plainRecord(value)) return false
-  if (value.kind === 'set-computer-enabled') {
+  if (value.kind === 'set-browser-enabled' || value.kind === 'set-computer-enabled') {
     return exactKeys(value, ['kind', 'enabled']) && typeof value.enabled === 'boolean'
   }
   if (value.kind === 'set-app-allowed') {

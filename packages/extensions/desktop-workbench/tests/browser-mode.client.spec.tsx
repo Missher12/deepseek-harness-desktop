@@ -28,6 +28,7 @@ function setup() {
     controlWorkbenchBrowser: vi.fn(async () => snapshot),
     onWorkbenchBrowserState: vi.fn(() => () => {}),
     giveWorkbenchBrowserToAgent: vi.fn(async () => ({ phase: 'given' as const, signedInWarning: true as const })),
+    setComputerControlSetting: vi.fn(async () => undefined),
     stopAgentBrowser: vi.fn(async () => ({ phase: 'human' as const, signedInWarning: true as const })),
     getBrowserTakeoverStatus: vi.fn(async () => ({ phase: 'human' as const, signedInWarning: true as const })),
     onBrowserTakeoverStatus: vi.fn((listener: typeof takeoverListener) => {
@@ -63,6 +64,7 @@ describe('Workbench Browser takeover controls', () => {
     confirm.mockReturnValue(true)
     fireEvent.click(give)
     await waitFor(() => { expect(api.giveWorkbenchBrowserToAgent).toHaveBeenCalledOnce() })
+    expect(api.setComputerControlSetting).not.toHaveBeenCalled()
     expect(await screen.findByRole('button', { name: en.browserStopAgent })).toBeDefined()
   })
 

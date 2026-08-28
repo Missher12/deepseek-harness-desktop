@@ -39,15 +39,25 @@ export function DesktopControlSettings({ snapshot, onMutation, labels = en }: De
     <section className={css.settings} data-desktop-control-settings>
       <header>
         <div><h2>{labels.section}</h2><p>{snapshot.supported ? labels.loaded : labels.unavailable}</p></div>
-        <label className={css.toggle}>
-          <input
-            type="checkbox"
-            checked={snapshot.computerEnabled}
-            disabled={!snapshot.supported}
-            onChange={(event) => { onMutation({ kind: 'set-computer-enabled', enabled: event.currentTarget.checked }) }}
-          />
-          {labels.computerControl}
-        </label>
+        <div className={css.toggles}>
+          <label className={css.toggle}>
+            <input
+              type="checkbox"
+              checked={snapshot.browserEnabled}
+              onChange={(event) => { onMutation({ kind: 'set-browser-enabled', enabled: event.currentTarget.checked }) }}
+            />
+            {labels.browserControl}
+          </label>
+          <label className={css.toggle}>
+            <input
+              type="checkbox"
+              checked={snapshot.computerEnabled}
+              disabled={!snapshot.supported}
+              onChange={(event) => { onMutation({ kind: 'set-computer-enabled', enabled: event.currentTarget.checked }) }}
+            />
+            {labels.computerControl}
+          </label>
+        </div>
       </header>
       <div className={css.permissions}>
         <p><strong>{labels.screenViewing}</strong><span>{permissionLabel(snapshot.permissions.screenViewing, labels)}</span></p>

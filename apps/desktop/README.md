@@ -13,7 +13,9 @@ main owns the per-task native approval, one process-wide lease, target identity,
 quotas, emergency shortcut, and Stop cleanup; the model, page, renderer, and
 native helper cannot mint authority. macOS requires Screen Recording and
 Accessibility permission. Protected, secure, elevated, or stale targets fail
-closed rather than escalating privileges.
+closed rather than escalating privileges. Browser Agent and Computer Control
+are both disabled by default and have separate visible settings; enabling either
+requires native main-process confirmation, while Give never changes enablement.
 
 The sidebar includes a Codex-style archived-session manager. Archiving keeps
 the session log and its Workspace position; the manager can restore it in

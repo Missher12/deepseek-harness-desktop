@@ -3,6 +3,7 @@ export type DesktopControlPermissionState = typeof DESKTOP_CONTROL_PERMISSION_ST
 
 export interface DesktopControlUiSnapshot {
   readonly supported: boolean
+  readonly browserEnabled: boolean
   readonly computerEnabled: boolean
   readonly permissions: {
     readonly screenViewing: DesktopControlPermissionState
@@ -23,6 +24,7 @@ export interface DesktopControlUiSnapshot {
 }
 
 export type DesktopControlUiMutation =
+  | { readonly kind: 'set-browser-enabled'; readonly enabled: boolean }
   | { readonly kind: 'set-computer-enabled'; readonly enabled: boolean }
   | { readonly kind: 'set-app-allowed'; readonly appId: string; readonly allowed: boolean }
   | { readonly kind: 'set-emergency-accelerator'; readonly accelerator: string }
@@ -50,10 +52,11 @@ function shortText(value: unknown, max: number): value is string {
 
 export function isDesktopControlUiSnapshot(value: unknown): value is DesktopControlUiSnapshot {
   if (!plainRecord(value) || !exactKeys(value, [
-    'supported', 'computerEnabled', 'permissions', 'ordinaryApps',
+    'supported', 'browserEnabled', 'computerEnabled', 'permissions', 'ordinaryApps',
     'emergencyAccelerator', 'active', 'stopping',
   ])) return false
-  if (typeof value.supported !== 'boolean' || typeof value.computerEnabled !== 'boolean'
+  if (typeof value.supported !== 'boolean' || typeof value.browserEnabled !== 'boolean'
+    || typeof value.computerEnabled !== 'boolean'
     || typeof value.stopping !== 'boolean' || !shortText(value.emergencyAccelerator, 128)) return false
   if (!plainRecord(value.permissions)
     || !exactKeys(value.permissions, ['screenViewing', 'assistiveControl'])) return false

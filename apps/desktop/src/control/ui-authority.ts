@@ -73,6 +73,7 @@ export class ComputerControlUiAuthority {
     })
     return Object.freeze({
       supported: nativeStatus.supported && coordinator.computerSupported,
+      browserEnabled: settings.browserEnabled,
       computerEnabled: settings.computerEnabled,
       permissions: Object.freeze({
         screenViewing: nativeStatus.viewing,
@@ -93,7 +94,11 @@ export class ComputerControlUiAuthority {
     })
     this.#mutationTail = task
     await task
-    if (failure !== undefined) throw failure
+    if (failure !== undefined) {
+      throw failure instanceof Error
+        ? failure
+        : new Error('Desktop control setting failed.', { cause: failure })
+    }
     return await this.snapshot()
   }
 
@@ -112,22 +117,25 @@ export class ComputerControlUiAuthority {
         throw new Error('Application is not currently enumerated.')
       }
     }
-    const expansion = mutation.kind === 'set-computer-enabled' && mutation.enabled
+    const expansion = mutation.kind === 'set-browser-enabled' && mutation.enabled
+      || mutation.kind === 'set-computer-enabled' && mutation.enabled
       || mutation.kind === 'set-app-allowed' && mutation.allowed
       || mutation.kind === 'set-emergency-accelerator'
     if (expansion && !await this.#options.confirmExpansion(mutation)) {
       throw new Error('Desktop control setting was not confirmed.')
     }
-    const next: ControlSettings = mutation.kind === 'set-computer-enabled'
-      ? Object.freeze({ ...current, computerEnabled: mutation.enabled })
-      : mutation.kind === 'set-emergency-accelerator'
-        ? Object.freeze({ ...current, emergencyAccelerator: mutation.accelerator })
-        : Object.freeze({
-          ...current,
-          ordinaryAppIds: Object.freeze(mutation.allowed
-            ? [...new Set([...current.ordinaryAppIds, mutation.appId])]
-            : current.ordinaryAppIds.filter(appId => appId !== mutation.appId)),
-        })
+    const next: ControlSettings = mutation.kind === 'set-browser-enabled'
+      ? Object.freeze({ ...current, browserEnabled: mutation.enabled })
+      : mutation.kind === 'set-computer-enabled'
+        ? Object.freeze({ ...current, computerEnabled: mutation.enabled })
+        : mutation.kind === 'set-emergency-accelerator'
+          ? Object.freeze({ ...current, emergencyAccelerator: mutation.accelerator })
+          : Object.freeze({
+            ...current,
+            ordinaryAppIds: Object.freeze(mutation.allowed
+              ? [...new Set([...current.ordinaryAppIds, mutation.appId])]
+              : current.ordinaryAppIds.filter(appId => appId !== mutation.appId)),
+          })
     await this.#options.writeSettings(next)
   }
 }

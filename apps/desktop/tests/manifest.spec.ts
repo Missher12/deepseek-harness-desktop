@@ -69,6 +69,13 @@ describe('desktop package manifest', () => {
     )
   })
 
+  it('maps browser enablement to a distinct native confirmation', () => {
+    const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
+
+    expect(mainSource).toContain("mutation.kind === 'set-browser-enabled'")
+    expect(mainSource).toContain('Enable Browser Agent control for the visible workbench browser?')
+  })
+
   it('uses one rounded icon source with native macOS and Windows containers', () => {
     const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
 
