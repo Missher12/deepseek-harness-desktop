@@ -464,6 +464,7 @@ namespace DshWindowsSmoke
   $stagingRoot = Join-Path $env:PUBLIC "dsh-windows-control-$suffix"
   $stagedScript = Join-Path $stagingRoot 'windows-computer-use-smoke.ps1'
   $stagedHelper = Join-Path $stagingRoot 'computer-use-helper.exe'
+  $wrapperPath = Join-Path $stagingRoot 'run-smoke.ps1'
   $resultPath = Join-Path $stagingRoot 'result.txt'
   $createdUser = $false
 
@@ -498,9 +499,9 @@ catch {
   exit 1
 }
 "@
-    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childSource))
+    [IO.File]::WriteAllText($wrapperPath, $childSource, [Text.UTF8Encoding]::new($false))
     $pwsh = (Get-Process -Id $PID).Path
-    $commandLine = "`"$pwsh`" -NoLogo -NoProfile -NonInteractive -STA -EncodedCommand $encoded"
+    $commandLine = "`"$pwsh`" -NoLogo -NoProfile -NonInteractive -STA -File `"$wrapperPath`""
     $exitCode = [DshWindowsSmoke.StandardUserProcess]::Run(
       $userName,
       $env:COMPUTERNAME,
