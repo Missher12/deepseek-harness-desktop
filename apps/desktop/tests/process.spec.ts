@@ -237,6 +237,70 @@ describe('HarnessProcess', () => {
     expect(order).toEqual(['attach', 'before-stop:start', 'before-stop:end', 'detach', 'terminate'])
   })
 
+  it('reclaims the owned child when control attach throws during startup', async () => {
+    const order: string[] = []
+    const child = new FakeChild()
+    const lifecycle: HarnessControlLifecycle = {
+      attach: () => {
+        order.push('attach')
+        throw new Error('control attach failed')
+      },
+      beforeStop: async () => { order.push('before-stop') },
+      detach: () => { order.push('detach') },
+    }
+    const owned = new HarnessProcess({
+      spawn: () => child as unknown as ChildProcess,
+      executable: '/Electron',
+      cli: '/cli.js',
+      waitForHarness: async () => undefined,
+      terminateTree: () => {
+        order.push('terminate')
+        queueMicrotask(() => { child.exit() })
+      },
+      controlLifecycle: lifecycle,
+    })
+
+    await expect(owned.start('/workspace')).rejects.toThrow('control attach failed')
+
+    expect(order).toEqual(['attach', 'detach', 'terminate'])
+    expect(owned.pid).toBeUndefined()
+  })
+
+  it('detaches, terminates, and awaits exit before propagating a beforeStop failure', async () => {
+    const order: string[] = []
+    const child = new FakeChild()
+    const lifecycle: HarnessControlLifecycle = {
+      attach: () => { order.push('attach') },
+      beforeStop: async () => {
+        order.push('before-stop')
+        throw new Error('control shutdown failed')
+      },
+      detach: () => { order.push('detach') },
+    }
+    const owned = new HarnessProcess({
+      spawn: () => child as unknown as ChildProcess,
+      executable: '/Electron',
+      cli: '/cli.js',
+      waitForHarness: async () => undefined,
+      terminateTree: () => {
+        order.push('terminate')
+        queueMicrotask(() => {
+          order.push('exit')
+          child.exit()
+        })
+      },
+      controlLifecycle: lifecycle,
+    })
+    const pending = owned.start('/workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await pending
+
+    await expect(owned.stop()).rejects.toThrow('control shutdown failed')
+
+    expect(order).toEqual(['attach', 'before-stop', 'detach', 'terminate', 'exit'])
+    expect(owned.pid).toBeUndefined()
+  })
+
   it('accepts the Windows startup URL when the browser status shares its stdout chunk', async () => {
     const child = new FakeChild()
     const owned = new HarnessProcess({

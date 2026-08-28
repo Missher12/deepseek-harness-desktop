@@ -92,6 +92,7 @@ export class HarnessProcess {
   private exitPromise: Promise<ExitState> | undefined
   private detachOutput: (() => void) | undefined
   private controlChannel: HarnessControlChannel | undefined
+  private controlAttached = false
   private controlGeneration = 0
 
   /**
@@ -162,7 +163,6 @@ export class HarnessProcess {
     const generation = ++this.controlGeneration
     const controlChannel = createHarnessControlChannel(child, generation)
     this.controlChannel = controlChannel
-    this.options.controlLifecycle?.attach(controlChannel)
     const exitPromise = new Promise<ExitState>((resolve) => {
       child.once('exit', (code, signal) => { resolve({ code, signal }) })
       child.once('error', (error) => { resolve({ code: null, signal: null, error }) })
@@ -171,6 +171,7 @@ export class HarnessProcess {
         if (this.controlChannel === controlChannel) {
           this.options.controlLifecycle?.detach(controlChannel)
           this.controlChannel = undefined
+          this.controlAttached = false
         }
         this.detachOutput?.()
         this.detachOutput = undefined
@@ -181,6 +182,13 @@ export class HarnessProcess {
       return state
     })
     this.exitPromise = exitPromise
+    try {
+      this.options.controlLifecycle?.attach(controlChannel)
+      this.controlAttached = this.options.controlLifecycle !== undefined
+    } catch (error) {
+      await this.stop()
+      throw error
+    }
 
     const stdoutOutput = (chunk: Buffer | string): void => {
       this.options.onOutput?.('stdout', chunk.toString())
@@ -245,13 +253,17 @@ export class HarnessProcess {
     const exitPromise = this.exitPromise
     if (child === undefined || exitPromise === undefined) return
     const controlChannel = this.controlChannel
+    let controlError: unknown
     if (controlChannel !== undefined) {
       try {
-        await this.options.controlLifecycle?.beforeStop(controlChannel)
+        if (this.controlAttached) await this.options.controlLifecycle?.beforeStop(controlChannel)
+      } catch (error) {
+        controlError = error
       } finally {
         if (this.controlChannel === controlChannel) {
           this.options.controlLifecycle?.detach(controlChannel)
           this.controlChannel = undefined
+          this.controlAttached = false
         }
       }
     }
@@ -269,6 +281,11 @@ export class HarnessProcess {
       }
     }
     await exitPromise
+    if (controlError !== undefined) {
+      throw controlError instanceof Error
+        ? controlError
+        : new Error('Harness control shutdown failed.', { cause: controlError })
+    }
   }
 }
 

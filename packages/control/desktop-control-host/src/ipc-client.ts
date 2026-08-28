@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { Session } from '@deepseek-ai/dsh-session'
 import {
   DesktopControlFrameDecoder,
   DesktopControlProtocolError,
@@ -485,13 +486,24 @@ export function createProcessControlLink(): DesktopControlIpcLink | undefined {
   })
 }
 
+type SessionLifecycleIdentity = Readonly<Pick<Session, 'id'>>
+
+interface SessionLifecycleGeneration {
+  readonly sessionId: SessionId
+  readonly generation: number
+  disposed: boolean
+  tail: Promise<void>
+}
+
 /** Per-session release/revoke tails wired to real awaited and fallback lifecycle boundaries. */
 export class ControlLifecycleCoordinator {
-  private readonly tails = new Map<SessionId, Promise<void>>()
-  private readonly disposedSessions = new Set<SessionId>()
+  private readonly instances = new WeakMap<object, SessionLifecycleGeneration>()
+  private readonly current = new Map<SessionId, SessionLifecycleGeneration>()
+  private readonly activeTails = new Set<Promise<void>>()
   private readonly now: () => number
   private readonly requestId: () => ReturnType<typeof RequestId>
   private readonly cleanupTimeoutMs: number
+  private nextGeneration = 0
 
   /** Create cleanup tails over the one shared requester and lease cache. */
   constructor(
@@ -509,53 +521,100 @@ export class ControlLifecycleCoordinator {
   }
 
   /**
+   * Adopt one concrete Core Session instance as a new lifecycle generation.
+   * Re-announcing the same live instance is idempotent, while a recreated object
+   * with the same durable id can never inherit the old instance's disposal bit or tail.
+   * @param session - Concrete Core Session identity announced by session/created.
+   */
+  sessionCreated(session: SessionLifecycleIdentity): void {
+    this.adopt(session)
+  }
+
+  /**
    * Await normal-path release while deliberately ignoring the turn's possibly aborted signal.
-   * @param sessionId - Canonical session whose current lease must be released.
+   * @param session - Concrete Core Session generation whose current lease must be released.
    * @param turnSignal - Original turn signal, accepted only to make its non-use explicit.
    */
-  async turnStopping(sessionId: SessionId, turnSignal: AbortSignal): Promise<void> {
+  async turnStopping(session: SessionLifecycleIdentity, turnSignal: AbortSignal): Promise<void> {
     void turnSignal
-    const lease = this.leaseCache.take(sessionId)
-    if (lease !== undefined) this.enqueueRelease(sessionId, lease)
-    await this.flush(sessionId)
+    const lifecycle = this.adopt(session)
+    const lease = this.takeCurrentLease(lifecycle)
+    if (lease !== undefined) this.enqueueRelease(lifecycle, lease)
+    await lifecycle.tail
   }
 
   /**
    * Synchronously invalidate and enqueue the fire-and-forget turn/end fallback.
-   * @param sessionId - Canonical session observed in the committed turn event.
+   * @param session - Concrete Core Session generation observed in the committed turn event.
    */
-  observeTurnEnd(sessionId: SessionId): void {
-    const lease = this.leaseCache.take(sessionId)
-    if (lease !== undefined) this.enqueueRelease(sessionId, lease)
+  observeTurnEnd(session: SessionLifecycleIdentity): void {
+    const lifecycle = this.adopt(session)
+    const lease = this.takeCurrentLease(lifecycle)
+    if (lease !== undefined) this.enqueueRelease(lifecycle, lease)
   }
 
   /**
    * Drain the exact session's idempotent cleanup tail at the awaited flush barrier.
-   * @param sessionId - Canonical session whose queued cleanup must settle.
+   * @param session - Concrete Core Session generation whose queued cleanup must settle.
    */
-  async flush(sessionId: SessionId): Promise<void> {
-    await this.tails.get(sessionId)
+  async flush(session: SessionLifecycleIdentity): Promise<void> {
+    await this.adopt(session).tail
   }
 
   /**
    * Synchronously invalidate, then queue release followed by one session revoke.
-   * @param sessionId - Canonical session being disposed.
+   * @param session - Concrete Core Session generation being disposed.
    */
-  disposeSession(sessionId: SessionId): void {
-    if (this.disposedSessions.has(sessionId)) return
-    this.disposedSessions.add(sessionId)
-    const lease = this.leaseCache.take(sessionId)
-    if (lease !== undefined) this.enqueueRelease(sessionId, lease)
-    this.enqueue(sessionId, async () => { await this.requester.revokeSession(sessionId) })
+  disposeSession(session: SessionLifecycleIdentity): void {
+    const lifecycle = this.adopt(session)
+    if (lifecycle.disposed) return
+    lifecycle.disposed = true
+    const lease = this.takeCurrentLease(lifecycle)
+    if (lease !== undefined) this.enqueueRelease(lifecycle, lease)
+    this.enqueue(lifecycle, async () => {
+      if (this.isCurrent(lifecycle)) {
+        await this.requester.revokeSession(lifecycle.sessionId)
+      }
+    })
   }
 
   /** Drain all release/revoke tails before the plugin removes its listeners. */
   async dispose(): Promise<void> {
-    await Promise.all([...this.tails.values()])
+    while (this.activeTails.size > 0) await Promise.all([...this.activeTails])
   }
 
-  private enqueueRelease(sessionId: SessionId, lease: ControlLeaseAcquireResult): void {
-    this.enqueue(sessionId, async () => {
+  private adopt(session: SessionLifecycleIdentity): SessionLifecycleGeneration {
+    const known = this.instances.get(session)
+    if (known !== undefined) return known
+    const previous = this.current.get(session.id)
+    if (previous !== undefined && !previous.disposed) {
+      previous.disposed = true
+      const lease = this.takeCurrentLease(previous)
+      if (lease !== undefined) this.enqueueRelease(previous, lease)
+    }
+    const lifecycle: SessionLifecycleGeneration = {
+      sessionId: session.id,
+      generation: ++this.nextGeneration,
+      disposed: false,
+      tail: Promise.resolve(),
+    }
+    this.instances.set(session, lifecycle)
+    this.current.set(session.id, lifecycle)
+    return lifecycle
+  }
+
+  private isCurrent(lifecycle: SessionLifecycleGeneration): boolean {
+    const current = this.current.get(lifecycle.sessionId)
+    return current === lifecycle && current.generation === lifecycle.generation
+  }
+
+  private takeCurrentLease(lifecycle: SessionLifecycleGeneration): ControlLeaseAcquireResult | undefined {
+    if (!this.isCurrent(lifecycle)) return undefined
+    return this.leaseCache.take(lifecycle.sessionId)
+  }
+
+  private enqueueRelease(lifecycle: SessionLifecycleGeneration, lease: ControlLeaseAcquireResult): void {
+    this.enqueue(lifecycle, async () => {
       const nowUnixMs = this.now()
       const controller = new AbortController()
       const timer = setTimeout(() => {
@@ -568,7 +627,7 @@ export class ControlLifecycleCoordinator {
           messageKind: 'request',
           requestKind: 'control.lease.release',
           requestId: this.requestId(),
-          sessionId,
+          sessionId: lifecycle.sessionId,
           deadlineUnixMs: nowUnixMs + Math.min(this.cleanupTimeoutMs, PROTOCOL_LIMITS.maxDeadlineAheadMs),
           leaseId: lease.leaseId,
           leaseRevision: lease.leaseRevision,
@@ -585,12 +644,18 @@ export class ControlLifecycleCoordinator {
     })
   }
 
-  private enqueue(sessionId: SessionId, task: () => Promise<void>): void {
-    const previous = this.tails.get(sessionId) ?? Promise.resolve()
+  private enqueue(lifecycle: SessionLifecycleGeneration, task: () => Promise<void>): void {
+    const previous = lifecycle.tail
     const operation = previous.then(task, task).catch(() => undefined)
-    this.tails.set(sessionId, operation)
+    lifecycle.tail = operation
+    this.activeTails.add(operation)
     void operation.finally(() => {
-      if (this.tails.get(sessionId) === operation) this.tails.delete(sessionId)
+      this.activeTails.delete(operation)
+      if (lifecycle.tail === operation
+        && lifecycle.disposed
+        && this.isCurrent(lifecycle)) {
+        this.current.delete(lifecycle.sessionId)
+      }
     })
   }
 }

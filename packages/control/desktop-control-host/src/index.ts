@@ -78,16 +78,18 @@ export function installDesktopControlHost(
   const lifecycle = new ControlLifecycleCoordinator(requester, cache,
     options?.now === undefined ? {} : { now: options.now })
 
+  const stopCreated = ctx.on('session/created', (session) => { lifecycle.sessionCreated(session) })
   const stopTurn = ctx.on('agent/turn-stopping', async ({ agent, signal }) => {
-    await lifecycle.turnStopping(agent.session.id, signal)
+    await lifecycle.turnStopping(agent.session, signal)
   })
   const stopEvent = ctx.on('session/event', (session, event) => {
-    if (event.type === 'turn/end') lifecycle.observeTurnEnd(session.id)
+    if (event.type === 'turn/end') lifecycle.observeTurnEnd(session)
   })
-  const stopFlush = ctx.on('session/flush', async (session) => { await lifecycle.flush(session.id) })
-  const stopDisposed = ctx.on('session/disposed', (session) => { lifecycle.disposeSession(session.id) })
+  const stopFlush = ctx.on('session/flush', async (session) => { await lifecycle.flush(session) })
+  const stopDisposed = ctx.on('session/disposed', (session) => { lifecycle.disposeSession(session) })
   ctx.effect(() => async () => {
     await lifecycle.dispose()
+    stopCreated()
     stopTurn()
     stopEvent()
     stopFlush()
