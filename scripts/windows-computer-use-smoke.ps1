@@ -35,8 +35,7 @@ namespace DshWindowsSmoke
         private const uint TOKEN_ALL_ACCESS = 0x000F01FF;
         private const uint LUA_TOKEN = 0x4;
         private const int TokenLinkedToken = 19;
-        private const uint CREATE_NEW_CONSOLE = 0x10;
-        private const uint CREATE_UNICODE_ENVIRONMENT = 0x400;
+        private const uint CREATE_NO_WINDOW = 0x08000000;
         private const uint WAIT_OBJECT_0 = 0;
         private const uint WAIT_TIMEOUT = 258;
 
@@ -193,7 +192,7 @@ namespace DshWindowsSmoke
                         0,
                         applicationPath,
                         mutableCommand,
-                        CREATE_NEW_CONSOLE | CREATE_UNICODE_ENVIRONMENT,
+                        CREATE_NO_WINDOW,
                         IntPtr.Zero,
                         workingDirectory,
                         ref startup,
@@ -209,7 +208,7 @@ namespace DshWindowsSmoke
                         IntPtr.Zero,
                         IntPtr.Zero,
                         false,
-                        CREATE_NEW_CONSOLE | CREATE_UNICODE_ENVIRONMENT,
+                        CREATE_NO_WINDOW,
                         IntPtr.Zero,
                         workingDirectory,
                         ref startup,
@@ -273,42 +272,11 @@ catch {
   $arguments = "-NoLogo -NoProfile -NonInteractive -STA -EncodedCommand $encoded"
   $commandLine = "`"$pwsh`" $arguments"
   try {
-    $shell = $null
-    $shellLaunched = $false
-    try {
-      $shell = New-Object -ComObject Shell.Application
-      $shell.ShellExecute($pwsh, $arguments, (Split-Path -Parent $ScriptPath), 'open', 1)
-      $shellLaunched = $true
-    }
-    catch {
-      Write-Host 'Windows shell launch was unavailable; using the restricted-token fallback.'
-    }
-    finally {
-      if ($null -ne $shell) {
-        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
-      }
-    }
-
-    if ($shellLaunched) {
-      $shellDeadline = [DateTime]::UtcNow.AddSeconds(60)
-      while (-not (Test-Path -LiteralPath $resultPath) -and [DateTime]::UtcNow -lt $shellDeadline) {
-        Start-Sleep -Milliseconds 200
-      }
-      if (Test-Path -LiteralPath $resultPath) {
-        $result = (Get-Content -LiteralPath $resultPath -Raw).Trim()
-        if ($result -ne 'PASS') {
-          throw "Windows Computer Use shell acceptance failed: $result"
-        }
-        Write-Host 'Windows Computer Use medium-integrity acceptance passed.'
-        return
-      }
-    }
-
     $exitCode = [DshWindowsSmoke.LimitedProcess]::Run(
       $pwsh,
       $commandLine,
       (Split-Path -Parent $ScriptPath),
-      180000
+      60000
     )
     $result = if (Test-Path -LiteralPath $resultPath) {
       (Get-Content -LiteralPath $resultPath -Raw).Trim()
@@ -552,7 +520,7 @@ catch {
 
 $resolvedHelper = (Resolve-Path -LiteralPath $HelperPath).Path
 if (-not $MediumIntegrityChild) {
-  Invoke-StandardUserSmoke -ScriptPath $PSCommandPath -ResolvedHelperPath $resolvedHelper
+  Invoke-MediumIntegritySmoke -ScriptPath $PSCommandPath -ResolvedHelperPath $resolvedHelper
   return
 }
 
