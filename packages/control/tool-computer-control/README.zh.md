@@ -12,9 +12,21 @@
 
 ## 模型体验
 
-存在提供方时，模型看到稳定的十二工具清单，并在操作前先使用 `computer_list` 与 `computer_snapshot`。缺少提供方时，不会出现任何电脑控制 schema 或 prompt 文本。输入内容不会显示在 pending presentation 中。
+### 工具 schema
 
-## 已知限制
+#### 模型看到什么
+
+存在提供方时，模型会看到十二个封闭的 [Computer Control 工具 schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-computer-control)，并在操作前先使用 `computer_list` 与 `computer_snapshot`。缺少提供方时，不会出现任何电脑控制 schema 或 prompt 文本。输入内容不会显示在 pending presentation 中。
+
+#### Token 影响
+
+挂载 Desktop 提供方时，固定 schema 会增加有界的输入成本。应用列表与 snapshot 内容属于逐次调用结果，不属于常驻 prompt 文本。
+
+#### KV Cache 影响
+
+只要 `ComputerControl` 可用性与封闭 schema 不变，工具清单就是前缀稳定的。挂载或移除提供方会改变工具可见性，并可能使该位置之后的复用失效。
+
+## 已知限制与暂缓事项
 
 - Accessibility 语义无法证明每个外部效果；原生 policy 与可见用户控制始终是权威。
 - 坐标 click、double-click、drag 与 scroll 需要视觉 route，且始终是窗口相对坐标。

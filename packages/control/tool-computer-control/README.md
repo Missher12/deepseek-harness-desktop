@@ -12,9 +12,21 @@ Semantic refs are preferred. Screenshot coordinates are accepted only on the exa
 
 ## Model Experience
 
-With a provider, the model sees a stable twelve-tool roster and uses `computer_list` followed by `computer_snapshot` before acting. Without a provider it sees no Computer Use schema or prompt text. Typed content is omitted from pending presentation.
+### Tool schemas
 
-## Known limitations
+#### What the model sees
+
+With a provider, the model sees the twelve closed [Computer Control tool schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-computer-control) and uses `computer_list` followed by `computer_snapshot` before acting. Without a provider it sees no Computer Use schema or prompt text. Typed content is omitted from pending presentation.
+
+#### Token effect
+
+The fixed schemas add a bounded input cost whenever the Desktop provider is mounted. List and snapshot contents are per-call results rather than standing prompt text.
+
+#### KV Cache effect
+
+The roster is prefix-stable while `ComputerControl` availability and the closed schemas remain unchanged. Mounting or removing the provider changes tool visibility and may invalidate reuse from that point.
+
+## Known Limitations and Deferred Work
 
 - Accessibility semantics cannot prove every external effect; native policy and visible user control remain authoritative.
 - Coordinate click, double-click, drag, and scroll require a vision-capable route and remain window-relative.

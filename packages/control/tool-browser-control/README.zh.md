@@ -20,11 +20,19 @@
 
 ## 模型体验
 
-只有 Desktop 提供 BrowserControl 时，模型才会看到十二个紧凑的封闭 schema。模型先调用 `browser_snapshot`，只用当前不透明 ref 执行语义目标操作，并在导航或 stale-ref 结果后重新 snapshot。Snapshot 文本有界；视觉 route 会收到一个相邻的持久图片 block，但不会因此获得坐标操作。Pending presentation 不展示输入文本和受保护页面内容。
+### 工具 schema
+
+#### 模型看到什么
+
+只有 Desktop 提供 `BrowserControl` 时，模型才会看到十二个封闭的 [Browser Control 工具 schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-browser-control)。模型先调用 `browser_snapshot`，只用当前不透明 ref 执行语义目标操作，并在导航或 stale-ref 结果后重新 snapshot。Snapshot 文本有界；视觉 route 会收到一个相邻的持久图片 block，但不会因此获得坐标操作。Pending presentation 不展示输入文本和受保护页面内容。
+
+#### Token 影响
+
+挂载 Desktop 提供方时，固定 schema 会增加有界的输入成本。Snapshot 语义与可选图片引用属于逐次调用结果，因此其数据相关大小不会成为常驻 prompt 文本。
 
 #### KV Cache 影响
 
-挂载 BrowserControl 时，固定 schema 会向 prompt 增加一组稳定工具。Snapshot 语义与可选图片引用属于逐次调用结果，不属于常驻 prompt 内容。不含提供方的 deployment 不增加任何 schema 或 prompt 文本。
+只要 `BrowserControl` 可用性与封闭 schema 不变，工具清单就是前缀稳定的。缺少提供方的 deployment 不增加任何 schema 或 prompt 文本；挂载或移除提供方会改变工具可见性，并可能使该位置之后的复用失效。
 
 ## 已知限制与暂缓事项
 

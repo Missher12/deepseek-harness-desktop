@@ -23,8 +23,10 @@
 | `@deepseek-ai/dsh-tools` | `run_code` | `ctx.tools`、`ctx.codeRuntime (execution time)`、`ctx.systemPrompt` | `tool/call`、`one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`、`tool/result` | - | 在 `mode: code`／`mode: both` 下，它由工具注册表所有，作为可过滤能力层之外的保留传输机制（参见 Code Mode Agent Note）。在 `code` 下，它是注册表对协议格式（wire format）的唯一贡献；其他可见能力在使用已加载运行时语言生成的 SDK 章节中声明。程序通过 binding 调用这些能力，调用按照原生并发约定调度：启动顺序和策略遵循提交顺序，并发安全的函数体最多重叠执行 `maxParallelSubCalls` 个。调用会重新进入完整且受守卫保护的工具流水线，并将每个嵌套执行关联到此外层结果。 |
 | `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`、`ctx.systemPrompt`、`ctx.userQuestions (execution time, opportunistic)` | `tool/call`、`plan/mode inactive on an approved review`、`tool/result` | - | 规划未激活时，exit_plan_mode 仍保留在面向模型的 schema 中，这样状态转换不会在规划策略变更之外额外造成工具目录变动。其执行路径会拒绝规划模式之外的调用；在规划模式下，它通过用户交互 seam 提交计划（批准／根据反馈继续规划），批准后会在步骤边界记录规划模式已停用。 |
 | `@deepseek-ai/dsh-tool-bash` | `bash` | `ctx.tools`、`ctx.shell`、`ctx.systemPrompt`、`ctx.shellEnv`、`ctx.jobs at call time for run_in_background` | `tool/call`、`tool/result` | - | bash 工具是 bash 执行器 seam 面向模型的消费方。使用 `run_in_background` 的运行会注册到通用 `ctx.jobs` 运行时，并通过 `job_*` 工具（来自 `@deepseek-ai/dsh-tool-jobs`）收集／停止；禁用 `enableRunInBackground` 配置（默认为 true）后，该参数会被完全移除。 |
+| `@deepseek-ai/dsh-tool-browser-control` | `browser_back`、`browser_click`、`browser_forward`、`browser_key`、`browser_navigate`、`browser_reload`、`browser_scroll`、`browser_select`、`browser_snapshot`、`browser_stop`、`browser_type`、`browser_wait` | `ctx.tools`、`ctx.browserControl` | `tool/call`、`tool/result`、`Desktop-owned browser surface state` | - | 这十二个 schema 只存在于挂载 BrowserControl 的 Desktop composition 中；普通 CLI 与 Web composition 不会注册其中任何一个。 |
 | `@deepseek-ai/dsh-tool-pwsh` | `pwsh` | `ctx.tools`、`ctx.shell`、`ctx.systemPrompt`、`ctx.shellEnv`、`ctx.jobs at call time for run_in_background` | `tool/call`、`tool/result` | - | pwsh 工具是 Windows 组合中 bash 执行器 seam 的 PowerShell 方言消费方（由 `@deepseek-ai/dsh-pwsh-local` 等 PowerShell 执行器为 `ctx.shell` 提供后端）；除沙箱接口外，它逐项对应 bash 工具调用。使用 `run_in_background` 的运行会注册到通用 `ctx.jobs` 运行时，并通过 `job_*` 工具收集／停止；托管的 `DSH_*` 环境来自 `@deepseek-ai/dsh-shell-env`。每次调用都在新进程中运行，不使用持久 PTY 会话。路径采用原生 `C:\...` 形式，变量采用 `$env:NAME`。 |
 | `@deepseek-ai/dsh-tool-cordis` | `cordis_define`、`cordis_inspect_list`、`cordis_inspect_query`、`cordis_inspect_self`、`cordis_run`、`cordis_stop`、`cordis_undefine` | `ctx.tools`、`ctx.dynamicCordisRunner` | `tool/call`、`tool/result`、`process-local dynamic package lifecycle` | - | 不在任何随产品发布的树中，需要显式选择启用；动态 Package 代码可以访问真实运行时，见 .agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md。该工具集注入 `@deepseek-ai/dsh-cordis-host-runner` 提供的 `ctx.dynamicCordisRunner`，后者拥有定义注册表和 vm 沙箱；组合缺少它时这些工具不会激活。运行中的 Package 在停止、undefine 或 DSH 重启前可以注册**额外的**模型可见工具；发生这类工具集变化时，系统会记录完整且有变动的请求头。 |
+| `@deepseek-ai/dsh-tool-computer-control` | `computer_click`、`computer_double_click`、`computer_drag`、`computer_focus`、`computer_key`、`computer_list`、`computer_scroll`、`computer_snapshot`、`computer_status`、`computer_stop`、`computer_type`、`computer_wait` | `ctx.tools`、`ctx.computerControl` | `tool/call`、`tool/result`、`Desktop-owned native control state` | - | 这十二个 schema 只存在于挂载 ComputerControl 的 Desktop composition 中；普通 CLI 与 Web composition 不会注册其中任何一个。 |
 | `@deepseek-ai/dsh-tool-bash-persistent` | `bash` | `ctx.tools`、`ctx.terminals`、`an owning Agent at execution time` | `tool/call`、`PTY shell state`、`tool/result` | - | 一个按所有者隔离的持久 bash 工具；部署组合提供 PTY 后端，并可覆盖面向模型的环境描述。 |
 | `@deepseek-ai/dsh-tool-pwsh-persistent` | `pwsh` | `ctx.tools`、`ctx.terminals`、`an owning Agent at execution time` | `tool/call`、`PTY shell state`、`tool/result` | - | 一个按所有者隔离的持久 pwsh 工具，持久 bash 工具的 Windows 对应物；部署组合提供 pwsh 方言的 PTY 后端，并可覆盖面向模型的环境描述。 |
 | `@deepseek-ai/dsh-tool-str-replace-editor` | `str_replace_editor` | `ctx.tools`、`ctx.fs` | `tool/call`、`fs/observed after view presence/absence, edit absence, or successful mutation`、`tool/result` | - | 基于文件系统 seam 的独立查看／创建／唯一字面量替换／按行插入工具；可与任何 shell 或终端接口组合。 |
@@ -222,6 +224,276 @@ ask_user_question 会暂停工具调用，直到当前 UI 提供方返回人类�
 来源：[`packages/shell/tool-bash/src/index.ts`](../packages/shell/tool-bash/src/index.ts)
 
 bash 工具是 bash 执行器 seam 面向模型的消费方。使用 `run_in_background` 的运行会注册到通用 `ctx.jobs` 运行时，并通过 `job_*` 工具（来自 `@deepseek-ai/dsh-tool-jobs`）收集／停止；禁用 `enableRunInBackground` 配置（默认为 true）后，该参数会被完全移除。
+
+<a id="deepseek-aidsh-tool-browser-control"></a>
+
+## `@deepseek-ai/dsh-tool-browser-control`
+
+### `browser_back`
+
+在受控浏览器中后退。普通页面导航与 JavaScript 可能产生外部效果。
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_click`
+
+激活一个当前语义浏览器 ref。BrowserControl 提供方会拒绝 password、OTP、payment、file、upload 及其他受保护目标；普通页面操作仍可能触发页面 JavaScript 或外部效果。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the latest browser_snapshot."
+    }
+  },
+  "required": [
+    "ref"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_forward`
+
+在受控浏览器中前进。普通页面导航与 JavaScript 可能产生外部效果。
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_key`
+
+向受控浏览器发送一个封闭的组合键。协议只接受一个 key 和 Alt／Control／Meta／Shift modifier 词汇；不存在 selector、坐标、文件或权限输入。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "description": "Provider-validated key name."
+    },
+    "modifiers": {
+      "type": "array",
+      "description": "Optional unique modifier keys.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "Alt",
+          "Control",
+          "Meta",
+          "Shift"
+        ]
+      }
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_navigate`
+
+让受控浏览器导航到一个 URL。Electron 会验证初始 URL 与每次 redirect；页面 JavaScript 和导航仍可能产生普通外部效果。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "Absolute destination URL."
+    }
+  },
+  "required": [
+    "url"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_reload`
+
+在受控浏览器中重新加载。普通页面导航与 JavaScript 可能产生外部效果。
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_scroll`
+
+使用有界整数 delta 滚动受控页面或一个当前语义 ref。本工具绝不接受屏幕坐标。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "description": "Optional opaque ref from the latest browser_snapshot."
+    },
+    "delta_x": {
+      "type": "integer",
+      "description": "Horizontal scroll delta."
+    },
+    "delta_y": {
+      "type": "integer",
+      "description": "Vertical scroll delta."
+    }
+  },
+  "required": [
+    "delta_x",
+    "delta_y"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_select`
+
+在一个当前语义浏览器 ref 上选择一个值。文件与 upload 控件仍由提供方拒绝。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the latest browser_snapshot."
+    },
+    "value": {
+      "type": "string",
+      "description": "Provider-validated option value."
+    }
+  },
+  "required": [
+    "ref",
+    "value"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_snapshot`
+
+捕获受控浏览器的当前 URL、标题、与 revision 绑定的语义 ref 及有界语义树。只有准确的当前模型支持图片输入时才附加截图。截图像素绝不授权坐标操作。
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_stop`
+
+停止当前官方会话的浏览器接管，并等待提供方清理。本操作绝不需要 approval，也不接受参数。
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_type`
+
+向一个当前语义浏览器 ref 输入文本。BrowserControl 提供方会拒绝受保护的 password、OTP、payment、file 与 upload 目标。UI presentation 会有意省略文本。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the latest browser_snapshot."
+    },
+    "text": {
+      "type": "string",
+      "description": "Text to enter into the ordinary non-sensitive target."
+    }
+  },
+  "required": [
+    "ref",
+    "text"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_wait`
+
+仅等待 duration、navigation 或 loading-idle 条件。Duration 等待上限为 10,000 毫秒。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": [
+        "duration",
+        "navigation",
+        "loading-idle"
+      ]
+    },
+    "duration_ms": {
+      "type": "integer",
+      "description": "Required only for duration mode; 0 through 10,000."
+    }
+  },
+  "required": [
+    "mode"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+这十二个 schema 只存在于挂载 BrowserControl 的 Desktop composition 中；普通 CLI 与 Web composition 不会注册其中任何一个。
 
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
@@ -504,6 +776,413 @@ pwsh 工具是 Windows 组合中 bash 执行器 seam 的 PowerShell 方言消费
 来源：[`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts)
 
 不在任何随产品发布的树中，需要显式选择启用；动态 Package 代码可以访问真实运行时，见 .agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md。该工具集注入 `@deepseek-ai/dsh-cordis-host-runner` 提供的 `ctx.dynamicCordisRunner`，后者拥有定义注册表和 vm 沙箱；组合缺少它时这些工具不会激活。运行中的 Package 在停止、undefine 或 DSH 重启前可以注册**额外的**模型可见工具；发生这类工具集变化时，系统会记录完整且有变动的请求头。
+
+<a id="deepseek-aidsh-tool-computer-control"></a>
+
+## `@deepseek-ai/dsh-tool-computer-control`
+
+### `computer_click`
+
+激活一个当前 accessibility ref；只有支持视觉的 route 才可改用有界截图坐标。受保护目标仍由提供方拒绝。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    },
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the latest computer_snapshot."
+    },
+    "x": {
+      "type": "number",
+      "description": "Window-relative x coordinate; vision routes only."
+    },
+    "y": {
+      "type": "number",
+      "description": "Window-relative y coordinate; vision routes only."
+    },
+    "button": {
+      "type": "string",
+      "description": "Pointer button; defaults to left.",
+      "enum": [
+        "left",
+        "middle",
+        "right"
+      ]
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_double_click`
+
+激活一个当前 accessibility ref；只有支持视觉的 route 才可改用有界截图坐标。受保护目标仍由提供方拒绝。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    },
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the latest computer_snapshot."
+    },
+    "x": {
+      "type": "number",
+      "description": "Window-relative x coordinate; vision routes only."
+    },
+    "y": {
+      "type": "number",
+      "description": "Window-relative y coordinate; vision routes only."
+    },
+    "button": {
+      "type": "string",
+      "description": "Pointer button; defaults to left.",
+      "enum": [
+        "left",
+        "middle",
+        "right"
+      ]
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_drag`
+
+只有准确的当前 route 支持截图附件时，才可在有界窗口相对坐标之间拖动。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    },
+    "from_x": {
+      "type": "number"
+    },
+    "from_y": {
+      "type": "number"
+    },
+    "to_x": {
+      "type": "number"
+    },
+    "to_y": {
+      "type": "number"
+    },
+    "button": {
+      "type": "string",
+      "description": "Pointer button; defaults to left.",
+      "enum": [
+        "left",
+        "middle",
+        "right"
+      ]
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id",
+    "from_x",
+    "from_y",
+    "to_x",
+    "to_y"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_focus`
+
+聚焦 `computer_list` 返回的一个 app／window 配对。提供方会在操作前重新验证进程与窗口身份。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_key`
+
+向一个已授权 app／window 发送由提供方验证的组合键。只接受 Alt／Control／Meta／Shift modifier 词汇。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    },
+    "key": {
+      "type": "string"
+    },
+    "modifiers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "Alt",
+          "Control",
+          "Meta",
+          "Shift"
+        ]
+      }
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id",
+    "key"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_list`
+
+仅列出当前符合显式用户授权条件的应用与窗口。本操作不会取得控制权。
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_scroll`
+
+滚动一个当前 accessibility ref；只有支持视觉的 route 才可改用有界截图坐标。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    },
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the latest computer_snapshot."
+    },
+    "x": {
+      "type": "number",
+      "description": "Window-relative x coordinate; vision routes only."
+    },
+    "y": {
+      "type": "number",
+      "description": "Window-relative y coordinate; vision routes only."
+    },
+    "delta_x": {
+      "type": "number"
+    },
+    "delta_y": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id",
+    "delta_x",
+    "delta_y"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_snapshot`
+
+捕获一个应用窗口的有界 accessibility 语义。只有准确的当前视觉 route 才会请求截图附件；像素绝不会扩大已授权 app／window 集合。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_status`
+
+读取本机 Computer Use 支持状态，以及 Screen Viewing 与 Assistive Control 权限状态。本操作不会请求权限或取得控制权。
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_stop`
+
+停止当前官方会话的原生 Computer Use，并等待清理。本操作不接受参数，也绝不需要 approval。
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_type`
+
+向一个当前普通 accessibility ref 输入文本。UI presentation 会省略输入文本，受保护字段由提供方拒绝。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    },
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the latest computer_snapshot."
+    },
+    "text": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id",
+    "ref",
+    "text"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_wait`
+
+在一个已授权 app／window 上等待有界时长。Duration 上限为 10,000 毫秒。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    },
+    "duration_ms": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id",
+    "duration_ms"
+  ],
+  "additionalProperties": false
+}
+```
+
+来源：[`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+这十二个 schema 只存在于挂载 ComputerControl 的 Desktop composition 中；普通 CLI 与 Web composition 不会注册其中任何一个。
 
 <a id="deepseek-aidsh-tool-bash-persistent"></a>
 

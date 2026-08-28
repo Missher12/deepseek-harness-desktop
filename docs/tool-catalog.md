@@ -19,8 +19,10 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tools` | `run_code` | `ctx.tools`, `ctx.codeRuntime (execution time)`, `ctx.systemPrompt` | `tool/call`, `one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`, `tool/result` | - | Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: code` / `mode: both` (see the Code Mode Agent Note). Under `code` it is the registry's only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime's language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result. |
 | `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`, `ctx.systemPrompt`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
 | `@deepseek-ai/dsh-tool-bash` | `bash` | `ctx.tools`, `ctx.shell`, `ctx.systemPrompt`, `ctx.shellEnv`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The bash tool is the model-facing consumer of the bash executor seam. A `run_in_background` run registers with the generic `ctx.jobs` runtime and is collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; the `enableRunInBackground` config (default true) removes the parameter entirely when disabled. |
+| `@deepseek-ai/dsh-tool-browser-control` | `browser_back`, `browser_click`, `browser_forward`, `browser_key`, `browser_navigate`, `browser_reload`, `browser_scroll`, `browser_select`, `browser_snapshot`, `browser_stop`, `browser_type`, `browser_wait` | `ctx.tools`, `ctx.browserControl` | `tool/call`, `tool/result`, `Desktop-owned browser surface state` | - | The twelve schemas exist only in Desktop compositions that mount BrowserControl; ordinary CLI and Web compositions register none of them. |
 | `@deepseek-ai/dsh-tool-pwsh` | `pwsh` | `ctx.tools`, `ctx.shell`, `ctx.systemPrompt`, `ctx.shellEnv`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The pwsh tool is the PowerShell-dialect consumer of the bash executor seam for Windows compositions (a PowerShell executor such as `@deepseek-ai/dsh-pwsh-local` backs `ctx.shell`); it mirrors the bash tool call-for-call minus sandbox controls — `run_in_background` runs register with the generic `ctx.jobs` runtime and are collected/stopped through the `job_*` tools, and the managed `DSH_*` environment comes from `@deepseek-ai/dsh-shell-env`. Each call runs in a fresh process (no persistent PTY session), with native `C:\...` paths and `$env:NAME` variables. |
 | `@deepseek-ai/dsh-tool-cordis` | `cordis_define`, `cordis_inspect_list`, `cordis_inspect_query`, `cordis_inspect_self`, `cordis_run`, `cordis_stop`, `cordis_undefine` | `ctx.tools`, `ctx.dynamicCordisRunner` | `tool/call`, `tool/result`, `process-local dynamic package lifecycle` | - | Not in any shipped tree (a deliberate opt-in — dynamic package code reaches the real runtime, see .agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md). The toolset injects `ctx.dynamicCordisRunner` from `@deepseek-ai/dsh-cordis-host-runner`, which owns the definition registry and the vm sandbox; a composition missing it never activates the tools. A running package may register ADDITIONAL model-visible tools until it is stopped, undefined, or DSH restarts; a full changed request header logs those tool-set changes. |
+| `@deepseek-ai/dsh-tool-computer-control` | `computer_click`, `computer_double_click`, `computer_drag`, `computer_focus`, `computer_key`, `computer_list`, `computer_scroll`, `computer_snapshot`, `computer_status`, `computer_stop`, `computer_type`, `computer_wait` | `ctx.tools`, `ctx.computerControl` | `tool/call`, `tool/result`, `Desktop-owned native control state` | - | The twelve schemas exist only in Desktop compositions that mount ComputerControl; ordinary CLI and Web compositions register none of them. |
 | `@deepseek-ai/dsh-tool-bash-persistent` | `bash` | `ctx.tools`, `ctx.terminals`, `an owning Agent at execution time` | `tool/call`, `PTY shell state`, `tool/result` | - | One owner-isolated persistent bash tool; deployment composition supplies the PTY backend and may override the model-facing environment description. |
 | `@deepseek-ai/dsh-tool-pwsh-persistent` | `pwsh` | `ctx.tools`, `ctx.terminals`, `an owning Agent at execution time` | `tool/call`, `PTY shell state`, `tool/result` | - | One owner-isolated persistent pwsh tool, the Windows counterpart of the persistent bash tool; deployment composition supplies a pwsh-dialect PTY backend and may override the model-facing environment description. |
 | `@deepseek-ai/dsh-tool-str-replace-editor` | `str_replace_editor` | `ctx.tools`, `ctx.fs` | `tool/call`, `fs/observed after view presence/absence, edit absence, or successful mutation`, `tool/result` | - | Standalone view/create/unique literal replace/line insert tool over the filesystem seam; it composes with any shell or terminal API. |
@@ -218,6 +220,276 @@ Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs 
 Source: [`packages/shell/tool-bash/src/index.ts`](../packages/shell/tool-bash/src/index.ts)
 
 The bash tool is the model-facing consumer of the bash executor seam. A `run_in_background` run registers with the generic `ctx.jobs` runtime and is collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; the `enableRunInBackground` config (default true) removes the parameter entirely when disabled.
+
+<a id="deepseek-aidsh-tool-browser-control"></a>
+
+## `@deepseek-ai/dsh-tool-browser-control`
+
+### `browser_back`
+
+Move backward in the controlled browser. Ordinary page navigation and JavaScript may have external effects.
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_click`
+
+Activate one current semantic browser ref. Password, OTP, payment, file, upload, and other protected targets are denied by the BrowserControl provider; ordinary page actions may still trigger page JavaScript or external effects.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the latest browser_snapshot."
+    }
+  },
+  "required": [
+    "ref"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_forward`
+
+Move forward in the controlled browser. Ordinary page navigation and JavaScript may have external effects.
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_key`
+
+Send one closed key chord to the controlled browser. The protocol accepts only a key plus the Alt/Control/Meta/Shift modifier vocabulary; no selector, coordinate, file, or authority input exists.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "description": "Provider-validated key name."
+    },
+    "modifiers": {
+      "type": "array",
+      "description": "Optional unique modifier keys.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "Alt",
+          "Control",
+          "Meta",
+          "Shift"
+        ]
+      }
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_navigate`
+
+Navigate the controlled browser to a URL. Electron validates the initial URL and every redirect; page JavaScript and navigation can still have ordinary external effects.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "Absolute destination URL."
+    }
+  },
+  "required": [
+    "url"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_reload`
+
+Reload in the controlled browser. Ordinary page navigation and JavaScript may have external effects.
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_scroll`
+
+Scroll the controlled page or one current semantic ref by bounded integer deltas. This tool never accepts screen coordinates.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "description": "Optional opaque ref from the latest browser_snapshot."
+    },
+    "delta_x": {
+      "type": "integer",
+      "description": "Horizontal scroll delta."
+    },
+    "delta_y": {
+      "type": "integer",
+      "description": "Vertical scroll delta."
+    }
+  },
+  "required": [
+    "delta_x",
+    "delta_y"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_select`
+
+Choose one value on a current semantic browser ref. File and upload controls remain provider-denied.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the latest browser_snapshot."
+    },
+    "value": {
+      "type": "string",
+      "description": "Provider-validated option value."
+    }
+  },
+  "required": [
+    "ref",
+    "value"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_snapshot`
+
+Capture the controlled browser's current URL, title, revision-bound semantic refs, and bounded semantic tree. A screenshot is attached only when the exact active model supports image input. Screenshot pixels never authorize coordinate actions.
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_stop`
+
+Stop browser takeover for the current official session and await provider cleanup. This action never requires approval and accepts no arguments.
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_type`
+
+Enter text into one current semantic browser ref. Protected password, OTP, payment, file, and upload targets are denied by the BrowserControl provider. Text is intentionally omitted from UI presentation.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the latest browser_snapshot."
+    },
+    "text": {
+      "type": "string",
+      "description": "Text to enter into the ordinary non-sensitive target."
+    }
+  },
+  "required": [
+    "ref",
+    "text"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+### `browser_wait`
+
+Wait only for a duration, navigation, or loading-idle condition. Duration waits are capped at 10,000 milliseconds.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": [
+        "duration",
+        "navigation",
+        "loading-idle"
+      ]
+    },
+    "duration_ms": {
+      "type": "integer",
+      "description": "Required only for duration mode; 0 through 10,000."
+    }
+  },
+  "required": [
+    "mode"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-browser-control/src/index.ts`](../packages/control/tool-browser-control/src/index.ts)
+
+The twelve schemas exist only in Desktop compositions that mount BrowserControl; ordinary CLI and Web compositions register none of them.
 
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
@@ -500,6 +772,413 @@ Permanently remove a dynamic Plugin owned by the current Session. If it is runni
 Source: [`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts)
 
 Not in any shipped tree (a deliberate opt-in — dynamic package code reaches the real runtime, see .agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md). The toolset injects `ctx.dynamicCordisRunner` from `@deepseek-ai/dsh-cordis-host-runner`, which owns the definition registry and the vm sandbox; a composition missing it never activates the tools. A running package may register ADDITIONAL model-visible tools until it is stopped, undefined, or DSH restarts; a full changed request header logs those tool-set changes.
+
+<a id="deepseek-aidsh-tool-computer-control"></a>
+
+## `@deepseek-ai/dsh-tool-computer-control`
+
+### `computer_click`
+
+Activate a current accessibility ref, or bounded screenshot coordinates only for a vision-capable route. Protected targets remain provider-denied.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    },
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the latest computer_snapshot."
+    },
+    "x": {
+      "type": "number",
+      "description": "Window-relative x coordinate; vision routes only."
+    },
+    "y": {
+      "type": "number",
+      "description": "Window-relative y coordinate; vision routes only."
+    },
+    "button": {
+      "type": "string",
+      "description": "Pointer button; defaults to left.",
+      "enum": [
+        "left",
+        "middle",
+        "right"
+      ]
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_double_click`
+
+Activate a current accessibility ref, or bounded screenshot coordinates only for a vision-capable route. Protected targets remain provider-denied.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    },
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the latest computer_snapshot."
+    },
+    "x": {
+      "type": "number",
+      "description": "Window-relative x coordinate; vision routes only."
+    },
+    "y": {
+      "type": "number",
+      "description": "Window-relative y coordinate; vision routes only."
+    },
+    "button": {
+      "type": "string",
+      "description": "Pointer button; defaults to left.",
+      "enum": [
+        "left",
+        "middle",
+        "right"
+      ]
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_drag`
+
+Drag between bounded window-relative coordinates only when the exact active route supports screenshot attachments.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    },
+    "from_x": {
+      "type": "number"
+    },
+    "from_y": {
+      "type": "number"
+    },
+    "to_x": {
+      "type": "number"
+    },
+    "to_y": {
+      "type": "number"
+    },
+    "button": {
+      "type": "string",
+      "description": "Pointer button; defaults to left.",
+      "enum": [
+        "left",
+        "middle",
+        "right"
+      ]
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id",
+    "from_x",
+    "from_y",
+    "to_x",
+    "to_y"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_focus`
+
+Focus one app/window pair returned by computer_list. The provider revalidates process and window identity before acting.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_key`
+
+Send one provider-validated key chord to an authorized app/window. Only the Alt/Control/Meta/Shift modifier vocabulary is accepted.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    },
+    "key": {
+      "type": "string"
+    },
+    "modifiers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "Alt",
+          "Control",
+          "Meta",
+          "Shift"
+        ]
+      }
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id",
+    "key"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_list`
+
+List only applications and windows currently eligible for an explicit user grant. It does not acquire control.
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_scroll`
+
+Scroll a current accessibility ref, or bounded screenshot coordinates only for a vision-capable route.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    },
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the latest computer_snapshot."
+    },
+    "x": {
+      "type": "number",
+      "description": "Window-relative x coordinate; vision routes only."
+    },
+    "y": {
+      "type": "number",
+      "description": "Window-relative y coordinate; vision routes only."
+    },
+    "delta_x": {
+      "type": "number"
+    },
+    "delta_y": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id",
+    "delta_x",
+    "delta_y"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_snapshot`
+
+Capture bounded accessibility semantics for one app window. A screenshot attachment is requested only for the exact active vision-capable route; pixels never expand the authorized app/window set.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_status`
+
+Read local Computer Use support plus Screen Viewing and Assistive Control permission states. This does not request permission or acquire control.
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_stop`
+
+Stop native Computer Use for the current official session and await cleanup. This action accepts no arguments and never requires approval.
+
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_type`
+
+Enter text into one current ordinary accessibility ref. Typed text is omitted from UI presentation and protected fields are provider-denied.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    },
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the latest computer_snapshot."
+    },
+    "text": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id",
+    "ref",
+    "text"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+### `computer_wait`
+
+Wait for a bounded duration on one authorized app/window. Duration is capped at 10,000 milliseconds.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app_id": {
+      "type": "string",
+      "description": "Application id from computer_list."
+    },
+    "window_id": {
+      "type": "string",
+      "description": "Window id paired with that application in computer_list."
+    },
+    "duration_ms": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "app_id",
+    "window_id",
+    "duration_ms"
+  ],
+  "additionalProperties": false
+}
+```
+
+Source: [`packages/control/tool-computer-control/src/index.ts`](../packages/control/tool-computer-control/src/index.ts)
+
+The twelve schemas exist only in Desktop compositions that mount ComputerControl; ordinary CLI and Web compositions register none of them.
 
 <a id="deepseek-aidsh-tool-bash-persistent"></a>
 

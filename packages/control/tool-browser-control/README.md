@@ -20,11 +20,19 @@ Known password, OTP, payment, file, upload, and other protected-target refusals 
 
 ## Model Experience
 
-The model sees twelve compact closed schemas only while Desktop supplies BrowserControl. It first calls `browser_snapshot`, uses only current opaque refs for semantic target actions, and snapshots again after navigation or a stale-ref result. Snapshot text is bounded and a visual route receives one adjacent durable image block without gaining coordinate actions. Pending presentation omits typed text and protected page content.
+### Tool schemas
+
+#### What the model sees
+
+The model sees the twelve closed [Browser Control tool schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-browser-control) only while Desktop supplies `BrowserControl`. It first calls `browser_snapshot`, uses only current opaque refs for semantic target actions, and snapshots again after navigation or a stale-ref result. Snapshot text is bounded and a visual route receives one adjacent durable image block without gaining coordinate actions. Pending presentation omits typed text and protected page content.
+
+#### Token effect
+
+The fixed schemas add a bounded input cost whenever the Desktop provider is mounted. Snapshot semantics and optional image references are per-call results, so their data-dependent size does not become standing prompt text.
 
 #### KV Cache effect
 
-When BrowserControl is mounted, the fixed schemas add a stable tool roster to the prompt. Snapshot semantics and optional image references are per-call results rather than standing prompt content. Provider-absent deployments add no schemas or prompt text.
+The roster is prefix-stable while `BrowserControl` availability and the closed schemas remain unchanged. Provider-absent deployments add no schemas or prompt text; mounting or removing the provider changes tool visibility and may invalidate reuse from that point.
 
 ## Known Limitations and Deferred Work
 

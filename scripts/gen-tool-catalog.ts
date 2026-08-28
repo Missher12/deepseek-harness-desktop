@@ -41,6 +41,10 @@ import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolAskUser from '@deepseek-ai/dsh-tool-ask-user'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
+import BrowserControl from '@deepseek-ai/dsh-browser-control'
+import * as ToolBrowserControl from '@deepseek-ai/dsh-tool-browser-control'
+import ComputerControl from '@deepseek-ai/dsh-computer-control'
+import * as ToolComputerControl from '@deepseek-ai/dsh-tool-computer-control'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as ToolBashPersistent from '@deepseek-ai/dsh-tool-bash-persistent'
 import * as ToolPwshPersistent from '@deepseek-ai/dsh-tool-pwsh-persistent'
@@ -90,6 +94,24 @@ class CatalogAttachmentStore extends AttachmentStore {
   override readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
     return Promise.reject(new Error('gen-tool-catalog: attachment reads are unreachable during schema harvest'))
   }
+}
+
+/** Registration-only browser seam; schema harvesting never executes a tool. */
+class CatalogBrowserControl extends BrowserControl {
+  override acquireLease(): never { throw new Error('tool-catalog browser provider is registration-only') }
+  override snapshot(): never { throw new Error('tool-catalog browser provider is registration-only') }
+  override act(): never { throw new Error('tool-catalog browser provider is registration-only') }
+  override revokeSession(): never { throw new Error('tool-catalog browser provider is registration-only') }
+}
+
+/** Registration-only computer seam; schema harvesting never executes a tool. */
+class CatalogComputerControl extends ComputerControl {
+  override acquireLease(): never { throw new Error('tool-catalog computer provider is registration-only') }
+  override status(): never { throw new Error('tool-catalog computer provider is registration-only') }
+  override list(): never { throw new Error('tool-catalog computer provider is registration-only') }
+  override snapshot(): never { throw new Error('tool-catalog computer provider is registration-only') }
+  override act(): never { throw new Error('tool-catalog computer provider is registration-only') }
+  override stop(): never { throw new Error('tool-catalog computer provider is registration-only') }
 }
 
 const root = resolve(import.meta.dirname, '..')
@@ -241,6 +263,19 @@ const TOOL_PACKAGES: ToolPackage[] = [
       'The bash tool is the model-facing consumer of the bash executor seam. A `run_in_background` run registers with the generic `ctx.jobs` runtime and is collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; the `enableRunInBackground` config (default true) removes the parameter entirely when disabled.',
   },
   {
+    pkg: '@deepseek-ai/dsh-tool-browser-control',
+    dir: 'tool-browser-control',
+    source: 'packages/control/tool-browser-control/src/index.ts',
+    requires: ['ctx.tools', 'ctx.browserControl'],
+    writes: ['tool/call', 'tool/result', 'Desktop-owned browser surface state'],
+    async mount(ctx) {
+      await ctx.plugin(CatalogBrowserControl)
+      await ctx.plugin(ToolBrowserControl)
+    },
+    note:
+      'The twelve schemas exist only in Desktop compositions that mount BrowserControl; ordinary CLI and Web compositions register none of them.',
+  },
+  {
     pkg: '@deepseek-ai/dsh-tool-pwsh',
     dir: 'tool-pwsh',
     source: 'packages/shell/tool-pwsh/src/index.ts',
@@ -270,6 +305,19 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'Not in any shipped tree (a deliberate opt-in — dynamic package code reaches the real runtime, see .agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md). The toolset injects `ctx.dynamicCordisRunner` from `@deepseek-ai/dsh-cordis-host-runner`, which owns the definition registry and the vm sandbox; a composition missing it never activates the tools. A running package may register ADDITIONAL model-visible tools until it is stopped, undefined, or DSH restarts; a full changed request header logs those tool-set changes.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-computer-control',
+    dir: 'tool-computer-control',
+    source: 'packages/control/tool-computer-control/src/index.ts',
+    requires: ['ctx.tools', 'ctx.computerControl'],
+    writes: ['tool/call', 'tool/result', 'Desktop-owned native control state'],
+    async mount(ctx) {
+      await ctx.plugin(CatalogComputerControl)
+      await ctx.plugin(ToolComputerControl)
+    },
+    note:
+      'The twelve schemas exist only in Desktop compositions that mount ComputerControl; ordinary CLI and Web compositions register none of them.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-bash-persistent',

@@ -8,7 +8,15 @@ The optional preload bridge exposes only validated, path-free status and setting
 
 Settings show explicit Browser Agent and Computer Control enablement, Screen Viewing and Assistive Control separately, the main-owned ordinary application allowlist, the emergency shortcut, and current control. Native status and application enumeration settle independently. Main retains the latest validated status and list in memory; a later failure marks only its refresh row, exposes a bounded generic Retry message, and never discards unrelated valid display state. Both controls remain disabled by default; enabling either is confirmed and persisted by Electron main. Give records only a browser takeover intent and never enables Browser Agent control. Static UI strings ship in English and Chinese.
 
-## Known limitations
+## Model Experience
+
+None, as this package only presents main-owned Desktop control state and fixed setting intents. It does not register tools, assemble prompts, select models, or send provider requests.
+
+#### KV Cache effect
+
+None; this package never participates in a model request or changes its cache behavior.
+
+## Known Limitations and Deferred Work
 
 - Native status/list observation is an optional main-process provider seam supplied with the native adapter.
 - OS permissions must be granted manually in system settings.
