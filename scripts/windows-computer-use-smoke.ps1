@@ -36,6 +36,7 @@ namespace DshWindowsSmoke
         private const uint LUA_TOKEN = 0x4;
         private const int TokenLinkedToken = 19;
         private const uint CREATE_NO_WINDOW = 0x08000000;
+        private const uint CREATE_UNICODE_ENVIRONMENT = 0x400;
         private const uint WAIT_OBJECT_0 = 0;
         private const uint WAIT_TIMEOUT = 258;
 
@@ -130,6 +131,15 @@ namespace DshWindowsSmoke
             ref STARTUPINFO startupInfo,
             out PROCESS_INFORMATION processInformation);
 
+        [DllImport("userenv.dll", SetLastError = true)]
+        private static extern bool CreateEnvironmentBlock(
+            out IntPtr environment,
+            IntPtr token,
+            bool inherit);
+
+        [DllImport("userenv.dll", SetLastError = true)]
+        private static extern bool DestroyEnvironmentBlock(IntPtr environment);
+
         [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern bool CreateProcessAsUserW(
             IntPtr token,
@@ -152,6 +162,8 @@ namespace DshWindowsSmoke
         {
             IntPtr sourceToken = IntPtr.Zero;
             IntPtr limitedToken = IntPtr.Zero;
+            IntPtr environment = IntPtr.Zero;
+            IntPtr desktop = IntPtr.Zero;
             PROCESS_INFORMATION process = new PROCESS_INFORMATION();
             try
             {
@@ -186,14 +198,20 @@ namespace DshWindowsSmoke
 
                 STARTUPINFO startup = new STARTUPINFO();
                 startup.cb = (uint)Marshal.SizeOf<STARTUPINFO>();
+                desktop = Marshal.StringToHGlobalUni("winsta0\\default");
+                startup.lpDesktop = desktop;
+                if (!CreateEnvironmentBlock(out environment, limitedToken, false))
+                    throw new Win32Exception(
+                        Marshal.GetLastWin32Error(),
+                        "CreateEnvironmentBlock failed");
                 StringBuilder mutableCommand = new StringBuilder(commandLine);
                 bool created = CreateProcessWithTokenW(
                         limitedToken,
                         0,
                         applicationPath,
                         mutableCommand,
-                        CREATE_NO_WINDOW,
-                        IntPtr.Zero,
+                        CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+                        environment,
                         workingDirectory,
                         ref startup,
                         out process);
@@ -208,8 +226,8 @@ namespace DshWindowsSmoke
                         IntPtr.Zero,
                         IntPtr.Zero,
                         false,
-                        CREATE_NO_WINDOW,
-                        IntPtr.Zero,
+                        CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+                        environment,
                         workingDirectory,
                         ref startup,
                         out process);
@@ -240,6 +258,8 @@ namespace DshWindowsSmoke
             {
                 if (process.hThread != IntPtr.Zero) CloseHandle(process.hThread);
                 if (process.hProcess != IntPtr.Zero) CloseHandle(process.hProcess);
+                if (environment != IntPtr.Zero) DestroyEnvironmentBlock(environment);
+                if (desktop != IntPtr.Zero) Marshal.FreeHGlobal(desktop);
                 if (limitedToken != IntPtr.Zero) CloseHandle(limitedToken);
                 if (sourceToken != IntPtr.Zero) CloseHandle(sourceToken);
             }

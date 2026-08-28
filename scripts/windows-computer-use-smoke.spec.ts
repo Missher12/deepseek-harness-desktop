@@ -17,6 +17,8 @@ describe('Windows installed Computer Use acceptance', () => {
     expect(source).toContain('CreateProcessWithLogonW')
     expect(source).toContain('CreateRestrictedToken')
     expect(source).toContain('CREATE_NO_WINDOW')
+    expect(source).toContain('CreateEnvironmentBlock')
+    expect(source).toContain('winsta0\\\\default')
     expect(source).toContain("'System32\\WindowsPowerShell\\v1.0\\powershell.exe'")
     expect(source).toContain('New-LocalUser')
     expect(source).toContain('Remove-LocalUser')
