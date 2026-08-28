@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { cp, readFile, readdir, rm, stat } from 'node:fs/promises'
+import { cp, lstat, readFile, readdir, realpath, rm, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -31,6 +31,8 @@ export interface StageDesktopDependencies {
   findNativeBinaries(root: string): Promise<readonly string[]>
   findComputerUseHelpers(root: string): Promise<readonly string[]>
   isExecutable(path: string): Promise<boolean>
+  lstat(path: string): Promise<{ isFile(): boolean; isSymbolicLink(): boolean }>
+  realpath(path: string): Promise<string>
 }
 
 /** Auditable result returned by one staging operation. */
@@ -138,6 +140,8 @@ const realDependencies: StageDesktopDependencies = {
   findNativeBinaries,
   findComputerUseHelpers,
   isExecutable: async path => ((await stat(path)).mode & 0o111) !== 0,
+  lstat,
+  realpath,
 }
 
 const REASONING_EFFORT_PACKAGE = '@deepseek-ai/dsh-reasoning-effort'
@@ -194,6 +198,11 @@ function stageRelative(stageDir: string, path: string): string {
     throw new Error(`Desktop staging found a file outside the stage directory: ${path}`)
   }
   return value.split(sep).join('/')
+}
+
+function isStrictDescendant(parent: string, path: string): boolean {
+  const value = relative(parent, path)
+  return value !== '' && value !== '..' && !value.startsWith(`..${sep}`) && !isAbsolute(value)
 }
 
 function flattenEntryRows(entries: EntryOptions[]): EntryOptions[] {
@@ -441,10 +450,27 @@ export async function stageDesktop(
   const nativeBinaries = await dependencies.findNativeBinaries(join(stageDir, 'node_modules'))
   if (nativeBinaries.length === 0) throw new Error('Desktop staging found no native .node modules.')
 
-  const helperPath = join(stageDir, 'native-bin', helperSpec.nativeRelativePath)
-  const nativeHelpers = await dependencies.findComputerUseHelpers(join(stageDir, 'native-bin'))
+  const nativeBinDir = join(stageDir, 'native-bin')
+  const selectedPlatformDir = join(nativeBinDir, helperDirectory)
+  const helperPath = join(nativeBinDir, helperSpec.nativeRelativePath)
+  const nativeHelpers = await dependencies.findComputerUseHelpers(nativeBinDir)
   if (nativeHelpers.length !== 1 || resolve(nativeHelpers[0] ?? '') !== resolve(helperPath)) {
     throw new Error(`Desktop staging expected exactly one platform-matching Computer Use helper; found ${String(nativeHelpers.length)}.`)
+  }
+  const helperStats = await dependencies.lstat(helperPath)
+  if (helperStats.isSymbolicLink() || !helperStats.isFile()) {
+    throw new Error('Desktop staging requires the Computer Use helper to be a regular file, not a symbolic link.')
+  }
+  const [nativeBinRealPath, selectedPlatformRealPath, helperRealPath] = await Promise.all([
+    dependencies.realpath(nativeBinDir),
+    dependencies.realpath(selectedPlatformDir),
+    dependencies.realpath(helperPath),
+  ])
+  if (!isStrictDescendant(nativeBinRealPath, selectedPlatformRealPath)) {
+    throw new Error('Desktop staging requires the selected platform directory real path to remain inside the staged native-bin directory.')
+  }
+  if (!isStrictDescendant(selectedPlatformRealPath, helperRealPath)) {
+    throw new Error('Desktop staging requires the Computer Use helper real path to remain inside the selected platform directory.')
   }
   assertComputerUseHelperArchitecture(
     await dependencies.readBinary(helperPath),

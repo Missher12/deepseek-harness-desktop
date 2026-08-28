@@ -94,6 +94,32 @@ describe('CI workflow', () => {
     })
   })
 
+  it('pins and verifies the native helper toolchain before building the Windows Desktop Setup', () => {
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+    const windows = workflowJob(workflow, 'build-install-smoke')
+    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
+    const steps = windows.steps.filter(isRecord)
+    const installIndex = steps.findIndex(step => step.name === 'Install pinned Rust toolchain')
+    const verifyIndex = steps.findIndex(step => step.name === 'Verify native helper')
+    const buildIndex = steps.findIndex(step => step.name === 'Build the assisted Windows Setup')
+    const install = steps[installIndex]
+    const verify = steps[verifyIndex]
+
+    expect(install).toMatchObject({
+      shell: 'pwsh',
+      run: 'rustup toolchain install 1.95.0 --profile minimal --component rustfmt,clippy',
+    })
+    expect(verify).toMatchObject({
+      shell: 'pwsh',
+      'working-directory': 's/native/computer-use-helper',
+    })
+    expect(verify?.run).toContain('cargo fmt --all -- --check')
+    expect(verify?.run).toContain('cargo clippy --locked --all-targets -- -D warnings')
+    expect(verify?.run).toContain('cargo test --locked')
+    expect(installIndex).toBeLessThan(verifyIndex)
+    expect(verifyIndex).toBeLessThan(buildIndex)
+  })
+
   it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')
     const masterWorkflow = loadWorkflow('.github/workflows/ci-master.yml')

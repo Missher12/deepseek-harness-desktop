@@ -29,7 +29,9 @@ const DEFAULT_NATIVE_BINARIES = [join(DEFAULT_STAGE, 'node_modules/node-pty/preb
 const DEFAULT_MARKET_PACKAGE_DIRECTORIES = [
   join(DEFAULT_STAGE, 'node_modules/.pnpm/dshmarket/node_modules/dshmarket'),
 ] as const
-const DEFAULT_HELPER = join(DEFAULT_STAGE, 'native-bin/darwin-x64/computer-use-helper')
+const DEFAULT_NATIVE_BIN = join(DEFAULT_STAGE, 'native-bin')
+const DEFAULT_PLATFORM_DIR = join(DEFAULT_NATIVE_BIN, 'darwin-x64')
+const DEFAULT_HELPER = join(DEFAULT_PLATFORM_DIR, 'computer-use-helper')
 const MACHO_X64 = Uint8Array.of(0xcf, 0xfa, 0xed, 0xfe, 0x07, 0x00, 0x00, 0x01)
 
 function fakeDependencies(
@@ -45,6 +47,8 @@ function fakeDependencies(
   removed: string[]
   validated: string[]
   read: string[]
+  lstat(path: string): Promise<{ isFile(): boolean; isSymbolicLink(): boolean }>
+  realpath(path: string): Promise<string>
 } {
   const commands: Array<[string, readonly string[]]> = []
   const copies: Array<[string, string]> = []
@@ -93,6 +97,8 @@ function fakeDependencies(
     findComputerUseHelpers: async root => [join(root, 'darwin-x64/computer-use-helper')],
     readBinary: async () => MACHO_X64,
     isExecutable: async () => true,
+    lstat: async () => ({ isFile: () => true, isSymbolicLink: () => false }),
+    realpath: async path => resolve(path),
   }
 }
 
@@ -202,6 +208,33 @@ describe('stageDesktop', () => {
     const nonExecutable = fakeDependencies()
     nonExecutable.isExecutable = async () => false
     await expect(stageDesktop(REPO_ROOT, nonExecutable)).rejects.toThrow(/executable/i)
+  })
+
+  it('rejects a staged native helper that is a symbolic link', async () => {
+    const dependencies = fakeDependencies()
+    dependencies.lstat = async () => ({ isFile: () => false, isSymbolicLink: () => true })
+
+    await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(/regular file.*symbolic link/i)
+  })
+
+  it('rejects a staged native helper whose real path escapes the selected platform directory', async () => {
+    const dependencies = fakeDependencies()
+    dependencies.realpath = async path => path === DEFAULT_HELPER
+      ? resolve('/outside/computer-use-helper')
+      : resolve(path)
+
+    await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(/real path.*selected platform directory/i)
+  })
+
+  it('rejects a selected platform directory whose real path escapes the staged native-bin directory', async () => {
+    const dependencies = fakeDependencies()
+    dependencies.realpath = async (path) => {
+      if (path === DEFAULT_PLATFORM_DIR) return resolve('/outside/darwin-x64')
+      if (path === DEFAULT_HELPER) return resolve('/outside/darwin-x64/computer-use-helper')
+      return resolve(path)
+    }
+
+    await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(/platform directory real path.*staged native-bin directory/i)
   })
 
   it('preflights the canonical messenger row before deleting or deploying', async () => {

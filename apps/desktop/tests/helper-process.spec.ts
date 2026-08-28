@@ -118,6 +118,11 @@ describe('NativeHelperProcess', () => {
       code: 'DISCONNECTED',
       message: 'Native Computer Use helper disconnected.',
     }))
+    expect(helper.running).toBe(true)
+    await expect(helper.request(statusRequest())).rejects.toEqual(expect.objectContaining({
+      code: 'DISCONNECTED',
+    }))
+    child.exit()
     expect(helper.running).toBe(false)
   })
 
@@ -149,5 +154,32 @@ describe('NativeHelperProcess', () => {
   it('exports a closed generic error shape', () => {
     const error = new NativeHelperProcessError('TIMEOUT')
     expect(error).toMatchObject({ code: 'TIMEOUT', message: 'Native Computer Use helper timed out.' })
+  })
+
+  it('rejects shutdown when the killed helper never exits and retains fail-closed ownership', async () => {
+    const child = new FakeChild()
+    child.kill.mockReturnValue(false)
+    const helper = new NativeHelperProcess({
+      binaryPath: '/verified/computer-use-helper',
+      spawn: () => asChild(child),
+      shutdownTimeoutMs: 1,
+    })
+    const pending = helper.request(statusRequest())
+    const pendingFailure = expect(pending).rejects.toEqual(expect.objectContaining({ code: 'CANCELLED' }))
+
+    await expect(helper.shutdown()).rejects.toEqual(expect.objectContaining({
+      code: 'DISCONNECTED',
+      message: 'Native Computer Use helper disconnected.',
+    }))
+    await pendingFailure
+    expect(child.kill).toHaveBeenNthCalledWith(1, 'SIGTERM')
+    expect(child.kill).toHaveBeenNthCalledWith(2, 'SIGKILL')
+    expect(helper.running).toBe(true)
+    await expect(helper.request(statusRequest())).rejects.toEqual(expect.objectContaining({
+      code: 'DISCONNECTED',
+    }))
+
+    child.exit()
+    expect(helper.running).toBe(false)
   })
 })

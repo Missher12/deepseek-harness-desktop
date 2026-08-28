@@ -71,8 +71,10 @@ export class NativeHelperProcess {
   private frames: DesktopControlFrameDecoder | undefined
   private readonly pending = new Map<string, PendingRequest>()
   private closing = false
+  private linkFailed = false
   private exitPromise: Promise<void> | undefined
   private resolveExit: (() => void) | undefined
+  private shutdownPromise: Promise<void> | undefined
 
   /** Whether the exact owned helper child is currently live. */
   get running(): boolean {
@@ -88,12 +90,17 @@ export class NativeHelperProcess {
 
   /** Send one strict helper request, spawning the child only when first needed. */
   request(request: HelperRequest, signal?: AbortSignal): Promise<DecodedDesktopControlEnvelope> {
-    if (this.closing) return Promise.reject(new NativeHelperProcessError('DISCONNECTED'))
+    if (this.closing || this.linkFailed) return Promise.reject(new NativeHelperProcessError('DISCONNECTED'))
     if (signal?.aborted === true) return Promise.reject(new NativeHelperProcessError('CANCELLED'))
     if (this.pending.size >= MAX_PENDING) return Promise.reject(new NativeHelperProcessError('TOO_MANY_PENDING'))
     const requestId = String(request.requestId)
     if (this.pending.has(requestId)) return Promise.reject(new NativeHelperProcessError('TOO_MANY_PENDING'))
-    const child = this.ensureChild()
+    let child: ChildProcessWithoutNullStreams
+    try {
+      child = this.ensureChild()
+    } catch {
+      return Promise.reject(new NativeHelperProcessError('DISCONNECTED'))
+    }
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -127,7 +134,7 @@ export class NativeHelperProcess {
 
   /** Send one strict revocation/control message without opening a network endpoint. */
   sendControl(control: DesktopControlControl): void {
-    if (this.closing) return
+    if (this.closing || this.linkFailed) return
     const child = this.child
     // With no owned child there is no native state to revoke or cancel.
     if (child === undefined) return
@@ -135,19 +142,26 @@ export class NativeHelperProcess {
   }
 
   /** End stdin normally, then use a bounded terminate/kill ladder for the exact child. */
-  async shutdown(): Promise<void> {
+  shutdown(): Promise<void> {
     const child = this.child
-    if (child === undefined) return
-    if (this.closing && this.exitPromise !== undefined) return this.exitPromise
+    if (child === undefined) return Promise.resolve()
+    if (this.shutdownPromise !== undefined) return this.shutdownPromise
     this.closing = true
     this.rejectPending('CANCELLED')
+    this.shutdownPromise = this.shutdownOwnedChild(child)
+    return this.shutdownPromise
+  }
+
+  private async shutdownOwnedChild(child: ChildProcessWithoutNullStreams): Promise<void> {
     child.stdin.end()
-    const exited = this.exitPromise ?? Promise.resolve()
+    const exited = this.exitPromise
+    if (exited === undefined) throw new NativeHelperProcessError('DISCONNECTED')
     if (await settlesWithin(exited, this.shutdownTimeoutMs)) return
-    child.kill('SIGTERM')
+    if (this.child === child) child.kill('SIGTERM')
     if (await settlesWithin(exited, this.shutdownTimeoutMs)) return
-    child.kill('SIGKILL')
-    await settlesWithin(exited, this.shutdownTimeoutMs)
+    if (this.child === child) child.kill('SIGKILL')
+    if (await settlesWithin(exited, this.shutdownTimeoutMs)) return
+    throw new NativeHelperProcessError('DISCONNECTED')
   }
 
   private ensureChild(): ChildProcessWithoutNullStreams {
@@ -158,19 +172,21 @@ export class NativeHelperProcess {
       windowsHide: true,
     })
     this.child = child
+    this.linkFailed = false
     this.lengths = new LengthPrefixedFrameDecoder()
     this.frames = new DesktopControlFrameDecoder(helperToElectron)
     this.exitPromise = new Promise((resolve) => { this.resolveExit = resolve })
     child.stderr.resume()
-    child.stdout.on('data', (chunk: Buffer) => { this.onStdout(new Uint8Array(chunk)) })
-    child.stdout.on('error', () => { this.failLink() })
-    child.stdin.on('error', () => { this.failLink() })
-    child.once('error', () => { this.failLink() })
+    child.stdout.on('data', (chunk: Buffer) => { this.onStdout(child, new Uint8Array(chunk)) })
+    child.stdout.on('error', () => { this.failLink(child) })
+    child.stdin.on('error', () => { this.failLink(child) })
+    child.once('error', () => { this.failLink(child) })
     child.once('exit', () => { this.onExit(child) })
     return child
   }
 
-  private onStdout(chunk: Uint8Array): void {
+  private onStdout(child: ChildProcessWithoutNullStreams, chunk: Uint8Array): void {
+    if (this.child !== child || this.linkFailed) return
     try {
       const lengths = this.lengths
       const frames = this.frames
@@ -179,7 +195,7 @@ export class NativeHelperProcess {
         for (const envelope of frames.pushFrame(frame)) this.resolveEnvelope(envelope)
       }
     } catch {
-      this.failLink()
+      this.failLink(child)
     }
   }
 
@@ -199,9 +215,10 @@ export class NativeHelperProcess {
 
   private write(child: ChildProcessWithoutNullStreams, frame: Uint8Array, requestId?: string): void {
     child.stdin.write(Buffer.from(new Uint8Array(frame)), (error?: Error | null) => {
+      if (this.child !== child) return
       if (error === undefined || error === null) return
       if (requestId !== undefined) this.rejectOne(requestId, 'DISCONNECTED')
-      this.failLink()
+      this.failLink(child)
     })
   }
 
@@ -218,11 +235,15 @@ export class NativeHelperProcess {
     for (const requestId of [...this.pending.keys()]) this.rejectOne(requestId, code)
   }
 
-  private failLink(): void {
-    const child = this.child
-    if (child === undefined) return
+  private failLink(child: ChildProcessWithoutNullStreams): void {
+    if (this.child !== child || this.linkFailed) return
+    this.linkFailed = true
     this.rejectPending('DISCONNECTED')
-    this.detachChild(child)
+    child.stdout.removeAllListeners('data')
+    try { this.lengths?.finish() } catch {}
+    try { this.frames?.finish() } catch {}
+    this.lengths = undefined
+    this.frames = undefined
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
   }
 
@@ -237,6 +258,7 @@ export class NativeHelperProcess {
     try { this.lengths?.finish() } catch {}
     try { this.frames?.finish() } catch {}
     this.child = undefined
+    this.linkFailed = false
     this.lengths = undefined
     this.frames = undefined
     this.resolveExit?.()

@@ -1,6 +1,7 @@
 //! Platform-neutral monotonic lease enforcement and read-only helper dispatch.
 
-use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use computer_use_protocol::{ControlMessage, HelperInput, HelperRequest, HelperResponse};
 use serde_json::{Value, json};
@@ -11,14 +12,42 @@ pub trait MonotonicClock {
     fn now_ms(&self) -> u64;
 }
 
+/// Cloneable process-local cancellation signal updated by the high-priority reader path.
+#[derive(Clone, Default)]
+pub struct CancellationToken(Arc<AtomicBool>);
+
+impl CancellationToken {
+    /// Create a live request token.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Cancel the request. Repeated cancellation is idempotent.
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    /// Check cancellation between bounded native observation stages.
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
 /// Narrow read-only platform seam. Implementations receive one immutable deadline.
 pub trait ObservationPlatform {
     /// Report platform permission/support state.
-    fn status(&mut self, deadline_ms: u64) -> PlatformResult;
+    fn status(&mut self, deadline_ms: u64, cancel: &CancellationToken) -> PlatformResult;
     /// Enumerate currently grantable applications and windows.
-    fn list(&mut self, deadline_ms: u64) -> PlatformResult;
+    fn list(&mut self, deadline_ms: u64, cancel: &CancellationToken) -> PlatformResult;
     /// Capture one already-authorized exact target.
-    fn snapshot(&mut self, request: &HelperRequest, deadline_ms: u64) -> PlatformResult;
+    fn snapshot(
+        &mut self,
+        request: &HelperRequest,
+        deadline_ms: u64,
+        cancel: &CancellationToken,
+    ) -> PlatformResult;
 }
 
 /// Closed platform result: success JSON or a protocol error code only.
@@ -29,15 +58,20 @@ pub type PlatformResult = std::result::Result<Value, &'static str>;
 pub struct NullObservationPlatform;
 
 impl ObservationPlatform for NullObservationPlatform {
-    fn status(&mut self, _deadline_ms: u64) -> PlatformResult {
+    fn status(&mut self, _deadline_ms: u64, _cancel: &CancellationToken) -> PlatformResult {
         Ok(json!({"viewing":"unknown","assistive":"unknown","supported":false}))
     }
 
-    fn list(&mut self, _deadline_ms: u64) -> PlatformResult {
+    fn list(&mut self, _deadline_ms: u64, _cancel: &CancellationToken) -> PlatformResult {
         Ok(json!({"apps":[]}))
     }
 
-    fn snapshot(&mut self, _request: &HelperRequest, _deadline_ms: u64) -> PlatformResult {
+    fn snapshot(
+        &mut self,
+        _request: &HelperRequest,
+        _deadline_ms: u64,
+        _cancel: &CancellationToken,
+    ) -> PlatformResult {
         Err("NOT_SUPPORTED")
     }
 }
@@ -64,6 +98,12 @@ struct Lease {
     hard_after_ms: u64,
 }
 
+struct ActiveLease {
+    session_id: String,
+    lease_id: String,
+    lease: Lease,
+}
+
 impl Lease {
     fn expired(&self, now_ms: u64) -> bool {
         now_ms.saturating_sub(self.last_activity_ms) >= self.idle_after_ms
@@ -85,8 +125,8 @@ impl Lease {
 pub struct ComputerUseCore<C, P> {
     clock: C,
     platform: P,
-    leases: HashMap<(String, String), Lease>,
-    last_revisions: HashMap<String, u64>,
+    active: Option<ActiveLease>,
+    last_revision: u64,
 }
 
 impl<C, P> ComputerUseCore<C, P>
@@ -100,35 +140,53 @@ where
         Self {
             clock,
             platform,
-            leases: HashMap::new(),
-            last_revisions: HashMap::new(),
+            active: None,
+            last_revision: 0,
         }
     }
 
     /// Dispatch one already strictly decoded helper input.
     pub fn handle(&mut self, input: HelperInput) -> Option<HelperResponse> {
+        self.handle_with_cancellation(input, &CancellationToken::new())
+    }
+
+    /// Dispatch with a token that the reader thread may cancel during platform work.
+    pub fn handle_with_cancellation(
+        &mut self,
+        input: HelperInput,
+        cancel: &CancellationToken,
+    ) -> Option<HelperResponse> {
         match input {
             HelperInput::Control(control) => {
                 self.handle_control(&control);
                 None
             }
-            HelperInput::Request(request) => Some(self.handle_request(&request)),
+            HelperInput::Request(request) => Some(self.handle_request(&request, cancel)),
         }
     }
 
     /// Visible only for deterministic lifecycle verification.
     #[must_use]
     pub fn active_lease_count(&self) -> usize {
-        self.leases.len()
+        usize::from(self.active.is_some())
     }
 
-    fn handle_request(&mut self, request: &HelperRequest) -> HelperResponse {
+    fn handle_request(
+        &mut self,
+        request: &HelperRequest,
+        cancel: &CancellationToken,
+    ) -> HelperResponse {
+        if cancel.is_cancelled() {
+            return HelperResponse::error(request, "CANCELLED", false);
+        }
         let deadline_ms = self.clock.now_ms().saturating_add(request.timeout_ms());
         match request.request_kind() {
-            "status" => platform_response(request, self.platform.status(deadline_ms)),
-            "list" => platform_response(request, self.platform.list(deadline_ms)),
+            "status" => {
+                platform_response(request, self.platform.status(deadline_ms, cancel), cancel)
+            }
+            "list" => platform_response(request, self.platform.list(deadline_ms, cancel), cancel),
             "lease.install" => self.install_lease(request),
-            "snapshot" => self.snapshot(request, deadline_ms),
+            "snapshot" => self.snapshot(request, deadline_ms, cancel),
             "stop" => self.stop(request),
             "input.release" => HelperResponse::ok(request, json!({"released":true})),
             // Input actions are intentionally absent from this delivery. Never invoke an OS API.
@@ -142,9 +200,11 @@ where
     fn install_lease(&mut self, request: &HelperRequest) -> HelperResponse {
         let lease_id = required_string(request, "leaseId");
         let revision = required_integer(request, "leaseRevision");
-        let last_revision = self.last_revisions.get(lease_id).copied().unwrap_or(0);
-        if revision <= last_revision {
+        if revision <= self.last_revision {
             return HelperResponse::error(request, "LEASE_REVOKED", false);
+        }
+        if self.active.is_some() {
+            return HelperResponse::error(request, "BUSY", true);
         }
         let targets = request
             .field("targets")
@@ -184,31 +244,39 @@ where
             idle_after_ms: required_integer(request, "idleExpiresAfterMs"),
             hard_after_ms: required_integer(request, "hardExpiresAfterMs"),
         };
-        self.last_revisions.insert(lease_id.to_owned(), revision);
-        self.leases.retain(|(_, id), _| id != lease_id);
-        self.leases.insert(
-            (request.session_id().to_owned(), lease_id.to_owned()),
+        self.last_revision = revision;
+        self.active = Some(ActiveLease {
+            session_id: request.session_id().to_owned(),
+            lease_id: lease_id.to_owned(),
             lease,
-        );
+        });
         HelperResponse::ok(request, json!({"installed":true,"leaseRevision":revision}))
     }
 
-    fn snapshot(&mut self, request: &HelperRequest, deadline_ms: u64) -> HelperResponse {
-        let key = (
-            request.session_id().to_owned(),
-            required_string(request, "leaseId").to_owned(),
-        );
+    fn snapshot(
+        &mut self,
+        request: &HelperRequest,
+        deadline_ms: u64,
+        cancel: &CancellationToken,
+    ) -> HelperResponse {
         let now_ms = self.clock.now_ms();
-        let Some(lease) = self.leases.get_mut(&key) else {
+        let session_id = request.session_id();
+        let lease_id = required_string(request, "leaseId");
+        let revision = required_integer(request, "leaseRevision");
+        let Some(active) = self.active.as_ref() else {
             return HelperResponse::error(request, "LEASE_REVOKED", false);
         };
-        if lease.revision != required_integer(request, "leaseRevision") {
+        if active.session_id != session_id
+            || active.lease_id != lease_id
+            || active.lease.revision != revision
+        {
             return HelperResponse::error(request, "LEASE_REVOKED", false);
         }
-        if lease.expired(now_ms) {
-            self.leases.remove(&key);
+        if active.lease.expired(now_ms) {
+            self.active = None;
             return HelperResponse::error(request, "LEASE_EXPIRED", false);
         }
+        let lease = &mut self.active.as_mut().expect("active lease checked").lease;
         if !lease.permits(
             required_string(request, "appId"),
             required_string(request, "windowId"),
@@ -221,18 +289,21 @@ where
         lease.quotas.operations -= 1;
         lease.quotas.snapshots -= 1;
         lease.last_activity_ms = now_ms;
-        platform_response(request, self.platform.snapshot(request, deadline_ms))
+        platform_response(
+            request,
+            self.platform.snapshot(request, deadline_ms, cancel),
+            cancel,
+        )
     }
 
     fn stop(&mut self, request: &HelperRequest) -> HelperResponse {
-        let key = (
-            request.session_id().to_owned(),
-            required_string(request, "leaseId").to_owned(),
-        );
-        let Some(lease) = self.leases.get(&key) else {
+        let Some(active) = self.active.as_ref() else {
             return HelperResponse::error(request, "LEASE_REVOKED", false);
         };
-        if lease.revision != required_integer(request, "leaseRevision") {
+        if active.session_id != request.session_id()
+            || active.lease_id != required_string(request, "leaseId")
+            || active.lease.revision != required_integer(request, "leaseRevision")
+        {
             return HelperResponse::error(request, "LEASE_REVOKED", false);
         }
         HelperResponse::ok(request, json!({"stopped":true}))
@@ -244,7 +315,13 @@ where
                 let Some(session_id) = control.string("sessionId") else {
                     return;
                 };
-                self.leases.retain(|(session, _), _| session != session_id);
+                if self
+                    .active
+                    .as_ref()
+                    .is_some_and(|active| active.session_id == session_id)
+                {
+                    self.active = None;
+                }
             }
             "lease.revoke" => {
                 let Some(session_id) = control.string("sessionId") else {
@@ -256,23 +333,29 @@ where
                 let Some(revision) = control.integer("leaseRevision") else {
                     return;
                 };
-                let key = (session_id.to_owned(), lease_id.to_owned());
-                if self
-                    .leases
-                    .get(&key)
-                    .is_some_and(|lease| lease.revision == revision)
-                {
-                    self.leases.remove(&key);
+                if self.active.as_ref().is_some_and(|active| {
+                    active.session_id == session_id
+                        && active.lease_id == lease_id
+                        && active.lease.revision == revision
+                }) {
+                    self.active = None;
                 }
             }
-            "parent.shutdown" => self.leases.clear(),
+            "parent.shutdown" => self.active = None,
             "request.cancel" => {}
             _ => {}
         }
     }
 }
 
-fn platform_response(request: &HelperRequest, result: PlatformResult) -> HelperResponse {
+fn platform_response(
+    request: &HelperRequest,
+    result: PlatformResult,
+    cancel: &CancellationToken,
+) -> HelperResponse {
+    if cancel.is_cancelled() {
+        return HelperResponse::error(request, "CANCELLED", false);
+    }
     match result {
         Ok(result) => HelperResponse::ok(request, result),
         Err(code) => HelperResponse::error(request, code, matches!(code, "BUSY" | "TIMEOUT")),
