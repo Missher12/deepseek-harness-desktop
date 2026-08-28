@@ -1,0 +1,1 @@
+{"protocolVersion":1,"messageKind":"request","sessionId":"lease-lifecycle-session","deadlineUnixMs":20000,"requestKind":"control.lease.release","requestId":"20000000-0000-4000-8000-000000000002","leaseId":"20000000-0000-4000-8000-000000000003","leaseRevision":4}

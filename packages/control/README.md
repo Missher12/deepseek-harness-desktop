@@ -10,4 +10,4 @@ This group owns the closed process protocol and the Browser Control and Computer
 | [`browser-control/`](browser-control/README.md) | Semantic browser Service Definition, owner-bound refs, and immutable bounds | service definition |
 | [`computer-control/`](computer-control/README.md) | Native control Service Definition, owner-bound refs, and fail-closed policy | service definition |
 
-Providers and Consumers in this group reuse the protocol types rather than redeclaring cross-process actions, results, or identifiers.
+Providers and Consumers in this group reuse the protocol types rather than redeclaring cross-process actions, results, identifiers, lease targets, or capability/surface unions. Both service seams expose internal lease acquisition for trusted Consumers; it is never a model tool.

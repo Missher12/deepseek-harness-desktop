@@ -1,6 +1,8 @@
 import { createRequire } from 'node:module'
 import {
   BRIDGE_REQUEST_KINDS,
+  CONTROL_LEASE_CAPABILITIES,
+  CONTROL_LEASE_SURFACE_KINDS,
   CONTROL_KINDS,
   ERROR_CODES,
   PROTOCOL_VERSION,
@@ -8,6 +10,8 @@ import {
 import {
   BRIDGE_REQUEST_FIELDS,
   CONTROL_FIELDS,
+  CONTROL_LEASE_QUOTA_FIELDS,
+  CONTROL_LEASE_TARGET_FIELDS,
   HELPER_REQUEST_FIELDS,
   RESULT_FIELDS,
 } from './fields.ts'
@@ -90,13 +94,17 @@ interface ProtocolManifest {
   readonly protocolVersion: number
   readonly limits: ProtocolLimits
   readonly bridgeRequestKinds: readonly unknown[]
+  readonly controlLeaseSurfaceKinds: readonly unknown[]
+  readonly controlLeaseCapabilities: readonly unknown[]
+  readonly controlLeaseTargetFields: readonly unknown[]
+  readonly controlLeaseQuotaFields: readonly unknown[]
   readonly helperRequestKinds: readonly unknown[]
   readonly controlKinds: readonly unknown[]
   readonly errorCodes: readonly unknown[]
-  readonly bridgeRequestFields: object
-  readonly helperRequestFields: object
-  readonly controlFields: object
-  readonly resultFields: object
+  readonly bridgeRequestFields: typeof BRIDGE_REQUEST_FIELDS
+  readonly helperRequestFields: typeof HELPER_REQUEST_FIELDS
+  readonly controlFields: typeof CONTROL_FIELDS
+  readonly resultFields: typeof RESULT_FIELDS
 }
 
 const require = createRequire(import.meta.url)
@@ -192,7 +200,9 @@ function parseManifest(value: unknown): ProtocolManifest {
   const root = objectValue(value, 'protocol manifest')
   const expectedRoot = [
     'protocolVersion', 'limits', 'bridgeRequestKinds', 'helperRequestKinds',
-    'controlKinds', 'errorCodes', 'bridgeRequestFields', 'helperRequestFields',
+    'controlLeaseSurfaceKinds', 'controlLeaseCapabilities', 'controlKinds',
+    'controlLeaseTargetFields', 'controlLeaseQuotaFields', 'errorCodes',
+    'bridgeRequestFields', 'helperRequestFields',
     'controlFields', 'resultFields',
   ]
   exactObjectKeys(root, expectedRoot, 'protocol manifest')
@@ -200,13 +210,23 @@ function parseManifest(value: unknown): ProtocolManifest {
     protocolVersion: own(root, 'protocolVersion') as number,
     limits: limitsValue(own(root, 'limits')),
     bridgeRequestKinds: stringArray(own(root, 'bridgeRequestKinds'), 'bridgeRequestKinds'),
+    controlLeaseSurfaceKinds: stringArray(own(root, 'controlLeaseSurfaceKinds'), 'controlLeaseSurfaceKinds'),
+    controlLeaseCapabilities: stringArray(own(root, 'controlLeaseCapabilities'), 'controlLeaseCapabilities'),
+    controlLeaseTargetFields: stringArray(own(root, 'controlLeaseTargetFields'), 'controlLeaseTargetFields'),
+    controlLeaseQuotaFields: stringArray(own(root, 'controlLeaseQuotaFields'), 'controlLeaseQuotaFields'),
     helperRequestKinds: stringArray(own(root, 'helperRequestKinds'), 'helperRequestKinds'),
     controlKinds: stringArray(own(root, 'controlKinds'), 'controlKinds'),
     errorCodes: stringArray(own(root, 'errorCodes'), 'errorCodes'),
-    bridgeRequestFields: fieldSection(own(root, 'bridgeRequestFields'), 'bridgeRequestFields'),
-    helperRequestFields: fieldSection(own(root, 'helperRequestFields'), 'helperRequestFields'),
-    controlFields: fieldSection(own(root, 'controlFields'), 'controlFields'),
-    resultFields: fieldSection(own(root, 'resultFields'), 'resultFields'),
+    bridgeRequestFields: fieldSection(
+      own(root, 'bridgeRequestFields'),
+      'bridgeRequestFields',
+    ) as typeof BRIDGE_REQUEST_FIELDS,
+    helperRequestFields: fieldSection(
+      own(root, 'helperRequestFields'),
+      'helperRequestFields',
+    ) as typeof HELPER_REQUEST_FIELDS,
+    controlFields: fieldSection(own(root, 'controlFields'), 'controlFields') as typeof CONTROL_FIELDS,
+    resultFields: fieldSection(own(root, 'resultFields'), 'resultFields') as typeof RESULT_FIELDS,
   }
   return Object.freeze(manifest)
 }
@@ -214,6 +234,10 @@ function parseManifest(value: unknown): ProtocolManifest {
 function assertParsedManifest(manifest: ProtocolManifest): void {
   if (manifest.protocolVersion !== PROTOCOL_VERSION) throw new Error('protocol version mismatch')
   if (!same(manifest.bridgeRequestKinds as readonly string[], BRIDGE_REQUEST_KINDS)) throw new Error('bridge roster mismatch')
+  if (!same(manifest.controlLeaseSurfaceKinds as readonly string[], CONTROL_LEASE_SURFACE_KINDS)) throw new Error('lease surface roster mismatch')
+  if (!same(manifest.controlLeaseCapabilities as readonly string[], CONTROL_LEASE_CAPABILITIES)) throw new Error('lease capability roster mismatch')
+  if (!same(manifest.controlLeaseTargetFields as readonly string[], CONTROL_LEASE_TARGET_FIELDS)) throw new Error('lease target field mismatch')
+  if (!same(manifest.controlLeaseQuotaFields as readonly string[], CONTROL_LEASE_QUOTA_FIELDS)) throw new Error('lease quota field mismatch')
   if (!same(manifest.helperRequestKinds as readonly string[], HELPER_REQUEST_KINDS)) throw new Error('helper roster mismatch')
   if (!same(manifest.controlKinds as readonly string[], CONTROL_KINDS)) throw new Error('control roster mismatch')
   if (!same(manifest.errorCodes as readonly string[], ERROR_CODES)) throw new Error('error roster mismatch')

@@ -1,20 +1,20 @@
 import type {
   BridgeRequest,
   BridgeRequestKind,
+  ControlLeaseSurfaceKind,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
-import { BRIDGE_REQUEST_KINDS } from '@deepseek-ai/dsh-desktop-control-protocol'
+import {
+  BRIDGE_REQUEST_KINDS,
+  CONTROL_LEASE_SURFACE_KINDS,
+} from '@deepseek-ai/dsh-desktop-control-protocol'
 
 /** Closed policy outcomes consumed by Desktop adapters. */
 export const CONTROL_POLICY_RESULTS = Object.freeze(['ALLOW', 'APPROVAL_REQUIRED', 'DENY'] as const)
 /** One closed Desktop action-policy outcome. */
 export type ControlPolicyResult = typeof CONTROL_POLICY_RESULTS[number]
 
-const CONTROL_SURFACE_CLASSES = Object.freeze([
-  'browser-ephemeral', 'browser-human-persistent', 'native-application',
-] as const)
-
 /** Authoritative surface class; model and page content never choose this value. */
-export type ControlSurfaceClass = typeof CONTROL_SURFACE_CLASSES[number]
+export type ControlSurfaceClass = ControlLeaseSurfaceKind
 
 /**
  * Authoritative sensitivity class produced by an adapter from native/DOM semantics.
@@ -68,12 +68,15 @@ const PERSISTENT_BROWSER_MUTATIONS = new Set<BridgeRequestKind>([
 ])
 
 const BRIDGE_REQUEST_KIND_SET: ReadonlySet<string> = new Set(BRIDGE_REQUEST_KINDS)
-const CONTROL_SURFACE_CLASS_SET: ReadonlySet<string> = new Set(CONTROL_SURFACE_CLASSES)
+const CONTROL_SURFACE_CLASS_SET: ReadonlySet<string> = new Set(CONTROL_LEASE_SURFACE_KINDS)
 const CONTROL_TARGET_SENSITIVITY_SET: ReadonlySet<string> = new Set(CONTROL_TARGET_SENSITIVITIES)
 const CONTROL_ACTION_EFFECT_SET: ReadonlySet<string> = new Set(CONTROL_ACTION_EFFECTS)
 
 function surfaceMatches(kind: BridgeRequestKind, surface: ControlSurfaceClass): boolean {
   switch (kind) {
+    case 'control.lease.acquire':
+    case 'control.lease.release':
+      return false
     case 'desktop.status':
       return true
     case 'browser.snapshot':

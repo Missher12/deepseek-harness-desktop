@@ -13,6 +13,9 @@ import {
   type ComputerSnapshotRequest,
   type ComputerSnapshotResult,
   type ComputerStatusResult,
+  type ControlLeaseAcquireRequest,
+  type ControlLeaseAcquireResult,
+  type ControlLeaseSurfaceKind,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
 import ComputerControl, {
   ComputerControlError,
@@ -30,6 +33,7 @@ import ComputerControl, {
   type ComputerReferenceBinding,
   type ComputerSnapshot,
   type ControlPolicyInput,
+  type ControlSurfaceClass,
   type ControlTargetSensitivity,
 } from '../src/index.ts'
 
@@ -75,6 +79,22 @@ function inheritedClickRequest(): unknown {
 class StubComputerControl extends ComputerControl {
   stopped: readonly SessionId[] = []
 
+  async acquireLease(
+    request: ControlLeaseAcquireRequest,
+    signal: AbortSignal,
+  ): Promise<ControlLeaseAcquireResult> {
+    signal.throwIfAborted()
+    return {
+      leaseId: LEASE,
+      leaseRevision: 1,
+      surfaceKind: request.surfaceKind,
+      targets: request.targets,
+      capabilities: request.capabilities,
+      idleExpiresAfterMs: 300_000,
+      hardExpiresAfterMs: 1_200_000,
+    }
+  }
+
   async status(): Promise<ComputerStatusResult> {
     return { viewing: 'granted', assistive: 'granted', supported: true }
   }
@@ -107,6 +127,18 @@ describe('ComputerControl service seam', () => {
     await ctx.plugin(StubComputerControl)
 
     const provider = ctx.computerControl
+    const acquired = await provider.acquireLease({
+      protocolVersion: 1,
+      messageKind: 'request',
+      requestKind: 'control.lease.acquire',
+      requestId: REQUEST,
+      sessionId: SESSION,
+      deadlineUnixMs: Date.now() + 1_000,
+      surfaceKind: 'native-application',
+      targets: [{ appId: 'com.example.editor', windowIds: ['window-1'] }],
+      capabilities: ['observe'],
+    }, new AbortController().signal)
+    expect(acquired.surfaceKind).toBe('native-application')
     await expect(provider.status()).resolves.toEqual({ viewing: 'granted', assistive: 'granted', supported: true })
     await provider.stop(SESSION)
     expect((ctx.computerControl as StubComputerControl).stopped).toEqual([SESSION])
@@ -123,6 +155,9 @@ describe('ComputerControl service seam', () => {
     expectTypeOf<ComputerClickRequest>().toEqualTypeOf<ProtocolComputerClickRequest>()
     expectTypeOf<ComputerControlStatus>().toEqualTypeOf<ComputerStatusResult>()
     expectTypeOf<ComputerSnapshot>().toEqualTypeOf<ComputerSnapshotResult>()
+    expectTypeOf<Parameters<ComputerControl['acquireLease']>[0]>().toEqualTypeOf<ControlLeaseAcquireRequest>()
+    expectTypeOf<Awaited<ReturnType<ComputerControl['acquireLease']>>>().toEqualTypeOf<ControlLeaseAcquireResult>()
+    expectTypeOf<ControlSurfaceClass>().toEqualTypeOf<ControlLeaseSurfaceKind>()
   })
 
   it('keeps act on the exact eight-action computer roster', () => {

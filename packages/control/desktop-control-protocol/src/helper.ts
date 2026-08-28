@@ -10,6 +10,8 @@ import type {
   StopResult,
   WaitResult,
   DesktopControlError,
+  ControlLeaseCapability,
+  ControlLeaseTarget,
 } from './bridge.ts'
 
 /** Request kinds accepted by the native helper. */
@@ -43,6 +45,7 @@ interface HelperTargetFields extends HelperLeaseFields {
 
 /** Electron-authored action quotas installed with one lease. */
 export interface ControlLeaseQuotaSnapshot {
+  readonly operations: number
   readonly snapshots: number
   readonly pointerActions: number
   readonly keyActions: number
@@ -80,9 +83,8 @@ export type HelperStopRequest = HelperRequestBase<'stop'> & HelperLeaseFields
 /** Install one Electron-authored lease snapshot. */
 export type HelperLeaseInstallRequest = HelperRequestBase<'lease.install'> & HelperLeaseFields & {
   readonly agentId: string
-  readonly apps: readonly string[]
-  readonly windows: readonly string[]
-  readonly capabilities: readonly ('observe' | 'pointer' | 'keyboard')[]
+  readonly targets: readonly ControlLeaseTarget[]
+  readonly capabilities: readonly ControlLeaseCapability[]
   readonly quotas: ControlLeaseQuotaSnapshot
   readonly idleExpiresAfterMs: number
   readonly hardExpiresAfterMs: number

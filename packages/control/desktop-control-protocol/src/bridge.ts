@@ -6,6 +6,7 @@ export const PROTOCOL_VERSION = 1 as const
 
 /** Request kinds accepted from the Harness child. */
 export const BRIDGE_REQUEST_KINDS = Object.freeze([
+  'control.lease.acquire', 'control.lease.release',
   'desktop.status',
   'browser.snapshot', 'browser.navigate', 'browser.click', 'browser.type',
   'browser.key', 'browser.select', 'browser.scroll', 'browser.wait',
@@ -13,6 +14,16 @@ export const BRIDGE_REQUEST_KINDS = Object.freeze([
   'computer.status', 'computer.list', 'computer.snapshot', 'computer.focus',
   'computer.click', 'computer.double-click', 'computer.drag', 'computer.type',
   'computer.key', 'computer.scroll', 'computer.wait', 'computer.stop',
+] as const)
+
+/** Surface classes that may be bound by one Electron-authored control lease. */
+export const CONTROL_LEASE_SURFACE_KINDS = Object.freeze([
+  'browser-ephemeral', 'browser-human-persistent', 'native-application',
+] as const)
+
+/** Capabilities that may be narrowed into one Electron-authored control lease. */
+export const CONTROL_LEASE_CAPABILITIES = Object.freeze([
+  'observe', 'pointer', 'keyboard',
 ] as const)
 
 /** Control messages accepted by Electron or the helper. */
@@ -35,6 +46,10 @@ export type BridgeRequestKind = typeof BRIDGE_REQUEST_KINDS[number]
 export type ControlKind = typeof CONTROL_KINDS[number]
 /** One protocol error code. */
 export type DesktopControlErrorCode = typeof ERROR_CODES[number]
+/** One closed Desktop control surface kind. */
+export type ControlLeaseSurfaceKind = typeof CONTROL_LEASE_SURFACE_KINDS[number]
+/** One closed Desktop control capability. */
+export type ControlLeaseCapability = typeof CONTROL_LEASE_CAPABILITIES[number]
 
 /** Modifier keys accepted by the closed keyboard actions. */
 export type KeyModifier = 'Alt' | 'Control' | 'Meta' | 'Shift'
@@ -69,6 +84,22 @@ interface TargetFields extends LeaseFields {
   readonly windowId: string
   readonly snapshotRevision: number
 }
+
+/** One pair-preserving application/window subset in a native control lease. */
+export interface ControlLeaseTarget {
+  readonly appId: string
+  readonly windowIds: readonly string[]
+}
+
+/** Internal trusted-provider request for Electron to authorize and mint one lease. */
+export type ControlLeaseAcquireRequest = BridgeRequestBase<'control.lease.acquire'> & {
+  readonly surfaceKind: ControlLeaseSurfaceKind
+  readonly targets: readonly ControlLeaseTarget[]
+  readonly capabilities: readonly ControlLeaseCapability[]
+}
+
+/** Internal trusted-provider request to await full cleanup of one lease revision. */
+export type ControlLeaseReleaseRequest = BridgeRequestBase<'control.lease.release'> & LeaseFields
 
 /** Request the availability of Desktop control capabilities. */
 export type DesktopStatusRequest = BridgeRequestBase<'desktop.status'>
@@ -126,6 +157,7 @@ export type ComputerStopRequest = BridgeRequestBase<'computer.stop'>
 
 /** Closed request union accepted from the Harness child. */
 export type BridgeRequest =
+  | ControlLeaseAcquireRequest | ControlLeaseReleaseRequest
   | DesktopStatusRequest | BrowserSnapshotRequest | BrowserNavigateRequest
   | BrowserClickRequest | BrowserTypeRequest | BrowserKeyRequest
   | BrowserSelectRequest | BrowserScrollRequest | BrowserWaitRequest
@@ -196,6 +228,22 @@ export interface StopResult {
   readonly stopped: true
 }
 
+/** Immutable effective lease descriptor returned after Electron-owned authorization. */
+export interface ControlLeaseAcquireResult {
+  readonly leaseId: ControlLeaseId
+  readonly leaseRevision: number
+  readonly surfaceKind: ControlLeaseSurfaceKind
+  readonly targets: readonly ControlLeaseTarget[]
+  readonly capabilities: readonly ControlLeaseCapability[]
+  readonly idleExpiresAfterMs: number
+  readonly hardExpiresAfterMs: number
+}
+
+/** Successful acknowledgement after complete lease cleanup. */
+export interface ControlLeaseReleaseResult {
+  readonly released: true
+}
+
 /** Native-control support and current OS permission states. */
 export interface ComputerStatusResult {
   readonly viewing: 'granted' | 'denied' | 'unknown'
@@ -220,6 +268,8 @@ export interface ComputerSnapshotResult {
 
 /** Closed result associated with each request discriminant. */
 export interface DesktopControlResultMap {
+  readonly 'control.lease.acquire': ControlLeaseAcquireResult
+  readonly 'control.lease.release': ControlLeaseReleaseResult
   readonly 'desktop.status': DesktopStatusResult
   readonly 'browser.snapshot': BrowserSnapshotResult
   readonly 'browser.navigate': BrowserNavigationResult

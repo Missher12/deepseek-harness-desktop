@@ -29,6 +29,7 @@
   "files": [
     "lib/index.js",
     "lib/invariant.js",
+    "lib/manifest-*.js",
     "protocol-v1.json",
     "lib/types/**/*.d.ts"
   ],

@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
 import {
   BRIDGE_REQUEST_KINDS,
+  CONTROL_LEASE_CAPABILITIES,
+  CONTROL_LEASE_SURFACE_KINDS,
   CONTROL_KINDS,
   ERROR_CODES,
   type BridgeRequest,
@@ -12,6 +14,7 @@ import {
   type DesktopControlResultMap,
   type GrantableApplication,
   type PngMetadata,
+  type ControlLeaseSurfaceKind,
 } from './bridge.ts'
 import {
   BrowserRef,
@@ -31,6 +34,8 @@ import {
 import {
   BRIDGE_REQUEST_FIELDS,
   CONTROL_FIELDS,
+  CONTROL_LEASE_QUOTA_FIELDS,
+  CONTROL_LEASE_TARGET_FIELDS,
   HELPER_REQUEST_FIELDS,
   RESULT_FIELDS,
 } from './fields.ts'
@@ -47,6 +52,8 @@ const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const MODIFIERS = new Set(['Alt', 'Control', 'Meta', 'Shift'])
 const BUTTONS = new Set(['left', 'middle', 'right'])
 const PERMISSION_STATES = new Set(['granted', 'denied', 'unknown'])
+const LEASE_SURFACES: ReadonlySet<string> = new Set(CONTROL_LEASE_SURFACE_KINDS)
+const LEASE_CAPABILITIES: ReadonlySet<string> = new Set(CONTROL_LEASE_CAPABILITIES)
 
 /** Every closed JSON message accepted by protocol v1. */
 export type DesktopControlMessage =
@@ -139,6 +146,56 @@ function literal<T extends string>(value: unknown, allowed: ReadonlySet<string>,
 function stringList(value: unknown, label: string, maximum = PROTOCOL_LIMITS.maxStringListItems): readonly string[] {
   if (!Array.isArray(value) || value.length > maximum) fail(`${label} must be a bounded array`)
   return value.map((item, index) => stringValue(item, `${label}[${index}]`, PROTOCOL_LIMITS.stringListItemBytes))
+}
+
+function controlLeaseCapabilities(value: unknown): void {
+  if (!Array.isArray(value) || value.length === 0
+    || value.length > PROTOCOL_LIMITS.maxLeaseCapabilities) {
+    fail('capabilities must be a non-empty bounded array')
+  }
+  const seen = new Set<string>()
+  for (const item of value) {
+    const capability = literal<string>(item, LEASE_CAPABILITIES, 'capability')
+    if (seen.has(capability)) fail('capabilities must be unique')
+    seen.add(capability)
+  }
+}
+
+function controlLeaseTargets(value: unknown, requireNativeTargets: boolean): void {
+  if (!Array.isArray(value) || value.length > PROTOCOL_LIMITS.maxGrantableApps) {
+    fail('targets must be a bounded array')
+  }
+  if (requireNativeTargets && value.length === 0) fail('native lease targets must be non-empty')
+  if (!requireNativeTargets && value.length !== 0) fail('browser lease targets must be empty')
+  const appIds = new Set<string>()
+  const windowIds = new Set<string>()
+  value.forEach((item, appIndex) => {
+    const target = asObject(item, `targets[${appIndex}]`)
+    keys(target, CONTROL_LEASE_TARGET_FIELDS)
+    const appId = stringValue(at(target, 'appId'), `targets[${appIndex}].appId`, PROTOCOL_LIMITS.appIdBytes)
+    if (appIds.has(appId)) fail('target appId values must be unique')
+    appIds.add(appId)
+    const windows = at(target, 'windowIds')
+    if (!Array.isArray(windows) || windows.length === 0) {
+      fail(`targets[${appIndex}].windowIds must be a non-empty bounded array`)
+    }
+    if (windows.length > PROTOCOL_LIMITS.maxGrantableWindowsPerApp) {
+      fail(`targets[${appIndex}].windowIds must be a bounded array`)
+    }
+    windows.forEach((item, windowIndex) => {
+      const windowId = stringValue(
+        item,
+        `targets[${appIndex}].windowIds[${windowIndex}]`,
+        PROTOCOL_LIMITS.windowIdBytes,
+      )
+      if (windowIds.has(windowId)) fail('target windowId values must be unique')
+      windowIds.add(windowId)
+    })
+  })
+}
+
+function controlLeaseSurface(value: unknown): ControlLeaseSurfaceKind {
+  return literal<ControlLeaseSurfaceKind>(value, LEASE_SURFACES, 'surfaceKind')
 }
 
 function sessionId(value: unknown): SessionId {
@@ -237,6 +294,16 @@ function browserLease(value: object): void {
 function validateBridgeRequest(value: object, kind: typeof BRIDGE_REQUEST_KINDS[number]): BridgeRequest {
   requestBase(value, true)
   switch (kind) {
+    case 'control.lease.acquire': {
+      bridgeKeys(value, kind)
+      const surfaceKind = controlLeaseSurface(at(value, 'surfaceKind'))
+      controlLeaseTargets(at(value, 'targets'), surfaceKind === 'native-application')
+      controlLeaseCapabilities(at(value, 'capabilities'))
+      break
+    }
+    case 'control.lease.release':
+      bridgeKeys(value, kind); leaseFields(value)
+      break
     case 'desktop.status': case 'browser.stop': case 'computer.status': case 'computer.list': case 'computer.stop':
       bridgeKeys(value, kind)
       break
@@ -370,18 +437,11 @@ function validateHelperRequest(value: object, kind: typeof HELPER_REQUEST_KINDS[
     case 'lease.install': {
       helperKeys(value, kind)
       leaseFields(value); stringValue(at(value, 'agentId'), 'agentId', PROTOCOL_LIMITS.agentIdBytes)
-      stringList(at(value, 'apps'), 'apps'); stringList(at(value, 'windows'), 'windows')
-      const capabilities = at(value, 'capabilities')
-      if (!Array.isArray(capabilities) || capabilities.length > PROTOCOL_LIMITS.maxLeaseCapabilities) fail('capabilities must be a bounded array')
-      const capabilitySet = new Set<string>()
-      for (const item of capabilities) {
-        const capability = literal<string>(item, new Set(['observe', 'pointer', 'keyboard']), 'capability')
-        if (capabilitySet.has(capability)) fail('capabilities must be unique')
-        capabilitySet.add(capability)
-      }
+      controlLeaseTargets(at(value, 'targets'), true)
+      controlLeaseCapabilities(at(value, 'capabilities'))
       const quotas = asObject(at(value, 'quotas'), 'quotas')
-      keys(quotas, ['snapshots', 'pointerActions', 'keyActions', 'textBytes'])
-      for (const field of ['snapshots', 'pointerActions', 'keyActions', 'textBytes']) {
+      keys(quotas, CONTROL_LEASE_QUOTA_FIELDS)
+      for (const field of CONTROL_LEASE_QUOTA_FIELDS) {
         safeInteger(at(quotas, field), field, PROTOCOL_LIMITS.minLeaseQuota, PROTOCOL_LIMITS.maxLeaseQuota)
       }
       safeInteger(at(value, 'idleExpiresAfterMs'), 'idleExpiresAfterMs', PROTOCOL_LIMITS.minLeaseDurationMs, PROTOCOL_LIMITS.maxIdleExpiresAfterMs)
@@ -473,6 +533,18 @@ function statusResult(value: object, kind: keyof DesktopControlResultMap | keyof
 function validateResult(value: unknown, kind: keyof DesktopControlResultMap | keyof HelperResultMap): void {
   const result = asObject(value, 'result')
   switch (kind) {
+    case 'control.lease.acquire': {
+      resultKeys(result, kind)
+      leaseFields(result)
+      const surfaceKind = controlLeaseSurface(at(result, 'surfaceKind'))
+      controlLeaseTargets(at(result, 'targets'), surfaceKind === 'native-application')
+      controlLeaseCapabilities(at(result, 'capabilities'))
+      safeInteger(at(result, 'idleExpiresAfterMs'), 'idleExpiresAfterMs', PROTOCOL_LIMITS.minLeaseDurationMs, PROTOCOL_LIMITS.maxIdleExpiresAfterMs)
+      safeInteger(at(result, 'hardExpiresAfterMs'), 'hardExpiresAfterMs', PROTOCOL_LIMITS.minLeaseDurationMs, PROTOCOL_LIMITS.maxHardExpiresAfterMs)
+      break
+    }
+    case 'control.lease.release':
+      resultKeys(result, kind); if (at(result, 'released') !== true) fail('released must be true'); break
     case 'desktop.status':
       resultKeys(result, kind)
       booleanValue(at(result, 'browserSupported'), 'browserSupported'); booleanValue(at(result, 'computerSupported'), 'computerSupported'); break

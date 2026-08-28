@@ -61,6 +61,10 @@ const target = { ...lease, appId: 'app-1', windowId: 'window-1', snapshotRevisio
 describe('closed request field matrices', () => {
   it('round-trips every bridge request kind', () => {
     const values = [
+      bridge('control.lease.acquire', {
+        surfaceKind: 'browser-ephemeral', targets: [], capabilities: ['observe'],
+      }),
+      bridge('control.lease.release', lease),
       bridge('desktop.status'),
       bridge('browser.snapshot', { ...lease, includeImage: false }),
       bridge('browser.navigate', { ...lease, url: 'https://example.test/' }),
@@ -102,10 +106,9 @@ describe('closed request field matrices', () => {
       helper('lease.install', {
         ...lease,
         agentId: 'agent-1',
-        apps: ['app-1'],
-        windows: ['window-1'],
+        targets: [{ appId: 'app-1', windowIds: ['window-1'] }],
         capabilities: ['observe', 'pointer', 'keyboard'],
-        quotas: { snapshots: 1, pointerActions: 2, keyActions: 3, textBytes: 4 },
+        quotas: { operations: 4, snapshots: 1, pointerActions: 2, keyActions: 3, textBytes: 4 },
         idleExpiresAfterMs: 1,
         hardExpiresAfterMs: 1,
       }),
@@ -136,6 +139,11 @@ describe('closed response result matrices', () => {
 
   it('round-trips every successful result kind', () => {
     const results = new Map<string, object>([
+      ['control.lease.acquire', {
+        leaseId, leaseRevision: 1, surfaceKind: 'browser-ephemeral', targets: [],
+        capabilities: ['observe'], idleExpiresAfterMs: 1, hardExpiresAfterMs: 1,
+      }],
+      ['control.lease.release', { released: true }],
       ['desktop.status', { browserSupported: true, computerSupported: false }],
       ['browser.snapshot', browserSnapshot],
       ['browser.navigate', { url: 'https://example.test/', snapshotRevision: 1 }],
@@ -200,8 +208,8 @@ describe('hostile syntax and cross-field combinations', () => {
     ['duplicate capability', ['observe', 'observe'], /unique/i],
   ])('rejects lease installation with %s', (_name, capabilities, message) => {
     expect(() => encodeJsonFrame(helper('lease.install', {
-      ...lease, agentId: 'a', apps: [], windows: [], capabilities,
-      quotas: { snapshots: 1, pointerActions: 1, keyActions: 1, textBytes: 1 },
+      ...lease, agentId: 'a', targets: [{ appId: 'app-1', windowIds: ['window-1'] }], capabilities,
+      quotas: { operations: 1, snapshots: 1, pointerActions: 1, keyActions: 1, textBytes: 1 },
       idleExpiresAfterMs: 1, hardExpiresAfterMs: 1,
     }))).toThrow(message)
   })

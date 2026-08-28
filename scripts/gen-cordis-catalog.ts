@@ -303,6 +303,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   BrowserActionResult: 'desktop-control.md',
   BrowserSnapshot: 'desktop-control.md',
   BrowserSnapshotRequest: 'desktop-control.md',
+  ControlLeaseAcquireRequest: 'desktop-control.md',
+  ControlLeaseAcquireResult: 'desktop-control.md',
   ComputerActionRequest: 'desktop-control.md',
   ComputerActionResult: 'desktop-control.md',
   ComputerControlStatus: 'desktop-control.md',

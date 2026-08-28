@@ -56,6 +56,8 @@
     "maxHelperTimeoutMs": 30000
   },
   "bridgeRequestKinds": [
+    "control.lease.acquire",
+    "control.lease.release",
     "desktop.status",
     "browser.snapshot",
     "browser.navigate",
@@ -82,6 +84,18 @@
     "computer.wait",
     "computer.stop"
   ],
+  "controlLeaseSurfaceKinds": [
+    "browser-ephemeral",
+    "browser-human-persistent",
+    "native-application"
+  ],
+  "controlLeaseCapabilities": [
+    "observe",
+    "pointer",
+    "keyboard"
+  ],
+  "controlLeaseTargetFields": ["appId", "windowIds"],
+  "controlLeaseQuotaFields": ["operations", "snapshots", "pointerActions", "keyActions", "textBytes"],
   "helperRequestKinds": [
     "status",
     "list",
@@ -124,6 +138,8 @@
     "INTERNAL"
   ],
   "bridgeRequestFields": {
+    "control.lease.acquire": ["surfaceKind", "targets", "capabilities"],
+    "control.lease.release": ["leaseId", "leaseRevision"],
     "desktop.status": [],
     "browser.snapshot": ["leaseId", "leaseRevision", "includeImage"],
     "browser.navigate": ["leaseId", "leaseRevision", "url"],
@@ -163,7 +179,7 @@
     "scroll": ["leaseId", "leaseRevision", "appId", "windowId", "snapshotRevision", "ref", "x", "y", "deltaX", "deltaY"],
     "wait": ["leaseId", "leaseRevision", "appId", "windowId", "snapshotRevision", "durationMs"],
     "stop": ["leaseId", "leaseRevision"],
-    "lease.install": ["leaseId", "leaseRevision", "agentId", "apps", "windows", "capabilities", "quotas", "idleExpiresAfterMs", "hardExpiresAfterMs"],
+    "lease.install": ["leaseId", "leaseRevision", "agentId", "targets", "capabilities", "quotas", "idleExpiresAfterMs", "hardExpiresAfterMs"],
     "input.release": ["keys", "buttons"]
   },
   "controlFields": {
@@ -173,6 +189,8 @@
     "parent.shutdown": []
   },
   "resultFields": {
+    "control.lease.acquire": ["leaseId", "leaseRevision", "surfaceKind", "targets", "capabilities", "idleExpiresAfterMs", "hardExpiresAfterMs"],
+    "control.lease.release": ["released"],
     "desktop.status": ["browserSupported", "computerSupported"],
     "browser.snapshot": ["surfaceId", "url", "title", "snapshotRevision", "semanticText", "refs", "image"],
     "browser.navigate": ["url", "snapshotRevision"],

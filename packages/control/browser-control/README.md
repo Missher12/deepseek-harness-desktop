@@ -6,6 +6,7 @@ The Browser Control Service Definition registers one `ctx.browserControl` provid
 
 ## Contract
 
+- `acquireLease(request, signal)` is an internal Consumer/provider operation that forwards the protocol-owned desired surface, targets, and capabilities to Electron authority. It is not a model tool and cannot authorize itself.
 - `snapshot(request, signal)` returns bounded semantics and an optional image descriptor for the current surface.
 - `act(request, signal)` accepts only the protocol's navigation, semantic-reference, key, selection, scroll, and wait actions. Browser coordinate actions do not exist.
 - `revokeSession(sessionId)` awaits teardown for exactly one session; implementations own exclusive surface lifetime and reference invalidation.
@@ -13,6 +14,8 @@ The Browser Control Service Definition registers one `ctx.browserControl` provid
 - `freezeBrowserSnapshot()` accepts only primitive own-data fields, rebuilds detached protocol output, and deeply freezes it while applying semantic collection and UTF-8 bounds. Optional PNG metadata is reconstructed from exactly its five protocol fields after brand, hash, byte, and dimension validation. `assertBrowserActionCount()` applies the service's 64-action per-turn ceiling; Electron-authored lease quotas may be narrower.
 
 Page text remains untrusted and cannot authorize actions. This seam does not claim that accessibility semantics can prove hostile page JavaScript has no external side effects. The Electron adapter owns the surface, debugger, URL/redirect validation, lease, and native approval challenge.
+
+Later tool Consumers derive the official session and populate every request id, deadline, lease id/revision, and other transport field themselves. Model schemas must not expose lease acquisition, session or lease metadata, approval, quota, clock, or action-digest fields.
 
 ## Model Experience
 

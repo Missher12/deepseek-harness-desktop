@@ -6,7 +6,9 @@
 
 ## Protocol v1
 
-[`protocol-v1.json`](protocol-v1.json) 是 TypeScript 和本地实现共用的机器可读清单、字段矩阵与限制真源。如果 TypeScript 常量发生偏离，导入时的 `assertProtocolManifest()` 就会失败。三类请求都是封闭的：25 种 bridge、14 种 helper 和 4 种 control。响应会回显精确的请求种类，并与显式结果类型或 17 种错误码之一配对；不存在通用结果逃逸口。
+[`protocol-v1.json`](protocol-v1.json) 是 TypeScript 和本地实现共用的机器可读清单、字段矩阵、嵌套 lease 字段与限制真源。如果 TypeScript 常量发生偏离，导入时的 `assertProtocolManifest()` 就会失败。三类请求都是封闭的：27 种 bridge、14 种 helper 和 4 种 control。响应会回显精确的请求种类，并与显式结果类型或 17 种错误码之一配对；不存在通用结果逃逸口。
+
+Bridge 清单包含仅供内部使用的 `control.lease.acquire` 与 `control.lease.release`。Acquire 携带一种封闭 surface kind、非空且不重复的 capability 子集，以及保持 `{ appId, windowIds[] }` 配对的目标。浏览器目标必须为空；原生 lease 至少包含一个唯一应用，且每个应用至少包含一个唯一窗口。结果只公开生效的 lease id／revision、surface、targets、capabilities 与相对 idle／hard 时长。Release 只返回 `{ released: true }`。请求和结果都不能携带审批声明、quota、action digest 或 clock 值。
 
 严格 decoder 会在整份 JSON 解析可以套用 last-wins 行为前拒绝重复 key。它也拒绝危险 key、未知或缺失字段、未知判别值、错误版本、畸形标识符、非有限或超范围数字，以及超过 UTF-8 限制的值。解码后的 JSON 与输入分离并深度冻结。
 
@@ -20,7 +22,7 @@
 
 `RequestId`、`ControlLeaseId` 和 `PngTransferId` 是规范的小写 UUID；`BrowserRef` 和 `ComputerRef` 使用不同固定前缀与 32 位小写十六进制数字。本包从 `@deepseek-ai/dsh-session/types` 导入并重新导出官方 `SessionId`；wire 校验将其 UTF-8 表示限制为 128 字节，但不改变所有方定义的字符集。
 
-Bridge deadline 保持 wall-clock 值，便于 Electron 缩短并转换；`assertBridgeDeadline(request, nowUnixMs)` 执行由调用方提供的当前时间检查与 30 秒上限。Helper 请求则携带 1 至 30,000 之间的 `timeoutMs`。有状态请求关联、重复请求 tombstone、取消与子进程 generation 属于 Host bridge，而不是这个无状态 codec。[封闭协议 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-28-closed-desktop-control-protocol.zh.md) 记录了该所有权决策。
+Bridge deadline 保持 wall-clock 值，便于 Electron 缩短并转换；`assertBridgeDeadline(request, nowUnixMs)` 执行由调用方提供的当前时间检查与 30 秒上限。Helper 请求则携带 1 至 30,000 之间的 `timeoutMs`。`lease.install` 复用相同的配对 targets 与 capability 类型，并增加 Electron 编写的总 `operations`、snapshot、pointer action、key action 与 text byte quota；`agentId` 只用于展示，绝不是身份。有状态请求关联、重复请求 tombstone、取消与子进程 generation 属于 Host bridge，而不是这个无状态 codec。原始 acquire／release fixture 与既有 status、screenshot fixture 一起，作为后续 Rust helper 的逐字节一致性输入。[封闭协议 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-28-closed-desktop-control-protocol.zh.md) 记录了该所有权决策。
 
 ## Model Experience
 

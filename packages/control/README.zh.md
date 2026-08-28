@@ -10,4 +10,4 @@
 | [`browser-control/`](browser-control/README.zh.md) | 语义浏览器 Service Definition、所有者绑定 ref 与不可变上限 | Service Definition |
 | [`computer-control/`](computer-control/README.zh.md) | 原生控制 Service Definition、所有者绑定 ref 与遇疑即拒策略 | Service Definition |
 
-本组的提供方与 Consumer 复用这些协议类型，不重新声明跨进程操作、结果或标识符。
+本组的提供方与 Consumer 复用这些协议类型，不重新声明跨进程操作、结果、标识符、lease target 或 capability／surface 联合。两条服务 seam 都向受信 Consumer 提供内部 lease acquire；它绝不是模型工具。

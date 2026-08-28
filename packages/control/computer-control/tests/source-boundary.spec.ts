@@ -26,6 +26,9 @@ const PROTOCOL_DECLARATIONS = [
   'HelperSnapshotRequest', 'HelperStatusRequest', 'HelperStopRequest',
   'HelperTypeRequest', 'HelperWaitRequest', 'DecodedDesktopControlEnvelope',
   'DecodedPngFrame', 'DesktopControlMessage',
+  'ControlLeaseAcquireRequest', 'ControlLeaseAcquireResult',
+  'ControlLeaseCapability', 'ControlLeaseReleaseRequest',
+  'ControlLeaseReleaseResult', 'ControlLeaseSurfaceKind', 'ControlLeaseTarget',
 ] as const
 
 async function readSourceTree(directory = new URL('../src/', import.meta.url)): Promise<string> {
@@ -58,6 +61,8 @@ describe('computer-control source boundary', () => {
     expect(source).toContain('KeyModifier')
     expect(source).toContain('PngMetadata')
     expect(source).toContain('PointerButton')
+    expect(source).toContain('ControlLeaseAcquireRequest')
+    expect(source).toContain('ControlLeaseAcquireResult')
     expect(source).not.toMatch(copiedDeclaration)
     expect(source).not.toMatch(/\b(?:payload|schema|body)\??\s*:\s*(?:any|unknown)\b/)
     expect(source).not.toMatch(/\bRecord\s*</)

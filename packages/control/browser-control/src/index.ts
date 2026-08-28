@@ -4,6 +4,8 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type {
   BrowserSnapshotRequest,
   BrowserSnapshotResult as BrowserSnapshot,
+  ControlLeaseAcquireRequest,
+  ControlLeaseAcquireResult,
   SessionId,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
 import type { BrowserActionRequest, BrowserActionResult } from './types.ts'
@@ -33,6 +35,13 @@ export type {
   BrowserTypeRequest,
   BrowserWaitRequest,
   ControlLeaseId as ControlLeaseIdType,
+  ControlLeaseAcquireRequest,
+  ControlLeaseAcquireResult,
+  ControlLeaseCapability,
+  ControlLeaseReleaseRequest,
+  ControlLeaseReleaseResult,
+  ControlLeaseSurfaceKind,
+  ControlLeaseTarget,
   KeyModifier,
   PngMetadata,
   PngTransferId as PngTransferIdType,
@@ -71,6 +80,18 @@ export abstract class BrowserControl extends Service {
   constructor(ctx: Context) {
     super(ctx, 'browserControl')
   }
+
+  /**
+   * Ask Electron main to authorize and mint one browser control lease.
+   * This is an internal trusted-provider operation and never a model tool.
+   * @param request - Protocol-owned request with official session and transport fields.
+   * @param signal - Caller lifetime.
+   * @returns the effective Electron-authored lease descriptor.
+   */
+  abstract acquireLease(
+    request: ControlLeaseAcquireRequest,
+    signal: AbortSignal,
+  ): Promise<ControlLeaseAcquireResult>
 
   /**
    * Capture bounded semantics and an optional image for the current browser surface.

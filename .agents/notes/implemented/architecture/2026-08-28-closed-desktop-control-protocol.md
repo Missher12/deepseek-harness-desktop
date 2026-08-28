@@ -12,7 +12,9 @@ Browser and native application control cross two process boundaries and later ga
 
 `@deepseek-ai/dsh-desktop-control-protocol` owns every cross-process action, result, error, and branded identifier used by Desktop control. `protocol-v1.json` is the machine-readable roster, field-matrix, and numeric-limit source; TypeScript constants validate themselves against it at import, and the native implementation consumes the same file and raw fixtures.
 
-Harness-facing `BridgeRequest` and Electron-facing `HelperRequest` are separate closed unions. Only the helper union includes `lease.install` and `input.release`, while the former carries Electron-authored quotas and the latter carries no lease fields. Successful responses bind explicit results to their request discriminants, and error responses use one closed code roster.
+Harness-facing `BridgeRequest` and Electron-facing `HelperRequest` are separate closed unions. The bridge union has 27 requests, including internal-only `control.lease.acquire` and `control.lease.release`. Acquire carries a closed surface, a non-empty unique capability subset, and pair-preserving app/window targets; browser targets are empty and native targets are non-empty. Its result exposes only the effective descriptor, while release returns only an awaited cleanup acknowledgement. Neither accepts or returns approval assertions, quotas, clocks, or action digests.
+
+Only the helper union includes `lease.install` and `input.release`. Install reuses the protocol-owned pair-preserving targets and capabilities and carries Electron-authored total `operations` plus category quotas; `agentId` is display-only. Recovery-only `input.release` carries no lease fields. Successful responses bind explicit results to their request discriminants, and error responses use one closed code roster.
 
 The binary envelope separates bounded UTF-8 JSON from raw PNG bytes. Screenshot metadata requires the immediately following PNG and binds its UUID, byte length, SHA-256, width, and height. Decoder output is detached and deeply frozen; image bytes have one immutable owner whose reader returns copies. A malformed value or frame sequence closes only the decoder used for Desktop control.
 
@@ -26,4 +28,4 @@ The binary envelope separates bounded UTF-8 JSON from raw PNG bytes. Screenshot 
 
 ## Consequences
 
-Every new operation or result requires one reviewed manifest and TypeScript update plus fixture changes, and the later native implementation must prove byte parity. The package deliberately does not own leases, authorization, request ledgers, process generations, or image normalization; their runtime owners consume its validated values. Protocol v1 has no compatibility negotiation during the repository's pre-release phase.
+Every new operation or result requires one reviewed manifest and TypeScript update plus fixture changes, and the later native implementation must prove byte parity. Raw acquire/release frames are checked in beside the status and screenshot fixtures. The package defines lease lifecycle messages but deliberately does not mint leases or own authorization, request ledgers, process generations, or image normalization; their runtime owners consume its validated values. Protocol v1 has no compatibility negotiation during the repository's pre-release phase.

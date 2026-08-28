@@ -507,6 +507,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Abstract semantic browser-control seam. A single Service Provider owns the visible surface, current reference registry, session revocation, and all browser-side cleanup.',
     methods: [
       {
+        signature: 'abstract acquireLease( request: ControlLeaseAcquireRequest, signal: AbortSignal, ): Promise<ControlLeaseAcquireResult>',
+        description: 'Ask Electron main to authorize and mint one browser control lease. This is an internal trusted-provider operation and never a model tool.',
+        parameters: [{ name: 'request', description: 'Protocol-owned request with official session and transport fields.' }, { name: 'signal', description: 'Caller lifetime.' }],
+        returns: 'the effective Electron-authored lease descriptor.',
+      },
+      {
         signature: 'abstract snapshot(request: BrowserSnapshotRequest, signal: AbortSignal): Promise<BrowserSnapshot>',
         description: 'Capture bounded semantics and an optional image for the current browser surface.',
         parameters: [{ name: 'request', description: 'Strict protocol request received from the Desktop bridge.' }, { name: 'signal', description: 'Caller lifetime.' }],
@@ -648,6 +654,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     summary: 'Abstract native Computer Control seam.',
     description: 'Abstract native Computer Control seam. A single Service Provider owns authorization, app/window identity, reference freshness, stop, and native resource cleanup.',
     methods: [
+      {
+        signature: 'abstract acquireLease( request: ControlLeaseAcquireRequest, signal: AbortSignal, ): Promise<ControlLeaseAcquireResult>',
+        description: 'Ask Electron main to authorize and mint one native-application control lease. This is an internal trusted-provider operation and never a model tool.',
+        parameters: [{ name: 'request', description: 'Protocol-owned request with official session and transport fields.' }, { name: 'signal', description: 'Caller lifetime.' }],
+        returns: 'the effective Electron-authored lease descriptor.',
+      },
       {
         signature: 'abstract status(): Promise<ComputerControlStatus>',
         description: 'Read the bounded local platform support and permission snapshot.',
@@ -3120,7 +3132,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BridgeRequest',
-    declaration: 'export type BridgeRequest = DesktopStatusRequest | BrowserSnapshotRequest | BrowserNavigateRequest | BrowserClickRequest | BrowserTypeRequest | BrowserKeyRequest | BrowserSelectRequest | BrowserScrollRequest | BrowserWaitRequest | BrowserNavigationRequest | BrowserStopRequest | ComputerStatusRequest | ComputerListRequest | ComputerSnapshotRequest | ComputerFocusRequest | ComputerClickRequest | ComputerDragRequest | ComputerTypeRequest | ComputerKeyRequest | ComputerScrollRequest | ComputerWaitRequest | ComputerStopRequest;',
+    declaration: 'export type BridgeRequest = ControlLeaseAcquireRequest | ControlLeaseReleaseRequest | DesktopStatusRequest | BrowserSnapshotRequest | BrowserNavigateRequest | BrowserClickRequest | BrowserTypeRequest | BrowserKeyRequest | BrowserSelectRequest | BrowserScrollRequest | BrowserWaitRequest | BrowserNavigationRequest | BrowserStopRequest | ComputerStatusRequest | ComputerListRequest | ComputerSnapshotRequest | ComputerFocusRequest | ComputerClickRequest | ComputerDragRequest | ComputerTypeRequest | ComputerKeyRequest | ComputerScrollRequest | ComputerWaitRequest | ComputerStopRequest;',
   },
   {
     name: 'BrowserActionRequest',
@@ -3395,6 +3407,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'continuable\';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}',
   },
   {
+    name: 'ControlLeaseAcquireRequest',
+    declaration: 'export type ControlLeaseAcquireRequest = BridgeRequestBase<\'control.lease.acquire\'> & {\n    readonly surfaceKind: ControlLeaseSurfaceKind;\n    readonly targets: readonly ControlLeaseTarget[];\n    readonly capabilities: readonly ControlLeaseCapability[];\n};',
+  },
+  {
+    name: 'ControlLeaseAcquireResult',
+    declaration: 'export interface ControlLeaseAcquireResult {\n    readonly leaseId: ControlLeaseId;\n    readonly leaseRevision: number;\n    readonly surfaceKind: ControlLeaseSurfaceKind;\n    readonly targets: readonly ControlLeaseTarget[];\n    readonly capabilities: readonly ControlLeaseCapability[];\n    readonly idleExpiresAfterMs: number;\n    readonly hardExpiresAfterMs: number;\n}',
+  },
+  {
+    name: 'ControlLeaseCapability',
+    declaration: 'export type ControlLeaseCapability = typeof CONTROL_LEASE_CAPABILITIES[number];',
+  },
+  {
+    name: 'ControlLeaseId',
+    declaration: 'export type ControlLeaseId = Branded<\'DesktopControlLeaseId\'>;',
+  },
+  {
+    name: 'ControlLeaseReleaseRequest',
+    declaration: 'export type ControlLeaseReleaseRequest = BridgeRequestBase<\'control.lease.release\'> & LeaseFields;',
+  },
+  {
+    name: 'ControlLeaseReleaseResult',
+    declaration: 'export interface ControlLeaseReleaseResult {\n    readonly released: true;\n}',
+  },
+  {
+    name: 'ControlLeaseSurfaceKind',
+    declaration: 'export type ControlLeaseSurfaceKind = typeof CONTROL_LEASE_SURFACE_KINDS[number];',
+  },
+  {
+    name: 'ControlLeaseTarget',
+    declaration: 'export interface ControlLeaseTarget {\n    readonly appId: string;\n    readonly windowIds: readonly string[];\n}',
+  },
+  {
     name: 'CordisDynamicPackageId',
     declaration: 'export type CordisDynamicPackageId = Branded<\'CordisDynamicPackageId\'>;',
   },
@@ -3468,7 +3512,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'DesktopControlResultMap',
-    declaration: 'export interface DesktopControlResultMap {\n    readonly \'desktop.status\': DesktopStatusResult;\n    readonly \'browser.snapshot\': BrowserSnapshotResult;\n    readonly \'browser.navigate\': BrowserNavigationResult;\n    readonly \'browser.click\': ActionResult;\n    readonly \'browser.type\': ActionResult;\n    readonly \'browser.key\': ActionResult;\n    readonly \'browser.select\': ActionResult;\n    readonly \'browser.scroll\': ActionResult;\n    readonly \'browser.wait\': WaitResult;\n    readonly \'browser.back\': BrowserNavigationResult;\n    readonly \'browser.forward\': BrowserNavigationResult;\n    readonly \'browser.reload\': BrowserNavigationResult;\n    readonly \'browser.stop\': StopResult;\n    readonly \'computer.status\': ComputerStatusResult;\n    readonly \'computer.list\': ComputerListResult;\n    readonly \'computer.snapshot\': ComputerSnapshotResult;\n    readonly \'computer.focus\': ActionResult;\n    readonly \'computer.click\': ActionResult;\n    readonly \'computer.double-click\': ActionResult;\n    readonly \'computer.drag\': ActionResult;\n    readonly \'computer.type\': ActionResult;\n    readonly \'computer.key\': ActionResult;\n    readonly \'computer.scroll\': ActionResult;\n    readonly \'computer.wait\': WaitResult;\n    readonly \'computer.stop\': StopResult;\n}',
+    declaration: 'export interface DesktopControlResultMap {\n    readonly \'control.lease.acquire\': ControlLeaseAcquireResult;\n    readonly \'control.lease.release\': ControlLeaseReleaseResult;\n    readonly \'desktop.status\': DesktopStatusResult;\n    readonly \'browser.snapshot\': BrowserSnapshotResult;\n    readonly \'browser.navigate\': BrowserNavigationResult;\n    readonly \'browser.click\': ActionResult;\n    readonly \'browser.type\': ActionResult;\n    readonly \'browser.key\': ActionResult;\n    readonly \'browser.select\': ActionResult;\n    readonly \'browser.scroll\': ActionResult;\n    readonly \'browser.wait\': WaitResult;\n    readonly \'browser.back\': BrowserNavigationResult;\n    readonly \'browser.forward\': BrowserNavigationResult;\n    readonly \'browser.reload\': BrowserNavigationResult;\n    readonly \'browser.stop\': StopResult;\n    readonly \'computer.status\': ComputerStatusResult;\n    readonly \'computer.list\': ComputerListResult;\n    readonly \'computer.snapshot\': ComputerSnapshotResult;\n    readonly \'computer.focus\': ActionResult;\n    readonly \'computer.click\': ActionResult;\n    readonly \'computer.double-click\': ActionResult;\n    readonly \'computer.drag\': ActionResult;\n    readonly \'computer.type\': ActionResult;\n    readonly \'computer.key\': ActionResult;\n    readonly \'computer.scroll\': ActionResult;\n    readonly \'computer.wait\': WaitResult;\n    readonly \'computer.stop\': StopResult;\n}',
   },
   {
     name: 'DesktopStatusRequest',

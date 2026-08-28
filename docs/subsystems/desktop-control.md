@@ -12,19 +12,21 @@ Sources:
 
 ## Protocol ownership
 
-`@deepseek-ai/dsh-desktop-control-protocol` is the sole owner of every cross-process request, result, error, and branded identifier. The Browser and Computer Service Definitions import or re-export those types; their own types contain only same-process ownership and validation facts.
+`@deepseek-ai/dsh-desktop-control-protocol` is the sole owner of every cross-process request, result, error, and branded identifier. Its 27-kind bridge roster includes internal-only acquire/release requests. Acquire preserves each app/window relationship, accepts only the closed surface and capability rosters, and returns only an effective relative-duration descriptor; helper install reuses those targets and adds Electron-owned total and category quotas. The Browser and Computer Service Definitions import or re-export those types; their own types contain only same-process ownership and validation facts.
 
 The closed protocol exposes no JavaScript, selector, command, generic payload, or raw operating-system escape. Optional PNG metadata is limited to transfer identity, byte length, lower-case SHA-256, width, and height. The PNG bytes travel in the protocol's separate bounded binary envelope.
 
 ## Browser service seam
 
-`ctx.browserControl` captures a bounded semantic snapshot, executes one of the ten closed browser actions, and revokes all browser ownership for one session. Provider-held opaque references bind the official session id to a surface id, surface generation, and snapshot revision. A foreign session is rejected before freshness is disclosed.
+`ctx.browserControl` first exposes internal `acquireLease(request, signal)` to trusted Consumers, then captures a bounded semantic snapshot, executes one of the ten closed browser actions, and revokes all browser ownership for one session. Provider-held opaque references bind the official session id to a surface id, surface generation, and snapshot revision. A foreign session is rejected before freshness is disclosed.
 
 The browser service owns no coordinate action. Page text and accessibility semantics remain untrusted and cannot grant approval or prove that hostile page JavaScript lacks external side effects.
 
 ## Computer service seam
 
-`ctx.computerControl` reports platform support, lists grantable applications and windows, captures a bounded native snapshot, executes one of the eight closed native actions, and stops native control for one session. Provider-held opaque references bind session, application, process id and creation identity, window, snapshot revision, and display scale.
+`ctx.computerControl` exposes the same protocol-owned internal lease acquisition, reports platform support, lists grantable applications and windows, captures a bounded native snapshot, executes one of the eight closed native actions, and stops native control for one session. Provider-held opaque references bind session, application, process id and creation identity, window, snapshot revision, and display scale.
+
+Neither acquire operation is a model tool. Later tool Consumers derive official session and transport fields; their model schemas never expose acquire, lease authority, approval, quotas, clocks, or action digests.
 
 The pure policy returns only `ALLOW`, `APPROVAL_REQUIRED`, or `DENY`. Unknown runtime facts fail closed. Known secure fields and privileged or destructive target classes are denied; external effects and persistent human-browser mutations require a separate native approval. A matching-surface Stop remains approval-free so revocation cannot be blocked by a target classification.
 
@@ -47,6 +49,15 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 Abstract semantic browser-control seam. A single Service Provider owns the visible surface, current reference registry, session revocation, and all browser-side cleanup.
 
 ```ts cordis-catalog
+/**
+ * Ask Electron main to authorize and mint one browser control lease.
+ * This is an internal trusted-provider operation and never a model tool.
+ * @param request - Protocol-owned request with official session and transport fields.
+ * @param signal - Caller lifetime.
+ * @returns the effective Electron-authored lease descriptor.
+ */
+abstract acquireLease( request: ControlLeaseAcquireRequest, signal: AbortSignal, ): Promise<ControlLeaseAcquireResult>
+
 /**
  * Capture bounded semantics and an optional image for the current browser surface.
  * @param request - Strict protocol request received from the Desktop bridge.
@@ -81,6 +92,15 @@ Source: [`packages/control/browser-control/src/index.ts`](../../packages/control
 Abstract native Computer Control seam. A single Service Provider owns authorization, app/window identity, reference freshness, stop, and native resource cleanup.
 
 ```ts cordis-catalog
+/**
+ * Ask Electron main to authorize and mint one native-application control lease.
+ * This is an internal trusted-provider operation and never a model tool.
+ * @param request - Protocol-owned request with official session and transport fields.
+ * @param signal - Caller lifetime.
+ * @returns the effective Electron-authored lease descriptor.
+ */
+abstract acquireLease( request: ControlLeaseAcquireRequest, signal: AbortSignal, ): Promise<ControlLeaseAcquireResult>
+
 /**
  * Read the bounded local platform support and permission snapshot.
  * @returns current platform support and permission states.

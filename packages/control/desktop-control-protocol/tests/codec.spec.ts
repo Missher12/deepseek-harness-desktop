@@ -56,6 +56,7 @@ describe('closed protocol manifest', () => {
   it('pins the complete bridge, helper, control, and error rosters', () => {
     expect(PROTOCOL_VERSION).toBe(1)
     expect(BRIDGE_REQUEST_KINDS).toEqual([
+      'control.lease.acquire', 'control.lease.release',
       'desktop.status',
       'browser.snapshot', 'browser.navigate', 'browser.click', 'browser.type',
       'browser.key', 'browser.select', 'browser.scroll', 'browser.wait',
@@ -481,7 +482,10 @@ describe('PNG correlation and immutability', () => {
 
 describe('published fixtures and forbidden vocabulary', () => {
   it('decodes and re-encodes every raw frame byte-for-byte', async () => {
-    const names = ['status-request.bin', 'browser-snapshot-json.bin', 'browser-snapshot-png.bin']
+    const names = [
+      'status-request.bin', 'browser-snapshot-json.bin', 'browser-snapshot-png.bin',
+      'lease-acquire-request.bin', 'lease-release-request.bin',
+    ]
     const inventory = (await readdir(resolve(import.meta.dirname, '../fixtures'))).filter(name => name.endsWith('.bin')).sort()
     expect(inventory).toEqual([...names].sort())
     for (const name of names) {

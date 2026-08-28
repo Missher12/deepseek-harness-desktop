@@ -6,6 +6,7 @@ Computer Control Service Definition 为跨用户已授权原生应用的有界�
 
 ## 约定
 
+- `acquireLease(request, signal)` 是 Consumer／提供方内部操作，它把保持应用／窗口配对的目标与 capabilities 转交给 Electron 权威方。它不是模型工具，也不能自行授权。
 - `status()` 报告平台与权限事实。`list(request, signal)` 只返回可供用户授权的应用／窗口。
 - `snapshot(request, signal)` 观察一个已授权窗口。`act(request, signal)` 只接受协议中的聚焦、语义／坐标指针、拖动、输入、按键、滚动与等待操作。
 - `stop(sessionId)` 等待恰好一个会话的原生资源释放完成。
@@ -17,6 +18,8 @@ Computer Control Service Definition 为跨用户已授权原生应用的有界�
 `classifyControlPolicy()` 只返回 `ALLOW`、`APPROVAL_REQUIRED` 或 `DENY`。运行时边界会校验普通输入对象，以及协议 request kind、surface、sensitivity 和 effect 的精确清单；无效、accessor-backed、非字符串或未知值都会在不抛异常的情况下被拒绝。已知 secure text、密码、一次性验证码、付款、文件、生物识别、密码管理器、钥匙串、操作系统隐私／安全目标、安装／移除、破坏性删除和下载后执行目标始终被拒绝。无法确定的敏感性或效果也被拒绝。无目标的 status／list request 使用显式的 `not-applicable` 类别，而不是虚构目标。匹配 surface 上的 Stop 只有在清单校验后才无需审批；错误 surface 上的 Stop 则被拒绝。普通只读操作，以及已授权临时／原生 surface 上的普通本地交互会获准；外部副作用和对持久 human browser 的任何变更都需要单独的 Electron 原生审批。
 
 分类器只接受适配器所有的事实。模型输出与页面文本不能自行把目标标成普通；accessibility 语义也不会被当作恶意 JavaScript 没有副作用的证明。
+
+策略的 surface 类型直接使用协议所有的 `ControlLeaseSurfaceKind`，不是复制出的联合。后续工具 Consumer 自行推导官方 session，并填充 request id、deadline、lease id／revision 与其他 transport 字段。模型 schema 不得公开 acquire、authority、approval、quota、clock 或 action digest 字段。
 
 ## 模型体验
 

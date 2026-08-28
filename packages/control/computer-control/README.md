@@ -6,6 +6,7 @@ The Computer Control Service Definition registers one `ctx.computerControl` prov
 
 ## Contract
 
+- `acquireLease(request, signal)` is an internal Consumer/provider operation that forwards pair-preserving desired app/window targets and capabilities to Electron authority. It is not a model tool and cannot authorize itself.
 - `status()` reports platform and permission facts. `list(request, signal)` returns only applications/windows eligible for a user grant.
 - `snapshot(request, signal)` observes one authorized window. `act(request, signal)` accepts only the protocol's focus, semantic/coordinate pointer, drag, type, key, scroll, and wait actions.
 - `stop(sessionId)` awaits release of native resources for exactly one session.
@@ -17,6 +18,8 @@ The Computer Control Service Definition registers one `ctx.computerControl` prov
 `classifyControlPolicy()` returns only `ALLOW`, `APPROVAL_REQUIRED`, or `DENY`. Its runtime boundary validates plain input objects and the exact protocol request-kind, surface, sensitivity, and effect rosters; invalid, accessor-backed, non-string, or unknown values are denied without throwing. Known secure text, passwords, one-time codes, payments, files, biometrics, password managers, keychains, OS privacy/security targets, installation/removal, destructive deletion, and download-execute targets are always denied. Unknown sensitivity or effect is denied. Targetless status/list requests use the explicit `not-applicable` class instead of inventing a target. Stop is approval-free on the matching surface only after roster validation, while a wrong-surface Stop is denied. Ordinary reads and ordinary local interaction on an authorized ephemeral/native surface are allowed; external side effects and any mutation of a persistent human browser require a separate Electron-native approval.
 
 The classifier accepts only adapter-owned facts. Model output and page text cannot label their own target as ordinary, and accessibility semantics are not treated as proof that hostile JavaScript lacks side effects.
+
+The policy surface type is the protocol-owned `ControlLeaseSurfaceKind`, not a copied union. Later tool Consumers derive the official session and fill request id, deadline, lease id/revision, and other transport fields themselves. Model schemas must not expose acquire, authority, approval, quota, clock, or action-digest fields.
 
 ## Model Experience
 

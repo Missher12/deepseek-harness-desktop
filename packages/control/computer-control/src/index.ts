@@ -7,6 +7,8 @@ import type {
   ComputerSnapshotRequest,
   ComputerSnapshotResult as ComputerSnapshot,
   ComputerStatusResult as ComputerControlStatus,
+  ControlLeaseAcquireRequest,
+  ControlLeaseAcquireResult,
   SessionId,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
 import type { ComputerActionRequest, ComputerActionResult } from './types.ts'
@@ -39,6 +41,13 @@ export type {
   ComputerTypeRequest,
   ComputerWaitRequest,
   ControlLeaseId as ControlLeaseIdType,
+  ControlLeaseAcquireRequest,
+  ControlLeaseAcquireResult,
+  ControlLeaseCapability,
+  ControlLeaseReleaseRequest,
+  ControlLeaseReleaseResult,
+  ControlLeaseSurfaceKind,
+  ControlLeaseTarget,
   GrantableApplication,
   KeyModifier,
   PngMetadata,
@@ -91,6 +100,18 @@ export abstract class ComputerControl extends Service {
   constructor(ctx: Context) {
     super(ctx, 'computerControl')
   }
+
+  /**
+   * Ask Electron main to authorize and mint one native-application control lease.
+   * This is an internal trusted-provider operation and never a model tool.
+   * @param request - Protocol-owned request with official session and transport fields.
+   * @param signal - Caller lifetime.
+   * @returns the effective Electron-authored lease descriptor.
+   */
+  abstract acquireLease(
+    request: ControlLeaseAcquireRequest,
+    signal: AbortSignal,
+  ): Promise<ControlLeaseAcquireResult>
 
   /**
    * Read the bounded local platform support and permission snapshot.

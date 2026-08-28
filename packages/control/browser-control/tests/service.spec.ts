@@ -9,6 +9,8 @@ import {
   type BrowserClickRequest as ProtocolBrowserClickRequest,
   type BrowserSnapshotRequest,
   type BrowserSnapshotResult,
+  type ControlLeaseAcquireRequest,
+  type ControlLeaseAcquireResult,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
 import BrowserControl, {
   BrowserControlError,
@@ -44,6 +46,22 @@ function browserSnapshot(): BrowserSnapshotResult {
 class StubBrowserControl extends BrowserControl {
   revoked: readonly SessionId[] = []
 
+  async acquireLease(
+    request: ControlLeaseAcquireRequest,
+    signal: AbortSignal,
+  ): Promise<ControlLeaseAcquireResult> {
+    signal.throwIfAborted()
+    return {
+      leaseId: LEASE,
+      leaseRevision: 1,
+      surfaceKind: request.surfaceKind,
+      targets: request.targets,
+      capabilities: request.capabilities,
+      idleExpiresAfterMs: 300_000,
+      hardExpiresAfterMs: 1_200_000,
+    }
+  }
+
   async snapshot(_request: BrowserSnapshotRequest, signal: AbortSignal): Promise<BrowserSnapshotResult> {
     signal.throwIfAborted()
     return freezeBrowserSnapshot(browserSnapshot())
@@ -72,6 +90,18 @@ describe('BrowserControl service seam', () => {
     await ctx.plugin(StubBrowserControl)
 
     const provider = ctx.browserControl
+    const acquired = await provider.acquireLease({
+      protocolVersion: 1,
+      messageKind: 'request',
+      requestKind: 'control.lease.acquire',
+      requestId: REQUEST,
+      sessionId: SESSION,
+      deadlineUnixMs: Date.now() + 1_000,
+      surfaceKind: 'browser-ephemeral',
+      targets: [],
+      capabilities: ['observe', 'pointer'],
+    }, new AbortController().signal)
+    expect(acquired.surfaceKind).toBe('browser-ephemeral')
     const result = await provider.snapshot({
       protocolVersion: 1,
       messageKind: 'request',
@@ -99,6 +129,8 @@ describe('BrowserControl service seam', () => {
   it('re-exports protocol request types instead of declaring a second wire DTO', () => {
     expectTypeOf<BrowserClickRequest>().toEqualTypeOf<ProtocolBrowserClickRequest>()
     expectTypeOf<BrowserSnapshot>().toEqualTypeOf<BrowserSnapshotResult>()
+    expectTypeOf<Parameters<BrowserControl['acquireLease']>[0]>().toEqualTypeOf<ControlLeaseAcquireRequest>()
+    expectTypeOf<Awaited<ReturnType<BrowserControl['acquireLease']>>>().toEqualTypeOf<ControlLeaseAcquireResult>()
   })
 
   it('keeps act on the exact ten-action browser roster', () => {

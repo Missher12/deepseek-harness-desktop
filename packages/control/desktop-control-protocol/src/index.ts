@@ -21,6 +21,8 @@ export type {
 } from './brand.ts'
 export {
   BRIDGE_REQUEST_KINDS,
+  CONTROL_LEASE_CAPABILITIES,
+  CONTROL_LEASE_SURFACE_KINDS,
   CONTROL_KINDS,
   ERROR_CODES,
   PROTOCOL_VERSION,
@@ -57,6 +59,13 @@ export type {
   ComputerStopRequest,
   ComputerTypeRequest,
   ComputerWaitRequest,
+  ControlLeaseAcquireRequest,
+  ControlLeaseAcquireResult,
+  ControlLeaseCapability,
+  ControlLeaseReleaseRequest,
+  ControlLeaseReleaseResult,
+  ControlLeaseSurfaceKind,
+  ControlLeaseTarget,
   ControlKind,
   DesktopControlControl,
   DesktopControlError,
@@ -74,6 +83,7 @@ export type {
   WaitResult,
 } from './bridge.ts'
 export { HELPER_REQUEST_KINDS } from './helper.ts'
+export { CONTROL_LEASE_QUOTA_FIELDS, CONTROL_LEASE_TARGET_FIELDS } from './fields.ts'
 export type {
   ControlLeaseQuotaSnapshot,
   HelperClickRequest,

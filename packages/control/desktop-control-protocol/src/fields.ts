@@ -3,8 +3,18 @@ function freezeMatrix<const T extends object>(matrix: T): T {
   return Object.freeze(matrix)
 }
 
+/** Canonical nested fields for one pair-preserving lease target. */
+export const CONTROL_LEASE_TARGET_FIELDS = Object.freeze(['appId', 'windowIds'] as const)
+
+/** Canonical nested fields for one Electron-authored helper quota snapshot. */
+export const CONTROL_LEASE_QUOTA_FIELDS = Object.freeze([
+  'operations', 'snapshots', 'pointerActions', 'keyActions', 'textBytes',
+] as const)
+
 /** Canonical TypeScript bridge field matrix validated against protocol-v1.json. */
 export const BRIDGE_REQUEST_FIELDS = freezeMatrix({
+  'control.lease.acquire': ['surfaceKind', 'targets', 'capabilities'],
+  'control.lease.release': ['leaseId', 'leaseRevision'],
   'desktop.status': [],
   'browser.snapshot': ['leaseId', 'leaseRevision', 'includeImage'],
   'browser.navigate': ['leaseId', 'leaseRevision', 'url'],
@@ -46,7 +56,7 @@ export const HELPER_REQUEST_FIELDS = freezeMatrix({
   scroll: ['leaseId', 'leaseRevision', 'appId', 'windowId', 'snapshotRevision', 'ref', 'x', 'y', 'deltaX', 'deltaY'],
   wait: ['leaseId', 'leaseRevision', 'appId', 'windowId', 'snapshotRevision', 'durationMs'],
   stop: ['leaseId', 'leaseRevision'],
-  'lease.install': ['leaseId', 'leaseRevision', 'agentId', 'apps', 'windows', 'capabilities', 'quotas', 'idleExpiresAfterMs', 'hardExpiresAfterMs'],
+  'lease.install': ['leaseId', 'leaseRevision', 'agentId', 'targets', 'capabilities', 'quotas', 'idleExpiresAfterMs', 'hardExpiresAfterMs'],
   'input.release': ['keys', 'buttons'],
 } as const)
 
@@ -60,6 +70,8 @@ export const CONTROL_FIELDS = freezeMatrix({
 
 /** Canonical TypeScript result field matrix validated against protocol-v1.json. */
 export const RESULT_FIELDS = freezeMatrix({
+  'control.lease.acquire': ['leaseId', 'leaseRevision', 'surfaceKind', 'targets', 'capabilities', 'idleExpiresAfterMs', 'hardExpiresAfterMs'],
+  'control.lease.release': ['released'],
   'desktop.status': ['browserSupported', 'computerSupported'],
   'browser.snapshot': ['surfaceId', 'url', 'title', 'snapshotRevision', 'semanticText', 'refs', 'image'],
   'browser.navigate': ['url', 'snapshotRevision'],
