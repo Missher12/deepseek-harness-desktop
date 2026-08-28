@@ -317,9 +317,217 @@ catch {
   }
 }
 
+function Invoke-StandardUserSmoke {
+  param(
+    [Parameter(Mandatory = $true)][string]$ScriptPath,
+    [Parameter(Mandatory = $true)][string]$ResolvedHelperPath
+  )
+
+  if (-not ('DshWindowsSmoke.StandardUserProcess' -as [type])) {
+    Add-Type -Language CSharp -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace DshWindowsSmoke
+{
+    public static class StandardUserProcess
+    {
+        private const uint LOGON_WITH_PROFILE = 0x1;
+        private const uint CREATE_NEW_CONSOLE = 0x10;
+        private const uint WAIT_OBJECT_0 = 0;
+        private const uint WAIT_TIMEOUT = 258;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct STARTUPINFO
+        {
+            public uint cb;
+            public IntPtr lpReserved;
+            public IntPtr lpDesktop;
+            public IntPtr lpTitle;
+            public uint dwX;
+            public uint dwY;
+            public uint dwXSize;
+            public uint dwYSize;
+            public uint dwXCountChars;
+            public uint dwYCountChars;
+            public uint dwFillAttribute;
+            public uint dwFlags;
+            public ushort wShowWindow;
+            public ushort cbReserved2;
+            public IntPtr lpReserved2;
+            public IntPtr hStdInput;
+            public IntPtr hStdOutput;
+            public IntPtr hStdError;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PROCESS_INFORMATION
+        {
+            public IntPtr hProcess;
+            public IntPtr hThread;
+            public uint dwProcessId;
+            public uint dwThreadId;
+        }
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool CreateProcessWithLogonW(
+            string userName,
+            string domain,
+            string password,
+            uint logonFlags,
+            string applicationName,
+            StringBuilder commandLine,
+            uint creationFlags,
+            IntPtr environment,
+            string currentDirectory,
+            ref STARTUPINFO startupInfo,
+            out PROCESS_INFORMATION processInformation);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetExitCodeProcess(IntPtr process, out uint exitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool TerminateProcess(IntPtr process, uint exitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr handle);
+
+        public static int Run(
+            string userName,
+            string domain,
+            string password,
+            string applicationPath,
+            string commandLine,
+            string workingDirectory,
+            int timeoutMilliseconds)
+        {
+            PROCESS_INFORMATION process = new PROCESS_INFORMATION();
+            IntPtr desktop = Marshal.StringToHGlobalUni("winsta0\\default");
+            try
+            {
+                STARTUPINFO startup = new STARTUPINFO();
+                startup.cb = (uint)Marshal.SizeOf<STARTUPINFO>();
+                startup.lpDesktop = desktop;
+                StringBuilder mutableCommand = new StringBuilder(commandLine);
+                if (!CreateProcessWithLogonW(
+                        userName,
+                        domain,
+                        password,
+                        LOGON_WITH_PROFILE,
+                        applicationPath,
+                        mutableCommand,
+                        CREATE_NEW_CONSOLE,
+                        IntPtr.Zero,
+                        workingDirectory,
+                        ref startup,
+                        out process))
+                    throw new Win32Exception(
+                        Marshal.GetLastWin32Error(),
+                        "CreateProcessWithLogonW failed");
+
+                uint wait = WaitForSingleObject(process.hProcess, (uint)timeoutMilliseconds);
+                if (wait == WAIT_TIMEOUT)
+                {
+                    TerminateProcess(process.hProcess, 124);
+                    WaitForSingleObject(process.hProcess, 5000);
+                    throw new TimeoutException("Standard-user Windows Computer Use smoke timed out");
+                }
+                if (wait != WAIT_OBJECT_0)
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "WaitForSingleObject failed");
+                if (!GetExitCodeProcess(process.hProcess, out uint exitCode))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "GetExitCodeProcess failed");
+                return unchecked((int)exitCode);
+            }
+            finally
+            {
+                if (process.hThread != IntPtr.Zero) CloseHandle(process.hThread);
+                if (process.hProcess != IntPtr.Zero) CloseHandle(process.hProcess);
+                Marshal.FreeHGlobal(desktop);
+            }
+        }
+    }
+}
+'@
+  }
+
+  $suffix = [Guid]::NewGuid().ToString('N')
+  $userName = "dshsmoke$($suffix.Substring(0, 8))"
+  $password = "Dsh!7aA$($suffix.Substring(8, 24))"
+  $stagingRoot = Join-Path $env:PUBLIC "dsh-windows-control-$suffix"
+  $stagedScript = Join-Path $stagingRoot 'windows-computer-use-smoke.ps1'
+  $stagedHelper = Join-Path $stagingRoot 'computer-use-helper.exe'
+  $resultPath = Join-Path $stagingRoot 'result.txt'
+  $createdUser = $false
+
+  try {
+    New-Item -ItemType Directory -Path $stagingRoot | Out-Null
+    Copy-Item -LiteralPath $ScriptPath -Destination $stagedScript
+    Copy-Item -LiteralPath $ResolvedHelperPath -Destination $stagedHelper
+    & icacls.exe $stagingRoot /grant '*S-1-5-32-545:(OI)(CI)M' /T /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to grant the isolated smoke user access to its staging directory: $LASTEXITCODE"
+    }
+
+    $securePassword = ConvertTo-SecureString -String $password -AsPlainText -Force
+    New-LocalUser -Name $userName -Password $securePassword -AccountNeverExpires `
+      -PasswordNeverExpires -UserMayNotChangePassword | Out-Null
+    $createdUser = $true
+
+    $scriptLiteral = $stagedScript.Replace("'", "''")
+    $helperLiteral = $stagedHelper.Replace("'", "''")
+    $resultLiteral = $resultPath.Replace("'", "''")
+    $childSource = @"
+`$ErrorActionPreference = 'Stop'
+try {
+  & '$scriptLiteral' -HelperPath '$helperLiteral' -MediumIntegrityChild
+  [IO.File]::WriteAllText('$resultLiteral', 'PASS', [Text.UTF8Encoding]::new(`$false))
+  exit 0
+}
+catch {
+  `$message = [string]`$_.Exception.Message
+  if (`$message.Length -gt 1024) { `$message = `$message.Substring(0, 1024) }
+  [IO.File]::WriteAllText('$resultLiteral', "FAIL: `$message", [Text.UTF8Encoding]::new(`$false))
+  exit 1
+}
+"@
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childSource))
+    $pwsh = (Get-Process -Id $PID).Path
+    $commandLine = "`"$pwsh`" -NoLogo -NoProfile -NonInteractive -STA -EncodedCommand $encoded"
+    $exitCode = [DshWindowsSmoke.StandardUserProcess]::Run(
+      $userName,
+      $env:COMPUTERNAME,
+      $password,
+      $pwsh,
+      $commandLine,
+      $stagingRoot,
+      180000
+    )
+    $result = if (Test-Path -LiteralPath $resultPath) {
+      (Get-Content -LiteralPath $resultPath -Raw).Trim()
+    } else {
+      'FAIL: standard-user smoke did not produce a result'
+    }
+    if ($exitCode -ne 0 -or $result -ne 'PASS') {
+      throw "Windows Computer Use standard-user acceptance failed (exit=$exitCode): $result"
+    }
+    Write-Host 'Windows Computer Use standard-user acceptance passed.'
+  }
+  finally {
+    if ($createdUser) {
+      Remove-LocalUser -Name $userName -ErrorAction Continue
+    }
+    Remove-Item -LiteralPath $stagingRoot -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
 $resolvedHelper = (Resolve-Path -LiteralPath $HelperPath).Path
 if (-not $MediumIntegrityChild) {
-  Invoke-MediumIntegritySmoke -ScriptPath $PSCommandPath -ResolvedHelperPath $resolvedHelper
+  Invoke-StandardUserSmoke -ScriptPath $PSCommandPath -ResolvedHelperPath $resolvedHelper
   return
 }
 
