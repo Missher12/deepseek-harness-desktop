@@ -12,6 +12,8 @@ Status: implemented
 
 两项权限与 Chrome 应用白名单都有效后，真实验收还暴露了第二个互操作问题：ScreenCaptureKit 把普通窗口命名为 `about:blank`，而辅助功能框架把同一 PID、同一几何边界的窗口命名为 `about:blank - Google Chrome - <profile>`。要求两套框架的展示标题逐字相同，会在读取语义或像素前把当前窗口误判为已关闭。
 
+一次超时的原生任务询问还会在没有活动租约时保留首个 Harness 官方会话。全局 Stop 只检查活动租约，因此后续会话会持续收到 `UNAUTHORIZED`，直到 Desktop 进程重启，尽管界面并未显示活动控制者。
+
 ## 决策
 
 Protocol 错误清单加入 `CONTROL_DISABLED`、`TARGET_NOT_AUTHORIZED` 和 `APPROVAL_DENIED`。Electron main 只在自身持有的判断点返回对应错误。原生应用 Surface 关闭或请求中没有白名单应用时，在原生询问前失败；原生询问被取消时，在询问后失败。`PERMISSION_DENIED` 继续表示操作系统结果，`TARGET_CLOSED` 表示已允许但不再有效的目标，`POLICY_DENIED` 继续表示目标受保护。电脑工具把每项错误码映射为长度受限的纠正文字，绝不转发 Provider 诊断。
@@ -21,6 +23,8 @@ Protocol 错误清单加入 `CONTROL_DISABLED`、`TARGET_NOT_AUTHORIZED` 和 `AP
 Helper 构建把与最终裸可执行文件名称一致的 `computer-use-helper` 设为嵌套代码标识，macOS 打包再把该可执行文件列入 Electron Builder 的显式二进制签名清单。因此使用证书的包会以同一稳定身份签署应用与 helper。默认本地临时签名仍然绑定 CDHash，不能描述为可持久使用；正式发布必须使用 Developer ID 签名与公证。
 
 macOS 辅助功能绑定现在会在已经验证的进程中，选择唯一一个有限且与所选 ScreenCaptureKit 窗口几何边界精确匹配的可见 AX 窗口。框架标题只属于展示数据，不再充当身份。零匹配与重复边界仍然失败关闭；ScreenCaptureKit 窗口号、进程启动身份、Bundle 身份，以及观察完成后的 ScreenCaptureKit 新鲜枚举全部保留。
+
+main 持有的全局 Stop 路径现在会优先撤销活动租约会话；若租约尚未激活，则撤销已经声明的官方会话。撤销仍会等待未完成清理，浏览器清理失败时继续失败关闭；只有精确会话清理成功后，才会把所有权交给后续 Harness 会话。
 
 ## 考虑过的替代方案
 
@@ -37,3 +41,5 @@ macOS 辅助功能绑定现在会在已经验证的进程中，选择唯一一�
 暂存与打包后的 macOS helper 现在会保持稳定嵌套标识，并进入应用签名流程。替换旧的哈希标识本地 helper 后，仍可能需要最后手动刷新一次权限。未来本地重建必须复用同一证书才能保持 TCC 身份；只有临时签名不能提供该保证。
 
 普通 Chrome 窗口不会再因为 ScreenCaptureKit 与辅助功能框架采用不同标题格式而失败。真实验收会针对一个 `about:blank` Chrome 窗口验证有界语义与 PNG 截图；PID 或边界存在歧义时仍硬性返回 `TARGET_CLOSED`。
+
+原生任务询问被取消或超时后，可见 Stop 操作也会清除遗留会话声明。新任务无需重启 DeepSeek Harness 即可重新申请控制；清理失败时则仍会阻止所有权转移。

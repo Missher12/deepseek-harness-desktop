@@ -444,8 +444,9 @@ const computerControlUi = new ComputerControlUiAuthority({
   getControlStatus: () => controlCoordinator.controlStatus(),
   stopActive: async () => {
     const active = controlCoordinator.activeLease()
-    if (active !== null) {
-      await controlCoordinator.revokeSession(active.sessionId, new AbortController().signal)
+    const sessionId = active?.sessionId ?? officialControlSession
+    if (sessionId !== undefined) {
+      await controlCoordinator.revokeSession(sessionId, new AbortController().signal)
     }
   },
   confirmExpansion: async (mutation) => {

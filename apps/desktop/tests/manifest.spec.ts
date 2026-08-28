@@ -70,6 +70,7 @@ describe('desktop package manifest', () => {
     expect(mainSource.indexOf('computerControlAdapter.unexpectedHelperExit()')).toBeLessThan(
       mainSource.indexOf('controlCoordinator.helperCrashed()'),
     )
+    expect(mainSource).toContain('active?.sessionId ?? officialControlSession')
   })
 
   it('maps browser enablement to a distinct native confirmation', () => {
