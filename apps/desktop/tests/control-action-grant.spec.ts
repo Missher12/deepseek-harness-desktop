@@ -11,10 +11,16 @@ import { describe, expect, it } from 'vitest'
 import {
   ACTION_GRANT_LIFETIME_MS,
   ActionGrantAuthority,
-  actionDigest,
   type ActionGrant,
   type BrowserActionGrantScope,
 } from '../src/control/action-grant.ts'
+import * as actionGrantModule from '../src/control/action-grant.ts'
+import type {
+  NativeApprovalCoordinator,
+  NativeApprovalResult,
+  NativeApprovalScope,
+  NativeApprovalTicket,
+} from '../src/control/native-approval.ts'
 
 class FakeClock {
   value = 0
@@ -89,30 +95,85 @@ function scope(
   }
 }
 
+class FakeApprovalTickets {
+  readonly tickets = new Set<NativeApprovalTicket>()
+
+  issue(): NativeApprovalTicket {
+    const ticket = Object.freeze({}) as NativeApprovalTicket
+    this.tickets.add(ticket)
+    return ticket
+  }
+
+  consumeBeforeDispatch(
+    ticket: NativeApprovalResult,
+    _scope: NativeApprovalScope,
+    revalidate: () => boolean,
+  ): boolean {
+    if (typeof ticket === 'string' || !this.tickets.delete(ticket)) return false
+    return revalidate()
+  }
+}
+
+const approvalAuthorities = new WeakMap<ActionGrantAuthority, FakeApprovalTickets>()
+
+function actionGrants(clock: FakeClock): ActionGrantAuthority {
+  const approvals = new FakeApprovalTickets()
+  const grants = new ActionGrantAuthority(
+    clock,
+    approvals as unknown as NativeApprovalCoordinator,
+  )
+  approvalAuthorities.set(grants, approvals)
+  return grants
+}
+
+function approvalScopeFor(
+  grants: ActionGrantAuthority,
+  input: BrowserActionGrantScope,
+): NativeApprovalScope {
+  return grants.approvalScope(input, {
+    sessionId: input.request.sessionId,
+    leaseId: input.request.leaseId,
+    leaseRevision: input.request.leaseRevision,
+    surfaceKind: 'browser-human-persistent',
+    targets: [],
+    capabilities: ['observe', 'pointer', 'keyboard'],
+    allowlistRevision: 3,
+  })
+}
+
 function approvedIssue(
   grants: ActionGrantAuthority,
   input: BrowserActionGrantScope,
 ): ActionGrant {
-  return grants.issue(input, actionDigest(input))
+  const approvals = approvalAuthorities.get(grants)
+  if (approvals === undefined) throw new Error('missing fake approval authority')
+  return grants.issueFromApproval(
+    input,
+    approvalScopeFor(grants, input),
+    approvals.issue(),
+    () => true,
+  )
 }
 
 describe('persistent browser action grants', () => {
-  it('produces one main-process exact digest for the native action challenge', () => {
-    const original = actionDigest(scope(click()))
-    const changed = actionDigest(scope(click({ ref: REF_B })))
-    expect(original).toMatch(/^[0-9a-f]{64}$/)
-    expect(changed).not.toBe(original)
+  it('does not expose a recomputable digest as an authorization API', () => {
+    expect(actionGrantModule).not.toHaveProperty('actionDigest')
   })
 
   it('will not mint a grant without the exact digest returned from the native challenge flow', () => {
-    const grants = new ActionGrantAuthority(new FakeClock())
-    expect(() => grants.issue(scope(), undefined as never)).toThrow(/approved action digest/i)
-    expect(() => grants.issue(scope(), 'b'.repeat(64) as never)).toThrow(/approved action digest/i)
+    const grants = actionGrants(new FakeClock())
+    const approvals = approvalAuthorities.get(grants)!
+    expect(() => grants.issueFromApproval(
+      scope(), approvalScopeFor(grants, scope()), {} as NativeApprovalTicket, () => true,
+    )).toThrow(/ticket/i)
+    expect(() => grants.issueFromApproval(
+      scope(), approvalScopeFor(grants, scope(click({ ref: REF_B }))), approvals.issue(), () => true,
+    )).toThrow(/exact action/i)
   })
 
   it('is valid before 30 seconds and expires at the exact monotonic boundary', () => {
     const clock = new FakeClock()
-    const grants = new ActionGrantAuthority(clock)
+    const grants = actionGrants(clock)
     const beforeBoundary = approvedIssue(grants, scope())
     clock.value = ACTION_GRANT_LIFETIME_MS - 1
     expect(grants.consumeBeforeDispatch(beforeBoundary, scope(), () => true)).toBe(true)
@@ -123,7 +184,7 @@ describe('persistent browser action grants', () => {
   })
 
   it('deletes before revalidation and cannot be replayed or consumed twice', () => {
-    const grants = new ActionGrantAuthority(new FakeClock())
+    const grants = actionGrants(new FakeClock())
     const grant = approvedIssue(grants, scope())
     let observedPending = -1
 
@@ -136,7 +197,7 @@ describe('persistent browser action grants', () => {
   })
 
   it('burns the one-shot grant before rejecting a changed action or failed current-state check', () => {
-    const grants = new ActionGrantAuthority(new FakeClock())
+    const grants = actionGrants(new FakeClock())
     const changedAction = approvedIssue(grants, scope())
     expect(grants.consumeBeforeDispatch(changedAction, scope(click({ ref: REF_B })), () => true)).toBe(false)
     expect(grants.consumeBeforeDispatch(changedAction, scope(), () => true)).toBe(false)
@@ -147,7 +208,7 @@ describe('persistent browser action grants', () => {
   })
 
   it('uses canonical length-delimited hashing instead of ambiguous concatenation', () => {
-    const grants = new ActionGrantAuthority(new FakeClock())
+    const grants = actionGrants(new FakeClock())
     const original = scope(type({ text: 'bc' }), { surfaceId: 'a' })
     const ambiguousIfConcatenated = scope(type({ text: 'c' }), { surfaceId: 'ab' })
     const grant = approvedIssue(grants, original)
@@ -156,14 +217,14 @@ describe('persistent browser action grants', () => {
   })
 
   it('canonicalizes every finite protocol-valid scroll delta without integer coercion', () => {
-    const grants = new ActionGrantAuthority(new FakeClock())
+    const grants = actionGrants(new FakeClock())
     const input = scope(scroll())
     const grant = approvedIssue(grants, input)
     expect(grants.consumeBeforeDispatch(grant, input, () => true)).toBe(true)
   })
 
   it('keeps the grant opaque and rejects forged or boundary-supplied authority', () => {
-    const grants = new ActionGrantAuthority(new FakeClock())
+    const grants = actionGrants(new FakeClock())
     const grant = approvedIssue(grants, scope())
     expect(Reflect.ownKeys(grant)).toEqual([])
     expect(JSON.stringify(grant)).toBe('{}')
@@ -175,7 +236,7 @@ describe('persistent browser action grants', () => {
   })
 
   it('clears exact navigation and reference grants without widening to unrelated scopes', () => {
-    const grants = new ActionGrantAuthority(new FakeClock())
+    const grants = actionGrants(new FakeClock())
     const oldNavigation = approvedIssue(grants, scope(click(), { surfaceId: 'surface-old' }))
     const currentNavigation = approvedIssue(grants, scope(click({ ref: REF_B })))
 
@@ -187,7 +248,7 @@ describe('persistent browser action grants', () => {
   })
 
   it('clears exact session and lease revisions on revocation', () => {
-    const grants = new ActionGrantAuthority(new FakeClock())
+    const grants = actionGrants(new FakeClock())
     const sessionARevision7 = approvedIssue(grants, scope())
     const sessionARevision8 = approvedIssue(grants, scope(click({ leaseRevision: 8 })))
     const sessionB = approvedIssue(grants, scope(click({
@@ -210,7 +271,7 @@ describe('persistent browser action grants', () => {
   })
 
   it('snapshots cleanup identity so later caller mutation cannot evade revocation', () => {
-    const grants = new ActionGrantAuthority(new FakeClock())
+    const grants = actionGrants(new FakeClock())
     const mutableRequest = click()
     const grant = approvedIssue(grants, scope(mutableRequest))
     Object.assign(mutableRequest as unknown as Record<string, unknown>, {

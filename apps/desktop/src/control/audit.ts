@@ -1,5 +1,6 @@
-import { createHmac } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { createHmac, randomBytes } from 'node:crypto'
+import { constants } from 'node:fs'
+import { lstat, open, readFile } from 'node:fs/promises'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 
 export type ControlAuditAction =
@@ -26,6 +27,31 @@ export interface ControlAuditLogOptions {
   readonly maxBytes?: number
   readonly readText?: (filename: string) => Promise<string>
   readonly writeAtomic?: (filename: string, content: string) => Promise<void>
+}
+
+const INSTALL_SALT = /^[0-9a-f]{64}\n$/
+
+/** Load or atomically create the separate per-install audit HMAC salt. */
+export async function loadOrCreateControlAuditSalt(filename: string): Promise<Uint8Array> {
+  try {
+    const metadata = await lstat(filename)
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size !== 65) {
+      throw new Error('control audit salt file is invalid')
+    }
+    const handle = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW)
+    try {
+      const encoded = await handle.readFile({ encoding: 'utf8' })
+      if (!INSTALL_SALT.test(encoded)) throw new Error('control audit salt file is invalid')
+      return new Uint8Array(Buffer.from(encoded.slice(0, 64), 'hex'))
+    } finally {
+      await handle.close()
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    const salt = randomBytes(32)
+    await writeFileAtomic(filename, `${salt.toString('hex')}\n`, { mode: 0o600, dirMode: 0o700 })
+    return new Uint8Array(salt)
+  }
 }
 
 interface ControlAuditRow {

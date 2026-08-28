@@ -30,11 +30,20 @@ export interface RuntimeController {
   stop(): Promise<void>
 }
 
+export type ControlLifecycleReason =
+  | 'startup-failure' | 'runtime-exit' | 'retry' | 'quit' | 'close-to-tray'
+
+/** Awaited Electron-main authority cleanup required before lifecycle transitions. */
+export interface ControlLifecycleController {
+  cleanup(reason: ControlLifecycleReason): Promise<void>
+}
+
 /** Dependencies that connect the pure lifecycle controller to Electron and macOS. */
 export interface DesktopApplicationOptions {
   app: AppFacade
   createWindow: () => Promise<DesktopWindow>
   runtime: RuntimeController
+  control?: ControlLifecycleController
   findConflict: () => Promise<HarnessConflict | undefined>
   workspace: string
   openLogs?: () => void
@@ -113,6 +122,7 @@ export class DesktopApplication {
   async runtimeExited(): Promise<void> {
     if (this.state !== 'running') return
     this.state = 'failure'
+    await this.cleanupControl('runtime-exit')
     await this.options.log?.('owned Harness runtime exited unexpectedly')
     await this.window?.loadFailure('runtime-exit')
   }
@@ -123,6 +133,17 @@ export class DesktopApplication {
     this.state = 'failure'
     await this.options.log?.('Harness renderer exited unexpectedly')
     await this.window?.loadFailure('renderer')
+  }
+
+  /** Await active-control cleanup before the native window is hidden to the tray. */
+  async beforeCloseToTray(): Promise<void> {
+    try {
+      await this.options.control?.cleanup('close-to-tray')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      await this.options.log?.(`control cleanup failed: ${message}`)
+      throw error
+    }
   }
 
   private installHandlers(): void {
@@ -181,11 +202,14 @@ export class DesktopApplication {
       this.state = 'running'
       this.options.markStartup?.('desktop-running')
     } catch (error) {
+      if (runtimeStarted) {
+        await this.cleanupControl('startup-failure')
+        await this.options.runtime.stop().catch(() => undefined)
+      }
       let window: DesktopWindow
       try {
         window = await windowPromise
       } catch (windowError) {
-        if (runtimeStarted) await this.options.runtime.stop()
         throw windowError
       }
       this.state = 'failure'
@@ -197,6 +221,7 @@ export class DesktopApplication {
 
   private async retry(): Promise<void> {
     if (this.state !== 'failure') return
+    await this.cleanupControl('retry')
     await this.options.runtime.stop()
     this.state = 'idle'
     await this.launch()
@@ -205,7 +230,8 @@ export class DesktopApplication {
   private shutdown(): Promise<void> {
     if (this.shutdownPromise !== undefined) return this.shutdownPromise
     this.state = 'shutting-down'
-    const operation = this.options.runtime.stop()
+    const operation = this.cleanupControl('quit')
+      .then(async () => { await this.options.runtime.stop() })
       .catch(async (error: unknown) => {
         const message = error instanceof Error ? error.message : String(error)
         await this.options.log?.(`shutdown failed: ${message}`)
@@ -216,5 +242,14 @@ export class DesktopApplication {
       })
     this.shutdownPromise = operation
     return operation
+  }
+
+  private async cleanupControl(reason: ControlLifecycleReason): Promise<void> {
+    try {
+      await this.options.control?.cleanup(reason)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      await this.options.log?.(`control cleanup failed: ${message}`)
+    }
   }
 }

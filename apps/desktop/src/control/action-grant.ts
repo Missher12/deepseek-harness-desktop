@@ -6,6 +6,11 @@ import type {
   ControlLeaseId,
   SessionId,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
+import type {
+  NativeApprovalCoordinator,
+  NativeApprovalScope,
+  NativeApprovalTicket,
+} from './native-approval.ts'
 
 export const ACTION_GRANT_LIFETIME_MS = 30_000
 
@@ -39,9 +44,6 @@ export interface ActionGrant {
 export interface MonotonicGrantClock {
   now(): number
 }
-
-declare const ACTION_DIGEST: unique symbol
-export type ActionDigest = string & { readonly [ACTION_DIGEST]: true }
 
 interface CanonicalGrantScope {
   readonly sessionId: SessionId
@@ -272,25 +274,51 @@ function canonicalScope(input: BrowserActionGrantScope): CanonicalGrantScope {
   }
 }
 
-/** Main-process-only fingerprint bound into the native persistent-browser challenge. */
-export function actionDigest(input: BrowserActionGrantScope): ActionDigest {
-  return canonicalScope(input).digest.toString('hex') as ActionDigest
-}
+export type BrowserActionApprovalBase = Omit<
+  NativeApprovalScope,
+  'purpose' | 'actionDigest'
+>
 
 export class ActionGrantAuthority {
   readonly #records = new Map<ActionGrant, GrantRecord>()
 
-  constructor(private readonly clock: MonotonicGrantClock) {}
+  constructor(
+    private readonly clock: MonotonicGrantClock,
+    private readonly approvals: NativeApprovalCoordinator,
+  ) {}
 
   get size(): number {
     return this.#records.size
   }
 
-  issue(input: BrowserActionGrantScope, approvedDigest: ActionDigest): ActionGrant {
+  approvalScope(
+    input: BrowserActionGrantScope,
+    base: BrowserActionApprovalBase,
+  ): NativeApprovalScope {
     const scope = canonicalScope(input)
-    if (typeof approvedDigest !== 'string' || !/^[0-9a-f]{64}$/.test(approvedDigest)
+    return Object.freeze({
+      ...base,
+      purpose: 'browser-action',
+      actionDigest: scope.digest.toString('hex'),
+    })
+  }
+
+  issueFromApproval(
+    input: BrowserActionGrantScope,
+    approvalScope: NativeApprovalScope,
+    ticket: NativeApprovalTicket,
+    revalidate: () => boolean,
+  ): ActionGrant {
+    if (!this.approvals.consumeBeforeDispatch(ticket, approvalScope, revalidate)) {
+      throw new TypeError('an exact one-use native approval ticket is required')
+    }
+    const scope = canonicalScope(input)
+    const approvedDigest = approvalScope.actionDigest
+    if (approvalScope.purpose !== 'browser-action'
+      || typeof approvedDigest !== 'string'
+      || !/^[0-9a-f]{64}$/.test(approvedDigest)
       || !timingSafeEqual(scope.digest, Buffer.from(approvedDigest, 'hex'))) {
-      throw new TypeError('the exact approved action digest is required')
+      throw new TypeError('the approved ticket does not match the exact action')
     }
     const issuedAt = finiteClockValue(this.clock.now())
     this.#purgeExpired(issuedAt)

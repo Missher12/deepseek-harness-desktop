@@ -114,6 +114,23 @@ function backend(
 }
 
 describe('DesktopControlBridgeServer', () => {
+  it('notifies the authority when an owned transport generation attaches and closes', () => {
+    const transportAttached = vi.fn()
+    const transportClosed = vi.fn()
+    const authority = {
+      ...backend(async request => statusResponse(request as ReturnType<typeof statusRequest>)),
+      transportAttached,
+      transportClosed,
+    }
+    const server = new DesktopControlBridgeServer({ backend: authority, now: () => 10_000 })
+    const channel = new FakeChannel(1)
+
+    server.attach(channel)
+    expect(transportAttached).toHaveBeenCalledOnce()
+    channel.disconnect()
+    expect(transportClosed).toHaveBeenCalledWith('peer-disconnected')
+  })
+
   it('accepts all bridge requests only from Harness and replies from the injected backend', async () => {
     const dispatch = vi.fn<DesktopControlBackend['dispatch']>(
       async request => statusResponse(request as ReturnType<typeof statusRequest>),

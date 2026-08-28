@@ -20,6 +20,11 @@ import {
   controlRequestRule,
   type AdapterPolicyFacts,
 } from './policy.ts'
+import type {
+  ActionGrant,
+  ActionGrantAuthority,
+  BrowserActionGrantScope,
+} from './action-grant.ts'
 
 export const CONTROL_LEASE_IDLE_MS = 300_000
 export const CONTROL_LEASE_HARD_MS = 1_200_000
@@ -59,11 +64,17 @@ export interface OperationAuthorityFacts {
   readonly targets: readonly ControlLeaseTarget[]
   readonly capabilities: readonly ControlLeaseCapability[]
   readonly policy: AdapterPolicyFacts
-  readonly nativeGrantValidated: boolean
+}
+
+export interface ApprovedOperationAuthorization {
+  readonly grant: ActionGrant
+  readonly scope: BrowserActionGrantScope
+  readonly revalidate: () => boolean
 }
 
 export interface ActiveControlLease extends ControlLeaseAcquireResult {
   readonly generation: number
+  readonly sessionId: SessionIdType
   readonly agentId: string
   readonly issuedAt: number
   readonly lastActionAt: number
@@ -86,11 +97,35 @@ interface MutableControlLease {
   remaining: ControlLeaseQuotaSnapshot
 }
 
+declare const PREPARED_CONTROL_LEASE: unique symbol
+export interface PreparedControlLease {
+  readonly [PREPARED_CONTROL_LEASE]: true
+}
+
+interface PreparedControlLeaseRecord {
+  readonly token: PreparedControlLease
+  readonly leaseId: ActiveControlLease['leaseId']
+  readonly leaseRevision: number
+  readonly sessionId: SessionIdType
+  readonly agentId: string
+  readonly surfaceKind: ControlLeaseSurfaceKind
+  readonly targets: readonly ControlLeaseTarget[]
+  readonly capabilities: readonly ControlLeaseCapability[]
+}
+
 export interface ControlLeaseAuthorityOptions {
   readonly clock: MonotonicClock
   readonly mintLeaseId: () => string
+  readonly onRevoked: (event: ControlLeaseRevokedEvent) => void
+  readonly actionGrants?: ActionGrantAuthority
   readonly initialRevision?: number
   readonly quotas?: ControlLeaseQuotaSnapshot
+}
+
+export interface ControlLeaseRevokedEvent {
+  readonly snapshot: ActiveControlLease
+  readonly reason: string
+  readonly generation: number
 }
 
 export const DEFAULT_CONTROL_LEASE_QUOTAS: ControlLeaseQuotaSnapshot = Object.freeze({
@@ -239,18 +274,42 @@ function safeNow(clock: MonotonicClock): number {
   return now
 }
 
+function sameValues<T>(left: readonly T[], right: readonly T[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function sameTargets(
+  left: readonly ControlLeaseTarget[],
+  right: readonly ControlLeaseTarget[],
+): boolean {
+  return left.length === right.length && left.every((target, index) => {
+    const candidate = right[index]
+    return candidate !== undefined
+      && target.appId === candidate.appId
+      && sameValues(target.windowIds, candidate.windowIds)
+  })
+}
+
 export class ControlLeaseAuthority {
   readonly #clock: MonotonicClock
   readonly #mintLeaseId: () => string
+  readonly #onRevoked: (event: ControlLeaseRevokedEvent) => void
+  readonly #actionGrants: ActionGrantAuthority | undefined
   readonly #quotas: ControlLeaseQuotaSnapshot
   #nextRevision: number | null
   #generation = 0
   #active: MutableControlLease | null = null
+  #prepared: PreparedControlLeaseRecord | null = null
   #timer: unknown = null
 
   constructor(options: ControlLeaseAuthorityOptions) {
     this.#clock = options.clock
     this.#mintLeaseId = options.mintLeaseId
+    if (typeof options.onRevoked !== 'function') {
+      fail('INTERNAL', 'lease revocation notification is required')
+    }
+    this.#onRevoked = options.onRevoked
+    this.#actionGrants = options.actionGrants
     this.#quotas = assertQuotas(options.quotas ?? DEFAULT_CONTROL_LEASE_QUOTAS)
     const initialRevision = options.initialRevision ?? 1
     if (!Number.isSafeInteger(initialRevision) || initialRevision < 1) {
@@ -264,8 +323,106 @@ export class ControlLeaseAuthority {
     facts: LeaseAcquisitionFacts,
     agentId: string,
   ): ControlLeaseAcquireResult {
+    const prepared = this.prepareAcquire(request, facts, agentId)
+    return this.activatePrepared(prepared, request, facts)
+  }
+
+  prepareAcquire(
+    request: ControlLeaseAcquireRequest,
+    facts: LeaseAcquisitionFacts,
+    agentId: string,
+  ): PreparedControlLease {
     this.#expireIfNeeded()
-    if (this.#active !== null) fail('BUSY', 'another control lease is active')
+    if (this.#active !== null || this.#prepared !== null) {
+      fail('BUSY', 'another control lease or lease approval is active')
+    }
+    const effective = this.#effectiveAcquisition(request, facts, agentId)
+    if (this.#nextRevision === null) fail('INTERNAL', 'lease revision space is exhausted')
+    let leaseId: ActiveControlLease['leaseId']
+    try {
+      leaseId = ControlLeaseId(this.#mintLeaseId())
+    } catch {
+      return fail('INTERNAL', 'Electron failed to mint a valid lease id')
+    }
+    const revision = this.#nextRevision
+    this.#nextRevision = revision === Number.MAX_SAFE_INTEGER ? null : revision + 1
+    const token = Object.freeze({}) as PreparedControlLease
+    this.#prepared = Object.freeze({
+      token,
+      leaseId,
+      leaseRevision: revision,
+      sessionId: request.sessionId,
+      agentId,
+      surfaceKind: effective.surfaceKind,
+      targets: effective.targets,
+      capabilities: effective.capabilities,
+    })
+    return token
+  }
+
+  preparedDescriptor(prepared: PreparedControlLease): ControlLeaseAcquireResult {
+    const record = this.#prepared
+    if (record === null || record.token !== prepared) {
+      fail('LEASE_REVOKED', 'prepared control lease is no longer current')
+    }
+    return this.#preparedDescriptor(record)
+  }
+
+  activatePrepared(
+    prepared: PreparedControlLease,
+    request: ControlLeaseAcquireRequest,
+    facts: LeaseAcquisitionFacts,
+  ): ControlLeaseAcquireResult {
+    const record = this.#prepared
+    if (record === null || record.token !== prepared) {
+      fail('LEASE_REVOKED', 'prepared control lease is no longer current')
+    }
+    this.#prepared = null
+    const effective = this.#effectiveAcquisition(request, facts, record.agentId)
+    if (request.sessionId !== record.sessionId
+      || effective.surfaceKind !== record.surfaceKind
+      || !sameTargets(effective.targets, record.targets)
+      || !sameValues(effective.capabilities, record.capabilities)) {
+      fail('POLICY_DENIED', 'prepared lease scope changed before activation')
+    }
+    const now = safeNow(this.#clock)
+    if (now > Number.MAX_SAFE_INTEGER - CONTROL_LEASE_HARD_MS) {
+      fail('INTERNAL', 'lease monotonic deadline would overflow')
+    }
+    this.#generation = this.#nextGeneration()
+    this.#active = {
+      leaseId: record.leaseId,
+      leaseRevision: record.leaseRevision,
+      generation: this.#generation,
+      sessionId: record.sessionId,
+      agentId: record.agentId,
+      surfaceKind: record.surfaceKind,
+      targets: record.targets,
+      capabilities: new Set(record.capabilities),
+      issuedAt: now,
+      lastActionAt: now,
+      hardExpiresAt: now + CONTROL_LEASE_HARD_MS,
+      remaining: freezeQuotas(this.#quotas),
+    }
+    this.#schedule(this.#active)
+    return this.#descriptor(this.#active)
+  }
+
+  cancelPrepared(prepared: PreparedControlLease): boolean {
+    if (this.#prepared?.token !== prepared) return false
+    this.#prepared = null
+    return true
+  }
+
+  #effectiveAcquisition(
+    request: ControlLeaseAcquireRequest,
+    facts: LeaseAcquisitionFacts,
+    agentId: string,
+  ): {
+    readonly surfaceKind: ControlLeaseSurfaceKind
+    readonly targets: readonly ControlLeaseTarget[]
+    readonly capabilities: readonly ControlLeaseCapability[]
+  } {
     if (request.sessionId !== facts.officialSessionId) {
       fail('UNAUTHORIZED', 'request does not belong to the official session')
     }
@@ -276,42 +433,20 @@ export class ControlLeaseAuthority {
     if (typeof facts.policyAllowed !== 'boolean' || !facts.policyAllowed) {
       fail('POLICY_DENIED', 'lease policy denied the request')
     }
-    if (typeof agentId !== 'string') fail('INTERNAL', 'agent display metadata is invalid')
-    if (this.#nextRevision === null) fail('INTERNAL', 'lease revision space is exhausted')
+    if (typeof agentId !== 'string' || agentId.length === 0
+      || Buffer.byteLength(agentId, 'utf8') > PROTOCOL_LIMITS.agentIdBytes) {
+      fail('INTERNAL', 'agent display metadata is invalid')
+    }
     const targets = effectiveTargets(request.targets, facts.targets, facts.surfaceKind)
     const capabilities = effectiveCapabilities(request.capabilities, facts.capabilities)
-    let leaseId: ActiveControlLease['leaseId']
-    try {
-      leaseId = ControlLeaseId(this.#mintLeaseId())
-    } catch {
-      return fail('INTERNAL', 'Electron failed to mint a valid lease id')
-    }
-    const now = safeNow(this.#clock)
-    if (now > Number.MAX_SAFE_INTEGER - CONTROL_LEASE_HARD_MS) {
-      fail('INTERNAL', 'lease monotonic deadline would overflow')
-    }
-    const revision = this.#nextRevision
-    this.#nextRevision = revision === Number.MAX_SAFE_INTEGER ? null : revision + 1
-    this.#generation = this.#nextGeneration()
-    this.#active = {
-      leaseId,
-      leaseRevision: revision,
-      generation: this.#generation,
-      sessionId: request.sessionId,
-      agentId,
-      surfaceKind: facts.surfaceKind,
-      targets,
-      capabilities: new Set(capabilities),
-      issuedAt: now,
-      lastActionAt: now,
-      hardExpiresAt: now + CONTROL_LEASE_HARD_MS,
-      remaining: freezeQuotas(this.#quotas),
-    }
-    this.#schedule(this.#active)
-    return this.#descriptor(this.#active)
+    return Object.freeze({ surfaceKind: facts.surfaceKind, targets, capabilities })
   }
 
-  prepareDispatch(request: BridgeRequest, facts: OperationAuthorityFacts): void {
+  prepareDispatch(
+    request: BridgeRequest,
+    facts: OperationAuthorityFacts,
+    authorization?: ApprovedOperationAuthorization,
+  ): void {
     if (request.sessionId !== facts.officialSessionId) {
       fail('UNAUTHORIZED', 'request does not belong to the official session')
     }
@@ -338,9 +473,18 @@ export class ControlLeaseAuthority {
     }
     this.#revalidateTarget(request, facts, active)
     const policy = classifyAuthorityRequest(request, active.surfaceKind, facts.policy)
-    if (policy === 'DENY' || (policy === 'APPROVAL_REQUIRED'
-      && (typeof facts.nativeGrantValidated !== 'boolean' || !facts.nativeGrantValidated))) {
+    if (policy === 'DENY') {
       fail('POLICY_DENIED', 'control policy denied the request')
+    }
+    if (policy === 'APPROVAL_REQUIRED') {
+      if (authorization === undefined || this.#actionGrants === undefined
+        || !this.#actionGrants.consumeBeforeDispatch(
+          authorization.grant,
+          authorization.scope,
+          authorization.revalidate,
+        )) {
+        fail('POLICY_DENIED', 'an exact one-use action grant is required')
+      }
     }
     const amount = rule.amount ?? 0
     if (active.remaining.operations < 1
@@ -358,11 +502,17 @@ export class ControlLeaseAuthority {
     this.#schedule(active)
   }
 
-  revoke(_reason: string): boolean {
-    if (this.#active === null) return false
+  revoke(reason: string): boolean {
+    const active = this.#active
+    if (active === null) return false
+    if (typeof reason !== 'string' || reason.length === 0 || reason.length > 128) {
+      fail('INTERNAL', 'lease revocation reason is invalid')
+    }
+    const snapshot = this.#snapshot(active)
     this.#clearTimer()
     this.#active = null
-    this.#generation = this.#nextGeneration()
+    const event = Object.freeze({ snapshot, reason, generation: active.generation })
+    this.#onRevoked(event)
     return true
   }
 
@@ -402,10 +552,23 @@ export class ControlLeaseAuthority {
     })
   }
 
+  #preparedDescriptor(prepared: PreparedControlLeaseRecord): ControlLeaseAcquireResult {
+    return Object.freeze({
+      leaseId: prepared.leaseId,
+      leaseRevision: prepared.leaseRevision,
+      surfaceKind: prepared.surfaceKind,
+      targets: freezeTargets(prepared.targets),
+      capabilities: Object.freeze([...prepared.capabilities]),
+      idleExpiresAfterMs: CONTROL_LEASE_IDLE_MS,
+      hardExpiresAfterMs: CONTROL_LEASE_HARD_MS,
+    })
+  }
+
   #snapshot(active: MutableControlLease): ActiveControlLease {
     return Object.freeze({
       ...this.#descriptor(active),
       generation: active.generation,
+      sessionId: active.sessionId,
       agentId: active.agentId,
       issuedAt: active.issuedAt,
       lastActionAt: active.lastActionAt,

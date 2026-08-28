@@ -1,10 +1,13 @@
 import { createRequire } from 'node:module'
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app,
   BrowserWindow,
+  dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   Tray,
@@ -14,6 +17,7 @@ import {
   type IpcMainInvokeEvent,
 } from 'electron'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import type { SessionId } from '@deepseek-ai/dsh-desktop-control-protocol'
 import { healProfilesModuleFallbackCached } from '@deepseek-ai/dsh-app-boot'
 import {
   DesktopApplication,
@@ -50,8 +54,20 @@ import { readDesktopWindowPrerequisites } from './window/prerequisites.ts'
 import { DesktopStartupTimeline } from './startup-timeline.ts'
 import {
   DesktopControlBridgeServer,
-  unavailableDesktopControlBackend,
 } from './control/bridge-server.ts'
+import { DesktopControlCoordinator } from './control/control-coordinator.ts'
+import {
+  DEFAULT_CONTROL_SETTINGS,
+  readControlSettings,
+  type ControlSettings,
+} from './control/settings-store.ts'
+import type {
+  NativeApprovalDialogOptions,
+} from './control/native-approval.ts'
+import {
+  ControlAuditLog,
+  loadOrCreateControlAuditSalt,
+} from './control/audit.ts'
 
 const PRODUCT_NAME = 'DeepSeek Harness'
 const require = createRequire(import.meta.url)
@@ -85,6 +101,9 @@ const userData = app.getPath('userData')
 const logPath = join(userData, 'logs', 'lifecycle.log')
 const windowStatePath = join(userData, 'window-state.json')
 const preferencesPath = join(userData, 'desktop-preferences.json')
+const controlSettingsPath = join(userData, 'desktop-control-settings.json')
+const controlAuditPath = join(userData, 'desktop-control-audit.jsonl')
+const controlAuditSaltPath = join(userData, 'desktop-control-audit.salt')
 const logger = createLifecycleLogger(logPath)
 const dshHome = resolveDshHome()
 
@@ -130,12 +149,95 @@ const updateService = new DesktopUpdateService({
   userData,
 })
 const startupTimeline = new DesktopStartupTimeline(record)
+let controlSettings: ControlSettings = DEFAULT_CONTROL_SETTINGS
+let officialControlSession: SessionId | undefined
+const controlSettingsReady = readControlSettings(controlSettingsPath).then((settings) => {
+  controlSettings = settings
+  return settings
+}).catch((error: unknown) => {
+  record(`desktop control settings read failed: ${error instanceof Error ? error.message : String(error)}`)
+  return controlSettings
+})
+let controlAuditReady: Promise<ControlAuditLog | undefined> | undefined
+function getControlAudit(): Promise<ControlAuditLog | undefined> {
+  controlAuditReady ??= loadOrCreateControlAuditSalt(controlAuditSaltPath).then((installSalt) => {
+    return new ControlAuditLog({
+      filename: controlAuditPath,
+      clock: { nowUnixMs: Date.now },
+      installSalt,
+    })
+  }).catch((error: unknown) => {
+    record(`desktop control audit initialization failed: ${error instanceof Error ? error.message : String(error)}`)
+    return undefined
+  })
+  return controlAuditReady
+}
+const controlLifecycle: { bridge?: DesktopControlBridgeServer } = {}
+const controlCoordinator = new DesktopControlCoordinator({
+  clock: {
+    now: () => performance.now(),
+    setTimeout: (callback, delayMs) => {
+      const timer = setTimeout(callback, delayMs)
+      timer.unref()
+      return timer
+    },
+    clearTimeout: (handle) => { clearTimeout(handle as NodeJS.Timeout) },
+  },
+  mintLeaseId: randomUUID,
+  // The Desktop-only Host injects its official session into every strict request.
+  // Electron binds the first owned-child session and rejects every different value.
+  getOfficialSessionId: () => officialControlSession,
+  claimOfficialSession: (sessionId) => {
+    officialControlSession ??= sessionId
+    return officialControlSession
+  },
+  releaseOfficialSession: (sessionId) => {
+    if (officialControlSession === sessionId) officialControlSession = undefined
+  },
+  getAgentDisplayName: () => 'Agent',
+  getSettings: () => ({ settings: controlSettings, revision: 1 }),
+  approval: {
+    dialog: {
+      async showMessageBox(window, options: NativeApprovalDialogOptions) {
+        return await dialog.showMessageBox(window as BrowserWindow, {
+          ...options,
+          buttons: [...options.buttons],
+        })
+      },
+    },
+    getOwnerWindow: () => nativeWindow,
+    revalidate: scope => scope.sessionId === officialControlSession,
+  },
+  shortcuts: {
+    register: (accelerator, callback) => globalShortcut.register(accelerator, callback),
+    unregister: (accelerator) => { globalShortcut.unregister(accelerator) },
+  },
+  audit: {
+    record: async (event) => { await (await getControlAudit())?.record(event) },
+    flush: async () => {
+      if (controlAuditReady !== undefined) await (await controlAuditReady)?.flush()
+    },
+  },
+  onLeaseRevoked: (event) => {
+    controlLifecycle.bridge?.revokeLease({
+      protocolVersion: 1,
+      messageKind: 'control',
+      controlKind: 'lease.revoke',
+      sessionId: event.snapshot.sessionId,
+      leaseId: event.snapshot.leaseId,
+      leaseRevision: event.snapshot.leaseRevision,
+    })
+  },
+})
 const controlBridge = new DesktopControlBridgeServer({
-  backend: unavailableDesktopControlBackend,
+  backend: controlCoordinator,
+  beforeControlShutdown: signal => controlCoordinator.beforeControlShutdown(signal),
   log: (event) => {
     record(`desktop control ${event.direction} generation=${String(event.generation)} pending=${String(event.pending)} reason=${event.reason}`)
   },
 })
+controlLifecycle.bridge = controlBridge
+void controlSettingsReady
 
 const runtime = new HarnessProcess({
   cli: resolveCliPath(),
@@ -281,11 +383,16 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
   window.on('close', (event) => {
     event.preventDefault()
     persistState()
-    void workbenchBrowser?.hide()
-    if (desktopPreferences.closeBehavior === 'keep-running') {
-      window.hide()
-      syncWindowsTray()
-    } else app.quit()
+    void controller.beforeCloseToTray().then(async () => {
+      await workbenchBrowser?.hide()
+      if (window.isDestroyed()) return
+      if (desktopPreferences.closeBehavior === 'keep-running') {
+        window.hide()
+        syncWindowsTray()
+      } else app.quit()
+    }).catch((error: unknown) => {
+      record(`close-to-tray control cleanup failed: ${error instanceof Error ? error.message : String(error)}`)
+    })
   })
   window.webContents.on('render-process-gone', () => { void controller.rendererExited() })
   window.webContents.on('did-fail-load', (_event, errorCode) => {
@@ -324,6 +431,7 @@ const controller = new DesktopApplication({
   app: appFacade,
   createWindow: createDesktopWindow,
   runtime,
+  control: controlCoordinator,
   findConflict: () => findConflictingHarness(dshHome),
   workspace: resolveWorkspace(),
   openLogs: () => { shell.showItemInFolder(logPath) },

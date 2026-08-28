@@ -13,6 +13,7 @@ import {
   ControlAuthorityError,
   ControlLeaseAuthority,
   effectiveHelperTimeoutMs,
+  type ControlLeaseRevokedEvent,
 } from '../src/control/control-lease.ts'
 import { adapterPolicyFacts } from '../src/control/policy.ts'
 import { FakeMonotonicClock } from './control-testkit.ts'
@@ -103,7 +104,6 @@ function operationFacts(
     targets: [],
     capabilities: ['observe', 'pointer', 'keyboard'] as const,
     policy: adapterPolicyFacts('ordinary', effect),
-    nativeGrantValidated: false,
   }
 }
 
@@ -111,11 +111,61 @@ function authority(clock = new FakeMonotonicClock(), options: { initialRevision?
   return new ControlLeaseAuthority({
     clock,
     mintLeaseId: () => leaseUuid,
+    onRevoked: () => undefined,
     ...options,
   })
 }
 
 describe('ControlLeaseAuthority', () => {
+  it('clears the active lease before one exact frozen revocation notification', () => {
+    const events: ControlLeaseRevokedEvent[] = []
+    const leases = new ControlLeaseAuthority({
+      clock: new FakeMonotonicClock(),
+      mintLeaseId: () => leaseUuid,
+      onRevoked: (event) => {
+        expect(leases.activeSnapshot()).toBeNull()
+        events.push(event)
+      },
+    })
+    const acquired = leases.acquire(acquireRequest(), acquireFacts(), 'Agent')
+
+    expect(leases.revoke('user-stop')).toBe(true)
+    expect(leases.revoke('duplicate-stop')).toBe(false)
+    expect(events).toHaveLength(1)
+    expect(events[0]?.reason).toBe('user-stop')
+    expect(events[0]?.generation).toBe(1)
+    expect(events[0]?.snapshot).toMatchObject({
+      leaseId: acquired.leaseId,
+      leaseRevision: acquired.leaseRevision,
+    })
+    expect(Object.isFrozen(events[0])).toBe(true)
+    expect(Object.isFrozen(events[0]?.snapshot)).toBe(true)
+  })
+
+  it('never lets a stale timer notify revocation for its replacement lease', () => {
+    const clock = new FakeMonotonicClock()
+    const events: Array<{ reason: string; generation: number }> = []
+    const ids = [
+      '10000000-0000-4000-8000-000000000001',
+      '10000000-0000-4000-8000-000000000002',
+    ]
+    const leases = new ControlLeaseAuthority({
+      clock,
+      mintLeaseId: () => ids.shift()!,
+      onRevoked: (event) => {
+        events.push({ reason: event.reason, generation: event.generation })
+      },
+    })
+    leases.acquire(acquireRequest(), acquireFacts(), 'first')
+    clock.advanceTo(1)
+    leases.revoke('replacement')
+    leases.acquire(acquireRequest(), acquireFacts(), 'second')
+
+    clock.advanceTo(CONTROL_LEASE_IDLE_MS)
+    clock.flush({ includeCancelled: true })
+    expect(events).toEqual([{ reason: 'replacement', generation: 1 }])
+    expect(leases.activeSnapshot()?.generation).toBe(2)
+  })
   it('derives a positive bounded helper timeout without lengthening either deadline', () => {
     expect(effectiveHelperTimeoutMs(30_001, 60_000)).toBe(30_000)
     expect(effectiveHelperTimeoutMs(12_345, 60_000)).toBe(12_345)
@@ -217,7 +267,11 @@ describe('ControlLeaseAuthority', () => {
       '10000000-0000-4000-8000-000000000001',
       replacementId,
     ]
-    const leases = new ControlLeaseAuthority({ clock, mintLeaseId: () => ids.shift()! })
+    const leases = new ControlLeaseAuthority({
+      clock,
+      mintLeaseId: () => ids.shift()!,
+      onRevoked: () => undefined,
+    })
     leases.acquire(acquireRequest(), acquireFacts(), 'Agent')
     clock.advanceTo(1)
     leases.revoke('replacement')
@@ -272,6 +326,7 @@ describe('ControlLeaseAuthority', () => {
     const leases = new ControlLeaseAuthority({
       clock,
       mintLeaseId: () => leaseUuid,
+      onRevoked: () => undefined,
       quotas: { operations: 2, snapshots: 1, pointerActions: 1, keyActions: 0, textBytes: 0 },
     })
     leases.acquire(acquireRequest(), acquireFacts(), 'Agent')

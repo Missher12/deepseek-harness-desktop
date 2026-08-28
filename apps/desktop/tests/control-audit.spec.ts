@@ -2,7 +2,10 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ControlAuditLog } from '../src/control/audit.ts'
+import {
+  ControlAuditLog,
+  loadOrCreateControlAuditSalt,
+} from '../src/control/audit.ts'
 
 const roots: string[] = []
 
@@ -11,6 +14,19 @@ afterEach(async () => {
 })
 
 describe('local control audit', () => {
+  it('atomically creates and then reuses one separate per-install HMAC salt', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-control-audit-'))
+    roots.push(root)
+    const file = join(root, 'audit.salt')
+
+    const created = await loadOrCreateControlAuditSalt(file)
+    const reused = await loadOrCreateControlAuditSalt(file)
+
+    expect(created).toHaveLength(32)
+    expect(reused).toEqual(created)
+    expect(await readFile(file, 'utf8')).toMatch(/^[0-9a-f]{64}\n$/)
+  })
+
   it('HMACs the session and never serializes sensitive sentinel fields', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-control-audit-'))
     roots.push(root)

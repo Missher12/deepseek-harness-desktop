@@ -12,6 +12,7 @@ import {
   type NativeApprovalDialogOptions,
   type NativeApprovalOwnerWindow,
   type NativeApprovalScope,
+  type NativeApprovalTicket,
 } from '../src/control/native-approval.ts'
 
 class Deferred<T> {
@@ -110,6 +111,12 @@ function coordinator(
   return new NativeApprovalCoordinator({ dialog, getOwnerWindow: () => window, revalidate })
 }
 
+function expectTicket(value: unknown): asserts value is NativeApprovalTicket {
+  expect(value).not.toBe('DENIED')
+  expect(value).not.toBe('BUSY')
+  expect(typeof value).toBe('object')
+}
+
 describe('native control approval', () => {
   it('uses a cancel-default native challenge and accepts only its explicit allow response', async () => {
     const dialog = new FakeDialog()
@@ -125,7 +132,7 @@ describe('native control approval', () => {
       noLink: true,
     })
     dialog.answers[0]?.resolve({ response: 1 })
-    await expect(approved).resolves.toBe('APPROVED')
+    expectTicket(await approved)
 
     const cancelled = approvals.request(scope({ leaseRevision: 8 }))
     dialog.answers[1]?.resolve({ response: 0 })
@@ -157,7 +164,7 @@ describe('native control approval', () => {
     expect(abortedDialog.calls).toHaveLength(0)
   })
 
-  it('coalesces structural copies of one exact scope process-wide and rejects competing spam as BUSY', async () => {
+  it('rejects every second challenge as BUSY, including an exact structural copy', async () => {
     const dialog = new FakeDialog()
     const window = new FakeWindow()
     const firstCoordinator = coordinator(dialog, window)
@@ -168,15 +175,15 @@ describe('native control approval', () => {
       capabilities: ['observe', 'pointer'],
     }))
 
-    expect(same).toBe(first)
+    await expect(same).resolves.toBe('BUSY')
     for (let index = 0; index < 25; index += 1) {
-      expect(firstCoordinator.request(scope())).toBe(first)
+      await expect(firstCoordinator.request(scope())).resolves.toBe('BUSY')
     }
     await expect(secondCoordinator.request(scope({ allowlistRevision: 4 }))).resolves.toBe('BUSY')
     expect(dialog.calls).toHaveLength(1)
 
     dialog.answers[0]?.resolve({ response: 1 })
-    await expect(first).resolves.toBe('APPROVED')
+    expectTicket(await first)
   })
 
   it.each(['hide', 'close', 'abort'] as const)(
@@ -199,17 +206,45 @@ describe('native control approval', () => {
     },
   )
 
-  it('lets an exact-scope coalesced caller abort the shared challenge', async () => {
+  it('ignores a competing caller abort and lets only the original owner cancel its challenge', async () => {
     const dialog = new FakeDialog()
     const window = new FakeWindow()
     const approvals = coordinator(dialog, window)
     const first = approvals.request(scope())
     const controller = new AbortController()
-    expect(approvals.request(scope(), controller.signal)).toBe(first)
+    await expect(approvals.request(scope(), controller.signal)).resolves.toBe('BUSY')
 
     controller.abort('coalesced caller stopped')
     dialog.answers[0]?.resolve({ response: 1 })
-    await expect(first).resolves.toBe('DENIED')
+    await expect(first).resolves.not.toBe('DENIED')
+  })
+
+  it('returns an opaque one-use ticket and burns it before exact-scope revalidation', async () => {
+    const dialog = new FakeDialog()
+    const approvals = coordinator(dialog, new FakeWindow())
+    const exactScope = scope()
+    const pending = approvals.request(exactScope)
+    dialog.answers[0]?.resolve({ response: 1 })
+    const ticket = await pending
+
+    expect(ticket).not.toBe('APPROVED')
+    expect(ticket).not.toBe('DENIED')
+    expect(ticket).not.toBe('BUSY')
+    expect(Reflect.ownKeys(ticket as object)).toEqual([])
+    expect(JSON.stringify(ticket)).toBe('{}')
+    let observedTicketCount = -1
+    expect(approvals.consumeBeforeDispatch(ticket, exactScope, () => {
+      observedTicketCount = approvals.ticketCount
+      return true
+    })).toBe(true)
+    expect(observedTicketCount).toBe(0)
+    expect(approvals.consumeBeforeDispatch(ticket, exactScope, () => true)).toBe(false)
+
+    const second = approvals.request(scope({ leaseRevision: 8 }))
+    dialog.answers[1]?.resolve({ response: 1 })
+    const changed = await second
+    expect(approvals.consumeBeforeDispatch(changed, scope({ leaseRevision: 9 }), () => true)).toBe(false)
+    expect(approvals.consumeBeforeDispatch(changed, scope({ leaseRevision: 8 }), () => true)).toBe(false)
   })
 
   it('denies dialog exceptions and a window that silently becomes invalid', async () => {
@@ -284,7 +319,7 @@ describe('native control approval', () => {
         targets: [],
       }),
       actionDigest: digest,
-    } as NativeApprovalScope)
+    })
     expect(dialog.calls[0]?.options.detail).toContain(digest.slice(0, 12))
     await expect(approvals.request({
       ...scope({
@@ -293,8 +328,8 @@ describe('native control approval', () => {
         targets: [],
       }),
       actionDigest: 'b'.repeat(64),
-    } as NativeApprovalScope)).resolves.toBe('BUSY')
+    })).resolves.toBe('BUSY')
     dialog.answers[0]?.resolve({ response: 1 })
-    await expect(pending).resolves.toBe('APPROVED')
+    expectTicket(await pending)
   })
 })

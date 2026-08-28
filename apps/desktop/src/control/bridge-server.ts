@@ -36,6 +36,8 @@ export interface DesktopControlBackend {
     context: DesktopControlDispatchContext,
   ): Promise<DecodedDesktopControlEnvelope>
   revokeSession(sessionId: SessionId, signal: AbortSignal): Promise<void>
+  transportAttached?(): void
+  transportClosed?(reason: string): void
 }
 
 /** Content-free diagnostics allowed from this privileged bridge. */
@@ -247,6 +249,7 @@ export class DesktopControlBridgeServer implements HarnessControlLifecycle {
       closed: false,
     }
     this.state = state
+    this.options.backend.transportAttached?.()
     state.detachMessage = channel.onMessage((frame) => {
       if (this.state !== state || channel.generation !== state.generation) return
       this.acceptFrame(state, frame)
@@ -518,6 +521,7 @@ export class DesktopControlBridgeServer implements HarnessControlLifecycle {
     state.pending.clear()
     state.sender.close(new Error('Desktop control bridge disconnected.'))
     if (this.state === state) this.state = undefined
+    try { this.options.backend.transportClosed?.(reason) } catch { /* transport is already closed */ }
     this.logEvent(state, reason)
     if (disconnect && state.channel.connected) state.channel.disconnect()
   }

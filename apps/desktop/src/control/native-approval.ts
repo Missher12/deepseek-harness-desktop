@@ -9,8 +9,6 @@ import type {
   ControlLeaseTarget,
   SessionId,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
-import type { ActionDigest } from './action-grant.ts'
-
 export interface NativeApprovalOwnerWindow {
   isVisible(): boolean
   isDestroyed(): boolean
@@ -46,19 +44,27 @@ export interface NativeApprovalScope {
   readonly capabilities: readonly ControlLeaseCapability[]
   readonly allowlistRevision: number
   /** Main-process-only exact persistent-browser action fingerprint. */
-  readonly actionDigest?: ActionDigest
+  readonly actionDigest?: string
 }
 
-export type NativeApprovalResult = 'APPROVED' | 'DENIED' | 'BUSY'
+declare const NATIVE_APPROVAL_TICKET: unique symbol
+/** Opaque Electron-main authority; object identity is the only credential. */
+export interface NativeApprovalTicket {
+  readonly [NATIVE_APPROVAL_TICKET]: true
+}
+
+export type NativeApprovalResult = NativeApprovalTicket | 'DENIED' | 'BUSY'
+
+export const NATIVE_APPROVAL_TICKET_LIFETIME_MS = 30_000
 
 export interface NativeApprovalDependencies {
   readonly dialog: NativeApprovalDialog
   readonly getOwnerWindow: () => NativeApprovalOwnerWindow | undefined
   readonly revalidate: (scope: NativeApprovalScope) => boolean | Promise<boolean>
+  readonly now?: () => number
 }
 
 interface PendingApproval {
-  readonly key: string
   readonly scope: NativeApprovalScope
   readonly promise: Promise<NativeApprovalResult>
   readonly ownerWindow: NativeApprovalOwnerWindow
@@ -66,6 +72,11 @@ interface PendingApproval {
   readonly invalidate: () => void
   readonly abortCleanups: Array<() => void>
   invalidated: boolean
+}
+
+interface ApprovalTicketRecord {
+  readonly key: string
+  readonly issuedAt: number
 }
 
 let processPendingApproval: PendingApproval | undefined
@@ -208,7 +219,7 @@ function canonicalScope(input: NativeApprovalScope): NativeApprovalScope {
     targets,
     capabilities,
     allowlistRevision,
-    ...(purpose === 'browser-action' ? { actionDigest: actionDigest as ActionDigest } : {}),
+    ...(purpose === 'browser-action' ? { actionDigest: actionDigest as string } : {}),
   })
 }
 
@@ -266,7 +277,46 @@ function pendingWindowIsValid(pending: PendingApproval): boolean {
 }
 
 export class NativeApprovalCoordinator {
+  readonly #tickets = new Map<NativeApprovalTicket, ApprovalTicketRecord>()
+
   constructor(private readonly dependencies: NativeApprovalDependencies) {}
+
+  get ticketCount(): number {
+    return this.#tickets.size
+  }
+
+  consumeBeforeDispatch(
+    ticket: NativeApprovalResult,
+    input: NativeApprovalScope,
+    revalidate: () => boolean,
+  ): boolean {
+    if (typeof ticket === 'string') return false
+    const record = this.#tickets.get(ticket)
+    if (record === undefined) return false
+    this.#tickets.delete(ticket)
+
+    let candidate: NativeApprovalScope
+    let now: number
+    try {
+      candidate = canonicalScope(input)
+      now = this.#now()
+    } catch {
+      return false
+    }
+    if (now < record.issuedAt
+      || now - record.issuedAt >= NATIVE_APPROVAL_TICKET_LIFETIME_MS
+      || scopeKey(candidate) !== record.key) return false
+    try {
+      const current: unknown = revalidate()
+      return current === true
+    } catch {
+      return false
+    }
+  }
+
+  revokeTicket(ticket: NativeApprovalTicket): boolean {
+    return this.#tickets.delete(ticket)
+  }
 
   request(input: NativeApprovalScope, signal?: AbortSignal): Promise<NativeApprovalResult> {
     let scope: NativeApprovalScope
@@ -277,23 +327,7 @@ export class NativeApprovalCoordinator {
     } catch {
       return Promise.resolve('DENIED')
     }
-    const existing = processPendingApproval
-    if (existing) {
-      if (existing.key !== key) return Promise.resolve('BUSY')
-      if (signal) {
-        if (signal.aborted) existing.invalidate()
-        else {
-          const onAbort = (): void => {
-            existing.invalidate()
-          }
-          signal.addEventListener('abort', onAbort, { once: true })
-          existing.abortCleanups.push(() => {
-            signal.removeEventListener('abort', onAbort)
-          })
-        }
-      }
-      return existing.promise
-    }
+    if (processPendingApproval !== undefined) return Promise.resolve('BUSY')
     if (signal?.aborted) return Promise.resolve('DENIED')
 
     let ownerWindow: NativeApprovalOwnerWindow | undefined
@@ -316,14 +350,15 @@ export class NativeApprovalCoordinator {
       settled = true
       resolveResult(result)
     }
+    let cleanup = (): void => undefined
     const pending: PendingApproval = {
-      key,
       scope,
       promise,
       ownerWindow,
       settle,
       invalidate: () => {
         pending.invalidated = true
+        cleanup()
         pending.settle('DENIED')
       },
       abortCleanups: [],
@@ -332,7 +367,7 @@ export class NativeApprovalCoordinator {
     const invalidate = pending.invalidate
     processPendingApproval = pending
 
-    const cleanup = (): void => {
+    cleanup = (): void => {
       try {
         ownerWindow.removeListener('hide', invalidate)
         ownerWindow.removeListener('closed', invalidate)
@@ -373,9 +408,20 @@ export class NativeApprovalCoordinator {
         } catch {
           current = false
         }
-        finish(current && pendingWindowIsValid(pending)
-          ? 'APPROVED'
-          : 'DENIED')
+        if (!current || !pendingWindowIsValid(pending)) {
+          finish('DENIED')
+          return
+        }
+        let issuedAt: number
+        try {
+          issuedAt = this.#now()
+        } catch {
+          finish('DENIED')
+          return
+        }
+        const ticket = Object.freeze({}) as NativeApprovalTicket
+        this.#tickets.set(ticket, Object.freeze({ key, issuedAt }))
+        finish(ticket)
       }).catch(() => {
         finish('DENIED')
       })
@@ -383,5 +429,13 @@ export class NativeApprovalCoordinator {
       finish('DENIED')
     }
     return promise
+  }
+
+  #now(): number {
+    const value = this.dependencies.now?.() ?? performance.now()
+    if (!Number.isFinite(value) || value < 0 || value > Number.MAX_SAFE_INTEGER) {
+      throw new TypeError('native approval monotonic clock is invalid')
+    }
+    return value
   }
 }

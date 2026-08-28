@@ -184,7 +184,8 @@ describe('desktop package manifest', () => {
     expect(bundleConfig).toContain("'@deepseek-ai/dsh-desktop-control-protocol'")
     expect(mainSource).toContain('new DesktopControlBridgeServer')
     expect(mainSource).toContain('controlLifecycle: controlBridge')
-    expect(mainSource).toContain('backend: unavailableDesktopControlBackend')
+    expect(mainSource).toContain('backend: controlCoordinator')
+    expect(mainSource).not.toContain('backend: unavailableDesktopControlBackend')
   })
 
   it('ships one ordered default-on external-brain stack from immutable release archives', () => {

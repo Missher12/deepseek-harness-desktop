@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   DesktopApplication,
   type AppFacade,
+  type ControlLifecycleController,
   type DesktopWindow,
   type RuntimeController,
 } from '../src/application.ts'
@@ -60,6 +61,12 @@ function createRuntime(): RuntimeController & {
     start: vi.fn(async () => 'http://127.0.0.1:45678/'),
     stop: vi.fn(async () => undefined),
   }
+}
+
+function createControl(): ControlLifecycleController & {
+  cleanup: ReturnType<typeof vi.fn>
+} {
+  return { cleanup: vi.fn(async () => undefined) }
 }
 
 describe('DesktopApplication', () => {
@@ -184,6 +191,92 @@ describe('DesktopApplication', () => {
     expect(app.exit).not.toHaveBeenCalled()
     stopped.resolve(undefined)
     await vi.waitFor(() => { expect(app.exit).toHaveBeenCalledWith(0) })
+  })
+
+  it('awaits control cleanup before retry stops and restarts Harness', async () => {
+    const app = new FakeApp()
+    const runtime = createRuntime()
+    const control = createControl()
+    const cleaned = deferred<undefined>()
+    control.cleanup.mockReturnValueOnce(cleaned.promise)
+    const controller = new DesktopApplication({
+      app,
+      createWindow: async () => createWindow(),
+      runtime,
+      control,
+      findConflict: async () => undefined,
+      workspace: '/workspace',
+    })
+    await controller.run()
+    await controller.rendererExited()
+    runtime.stop.mockClear()
+    runtime.start.mockClear()
+
+    controller.recover('retry')
+    await vi.waitFor(() => { expect(control.cleanup).toHaveBeenCalledWith('retry') })
+    expect(runtime.stop).not.toHaveBeenCalled()
+    cleaned.resolve(undefined)
+    await vi.waitFor(() => { expect(runtime.start).toHaveBeenCalledOnce() })
+    expect(runtime.stop).toHaveBeenCalledOnce()
+  })
+
+  it('awaits runtime-exit and close-to-tray control cleanup before changing visible lifecycle state', async () => {
+    const app = new FakeApp()
+    const window = createWindow()
+    const control = createControl()
+    const runtimeExitCleanup = deferred<undefined>()
+    const closeCleanup = deferred<undefined>()
+    control.cleanup
+      .mockReturnValueOnce(runtimeExitCleanup.promise)
+      .mockReturnValueOnce(closeCleanup.promise)
+    const controller = new DesktopApplication({
+      app,
+      createWindow: async () => window,
+      runtime: createRuntime(),
+      control,
+      findConflict: async () => undefined,
+      workspace: '/workspace',
+    })
+    await controller.run()
+
+    const exited = controller.runtimeExited()
+    expect(window.loadFailure).not.toHaveBeenCalled()
+    runtimeExitCleanup.resolve(undefined)
+    await exited
+    expect(window.loadFailure).toHaveBeenCalledWith('runtime-exit')
+
+    const closing = controller.beforeCloseToTray()
+    let closed = false
+    void closing.then(() => { closed = true })
+    await Promise.resolve()
+    expect(closed).toBe(false)
+    closeCleanup.resolve(undefined)
+    await closing
+    expect(control.cleanup).toHaveBeenLastCalledWith('close-to-tray')
+  })
+
+  it('awaits control cleanup before quit reaches runtime stop', async () => {
+    const app = new FakeApp()
+    const runtime = createRuntime()
+    const control = createControl()
+    const cleaned = deferred<undefined>()
+    control.cleanup.mockReturnValueOnce(cleaned.promise)
+    const controller = new DesktopApplication({
+      app,
+      createWindow: async () => createWindow(),
+      runtime,
+      control,
+      findConflict: async () => undefined,
+      workspace: '/workspace',
+    })
+    await controller.run()
+    const event = { preventDefault: vi.fn() }
+
+    app.emit('before-quit', event as never)
+    await vi.waitFor(() => { expect(control.cleanup).toHaveBeenCalledWith('quit') })
+    expect(runtime.stop).not.toHaveBeenCalled()
+    cleaned.resolve(undefined)
+    await vi.waitFor(() => { expect(runtime.stop).toHaveBeenCalledOnce() })
   })
 
   it('moves an unexpected owned runtime exit to the closed failure surface', async () => {
