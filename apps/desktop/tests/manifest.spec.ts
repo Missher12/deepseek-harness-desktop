@@ -55,6 +55,7 @@ describe('desktop package manifest', () => {
     expect(mainSource).toContain("capabilities: ['observe', 'pointer', 'keyboard']")
     expect(mainSource).toContain('app.isPackaged')
     expect(mainSource).toContain('process.resourcesPath')
+    expect(mainSource).toContain("(process.platform === 'darwin' || process.platform === 'win32')")
     expect(mainSource).toContain('lstatBinary: lstatSync')
     expect(mainSource).toContain('readBinary: readFileSync')
     expect(mainSource).toContain("SessionId('desktop-computer-ui')")

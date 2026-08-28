@@ -322,7 +322,8 @@ const browserControlAdapter = new BrowserDesktopControlAdapter({
   },
 })
 
-const computerHelperBinaryPath = process.platform === 'darwin' && process.arch === 'x64'
+const computerHelperBinaryPath = (process.platform === 'darwin' || process.platform === 'win32')
+  && process.arch === 'x64'
   ? resolveComputerHelperBinaryPath({
     platform: process.platform,
     arch: process.arch,
