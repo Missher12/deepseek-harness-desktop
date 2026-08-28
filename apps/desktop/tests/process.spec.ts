@@ -13,12 +13,15 @@ import {
 import type { DesktopStartupMilestone } from '../src/startup-timeline.ts'
 
 class FakeChild extends EventEmitter {
-  readonly pid = 4321
   readonly stdout = new PassThrough()
   readonly stderr = new PassThrough()
   exitCode: number | null = null
   connected = true
   readonly sent: Uint8Array[] = []
+
+  constructor(readonly pid = 4321) {
+    super()
+  }
 
   send(message: Uint8Array, callback?: (error: Error | null) => void): boolean {
     this.sent.push(message)
@@ -299,6 +302,116 @@ describe('HarnessProcess', () => {
 
     expect(order).toEqual(['attach', 'before-stop', 'detach', 'terminate', 'exit'])
     expect(owned.pid).toBeUndefined()
+  })
+
+  it('shares one exact cleanup and error terminal across concurrent stop callers', async () => {
+    const child = new FakeChild()
+    const failure = new Error('shared control shutdown failure')
+    let releaseHook!: () => void
+    const hookHeld = new Promise<void>((resolve) => { releaseHook = resolve })
+    const attach = vi.fn()
+    const beforeStop = vi.fn(async () => {
+      await hookHeld
+      throw failure
+    })
+    const detach = vi.fn()
+    const lifecycle: HarnessControlLifecycle = {
+      attach,
+      beforeStop,
+      detach,
+    }
+    const terminateTree = vi.fn(() => { queueMicrotask(() => { child.exit() }) })
+    const owned = new HarnessProcess({
+      spawn: () => child as unknown as ChildProcess,
+      executable: '/Electron',
+      cli: '/cli.js',
+      waitForHarness: async () => undefined,
+      terminateTree,
+      controlLifecycle: lifecycle,
+    })
+    const starting = owned.start('/workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await starting
+
+    const first = owned.stop()
+    const second = owned.stop()
+    expect(second).toBe(first)
+    await vi.waitFor(() => { expect(beforeStop).toHaveBeenCalledTimes(1) })
+    releaseHook()
+    const terminals = await Promise.allSettled([first, second])
+
+    expect(terminals).toEqual([
+      { status: 'rejected', reason: failure },
+      { status: 'rejected', reason: failure },
+    ])
+    expect(beforeStop).toHaveBeenCalledOnce()
+    expect(detach).toHaveBeenCalledOnce()
+    expect(terminateTree).toHaveBeenCalledOnce()
+    expect(owned.pid).toBeUndefined()
+  })
+
+  it('keeps a new child generation intact while an exited generation stop finishes', async () => {
+    const firstChild = new FakeChild(4321)
+    const nextChild = new FakeChild(5432)
+    const spawnQueue = [firstChild, nextChild]
+    const allChildren = [firstChild, nextChild]
+    const attached: HarnessControlChannel[] = []
+    const detached: HarnessControlChannel[] = []
+    let releaseOldStop!: () => void
+    const oldStopHeld = new Promise<void>((resolve) => { releaseOldStop = resolve })
+    const lifecycle: HarnessControlLifecycle = {
+      attach: (channel) => { attached.push(channel) },
+      beforeStop: async (channel) => {
+        if (channel.generation === 1) await oldStopHeld
+      },
+      detach: (channel) => { detached.push(channel) },
+    }
+    const onOutput = vi.fn()
+    const terminateTree = vi.fn((pid: number) => {
+      const child = allChildren.find(candidate => candidate.pid === pid)
+      queueMicrotask(() => { child?.exit() })
+    })
+    const owned = new HarnessProcess({
+      spawn: () => spawnQueue.shift() as unknown as ChildProcess,
+      executable: '/Electron',
+      cli: '/cli.js',
+      waitForHarness: async () => undefined,
+      terminateTree,
+      controlLifecycle: lifecycle,
+      onOutput,
+    })
+    const firstStart = owned.start('/workspace')
+    firstChild.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await firstStart
+
+    const oldStop = owned.stop()
+    await vi.waitFor(() => { expect(attached).toHaveLength(1) })
+    firstChild.exit()
+    await vi.waitFor(() => { expect(owned.pid).toBeUndefined() })
+
+    const nextStart = owned.start('/workspace')
+    nextChild.stdout.write('dsh web: http://127.0.0.1:56789\n')
+    await nextStart
+    onOutput.mockClear()
+
+    releaseOldStop()
+    await oldStop
+
+    expect(owned.pid).toBe(5432)
+    expect(attached.map(channel => channel.generation)).toEqual([1, 2])
+    expect(detached.map(channel => channel.generation)).toEqual([1])
+    nextChild.stdout.write('new generation output\n')
+    await vi.waitFor(() => {
+      expect(onOutput).toHaveBeenCalledWith('stdout', 'new generation output\n')
+    })
+
+    await owned.stop()
+    expect(terminateTree).toHaveBeenCalledOnce()
+    expect(terminateTree).toHaveBeenCalledWith(
+      5432,
+      process.platform === 'win32' ? 'force' : 'graceful',
+      process.platform,
+    )
   })
 
   it('accepts the Windows startup URL when the browser status shares its stdout chunk', async () => {

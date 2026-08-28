@@ -82,17 +82,27 @@ function settledWithin(promise: Promise<unknown>, timeoutMs: number): Promise<bo
   })
 }
 
+interface HarnessProcessGeneration {
+  readonly generation: number
+  readonly child: ChildProcess
+  readonly controlChannel: HarnessControlChannel
+  exitPromise: Promise<ExitState>
+  detachOutput: (() => void) | undefined
+  stopPromise: Promise<void> | undefined
+  lifecycleError: unknown
+  controlAttached: boolean
+  controlDetached: boolean
+  exited: boolean
+}
+
 /** Owns startup, readiness, and quiescent shutdown for one Harness child. */
 export class HarnessProcess {
   private readonly options: Required<Pick<HarnessProcessOptions,
     'executable' | 'spawn' | 'waitForHarness' | 'platform' | 'terminateTree' | 'stopTimeoutMs'>>
     & Pick<HarnessProcessOptions,
       'cli' | 'patch' | 'prepare' | 'onOutput' | 'onExit' | 'markStartup' | 'controlLifecycle'>
-  private child: ChildProcess | undefined
-  private exitPromise: Promise<ExitState> | undefined
-  private detachOutput: (() => void) | undefined
-  private controlChannel: HarnessControlChannel | undefined
-  private controlAttached = false
+  private active: HarnessProcessGeneration | undefined
+  private lastStop: { readonly record: HarnessProcessGeneration; readonly promise: Promise<void> } | undefined
   private controlGeneration = 0
 
   /**
@@ -117,7 +127,7 @@ export class HarnessProcess {
 
   /** Return the exact currently owned PID, if the child is still alive. */
   get pid(): number | undefined {
-    return this.child?.pid
+    return this.active?.child.pid
   }
 
   /**
@@ -126,7 +136,7 @@ export class HarnessProcess {
    * @returns The validated, ready loopback URL.
    */
   async start(workspace: string): Promise<string> {
-    if (this.child !== undefined) throw new Error('Harness process is already running.')
+    if (this.active !== undefined) throw new Error('Harness process is already running.')
     this.options.prepare?.()
     this.options.markStartup?.('fallback-ready')
     const childEnv = { ...process.env }
@@ -159,34 +169,39 @@ export class HarnessProcess {
     const stdout = child.stdout
     const stderr = child.stderr
 
-    this.child = child
     const generation = ++this.controlGeneration
     const controlChannel = createHarnessControlChannel(child, generation)
-    this.controlChannel = controlChannel
-    const exitPromise = new Promise<ExitState>((resolve) => {
+    const rawExitPromise = new Promise<ExitState>((resolve) => {
       child.once('exit', (code, signal) => { resolve({ code, signal }) })
       child.once('error', (error) => { resolve({ code: null, signal: null, error }) })
-    }).then((state) => {
-      if (this.child === child) {
-        if (this.controlChannel === controlChannel) {
-          this.options.controlLifecycle?.detach(controlChannel)
-          this.controlChannel = undefined
-          this.controlAttached = false
-        }
-        this.detachOutput?.()
-        this.detachOutput = undefined
-        this.child = undefined
-        this.exitPromise = undefined
-      }
+    })
+    const record: HarnessProcessGeneration = {
+      generation,
+      child,
+      controlChannel,
+      exitPromise: rawExitPromise,
+      detachOutput: undefined,
+      stopPromise: undefined,
+      lifecycleError: undefined,
+      controlAttached: false,
+      controlDetached: false,
+      exited: false,
+    }
+    record.exitPromise = rawExitPromise.then((state) => {
+      record.exited = true
+      this.detachControl(record)
+      record.detachOutput?.()
+      record.detachOutput = undefined
+      if (this.active === record) this.active = undefined
       this.options.onExit?.(state)
       return state
     })
-    this.exitPromise = exitPromise
+    this.active = record
     try {
       this.options.controlLifecycle?.attach(controlChannel)
-      this.controlAttached = this.options.controlLifecycle !== undefined
+      record.controlAttached = this.options.controlLifecycle !== undefined
     } catch (error) {
-      await this.stop()
+      await this.stopGeneration(record)
       throw error
     }
 
@@ -198,7 +213,7 @@ export class HarnessProcess {
     }
     stdout.on('data', stdoutOutput)
     stderr.on('data', stderrOutput)
-    this.detachOutput = () => {
+    record.detachOutput = () => {
       stdout.off('data', stdoutOutput)
       stderr.off('data', stderrOutput)
     }
@@ -230,7 +245,7 @@ export class HarnessProcess {
       stdout.on('data', onData)
     })
 
-    const exitedBeforeReady = (): Promise<never> => exitPromise.then((state) => {
+    const exitedBeforeReady = (): Promise<never> => record.exitPromise.then((state) => {
       throw new Error(`Harness exited before startup completed (${describeExit(state)}).`)
     })
 
@@ -242,49 +257,71 @@ export class HarnessProcess {
       return url
     } catch (error) {
       detachStartup()
-      await this.stop()
+      await this.stopGeneration(record)
       throw error
     }
   }
 
-  /** Stop the exact owned process tree and await its exit. */
-  async stop(): Promise<void> {
-    const child = this.child
-    const exitPromise = this.exitPromise
-    if (child === undefined || exitPromise === undefined) return
-    const controlChannel = this.controlChannel
-    let controlError: unknown
-    if (controlChannel !== undefined) {
-      try {
-        if (this.controlAttached) await this.options.controlLifecycle?.beforeStop(controlChannel)
-      } catch (error) {
-        controlError = error
-      } finally {
-        if (this.controlChannel === controlChannel) {
-          this.options.controlLifecycle?.detach(controlChannel)
-          this.controlChannel = undefined
-          this.controlAttached = false
-        }
+  /** Stop the exact owned generation once and share its terminal with concurrent callers. */
+  stop(): Promise<void> {
+    const record = this.active
+    if (record !== undefined) return this.stopGeneration(record)
+    return this.lastStop?.promise ?? Promise.resolve()
+  }
+
+  private stopGeneration(record: HarnessProcessGeneration): Promise<void> {
+    if (record.stopPromise !== undefined) return record.stopPromise
+    // Defer the hook until after publishing the promise so even a re-entrant
+    // stop call from lifecycle code observes this exact generation terminal.
+    const promise = Promise.resolve().then(async () => { await this.performStop(record) })
+    record.stopPromise = promise
+    this.lastStop = { record, promise }
+    void promise.then(
+      () => { if (this.lastStop?.record === record) this.lastStop = undefined },
+      () => { if (this.lastStop?.record === record) this.lastStop = undefined },
+    )
+    return promise
+  }
+
+  private async performStop(record: HarnessProcessGeneration): Promise<void> {
+    try {
+      if (record.controlAttached && !record.controlDetached) {
+        await this.options.controlLifecycle?.beforeStop(record.controlChannel)
       }
+    } catch (error) {
+      record.lifecycleError = error
+    } finally {
+      this.detachControl(record)
     }
-    this.detachOutput?.()
-    this.detachOutput = undefined
-    const pid = child.pid
-    if (child.exitCode === null && pid !== undefined) {
+    record.detachOutput?.()
+    record.detachOutput = undefined
+    const pid = record.child.pid
+    if (!record.exited && record.child.exitCode === null && pid !== undefined) {
       const initialMode = this.options.platform === 'win32' ? 'force' : 'graceful'
       this.options.terminateTree(pid, initialMode, this.options.platform)
-      if (!await settledWithin(exitPromise, this.options.stopTimeoutMs)) {
+      if (!await settledWithin(record.exitPromise, this.options.stopTimeoutMs)) {
         this.options.terminateTree(pid, 'force', this.options.platform)
-        if (!await settledWithin(exitPromise, this.options.stopTimeoutMs)) {
+        if (!await settledWithin(record.exitPromise, this.options.stopTimeoutMs)) {
           throw new Error(`Harness process tree ${String(pid)} did not exit after forced termination.`)
         }
       }
     }
-    await exitPromise
-    if (controlError !== undefined) {
-      throw controlError instanceof Error
-        ? controlError
-        : new Error('Harness control shutdown failed.', { cause: controlError })
+    await record.exitPromise
+    if (record.lifecycleError !== undefined) {
+      throw record.lifecycleError instanceof Error
+        ? record.lifecycleError
+        : new Error('Harness control shutdown failed.', { cause: record.lifecycleError })
+    }
+  }
+
+  private detachControl(record: HarnessProcessGeneration): void {
+    if (record.controlDetached) return
+    record.controlDetached = true
+    record.controlAttached = false
+    try {
+      this.options.controlLifecycle?.detach(record.controlChannel)
+    } catch (error) {
+      if (record.lifecycleError === undefined) record.lifecycleError = error
     }
   }
 }
