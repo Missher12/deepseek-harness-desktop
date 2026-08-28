@@ -16,7 +16,7 @@ After a fresh snapshot, focus, semantic pointer actions, closed key events, boun
 
 The `helper` crate owns the bounded stdio loop. Malformed input closes only the dedicated link without echoing input or OS diagnostics. EOF is the normal shutdown signal.
 
-The macOS build gives the nested helper the fixed code identifier `ai.deepseek.harness.desktop.computer-use-helper`, and Electron Builder signs it as an explicit binary with the same identity as the app. A stable signing certificate is still required for a durable TCC designated requirement: ad-hoc signatures remain bound to the exact CDHash. Official distribution therefore requires Developer ID signing and notarization; replacing an older hash-identified local helper can require one final manual permission refresh.
+The macOS build gives the nested helper the fixed code identifier `computer-use-helper`, matching the bare executable name retained by Electron Builder, and signs it as an explicit binary with the same identity as the app. A stable signing certificate is still required for a durable TCC designated requirement: ad-hoc signatures remain bound to the exact CDHash. Official distribution therefore requires Developer ID signing and notarization; replacing an older hash-identified local helper can require one final manual permission refresh.
 
 ## Development
 

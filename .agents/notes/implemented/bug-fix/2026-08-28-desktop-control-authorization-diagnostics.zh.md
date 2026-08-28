@@ -16,7 +16,7 @@ Protocol 错误清单加入 `CONTROL_DISABLED`、`TARGET_NOT_AUTHORIZED` 和 `AP
 
 电脑控制可用且已开启、但枚举应用均未获允许时，设置页应用区域会显示纠正状态。页面会说明应用出现在列表中不代表已授权；每个新任务使用独立的 Electron 原生批准，Harness 普通 `ask` 或 `never` 策略不能替代它。应用修改继续使用现有 main 持有的确认与持久白名单；Renderer 或模型字段都不能生成租约或批准。
 
-Helper 构建把 `ai.deepseek.harness.desktop.computer-use-helper` 设为嵌套代码标识，macOS 打包再把该可执行文件列入 Electron Builder 的显式二进制签名清单。因此使用证书的包会以同一稳定身份签署应用与 helper。默认本地临时签名仍然绑定 CDHash，不能描述为可持久使用；正式发布必须使用 Developer ID 签名与公证。
+Helper 构建把与最终裸可执行文件名称一致的 `computer-use-helper` 设为嵌套代码标识，macOS 打包再把该可执行文件列入 Electron Builder 的显式二进制签名清单。因此使用证书的包会以同一稳定身份签署应用与 helper。默认本地临时签名仍然绑定 CDHash，不能描述为可持久使用；正式发布必须使用 Developer ID 签名与公证。
 
 ## 考虑过的替代方案
 

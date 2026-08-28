@@ -52,6 +52,9 @@ describe('Computer Use helper architecture gate', () => {
 
   it('assigns the staged macOS helper a stable nested code identifier', async () => {
     const commands: Array<{ command: string; args: readonly string[]; cwd: string }> = []
+    expect(MACOS_COMPUTER_USE_HELPER_IDENTIFIER).toBe(
+      computerUseHelperBuildSpec('darwin', 'x64').artifactName,
+    )
     const target = await buildComputerUseHelper('/repo', {
       platform: 'darwin',
       arch: 'x64',

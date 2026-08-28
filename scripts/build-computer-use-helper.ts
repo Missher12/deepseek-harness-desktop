@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 /** Stable nested identifier retained when the packaged app uses a stable signing identity. */
-export const MACOS_COMPUTER_USE_HELPER_IDENTIFIER = 'ai.deepseek.harness.desktop.computer-use-helper'
+export const MACOS_COMPUTER_USE_HELPER_IDENTIFIER = 'computer-use-helper'
 
 /** Exact native target and output selected for one supported Desktop build host. */
 export interface ComputerUseHelperBuildSpec {

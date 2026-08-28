@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-28-desktop-control-authorization-diagnostics.md
-2026-08-28-desktop-control-authorization-diagnostics.md: dbf8f5bffca70df21037be7160279001c6aea379
-2026-08-28-desktop-control-authorization-diagnostics.zh.md: 391f09d93a8f4a5d386b7c2391a902d40275ed83
+2026-08-28-desktop-control-authorization-diagnostics.md: 813fb2839a41ea161ac998cf6b876176b136f507
+2026-08-28-desktop-control-authorization-diagnostics.zh.md: 958efeaa26ab7277cf450336d2f340f5a8521fc8

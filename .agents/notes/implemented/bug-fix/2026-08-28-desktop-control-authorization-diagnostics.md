@@ -16,7 +16,7 @@ The protocol error roster includes `CONTROL_DISABLED`, `TARGET_NOT_AUTHORIZED`, 
 
 The settings application section displays a corrective status when Computer Control is available and enabled but no enumerated application is allowed. It states that listing is not authorization and that each new task uses a separate Electron-native approval which the ordinary Harness `ask` or `never` policy does not replace. Application changes retain the existing main-owned confirmation and persistent allowlist; no renderer or model field can mint a lease or approval.
 
-The helper build assigns `ai.deepseek.harness.desktop.computer-use-helper` as the nested code identifier, and the macOS package lists that executable in Electron Builder's explicit binary signing roster. A certificate-backed package therefore signs the app and helper with one stable identity. The default local ad-hoc mode remains CDHash-bound and is not described as durable; official distribution requires Developer ID signing and notarization.
+The helper build assigns `computer-use-helper`, matching the final bare executable name, as the nested code identifier, and the macOS package lists that executable in Electron Builder's explicit binary signing roster. A certificate-backed package therefore signs the app and helper with one stable identity. The default local ad-hoc mode remains CDHash-bound and is not described as durable; official distribution requires Developer ID signing and notarization.
 
 ## Alternatives considered
 

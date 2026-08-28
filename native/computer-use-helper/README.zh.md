@@ -16,7 +16,7 @@
 
 `helper` crate 负责有界 stdio 循环。畸形输入只关闭专用链路，不回显输入或操作系统诊断。EOF 是正常关闭信号。
 
-macOS 构建为嵌套 helper 固定代码标识 `ai.deepseek.harness.desktop.computer-use-helper`，Electron Builder 再把它作为显式二进制，使用与应用相同的身份签名。可持久使用的 TCC designated requirement 仍需要稳定签名证书：临时签名依旧绑定精确 CDHash。因此正式发布必须使用 Developer ID 签名与公证；替换旧的哈希标识本地 helper 后，可能需要最后手动刷新一次权限。
+macOS 构建为嵌套 helper 固定代码标识 `computer-use-helper`，与 Electron Builder 为裸可执行文件保留的名称一致，再把它作为显式二进制，使用与应用相同的身份签名。可持久使用的 TCC designated requirement 仍需要稳定签名证书：临时签名依旧绑定精确 CDHash。因此正式发布必须使用 Developer ID 签名与公证；替换旧的哈希标识本地 helper 后，可能需要最后手动刷新一次权限。
 
 ## 开发
 
