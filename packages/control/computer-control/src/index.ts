@@ -5,17 +5,17 @@ import type {
   ComputerListRequest,
   ComputerListResult,
   ComputerSnapshotRequest,
-  ComputerSnapshotResult as ComputerSnapshot,
   ComputerStatusResult as ComputerControlStatus,
   ControlLeaseAcquireRequest,
   ControlLeaseAcquireResult,
   SessionId,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
-import type { ComputerActionRequest, ComputerActionResult } from './types.ts'
+import type { ComputerActionRequest, ComputerActionResult, ComputerSnapshotEnvelope } from './types.ts'
 
 export {
   ComputerRef,
   ControlLeaseId,
+  ImmutablePng,
   PngTransferId,
   RequestId,
   SessionId,
@@ -69,12 +69,14 @@ export {
   bindComputerReference,
   freezeComputerList,
   freezeComputerSnapshot,
+  freezeComputerSnapshotEnvelope,
 } from './types.ts'
 export type {
   ComputerActionRequest,
   ComputerActionResult,
   ComputerReferenceBinding,
   ComputerReferenceScope,
+  ComputerSnapshotEnvelope,
 } from './types.ts'
 export { CONTROL_POLICY_RESULTS, classifyControlPolicy } from './policy.ts'
 export type {
@@ -131,9 +133,9 @@ export abstract class ComputerControl extends Service {
    * Capture bounded semantics and an optional image for one authorized window.
    * @param request - Strict target-scoped protocol request.
    * @param signal - Caller lifetime.
-   * @returns an immutable bounded protocol snapshot.
+   * @returns an immutable service envelope whose result and PNG owner remain paired.
    */
-  abstract snapshot(request: ComputerSnapshotRequest, signal: AbortSignal): Promise<ComputerSnapshot>
+  abstract snapshot(request: ComputerSnapshotRequest, signal: AbortSignal): Promise<ComputerSnapshotEnvelope>
 
   /**
    * Execute one action from the closed native request roster.

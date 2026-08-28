@@ -29,7 +29,7 @@
 
 ## 信任立场
 
-vm 沙箱隔离全局变量，但不是安全边界：Node 全局变量不存在，或重定向到 Cordis 服务（`ctx.fs`、`ctx.web`、`ctx.bash` 以及定时器 helper），host 半收到的是不含框架内部机制的 façade，但它声明的服务仍会触达存活运行时。应当像对待 bash 访问一样对待动态包，参见[自引用工具集 Agent Note](../../../.agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.zh.md)。
+vm 沙箱隔离全局变量，但不是安全边界：Node 全局变量不存在，或重定向到 Cordis 服务（`ctx.fs`、`ctx.web`、`ctx.bash` 以及定时器 helper），host 半收到的是不含框架内部机制的 façade，但它声明的大多数服务仍会触达存活运行时。特权 `browserControl` 与 `computerControl` 权威是刻意的例外：即使已声明，façade 属性访问与 `ctx.get()` 也会 fail closed，`has` 则不会宣称两个键存在。使用真实 Cordis Context 的静态第一方插件不受影响。应当像对待 bash 访问一样对待动态包，参见[自引用工具集 Agent Note](../../../.agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.zh.md)。
 
 <a id="config"></a>
 

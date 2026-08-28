@@ -147,6 +147,29 @@ describe('closed lease lifecycle roster and types', () => {
 })
 
 describe('lease acquire and release codec', () => {
+  it('rejects inherited or hidden serialization hooks before they can rewrite lease wire bytes', () => {
+    const inheritedAcquire = Object.assign(Object.create({
+      toJSON: () => release(),
+    }) as object, acquire()) as ControlLeaseAcquireRequest
+    const hiddenRelease = release()
+    Object.defineProperty(hiddenRelease, 'toJSON', {
+      value: () => acquire(),
+      enumerable: false,
+    })
+
+    expect(() => encodeJsonFrame(inheritedAcquire)).toThrow(/plain|serializ|toJSON|prototype/i)
+    expect(() => encodeJsonFrame(hiddenRelease)).toThrow(/plain|serializ|toJSON|enumerable/i)
+  })
+
+  it('rejects a helper lease install carried by a custom prototype even when JSON would look valid', () => {
+    const customPrototypeInstall = Object.assign(
+      Object.create({ inheritedAuthority: true }) as object,
+      install(),
+    ) as HelperLeaseInstallRequest
+
+    expect(() => encodeJsonFrame(customPrototypeInstall)).toThrow(/plain|serializ|prototype/i)
+  })
+
   it('round-trips pair-preserving native targets as detached deeply frozen data', () => {
     const decoded = decodeJsonFrame(encodeJsonFrame(acquire()))
     expect(decoded).toEqual(acquire())

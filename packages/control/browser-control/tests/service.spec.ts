@@ -3,6 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import {
   BrowserRef,
   ControlLeaseId,
+  ImmutablePng,
   PngTransferId,
   RequestId,
   SessionId,
@@ -19,10 +20,12 @@ import BrowserControl, {
   assertBrowserReferenceCurrent,
   bindBrowserReference,
   freezeBrowserSnapshot,
+  freezeBrowserSnapshotEnvelope,
   type BrowserActionRequest,
   type BrowserActionResult,
   type BrowserClickRequest,
   type BrowserSnapshot,
+  type BrowserSnapshotEnvelope,
   type BrowserReferenceBinding,
 } from '../src/index.ts'
 
@@ -62,9 +65,9 @@ class StubBrowserControl extends BrowserControl {
     }
   }
 
-  async snapshot(_request: BrowserSnapshotRequest, signal: AbortSignal): Promise<BrowserSnapshotResult> {
+  async snapshot(_request: BrowserSnapshotRequest, signal: AbortSignal): Promise<BrowserSnapshotEnvelope> {
     signal.throwIfAborted()
-    return freezeBrowserSnapshot(browserSnapshot())
+    return freezeBrowserSnapshotEnvelope({ result: browserSnapshot() })
   }
 
   async act(request: BrowserActionRequest, signal: AbortSignal): Promise<BrowserActionResult> {
@@ -113,7 +116,7 @@ describe('BrowserControl service seam', () => {
       leaseRevision: 1,
       includeImage: false,
     }, new AbortController().signal)
-    expect(result.refs[0]?.ref).toBe(REF)
+    expect(result.result.refs[0]?.ref).toBe(REF)
 
     await provider.revokeSession(SESSION)
     expect((ctx.browserControl as StubBrowserControl).revoked).toEqual([SESSION])
@@ -129,6 +132,7 @@ describe('BrowserControl service seam', () => {
   it('re-exports protocol request types instead of declaring a second wire DTO', () => {
     expectTypeOf<BrowserClickRequest>().toEqualTypeOf<ProtocolBrowserClickRequest>()
     expectTypeOf<BrowserSnapshot>().toEqualTypeOf<BrowserSnapshotResult>()
+    expectTypeOf<Awaited<ReturnType<BrowserControl['snapshot']>>>().toEqualTypeOf<BrowserSnapshotEnvelope>()
     expectTypeOf<Parameters<BrowserControl['acquireLease']>[0]>().toEqualTypeOf<ControlLeaseAcquireRequest>()
     expectTypeOf<Awaited<ReturnType<BrowserControl['acquireLease']>>>().toEqualTypeOf<ControlLeaseAcquireResult>()
   })
@@ -236,6 +240,66 @@ describe('browser reference ownership and bounds', () => {
     expect(() => {
       ;(frozen.refs as unknown as { ref: typeof REF }[]).push({ ref: REF })
     }).toThrow()
+  })
+
+  it('preserves correlated image bytes in a detached deeply frozen snapshot envelope', () => {
+    const bytes = Uint8Array.of(1, 2, 3)
+    const png = new ImmutablePng(bytes)
+    const result = {
+      ...browserSnapshot(),
+      image: {
+        transferId: PngTransferId('00000000-0000-4000-8000-000000000099'),
+        byteLength: bytes.byteLength,
+        sha256: 'a'.repeat(64),
+        width: 1,
+        height: 1,
+      },
+    }
+    const envelope = freezeBrowserSnapshotEnvelope({
+      result,
+      png,
+      secret: { value: 'must-not-cross' },
+    } as BrowserSnapshotEnvelope)
+
+    expect(Object.keys(envelope).sort()).toEqual(['png', 'result'])
+    expect(envelope.result).not.toBe(result)
+    expect(envelope.png).not.toBe(png)
+    expect(Object.isFrozen(envelope)).toBe(true)
+    expect(Object.isFrozen(envelope.result)).toBe(true)
+    expect(Object.isFrozen(envelope.result.refs)).toBe(true)
+    expect(Object.isFrozen(envelope.png)).toBe(true)
+    const first = envelope.png!.read()
+    const second = envelope.png!.read()
+    first[0] = 99
+    expect(second).toEqual(Uint8Array.of(1, 2, 3))
+    expect(envelope.png!.read()).toEqual(Uint8Array.of(1, 2, 3))
+    expect(envelope).not.toHaveProperty('secret')
+    expect(envelope.png).not.toHaveProperty('bytes')
+  })
+
+  it('rejects missing, extra, or forged snapshot image owners', () => {
+    const png = new ImmutablePng(Uint8Array.of(1))
+    const resultWithImage = {
+      ...browserSnapshot(),
+      image: {
+        transferId: PngTransferId('00000000-0000-4000-8000-000000000099'),
+        byteLength: 1,
+        sha256: 'a'.repeat(64),
+        width: 1,
+        height: 1,
+      },
+    }
+
+    expect(() => freezeBrowserSnapshotEnvelope({ result: resultWithImage })).toThrow(/image.*PNG|PNG.*image/i)
+    expect(() => freezeBrowserSnapshotEnvelope({ result: browserSnapshot(), png })).toThrow(/image.*PNG|PNG.*image/i)
+    expect(() => freezeBrowserSnapshotEnvelope({
+      result: resultWithImage,
+      png: { read: () => Uint8Array.of(1) } as unknown as ImmutablePng,
+    })).toThrow(TypeError)
+    expect(() => freezeBrowserSnapshotEnvelope(Object.create({
+      result: resultWithImage,
+      png,
+    }) as BrowserSnapshotEnvelope)).toThrow(TypeError)
   })
 
   it('canonicalizes and deeply freezes only the five PNG metadata fields', () => {

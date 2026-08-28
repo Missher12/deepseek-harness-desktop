@@ -14,7 +14,9 @@ Sources:
 
 `@deepseek-ai/dsh-desktop-control-protocol` is the sole owner of every cross-process request, result, error, and branded identifier. Its 27-kind bridge roster includes internal-only acquire/release requests. Acquire preserves each app/window relationship, accepts only the closed surface and capability rosters, and returns only an effective relative-duration descriptor; helper install reuses those targets and adds Electron-owned total and category quotas. The Browser and Computer Service Definitions import or re-export those types; their own types contain only same-process ownership and validation facts.
 
-The closed protocol exposes no JavaScript, selector, command, generic payload, or raw operating-system escape. Optional PNG metadata is limited to transfer identity, byte length, lower-case SHA-256, width, and height. The PNG bytes travel in the protocol's separate bounded binary envelope.
+The closed protocol exposes no JavaScript, selector, command, generic payload, or raw operating-system escape. Optional PNG metadata is limited to transfer identity, byte length, lower-case SHA-256, width, and height. The PNG bytes travel in the protocol's separate bounded binary envelope. A transport-owned JSON validator runs before screenshot correlation, so a valid message from the wrong direction fails immediately without opening pending PNG state.
+
+Encoding rejects custom prototypes, `toJSON`, accessors, non-enumerable or symbol-keyed state, and shared or cyclic values before serialization, then strictly validates the exact emitted JSON frame. A direction validator receives only that detached JSON, must not return data, and permanently closes its decoder if it rejects or returns anything.
 
 ## Browser service seam
 
@@ -28,11 +30,13 @@ The browser service owns no coordinate action. Page text and accessibility seman
 
 Neither acquire operation is a model tool. Later tool Consumers derive official session and transport fields; their model schemas never expose acquire, lease authority, approval, quotas, clocks, or action digests.
 
+The generated documentation retains both service contracts for trusted first-party implementers. The model-facing runtime Cordis catalog and live inspection exclude them, however, and the dynamic package façade withholds both property and `ctx.get()` access even when a package declares injection. This leaves ordinary static first-party Cordis providers and Consumers unchanged while preventing model-authored packages from acquiring Desktop-control authority.
+
 The pure policy returns only `ALLOW`, `APPROVAL_REQUIRED`, or `DENY`. Unknown runtime facts fail closed. Known secure fields and privileged or destructive target classes are denied; external effects and persistent human-browser mutations require a separate native approval. A matching-surface Stop remains approval-free so revocation cannot be blocked by a target classification.
 
 ## Bounded immutable results
 
-Both service packages accept only primitive runtime fields, reconstruct protocol results from their closed fields, and return detached deeply frozen objects. Semantic collections and text use protocol-owned limits. PNG metadata is rebuilt from exactly five validated fields, so provider-local objects or additional fields cannot cross the service boundary.
+Both service packages accept only primitive runtime fields, reconstruct protocol results from their closed fields, and return detached deeply frozen objects. Semantic collections and text use protocol-owned limits. PNG metadata is rebuilt from exactly five validated fields, so provider-local objects or additional fields cannot cross the service boundary. Each snapshot service returns an exact local envelope containing the protocol result and, only when metadata declares an image, a copied protocol `ImmutablePng`; no raw byte-array field crosses the service seam.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -62,9 +66,9 @@ abstract acquireLease( request: ControlLeaseAcquireRequest, signal: AbortSignal,
  * Capture bounded semantics and an optional image for the current browser surface.
  * @param request - Strict protocol request received from the Desktop bridge.
  * @param signal - Caller lifetime.
- * @returns an immutable bounded protocol snapshot.
+ * @returns an immutable service envelope whose result and PNG owner remain paired.
  */
-abstract snapshot(request: BrowserSnapshotRequest, signal: AbortSignal): Promise<BrowserSnapshot>
+abstract snapshot(request: BrowserSnapshotRequest, signal: AbortSignal): Promise<BrowserSnapshotEnvelope>
 
 /**
  * Execute one action from the closed browser request roster.
@@ -119,9 +123,9 @@ abstract list(request: ComputerListRequest, signal: AbortSignal): Promise<Comput
  * Capture bounded semantics and an optional image for one authorized window.
  * @param request - Strict target-scoped protocol request.
  * @param signal - Caller lifetime.
- * @returns an immutable bounded protocol snapshot.
+ * @returns an immutable service envelope whose result and PNG owner remain paired.
  */
-abstract snapshot(request: ComputerSnapshotRequest, signal: AbortSignal): Promise<ComputerSnapshot>
+abstract snapshot(request: ComputerSnapshotRequest, signal: AbortSignal): Promise<ComputerSnapshotEnvelope>
 
 /**
  * Execute one action from the closed native request roster.

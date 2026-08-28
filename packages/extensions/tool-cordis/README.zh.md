@@ -20,7 +20,7 @@
 
 ## 信任立场
 
-该沙箱隔离全局变量，但不是安全边界。Node 全局变量不存在，或会重定向到 `ctx.fs`、`ctx.web`、`ctx.bash` 等 Cordis 服务；写入 `globalThis` 的内容保持局部，但 host realm helper 使逃逸成为可能。运行中的 host 半收到不含框架内部机制的 façade，但获准服务仍会影响存活运行时。动态工具 schema 与 annotation 通过迭代式 JSON 克隆和 schema 规范化跨越 realm，因此有效的深层声明受内存而非调用栈限制；含 JSON 不可见 key 的 record，以及子类化或装饰过的 schema array，会在规范化前被拒绝。应当像对待 bash 访问一样对待该工具集；参见[设计与信任立场](../../../.agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.zh.md)。
+该沙箱隔离全局变量，但不是安全边界。Node 全局变量不存在，或会重定向到 `ctx.fs`、`ctx.web`、`ctx.bash` 等 Cordis 服务；写入 `globalThis` 的内容保持局部，但 host realm helper 使逃逸成为可能。运行中的 host 半收到不含框架内部机制的 façade，但获准服务仍会影响存活运行时。即使动态包声明了 inject，特权 `browserControl` 与 `computerControl` 权威也会在 façade 的两条访问路径上被扣留。动态工具 schema 与 annotation 通过迭代式 JSON 克隆和 schema 规范化跨越 realm，因此有效的深层声明受内存而非调用栈限制；含 JSON 不可见 key 的 record，以及子类化或装饰过的 schema array，会在规范化前被拒绝。应当像对待 bash 访问一样对待该工具集；参见[设计与信任立场](../../../.agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.zh.md)。
 
 ## 配置
 
@@ -36,14 +36,14 @@
 
 `cordis_inspect what:"api"`／`what:"events"` 渲染的是 `src/api-catalog.ts`，即工作区 Cordis 声明的生成投影：渲染好的方法签名、源码 JSDoc、带分发模式的 harness 事件，以及这些签名引用到的类型形状——全部由与 `docs/subsystems` 同一次 AST 遍历产出，因此模型读到的数据与渲染出的文档不可能彼此偏离。它是关于**仓库**的编译期事实，所以用 `pnpm run gen-cordis-api` 重新生成、用 `pnpm run verify-cordis-api` 守它的新鲜度。
 
-`src/inspect.ts` 把这份目录与**活的**服务存储取交集：**谁在跑**由存储回答，**每个服务能做什么**由目录回答；目录没覆盖到的活服务会被报成可达但没有签名，而不是被省略。包代码若要在自己源码里用这份清单，就从报告里抄出来——目录是关于仓库的编译期事实，所以对任一个部署而言，抄出来的清单与现读的清单说的是同一件事。
+`src/inspect.ts` 把这份目录与**活的**服务存储取交集：**谁在跑**由存储回答，**每个服务能做什么**由目录回答。通常，目录未覆盖的活服务会被报成可达但没有签名，而不是被省略。共享特权控制清单是唯一安全例外：即使正在运行，`browserControl`、`computerControl`、其 acquire 方法及 authority DTO 闭包也绝不会进入模型报告，这与扣留它们的动态 façade 一致。包代码若要在自己源码里使用模型可见清单，就从报告里复制——目录是关于仓库的编译期事实，所以对任一个部署而言，复制的清单与现读清单说的是同一件事。
 
 有两项面向模型的判断住在本包里，而不住在产物里，因为反射数据忠于代码，而报告必须有用：
 
 - **只展示可调用的方法。** 非方法成员是状态而不是动词，而它们渲染出来的形式会带上实现体里的初始值；以 symbol 为键的成员是插件之间的内部 seam，包的 façade 刻意无法触达，所以点出其中任何一个，都等于宣传一次根本发不出的调用。
-- **只有 host 半够得到的键，才会被点名给模型。** 反射模型覆盖包声明的每一个 `ctx.<key>`，其中包括 launcher 提供的 boot 值（`agent`、`headlessIo` 等）与浏览器半的服务（`connection`）。`src/curation.ts` 会为每一个这样的键归类它的 `reach`——`injectable`、`not-a-service` 或 `other-face`——而只有 `injectable` 的键能进报告：点名一个包够不到的键，就等于宣传一次根本发不出的调用。这份归类是作为每条目录条目上的数据携带的，而不是在渲染时才施加，因此这项排除可以单独测试；同时 `verify-cordis-catalog` 把被归类的集合钉成「文档投影不渲染的键」这个集合本身——新声明一个键会把门禁拦下来，而不是悄悄引诱模型去 `inject` 一个永远不会到来的东西。一个被归类、但确实有存活提供方的键，仍然会被报成在跑且可 inject：服务 store 才是「什么存在」的权威。
+- **只有 host 半够得到的键，才会被点名给模型。** 反射模型覆盖包声明的每一个 `ctx.<key>`，其中包括 launcher 提供的 boot 值（`agent`、`headlessIo` 等）与浏览器半的服务（`connection`）。`src/curation.ts` 会为每一个这样的键归类它的 `reach`——`injectable`、`not-a-service` 或 `other-face`——而只有 `injectable` 的键能进报告：点名一个包够不到的键，就等于宣传一次根本发不出的调用。这份归类是作为每条目录条目上的数据携带的，而不是在渲染时才施加，因此这项排除可以单独测试；同时 `verify-cordis-catalog` 把被归类的集合钉成「文档投影不渲染的键」这个集合本身——新声明一个键会把门禁拦下来，而不是悄悄引诱模型去 `inject` 一个永远不会到来的东西。其他已归类且确有存活提供方的键仍会被报成在跑且可 inject；特权控制清单会先被过滤，因为 façade 刻意使这些权威不可达。
 
-生成常量 `INHERITED_CTX_API` 为 `api` 报告收尾，列出框架继承来的 `ctx` 面（`ctx.on`、`ctx.effect`、`ctx.loader`、各 timer 辅助方法）：这些成员本身就是 Context，不是某个服务键；而框架层住在 pinned vendor 包里，位于每一个被分析的契约面之外——所以生成器策展这**一层**，并把它同时渲染进本目录与 `docs/cordis-api/inherited.md`。一个活着、但目录并不描述的服务，会被报成“在跑、且仍可 inject”，而不是报成不存在。宽泛的 `api`／`events` 报告只渲染摘要与签名；精确 `name` 会选择保留的方法／事件 JSDoc，未知或未运行的服务目标会高声失败。
+生成常量 `INHERITED_CTX_API` 为 `api` 报告收尾，列出框架继承来的 `ctx` 面（`ctx.on`、`ctx.effect`、`ctx.loader`、各 timer 辅助方法）：这些成员本身就是 Context，不是某个服务键；而框架层住在 pinned vendor 包里，位于每一个被分析的契约面之外——所以生成器策展这**一层**，并把它同时渲染进本目录与 `docs/cordis-api/inherited.md`。除特权控制 denylist 外，一个活着但目录未描述的服务仍会被报成“在跑、且可 inject”，而不是报成不存在。宽泛的 `api`／`events` 报告只渲染摘要与签名；精确 `name` 会选择保留的方法／事件 JSDoc，未知、被扣留或未运行的服务目标会高声失败。
 
 ## 渲染
 

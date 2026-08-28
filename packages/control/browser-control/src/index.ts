@@ -3,16 +3,16 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import type {
   BrowserSnapshotRequest,
-  BrowserSnapshotResult as BrowserSnapshot,
   ControlLeaseAcquireRequest,
   ControlLeaseAcquireResult,
   SessionId,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
-import type { BrowserActionRequest, BrowserActionResult } from './types.ts'
+import type { BrowserActionRequest, BrowserActionResult, BrowserSnapshotEnvelope } from './types.ts'
 
 export {
   BrowserRef,
   ControlLeaseId,
+  ImmutablePng,
   PngTransferId,
   RequestId,
   SessionId,
@@ -57,12 +57,14 @@ export {
   assertBrowserReferenceCurrent,
   bindBrowserReference,
   freezeBrowserSnapshot,
+  freezeBrowserSnapshotEnvelope,
 } from './types.ts'
 export type {
   BrowserActionRequest,
   BrowserActionResult,
   BrowserReferenceBinding,
   BrowserReferenceScope,
+  BrowserSnapshotEnvelope,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -97,9 +99,9 @@ export abstract class BrowserControl extends Service {
    * Capture bounded semantics and an optional image for the current browser surface.
    * @param request - Strict protocol request received from the Desktop bridge.
    * @param signal - Caller lifetime.
-   * @returns an immutable bounded protocol snapshot.
+   * @returns an immutable service envelope whose result and PNG owner remain paired.
    */
-  abstract snapshot(request: BrowserSnapshotRequest, signal: AbortSignal): Promise<BrowserSnapshot>
+  abstract snapshot(request: BrowserSnapshotRequest, signal: AbortSignal): Promise<BrowserSnapshotEnvelope>
 
   /**
    * Execute one action from the closed browser request roster.

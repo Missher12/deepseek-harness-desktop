@@ -28,6 +28,7 @@ import {
   REGION_END,
 } from '@deepseek-ai/dsh-typert-generator'
 import type { CordisCatalogPolicy } from '@deepseek-ai/dsh-typert-generator'
+import { PRIVILEGED_CONTROL_SERVICE_KEYS } from '../packages/extensions/cordis-host-runner/src/control-authority-policy.ts'
 import { renderCordisCoreApiPages } from './cordis-core-api.ts'
 import { contextKeyMap, contextMergeFiles, eventNameList } from './cordis-walk.ts'
 import {
@@ -302,6 +303,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   BrowserActionRequest: 'desktop-control.md',
   BrowserActionResult: 'desktop-control.md',
   BrowserSnapshot: 'desktop-control.md',
+  BrowserSnapshotEnvelope: 'desktop-control.md',
   BrowserSnapshotRequest: 'desktop-control.md',
   ControlLeaseAcquireRequest: 'desktop-control.md',
   ControlLeaseAcquireResult: 'desktop-control.md',
@@ -311,6 +313,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ComputerListRequest: 'desktop-control.md',
   ComputerListResult: 'desktop-control.md',
   ComputerSnapshot: 'desktop-control.md',
+  ComputerSnapshotEnvelope: 'desktop-control.md',
   ComputerSnapshotRequest: 'desktop-control.md',
   EncodedImageAttachment: 'attachment.md',
   ImageAttachmentRef: 'attachment.md',
@@ -658,6 +661,7 @@ export const CORDIS_CATALOG_POLICY: CordisCatalogPolicy = {
   foundationTypeNames: FOUNDATION_TYPE_NAMES,
   typeLinkExemptions: TYPE_LINK_EXEMPTIONS,
   runtimeServiceExclusions: new Set([
+    ...PRIVILEGED_CONTROL_SERVICE_KEYS,
     'cordisInspect',
     'desktopPnpm',
     'desktopProfiles',

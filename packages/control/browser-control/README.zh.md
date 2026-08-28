@@ -7,15 +7,17 @@ Browser Control Service Definition 为 Desktop 所有的可见浏览器 surface 
 ## 约定
 
 - `acquireLease(request, signal)` 是 Consumer／提供方内部操作，它把协议所有的目标 surface、targets 和 capabilities 转交给 Electron 权威方。它不是模型工具，也不能自行授权。
-- `snapshot(request, signal)` 返回当前 surface 的有界语义和可选图片描述符。
+- `snapshot(request, signal)` 返回 `BrowserSnapshotEnvelope`；只要存在图片，其中的有界协议结果与 codec 所有的 `ImmutablePng` 就必须同时存在。
 - `act(request, signal)` 只接受协议中的导航、语义引用、按键、选择、滚动与等待操作。浏览器坐标操作不存在。
 - `revokeSession(sessionId)` 等待恰好一个会话的拆卸完成；surface 的独占生命周期和引用失效由实现负责。
 - `bindBrowserReference()` 与 `assertBrowserReferenceCurrent()` 把不透明 ref 绑定到官方会话、surface 身份、mount generation 和 snapshot revision。所有权先于新鲜度检查，避免外来会话探测 surface。
-- `freezeBrowserSnapshot()` 只接受原语 own-data 字段，重新构建分离的协议输出，并在执行语义集合与 UTF-8 上限后深度冻结。可选 PNG 元数据只有在 brand、hash、字节和尺寸校验后，才会严格按协议的五个字段重建。`assertBrowserActionCount()` 执行服务的每轮次 64 次操作上限；Electron 创建的 lease quota 可以更窄。
+- `freezeBrowserSnapshot()` 只接受原语 own-data 字段，重新构建分离的协议输出，并在执行语义集合与 UTF-8 上限后深度冻结。可选 PNG 元数据只有在 brand、hash、字节和尺寸校验后，才会严格按协议的五个字段重建。`freezeBrowserSnapshotEnvelope()` 会拒绝元数据／PNG 存在性不一致，把协议 `ImmutablePng` 复制进服务所有的存储，剥离额外字段并冻结严格 envelope；不会把原始字节数组作为字段公开。`assertBrowserActionCount()` 执行服务的每轮次 64 次操作上限；Electron 创建的 lease quota 可以更窄。
 
 页面文本始终不受信任，不能授权操作。此 seam 不声称 accessibility 语义能够证明恶意页面 JavaScript 不会产生外部副作用。surface、debugger、URL／redirect 验证、lease 和原生审批挑战均由 Electron 适配器负责。
 
 后续工具 Consumer 自行推导官方 session，并填充每个 request id、deadline、lease id／revision 与其他 transport 字段。模型 schema 不得公开 lease acquire、session 或 lease 元数据、approval、quota、clock 或 action digest 字段。
+
+此特权服务仍会写入文档，供受信的静态第一方提供方与 Consumer 阅读；但运行时模型 Cordis 目录会排除它，模型编写的动态包也无法通过属性访问或 `ctx.get()` 取得该服务。
 
 ## 模型体验
 

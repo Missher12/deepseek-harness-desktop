@@ -1,5 +1,6 @@
 import {
   ComputerRef as brandComputerRef,
+  ImmutablePng,
   PngTransferId as brandPngTransferId,
   PROTOCOL_LIMITS,
   SessionId as brandSessionId,
@@ -31,6 +32,14 @@ export type ComputerActionRequest = Exclude<
 
 /** Closed protocol result union for a native action request. */
 export type ComputerActionResult = DesktopControlResultMap[ComputerActionRequest['requestKind']]
+
+/** Service-owned immutable snapshot result plus its codec-verified image bytes, when present. */
+export interface ComputerSnapshotEnvelope {
+  /** Detached, bounded protocol snapshot metadata and semantics. */
+  readonly result: ComputerSnapshotResult
+  /** Protocol-owned immutable PNG paired by the frame decoder. */
+  readonly png?: ImmutablePng
+}
 
 /** Authoritative native target scope used to validate one opaque accessibility reference. */
 export interface ComputerReferenceScope {
@@ -326,4 +335,28 @@ export function freezeComputerSnapshot(snapshot: ComputerSnapshotResult): Comput
     refs,
     ...image === undefined ? {} : { image },
   })
+}
+
+/**
+ * Validate, detach, and freeze a native snapshot together with its optional verified PNG.
+ * Image metadata and byte ownership must be present together; correlation itself belongs to the protocol codec.
+ * @param envelope - Provider-owned snapshot result and codec-produced PNG owner.
+ * @returns an exact immutable service envelope with no caller-owned byte aliases.
+ */
+export function freezeComputerSnapshotEnvelope(envelope: ComputerSnapshotEnvelope): ComputerSnapshotEnvelope {
+  const source = assertPlainObject(envelope, 'computer snapshot envelope')
+  const result = freezeComputerSnapshot(ownData(source, 'result') as ComputerSnapshotResult)
+  const rawPng = Object.hasOwn(source, 'png') ? ownData(source, 'png') : undefined
+  if ((result.image === undefined) !== (rawPng === undefined)) {
+    throw new TypeError('computer snapshot image metadata and PNG must be present together')
+  }
+  if (rawPng === undefined) return Object.freeze({ result })
+  if (!(rawPng instanceof ImmutablePng)) throw new TypeError('png must be an ImmutablePng')
+  let png: ImmutablePng
+  try {
+    png = new ImmutablePng(ImmutablePng.prototype.read.call(rawPng))
+  } catch {
+    throw new TypeError('png must be a genuine ImmutablePng')
+  }
+  return Object.freeze({ result, png })
 }

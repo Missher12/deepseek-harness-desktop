@@ -67,6 +67,19 @@ export interface DecodedDesktopControlEnvelope {
   readonly png?: ImmutablePng
 }
 
+/** Trusted transport-side validator applied to decoded JSON before image correlation begins; it must return no data. */
+export type DesktopControlMessageValidator = (message: DesktopControlMessage) => undefined
+
+function runMessageValidator(
+  validator: DesktopControlMessageValidator | undefined,
+  message: DesktopControlMessage,
+): void {
+  if (validator === undefined) return
+  const runtimeValidator: (candidate: DesktopControlMessage) => unknown = validator
+  const validationResult = runtimeValidator(message)
+  if (validationResult !== undefined) fail('JSON validator must not return data')
+}
+
 /** Protocol decoding failure that requires closing only the dedicated control link. */
 export class DesktopControlProtocolError extends Error {
   override readonly name = 'DesktopControlProtocolError'
@@ -74,6 +87,44 @@ export class DesktopControlProtocolError extends Error {
 
 function fail(message: string): never {
   throw new DesktopControlProtocolError(message)
+}
+
+function assertPlainWireTree(root: unknown): void {
+  const pending: { readonly value: unknown; readonly location: string }[] = [{ value: root, location: 'message' }]
+  const seen = new WeakSet<object>()
+  while (pending.length > 0) {
+    const entry = pending.pop()
+    if (entry === undefined) break
+    const { value, location } = entry
+    if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') continue
+    if (typeof value !== 'object') fail(`${location} must contain only plain serializable values`)
+    if (seen.has(value)) fail(`${location} must not contain shared or cyclic objects`)
+    seen.add(value)
+
+    const array = Array.isArray(value)
+    const prototype: unknown = Object.getPrototypeOf(value)
+    if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) {
+      fail(`${location} must contain only plain object and array prototypes`)
+    }
+    if ('toJSON' in value) fail(`${location} must not define or inherit toJSON`)
+    const descriptors = Object.getOwnPropertyDescriptors(value)
+    const ownKeys = Reflect.ownKeys(descriptors)
+    if (array && ownKeys.length !== value.length + 1) fail(`${location} must be a dense plain array`)
+    for (const key of ownKeys) {
+      if (array && key === 'length') continue
+      if (typeof key !== 'string') fail(`${location} keys must be strings`)
+      const descriptor = descriptors[key]
+      if (descriptor === undefined || !Object.hasOwn(descriptor, 'value') || !descriptor.enumerable) {
+        fail(`${location}.${key} must be an own enumerable data property`)
+      }
+      pending.push({ value: descriptor.value, location: `${location}.${key}` })
+    }
+    if (array) {
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) fail(`${location} must be a dense plain array`)
+      }
+    }
+  }
 }
 
 function byteLength(value: string): number {
@@ -776,13 +827,20 @@ export function decodeJsonFrame(frame: Uint8Array): DesktopControlMessage {
  * @returns a fresh JSON-tagged frame.
  */
 export function encodeJsonFrame(message: DesktopControlMessage): Uint8Array {
+  assertPlainWireTree(message)
   validateMessage(message)
-  const text = JSON.stringify(message)
+  let text: string
+  try {
+    text = JSON.stringify(message)
+  } catch {
+    return fail('message could not be serialized')
+  }
   const bytes = utf8.encode(text)
   if (bytes.byteLength > PROTOCOL_LIMITS.jsonPayloadBytes) fail('JSON frame exceeds the payload limit')
   const frame = new Uint8Array(1 + bytes.byteLength)
   frame[0] = JSON_TAG
   frame.set(bytes, 1)
+  decodeJsonFrame(frame)
   return frame
 }
 
@@ -793,8 +851,8 @@ export function encodeJsonFrame(message: DesktopControlMessage): Uint8Array {
  */
 export function assertBridgeDeadline(request: BridgeRequest, nowUnixMs: number): void {
   safeInteger(nowUnixMs, 'nowUnixMs', PROTOCOL_LIMITS.minDeadlineUnixMs)
-  if (request.deadlineUnixMs < nowUnixMs || request.deadlineUnixMs > nowUnixMs + PROTOCOL_LIMITS.maxDeadlineAheadMs) {
-    fail('deadlineUnixMs must be current and no more than 30 seconds ahead')
+  if (request.deadlineUnixMs <= nowUnixMs || request.deadlineUnixMs > nowUnixMs + PROTOCOL_LIMITS.maxDeadlineAheadMs) {
+    fail('deadlineUnixMs must be in the future and no more than 30 seconds ahead')
   }
 }
 
@@ -892,6 +950,13 @@ export class DesktopControlFrameDecoder {
   private closed = false
 
   /**
+   * Create one fail-closed correlator with an optional transport-direction validator.
+   * The validator receives only detached JSON messages, must return undefined, and runs before image state changes.
+   * @param validateMessage - Trusted validation callback for the owning transport direction.
+   */
+  constructor(private readonly validateMessage?: DesktopControlMessageValidator) {}
+
+  /**
    * Accept one complete unprefixed protocol frame.
    * @param frame - JSON or PNG frame received in exact order.
    * @returns zero envelopes while awaiting a PNG, otherwise the completed envelope.
@@ -916,6 +981,7 @@ export class DesktopControlFrameDecoder {
       }
       if (frame[0] === PNG_TAG) fail('orphan PNG frame')
       const message = decodeJsonFrame(frame)
+      runMessageValidator(this.validateMessage, message)
       const image = pendingImage(message)
       if (image !== undefined) {
         this.pending = { message, image }

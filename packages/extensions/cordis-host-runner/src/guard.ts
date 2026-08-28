@@ -20,6 +20,7 @@ import { assertSupportedJsonSchema, defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
+import { isPrivilegedControlService } from './control-authority-policy.ts'
 
 const DYNAMIC_TOOL = Symbol('cordis-host-runner.dynamic-tool')
 const SCHEMA_TYPES = new Set<unknown>(['string', 'number', 'integer', 'boolean', 'null', 'object', 'array', 'json'])
@@ -737,6 +738,11 @@ function sandboxContext(ctx: Context, reportFailure: (error: Error) => void): Co
   // is the façade's own API on either path.
   const readService = (name: string, requireDeclaration: boolean): unknown => {
     if (name === 'tools') return tools
+    if (isPrivilegedControlService(name)) {
+      return rejectGuard(reportFailure,
+        `service "${name}" is withheld from dynamic packages by design because it controls Desktop authority`,
+      )
+    }
     if (requireDeclaration && !declared.has(name)) return denyRead(name)
     const service = denyContext(ctx.get(name), name, reportFailure)
     if (service === null || (typeof service !== 'object' && typeof service !== 'function')) return service
@@ -775,6 +781,7 @@ function sandboxContext(ctx: Context, reportFailure: (error: Error) => void): Co
     // (whether or not currently live). Does not resolve/wrap — no throw.
     has: (_target, prop) => prop === 'tools' || prop === 'get'
       || (typeof prop === 'string'
+        && !isPrivilegedControlService(prop)
         && ((CTX_VERBS.has(prop) && (!TIMER_VERBS.has(prop) || declared.has('timer'))) || declared.has(prop))),
   }) as unknown as Context
   /* jscpd:ignore-end */

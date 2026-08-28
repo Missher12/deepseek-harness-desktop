@@ -148,7 +148,7 @@ function workspaceManifests(): WorkspaceManifest[] {
 
 const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // Native and TypeScript peers validate the same machine-readable protocol roster and limits.
-  '@deepseek-ai/dsh-desktop-control-protocol': ['protocol-v1.json'],
+  '@deepseek-ai/dsh-desktop-control-protocol': ['lib/manifest-*.js', 'protocol-v1.json'],
   // Statically linked client libraries keep their stylesheets next to the emitted
   // JavaScript, which imports them by relative path: the compile shell runs
   // them through its own CSS pipeline, so the sheets are published artifacts.

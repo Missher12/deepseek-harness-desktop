@@ -10,19 +10,19 @@
 
 Bridge 清单包含仅供内部使用的 `control.lease.acquire` 与 `control.lease.release`。Acquire 携带一种封闭 surface kind、非空且不重复的 capability 子集，以及保持 `{ appId, windowIds[] }` 配对的目标。浏览器目标必须为空；原生 lease 至少包含一个唯一应用，且每个应用至少包含一个唯一窗口。结果只公开生效的 lease id／revision、surface、targets、capabilities 与相对 idle／hard 时长。Release 只返回 `{ released: true }`。请求和结果都不能携带审批声明、quota、action digest 或 clock 值。
 
-严格 decoder 会在整份 JSON 解析可以套用 last-wins 行为前拒绝重复 key。它也拒绝危险 key、未知或缺失字段、未知判别值、错误版本、畸形标识符、非有限或超范围数字，以及超过 UTF-8 限制的值。解码后的 JSON 与输入分离并深度冻结。
+严格 decoder 会在整份 JSON 解析可以套用 last-wins 行为前拒绝重复 key。它也拒绝危险 key、未知或缺失字段、未知判别值、错误版本、畸形标识符、非有限或超范围数字，以及超过 UTF-8 限制的值。编码只接受按 descriptor 检查过的普通树；自定义 prototype、`toJSON`、accessor、不可枚举或 symbol key、稀疏数组、共享或循环对象都会在序列化前失败。实际发出的 frame 会再次解码并校验，因此校验对象绝不会与传输文本不同。解码后的 JSON 与输入分离并深度冻结。
 
 ## 分帧与图像
 
 无前缀 frame 以 tag `0x01` 开始时，后续最多为 65,536 个 JSON 字节；以 tag `0x02` 开始时，后续为 16 字节 transfer UUID 和最多 4,194,304 个原始 PNG 字节。`LengthPrefixedFrameDecoder` 接受 helper 流中拆分或合并的输入，其 4 字节大端长度包含 tag 和 body；它会在分配 body 之前拒绝零值与超限长度。
 
-`DesktopControlFrameDecoder` 要求截图元数据与其 PNG 相邻。它校验 transfer ID、字节长度、SHA-256、PNG 签名、IHDR 尺寸和顺序，随后通过 `ImmutablePng.read()` 公开图像字节，每次读取都返回新副本。任何畸形或顺序错误的输入都会永久关闭该 decoder 实例，但不为 Harness 或聊天生命周期定义行为。
+`DesktopControlFrameDecoder` 接受可选的受信 JSON 消息校验器，用于约束所属 transport 的方向。校验器只接收已分离的 JSON 消息、不得返回数据，并在截图关联进入 pending 状态前运行。随后 decoder 要求截图元数据与其 PNG 相邻，校验 transfer ID、字节长度、SHA-256、PNG 签名、IHDR 尺寸和顺序，并通过 `ImmutablePng.read()` 公开图像字节；每次读取都返回新副本。校验器拒绝、返回值、畸形输入或顺序错误都会永久关闭该 decoder 实例，但不为 Harness 或聊天生命周期定义行为。
 
 ## API 所有权
 
 `RequestId`、`ControlLeaseId` 和 `PngTransferId` 是规范的小写 UUID；`BrowserRef` 和 `ComputerRef` 使用不同固定前缀与 32 位小写十六进制数字。本包从 `@deepseek-ai/dsh-session/types` 导入并重新导出官方 `SessionId`；wire 校验将其 UTF-8 表示限制为 128 字节，但不改变所有方定义的字符集。
 
-Bridge deadline 保持 wall-clock 值，便于 Electron 缩短并转换；`assertBridgeDeadline(request, nowUnixMs)` 执行由调用方提供的当前时间检查与 30 秒上限。Helper 请求则携带 1 至 30,000 之间的 `timeoutMs`。`lease.install` 复用相同的配对 targets 与 capability 类型，并增加 Electron 编写的总 `operations`、snapshot、pointer action、key action 与 text byte quota；`agentId` 只用于展示，绝不是身份。有状态请求关联、重复请求 tombstone、取消与子进程 generation 属于 Host bridge，而不是这个无状态 codec。原始 acquire／release fixture 与既有 status、screenshot fixture 一起，作为后续 Rust helper 的逐字节一致性输入。[封闭协议 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-28-closed-desktop-control-protocol.zh.md) 记录了该所有权决策。
+Bridge deadline 保持 wall-clock 值，便于 Electron 缩短并转换；`assertBridgeDeadline(request, nowUnixMs)` 只接受严格晚于调用方单次提供的当前时间、且最多提前 30 秒的 deadline。Helper 请求则携带 1 至 30,000 之间的 `timeoutMs`。`lease.install` 复用相同的配对 targets 与 capability 类型，并增加 Electron 编写的总 `operations`、snapshot、pointer action、key action 与 text byte quota；`agentId` 只用于展示，绝不是身份。有状态请求关联、重复请求 tombstone、取消与子进程 generation 属于 Host bridge，而不是这个无状态 codec。原始 acquire／release fixture 与既有 status、screenshot fixture 一起，作为后续 Rust helper 的逐字节一致性输入。[封闭协议 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-28-closed-desktop-control-protocol.zh.md) 记录了该所有权决策。
 
 ## Model Experience
 

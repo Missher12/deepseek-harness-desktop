@@ -12,6 +12,7 @@ import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 // Type-only: resolves `ctx.dynamicCordisRunner` (the registry this report reads).
 import type {} from '@deepseek-ai/dsh-cordis-host-runner'
+import { isPrivilegedControlService } from '@deepseek-ai/dsh-cordis-host-runner'
 import { EVENT_API, INHERITED_CTX_API, SERVICE_API, TYPE_API } from './api-catalog.ts'
 import type { EventApiEntry, InheritedApiEntry, ServiceApiEntry, ServiceApiMethod, TypeApiEntry } from './api-catalog.ts'
 import { FiberState, STATE_LABELS } from './fiber-state.ts'
@@ -38,6 +39,7 @@ function liveImpls(ctx: Context): { name: string; fiber: Fiber }[] {
   return Object.getOwnPropertySymbols(store)
     .map(key => store[key])
     .filter((impl): impl is NonNullable<typeof impl> => impl !== undefined)
+    .filter(impl => !isPrivilegedControlService(impl.name))
 }
 
 /**

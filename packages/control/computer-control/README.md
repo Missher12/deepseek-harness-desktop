@@ -8,10 +8,10 @@ The Computer Control Service Definition registers one `ctx.computerControl` prov
 
 - `acquireLease(request, signal)` is an internal Consumer/provider operation that forwards pair-preserving desired app/window targets and capabilities to Electron authority. It is not a model tool and cannot authorize itself.
 - `status()` reports platform and permission facts. `list(request, signal)` returns only applications/windows eligible for a user grant.
-- `snapshot(request, signal)` observes one authorized window. `act(request, signal)` accepts only the protocol's focus, semantic/coordinate pointer, drag, type, key, scroll, and wait actions.
+- `snapshot(request, signal)` observes one authorized window and returns a `ComputerSnapshotEnvelope`; its bounded protocol result and codec-owned `ImmutablePng` are present together whenever an image exists. `act(request, signal)` accepts only the protocol's focus, semantic/coordinate pointer, drag, type, key, scroll, and wait actions.
 - `stop(sessionId)` awaits release of native resources for exactly one session.
 - `bindComputerReference()` and `assertComputerReferenceCurrent()` bind an opaque ref to session, application, PID, process-creation identity, window, snapshot revision, and display scale. A changed field is stale; a foreign session is unauthorized.
-- `freezeComputerList()` and `freezeComputerSnapshot()` accept only primitive own-data fields, rebuild detached protocol collections, and deeply freeze them under the protocol limits. Optional PNG metadata is reconstructed from exactly its five protocol fields after brand, hash, byte, and dimension validation. `assertComputerActionCount()` applies the service's 64-action per-turn ceiling; a native lease may be narrower.
+- `freezeComputerList()` and `freezeComputerSnapshot()` accept only primitive own-data fields, rebuild detached protocol collections, and deeply freeze them under the protocol limits. Optional PNG metadata is reconstructed from exactly its five protocol fields after brand, hash, byte, and dimension validation. `freezeComputerSnapshotEnvelope()` rejects metadata/PNG presence mismatches, copies the protocol `ImmutablePng` into service-owned storage, strips extra fields, and freezes the exact envelope; raw byte arrays are never exposed as fields. `assertComputerActionCount()` applies the service's 64-action per-turn ceiling; a native lease may be narrower.
 
 ## Fail-closed policy
 
@@ -20,6 +20,8 @@ The Computer Control Service Definition registers one `ctx.computerControl` prov
 The classifier accepts only adapter-owned facts. Model output and page text cannot label their own target as ordinary, and accessibility semantics are not treated as proof that hostile JavaScript lacks side effects.
 
 The policy surface type is the protocol-owned `ControlLeaseSurfaceKind`, not a copied union. Later tool Consumers derive the official session and fill request id, deadline, lease id/revision, and other transport fields themselves. Model schemas must not expose acquire, authority, approval, quota, clock, or action-digest fields.
+
+This privileged service remains documented for trusted static first-party providers and Consumers, but it is excluded from the runtime model Cordis catalog and withheld from model-authored dynamic packages through both property access and `ctx.get()`.
 
 ## Model Experience
 

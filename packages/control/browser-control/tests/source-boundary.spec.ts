@@ -25,7 +25,8 @@ const PROTOCOL_DECLARATIONS = [
   'HelperRequest', 'HelperRequestKind', 'HelperResultMap', 'HelperScrollRequest',
   'HelperSnapshotRequest', 'HelperStatusRequest', 'HelperStopRequest',
   'HelperTypeRequest', 'HelperWaitRequest', 'DecodedDesktopControlEnvelope',
-  'DecodedPngFrame', 'DesktopControlMessage',
+  'DecodedPngFrame', 'DesktopControlMessage', 'DesktopControlMessageValidator',
+  'ImmutablePng',
   'ControlLeaseAcquireRequest', 'ControlLeaseAcquireResult',
   'ControlLeaseCapability', 'ControlLeaseReleaseRequest',
   'ControlLeaseReleaseResult', 'ControlLeaseSurfaceKind', 'ControlLeaseTarget',
@@ -58,11 +59,13 @@ describe('browser-control source boundary', () => {
     expect(source).toContain('PngTransferId')
     expect(source).toContain('KeyModifier')
     expect(source).toContain('PngMetadata')
+    expect(source).toContain('ImmutablePng')
     expect(source).toContain('ControlLeaseAcquireRequest')
     expect(source).toContain('ControlLeaseAcquireResult')
     expect(source).not.toMatch(copiedDeclaration)
     expect(source).not.toMatch(/\b(?:payload|schema|body)\??\s*:\s*(?:any|unknown)\b/)
     expect(source).not.toMatch(/\bRecord\s*</)
     expect(source).not.toMatch(/\[\s*key\s*:\s*string\s*\]/)
+    expect(source).not.toMatch(/\b(?:png|bytes)\??\s*:\s*(?:readonly\s+)?Uint8Array\b/)
   })
 })

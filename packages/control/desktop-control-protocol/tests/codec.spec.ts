@@ -26,6 +26,8 @@ import {
   PngTransferId,
   RequestId,
   type BridgeRequest,
+  type DesktopControlMessage,
+  type DesktopControlMessageValidator,
   type HelperRequest,
   type DesktopControlOkResponse,
 } from '../src/index.ts'
@@ -321,9 +323,11 @@ describe('strict JSON codec', () => {
   })
 
   it('validates bridge deadlines only when the caller supplies its current time', () => {
-    expect(() => assertBridgeDeadline(statusRequest(), 1_000)).not.toThrow()
-    expect(() => assertBridgeDeadline({ ...statusRequest(), deadlineUnixMs: 31_001 }, 1_000)).toThrow(/30 seconds/i)
-    expect(() => assertBridgeDeadline({ ...statusRequest(), deadlineUnixMs: 999 }, 1_000)).toThrow(/current/i)
+    const nowUnixMs = 1_000
+    expect(() => assertBridgeDeadline({ ...statusRequest(), deadlineUnixMs: nowUnixMs }, nowUnixMs)).toThrow(/future/i)
+    expect(() => assertBridgeDeadline({ ...statusRequest(), deadlineUnixMs: nowUnixMs + 1 }, nowUnixMs)).not.toThrow()
+    expect(() => assertBridgeDeadline({ ...statusRequest(), deadlineUnixMs: nowUnixMs + 30_000 }, nowUnixMs)).not.toThrow()
+    expect(() => assertBridgeDeadline({ ...statusRequest(), deadlineUnixMs: nowUnixMs + 30_001 }, nowUnixMs)).toThrow(/30 seconds/i)
   })
 
   it('enforces helper timeout limits and Electron-only field matrices', () => {
@@ -392,6 +396,33 @@ describe('binary framing', () => {
 })
 
 describe('PNG correlation and immutability', () => {
+  it('validates each JSON message before opening image correlation and fails closed', async () => {
+    const metadataFrame = new Uint8Array(await readFile(resolve(import.meta.dirname, '../fixtures/browser-snapshot-json.bin')))
+    const seen: DesktopControlMessage[] = []
+    let argumentCount = 0
+    const validateDirection: DesktopControlMessageValidator = function (message) {
+      argumentCount = arguments.length
+      seen.push(message)
+      if (message.messageKind === 'response') throw new Error('wrong bridge direction')
+    }
+    const decoder = new DesktopControlFrameDecoder(validateDirection)
+
+    expect(() => decoder.pushFrame(metadataFrame)).toThrow(/wrong bridge direction/i)
+    expect(seen).toHaveLength(1)
+    expect(argumentCount).toBe(1)
+    expect(seen[0]).not.toHaveProperty('png')
+    expect(seen[0]).not.toBeInstanceOf(Uint8Array)
+    expect(() => decoder.pushFrame(metadataFrame)).toThrow(/closed/i)
+  })
+
+  it('rejects any value returned by a JSON-only validator and fails closed', () => {
+    const leaksBytes = (() => Uint8Array.of(0x89, 0x50)) as unknown as DesktopControlMessageValidator
+    const decoder = new DesktopControlFrameDecoder(leaksBytes)
+
+    expect(() => decoder.pushFrame(encodeJsonFrame(statusRequest()))).toThrow(/validator.*return/i)
+    expect(() => decoder.pushFrame(encodeJsonFrame(statusRequest()))).toThrow(/closed/i)
+  })
+
   it('correlates the immediate raw PNG frame and returns copies', async () => {
     const png = new Uint8Array(await readFile(resolve(import.meta.dirname, '../fixtures/tiny.png')))
     const metadataFrame = new Uint8Array(await readFile(resolve(import.meta.dirname, '../fixtures/browser-snapshot-json.bin')))

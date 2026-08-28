@@ -16,7 +16,7 @@ Status: implemented
 
 只有 helper 联合包含 `lease.install` 与 `input.release`。Install 复用协议所有的配对 targets 与 capabilities，并携带 Electron 编写的总 `operations` 及分类 quota；`agentId` 只用于展示。仅用于恢复的 `input.release` 不携带 lease 字段。成功响应把显式结果绑定到其请求判别值；错误响应使用一份封闭代码清单。
 
-二进制 envelope 将有界 UTF-8 JSON 与原始 PNG 字节分离。截图元数据要求后续紧邻的 PNG，并绑定其 UUID、字节长度、SHA-256、宽度和高度。Decoder 输出与输入分离并深度冻结；图像字节只有一个不可变所有方，其 reader 返回副本。畸形值或 frame 顺序只会关闭用于 Desktop 控制的 decoder。
+二进制 envelope 将有界 UTF-8 JSON 与原始 PNG 字节分离。编码会先检查仅含 data descriptor 的普通值树，拒绝自定义序列化 hook 与非 data 状态，再严格解码并校验实际发出的 frame。Transport 可以注入受信 JSON 消息校验器；它只看到已分离的 JSON、不得返回数据，并在截图关联进入 pending 状态前运行，使每个 bridge 方向能够立即拒绝格式有效但方向错误的消息。截图元数据随后要求后续紧邻的 PNG，并绑定其 UUID、字节长度、SHA-256、宽度和高度。Decoder 输出与输入分离并深度冻结；图像字节只有一个不可变所有方，其 reader 返回副本。校验器拒绝或返回数据、畸形值或 frame 顺序只会关闭用于 Desktop 控制的 decoder。Bridge deadline 使用调用方的单次时间样本，且只接受 `(nowUnixMs, nowUnixMs + 30_000]` 区间。
 
 ## 考虑过的替代方案
 

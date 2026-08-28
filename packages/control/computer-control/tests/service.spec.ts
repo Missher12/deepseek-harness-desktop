@@ -4,6 +4,7 @@ import {
   BrowserRef,
   ComputerRef,
   ControlLeaseId,
+  ImmutablePng,
   PngTransferId,
   RequestId,
   SessionId,
@@ -26,12 +27,14 @@ import ComputerControl, {
   classifyControlPolicy,
   freezeComputerList,
   freezeComputerSnapshot,
+  freezeComputerSnapshotEnvelope,
   type ComputerActionRequest,
   type ComputerActionResult,
   type ComputerClickRequest,
   type ComputerControlStatus,
   type ComputerReferenceBinding,
   type ComputerSnapshot,
+  type ComputerSnapshotEnvelope,
   type ControlPolicyInput,
   type ControlSurfaceClass,
   type ControlTargetSensitivity,
@@ -104,9 +107,9 @@ class StubComputerControl extends ComputerControl {
     return freezeComputerList({ apps: [{ appId: 'com.example.editor', name: 'Editor', windows: [{ windowId: 'window-1', title: 'Note' }] }] })
   }
 
-  async snapshot(_request: ComputerSnapshotRequest, signal: AbortSignal): Promise<ComputerSnapshotResult> {
+  async snapshot(_request: ComputerSnapshotRequest, signal: AbortSignal): Promise<ComputerSnapshotEnvelope> {
     signal.throwIfAborted()
-    return freezeComputerSnapshot(snapshot())
+    return freezeComputerSnapshotEnvelope({ result: snapshot() })
   }
 
   async act(request: ComputerActionRequest, signal: AbortSignal): Promise<ComputerActionResult> {
@@ -155,6 +158,7 @@ describe('ComputerControl service seam', () => {
     expectTypeOf<ComputerClickRequest>().toEqualTypeOf<ProtocolComputerClickRequest>()
     expectTypeOf<ComputerControlStatus>().toEqualTypeOf<ComputerStatusResult>()
     expectTypeOf<ComputerSnapshot>().toEqualTypeOf<ComputerSnapshotResult>()
+    expectTypeOf<Awaited<ReturnType<ComputerControl['snapshot']>>>().toEqualTypeOf<ComputerSnapshotEnvelope>()
     expectTypeOf<Parameters<ComputerControl['acquireLease']>[0]>().toEqualTypeOf<ControlLeaseAcquireRequest>()
     expectTypeOf<Awaited<ReturnType<ComputerControl['acquireLease']>>>().toEqualTypeOf<ControlLeaseAcquireResult>()
     expectTypeOf<ControlSurfaceClass>().toEqualTypeOf<ControlLeaseSurfaceKind>()
@@ -315,6 +319,66 @@ describe('computer reference ownership and bounds', () => {
     expect(Object.isFrozen(frozen)).toBe(true)
     expect(Object.isFrozen(frozen.refs)).toBe(true)
     expect(Object.isFrozen(frozen.refs[0])).toBe(true)
+  })
+
+  it('preserves correlated image bytes in a detached deeply frozen snapshot envelope', () => {
+    const bytes = Uint8Array.of(4, 5, 6)
+    const png = new ImmutablePng(bytes)
+    const result = {
+      ...snapshot(),
+      image: {
+        transferId: PngTransferId('00000000-0000-4000-8000-000000000199'),
+        byteLength: bytes.byteLength,
+        sha256: 'b'.repeat(64),
+        width: 1,
+        height: 1,
+      },
+    }
+    const envelope = freezeComputerSnapshotEnvelope({
+      result,
+      png,
+      nested: { secret: 'must-not-cross' },
+    } as ComputerSnapshotEnvelope)
+
+    expect(Object.keys(envelope).sort()).toEqual(['png', 'result'])
+    expect(envelope.result).not.toBe(result)
+    expect(envelope.png).not.toBe(png)
+    expect(Object.isFrozen(envelope)).toBe(true)
+    expect(Object.isFrozen(envelope.result)).toBe(true)
+    expect(Object.isFrozen(envelope.result.refs)).toBe(true)
+    expect(Object.isFrozen(envelope.png)).toBe(true)
+    const first = envelope.png!.read()
+    const second = envelope.png!.read()
+    first[0] = 99
+    expect(second).toEqual(Uint8Array.of(4, 5, 6))
+    expect(envelope.png!.read()).toEqual(Uint8Array.of(4, 5, 6))
+    expect(envelope).not.toHaveProperty('nested')
+    expect(envelope.png).not.toHaveProperty('bytes')
+  })
+
+  it('rejects missing, extra, or forged snapshot image owners', () => {
+    const png = new ImmutablePng(Uint8Array.of(1))
+    const resultWithImage = {
+      ...snapshot(),
+      image: {
+        transferId: PngTransferId('00000000-0000-4000-8000-000000000199'),
+        byteLength: 1,
+        sha256: 'b'.repeat(64),
+        width: 1,
+        height: 1,
+      },
+    }
+
+    expect(() => freezeComputerSnapshotEnvelope({ result: resultWithImage })).toThrow(/image.*PNG|PNG.*image/i)
+    expect(() => freezeComputerSnapshotEnvelope({ result: snapshot(), png })).toThrow(/image.*PNG|PNG.*image/i)
+    expect(() => freezeComputerSnapshotEnvelope({
+      result: resultWithImage,
+      png: Object.create(ImmutablePng.prototype) as ImmutablePng,
+    })).toThrow(TypeError)
+    expect(() => freezeComputerSnapshotEnvelope(Object.create({
+      result: resultWithImage,
+      png,
+    }) as ComputerSnapshotEnvelope)).toThrow(TypeError)
   })
 
   it('canonicalizes and deeply freezes only the five PNG metadata fields', () => {

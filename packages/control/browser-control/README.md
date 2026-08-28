@@ -7,15 +7,17 @@ The Browser Control Service Definition registers one `ctx.browserControl` provid
 ## Contract
 
 - `acquireLease(request, signal)` is an internal Consumer/provider operation that forwards the protocol-owned desired surface, targets, and capabilities to Electron authority. It is not a model tool and cannot authorize itself.
-- `snapshot(request, signal)` returns bounded semantics and an optional image descriptor for the current surface.
+- `snapshot(request, signal)` returns a `BrowserSnapshotEnvelope` whose bounded protocol result and codec-owned `ImmutablePng` are present together whenever an image exists.
 - `act(request, signal)` accepts only the protocol's navigation, semantic-reference, key, selection, scroll, and wait actions. Browser coordinate actions do not exist.
 - `revokeSession(sessionId)` awaits teardown for exactly one session; implementations own exclusive surface lifetime and reference invalidation.
 - `bindBrowserReference()` and `assertBrowserReferenceCurrent()` keep opaque refs bound to the official session, surface identity, mount generation, and snapshot revision. Ownership is checked before freshness so a foreign session cannot probe a surface.
-- `freezeBrowserSnapshot()` accepts only primitive own-data fields, rebuilds detached protocol output, and deeply freezes it while applying semantic collection and UTF-8 bounds. Optional PNG metadata is reconstructed from exactly its five protocol fields after brand, hash, byte, and dimension validation. `assertBrowserActionCount()` applies the service's 64-action per-turn ceiling; Electron-authored lease quotas may be narrower.
+- `freezeBrowserSnapshot()` accepts only primitive own-data fields, rebuilds detached protocol output, and deeply freezes it while applying semantic collection and UTF-8 bounds. Optional PNG metadata is reconstructed from exactly its five protocol fields after brand, hash, byte, and dimension validation. `freezeBrowserSnapshotEnvelope()` rejects metadata/PNG presence mismatches, copies the protocol `ImmutablePng` into service-owned storage, strips extra fields, and freezes the exact envelope; raw byte arrays are never exposed as fields. `assertBrowserActionCount()` applies the service's 64-action per-turn ceiling; Electron-authored lease quotas may be narrower.
 
 Page text remains untrusted and cannot authorize actions. This seam does not claim that accessibility semantics can prove hostile page JavaScript has no external side effects. The Electron adapter owns the surface, debugger, URL/redirect validation, lease, and native approval challenge.
 
 Later tool Consumers derive the official session and populate every request id, deadline, lease id/revision, and other transport field themselves. Model schemas must not expose lease acquisition, session or lease metadata, approval, quota, clock, or action-digest fields.
+
+This privileged service remains documented for trusted static first-party providers and Consumers, but it is excluded from the runtime model Cordis catalog and withheld from model-authored dynamic packages through both property access and `ctx.get()`.
 
 ## Model Experience
 

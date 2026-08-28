@@ -8,10 +8,10 @@ Computer Control Service Definition 为跨用户已授权原生应用的有界�
 
 - `acquireLease(request, signal)` 是 Consumer／提供方内部操作，它把保持应用／窗口配对的目标与 capabilities 转交给 Electron 权威方。它不是模型工具，也不能自行授权。
 - `status()` 报告平台与权限事实。`list(request, signal)` 只返回可供用户授权的应用／窗口。
-- `snapshot(request, signal)` 观察一个已授权窗口。`act(request, signal)` 只接受协议中的聚焦、语义／坐标指针、拖动、输入、按键、滚动与等待操作。
+- `snapshot(request, signal)` 观察一个已授权窗口并返回 `ComputerSnapshotEnvelope`；只要存在图片，其中的有界协议结果与 codec 所有的 `ImmutablePng` 就必须同时存在。`act(request, signal)` 只接受协议中的聚焦、语义／坐标指针、拖动、输入、按键、滚动与等待操作。
 - `stop(sessionId)` 等待恰好一个会话的原生资源释放完成。
 - `bindComputerReference()` 与 `assertComputerReferenceCurrent()` 把不透明 ref 绑定到会话、应用、PID、进程创建身份、窗口、snapshot revision 和 display scale。任一字段变化即为陈旧；外来会话则未获授权。
-- `freezeComputerList()` 与 `freezeComputerSnapshot()` 只接受原语 own-data 字段，在协议上限内重新构建分离的协议集合并深度冻结。可选 PNG 元数据只有在 brand、hash、字节和尺寸校验后，才会严格按协议的五个字段重建。`assertComputerActionCount()` 执行服务的每轮次 64 次操作上限；原生 lease 可以更窄。
+- `freezeComputerList()` 与 `freezeComputerSnapshot()` 只接受原语 own-data 字段，在协议上限内重新构建分离的协议集合并深度冻结。可选 PNG 元数据只有在 brand、hash、字节和尺寸校验后，才会严格按协议的五个字段重建。`freezeComputerSnapshotEnvelope()` 会拒绝元数据／PNG 存在性不一致，把协议 `ImmutablePng` 复制进服务所有的存储，剥离额外字段并冻结严格 envelope；不会把原始字节数组作为字段公开。`assertComputerActionCount()` 执行服务的每轮次 64 次操作上限；原生 lease 可以更窄。
 
 ## 遇疑即拒策略
 
@@ -20,6 +20,8 @@ Computer Control Service Definition 为跨用户已授权原生应用的有界�
 分类器只接受适配器所有的事实。模型输出与页面文本不能自行把目标标成普通；accessibility 语义也不会被当作恶意 JavaScript 没有副作用的证明。
 
 策略的 surface 类型直接使用协议所有的 `ControlLeaseSurfaceKind`，不是复制出的联合。后续工具 Consumer 自行推导官方 session，并填充 request id、deadline、lease id／revision 与其他 transport 字段。模型 schema 不得公开 acquire、authority、approval、quota、clock 或 action digest 字段。
+
+此特权服务仍会写入文档，供受信的静态第一方提供方与 Consumer 阅读；但运行时模型 Cordis 目录会排除它，模型编写的动态包也无法通过属性访问或 `ctx.get()` 取得该服务。
 
 ## 模型体验
 

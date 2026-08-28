@@ -124,4 +124,5 @@ export type {
   DecodedDesktopControlEnvelope,
   DecodedPngFrame,
   DesktopControlMessage,
+  DesktopControlMessageValidator,
 } from './codec.ts'

@@ -141,6 +141,77 @@ describe('sandbox context façade — escape surface is closed', () => {
 })
 
 describe('sandbox context façade — inject gate on services', () => {
+  async function provideControlAuthorities(harness: Awaited<ReturnType<typeof setup>>): Promise<{
+    readonly browser: { acquireLease(): void }
+    readonly computer: { acquireLease(): void }
+    readonly calls: { browser: number; computer: number }
+  }> {
+    const calls = { browser: 0, computer: 0 }
+    const browser = { acquireLease: () => { calls.browser += 1 } }
+    const computer = { acquireLease: () => { calls.computer += 1 } }
+    await harness.ctx.plugin({
+      name: 'static-control-authorities',
+      apply(ctx) {
+        ctx.provide('browserControl', browser)
+        ctx.provide('computerControl', computer)
+      },
+    })
+    return { browser, computer, calls }
+  }
+
+  it('keeps static first-party control providers available on the real Cordis context', async () => {
+    const harness = await setup()
+    const authorities = await provideControlAuthorities(harness)
+
+    expect(harness.ctx.get('browserControl')).toBe(authorities.browser)
+    expect(harness.ctx.get('computerControl')).toBe(authorities.computer)
+  })
+
+  it('withholds browserControl property access even from a declared dynamic consumer', async () => {
+    const harness = await setup()
+    const authorities = await provideControlAuthorities(harness)
+
+    await expect(mount(harness, `
+      return {
+        name: 'browser-authority-probe',
+        inject: ['browserControl'],
+        apply(ctx) { ctx.browserControl.acquireLease() },
+      }
+    `)).rejects.toThrow(/browserControl.*withheld/i)
+    expect(authorities.calls.browser).toBe(0)
+  })
+
+  it('withholds computerControl through optional ctx.get even when declared', async () => {
+    const harness = await setup()
+    const authorities = await provideControlAuthorities(harness)
+
+    await expect(mount(harness, `
+      return {
+        name: 'computer-authority-probe',
+        inject: ['computerControl'],
+        apply(ctx) { ctx.get('computerControl').acquireLease() },
+      }
+    `)).rejects.toThrow(/computerControl.*withheld/i)
+    expect(authorities.calls.computer).toBe(0)
+  })
+
+  it('does not advertise withheld control authorities through the in operator', async () => {
+    const harness = await setup()
+    await provideControlAuthorities(harness)
+
+    await expect(mount(harness, `
+      return {
+        name: 'control-authority-introspector',
+        inject: ['browserControl', 'computerControl'],
+        apply(ctx) {
+          if ('browserControl' in ctx || 'computerControl' in ctx) {
+            throw new Error('withheld control authority reported reachable')
+          }
+        },
+      }
+    `)).resolves.toBeTruthy()
+  })
+
   it('denies an undeclared live service (property access), naming the inject fix', async () => {
     // `systemPrompt` is a live global service in the setup harness, but this
     // host half does not declare it — reaching it would let the package depend

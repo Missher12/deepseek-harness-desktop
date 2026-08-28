@@ -14,7 +14,9 @@
 
 `@deepseek-ai/dsh-desktop-control-protocol` 是所有跨进程请求、结果、错误和品牌化标识的唯一所有者。其 27 种 bridge 清单包含仅供内部使用的 acquire／release。Acquire 保留每一组应用／窗口关系，只接受封闭的 surface 与 capability 清单，并只返回使用相对时长的生效描述符；helper install 复用这些 targets，再加入 Electron 所有的总量与分类 quota。Browser 与 Computer Service Definition 直接导入或重新导出这些类型；它们自身的类型只包含同进程的所有权与校验事实。
 
-封闭协议不暴露 JavaScript、selector、命令、通用 payload 或原始操作系统逃逸口。可选 PNG 元数据只包含传输标识、字节长度、小写 SHA-256、宽度和高度；PNG 字节通过协议内独立且有界的二进制信封传输。
+封闭协议不暴露 JavaScript、selector、命令、通用 payload 或原始操作系统逃逸口。可选 PNG 元数据只包含传输标识、字节长度、小写 SHA-256、宽度和高度；PNG 字节通过协议内独立且有界的二进制信封传输。Transport 所有的 JSON 校验器会在截图关联前运行，因此方向错误的有效消息会立即失败，不会打开 PNG pending 状态。
+
+编码会在序列化前拒绝自定义 prototype、`toJSON`、accessor、不可枚举或 symbol key 状态，以及共享或循环值，再严格校验实际发出的 JSON frame。方向校验器只能接收这份分离的 JSON、不得返回数据；拒绝消息或返回任何内容都会永久关闭其 decoder。
 
 ## 浏览器服务 seam
 
@@ -28,11 +30,13 @@
 
 两个 acquire 操作都不是模型工具。后续工具 Consumer 会推导官方 session 与 transport 字段；其模型 schema 绝不会公开 acquire、lease authority、approval、quota、clock 或 action digest。
 
+生成的文档会为受信第一方实现方保留两个服务约定，但面向模型的运行时 Cordis 目录与实时检查会排除它们；即便动态包声明了 inject，façade 也会拒绝属性与 `ctx.get()` 访问。普通静态第一方 Cordis 提供方与 Consumer 不受影响，同时模型编写的动态包无法取得 Desktop 控制权威。
+
 纯策略只返回 `ALLOW`、`APPROVAL_REQUIRED` 或 `DENY`。未知运行时事实会 fail closed。已知安全字段以及特权或破坏性目标类别会被拒绝；外部副作用和持久 human browser 变更需要独立原生审批。正确 surface 的 Stop 始终无需审批，目标分类不能阻断撤销。
 
 ## 有界不可变结果
 
-两个服务包都只接受原语运行时字段，按封闭字段重新构建协议结果，并返回完全分离且深冻结的对象。语义集合和文本使用协议拥有的限制。PNG 元数据严格从五个已校验字段重建，因此提供方本地对象或额外字段不能越过服务边界。
+两个服务包都只接受原语运行时字段，按封闭字段重新构建协议结果，并返回完全分离且深冻结的对象。语义集合和文本使用协议拥有的限制。PNG 元数据严格从五个已校验字段重建，因此提供方本地对象或额外字段不能越过服务边界。每个 snapshot 服务返回严格的本地 envelope，其中包含协议 result，并且只在元数据声明图像时携带复制后的协议 `ImmutablePng`；服务 seam 不会公开原始字节数组字段。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -62,9 +66,9 @@ abstract acquireLease( request: ControlLeaseAcquireRequest, signal: AbortSignal,
  * Capture bounded semantics and an optional image for the current browser surface.
  * @param request - Strict protocol request received from the Desktop bridge.
  * @param signal - Caller lifetime.
- * @returns an immutable bounded protocol snapshot.
+ * @returns an immutable service envelope whose result and PNG owner remain paired.
  */
-abstract snapshot(request: BrowserSnapshotRequest, signal: AbortSignal): Promise<BrowserSnapshot>
+abstract snapshot(request: BrowserSnapshotRequest, signal: AbortSignal): Promise<BrowserSnapshotEnvelope>
 
 /**
  * Execute one action from the closed browser request roster.
@@ -119,9 +123,9 @@ abstract list(request: ComputerListRequest, signal: AbortSignal): Promise<Comput
  * Capture bounded semantics and an optional image for one authorized window.
  * @param request - Strict target-scoped protocol request.
  * @param signal - Caller lifetime.
- * @returns an immutable bounded protocol snapshot.
+ * @returns an immutable service envelope whose result and PNG owner remain paired.
  */
-abstract snapshot(request: ComputerSnapshotRequest, signal: AbortSignal): Promise<ComputerSnapshot>
+abstract snapshot(request: ComputerSnapshotRequest, signal: AbortSignal): Promise<ComputerSnapshotEnvelope>
 
 /**
  * Execute one action from the closed native request roster.
