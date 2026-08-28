@@ -115,3 +115,47 @@ expect(retry).toHaveBeenCalledOnce()
 - [ ] **步骤 4：从最终候选构建 Intel macOS 应用。使用隔离的 Desktop 设置目录启动，验证两个已安装 Adapter 均显示“可用 · 未开启”，两个已授予权限分别显示；重试不折叠状态；分别开启能力时仍要求原生确认。采集完整模块的浅色与深色外观。**
 - [ ] **步骤 5：只有自动与打包 smoke 全部通过后才安装验证应用。确认普通 Harness 聊天正常启动，控制模块不再显示汇总式“不可用”。**
 - [ ] **步骤 6：提交文档与证据 `docs(desktop): record control settings status model`。**
+
+### 任务 5：闭合电脑控制授权流程
+
+**文件：**
+- 修改：`packages/control/desktop-control-protocol/src/bridge.ts`
+- 修改：`packages/control/desktop-control-protocol/protocol-v1.json`
+- 修改：`packages/control/desktop-control-protocol/tests/codec.spec.ts`
+- 修改：`packages/control/desktop-control-protocol/tests/codec-matrix.spec.ts`
+- 修改：`native/computer-use-helper/crates/protocol/src/lib.rs`
+- 修改：`apps/desktop/src/control/control-coordinator.ts`
+- 修改：`apps/desktop/tests/control-coordinator.spec.ts`
+- 修改：`packages/control/tool-computer-control/src/controller.ts`
+- 修改：`packages/control/tool-computer-control/tests/tools.spec.ts`
+- 修改：`packages/client/ui-desktop-control/src/client/components.tsx`
+- 修改：`packages/client/ui-desktop-control/src/client/locales.ts`
+- 修改：`packages/client/ui-desktop-control/src/client/desktop-control.module.css`
+- 修改：`packages/client/ui-desktop-control/tests/components.client.spec.tsx`
+- 修改：`packages/control/tool-computer-control/README.md`
+- 修改：`packages/control/tool-computer-control/README.zh.md`
+- 修改：`packages/client/ui-desktop-control/README.md`
+- 修改：`packages/client/ui-desktop-control/README.zh.md`
+- 新建：`.agents/notes/implemented/feature/2026-08-28-desktop-control-authorization-diagnostics.md`
+- 新建：`.agents/notes/implemented/feature/2026-08-28-desktop-control-authorization-diagnostics.zh.md`
+
+- [ ] **步骤 1：为安全拒绝清单编写 Protocol 与 Coordinator RED 测试。**
+
+```ts ignore-check
+expect(ERROR_CODES).toContain('CONTROL_DISABLED')
+expect(ERROR_CODES).toContain('TARGET_NOT_AUTHORIZED')
+expect(ERROR_CODES).toContain('APPROVAL_DENIED')
+await expect(acquireWithNoAllowedApps()).rejects.toMatchObject({ code: 'TARGET_NOT_AUTHORIZED' })
+expect(nativeApproval).not.toHaveBeenCalled()
+```
+
+- [ ] **步骤 2：运行聚焦 Protocol 与 Coordinator 测试；当前三项判断都会折叠成 `POLICY_DENIED`，因此预期进入 RED。**
+- [ ] **步骤 3：将三个错误码加入权威 TypeScript Manifest 与 Rust 清单。只在原生应用 Surface 关闭时返回 `CONTROL_DISABLED`；非空原生请求经过 main 持有的白名单过滤后没有目标时返回 `TARGET_NOT_AUTHORIZED`；Electron 询问被取消时返回 `APPROVAL_DENIED`。浏览器与 Helper 的敏感目标策略继续使用 `POLICY_DENIED`。**
+- [ ] **步骤 4：添加工具 RED 测试，分别输入三个精确 Provider 错误码，并断言长度受限、不会泄露原始细节的纠正提示。`POLICY_DENIED` 继续映射为目标受保护提示，`PERMISSION_DENIED` 映射为操作系统权限指引。**
+- [ ] **步骤 5：实现工具映射并证明 `ComputerToolController` 仍只调用 `acquireLease`；它不得导入或调用 Harness `ApprovalService`，因此普通 `ask` 与 `never` 保持独立。**
+- [ ] **步骤 6：为电脑控制可用且已开启、应用列表存在但均未允许的状态添加组件 RED 测试。断言页面醒目显示应用授权提示，并说明每个任务使用独立的原生批准。**
+- [ ] **步骤 7：根据权威快照状态渲染指引，保留逐应用原生确认，并确保 UI 不包含租约、Session、窗口、引用或批准字段。只新增对应中英文文案并复用现有 Desktop Token。**
+- [ ] **步骤 8：更新两组 README 配对并新增 implemented Agent Note。对每组变更执行 `pnpm run verify-translation-pairing --write <english-path>`。**
+- [ ] **步骤 9：运行聚焦 Protocol／Coordinator／工具／UI 测试、Rust Protocol 测试、Desktop／Host／Client 类型检查、限定 Oxlint、GUI 测试、Web replay、constraints、publint、文档门禁和 `git diff --check`；所有本变更持有的检查必须通过。**
+- [ ] **步骤 10：构建并安装 Intel macOS 候选。从零个允许应用开始，验证专用纠正提示且不打开原生任务询问；通过 GUI 允许 Chrome、批准原生任务询问，然后完成一次无害的 `computer_snapshot` → `computer_focus` → 新鲜引用 `computer_click`。**
+- [ ] **步骤 11：提交实现 `fix(desktop): explain computer authorization denials`。**

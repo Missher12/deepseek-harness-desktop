@@ -115,3 +115,47 @@ expect(retry).toHaveBeenCalledOnce()
 - [ ] **Step 4: Build the Intel macOS app from the final candidate. Start with an isolated Desktop settings home and verify both installed adapters render Available · Not enabled, both granted permissions render independently, Retry does not collapse state, and enabling each capability still requires native confirmation. Capture the full module in light and dark appearance.**
 - [ ] **Step 5: Install the verified app only after automated and packaged smoke checks pass. Confirm normal Harness chat still starts and the control module no longer shows the aggregate Unavailable state.**
 - [ ] **Step 6: Commit documentation/evidence with `docs(desktop): record control settings status model`.**
+
+### Task 5: Close the Computer Control authorization loop
+
+**Files:**
+- Modify: `packages/control/desktop-control-protocol/src/bridge.ts`
+- Modify: `packages/control/desktop-control-protocol/protocol-v1.json`
+- Modify: `packages/control/desktop-control-protocol/tests/codec.spec.ts`
+- Modify: `packages/control/desktop-control-protocol/tests/codec-matrix.spec.ts`
+- Modify: `native/computer-use-helper/crates/protocol/src/lib.rs`
+- Modify: `apps/desktop/src/control/control-coordinator.ts`
+- Modify: `apps/desktop/tests/control-coordinator.spec.ts`
+- Modify: `packages/control/tool-computer-control/src/controller.ts`
+- Modify: `packages/control/tool-computer-control/tests/tools.spec.ts`
+- Modify: `packages/client/ui-desktop-control/src/client/components.tsx`
+- Modify: `packages/client/ui-desktop-control/src/client/locales.ts`
+- Modify: `packages/client/ui-desktop-control/src/client/desktop-control.module.css`
+- Modify: `packages/client/ui-desktop-control/tests/components.client.spec.tsx`
+- Modify: `packages/control/tool-computer-control/README.md`
+- Modify: `packages/control/tool-computer-control/README.zh.md`
+- Modify: `packages/client/ui-desktop-control/README.md`
+- Modify: `packages/client/ui-desktop-control/README.zh.md`
+- Create: `.agents/notes/implemented/feature/2026-08-28-desktop-control-authorization-diagnostics.md`
+- Create: `.agents/notes/implemented/feature/2026-08-28-desktop-control-authorization-diagnostics.zh.md`
+
+- [ ] **Step 1: Write protocol and coordinator RED tests for the safe denial roster.**
+
+```ts ignore-check
+expect(ERROR_CODES).toContain('CONTROL_DISABLED')
+expect(ERROR_CODES).toContain('TARGET_NOT_AUTHORIZED')
+expect(ERROR_CODES).toContain('APPROVAL_DENIED')
+await expect(acquireWithNoAllowedApps()).rejects.toMatchObject({ code: 'TARGET_NOT_AUTHORIZED' })
+expect(nativeApproval).not.toHaveBeenCalled()
+```
+
+- [ ] **Step 2: Run the focused protocol and coordinator tests; expect RED because all three decisions currently collapse into `POLICY_DENIED`.**
+- [ ] **Step 3: Add the three codes to the canonical TypeScript manifest and Rust roster. Emit `CONTROL_DISABLED` only for a disabled native-application surface, `TARGET_NOT_AUTHORIZED` when a non-empty native request has no target after main-owned allowlist filtering, and `APPROVAL_DENIED` when the Electron challenge is cancelled. Keep browser and helper sensitive-target policy on `POLICY_DENIED`.**
+- [ ] **Step 4: Add tool RED tests that feed each exact provider code and assert bounded corrective messages without raw detail. Keep `POLICY_DENIED` mapped to the protected-target message and `PERMISSION_DENIED` mapped to operating-system permission guidance.**
+- [ ] **Step 5: Implement the tool mapping and prove `ComputerToolController` still calls only `acquireLease`; it must not import or invoke Harness `ApprovalService`, so ordinary `ask` and `never` remain independent.**
+- [ ] **Step 6: Add component RED tests for an enabled, available Computer Control capability with applications present but none allowed. Assert a prominent application-authorization notice and an explanation that each task uses a separate native approval.**
+- [ ] **Step 7: Render the guidance from authoritative snapshot state, preserve per-application native confirmation, and keep the UI free of lease, session, window, ref, or approval fields. Add matched English and Chinese copy and existing Desktop tokens only.**
+- [ ] **Step 8: Update both README pairs and add the implemented Agent Note. Re-record every changed pair with `pnpm run verify-translation-pairing --write <english-path>`.**
+- [ ] **Step 9: Run focused protocol/coordinator/tool/UI tests, Rust protocol tests, Desktop/Host/client typechecks, scoped Oxlint, GUI tests, replayed Web tests, constraints, publint, documentation gates, and `git diff --check`; expect all change-owned checks to pass.**
+- [ ] **Step 10: Build and install the Intel macOS candidate. Starting from zero allowed applications, verify the specific remediation message and no native task challenge; allow Chrome through the GUI, approve the native task challenge, then complete one harmless `computer_snapshot` → `computer_focus` → fresh-ref `computer_click` sequence.**
+- [ ] **Step 11: Commit the implementation with `fix(desktop): explain computer authorization denials`.**

@@ -48,9 +48,18 @@ The preload bridge keeps its existing zero-authority shape. Renderer bridge oper
 
 Each setting mutation is serialized. The UI shows only the affected control as pending, ignores duplicate submission, and replaces its state with the authoritative snapshot returned by main. A rejected confirmation or failed write restores the prior value and shows a bounded inline error; it does not optimistically persist.
 
+## Authorization Diagnostics
+
+Computer Control uses three independent decisions: macOS permission, the persisted Computer Control switch and application allowlist, and a short-lived Electron-native task lease. The ordinary Harness `ask` or `never` tool-approval policy never grants, suppresses, or persists that Desktop lease. The settings module states this distinction beside the application list.
+
+The wire error roster carries safe reasons for `CONTROL_DISABLED`, `TARGET_NOT_AUTHORIZED`, and `APPROVAL_DENIED`. Electron emits them only at the decision it owns: before native approval when the Computer Control switch is off or no requested application remains in the allowlist, and after the native challenge is cancelled. `PERMISSION_DENIED` remains the operating-system permission result; `POLICY_DENIED` remains reserved for a sensitive or otherwise protected target. The tool maps each code to bounded corrective guidance and never exposes raw helper text, application identifiers, window titles, or approval material.
+
+When Computer Control is available and enabled but no application is allowed, the application section displays a prominent **Select at least one application** state. Enumerating an application does not authorize it. Selecting an application still requires the existing main-owned settings confirmation; the next task-scoped operation then opens the separate **Allow Desktop control?** challenge. Application allowlisting persists, while the task lease expires on turn completion, Stop, session or lifecycle teardown, five minutes idle, or twenty minutes total.
+
 ## Failure Behavior
 
 - Provider absence or an explicitly unsupported adapter marks only that capability unavailable.
+- Disabled Computer Control, an empty effective application allowlist, native approval cancellation, missing operating-system permission, and a protected target produce distinct safe diagnostics.
 - A status timeout, enumeration failure, malformed response, or rejected IPC snapshot fails closed and produces a retryable display error without discarding unrelated valid state.
 - Stop remains idempotent. While cleanup is pending, enablement and allowlist expansion stay disabled; a cleanup failure keeps the Stop surface visible with a retryable error.
 - No renderer or model-visible message may include raw helper stderr, window titles, page text, absolute paths, lease identifiers, refs, or approval material.
@@ -61,5 +70,7 @@ Each setting mutation is serialized. The UI shows only the affected control as p
 - Authority tests prove Browser Control support does not depend on native Computer status, and that supported-but-disabled renders as available and not enabled.
 - Failure tests independently cover status failure, list failure, retained last-valid state, first-load failure, Retry, mutation rejection, and Stop cleanup failure.
 - Component tests cover the full compact module, all capability combinations, permission states, empty and populated applications, pending mutations, active control, Stop, narrow layout, keyboard operation, and visible non-color status text.
+- Protocol, coordinator, provider, and tool tests prove the three safe authorization errors survive the owned IPC path, an empty allowlist never opens the native challenge, an allowed application does open it, and ordinary Harness `ask` or `never` policy is not consulted.
+- A focused macOS acceptance starts with no allowed application, observes the corrective message without a native challenge, allows Chrome in the settings module, approves the next task challenge, and completes `computer_snapshot`, `computer_focus`, and one harmless `computer_click` against fresh snapshot state.
 - A packaged macOS smoke starts with an isolated settings home and proves both installed adapters report available while both default switches report not enabled. The installed app then enables each capability through native confirmation and refreshes without showing the aggregate unavailable state.
 - Existing coordinator, preload, menu/tray Stop, helper, Browser Control, Computer Control, settings persistence, and translation-pairing suites remain green.
