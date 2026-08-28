@@ -76,6 +76,7 @@ export class NativeHelperProcess {
   private readonly tombstones = new Map<string, HelperRequest['requestKind']>()
   private closing = false
   private linkFailed = false
+  private spawnConfirmed = false
   private exitPromise: Promise<void> | undefined
   private resolveExit: (() => void) | undefined
   private shutdownPromise: Promise<void> | undefined
@@ -180,6 +181,7 @@ export class NativeHelperProcess {
     })
     this.child = child
     this.linkFailed = false
+    this.spawnConfirmed = false
     this.lengths = new LengthPrefixedFrameDecoder()
     this.frames = new DesktopControlFrameDecoder(helperToElectron)
     this.exitPromise = new Promise((resolve) => { this.resolveExit = resolve })
@@ -187,8 +189,10 @@ export class NativeHelperProcess {
     child.stdout.on('data', (chunk: Buffer) => { this.onStdout(child, new Uint8Array(chunk)) })
     child.stdout.on('error', () => { this.failLink(child) })
     child.stdin.on('error', () => { this.failLink(child) })
-    child.once('error', () => { this.failLink(child) })
+    child.once('spawn', () => { this.onSpawn(child) })
+    child.once('error', () => { this.onChildError(child) })
     child.once('exit', () => { this.onExit(child) })
+    child.once('close', () => { this.onExit(child) })
     return child
   }
 
@@ -285,6 +289,20 @@ export class NativeHelperProcess {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
   }
 
+  private onSpawn(child: ChildProcessWithoutNullStreams): void {
+    if (this.child === child) this.spawnConfirmed = true
+  }
+
+  private onChildError(child: ChildProcessWithoutNullStreams): void {
+    if (this.child !== child) return
+    if (this.spawnConfirmed) {
+      this.failLink(child)
+      return
+    }
+    this.rejectPending('DISCONNECTED')
+    this.detachChild(child)
+  }
+
   private onExit(child: ChildProcessWithoutNullStreams): void {
     if (this.child !== child) return
     if (!this.closing) this.rejectPending('DISCONNECTED')
@@ -297,6 +315,7 @@ export class NativeHelperProcess {
     try { this.frames?.finish() } catch {}
     this.child = undefined
     this.linkFailed = false
+    this.spawnConfirmed = false
     this.lengths = undefined
     this.frames = undefined
     this.tombstones.clear()

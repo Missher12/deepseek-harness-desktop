@@ -28,6 +28,14 @@ class FakeChild extends EventEmitter {
     this.exitCode = code
     this.emit('exit', code, null)
   }
+
+  spawned(): void {
+    this.emit('spawn')
+  }
+
+  closed(): void {
+    this.emit('close', this.exitCode, this.signalCode)
+  }
 }
 
 function asChild(child: FakeChild): ChildProcessWithoutNullStreams {
@@ -239,5 +247,59 @@ describe('NativeHelperProcess', () => {
       sessionId: 'session-1',
       requestId: abortedRequest.requestId,
     })
+  })
+
+  it('releases ownership after an asynchronous pre-spawn error and permits one clean retry', async () => {
+    const first = new FakeChild()
+    const second = new FakeChild()
+    const spawn = vi.fn<SpawnNativeHelper>()
+      .mockReturnValueOnce(asChild(first))
+      .mockReturnValueOnce(asChild(second))
+    const helper = new NativeHelperProcess({
+      binaryPath: '/verified/computer-use-helper',
+      spawn,
+    })
+    const failed = helper.request(statusRequest())
+    first.emit('error', new Error('ENOENT: SENSITIVE RAW PATH'))
+
+    await expect(failed).rejects.toEqual(expect.objectContaining({
+      code: 'DISCONNECTED',
+      message: 'Native Computer Use helper disconnected.',
+    }))
+    expect(first.kill).not.toHaveBeenCalled()
+    expect(helper.running).toBe(false)
+
+    const retryRequest = statusRequest('00000000-0000-4000-8000-000000000002')
+    const retry = helper.request(retryRequest)
+    second.spawned()
+    second.stdout.write(encodeLengthPrefixedFrame(encodeJsonFrame({
+      protocolVersion: 1,
+      messageKind: 'response',
+      responseKind: 'ok',
+      requestKind: 'status',
+      requestId: retryRequest.requestId,
+      result: { viewing: 'unknown', assistive: 'unknown', supported: false },
+    })))
+    await expect(retry).resolves.toMatchObject({ message: { responseKind: 'ok' } })
+    expect(spawn).toHaveBeenCalledTimes(2)
+  })
+
+  it('retains a confirmed child after error until its real close boundary', async () => {
+    const child = new FakeChild()
+    const helper = new NativeHelperProcess({
+      binaryPath: '/verified/computer-use-helper',
+      spawn: () => asChild(child),
+    })
+    const pending = helper.request(statusRequest())
+    child.spawned()
+    child.emit('error', new Error('started child failed'))
+
+    await expect(pending).rejects.toEqual(expect.objectContaining({ code: 'DISCONNECTED' }))
+    expect(helper.running).toBe(true)
+    await expect(helper.request(statusRequest('00000000-0000-4000-8000-000000000002')))
+      .rejects.toEqual(expect.objectContaining({ code: 'DISCONNECTED' }))
+
+    child.closed()
+    expect(helper.running).toBe(false)
   })
 })
