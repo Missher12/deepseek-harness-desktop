@@ -426,9 +426,12 @@ namespace DshWindowsSmoke
                         workingDirectory,
                         ref startup,
                         out process))
+                {
+                    int createError = Marshal.GetLastWin32Error();
                     throw new Win32Exception(
-                        Marshal.GetLastWin32Error(),
-                        "CreateProcessWithLogonW failed");
+                        createError,
+                        "CreateProcessWithLogonW failed (error=" + createError + ")");
+                }
 
                 uint wait = WaitForSingleObject(process.hProcess, (uint)timeoutMilliseconds);
                 if (wait == WAIT_TIMEOUT)
