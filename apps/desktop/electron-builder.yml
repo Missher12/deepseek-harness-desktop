@@ -50,6 +50,9 @@ mac:
   category: public.app-category.developer-tools
   icon: assets/icon.icns
   identity: null
+  extraResources:
+    - from: "native-bin/darwin-x64/computer-use-helper"
+      to: "native/computer-use-helper"
   files:
     - "!node_modules/node-pty/prebuilds/win32-x64/**"
 dmg:
@@ -62,6 +65,9 @@ win:
         - x64
   icon: assets/icon.ico
   requestedExecutionLevel: asInvoker
+  extraResources:
+    - from: "native-bin/win32-x64/computer-use-helper.exe"
+      to: "native/computer-use-helper.exe"
   files:
     - "!node_modules/node-pty/prebuilds/darwin-x64/**"
     - "!node_modules/**/*.pdb"

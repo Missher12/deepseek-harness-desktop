@@ -5,6 +5,10 @@ import { pathToFileURL } from 'node:url'
 import { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import * as yaml from 'js-yaml'
+import {
+  assertComputerUseHelperArchitecture,
+  computerUseHelperBuildSpec,
+} from './build-computer-use-helper.ts'
 
 const DESKTOP_PACKAGE = '@deepseek-ai/dsh-desktop'
 const SESSION_MESSENGER_PACKAGE = '@deepseek-ai/dsh-session-messenger'
@@ -14,7 +18,10 @@ const DESKTOP_CONTROL_HOST_ROW_ID = 'desktop-control-host'
 
 /** OS seams injected by staging tests. */
 export interface StageDesktopDependencies {
+  readonly platform: NodeJS.Platform
+  readonly arch: string
   readText(path: string): Promise<string>
+  readBinary(path: string): Promise<Uint8Array>
   remove(path: string): Promise<void>
   pnpmInvocation(args: readonly string[]): { command: string; args: readonly string[] }
   run(command: string, args: readonly string[], cwd: string): void
@@ -22,6 +29,8 @@ export interface StageDesktopDependencies {
   isFile(path: string): Promise<boolean>
   findPackageDirectories(root: string, packageDirectoryName: string): Promise<readonly string[]>
   findNativeBinaries(root: string): Promise<readonly string[]>
+  findComputerUseHelpers(root: string): Promise<readonly string[]>
+  isExecutable(path: string): Promise<boolean>
 }
 
 /** Auditable result returned by one staging operation. */
@@ -79,6 +88,13 @@ async function findNativeBinaries(root: string): Promise<string[]> {
   })
 }
 
+async function findComputerUseHelpers(root: string): Promise<string[]> {
+  return findTreePaths(root, (_path, name, isDirectory) => {
+    if (isDirectory) return 'descend'
+    return name === 'computer-use-helper' || name === 'computer-use-helper.exe' ? 'collect' : 'skip'
+  })
+}
+
 async function findPackageDirectories(root: string, packageDirectoryName: string): Promise<string[]> {
   return findTreePaths(root, async (path, name, isDirectory) => {
     if (!isDirectory) return 'skip'
@@ -109,14 +125,19 @@ export function desktopStagePnpmInvocation(
 }
 
 const realDependencies: StageDesktopDependencies = {
+  platform: process.platform,
+  arch: process.arch,
   remove: async (path) => { await rm(path, { recursive: true, force: true }) },
   readText: async path => await readFile(path, 'utf8'),
+  readBinary: async path => new Uint8Array(await readFile(path)),
   pnpmInvocation: desktopStagePnpmInvocation,
   run,
   copy: async (source, target) => { await cp(source, target, { recursive: true, force: true }) },
   isFile: pathIsFile,
   findPackageDirectories,
   findNativeBinaries,
+  findComputerUseHelpers,
+  isExecutable: async path => ((await stat(path)).mode & 0o111) !== 0,
 }
 
 const REASONING_EFFORT_PACKAGE = '@deepseek-ai/dsh-reasoning-effort'
@@ -274,6 +295,7 @@ export async function stageDesktop(
   if (!isDefaultStage && !isDedicatedExternalStage) {
     throw new Error(`Desktop staging refused an unexpected deletion target: ${stageDir}`)
   }
+  const helperSpec = computerUseHelperBuildSpec(dependencies.platform, dependencies.arch)
 
   const desktopPatch = await dependencies.readText(join(desktopDir, 'desktop.cordis.patch.yml'))
   validateReasoningEffortPatch(desktopPatch)
@@ -300,6 +322,11 @@ export async function stageDesktop(
   for (const entry of desktopEntries) {
     await dependencies.copy(join(desktopDir, entry), join(stageDir, entry))
   }
+  const helperDirectory = dirname(helperSpec.nativeRelativePath)
+  await dependencies.copy(
+    join(desktopDir, 'native-bin', helperDirectory),
+    join(stageDir, 'native-bin', helperDirectory),
+  )
   await dependencies.copy(join(root, 'THIRD_PARTY_NOTICES.md'), join(stageDir, 'THIRD_PARTY_NOTICES.md'))
 
   const required = [
@@ -357,6 +384,7 @@ export async function stageDesktop(
     'node_modules/@deepseek-ai/dsh-reasoning-effort/THIRD_PARTY_NOTICES.md',
     'node_modules/@deepseek-ai/dsh-reasoning-effort/lib/assets/chibi-runner-strip.png',
     'node_modules/pnpm/bin/pnpm.mjs',
+    `native-bin/${helperSpec.nativeRelativePath}`,
   ]
   for (const path of required) {
     if (!await dependencies.isFile(join(stageDir, path))) {
@@ -412,6 +440,20 @@ export async function stageDesktop(
 
   const nativeBinaries = await dependencies.findNativeBinaries(join(stageDir, 'node_modules'))
   if (nativeBinaries.length === 0) throw new Error('Desktop staging found no native .node modules.')
+
+  const helperPath = join(stageDir, 'native-bin', helperSpec.nativeRelativePath)
+  const nativeHelpers = await dependencies.findComputerUseHelpers(join(stageDir, 'native-bin'))
+  if (nativeHelpers.length !== 1 || resolve(nativeHelpers[0] ?? '') !== resolve(helperPath)) {
+    throw new Error(`Desktop staging expected exactly one platform-matching Computer Use helper; found ${String(nativeHelpers.length)}.`)
+  }
+  assertComputerUseHelperArchitecture(
+    await dependencies.readBinary(helperPath),
+    dependencies.platform,
+    dependencies.arch,
+  )
+  if (dependencies.platform === 'darwin' && !await dependencies.isExecutable(helperPath)) {
+    throw new Error('Desktop staging requires an executable Computer Use helper on macOS.')
+  }
 
   dependencies.run(
     process.execPath,

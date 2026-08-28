@@ -272,9 +272,17 @@ describe('desktop package manifest', () => {
     expect(rootManifest.scripts['desktop:setup:built']).toContain('pack:setup')
     expect(rootManifest.scripts['desktop:setup']).toContain('desktop:setup:built')
     expect(builder.mac?.icon).toBe('assets/icon.icns')
+    expect(builder.mac?.extraResources).toEqual([{
+      from: 'native-bin/darwin-x64/computer-use-helper',
+      to: 'native/computer-use-helper',
+    }])
     expect(builder.win).toMatchObject({
       target: [{ target: 'nsis', arch: ['x64'] }],
       icon: 'assets/icon.ico',
+      extraResources: [{
+        from: 'native-bin/win32-x64/computer-use-helper.exe',
+        to: 'native/computer-use-helper.exe',
+      }],
     })
     expect(builder.nsis).toMatchObject({
       include: 'build/installer.nsh',

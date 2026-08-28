@@ -1,0 +1,10 @@
+[package]
+name = "computer-use-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+computer-use-protocol.workspace = true
+serde_json.workspace = true

@@ -49,3 +49,4 @@ worktrees/
 .superpowers/
 apps/desktop/.stage/
 apps/desktop/release/
+apps/desktop/native-bin/

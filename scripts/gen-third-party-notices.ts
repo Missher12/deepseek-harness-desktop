@@ -1,8 +1,8 @@
 /**
  * Generate `THIRD_PARTY_NOTICES.md` from the workspace manifests: every
  * external dependency named by a workspace `package.json`, the vendored-package
- * manifest in `vendor/README.md`, the Python `pyproject.toml` files, and the
- * pnpm patch list. License and repository metadata come from the installed
+ * manifest in `vendor/README.md`, the Python `pyproject.toml` files, the native
+ * helper `Cargo.lock`, and the pnpm patch list. License and repository metadata come from the installed
  * store, so the tree must be installed. `--check` verifies the committed
  * artifact. Tier policy and ownership live in
  * `.agents/notes/implemented/process/2026-07-30-generated-third-party-notices.md`.
@@ -86,6 +86,31 @@ const PYTHON_METADATA: Record<string, { license: string; repo: string; role: str
   pydantic: { license: 'MIT', repo: 'https://github.com/pydantic/pydantic', role: 'runtime dependency of `deepseek-harness-sdk`' },
   hatchling: { license: 'MIT', repo: 'https://github.com/pypa/hatch', role: 'build backend' },
   pytest: { license: 'MIT', repo: 'https://github.com/pytest-dev/pytest', role: 'test-only' },
+}
+
+/** License metadata for every external crate statically linked into the helper. */
+const RUST_LICENSES: Readonly<Record<string, string>> = {
+  'block-buffer': 'MIT OR Apache-2.0',
+  'cfg-if': 'MIT OR Apache-2.0',
+  cpufeatures: 'MIT OR Apache-2.0',
+  'crypto-common': 'MIT OR Apache-2.0',
+  digest: 'MIT OR Apache-2.0',
+  'generic-array': 'MIT',
+  itoa: 'MIT OR Apache-2.0',
+  libc: 'MIT OR Apache-2.0',
+  memchr: 'Unlicense OR MIT',
+  'proc-macro2': 'MIT OR Apache-2.0',
+  quote: 'MIT OR Apache-2.0',
+  serde: 'MIT OR Apache-2.0',
+  serde_core: 'MIT OR Apache-2.0',
+  serde_derive: 'MIT OR Apache-2.0',
+  serde_json: 'MIT OR Apache-2.0',
+  sha2: 'MIT OR Apache-2.0',
+  syn: 'MIT OR Apache-2.0',
+  typenum: 'MIT OR Apache-2.0',
+  'unicode-ident': 'MIT OR Apache-2.0',
+  version_check: 'MIT OR Apache-2.0',
+  zmij: 'MIT OR Apache-2.0',
 }
 
 type PythonMetadata = typeof PYTHON_METADATA
@@ -575,6 +600,35 @@ function collectPython(): { name: string; license: string; repo: string; role: s
   return collectPythonDependencies(manifests.map(path => readFileSync(resolve(root, path), 'utf8')))
 }
 
+/** Exact external Cargo.lock closure statically linked into the shipped helper. */
+function collectRust(): { name: string; version: string; license: string }[] {
+  const lock = parseToml(readFileSync(
+    resolve(root, 'native/computer-use-helper/Cargo.lock'),
+    'utf8',
+  ))
+  const packages = lock.package
+  if (!Array.isArray(packages)) {
+    throw new Error('gen-third-party-notices: native helper Cargo.lock has no package array.')
+  }
+  const firstParty = new Set([
+    'computer-use-core',
+    'computer-use-helper',
+    'computer-use-protocol',
+  ])
+  return packages.flatMap((value) => {
+    const name = String(value.name ?? '')
+    const version = String(value.version ?? '')
+    if (firstParty.has(name)) return []
+    const license = RUST_LICENSES[name]
+    if (name.length === 0 || version.length === 0 || license === undefined) {
+      throw new Error(
+        `gen-third-party-notices: Rust crate ${name || '<missing>'} is missing pinned license metadata.`,
+      )
+    }
+    return [{ name, version, license }]
+  }).sort((left, right) => left.name.localeCompare(right.name))
+}
+
 /** pnpm-patched external packages, from `pnpm-workspace.yaml`. */
 function collectPatched(): { spec: string; patch: string }[] {
   const workspace = yaml.load(readFileSync(resolve(root, 'pnpm-workspace.yaml'), 'utf8')) as { patchedDependencies?: Record<string, string> }
@@ -677,6 +731,7 @@ export function render(): string {
   const devDeps = npm.filter(dep => !dep.runtime)
   const vendored = collectVendored()
   const python = collectPython()
+  const rust = collectRust()
   const patched = collectPatched()
   const claudeDistribution = runtimeDeps.some(
     dep => dep.name === CLAUDE_AGENT_SDK_PACKAGE,
@@ -704,7 +759,7 @@ DeepSeek Harness is licensed under [MIT](LICENSE). It depends on the third-party
 
 This file lists **direct** dependencies declared by the workspace and the explicitly disclosed official Claude Code platform payload closure. It is generated from the workspace manifests by \`scripts/gen-third-party-notices.ts\`: a pre-commit hook regenerates it whenever a staged file changes one of its inputs, and \`scripts/gen-third-party-notices.spec.ts\` asserts in the test lane that the committed bytes match. Deleting a manifest runs no hook, so that case is caught by the assertion instead. Run \`pnpm run verify-third-party-notices\` for the standalone check.
 
-The complete npm transitive closure, including the Landlock launcher workspace, is recorded with exact pinned versions in [\`pnpm-lock.yaml\`](pnpm-lock.yaml) — inspect it with \`pnpm licenses list\`. The Python closure is recorded separately in [\`python/sdk/uv.lock\`](python/sdk/uv.lock).
+The complete npm transitive closure, including the Landlock launcher workspace, is recorded with exact pinned versions in [\`pnpm-lock.yaml\`](pnpm-lock.yaml) — inspect it with \`pnpm licenses list\`. The Python closure is recorded separately in [\`python/sdk/uv.lock\`](python/sdk/uv.lock), and the statically linked Computer Use helper closure is pinned in [\`native/computer-use-helper/Cargo.lock\`](native/computer-use-helper/Cargo.lock).
 
 ## Vendored source (\`vendor/\`)
 
@@ -739,6 +794,14 @@ External packages **directly declared** only by repository tooling, test infrast
 
 ${renderNpmTable(devDeps)}
 ${renderNonPermissiveNote(nonPermissiveDev)}
+## Native Computer Use helper crates
+
+The shipped Rust helper statically links the following exact external crate closure. It opens no port and this release implements only protocol, lease, status, list, snapshot dispatch, stop, and input-release framing; native input actions remain unsupported.
+
+| Crate | Version | License |
+| --- | --- | --- |
+${rust.map(dep => `| [\`${dep.name}\`](https://crates.io/crates/${dep.name}) | ${dep.version} | ${dep.license} |`).join('\n')}
+
 ## Python SDK dependencies (\`python/\`)
 
 Direct dependencies of the \`pyproject.toml\` manifests, plus \`uv\` as the development workflow tool.

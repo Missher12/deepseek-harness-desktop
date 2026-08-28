@@ -29,6 +29,8 @@ const DEFAULT_NATIVE_BINARIES = [join(DEFAULT_STAGE, 'node_modules/node-pty/preb
 const DEFAULT_MARKET_PACKAGE_DIRECTORIES = [
   join(DEFAULT_STAGE, 'node_modules/.pnpm/dshmarket/node_modules/dshmarket'),
 ] as const
+const DEFAULT_HELPER = join(DEFAULT_STAGE, 'native-bin/darwin-x64/computer-use-helper')
+const MACHO_X64 = Uint8Array.of(0xcf, 0xfa, 0xed, 0xfe, 0x07, 0x00, 0x00, 0x01)
 
 function fakeDependencies(
   filesPresent = true,
@@ -59,6 +61,8 @@ function fakeDependencies(
     ...semanticOverrides,
   }
   return {
+    platform: 'darwin',
+    arch: 'x64',
     commands,
     copies,
     events,
@@ -86,6 +90,9 @@ function fakeDependencies(
     },
     findPackageDirectories: async () => marketPackageDirectories,
     findNativeBinaries: async () => nativeBinaries,
+    findComputerUseHelpers: async root => [join(root, 'darwin-x64/computer-use-helper')],
+    readBinary: async () => MACHO_X64,
+    isExecutable: async () => true,
   }
 }
 
@@ -122,6 +129,10 @@ describe('stageDesktop', () => {
       [join(REPO_ROOT, 'apps/desktop/electron-builder.yml'), join(DEFAULT_STAGE, 'electron-builder.yml')],
       [join(REPO_ROOT, 'apps/desktop/desktop.cordis.patch.yml'), join(DEFAULT_STAGE, 'desktop.cordis.patch.yml')],
       [join(REPO_ROOT, 'apps/desktop/update-metadata.json'), join(DEFAULT_STAGE, 'update-metadata.json')],
+      [
+        join(REPO_ROOT, 'apps/desktop/native-bin/darwin-x64'),
+        join(DEFAULT_STAGE, 'native-bin/darwin-x64'),
+      ],
       [join(REPO_ROOT, 'THIRD_PARTY_NOTICES.md'), join(DEFAULT_STAGE, 'THIRD_PARTY_NOTICES.md')],
     ])
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh/lib/bin.js')
@@ -176,6 +187,21 @@ describe('stageDesktop', () => {
     expect(result.validatedFiles).toContain('assets/icon.ico')
     expect(result.validatedFiles).not.toContain('assets/icon-source-rounded.png')
     expect(result.validatedFiles).toContain('node_modules/node-pty/prebuilds/darwin-x64/pty.node')
+    expect(result.validatedFiles).toContain('native-bin/darwin-x64/computer-use-helper')
+  })
+
+  it('rejects a wrong, duplicate, or non-executable staged native helper', async () => {
+    const wrong = fakeDependencies()
+    wrong.readBinary = async () => Uint8Array.of(0x4d, 0x5a)
+    await expect(stageDesktop(REPO_ROOT, wrong)).rejects.toThrow(/Mach-O|architecture/i)
+
+    const duplicate = fakeDependencies()
+    duplicate.findComputerUseHelpers = async () => [DEFAULT_HELPER, join(DEFAULT_STAGE, 'native-bin/win32-x64/computer-use-helper.exe')]
+    await expect(stageDesktop(REPO_ROOT, duplicate)).rejects.toThrow(/exactly one.*helper/i)
+
+    const nonExecutable = fakeDependencies()
+    nonExecutable.isExecutable = async () => false
+    await expect(stageDesktop(REPO_ROOT, nonExecutable)).rejects.toThrow(/executable/i)
   })
 
   it('preflights the canonical messenger row before deleting or deploying', async () => {
