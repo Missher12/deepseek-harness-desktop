@@ -12,6 +12,9 @@ export const zh = {
   terminalTab: '终端 {index}', clearView: '清屏', terminalReady: '终端已就绪', terminalPlaceholder: '输入命令并按回车',
   browserDesktopOnly: '原生浏览器仅在桌面版可用', browserPlaceholder: '搜索或输入网址', browserNewTab: '输入网址开始浏览',
   back: '后退', forward: '前进', reload: '刷新', stop: '停止',
+  browserGive: '交给 Agent', browserStopAgent: '停止 Agent', browserStopping: '正在停止…',
+  browserGiveWarning: '当前浏览器可能包含已登录状态。交给 Agent 后，它可在这个可见页面中执行普通操作。是否继续？',
+  browserAgentWaiting: '等待当前会话的 Agent 接管', browserAgentActive: 'Agent 正在控制此可见浏览器',
 } as const
 /** English workbench copy. */
 export const en: Record<keyof typeof zh, string> = {
@@ -25,6 +28,9 @@ export const en: Record<keyof typeof zh, string> = {
   terminalTab: 'Terminal {index}', clearView: 'Clear', terminalReady: 'Terminal ready', terminalPlaceholder: 'Type a command and press Return',
   browserDesktopOnly: 'The native Browser is available in Desktop only', browserPlaceholder: 'Search or enter address', browserNewTab: 'Enter an address to browse',
   back: 'Back', forward: 'Forward', reload: 'Reload', stop: 'Stop',
+  browserGive: 'Give to Agent', browserStopAgent: 'Stop Agent', browserStopping: 'Stopping…',
+  browserGiveWarning: 'This browser may contain signed-in state. Giving it to the Agent allows ordinary actions in this visible page. Continue?',
+  browserAgentWaiting: 'Waiting for the current session Agent', browserAgentActive: 'Agent is controlling this visible browser',
 }
 /** Closed workbench locale key set. */
 export type DesktopWorkbenchKey = keyof typeof zh

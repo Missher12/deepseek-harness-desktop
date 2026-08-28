@@ -139,3 +139,7 @@
   config:
     fetch: false
     searchTimeoutMs: 60000
+
+# Registers nothing when the Desktop-owned BrowserControl provider is absent.
+- id: tool-browser-control
+  name: '@deepseek-ai/dsh-tool-browser-control'

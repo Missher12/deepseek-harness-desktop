@@ -40,6 +40,22 @@ export type DesktopPreferenceMutation =
   | { key: 'closeBehavior'; value: DesktopCloseBehavior }
   | { key: 'tieredPricingEstimates'; value: boolean }
 
+export interface BrowserTakeoverStatus {
+  readonly phase: 'human' | 'given' | 'agent' | 'stopping'
+  readonly signedInWarning: true
+}
+
+/** Validate the path-free renderer-visible browser takeover state. */
+export function isBrowserTakeoverStatus(value: unknown): value is BrowserTakeoverStatus {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)
+    || Object.getPrototypeOf(value) !== Object.prototype) return false
+  const candidate = value as Record<string, unknown>
+  return Object.keys(candidate).length === 2
+    && (candidate.phase === 'human' || candidate.phase === 'given'
+      || candidate.phase === 'agent' || candidate.phase === 'stopping')
+    && candidate.signedInWarning === true
+}
+
 export function isDesktopPreferencesSnapshot(value: unknown): value is DesktopPreferencesSnapshot {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const candidate = value as Record<string, unknown>
@@ -117,6 +133,13 @@ export interface DesktopApi {
   hideWorkbenchBrowser(): Promise<void>
   controlWorkbenchBrowser(request: DesktopBrowserRequest): Promise<DesktopBrowserSnapshot>
   onWorkbenchBrowserState(listener: (snapshot: DesktopBrowserSnapshot) => void): () => void
+  /** Give the exact visible persistent human browser to the next official Agent acquire. */
+  giveWorkbenchBrowserToAgent(): Promise<BrowserTakeoverStatus>
+  /** Await complete cleanup of the active Agent browser surface. */
+  stopAgentBrowser(): Promise<BrowserTakeoverStatus>
+  /** Read path-free takeover state without exposing any authority identity. */
+  getBrowserTakeoverStatus(): Promise<BrowserTakeoverStatus>
+  onBrowserTakeoverStatus(listener: (status: BrowserTakeoverStatus) => void): () => void
   getDesktopPreferences(): Promise<DesktopPreferencesSnapshot>
   setDesktopPreference(mutation: DesktopPreferenceMutation): Promise<DesktopPreferencesSnapshot>
   onDesktopPreferences(listener: (snapshot: DesktopPreferencesSnapshot) => void): () => void

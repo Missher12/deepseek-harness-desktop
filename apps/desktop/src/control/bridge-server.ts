@@ -309,9 +309,11 @@ export class DesktopControlBridgeServer implements HarnessControlLifecycle {
     // cache before any matching request receives its terminal error.
     void state.sender.enqueue([encodeJsonFrame(control)]).catch(() => { this.close(state, 'send-failed', true) })
     for (const pending of [...state.pending.values()]) {
+      const lease = pending.lease
       if (pending.request.sessionId === control.sessionId
-        && pending.lease?.leaseId === control.leaseId
-        && pending.lease.leaseRevision === control.leaseRevision) {
+        && lease !== undefined
+        && lease.leaseId === control.leaseId
+        && lease.leaseRevision === control.leaseRevision) {
         this.settleError(state, pending, 'LEASE_REVOKED', 'Desktop control lease was revoked.')
       }
     }

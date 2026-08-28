@@ -4,6 +4,7 @@ import {
   isDesktopUpdateSnapshot,
   isDesktopPreferenceMutation,
   isDesktopPreferencesSnapshot,
+  isBrowserTakeoverStatus,
   isRecoveryAction,
   supportsDesktopUpdates,
 } from '../src/preload-api.ts'
@@ -53,5 +54,13 @@ describe('desktop preload vocabulary', () => {
     expect(isDesktopPreferenceMutation({ key: 'tieredPricingEstimates', value: false })).toBe(true)
     expect(isDesktopPreferenceMutation({ key: 'closeBehavior', value: false })).toBe(false)
     expect(isDesktopPreferenceMutation({ key: 'shell', value: 'quit' })).toBe(false)
+  })
+
+  it('accepts only the exact browser takeover status vocabulary', () => {
+    expect(isBrowserTakeoverStatus({ phase: 'human', signedInWarning: true })).toBe(true)
+    expect(isBrowserTakeoverStatus({ phase: 'stopping', signedInWarning: true })).toBe(true)
+    expect(isBrowserTakeoverStatus({ phase: 'agent', signedInWarning: false })).toBe(false)
+    expect(isBrowserTakeoverStatus({ phase: 'given', signedInWarning: true, sessionId: 'renderer' })).toBe(false)
+    expect(isBrowserTakeoverStatus(Object.create({ phase: 'human', signedInWarning: true }))).toBe(false)
   })
 })

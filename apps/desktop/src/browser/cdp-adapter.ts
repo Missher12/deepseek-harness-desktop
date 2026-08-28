@@ -495,6 +495,9 @@ export class CdpBrowserAdapter {
     return Object.freeze({ acted: true, snapshotRevision: this.revision })
   }
 
+  /** Return the current revision without exposing any debugger or page primitive. */
+  currentSnapshotRevision(): number { return this.revision }
+
   /** Invalidate refs and detach only a debugger this adapter attached itself. */
   stop(): Promise<void> {
     if (this.stopOperation !== undefined) return this.stopOperation
@@ -987,6 +990,9 @@ export class CdpBrowserAdapter {
     signal?: AbortSignal,
     commit: () => void | Promise<unknown> = async () => await this.webContents.loadURL(target),
   ): Promise<void> {
+    if (new URL(target).protocol !== 'https:') {
+      throw new AgentBrowserError('POLICY_DENIED', 'browser navigation requires HTTPS')
+    }
     this.approvedNavigation = target
     try {
       const hostname = new URL(target).hostname.replace(/^\[|\]$/gu, '')

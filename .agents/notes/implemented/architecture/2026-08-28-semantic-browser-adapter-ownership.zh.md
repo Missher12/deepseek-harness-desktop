@@ -14,7 +14,7 @@ Status: implemented
 
 ## 决策
 
-Desktop 浏览器层把全局表层所有权、页面策略与封闭的 CDP 适配器分别放在 [`surface-manager.ts`](../../../../apps/desktop/src/browser/surface-manager.ts)、[`policy.ts`](../../../../apps/desktop/src/browser/policy.ts) 和 [`cdp-adapter.ts`](../../../../apps/desktop/src/browser/cdp-adapter.ts)。[`contracts.ts`](../../../../apps/desktop/src/browser/contracts.ts) 负责动作校验器、不透明 ref 形状、partition 名称、快照 envelope、结构化失败与固定资源边界。这些文件只导出窄化的 Electron 接口，不注册模型工具，也不改变 main、preload 或 renderer 组合。
+Desktop 浏览器层把全局表层所有权、页面策略与封闭的 CDP 适配器分别放在 [`surface-manager.ts`](../../../../apps/desktop/src/browser/surface-manager.ts)、[`policy.ts`](../../../../apps/desktop/src/browser/policy.ts) 和 [`cdp-adapter.ts`](../../../../apps/desktop/src/browser/cdp-adapter.ts)。[`contracts.ts`](../../../../apps/desktop/src/browser/contracts.ts) 负责动作校验器、不透明 ref 形状、partition 名称、快照 envelope、结构化失败与固定资源边界。Electron main 组合层提供这些窄接口；renderer 与工具调用方不会获得 WebContents、Session、表层身份、generation、partition、proxy port 或 grant。
 
 ## 所有权与生命周期
 
@@ -23,6 +23,14 @@ Desktop 浏览器层把全局表层所有权、页面策略与封闭的 CDP 适�
 每次 mount 都有 generation 与 mount token。陈旧的 hide 和 Stop token 不产生影响，清理失败时仍以封闭失败方式保留所有者，不会接纳替代者。Stop 按顺序尝试属于该 generation 的 handler dispose、debugger detach、view teardown、临时存储清理与 coordinator revoke；即使其中一步失败，也会等待所有步骤，并且只在整个序列达到完全停稳（quiescence）后释放所有权。在发布前 mount 失败时遵循同一规则：所有清理步骤都会执行，失败步骤仍绑定未发布的 session 与 generation，所有 acquire 保持 `BUSY`，只有携带精确身份的生命周期重试在这些步骤成功后才能释放位置。被转移的人工持久化表层绝不会清理存储；临时 Agent partition 始终不同于 Workbench partition。
 
 表层资源会在 mount 前安装 popup、导航、下载与权限防护。防护会拒绝所有新窗口、取消下载，并让 permission check 与 permission request 两条路径拒绝所有权限，包括相机、麦克风、位置与剪贴板访问。长期存在的 main-process handler owner 只安装一次 Electron 的 window-open 与 permission 单槽 dispatcher，把既有人工 handler 保留为基础层，并在不把这些槽写回 `null` 的前提下添加或移除 Agent generation；陈旧 dispose 无法移除较新 generation，也无法移除下面的人工行为。既有事件 listener 同样保持原位，每个 generation 只移除自己安装的导航与下载 listener。适配器会在每次自有 debugger 附加时启用 `Page.setInterceptFileChooserDialog`，在 detach 该自有 debugger 前将其关闭，并且不暴露任何设置文件的操作。
+
+## Desktop 组合
+
+[`main.ts`](../../../../apps/desktop/src/main.ts) 拥有唯一的 Electron 表层 registry、`BrowserSurfaceManager`、语义适配器、pinned transport、takeover authority 与 `DesktopControlCoordinator` 浏览器适配器。临时 acquire 会创建使用唯一非持久化 partition、已可见挂载的 `WebContentsView`。经过验证的 Give 只转移精确的可见 Workbench view 及其 `persist:dsh-workbench-browser` partition。两条路径都从官方 provider session 得出 owner，并且通过拥有该 view 的精确 Electron `Session` 上的 `resolveHost()` 获取 DNS 结果。
+
+main 拥有的 loopback transport 会为一个活动 generation 绑定不公开的随机端口，并配置所属 Session 把 HTTP 与 HTTPS 代理流量都送入该端口，同时移除 Chromium 的隐式 loopback bypass。普通 HTTP 请求会失败；CONNECT 只接受没有 userinfo、Host authority 完全匹配且端口为 443 的请求。每个获准 CONNECT 都会通过 Chromium Session 重新解析，并只拨号一个已验证的 public IP；TLS 仍使用原 hostname 完成 SNI 与证书校验。Stop、revoke、activation rollback 与 shutdown 会关闭全部隧道并把 Session 网络恢复为 direct；proxy 配置只完成一部分即失败时也走同一清理路径。
+
+preload 只向受信任 Harness main frame 暴露无参数的 Give、Stop 与 status 方法。Give 为下一次官方 acquire 保存 main 拥有的不透明 intent；status 只暴露 human／given／agent／stopping 阶段与已登录警告。Workbench 工具栏会在 Give 前要求确认，并在清理完成前保持 Stop pending。非 minimal Desktop preset 包含 `tool-browser-control`；它的 Cordis injection 只在 Desktop 拥有的 `BrowserControl` provider 存在期间注册闭集工具。没有该 provider 的 CLI 与 Web 组合不会拥有浏览器工具。
 
 ## CDP 与引用边界
 
@@ -38,13 +46,13 @@ CDP 方法闭集仅包含 `Accessibility.getRootAXNode`、有界广度优先的 
 
 `AgentBrowserUrlPolicy` 只接受没有 userinfo 的 HTTP(S) URL。它没有 Node DNS fallback：组合层必须适配拥有该表层的精确 Electron `Session` 的 `resolveHost()`。策略会校验字面与解析后的目标，包括 IPv4-mapped IPv6，并且拒绝 loopback、link-local、private、carrier-grade NAT、site-local、unspecified、multicast、格式错误的解析器输出与 localhost 保留名称，除非用户拥有的 allowlist 明确允许精确目标。适配器会先取消页面驱动的导航与每一跳 redirect，再独立授权下一跳；页面文本不能改变 allowlist。
 
-先检查一次 DNS 结果再调用普通 `loadURL()` 并不能防御 rebinding，因为 Chromium 仍可能在连接前再次解析。public IP literal 经策略校验后保留直接加载；hostname 则必须使用属于该表层的 pinned-navigation transport。navigate、back、forward 与 reload 都会先取得并授权其精确目标 URL，再把对应的一次性原生 commit 交给同一 transport；只有完成 request-time 校验后才能执行 commit，并且 transport 返回或失败后的延迟 commit 会被拒绝。在 history 或 reload commit 之前，适配器还会在没有中间 await 的情况下重新检查导航 revision 与当前 URL；history 移动还要求原 active index，以及活动／目标 entry 的精确 URL、title 与 Chromium page state 全部保持不变。注入的 Task 8 transport contract 会获得 request-time `resolveAndValidate` 能力，并且必须对初始、redirect 与 subresource 的每次 CONNECT 使用该能力，只把 socket 连接到返回的某个 public address，同时保留原 URL hostname 供 HTTP Host、HTTPS SNI 与证书校验使用。没有该 transport 时，每条 hostname 导航路径都会封闭失败且绝不回退到 `loadURL` 或原生 history／reload；Task 7 不会用 `webRequest` 或 URL-to-IP 重写伪装成地址固定。
+先检查一次 DNS 结果再调用普通 `loadURL()` 并不能防御 rebinding，因为 Chromium 仍可能在连接前再次解析。public HTTPS IP literal 经策略校验后保留直接加载；普通 HTTP 不可用。hostname 使用属于该表层的 pinned-navigation transport。navigate、back、forward 与 reload 都会先取得并授权其精确目标 URL，再把对应的一次性原生 commit 交给同一 transport；只有完成 request-time 校验后才能执行 commit，并且 transport 返回或失败后的延迟 commit 会被拒绝。在 history 或 reload commit 之前，适配器还会在没有中间 await 的情况下重新检查导航 revision 与当前 URL；history 移动还要求原 active index，以及活动／目标 entry 的精确 URL、title 与 Chromium page state 全部保持不变。transport 会对每次 CONNECT 使用 request-time `resolveAndValidate` 能力，只把 socket 连接到返回的某个 public address，同时保留原 URL hostname 供 HTTP Host、HTTPS SNI 与证书校验使用。没有该 transport 时，每条 hostname 导航路径都会封闭失败且绝不回退到 `loadURL` 或原生 history／reload；适配器不会用 `webRequest` 或 URL-to-IP 重写伪装成地址固定。
 
 截图只覆盖可见 viewport，并设置 `captureBeyondViewport: false`。适配器会在捕获前确定性选择不大于 1 的 scale，确保预期输出的任一边都不超过 2,048 像素，面积也不超过 4,194,304 像素。编码过大时会按几何比例降低 scale，总尝试次数最多为 3，并且不会分配无界的解码 buffer。交付的图片必须先通过规范 base64 解码、PNG signature 与 IHDR 校验、精确缩放尺寸、4,194,304 字节与像素边界、UUID transfer ID 校验和 SHA-256 计算，之后 metadata 与分离的 PNG 字节才能进入保持配对的快照 envelope。
 
 ## 验证
 
-[`browser-agent.spec.ts`](../../../../apps/desktop/tests/browser-agent.spec.ts)、[`browser-policy.spec.ts`](../../../../apps/desktop/tests/browser-policy.spec.ts) 与 [`browser-contracts.spec.ts`](../../../../apps/desktop/tests/browser-contracts.spec.ts) 使用 fake debugger、WebContents、Session 与表层资源。focused suite 固定了附加所有权与竞态、延迟响应与 ref 失效、所有资源边界、snapshot-to-action 敏感性变化、click 时的焦点重定向、CDP 和动作闭集、截图缩减与校验、直接及 history／reload 路径中的 public-to-private DNS rebinding 且不 load／connect、deferred transport 期间 history／reload 漂移且不原生提交、稳定恢复人工 handler、会话原子所有权、陈旧 token、持久化转移、反复失败的 mount-cleanup reservation 与精确 generation 生命周期重试，以及 revoke。三个 spec 共 77 个测试通过；Desktop package 的 `tsc --noEmit` 通过，实现与测试的仓库 scoped oxlint 也通过。
+focused browser、policy、pinned-transport、coordinator adapter、takeover、preload、preset 与 Workbench client spec 会使用 fake debugger、WebContents、Session、proxy socket、IPC registry 与表层资源。它们固定了附加所有权与竞态、延迟响应与 ref 失效、所有资源边界、snapshot-to-action 敏感性变化、click 时的焦点重定向、CDP 和动作闭集、截图缩减与校验、public-to-private DNS rebinding 且不 load／connect、CONNECT authority 与 proxy bypass 策略、稳定恢复人工 handler、会话原子所有权、陈旧 token、持久化转移、失败清理的 reservation 与重试、可信无参数 IPC、Stop pending 状态、条件工具注册，以及 revoke。Desktop 与 Workbench TypeScript 检查和仓库 scoped oxlint 覆盖该组合。
 
 ## 备选方案
 
@@ -58,10 +66,10 @@ CDP 方法闭集仅包含 `Accessibility.getRootAXNode`、有界广度优先的 
 
 **清理尝试失败后释放全局所有权。** 当 debugger、view、storage 或 revoke 状态不确定时接纳替代者，可能产生两个有效所有者。清理过程会尝试每个步骤，但仍把失败的 generation 保持为 busy，直到进程所有者解决失败。
 
-**只解析一次 hostname 后调用 `loadURL()`，或把 HTTPS URL 改写成选定 IP。** 前者会在校验与 Chromium 连接之间留下 DNS rebinding 窗口；后者会改变 SNI 与证书身份。因此 hostname 必须使用注入的地址固定 transport，并且在 Task 8 提供之前保持不可用。
+**只解析一次 hostname 后调用 `loadURL()`，或把 HTTPS URL 改写成选定 IP。** 前者会在校验与 Chromium 连接之间留下 DNS rebinding 窗口；后者会改变 SNI 与证书身份。因此 hostname 使用由其精确 Electron Session 拥有的地址固定 CONNECT transport。
 
 ## 影响
 
 浏览器适配器具有小而可审计的权限边界：一个受信任会话拥有一个可见表层；每个页面派生 ref 都会在实质变更时失效；所有输入都来自固定闭集；网络、权限、文件、遍历、JSON 与图片边界都会封闭失败。除非 coordinator 验证显式转移，否则人工 Workbench 浏览器会保留其持久化 partition 与既有行为。
 
-同一边界有意放弃任意 Web 自动化。缺少可用无障碍语义的页面控件、无法确认敏感性的字段、没有显式 allowlist 的私有目标、popup、下载、上传与依赖权限的工作流都不受支持。在 Task 8 注入满足固定地址约定的受控 CONNECT transport 前，hostname 导航也会刻意保持不可用，且没有不安全 fallback。真实 Electron 组合会通过这些窄接口提供该 transport、manager resource 与 authority coordinator；本层自身不改变普通 CLI 或 Web 启动，也不通过 UI 或工具暴露 Browser Control。
+同一边界有意放弃任意 Web 自动化。缺少可用无障碍语义的页面控件、无法确认敏感性的字段、没有显式 allowlist 的私有目标、普通 HTTP、popup、下载、上传与依赖权限的工作流都不受支持。真实 Electron 组合会通过窄接口提供 transport、manager resource、authority coordinator、严格 takeover IPC 与条件工具 provider。没有 Desktop 拥有的 provider 时，普通 CLI 与 Web 启动保持不变。

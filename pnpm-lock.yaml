@@ -247,6 +247,9 @@ importers:
       '@deepseek-ai/dsh-tool-ask-user':
         specifier: workspace:^
         version: link:../../packages/interaction/tool-ask-user
+      '@deepseek-ai/dsh-tool-browser-control':
+        specifier: workspace:^
+        version: link:../../packages/control/tool-browser-control
       '@deepseek-ai/dsh-tool-bash':
         specifier: workspace:^
         version: link:../../packages/shell/tool-bash
@@ -923,6 +926,9 @@ importers:
       '@deepseek-ai/dsh-tool-ask-user':
         specifier: workspace:^
         version: link:../../packages/interaction/tool-ask-user
+      '@deepseek-ai/dsh-tool-browser-control':
+        specifier: workspace:^
+        version: link:../../packages/control/tool-browser-control
       '@deepseek-ai/dsh-tool-bash':
         specifier: workspace:^
         version: link:../../packages/shell/tool-bash

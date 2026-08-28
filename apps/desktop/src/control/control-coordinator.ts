@@ -407,11 +407,17 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     try {
       const initial = await adapter.acquireFacts(request, controller.signal)
       this.#throwIfAborted(controller.signal)
-      const facts = this.#leaseFacts(request, initial, settings)
+      const effectiveRequest = this.#effectiveAcquireRequest(request, initial)
+      const facts = this.#leaseFacts(effectiveRequest, initial, settings)
       const agentId = this.#options.getAgentDisplayName(request.sessionId)
-      prepared = this.#leases.prepareAcquire(request, facts, agentId)
+      prepared = this.#leases.prepareAcquire(effectiveRequest, facts, agentId)
       this.#pendingAcquire = { prepared, controller }
       const descriptor = this.#leases.preparedDescriptor(prepared)
+      install = Object.freeze({
+        ...descriptor,
+        agentId,
+        quotas: Object.freeze({ ...DEFAULT_CONTROL_LEASE_QUOTAS }),
+      })
       const approvalScope = this.#leaseApprovalScope(request.sessionId, descriptor, settings.revision)
       const approval = await this.#approvals.request(approvalScope, controller.signal)
       this.#throwIfAborted(controller.signal)
@@ -421,19 +427,14 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       const currentSettings = this.#settings()
       const current = await adapter.acquireFacts(request, controller.signal)
       this.#throwIfAborted(controller.signal)
-      const currentFacts = this.#leaseFacts(request, current, currentSettings)
+      const currentFacts = this.#leaseFacts(effectiveRequest, current, currentSettings)
       if (!this.#approvals.consumeBeforeDispatch(
         approval,
         approvalScope,
         () => this.#leaseApprovalCurrent(approvalScope, currentFacts, currentSettings),
       )) throw new ControlAuthorityError('POLICY_DENIED', 'native approval became stale')
 
-      install = Object.freeze({
-        ...descriptor,
-        agentId,
-        quotas: Object.freeze({ ...DEFAULT_CONTROL_LEASE_QUOTAS }),
-      })
-      if (request.surfaceKind === 'native-application') {
+      if (effectiveRequest.surfaceKind === 'native-application') {
         if (adapter.installLease === undefined) {
           throw new ControlAuthorityError('NOT_SUPPORTED', 'native helper is unavailable')
         }
@@ -448,14 +449,14 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       const activationSettings = this.#settings()
       const latest = await adapter.acquireFacts(request, controller.signal)
       this.#throwIfAborted(controller.signal)
-      const activationFacts = this.#leaseFacts(request, latest, activationSettings)
+      const activationFacts = this.#leaseFacts(effectiveRequest, latest, activationSettings)
       if (activationSettings.revision !== approvalScope.allowlistRevision) {
         throw new ControlAuthorityError('POLICY_DENIED', 'allowlist changed before activation')
       }
       this.#throwIfAborted(controller.signal)
       activationTransferred = true
       activationIdentity = descriptor
-      const result = this.#leases.activatePrepared(prepared, request, activationFacts)
+      const result = this.#leases.activatePrepared(prepared, effectiveRequest, activationFacts)
       prepared = undefined
       activated = this.#leases.activeSnapshot()
       if (activated === null) throw new ControlAuthorityError('INTERNAL', 'activated lease is unavailable')
@@ -493,7 +494,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
         : undefined
       if (transferredCleanup !== undefined) {
         await transferredCleanup.catch(() => undefined)
-      } else if (installAttempted && install !== undefined) {
+      } else if (install !== undefined && (installAttempted || adapter.kind === 'browser')) {
         const attemptedInstall = install
         await this.#bounded(async (signal) => {
           await adapter.rollbackLeaseInstall?.(attemptedInstall, {
@@ -760,6 +761,19 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       capabilities: facts.capabilities,
       policyAllowed: facts.policyAllowed,
     })
+  }
+
+  #effectiveAcquireRequest(
+    request: ControlLeaseAcquireRequest,
+    facts: SurfaceAcquireFacts,
+  ): ControlLeaseAcquireRequest {
+    if (facts.surfaceKind === request.surfaceKind) return request
+    if (request.surfaceKind === 'browser-ephemeral'
+      && facts.surfaceKind === 'browser-human-persistent'
+      && facts.policyAllowed) {
+      return Object.freeze({ ...request, surfaceKind: facts.surfaceKind })
+    }
+    throw new ControlAuthorityError('POLICY_DENIED', 'surface authority facts are stale')
   }
 
   #operationFacts(facts: SurfaceOperationFacts): OperationAuthorityFacts {

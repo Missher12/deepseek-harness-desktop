@@ -1,24 +1,37 @@
-import { WebContentsView, type BrowserWindow, type Session } from 'electron'
+import { screen, WebContentsView, type BrowserWindow, type Session } from 'electron'
 import {
-  normalizeBrowserTarget, WORKBENCH_BROWSER_PARTITION,
+  AgentBrowserError, normalizeBrowserTarget, WORKBENCH_BROWSER_PARTITION,
   type DesktopBrowserBounds, type DesktopBrowserRequest, type DesktopBrowserSnapshot,
 } from './contracts.ts'
+import type { BrowserPersistentGiveIntent, BrowserPersistentTakeoverSource } from './takeover.ts'
+import {
+  createHumanBrowserSecurityOwner,
+  type ElectronBrowserSurfaceResource,
+  type ElectronBrowserSurfaceRegistry,
+} from './electron-surface.ts'
+import type { BrowserSecurityHandlerOwner } from './policy.ts'
 
-export class WorkbenchBrowserController {
+export class WorkbenchBrowserController implements BrowserPersistentTakeoverSource {
   private view: WebContentsView | undefined
   private error: string | null = null
   private partition: Session | undefined
+  private securityOwner: BrowserSecurityHandlerOwner | undefined
+  private viewGeneration = 0
+  private viewIdentity: string | undefined
+  private visible = false
   private readonly denyDownload = (event: Electron.Event): void => { event.preventDefault() }
 
   constructor(
     private readonly window: BrowserWindow,
     private readonly emit: (snapshot: DesktopBrowserSnapshot) => void,
+    private readonly registry: ElectronBrowserSurfaceRegistry,
   ) {}
 
   show(bounds: DesktopBrowserBounds): Promise<DesktopBrowserSnapshot> {
     const view = this.ensureView()
     view.setBounds(this.clip(bounds))
     view.setVisible(true)
+    this.visible = true
     return Promise.resolve(this.snapshot())
   }
 
@@ -42,6 +55,7 @@ export class WorkbenchBrowserController {
     const view = this.view
     if (view === undefined) return Promise.resolve()
     this.view = undefined
+    this.visible = false
     view.setVisible(false)
     this.window.contentView.removeChildView(view)
     view.webContents.close({ waitForBeforeUnload: false })
@@ -49,6 +63,8 @@ export class WorkbenchBrowserController {
     this.partition?.setPermissionCheckHandler(null)
     this.partition?.setPermissionRequestHandler(null)
     this.partition = undefined
+    this.securityOwner = undefined
+    this.viewIdentity = undefined
     this.error = null
     return Promise.resolve()
   }
@@ -60,8 +76,9 @@ export class WorkbenchBrowserController {
       partition: WORKBENCH_BROWSER_PARTITION,
     } })
     this.view = view
+    this.viewGeneration += 1
+    this.viewIdentity = `workbench-browser-${String(view.webContents.id)}-${String(this.viewGeneration)}`
     this.window.contentView.addChildView(view)
-    view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     const guard = (event: Electron.Event, url: string): void => {
       if (normalizeBrowserTarget(url) === undefined) event.preventDefault()
     }
@@ -81,10 +98,93 @@ export class WorkbenchBrowserController {
     })
     const partition = view.webContents.session
     this.partition = partition
-    partition.setPermissionCheckHandler(() => false)
-    partition.setPermissionRequestHandler((_contents, _permission, callback) => { callback(false) })
+    this.securityOwner = createHumanBrowserSecurityOwner(view.webContents, partition)
     partition.on('will-download', this.denyDownload)
     return view
+  }
+
+  /** Capture only the opaque identity of the exact currently visible persistent human view. */
+  captureVisiblePersistentIntent(): BrowserPersistentGiveIntent | undefined {
+    const view = this.view
+    const instanceId = this.viewIdentity
+    if (!this.visible || view === undefined || view.webContents.isDestroyed() || instanceId === undefined) return undefined
+    return Object.freeze({ instanceId, generation: this.viewGeneration })
+  }
+
+  /** Transfer the exact captured human view without accepting any renderer-selected identity. */
+  consumeVisiblePersistentIntent(intent: BrowserPersistentGiveIntent): Promise<ElectronBrowserSurfaceResource> {
+    const view = this.view
+    const partition = this.partition
+    const owner = this.securityOwner
+    if (!this.visible || view === undefined || partition === undefined || owner === undefined
+      || view.webContents.isDestroyed() || intent.instanceId !== this.viewIdentity
+      || intent.generation !== this.viewGeneration) {
+      throw new AgentBrowserError('STALE_REF', 'visible persistent browser changed before transfer')
+    }
+    const surfaceId = intent.instanceId
+    this.view = undefined
+    this.partition = undefined
+    this.securityOwner = undefined
+    this.viewIdentity = undefined
+    this.visible = false
+    const window = this.window
+    const denyDownload = this.denyDownload
+    let mountToken: string | undefined
+    let closed = false
+    let unregister = (): void => undefined
+    const resource: ElectronBrowserSurfaceResource = {
+      surfaceId,
+      partition: WORKBENCH_BROWSER_PARTITION,
+      kind: 'human-persistent',
+      webContents: view.webContents,
+      session: partition,
+      viewport: () => {
+        const bounds = view.getBounds()
+        const scale = screen.getDisplayMatching(window.getBounds()).scaleFactor
+        return Object.freeze({
+          width: Math.max(1, bounds.width),
+          height: Math.max(1, bounds.height),
+          deviceScaleFactor: Number.isFinite(scale) && scale > 0 ? scale : 1,
+        })
+      },
+      installSecurityHandlers: generation => owner.install({
+        generation,
+        allowsNavigation: (value) => {
+          try { return new URL(value).protocol === 'https:' } catch { return false }
+        },
+      }),
+      mount(token) {
+        if (closed || mountToken !== undefined && mountToken !== token) {
+          throw new AgentBrowserError('STALE_REF', 'browser mount token is stale')
+        }
+        mountToken = token
+        view.setVisible(true)
+        return Promise.resolve()
+      },
+      hide(token) {
+        if (!closed && token === mountToken) view.setVisible(false)
+        return Promise.resolve()
+      },
+      detachDebugger() {
+        // CdpBrowserAdapter is the only owner allowed to detach its debugger.
+        return Promise.resolve()
+      },
+      teardownView() {
+        if (closed) return Promise.resolve()
+        closed = true
+        view.setVisible(false)
+        window.contentView.removeChildView(view)
+        partition.removeListener('will-download', denyDownload)
+        unregister()
+        view.webContents.close({ waitForBeforeUnload: false })
+        return Promise.resolve()
+      },
+      async clearStorage() {
+        // Persistent human state is intentionally retained across Stop.
+      },
+    }
+    unregister = this.registry.register(resource)
+    return Promise.resolve(resource)
   }
 
   private publish(): void {

@@ -43,7 +43,22 @@ import {
 } from './preferences.ts'
 import { DesktopUpdateService } from './update/service.ts'
 import { WorkbenchBrowserController } from './browser/controller.ts'
-import { isDesktopBrowserBounds, isDesktopBrowserRequest } from './browser/contracts.ts'
+import {
+  AgentBrowserError,
+  isDesktopBrowserBounds,
+  isDesktopBrowserRequest,
+  type DesktopBrowserBounds,
+} from './browser/contracts.ts'
+import { CdpBrowserAdapter } from './browser/cdp-adapter.ts'
+import { AgentBrowserUrlPolicy } from './browser/policy.ts'
+import { BrowserSurfaceManager } from './browser/surface-manager.ts'
+import { BrowserDesktopControlAdapter } from './browser/control-adapter.ts'
+import { LoopbackPinnedNavigationTransport } from './browser/pinned-transport.ts'
+import {
+  createElectronEphemeralSurface,
+  ElectronBrowserSurfaceRegistry,
+} from './browser/electron-surface.ts'
+import { BrowserTakeoverAuthority, installBrowserTakeoverIpc } from './browser/takeover.ts'
 import { launchDesktopInstaller } from './update/installer.ts'
 import { allowRendererPermission, classifyNavigation } from './window/navigation.ts'
 import { createMenuTemplate } from './window/menu.ts'
@@ -132,6 +147,7 @@ const appFacade: AppFacade = {
 let nativeWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 let workbenchBrowser: WorkbenchBrowserController | undefined
+let workbenchBrowserBounds: DesktopBrowserBounds | undefined
 let activeHarnessRoot: string | undefined
 const lifecycle: { controller?: DesktopApplication } = {}
 let desktopPreferences: DesktopPreferencesSnapshot = defaultDesktopPreferences(process.platform)
@@ -173,6 +189,116 @@ function getControlAudit(): Promise<ControlAuditLog | undefined> {
   return controlAuditReady
 }
 const controlLifecycle: { bridge?: DesktopControlBridgeServer } = {}
+const browserResources = new ElectronBrowserSurfaceRegistry()
+const browserTakeover = new BrowserTakeoverAuthority({
+  source: {
+    captureVisiblePersistentIntent: () => workbenchBrowser?.captureVisiblePersistentIntent(),
+    consumeVisiblePersistentIntent: async (intent) => {
+      const browser = workbenchBrowser
+      if (browser === undefined) throw new AgentBrowserError('TARGET_CLOSED', 'human browser is unavailable')
+      return await browser.consumeVisiblePersistentIntent(intent)
+    },
+  },
+  stopActiveSession: async (sessionId) => {
+    const official = officialControlSession
+    if (official === undefined || official !== sessionId) {
+      throw new AgentBrowserError('STALE_REF', 'browser owner session is stale')
+    }
+    await controlCoordinator.revokeSession(official, new AbortController().signal)
+  },
+  emit: (status) => {
+    if (nativeWindow !== undefined && !nativeWindow.isDestroyed() && activeHarnessRoot !== undefined) {
+      nativeWindow.webContents.send('desktop:browser-takeover-state', status)
+    }
+  },
+})
+
+function agentBrowserBounds(window: BrowserWindow): Electron.Rectangle {
+  const area = window.getContentBounds()
+  const requested = workbenchBrowserBounds
+  if (requested === undefined) {
+    const width = Math.min(420, area.width)
+    return { x: Math.max(0, area.width - width), y: 0, width: Math.max(1, width), height: Math.max(1, area.height) }
+  }
+  const x = Math.max(0, Math.min(Math.round(requested.x), area.width - 1))
+  const y = Math.max(0, Math.min(Math.round(requested.y), area.height - 1))
+  return {
+    x,
+    y,
+    width: Math.max(1, Math.min(Math.round(requested.width), area.width - x)),
+    height: Math.max(1, Math.min(Math.round(requested.height), area.height - y)),
+  }
+}
+
+async function resolveBrowserHost(
+  browserSession: Electron.Session,
+  hostname: string,
+  signal?: AbortSignal,
+): Promise<readonly string[]> {
+  const assertActive = (): void => { if (signal?.aborted === true) throw signal.reason }
+  assertActive()
+  const attempts = await Promise.allSettled((['A', 'AAAA'] as const).map(async (queryType) => {
+    return await browserSession.resolveHost(hostname, {
+      queryType,
+      source: 'any',
+      cacheUsage: 'disallowed',
+    })
+  }))
+  assertActive()
+  const addresses = attempts.flatMap(result => result.status === 'fulfilled'
+    ? result.value.endpoints.map(endpoint => endpoint.address)
+    : [])
+  return Object.freeze([...new Set(addresses)])
+}
+
+const browserSurfaceManager = new BrowserSurfaceManager({
+  coordinator: browserTakeover,
+  createEphemeral: (request) => {
+    const window = nativeWindow
+    if (window === undefined || window.isDestroyed()) {
+      throw new AgentBrowserError('TARGET_CLOSED', 'Desktop owner window is unavailable')
+    }
+    browserTakeover.claimEphemeralOwner(request.sessionId)
+    return Promise.resolve(createElectronEphemeralSurface({
+      window,
+      request,
+      registry: browserResources,
+      bounds: () => agentBrowserBounds(window),
+    }))
+  },
+})
+
+const browserControlAdapter = new BrowserDesktopControlAdapter({
+  surfaceManager: browserSurfaceManager,
+  activate: (mount) => {
+    const resource = browserResources.get(mount.surfaceId)
+    let generationActive = true
+    const policy = new AgentBrowserUrlPolicy({
+      lookup: async (hostname, signal) => await resolveBrowserHost(resource.session, hostname, signal),
+    })
+    const transport = new LoopbackPinnedNavigationTransport({
+      session: resource.session,
+      generation: mount.generation,
+      isGenerationActive: generation => generationActive && generation === mount.generation,
+    })
+    const semantic = new CdpBrowserAdapter({
+      webContents: resource.webContents,
+      surfaceId: mount.surfaceId,
+      surfaceGeneration: mount.generation,
+      viewport: () => resource.viewport(),
+      urlPolicy: policy,
+      pinnedNavigationTransport: transport,
+    })
+    return Promise.resolve(Object.freeze({
+      semantic,
+      disposeTransport: async () => {
+        generationActive = false
+        await transport.dispose()
+      },
+    }))
+  },
+})
+
 const controlCoordinator = new DesktopControlCoordinator({
   clock: {
     now: () => performance.now(),
@@ -212,6 +338,7 @@ const controlCoordinator = new DesktopControlCoordinator({
     register: (accelerator, callback) => globalShortcut.register(accelerator, callback),
     unregister: (accelerator) => { globalShortcut.unregister(accelerator) },
   },
+  browser: browserControlAdapter,
   audit: {
     record: async (event) => { await (await getControlAudit())?.record(event) },
     flush: async () => {
@@ -376,7 +503,7 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
   nativeWindow = window
   workbenchBrowser = new WorkbenchBrowserController(window, (snapshot) => {
     if (!window.isDestroyed()) window.webContents.send('desktop:workbench-browser-state', snapshot)
-  })
+  }, browserResources)
   let ownedRoot: string | undefined
   installNavigationPolicy(window, () => ownedRoot)
   const persistState = createStateWriter(window)
@@ -529,6 +656,7 @@ ipcMain.handle('desktop:workbench-browser-show', async (event, value: unknown) =
   if (!isHarnessSender(event) || !isDesktopBrowserBounds(value) || workbenchBrowser === undefined) {
     throw new Error('Untrusted workbench Browser request.')
   }
+  workbenchBrowserBounds = value
   return await workbenchBrowser.show(value)
 })
 
@@ -544,8 +672,15 @@ ipcMain.handle('desktop:workbench-browser-control', async (event, value: unknown
   return await workbenchBrowser.control(value)
 })
 
+const removeBrowserTakeoverIpc = installBrowserTakeoverIpc({
+  registry: ipcMain,
+  authority: browserTakeover,
+  isTrustedMainFrame: event => isHarnessSender(event as IpcMainInvokeEvent),
+})
+
 
 app.on('before-quit', () => {
+  removeBrowserTakeoverIpc()
   updateService.dispose()
   tray?.destroy()
   tray = undefined

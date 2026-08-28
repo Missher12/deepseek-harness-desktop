@@ -852,6 +852,22 @@ describe('semantic Agent browser adapter', () => {
     expect(contents.loadedUrls).toEqual(['https://93.184.216.34/'])
   })
 
+  it('rejects plain HTTP even for a public IP literal before Chromium can connect', async () => {
+    const contents = new FakeWebContents()
+    installTree(contents, [])
+    const adapter = new CdpBrowserAdapter({
+      webContents: contents,
+      surfaceId: 'surface-1',
+      surfaceGeneration: 1,
+      viewport: () => ({ width: 1280, height: 720, deviceScaleFactor: 1 }),
+      urlPolicy: new AgentBrowserUrlPolicy({ lookup: async () => ['93.184.216.34'] }),
+    })
+
+    await expect(adapter.act({ kind: 'navigate', url: 'http://93.184.216.34/' }))
+      .rejects.toMatchObject({ code: 'POLICY_DENIED' })
+    expect(contents.loadedUrls).toEqual([])
+  })
+
   it('does not retain a navigation approval after loadURL fails', async () => {
     const contents = new FakeWebContents()
     installTree(contents, [])

@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import {
   type DesktopApi,
+  type BrowserTakeoverStatus,
   type DesktopUpdateSnapshot,
+  isBrowserTakeoverStatus,
   isDesktopCommand,
   isDesktopPreferenceMutation,
   isDesktopPreferencesSnapshot,
@@ -77,6 +79,31 @@ const api: DesktopApi = {
     }
     ipcRenderer.on('desktop:workbench-browser-state', handler)
     return () => { ipcRenderer.off('desktop:workbench-browser-state', handler) }
+  },
+  async giveWorkbenchBrowserToAgent(...args: unknown[]) {
+    if (args.length !== 0) throw new TypeError('Give to Agent accepts no arguments.')
+    const value: unknown = await ipcRenderer.invoke('desktop:browser-takeover-give')
+    if (!isBrowserTakeoverStatus(value)) throw new Error('Invalid browser takeover status.')
+    return value
+  },
+  async stopAgentBrowser(...args: unknown[]) {
+    if (args.length !== 0) throw new TypeError('Stop Agent browser accepts no arguments.')
+    const value: unknown = await ipcRenderer.invoke('desktop:browser-takeover-stop')
+    if (!isBrowserTakeoverStatus(value)) throw new Error('Invalid browser takeover status.')
+    return value
+  },
+  async getBrowserTakeoverStatus(...args: unknown[]) {
+    if (args.length !== 0) throw new TypeError('Browser takeover status accepts no arguments.')
+    const value: unknown = await ipcRenderer.invoke('desktop:browser-takeover-status')
+    if (!isBrowserTakeoverStatus(value)) throw new Error('Invalid browser takeover status.')
+    return value
+  },
+  onBrowserTakeoverStatus(listener: (status: BrowserTakeoverStatus) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      if (isBrowserTakeoverStatus(value)) listener(value)
+    }
+    ipcRenderer.on('desktop:browser-takeover-state', handler)
+    return () => { ipcRenderer.off('desktop:browser-takeover-state', handler) }
   },
   async getDesktopPreferences() {
     const value: unknown = await ipcRenderer.invoke('desktop:preferences-get')

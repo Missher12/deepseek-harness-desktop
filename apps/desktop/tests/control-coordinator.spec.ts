@@ -252,6 +252,43 @@ async function approve(dialog: FakeDialog): Promise<void> {
 }
 
 describe('DesktopControlCoordinator', () => {
+  it('upgrades an ephemeral provider request only to a main-verified persistent Give surface', async () => {
+    const browser = adapter('browser')
+    browser.acquireFacts = async () => ({
+      surfaceKind: 'browser-human-persistent',
+      targets: [],
+      capabilities: ['observe', 'pointer', 'keyboard'],
+      policyAllowed: true,
+    })
+    const { coordinator, dialog } = setup({ browser })
+    const pending = coordinator.dispatch(acquire('browser-ephemeral'), context())
+    await approve(dialog)
+
+    await expect(pending).resolves.toMatchObject({
+      message: {
+        responseKind: 'ok',
+        result: { surfaceKind: 'browser-human-persistent' },
+      },
+    })
+    expect(dialog.calls[0]?.options.detail).toContain('browser-human-persistent')
+    await coordinator.beforeControlShutdown(new AbortController().signal)
+  })
+
+  it('rolls back a browser surface mounted before a denied lease challenge', async () => {
+    const order: string[] = []
+    const browser = adapter('browser', order)
+    const { coordinator, dialog } = setup({ browser })
+    const pending = coordinator.dispatch(acquire('browser-ephemeral'), context())
+    await vi.waitFor(() => { expect(dialog.answers).toHaveLength(1) })
+    dialog.answers[0]?.resolve({ response: 0 })
+
+    await expect(pending).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'POLICY_DENIED' } },
+    })
+    expect(order).toEqual(['rollback-install'])
+    expect(coordinator.activeLease()).toBeNull()
+  })
+
   it('withholds an effective descriptor until native approval and helper install both succeed', async () => {
     const order: string[] = []
     const install = new Deferred<void>()
