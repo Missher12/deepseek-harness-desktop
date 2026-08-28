@@ -190,19 +190,26 @@ External packages **directly declared** only by repository tooling, test infrast
 
 ## Native Computer Use helper crates
 
-The shipped Rust helper statically links the following exact external crate closure. It opens no port and this release implements only protocol, lease, status, list, snapshot dispatch, stop, and input-release framing; native input actions remain unsupported.
+The shipped Rust helper statically links the following exact external crate closure. It opens no port and accepts only the closed Computer Use protocol. Platform observation and input remain bounded by the Electron-owned lease, target identity, capabilities, quotas, cancellation, and input-release lifecycle; unsupported or protected targets fail closed.
 
 | Crate | Version | License |
 | --- | --- | --- |
+| [`bitflags`](https://crates.io/crates/bitflags) | 2.13.1 | MIT OR Apache-2.0 |
 | [`block-buffer`](https://crates.io/crates/block-buffer) | 0.10.4 | MIT OR Apache-2.0 |
+| [`block2`](https://crates.io/crates/block2) | 0.6.2 | MIT |
 | [`cfg-if`](https://crates.io/crates/cfg-if) | 1.0.4 | MIT OR Apache-2.0 |
 | [`cpufeatures`](https://crates.io/crates/cpufeatures) | 0.2.17 | MIT OR Apache-2.0 |
 | [`crypto-common`](https://crates.io/crates/crypto-common) | 0.1.7 | MIT OR Apache-2.0 |
 | [`digest`](https://crates.io/crates/digest) | 0.10.7 | MIT OR Apache-2.0 |
+| [`dispatch2`](https://crates.io/crates/dispatch2) | 0.3.1 | Zlib OR Apache-2.0 OR MIT |
 | [`generic-array`](https://crates.io/crates/generic-array) | 0.14.7 | MIT |
 | [`itoa`](https://crates.io/crates/itoa) | 1.0.18 | MIT OR Apache-2.0 |
 | [`libc`](https://crates.io/crates/libc) | 0.2.189 | MIT OR Apache-2.0 |
 | [`memchr`](https://crates.io/crates/memchr) | 2.8.3 | Unlicense OR MIT |
+| [`objc2`](https://crates.io/crates/objc2) | 0.6.4 | MIT |
+| [`objc2-core-foundation`](https://crates.io/crates/objc2-core-foundation) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
+| [`objc2-encode`](https://crates.io/crates/objc2-encode) | 4.1.0 | MIT |
+| [`objc2-foundation`](https://crates.io/crates/objc2-foundation) | 0.3.2 | MIT |
 | [`proc-macro2`](https://crates.io/crates/proc-macro2) | 1.0.107 | MIT OR Apache-2.0 |
 | [`quote`](https://crates.io/crates/quote) | 1.0.47 | MIT OR Apache-2.0 |
 | [`serde`](https://crates.io/crates/serde) | 1.0.228 | MIT OR Apache-2.0 |

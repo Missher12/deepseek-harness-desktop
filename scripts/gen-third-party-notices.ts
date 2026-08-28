@@ -90,15 +90,22 @@ const PYTHON_METADATA: Record<string, { license: string; repo: string; role: str
 
 /** License metadata for every external crate statically linked into the helper. */
 const RUST_LICENSES: Readonly<Record<string, string>> = {
+  bitflags: 'MIT OR Apache-2.0',
   'block-buffer': 'MIT OR Apache-2.0',
+  block2: 'MIT',
   'cfg-if': 'MIT OR Apache-2.0',
   cpufeatures: 'MIT OR Apache-2.0',
   'crypto-common': 'MIT OR Apache-2.0',
   digest: 'MIT OR Apache-2.0',
+  dispatch2: 'Zlib OR Apache-2.0 OR MIT',
   'generic-array': 'MIT',
   itoa: 'MIT OR Apache-2.0',
   libc: 'MIT OR Apache-2.0',
   memchr: 'Unlicense OR MIT',
+  objc2: 'MIT',
+  'objc2-core-foundation': 'Zlib OR Apache-2.0 OR MIT',
+  'objc2-encode': 'MIT',
+  'objc2-foundation': 'MIT',
   'proc-macro2': 'MIT OR Apache-2.0',
   quote: 'MIT OR Apache-2.0',
   serde: 'MIT OR Apache-2.0',
@@ -799,7 +806,7 @@ ${renderNpmTable(devDeps)}
 ${renderNonPermissiveNote(nonPermissiveDev)}
 ## Native Computer Use helper crates
 
-The shipped Rust helper statically links the following exact external crate closure. It opens no port and this release implements only protocol, lease, status, list, snapshot dispatch, stop, and input-release framing; native input actions remain unsupported.
+The shipped Rust helper statically links the following exact external crate closure. It opens no port and accepts only the closed Computer Use protocol. Platform observation and input remain bounded by the Electron-owned lease, target identity, capabilities, quotas, cancellation, and input-release lifecycle; unsupported or protected targets fail closed.
 
 | Crate | Version | License |
 | --- | --- | --- |

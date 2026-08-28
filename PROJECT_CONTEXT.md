@@ -69,8 +69,14 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
-- Version 0.4.2 is the active release candidate. A navigation-only prompt
-  ruler indexes every user-message boundary from the immutable history tail,
+- Version 0.4.3 is the active release candidate. It preserves the 0.4.2
+  navigation-only prompt ruler and explicit custom-model image capabilities,
+  and adds visible, revocable Agent control of the built-in browser and
+  approved desktop applications through bounded semantic and visual tools.
+  Electron main owns native approval, one process-wide lease, quotas, target
+  identity, emergency Stop, browser transfer, and helper cleanup; the model,
+  page, renderer, and helper cannot mint authority. The prompt ruler indexes
+  every user-message boundary from the immutable history tail,
   renders a bounded left-side rail, reveals localized prompt summaries on
   pointer hover or keyboard focus, and fetches older pages only when an exact
   sequence is selected. It does not delete, edit, rewind, resend, or fork
