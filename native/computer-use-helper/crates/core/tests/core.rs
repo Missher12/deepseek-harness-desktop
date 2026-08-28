@@ -5,7 +5,7 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 
 use computer_use_core::{
-    CancellationToken, ComputerUseCore, MonotonicClock, NullObservationPlatform,
+    CancellationToken, ComputerUseCore, MonotonicClock, NativeInputCost, NullObservationPlatform,
     ObservationPlatform, PlatformResult,
 };
 use computer_use_protocol::{HelperRequest, decode_helper_input};
@@ -314,6 +314,87 @@ impl ObservationPlatform for BlockingPlatform {
 
 struct RevisionPlatform {
     observed: Rc<RefCell<Vec<u64>>>,
+}
+
+struct ActionPlatform;
+
+impl ObservationPlatform for ActionPlatform {
+    fn status(&mut self, _deadline_ms: u64, _cancel: &CancellationToken) -> PlatformResult {
+        unreachable!("status is not used")
+    }
+
+    fn list(&mut self, _deadline_ms: u64, _cancel: &CancellationToken) -> PlatformResult {
+        unreachable!("list is not used")
+    }
+
+    fn snapshot(
+        &mut self,
+        _request: &HelperRequest,
+        _snapshot_revision: u64,
+        _deadline_ms: u64,
+        _cancel: &CancellationToken,
+    ) -> PlatformResult {
+        Ok(json!({"snapshotRevision":_snapshot_revision,"refs":[]}))
+    }
+
+    fn input(
+        &mut self,
+        request: &HelperRequest,
+        _deadline_ms: u64,
+        _cancel: &CancellationToken,
+        permit: &mut dyn FnMut(NativeInputCost) -> Result<(), &'static str>,
+    ) -> PlatformResult {
+        permit(NativeInputCost::pointer())?;
+        Ok(json!({
+            "acted":true,
+            "snapshotRevision":request.integer("snapshotRevision").expect("revision")
+        }))
+    }
+}
+
+#[test]
+fn authorized_focus_dispatches_to_the_input_backend() {
+    let mut core = ComputerUseCore::new(FakeClock(Rc::new(Cell::new(10))), ActionPlatform);
+    core.handle(
+        decode_helper_input(install_with(
+            "session-1",
+            LEASE_ID,
+            1,
+            json!(["observe", "pointer"]),
+            json!({"operations":4,"snapshots":1,"pointerActions":3,"keyActions":0,"textBytes":0}),
+        ))
+        .expect("install"),
+    );
+    core.handle(
+        decode_helper_input(request(
+            "snapshot",
+            json!({
+                "leaseId":LEASE_ID,"leaseRevision":1,"appId":"app","windowId":"window",
+                "snapshotRevision":99,"includeImage":false
+            }),
+        ))
+        .expect("snapshot"),
+    );
+
+    let response = core
+        .handle(
+            decode_helper_input(request(
+                "focus",
+                json!({
+                    "leaseId":LEASE_ID,"leaseRevision":1,"appId":"app","windowId":"window",
+                    "snapshotRevision":1
+                }),
+            ))
+            .expect("focus"),
+        )
+        .expect("focus response")
+        .into_value();
+
+    assert_eq!(response.pointer("/result/acted"), Some(&json!(true)));
+    assert_eq!(
+        response.pointer("/result/snapshotRevision"),
+        Some(&json!(1))
+    );
 }
 
 impl ObservationPlatform for RevisionPlatform {

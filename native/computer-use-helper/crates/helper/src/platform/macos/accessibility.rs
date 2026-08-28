@@ -6,7 +6,8 @@ use std::time::Instant;
 
 use computer_use_core::{
     AccessibilityNode, AccessibilityNodeSource, AccessibilityProjection, CancellationToken,
-    MAX_RAW_ACCESSIBILITY_NODES, ObservationBounds, ProjectionScope, project_accessibility_tree,
+    InputSafety, MAX_RAW_ACCESSIBILITY_NODES, ObservationBounds, ProjectionScope,
+    project_accessibility_tree,
 };
 
 use super::{WindowDescriptor, close_bounds, process_identity};
@@ -278,18 +279,24 @@ impl AccessibilityNodeSource for AxSource<'_> {
             || self.boolean(node, b"AXMinimized\0"),
             || {
                 let role = self.string(node, b"AXRole\0", 256)?;
+                let subrole = self.string(node, b"AXSubrole\0", 256)?;
                 let title = self.string(node, b"AXTitle\0", 2_048)?;
                 let name = if title.is_empty() {
                     self.string(node, b"AXDescription\0", 2_048)?
                 } else {
                     title
                 };
+                let mut input_safety = classify_input(&role, &subrole, &name);
+                if input_safety.editable || input_safety.sensitive {
+                    input_safety.focused = self.boolean(node, b"AXFocused\0")?;
+                }
                 Ok(AccessibilityNode {
                     role,
                     name,
                     bounds: self.bounds(node)?,
                     hidden: false,
                     minimized: false,
+                    input_safety,
                     children: self.children(node)?,
                 })
             },
@@ -300,6 +307,7 @@ impl AccessibilityNodeSource for AxSource<'_> {
                 bounds: None,
                 hidden: true,
                 minimized: false,
+                input_safety: InputSafety::default(),
                 children: Vec::new(),
             }),
             VisibilityRead::Minimized => Ok(AccessibilityNode {
@@ -308,10 +316,56 @@ impl AccessibilityNodeSource for AxSource<'_> {
                 bounds: None,
                 hidden: false,
                 minimized: true,
+                input_safety: InputSafety::default(),
                 children: Vec::new(),
             }),
             VisibilityRead::Visible(description) => Ok(description),
         }
+    }
+}
+
+fn classify_input(role: &str, subrole: &str, name: &str) -> InputSafety {
+    let role = role.to_ascii_lowercase();
+    let subrole = subrole.to_ascii_lowercase();
+    let name = name.to_lowercase();
+    let sensitive = subrole.contains("secure")
+        || role.contains("secure")
+        || [
+            "password",
+            "passcode",
+            "one-time",
+            "one time",
+            "otp",
+            "verification code",
+            "biometric",
+            "touch id",
+            "face id",
+            "keychain",
+            "password manager",
+            "privacy",
+            "payment",
+            "credit card",
+            "bank transfer",
+            "密码",
+            "口令",
+            "验证码",
+            "一次性",
+            "生物识别",
+            "指纹",
+            "面容",
+            "钥匙串",
+            "隐私",
+            "支付",
+            "银行卡",
+            "转账",
+        ]
+        .iter()
+        .any(|needle| name.contains(needle));
+    let editable = !sensitive && matches!(role.as_str(), "axtextfield" | "axtextarea");
+    InputSafety {
+        sensitive,
+        editable,
+        focused: false,
     }
 }
 

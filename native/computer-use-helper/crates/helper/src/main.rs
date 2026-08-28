@@ -215,53 +215,58 @@ where
     let (sender, receiver) = mpsc::channel();
     spawn_reader(input, sender, registry.clone());
 
-    while let Ok(work) = receiver.recv() {
-        match work {
-            WorkItem::Request(request, ticket) => {
-                let request_id = request.request_id().to_owned();
-                let response =
-                    core.handle_with_cancellation(HelperInput::Request(request), &ticket.token);
-                if ticket.token.is_cancelled() {
-                    registry.complete(&request_id, ticket.generation);
-                    continue;
-                }
-                if let Some(response) = response {
-                    let json = encode_json_value(response.value()).map_err(|_| ())?;
-                    let mut framed = encode_length_prefixed(&json).map_err(|_| ())?;
-                    if let Some(png) = response.png() {
-                        let png = png.encode_frame().map_err(|_| ())?;
-                        framed.extend_from_slice(&encode_length_prefixed(&png).map_err(|_| ())?);
-                    }
-                    if !registry.try_begin_output(&request_id, ticket.generation) {
+    let run_result = (|| -> Result<(), ()> {
+        while let Ok(work) = receiver.recv() {
+            match work {
+                WorkItem::Request(request, ticket) => {
+                    let request_id = request.request_id().to_owned();
+                    let response =
+                        core.handle_with_cancellation(HelperInput::Request(request), &ticket.token);
+                    if ticket.token.is_cancelled() {
                         registry.complete(&request_id, ticket.generation);
                         continue;
                     }
-                    match write_cancelable(&mut output, &framed, &ticket.token) {
-                        Ok(OutputWrite::Complete) => {}
-                        Ok(OutputWrite::Canceled) => {
+                    if let Some(response) = response {
+                        let json = encode_json_value(response.value()).map_err(|_| ())?;
+                        let mut framed = encode_length_prefixed(&json).map_err(|_| ())?;
+                        if let Some(png) = response.png() {
+                            let png = png.encode_frame().map_err(|_| ())?;
+                            framed
+                                .extend_from_slice(&encode_length_prefixed(&png).map_err(|_| ())?);
+                        }
+                        if !registry.try_begin_output(&request_id, ticket.generation) {
                             registry.complete(&request_id, ticket.generation);
                             continue;
                         }
-                        Err(()) => {
-                            registry.complete(&request_id, ticket.generation);
-                            return Err(());
+                        match write_cancelable(&mut output, &framed, &ticket.token) {
+                            Ok(OutputWrite::Complete) => {}
+                            Ok(OutputWrite::Canceled) => {
+                                registry.complete(&request_id, ticket.generation);
+                                continue;
+                            }
+                            Err(()) => {
+                                registry.complete(&request_id, ticket.generation);
+                                return Err(());
+                            }
                         }
                     }
+                    registry.complete(&request_id, ticket.generation);
                 }
-                registry.complete(&request_id, ticket.generation);
-            }
-            WorkItem::Control(control) => {
-                let shutdown = control.control_kind() == "parent.shutdown";
-                core.handle(HelperInput::Control(control));
-                if shutdown {
-                    return Ok(());
+                WorkItem::Control(control) => {
+                    let shutdown = control.control_kind() == "parent.shutdown";
+                    core.handle(HelperInput::Control(control));
+                    if shutdown {
+                        return Ok(());
+                    }
                 }
+                WorkItem::Eof => return Ok(()),
+                WorkItem::Fatal => return Err(()),
             }
-            WorkItem::Eof => return Ok(()),
-            WorkItem::Fatal => return Err(()),
         }
-    }
-    Err(())
+        Err(())
+    })();
+    let cleanup_result = core.shutdown().map_err(|_| ());
+    run_result.and(cleanup_result)
 }
 
 fn spawn_reader<R>(input: R, sender: mpsc::Sender<WorkItem>, registry: RequestRegistry)
@@ -354,6 +359,37 @@ mod tests {
     struct PngPlatform {
         png: Vec<u8>,
         pending: Option<Vec<u8>>,
+    }
+
+    struct ReleasePlatform(Arc<AtomicU64>);
+
+    impl ObservationPlatform for ReleasePlatform {
+        fn status(&mut self, _deadline_ms: u64, _cancel: &CancellationToken) -> PlatformResult {
+            unreachable!()
+        }
+
+        fn list(&mut self, _deadline_ms: u64, _cancel: &CancellationToken) -> PlatformResult {
+            unreachable!()
+        }
+
+        fn snapshot(
+            &mut self,
+            _request: &HelperRequest,
+            _snapshot_revision: u64,
+            _deadline_ms: u64,
+            _cancel: &CancellationToken,
+        ) -> PlatformResult {
+            unreachable!()
+        }
+
+        fn release_all_input(
+            &mut self,
+            _deadline_ms: u64,
+            _cancel: &CancellationToken,
+        ) -> Result<(), &'static str> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
     }
 
     impl ObservationPlatform for PngPlatform {
@@ -456,6 +492,21 @@ mod tests {
     fn framed(value: &Value) -> Vec<u8> {
         let json = encode_json_value(value).expect("strict message");
         encode_length_prefixed(&json).expect("length-prefixed message")
+    }
+
+    #[test]
+    fn eof_releases_held_input_before_the_helper_exits() {
+        let releases = Arc::new(AtomicU64::new(0));
+        run_io(
+            Cursor::new(Vec::<u8>::new()),
+            Vec::<u8>::new(),
+            ComputerUseCore::new(
+                AtomicClock(Arc::new(AtomicU64::new(0))),
+                ReleasePlatform(releases.clone()),
+            ),
+        )
+        .expect("clean EOF");
+        assert_eq!(releases.load(Ordering::SeqCst), 1);
     }
 
     fn install_request() -> Value {

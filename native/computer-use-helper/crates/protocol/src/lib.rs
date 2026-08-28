@@ -253,6 +253,23 @@ fn integer(value: &Value, label: &str, minimum: u64, maximum: u64) -> Result<u64
     Ok(value)
 }
 
+fn number(value: &Value, label: &str, minimum: f64, maximum: f64) -> Result<f64> {
+    let value = value
+        .as_f64()
+        .ok_or_else(|| ProtocolError::new(format!("{label} must be a number")))?;
+    if !value.is_finite() || value < minimum || value > maximum {
+        return Err(ProtocolError::new(format!("{label} is out of bounds")));
+    }
+    Ok(value)
+}
+
+fn boolean(value: &Value, label: &str) -> Result<()> {
+    value
+        .is_boolean()
+        .then_some(())
+        .ok_or_else(|| ProtocolError::new(format!("{label} must be boolean")))
+}
+
 fn exact_keys(object: &Map<String, Value>, required: &[String], optional: &[&str]) -> Result<()> {
     let required_set: HashSet<&str> = required.iter().map(String::as_str).collect();
     let optional: HashSet<&str> = optional.iter().copied().collect();
@@ -437,7 +454,7 @@ fn validate_request_fields(message: &Map<String, Value>, kind: &str) -> Result<(
         return Ok(());
     }
     if kind == "input.release" {
-        validate_bounded_strings(field(message, "keys")?, "keys")?;
+        validate_release_keys(field(message, "keys")?)?;
         validate_literals(
             field(message, "buttons")?,
             &["left", "middle", "right"],
@@ -539,10 +556,138 @@ fn validate_request_fields(message: &Map<String, Value>, kind: &str) -> Result<(
             ));
         }
     }
-    if let Some(value) = message.get("durationMs") {
-        integer(value, "durationMs", 0, 10_000)?;
+    match kind {
+        "snapshot" | "computer.snapshot" => {
+            boolean(field(message, "includeImage")?, "includeImage")?;
+        }
+        "click" | "double-click" | "computer.click" | "computer.double-click" => {
+            validate_literal(
+                field(message, "button")?,
+                &["left", "middle", "right"],
+                "button",
+            )?;
+            validate_optional_pointer(message)?;
+        }
+        "drag" | "computer.drag" => {
+            for name in ["fromX", "fromY", "toX", "toY"] {
+                number(field(message, name)?, name, -1_000_000.0, 1_000_000.0)?;
+            }
+            validate_literal(
+                field(message, "button")?,
+                &["left", "middle", "right"],
+                "button",
+            )?;
+        }
+        "type" | "computer.type" => {
+            string(field(message, "text")?, "text", 49_152, true)?;
+        }
+        "key" | "computer.key" => {
+            let key = string(field(message, "key")?, "key", 64, false)?;
+            if !valid_key(key) {
+                return Err(ProtocolError::new("key is outside the closed vocabulary"));
+            }
+            validate_literals(
+                field(message, "modifiers")?,
+                &["Alt", "Control", "Meta", "Shift"],
+                "modifiers",
+                4,
+            )?;
+        }
+        "scroll" | "computer.scroll" => {
+            validate_optional_pointer(message)?;
+            for name in ["deltaX", "deltaY"] {
+                number(field(message, name)?, name, -1_000_000.0, 1_000_000.0)?;
+            }
+        }
+        "wait" | "computer.wait" => {
+            integer(field(message, "durationMs")?, "durationMs", 0, 10_000)?;
+        }
+        _ => {}
     }
     Ok(())
+}
+
+fn validate_optional_pointer(message: &Map<String, Value>) -> Result<()> {
+    if message.contains_key("x") {
+        number(field(message, "x")?, "x", -1_000_000.0, 1_000_000.0)?;
+        number(field(message, "y")?, "y", -1_000_000.0, 1_000_000.0)?;
+    }
+    Ok(())
+}
+
+fn validate_literal(value: &Value, allowed: &[&str], label: &str) -> Result<()> {
+    let value = string(value, label, 256, false)?;
+    if !allowed.contains(&value) {
+        return Err(ProtocolError::new(format!("{label} is unknown")));
+    }
+    Ok(())
+}
+
+fn valid_key(value: &str) -> bool {
+    matches!(
+        value,
+        "A" | "B"
+            | "C"
+            | "D"
+            | "E"
+            | "F"
+            | "G"
+            | "H"
+            | "I"
+            | "J"
+            | "K"
+            | "L"
+            | "M"
+            | "N"
+            | "O"
+            | "P"
+            | "Q"
+            | "R"
+            | "S"
+            | "T"
+            | "U"
+            | "V"
+            | "W"
+            | "X"
+            | "Y"
+            | "Z"
+            | "0"
+            | "1"
+            | "2"
+            | "3"
+            | "4"
+            | "5"
+            | "6"
+            | "7"
+            | "8"
+            | "9"
+            | "Enter"
+            | "Tab"
+            | "Space"
+            | "Backspace"
+            | "Escape"
+            | "Delete"
+            | "Home"
+            | "End"
+            | "PageUp"
+            | "PageDown"
+            | "ArrowLeft"
+            | "ArrowRight"
+            | "ArrowDown"
+            | "ArrowUp"
+            | "F1"
+            | "F2"
+            | "F3"
+            | "F4"
+            | "F5"
+            | "F6"
+            | "F7"
+            | "F8"
+            | "F9"
+            | "F10"
+            | "F11"
+            | "F12"
+    )
 }
 
 fn validate_lease_fields(message: &Map<String, Value>) -> Result<()> {
@@ -621,15 +766,21 @@ fn validate_literals(value: &Value, allowed: &[&str], label: &str, maximum: usiz
     Ok(())
 }
 
-fn validate_bounded_strings(value: &Value, label: &str) -> Result<()> {
+fn validate_release_keys(value: &Value) -> Result<()> {
     let values = value
         .as_array()
-        .ok_or_else(|| ProtocolError::new(format!("{label} must be an array")))?;
+        .ok_or_else(|| ProtocolError::new("keys must be an array"))?;
     if values.len() > 64 {
-        return Err(ProtocolError::new(format!("{label} is out of bounds")));
+        return Err(ProtocolError::new("keys is out of bounds"));
     }
+    let mut seen = HashSet::new();
     for value in values {
-        string(value, label, 256, false)?;
+        let value = string(value, "keys", 64, false)?;
+        if (!valid_key(value) && !matches!(value, "Alt" | "Control" | "Meta" | "Shift"))
+            || !seen.insert(value)
+        {
+            return Err(ProtocolError::new("keys contains an invalid item"));
+        }
     }
     Ok(())
 }

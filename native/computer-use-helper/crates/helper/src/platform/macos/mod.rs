@@ -2,19 +2,28 @@
 
 mod accessibility;
 mod capture;
+mod input;
 mod permissions;
 mod scale;
 
 use std::collections::BTreeMap;
 use std::mem::{MaybeUninit, size_of};
+use std::thread;
+use std::time::Duration;
 use std::time::Instant;
 
 use computer_use_core::{
-    CancellationToken, ObservationBounds, ObservationPlatform, PlatformResult,
+    CancellationToken, NativeInputCost, ObservationBounds, ObservationPlatform, PlatformResult,
+    ProjectedRef,
 };
 use computer_use_protocol::HelperRequest;
 use serde_json::json;
 use sha2::{Digest, Sha256};
+
+use input::{
+    Button, CoreGraphicsSink, InputCommand, InputController, Point, ensure_safe_input_text,
+    ensure_safe_target,
+};
 
 pub use permissions::permission_status;
 
@@ -88,6 +97,16 @@ impl WindowDescriptor {
 pub struct MacObservationPlatform {
     epoch: Instant,
     pending_png: Option<Vec<u8>>,
+    latest_snapshot: Option<LiveSnapshot>,
+    input: InputController<CoreGraphicsSink>,
+}
+
+#[derive(Clone)]
+struct LiveSnapshot {
+    target: WindowDescriptor,
+    revision: u64,
+    included_image: bool,
+    refs: Vec<ProjectedRef>,
 }
 
 impl MacObservationPlatform {
@@ -97,6 +116,8 @@ impl MacObservationPlatform {
         Self {
             epoch,
             pending_png: None,
+            latest_snapshot: None,
+            input: InputController::new(CoreGraphicsSink),
         }
     }
 
@@ -145,6 +166,7 @@ impl ObservationPlatform for MacObservationPlatform {
         cancel: &CancellationToken,
     ) -> PlatformResult {
         self.pending_png = None;
+        self.latest_snapshot = None;
         let (supported, viewing, assistive) = self.precheck(deadline_ms, cancel)?;
         if !supported {
             return Err("NOT_SUPPORTED");
@@ -186,9 +208,10 @@ impl ObservationPlatform for MacObservationPlatform {
         {
             return Err("TARGET_CLOSED");
         }
+        let projected_refs = projection.refs.clone();
         let refs = projection
             .refs
-            .into_iter()
+            .iter()
             .map(|item| json!({"ref":item.ref_id,"role":item.role,"name":item.name}))
             .collect::<Vec<_>>();
         let result = json!({
@@ -202,8 +225,10 @@ impl ObservationPlatform for MacObservationPlatform {
             return Err("BINARY_MISMATCH");
         }
 
-        if request.boolean("includeImage") == Some(true) {
+        let included_image = request.boolean("includeImage") == Some(true);
+        if included_image {
             let mut last_error = "BINARY_MISMATCH";
+            let mut captured = None;
             for attempt in 0..scale::MAX_DOWNSCALE_ATTEMPTS {
                 match capture::capture_exact_window(
                     &target,
@@ -213,21 +238,442 @@ impl ObservationPlatform for MacObservationPlatform {
                     cancel,
                 ) {
                     Ok(png) => {
-                        self.pending_png = Some(png);
-                        return Ok(result);
+                        captured = Some(png);
+                        break;
                     }
                     Err("BINARY_MISMATCH") => last_error = "BINARY_MISMATCH",
                     Err(code) => return Err(code),
                 }
             }
-            return Err(last_error);
+            let Some(png) = captured else {
+                return Err(last_error);
+            };
+            self.pending_png = Some(png);
         }
+        self.latest_snapshot = Some(LiveSnapshot {
+            target,
+            revision: snapshot_revision,
+            included_image,
+            refs: projected_refs,
+        });
         Ok(result)
+    }
+
+    fn input(
+        &mut self,
+        request: &HelperRequest,
+        deadline_ms: u64,
+        cancel: &CancellationToken,
+        permit: &mut dyn FnMut(NativeInputCost) -> Result<(), &'static str>,
+    ) -> PlatformResult {
+        let snapshot = self.latest_snapshot.clone().ok_or("STALE_REF")?;
+        if snapshot.revision != request.integer("snapshotRevision").ok_or("INTERNAL")?
+            || snapshot.target.app_id() != request.string("appId").ok_or("INTERNAL")?
+            || snapshot.target.encoded_window_id()
+                != request.string("windowId").ok_or("INTERNAL")?
+        {
+            return Err("STALE_REF");
+        }
+        ensure_safe_target(&snapshot.target.app_name, &snapshot.target.title)?;
+
+        if request.request_kind() == "wait" {
+            permit(NativeInputCost::operation())?;
+            wait_exact(
+                &snapshot,
+                request.integer("durationMs").ok_or("INTERNAL")?,
+                &self.epoch,
+                deadline_ms,
+                cancel,
+            )?;
+            return Ok(json!({"waited":true,"snapshotRevision":snapshot.revision}));
+        }
+
+        let (command, expected_ref, require_focused, inspect_focused) =
+            input_command(request, &snapshot)?;
+        let epoch = self.epoch;
+        let validation_snapshot = snapshot.clone();
+        let mut validate = || {
+            validate_live(
+                &validation_snapshot,
+                expected_ref.as_ref(),
+                require_focused,
+                inspect_focused,
+                &epoch,
+                deadline_ms,
+                cancel,
+            )
+        };
+        self.input
+            .execute(snapshot.target.identity.pid, command, &mut validate, permit)?;
+        Ok(json!({"acted":true,"snapshotRevision":snapshot.revision}))
+    }
+
+    fn release_input(
+        &mut self,
+        request: &HelperRequest,
+        deadline_ms: u64,
+        cancel: &CancellationToken,
+    ) -> PlatformResult {
+        check_deadline(&self.epoch, deadline_ms, cancel)?;
+        let keys = request
+            .field("keys")
+            .and_then(serde_json::Value::as_array)
+            .ok_or("INTERNAL")?
+            .iter()
+            .map(|item| item.as_str().map(ToOwned::to_owned).ok_or("INTERNAL"))
+            .collect::<Result<Vec<_>, _>>()?;
+        let buttons = request
+            .field("buttons")
+            .and_then(serde_json::Value::as_array)
+            .ok_or("INTERNAL")?
+            .iter()
+            .map(|item| Button::parse(item.as_str().ok_or("INTERNAL")?))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.input.release_requested(&keys, &buttons)?;
+        check_deadline(&self.epoch, deadline_ms, cancel)?;
+        Ok(json!({"released":true}))
+    }
+
+    fn release_all_input(
+        &mut self,
+        deadline_ms: u64,
+        cancel: &CancellationToken,
+    ) -> Result<(), &'static str> {
+        check_deadline(&self.epoch, deadline_ms, cancel)?;
+        self.input.release_all()
     }
 
     fn take_png(&mut self) -> Option<Vec<u8>> {
         self.pending_png.take()
     }
+}
+
+fn input_command(
+    request: &HelperRequest,
+    snapshot: &LiveSnapshot,
+) -> Result<(InputCommand, Option<ProjectedRef>, bool, bool), &'static str> {
+    let semantic_ref = || -> Result<ProjectedRef, &'static str> {
+        let ref_id = request.string("ref").ok_or("INTERNAL")?;
+        let reference = snapshot
+            .refs
+            .iter()
+            .find(|item| item.ref_id == ref_id)
+            .cloned()
+            .ok_or("STALE_REF")?;
+        ensure_safe_input_text(
+            &snapshot.target.app_name,
+            &snapshot.target.title,
+            &reference.role,
+            &reference.name,
+        )?;
+        if reference.input_safety.sensitive {
+            return Err("POLICY_DENIED");
+        }
+        Ok(reference)
+    };
+    match request.request_kind() {
+        "focus" => Ok((
+            InputCommand::Focus(Point {
+                x: snapshot.target.bounds.x + snapshot.target.bounds.width / 2.0,
+                y: snapshot.target.bounds.y + snapshot.target.bounds.height.min(24.0) / 2.0,
+            }),
+            None,
+            false,
+            false,
+        )),
+        "click" | "double-click" => {
+            let button = Button::parse(request.string("button").ok_or("INTERNAL")?)?;
+            let (point, reference) = if request.string("ref").is_some() {
+                let reference = semantic_ref()?;
+                if !pointer_role(&reference.role) {
+                    return Err("POLICY_DENIED");
+                }
+                (
+                    semantic_center(reference.bounds, snapshot.target.bounds)?,
+                    Some(reference),
+                )
+            } else {
+                require_visual(snapshot)?;
+                (request_target_point(request, "x", "y", snapshot)?, None)
+            };
+            Ok((
+                InputCommand::Click {
+                    point,
+                    button,
+                    count: if request.request_kind() == "double-click" {
+                        2
+                    } else {
+                        1
+                    },
+                },
+                reference,
+                false,
+                false,
+            ))
+        }
+        "drag" => {
+            require_visual(snapshot)?;
+            Ok((
+                InputCommand::Drag {
+                    from: request_target_point(request, "fromX", "fromY", snapshot)?,
+                    to: request_target_point(request, "toX", "toY", snapshot)?,
+                    button: Button::parse(request.string("button").ok_or("INTERNAL")?)?,
+                },
+                None,
+                false,
+                false,
+            ))
+        }
+        "type" => {
+            let reference = semantic_ref()?;
+            if !reference.input_safety.editable {
+                return Err("POLICY_DENIED");
+            }
+            let text = request.string("text").ok_or("INTERNAL")?;
+            if text.is_empty() {
+                return Err("POLICY_DENIED");
+            }
+            Ok((
+                InputCommand::Unicode(text.to_owned()),
+                Some(reference),
+                true,
+                false,
+            ))
+        }
+        "key" => {
+            let modifiers = request
+                .field("modifiers")
+                .and_then(serde_json::Value::as_array)
+                .ok_or("INTERNAL")?
+                .iter()
+                .map(|value| value.as_str().map(ToOwned::to_owned).ok_or("INTERNAL"))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((
+                InputCommand::Key {
+                    key: request.string("key").ok_or("INTERNAL")?.to_owned(),
+                    modifiers,
+                },
+                None,
+                false,
+                true,
+            ))
+        }
+        "scroll" => {
+            let (point, reference) = if request.string("ref").is_some() {
+                let reference = semantic_ref()?;
+                if !scroll_role(&reference.role) {
+                    return Err("POLICY_DENIED");
+                }
+                (
+                    semantic_center(reference.bounds, snapshot.target.bounds)?,
+                    Some(reference),
+                )
+            } else {
+                require_visual(snapshot)?;
+                (request_target_point(request, "x", "y", snapshot)?, None)
+            };
+            Ok((
+                InputCommand::Scroll {
+                    point,
+                    delta_x: request_delta(request, "deltaX")?,
+                    delta_y: request_delta(request, "deltaY")?,
+                },
+                reference,
+                false,
+                false,
+            ))
+        }
+        _ => Err("NOT_SUPPORTED"),
+    }
+}
+
+fn validate_live(
+    snapshot: &LiveSnapshot,
+    expected_ref: Option<&ProjectedRef>,
+    require_focused: bool,
+    inspect_focused: bool,
+    epoch: &Instant,
+    deadline_ms: u64,
+    cancel: &CancellationToken,
+) -> Result<(), &'static str> {
+    check_deadline(epoch, deadline_ms, cancel)?;
+    if process_identity(
+        snapshot.target.identity.pid,
+        &snapshot.target.identity.bundle_id,
+    )
+    .as_ref()
+        != Some(&snapshot.target.identity)
+    {
+        return Err("TARGET_CLOSED");
+    }
+    let refreshed = capture::query_windows(epoch, deadline_ms, cancel)?;
+    if refreshed
+        .iter()
+        .filter(|window| window.exactly_matches(&snapshot.target))
+        .count()
+        != 1
+    {
+        return Err("STALE_REF");
+    }
+    ensure_safe_target(&snapshot.target.app_name, &snapshot.target.title)?;
+    if expected_ref.is_some() || inspect_focused {
+        let projection = accessibility::observe_exact_window(
+            &snapshot.target,
+            &snapshot.target.app_id(),
+            &snapshot.target.encoded_window_id(),
+            snapshot.revision,
+            epoch,
+            deadline_ms,
+            cancel,
+        )?;
+        if inspect_focused && projection.focused_sensitive {
+            return Err("POLICY_DENIED");
+        }
+        let Some(expected) = expected_ref else {
+            return Ok(());
+        };
+        let current = projection
+            .refs
+            .iter()
+            .find(|item| item.ref_id == expected.ref_id)
+            .ok_or("STALE_REF")?;
+        if current.role != expected.role
+            || current.name != expected.name
+            || !close_bounds(current.bounds, expected.bounds)
+            || current.input_safety.sensitive != expected.input_safety.sensitive
+            || current.input_safety.editable != expected.input_safety.editable
+        {
+            return Err("STALE_REF");
+        }
+        ensure_safe_input_text(
+            &snapshot.target.app_name,
+            &snapshot.target.title,
+            &current.role,
+            &current.name,
+        )?;
+        if current.input_safety.sensitive
+            || (require_focused
+                && (!current.input_safety.editable || !current.input_safety.focused))
+        {
+            return Err("POLICY_DENIED");
+        }
+    }
+    Ok(())
+}
+
+fn wait_exact(
+    snapshot: &LiveSnapshot,
+    duration_ms: u64,
+    epoch: &Instant,
+    deadline_ms: u64,
+    cancel: &CancellationToken,
+) -> Result<(), &'static str> {
+    let end_ms = u64::try_from(epoch.elapsed().as_millis())
+        .unwrap_or(u64::MAX)
+        .saturating_add(duration_ms);
+    loop {
+        validate_live(snapshot, None, false, false, epoch, deadline_ms, cancel)?;
+        let now_ms = u64::try_from(epoch.elapsed().as_millis()).unwrap_or(u64::MAX);
+        if now_ms >= end_ms {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(end_ms.saturating_sub(now_ms).min(5)));
+    }
+}
+
+fn check_deadline(
+    epoch: &Instant,
+    deadline_ms: u64,
+    cancel: &CancellationToken,
+) -> Result<(), &'static str> {
+    if cancel.is_cancelled() {
+        return Err("CANCELLED");
+    }
+    if u64::try_from(epoch.elapsed().as_millis()).unwrap_or(u64::MAX) >= deadline_ms {
+        return Err("TIMEOUT");
+    }
+    Ok(())
+}
+
+fn request_target_point(
+    request: &HelperRequest,
+    x_field: &str,
+    y_field: &str,
+    snapshot: &LiveSnapshot,
+) -> Result<Point, &'static str> {
+    let point = Point {
+        x: request
+            .field(x_field)
+            .and_then(serde_json::Value::as_f64)
+            .ok_or("INTERNAL")?,
+        y: request
+            .field(y_field)
+            .and_then(serde_json::Value::as_f64)
+            .ok_or("INTERNAL")?,
+    };
+    let bounds = snapshot.target.bounds;
+    if point.x < bounds.x
+        || point.y < bounds.y
+        || point.x > bounds.x + bounds.width
+        || point.y > bounds.y + bounds.height
+    {
+        return Err("POLICY_DENIED");
+    }
+    Ok(point)
+}
+
+fn request_delta(request: &HelperRequest, field: &str) -> Result<i32, &'static str> {
+    let value = request
+        .field(field)
+        .and_then(serde_json::Value::as_f64)
+        .ok_or("INTERNAL")?;
+    if !value.is_finite() || value.abs() > 1_000_000.0 {
+        return Err("POLICY_DENIED");
+    }
+    Ok(value.round() as i32)
+}
+
+fn require_visual(snapshot: &LiveSnapshot) -> Result<(), &'static str> {
+    snapshot.included_image.then_some(()).ok_or("POLICY_DENIED")
+}
+
+fn semantic_center(
+    bounds: ObservationBounds,
+    window: ObservationBounds,
+) -> Result<Point, &'static str> {
+    let left = bounds.x.max(window.x);
+    let top = bounds.y.max(window.y);
+    let right = (bounds.x + bounds.width).min(window.x + window.width);
+    let bottom = (bounds.y + bounds.height).min(window.y + window.height);
+    if left >= right || top >= bottom {
+        return Err("STALE_REF");
+    }
+    Ok(Point {
+        x: (left + right) / 2.0,
+        y: (top + bottom) / 2.0,
+    })
+}
+
+fn pointer_role(role: &str) -> bool {
+    matches!(
+        role.to_ascii_lowercase().as_str(),
+        "axbutton"
+            | "axcheckbox"
+            | "axradiobutton"
+            | "axmenuitem"
+            | "axpopupbutton"
+            | "axlink"
+            | "axtab"
+            | "axtextfield"
+            | "axtextarea"
+    )
+}
+
+fn scroll_role(role: &str) -> bool {
+    matches!(
+        role.to_ascii_lowercase().as_str(),
+        "axscrollarea" | "axlist" | "axtable" | "axoutline" | "axtextarea"
+    )
 }
 
 fn list_result(windows: Vec<WindowDescriptor>) -> PlatformResult {

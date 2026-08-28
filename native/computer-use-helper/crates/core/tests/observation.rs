@@ -3,8 +3,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use computer_use_core::{
-    AccessibilityNode, AccessibilityNodeSource, CancellationToken, MAX_RAW_ACCESSIBILITY_NODES,
-    ObservationBounds, ProjectionScope, capture_dimensions, project_accessibility_tree,
+    AccessibilityNode, AccessibilityNodeSource, CancellationToken, InputSafety,
+    MAX_RAW_ACCESSIBILITY_NODES, ObservationBounds, ProjectionScope, capture_dimensions,
+    project_accessibility_tree,
 };
 
 #[derive(Clone)]
@@ -35,6 +36,7 @@ impl AccessibilityNodeSource for FakeTree {
             bounds: node.bounds,
             hidden: node.hidden,
             minimized: node.minimized,
+            input_safety: InputSafety::default(),
             children: node.children.clone(),
         })
     }
@@ -340,6 +342,7 @@ impl AccessibilityNodeSource for BranchingTree {
             bounds: Some(bounds(0.0, 0.0, 10.0, 10.0)),
             hidden: false,
             minimized: false,
+            input_safety: InputSafety::default(),
             children: (0..3).map(|_| TrackedNode::new(&self.live)).collect(),
         })
     }

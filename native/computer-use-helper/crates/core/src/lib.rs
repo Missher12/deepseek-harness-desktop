@@ -74,8 +74,21 @@ pub struct AccessibilityNode<N> {
     pub hidden: bool,
     /// Whether the element is minimized.
     pub minimized: bool,
+    /// Conservative input classification derived without reading an editable value.
+    pub input_safety: InputSafety,
     /// Child nodes in native order.
     pub children: Vec<N>,
+}
+
+/// Safe structural input facts. Unknown elements remain non-editable.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct InputSafety {
+    /// A secure, private, or high-impact element that must never receive input.
+    pub sensitive: bool,
+    /// A known ordinary editable role eligible for Unicode entry when focused.
+    pub editable: bool,
+    /// Whether AX reports this exact element as the current keyboard focus.
+    pub focused: bool,
 }
 
 /// Read-only, fakeable native accessibility seam.
@@ -103,7 +116,7 @@ pub struct ProjectionScope<'a> {
 }
 
 /// One bounded semantic reference.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ProjectedRef {
     /// Stable opaque reference for this exact target and revision.
     pub ref_id: String,
@@ -111,6 +124,10 @@ pub struct ProjectedRef {
     pub role: String,
     /// Truncated safe accessible name.
     pub name: String,
+    /// Exact visible desktop-space bounds used for semantic pointer actions.
+    pub bounds: ObservationBounds,
+    /// Conservative input classification, never derived from AXValue.
+    pub input_safety: InputSafety,
 }
 
 /// Output of one bounded breadth-first projection.
@@ -121,6 +138,8 @@ pub struct AccessibilityProjection {
     pub refs: Vec<ProjectedRef>,
     /// Number of raw nodes inspected, including skipped nodes.
     pub raw_nodes: usize,
+    /// Whether any inspected non-hidden element is both focused and sensitive.
+    pub focused_sensitive: bool,
 }
 
 /// Project an accessibility tree with fixed fail-closed bounds.
@@ -140,6 +159,7 @@ where
     let mut semantic_text = String::new();
     let mut refs = Vec::new();
     let mut raw_nodes = 0_usize;
+    let mut focused_sensitive = false;
 
     while let Some((node, depth)) = queue.pop_front() {
         if cancel.is_cancelled() {
@@ -150,6 +170,7 @@ where
         }
         raw_nodes += 1;
         let described = source.describe(&node)?;
+        focused_sensitive |= described.input_safety.focused && described.input_safety.sensitive;
         let visible_bounds = described
             .bounds
             .filter(|bounds| bounds.intersects(scope.window_bounds));
@@ -205,13 +226,20 @@ where
             continue;
         }
         push_truncated(&mut semantic_text, &line, MAX_SEMANTIC_TEXT_BYTES);
-        refs.push(ProjectedRef { ref_id, role, name });
+        refs.push(ProjectedRef {
+            ref_id,
+            role,
+            name,
+            bounds,
+            input_safety: described.input_safety,
+        });
     }
 
     Ok(AccessibilityProjection {
         semantic_text,
         refs,
         raw_nodes,
+        focused_sensitive,
     })
 }
 
@@ -326,7 +354,50 @@ impl CancellationToken {
     }
 }
 
-/// Narrow read-only platform seam. Implementations receive one immutable deadline.
+/// One quota charge committed immediately before a native input event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NativeInputCost {
+    /// Pointer-event units consumed by this native call.
+    pub pointer_events: u64,
+    /// Key-event units consumed by this native call.
+    pub key_events: u64,
+    /// UTF-8 text bytes carried by this native call.
+    pub text_bytes: u64,
+}
+
+impl NativeInputCost {
+    /// Charge one pointer event.
+    #[must_use]
+    pub const fn pointer() -> Self {
+        Self {
+            pointer_events: 1,
+            key_events: 0,
+            text_bytes: 0,
+        }
+    }
+
+    /// Charge one key event and optional Unicode payload bytes.
+    #[must_use]
+    pub const fn key(text_bytes: u64) -> Self {
+        Self {
+            pointer_events: 0,
+            key_events: 1,
+            text_bytes,
+        }
+    }
+
+    /// Charge one lease-scoped operation that emits no input event.
+    #[must_use]
+    pub const fn operation() -> Self {
+        Self {
+            pointer_events: 0,
+            key_events: 0,
+            text_bytes: 0,
+        }
+    }
+}
+
+/// Narrow native platform seam. Implementations receive one immutable deadline.
 pub trait ObservationPlatform {
     /// Report platform permission/support state.
     fn status(&mut self, deadline_ms: u64, cancel: &CancellationToken) -> PlatformResult;
@@ -340,6 +411,36 @@ pub trait ObservationPlatform {
         deadline_ms: u64,
         cancel: &CancellationToken,
     ) -> PlatformResult;
+
+    /// Execute one closed input request and call `permit` immediately before every native event.
+    fn input(
+        &mut self,
+        _request: &HelperRequest,
+        _deadline_ms: u64,
+        _cancel: &CancellationToken,
+        _permit: &mut dyn FnMut(NativeInputCost) -> Result<(), &'static str>,
+    ) -> PlatformResult {
+        Err("NOT_SUPPORTED")
+    }
+
+    /// Emit only requested key/button-up events without requiring a lease.
+    fn release_input(
+        &mut self,
+        _request: &HelperRequest,
+        _deadline_ms: u64,
+        _cancel: &CancellationToken,
+    ) -> PlatformResult {
+        Err("NOT_SUPPORTED")
+    }
+
+    /// Release every key/button still held by this helper before teardown acknowledgement.
+    fn release_all_input(
+        &mut self,
+        _deadline_ms: u64,
+        _cancel: &CancellationToken,
+    ) -> Result<(), &'static str> {
+        Ok(())
+    }
 
     /// Take the exact PNG produced by the immediately preceding successful snapshot.
     fn take_png(&mut self) -> Option<Vec<u8>> {
@@ -499,11 +600,15 @@ where
             ),
             "lease.install" => self.install_lease(request),
             "snapshot" => self.snapshot(request, deadline_ms, cancel),
-            "stop" => self.stop(request),
-            "input.release" => HelperResponse::ok(request, json!({"released":true})),
-            // Input actions are intentionally absent from this delivery. Never invoke an OS API.
+            "stop" => self.stop(request, deadline_ms, cancel),
+            "input.release" => platform_response(
+                request,
+                self.platform.release_input(request, deadline_ms, cancel),
+                cancel,
+                None,
+            ),
             "focus" | "click" | "double-click" | "drag" | "type" | "key" | "scroll" | "wait" => {
-                self.disabled_input(request)
+                self.input(request, deadline_ms, cancel)
             }
             _ => HelperResponse::error(request, "NOT_SUPPORTED", false),
         }
@@ -618,19 +723,47 @@ where
         platform_response(request, result, cancel, png)
     }
 
-    fn stop(&mut self, request: &HelperRequest) -> HelperResponse {
+    fn stop(
+        &mut self,
+        request: &HelperRequest,
+        deadline_ms: u64,
+        cancel: &CancellationToken,
+    ) -> HelperResponse {
         if let Err(code) = self.active_lease_for(request, self.clock.now_ms()) {
             return HelperResponse::error(request, code, false);
         }
         self.active = None;
-        HelperResponse::ok(request, json!({"stopped":true}))
+        match self.platform.release_all_input(deadline_ms, cancel) {
+            Ok(()) => HelperResponse::ok(request, json!({"stopped":true})),
+            Err(code) => HelperResponse::error(request, code, false),
+        }
     }
 
-    fn disabled_input(&mut self, request: &HelperRequest) -> HelperResponse {
-        let lease = match self.active_lease_for(request, self.clock.now_ms()) {
-            Ok(lease) => lease,
-            Err(code) => return HelperResponse::error(request, code, false),
+    fn input(
+        &mut self,
+        request: &HelperRequest,
+        deadline_ms: u64,
+        cancel: &CancellationToken,
+    ) -> HelperResponse {
+        let now_ms = self.clock.now_ms();
+        if let Some(expired) = self.expire_active(now_ms) {
+            return HelperResponse::error(
+                request,
+                if active_matches(&expired, request) {
+                    "LEASE_EXPIRED"
+                } else {
+                    "LEASE_REVOKED"
+                },
+                false,
+            );
+        }
+        let Some(active) = self.active.as_mut() else {
+            return HelperResponse::error(request, "LEASE_REVOKED", false);
         };
+        if !active_matches(active, request) {
+            return HelperResponse::error(request, "LEASE_REVOKED", false);
+        }
+        let lease = &mut active.lease;
         if !lease.permits(
             required_string(request, "appId"),
             required_string(request, "windowId"),
@@ -647,24 +780,67 @@ where
         if !lease.capabilities.contains(capability) {
             return HelperResponse::error(request, "UNAUTHORIZED", false);
         }
-        let category_available = match kind {
-            "focus" | "click" | "double-click" | "drag" | "scroll" => {
-                lease.quotas.pointer_actions > 0
-            }
-            "key" => lease.quotas.key_actions > 0,
-            "type" => {
-                lease.quotas.key_actions > 0
-                    && request
-                        .string("text")
-                        .is_some_and(|text| text.len() as u64 <= lease.quotas.text_bytes)
-            }
-            "wait" => true,
-            _ => false,
-        };
-        if lease.quotas.operations == 0 || !category_available {
+        let initial_quota_available = lease.quotas.operations > 0
+            && match capability {
+                "pointer" => lease.quotas.pointer_actions > 0,
+                "keyboard" => {
+                    lease.quotas.key_actions > 0
+                        && (kind != "type"
+                            || lease.quotas.text_bytes
+                                >= request.string("text").map_or(0, |text| text.len() as u64))
+                }
+                "observe" => true,
+                _ => false,
+            };
+        if !initial_quota_available {
             return HelperResponse::error(request, "QUOTA_EXCEEDED", false);
         }
-        HelperResponse::error(request, "NOT_SUPPORTED", false)
+        if self.last_snapshot_revision != 0
+            && required_integer(request, "snapshotRevision") != self.last_snapshot_revision
+        {
+            return HelperResponse::error(request, "STALE_REF", false);
+        }
+        let clock = &self.clock;
+        let mut permit = |cost: NativeInputCost| -> Result<(), &'static str> {
+            if cancel.is_cancelled() {
+                return Err("CANCELLED");
+            }
+            let event_now_ms = clock.now_ms();
+            if event_now_ms >= deadline_ms {
+                return Err("TIMEOUT");
+            }
+            if lease.expired(event_now_ms) {
+                return Err("LEASE_EXPIRED");
+            }
+            if !lease.capabilities.contains(capability) {
+                return Err("UNAUTHORIZED");
+            }
+            if lease.quotas.operations == 0
+                || lease.quotas.pointer_actions < cost.pointer_events
+                || lease.quotas.key_actions < cost.key_events
+                || lease.quotas.text_bytes < cost.text_bytes
+            {
+                return Err("QUOTA_EXCEEDED");
+            }
+            lease.quotas.operations -= 1;
+            lease.quotas.pointer_actions -= cost.pointer_events;
+            lease.quotas.key_actions -= cost.key_events;
+            lease.quotas.text_bytes -= cost.text_bytes;
+            lease.last_activity_ms = event_now_ms;
+            Ok(())
+        };
+        let result = self
+            .platform
+            .input(request, deadline_ms, cancel, &mut permit);
+        platform_response(request, result, cancel, None)
+    }
+
+    /// Release all helper-owned input state before EOF or fatal link shutdown.
+    pub fn shutdown(&mut self) -> Result<(), &'static str> {
+        self.active = None;
+        let cancel = CancellationToken::new();
+        self.platform
+            .release_all_input(self.clock.now_ms().saturating_add(1_000), &cancel)
     }
 
     fn expire_active(&mut self, now_ms: u64) -> Option<ActiveLease> {
@@ -711,6 +887,10 @@ where
                     .is_some_and(|active| active.session_id == session_id)
                 {
                     self.active = None;
+                    let cancel = CancellationToken::new();
+                    let _ = self
+                        .platform
+                        .release_all_input(self.clock.now_ms().saturating_add(1_000), &cancel);
                 }
             }
             "lease.revoke" => {
@@ -729,9 +909,19 @@ where
                         && active.lease.revision == revision
                 }) {
                     self.active = None;
+                    let cancel = CancellationToken::new();
+                    let _ = self
+                        .platform
+                        .release_all_input(self.clock.now_ms().saturating_add(1_000), &cancel);
                 }
             }
-            "parent.shutdown" => self.active = None,
+            "parent.shutdown" => {
+                self.active = None;
+                let cancel = CancellationToken::new();
+                let _ = self
+                    .platform
+                    .release_all_input(self.clock.now_ms().saturating_add(1_000), &cancel);
+            }
             "request.cancel" => {}
             _ => {}
         }

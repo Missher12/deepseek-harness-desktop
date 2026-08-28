@@ -58,6 +58,25 @@ fn rejects_duplicate_unknown_version_and_malformed_reference_json() {
 }
 
 #[test]
+fn rejects_input_outside_the_closed_native_action_vocabulary_and_bounds() {
+    let base = r#""protocolVersion":1,"messageKind":"request","requestKind":"key","requestId":"00000000-0000-4000-8000-000000000001","sessionId":"s","timeoutMs":1,"leaseId":"00000000-0000-4000-8000-000000000002","leaseRevision":1,"appId":"app","windowId":"window","snapshotRevision":1"#;
+    for fields in [
+        r#""key":"CapsLock","modifiers":[]"#,
+        r#""key":"A","modifiers":["Shift","Shift"]"#,
+        r#""key":"A","modifiers":["CapsLock"]"#,
+    ] {
+        let mut frame = vec![0x01];
+        frame.extend_from_slice(format!("{{{base},{fields}}}").as_bytes());
+        assert!(decode_outer_frame(&frame).is_err(), "accepted {fields}");
+    }
+
+    let click = r#"{"protocolVersion":1,"messageKind":"request","requestKind":"click","requestId":"00000000-0000-4000-8000-000000000001","sessionId":"s","timeoutMs":1,"leaseId":"00000000-0000-4000-8000-000000000002","leaseRevision":1,"appId":"app","windowId":"window","snapshotRevision":1,"x":1000001,"y":0,"button":"primary"}"#;
+    let mut frame = vec![0x01];
+    frame.extend_from_slice(click.as_bytes());
+    assert!(decode_outer_frame(&frame).is_err());
+}
+
+#[test]
 fn length_prefix_decoder_rejects_before_allocation_and_handles_splits_and_batches() {
     let raw = fs::read(fixtures().join("status-request.bin")).expect("fixture");
     let framed = encode_length_prefixed(&raw).expect("prefix");
