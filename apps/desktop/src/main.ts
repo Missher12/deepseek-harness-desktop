@@ -269,6 +269,7 @@ function showDesktopWindow(): void {
   if (nativeWindow.isMinimized()) nativeWindow.restore()
   nativeWindow.show()
   nativeWindow.focus()
+  controlCoordinator.resumeAdmission()
 }
 
 function syncWindowsTray(): void {
@@ -420,6 +421,7 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
     show() {
       if (window.isMinimized()) window.restore()
       window.show()
+      controlCoordinator.resumeAdmission()
     },
     focus() { window.focus() },
     sendCommand(command: DesktopCommand) { window.webContents.send('desktop:command', command) },

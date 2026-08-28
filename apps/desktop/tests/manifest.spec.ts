@@ -186,6 +186,7 @@ describe('desktop package manifest', () => {
     expect(mainSource).toContain('controlLifecycle: controlBridge')
     expect(mainSource).toContain('backend: controlCoordinator')
     expect(mainSource).not.toContain('backend: unavailableDesktopControlBackend')
+    expect(mainSource.match(/controlCoordinator\.resumeAdmission\(\)/g)).toHaveLength(2)
   })
 
   it('ships one ordered default-on external-brain stack from immutable release archives', () => {

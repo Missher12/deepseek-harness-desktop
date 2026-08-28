@@ -123,8 +123,25 @@ function status(sessionId = SESSION): Extract<BridgeRequest, { requestKind: 'des
   return { ...requestBase('desktop.status', sessionId) }
 }
 
-function context() {
-  return { signal: new AbortController().signal, timeoutMs: 30_000, generation: 1 }
+interface TestAcquisitionCompletion {
+  accept(): void
+  cancel(): Promise<void>
+}
+
+function context(options: {
+  signal?: AbortSignal
+  holdAcquisition?: (completion: TestAcquisitionCompletion) => void
+} = {}) {
+  return {
+    signal: options.signal ?? new AbortController().signal,
+    timeoutMs: 30_000,
+    generation: 1,
+    registerAcquisition(completion: TestAcquisitionCompletion): boolean {
+      if (options.holdAcquisition !== undefined) options.holdAcquisition(completion)
+      else completion.accept()
+      return true
+    },
+  }
 }
 
 function ok<K extends BridgeRequest['requestKind']>(
@@ -184,7 +201,7 @@ function setup(options: {
   dialog?: FakeDialog
   clock?: FakeMonotonicClock
   revalidate?: (scope: NativeApprovalScope) => boolean | Promise<boolean>
-  audit?: (action: string) => void
+  audit?: (action: string) => void | Promise<void>
   unclaimedSession?: boolean
 } = {}) {
   const dialog = options.dialog ?? new FakeDialog()
@@ -224,7 +241,7 @@ function setup(options: {
     cleanupTimeoutMs: 1_000,
     audit: options.audit === undefined
       ? undefined
-      : { record: async (event) => { options.audit?.(event.action) }, flush: async () => undefined },
+      : { record: async (event) => { await options.audit?.(event.action) }, flush: async () => undefined },
   })
   return { coordinator, dialog, shortcuts, clock }
 }
@@ -284,6 +301,77 @@ describe('DesktopControlCoordinator', () => {
 
     expect(envelope.message).toMatchObject({ responseKind: 'error', error: { code: 'INTERNAL' } })
     expect(shortcuts.callbacks.size).toBe(0)
+    expect(coordinator.activeLease()).toBeNull()
+  })
+
+  it('rejects an ignored abort after every adapter await and before lease activation', async () => {
+    const activationFacts = new Deferred<Awaited<ReturnType<DesktopControlSurfaceAdapter['acquireFacts']>>>()
+    const order: string[] = []
+    const browser = adapter('browser', order)
+    let factsCalls = 0
+    const baseFacts = browser.acquireFacts.bind(browser)
+    browser.acquireFacts = async (request, signal) => {
+      factsCalls += 1
+      if (factsCalls === 3) return await activationFacts.promise
+      return await baseFacts(request, signal)
+    }
+    const controller = new AbortController()
+    const { coordinator, dialog } = setup({ browser })
+    const acquiring = coordinator.dispatch(
+      acquire('browser-ephemeral'),
+      context({ signal: controller.signal }),
+    )
+    await approve(dialog)
+    await vi.waitFor(() => { expect(factsCalls).toBe(3) })
+
+    controller.abort(new Error('deadline'))
+    activationFacts.resolve({
+      surfaceKind: 'browser-ephemeral', targets: [],
+      capabilities: ['observe', 'pointer', 'keyboard'], policyAllowed: true,
+    })
+    await expect(acquiring).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'CANCELLED' } },
+    })
+    expect(coordinator.activeLease()).toBeNull()
+  })
+
+  it('revokes and awaits cleanup when cancellation wins after activation but before acceptance', async () => {
+    const audit = new Deferred<void>()
+    const order: string[] = []
+    const browser = adapter('browser', order)
+    const controller = new AbortController()
+    let completion: TestAcquisitionCompletion | undefined
+    const { coordinator, dialog } = setup({ browser, audit: async () => { await audit.promise } })
+    const acquiring = coordinator.dispatch(acquire('browser-ephemeral'), context({
+      signal: controller.signal,
+      holdAcquisition: (value) => { completion = value },
+    }))
+    await approve(dialog)
+    await vi.waitFor(() => { expect(coordinator.activeLease()).not.toBeNull() })
+    await expect(acquiring).resolves.toMatchObject({ message: { responseKind: 'ok' } })
+
+    controller.abort(new Error('deadline'))
+    audit.resolve()
+    await coordinator.drainCleanup()
+    expect(completion).toBeDefined()
+    expect(coordinator.activeLease()).toBeNull()
+    expect(order).toEqual(['clear-queue', 'stop-surface'])
+  })
+
+  it('uses the queued timer-failure cleanup and never rolls back the same helper lease', async () => {
+    const order: string[] = []
+    const computer = adapter('computer', order)
+    const clock = new FakeMonotonicClock()
+    vi.spyOn(clock, 'setTimeout').mockImplementation(() => { throw new Error('timer failed') })
+    const { coordinator, dialog } = setup({ computer, clock })
+    const acquiring = coordinator.dispatch(acquire(), context())
+    await approve(dialog)
+
+    await expect(acquiring).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'INTERNAL' } },
+    })
+    await coordinator.drainCleanup()
+    expect(order).toEqual(['install', 'clear-queue', 'stop-surface', 'release-input'])
     expect(coordinator.activeLease()).toBeNull()
   })
 
@@ -387,6 +475,24 @@ describe('DesktopControlCoordinator', () => {
     await expect(coordinator.dispatch(acquire('browser-ephemeral'), context())).resolves.toMatchObject({
       message: { responseKind: 'error', error: { code: 'BUSY' } },
     })
+  })
+
+  it('keeps successful close-to-tray cleanup closed until the visible window explicitly resumes admission', async () => {
+    const browser = adapter('browser')
+    const { coordinator, dialog } = setup({ browser })
+    const acquiring = coordinator.dispatch(acquire('browser-ephemeral'), context())
+    await approve(dialog)
+    await acquiring
+
+    await coordinator.cleanup('close-to-tray')
+    await expect(coordinator.dispatch(acquire('browser-ephemeral'), context())).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'BUSY' } },
+    })
+    expect(coordinator.resumeAdmission()).toBe(true)
+    const resumed = coordinator.dispatch(acquire('browser-ephemeral'), context())
+    await vi.waitFor(() => { expect(dialog.answers).toHaveLength(2) })
+    dialog.answers[1]?.resolve({ response: 1 })
+    await expect(resumed).resolves.toMatchObject({ message: { responseKind: 'ok' } })
   })
 
   it('returns one uniform UNAUTHORIZED error before probing adapters for a foreign session', async () => {

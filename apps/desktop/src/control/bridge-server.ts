@@ -27,6 +27,13 @@ export interface DesktopControlDispatchContext {
   readonly signal: AbortSignal
   readonly timeoutMs: number
   readonly generation: number
+  registerAcquisition(completion: DesktopControlAcquisitionCompletion): boolean
+}
+
+/** Exact provisional-acquire lifecycle retained until the bridge accepts its response. */
+export interface DesktopControlAcquisitionCompletion {
+  accept(): void
+  cancel(): Promise<void>
 }
 
 /** Task 6 injection seam; this bridge owns transport but never mints authority. */
@@ -55,6 +62,7 @@ interface PendingDispatch {
   readonly lease?: { readonly leaseId: ControlLeaseId; readonly leaseRevision: number }
   readonly controller: AbortController
   readonly timer: ReturnType<typeof setTimeout>
+  acquisition?: DesktopControlAcquisitionCompletion
 }
 
 interface Tombstone {
@@ -405,6 +413,14 @@ export class DesktopControlBridgeServer implements HarnessControlLifecycle {
       signal: controller.signal,
       timeoutMs,
       generation: state.generation,
+      registerAcquisition: (completion) => {
+        if (request.requestKind !== 'control.lease.acquire'
+          || this.state !== state || state.closed
+          || state.pending.get(id) !== pending || controller.signal.aborted
+          || pending.acquisition !== undefined) return false
+        pending.acquisition = completion
+        return true
+      },
     }).then(
       (envelope) => { this.complete(state, pending, envelope) },
       () => {
@@ -433,14 +449,24 @@ export class DesktopControlBridgeServer implements HarnessControlLifecycle {
       this.settleError(state, pending, 'INTERNAL', 'Desktop control backend response mismatch.')
       return
     }
-    this.finishPending(state, pending)
     let frames: readonly Uint8Array[]
     try {
       frames = encodedEnvelope(envelope)
     } catch {
-      this.sendError(state, pending.request, 'INTERNAL', 'Desktop control backend envelope is invalid.')
+      this.settleError(state, pending, 'INTERNAL', 'Desktop control backend envelope is invalid.')
       return
     }
+    if (message.responseKind === 'ok' && message.requestKind === 'control.lease.acquire') {
+      if (pending.acquisition === undefined) {
+        this.settleError(state, pending, 'INTERNAL', 'Desktop control acquisition was not registered.')
+        return
+      }
+      pending.acquisition.accept()
+      delete pending.acquisition
+    } else {
+      this.cancelAcquisition(pending)
+    }
+    this.finishPending(state, pending)
     void state.sender.enqueue(frames).catch(() => { this.close(state, 'send-failed', true) })
   }
 
@@ -453,6 +479,7 @@ export class DesktopControlBridgeServer implements HarnessControlLifecycle {
     const id = String(pending.request.requestId)
     if (state.pending.get(id) !== pending) return
     pending.controller.abort(new Error(code))
+    this.cancelAcquisition(pending)
     this.finishPending(state, pending)
     this.sendError(state, pending.request, code, message)
   }
@@ -466,6 +493,13 @@ export class DesktopControlBridgeServer implements HarnessControlLifecycle {
       sessionId: pending.request.sessionId,
       requestKind: pending.request.requestKind,
     })
+  }
+
+  private cancelAcquisition(pending: PendingDispatch): void {
+    const acquisition = pending.acquisition
+    if (acquisition === undefined) return
+    delete pending.acquisition
+    void acquisition.cancel().catch(() => undefined)
   }
 
   private sendError(
@@ -512,6 +546,7 @@ export class DesktopControlBridgeServer implements HarnessControlLifecycle {
     state.detachDisconnect()
     for (const pending of [...state.pending.values()]) {
       pending.controller.abort(new Error('DISCONNECTED'))
+      this.cancelAcquisition(pending)
       clearTimeout(pending.timer)
       this.addTombstone(state, String(pending.request.requestId), {
         sessionId: pending.request.sessionId,

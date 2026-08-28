@@ -89,6 +89,43 @@ function statusResponse(request: ReturnType<typeof statusRequest>): DecodedDeskt
   }
 }
 
+function acquireRequest(
+  deadlineUnixMs = 40_000,
+): Extract<BridgeRequest, { requestKind: 'control.lease.acquire' }> {
+  return {
+    protocolVersion: 1,
+    messageKind: 'request',
+    requestKind: 'control.lease.acquire',
+    requestId: RequestId('00000000-0000-4000-8000-000000000099'),
+    sessionId: SESSION,
+    deadlineUnixMs,
+    surfaceKind: 'browser-ephemeral',
+    targets: [],
+    capabilities: ['observe'],
+  }
+}
+
+function acquireResponse(request: ReturnType<typeof acquireRequest>): DecodedDesktopControlEnvelope {
+  return {
+    message: {
+      protocolVersion: 1,
+      messageKind: 'response',
+      responseKind: 'ok',
+      requestId: request.requestId,
+      requestKind: request.requestKind,
+      result: {
+        leaseId: LEASE,
+        leaseRevision: 1,
+        surfaceKind: 'browser-ephemeral',
+        targets: [],
+        capabilities: ['observe'],
+        idleExpiresAfterMs: 300_000,
+        hardExpiresAfterMs: 1_200_000,
+      },
+    },
+  }
+}
+
 function navigateRequest(
   sequence: number,
   overrides: Partial<Extract<BridgeRequest, { requestKind: 'browser.navigate' }>> = {},
@@ -271,6 +308,81 @@ describe('DesktopControlBridgeServer', () => {
     await vi.waitFor(() => { expect(channel.frames).toHaveLength(1) })
     expect(decodeJsonFrame(channel.frames[0]!)).toMatchObject({
       responseKind: 'error', error: { code: 'CANCELLED' },
+    })
+  })
+
+  it('cancels an activated acquisition on deadline and never accepts its late response', async () => {
+    vi.useFakeTimers()
+    try {
+      let resolve!: (value: DecodedDesktopControlEnvelope) => void
+      const held = new Promise<DecodedDesktopControlEnvelope>((done) => { resolve = done })
+      const accepted = vi.fn()
+      const cancelled = vi.fn(async () => undefined)
+      const server = new DesktopControlBridgeServer({
+        backend: backend(async (request, rawContext) => {
+          const acquireContext = rawContext as DesktopControlDispatchContext & {
+            registerAcquisition(completion: { accept(): void; cancel(): Promise<void> }): boolean
+          }
+          expect(acquireContext.registerAcquisition({ accept: accepted, cancel: cancelled })).toBe(true)
+          return await held
+        }),
+        now: () => 10_000,
+      })
+      const channel = new FakeChannel(1)
+      server.attach(channel)
+      const request = acquireRequest(10_001)
+      channel.receive(request)
+      await Promise.resolve()
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(cancelled).toHaveBeenCalledOnce()
+      expect(accepted).not.toHaveBeenCalled()
+      expect(decodeJsonFrame(channel.frames[0]!)).toMatchObject({
+        responseKind: 'error', error: { code: 'TIMEOUT' },
+      })
+
+      resolve(acquireResponse(request))
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(channel.frames).toHaveLength(1)
+      expect(accepted).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('accepts only a registered acquisition while the exact response remains pending', async () => {
+    const request = acquireRequest()
+    const accepted = vi.fn()
+    const cancelled = vi.fn(async () => undefined)
+    const registered = new DesktopControlBridgeServer({
+      backend: backend(async (_request, rawContext) => {
+        const acquireContext = rawContext as DesktopControlDispatchContext & {
+          registerAcquisition(completion: { accept(): void; cancel(): Promise<void> }): boolean
+        }
+        expect(acquireContext.registerAcquisition({ accept: accepted, cancel: cancelled })).toBe(true)
+        return acquireResponse(request)
+      }),
+      now: () => 10_000,
+    })
+    const acceptedChannel = new FakeChannel(1)
+    registered.attach(acceptedChannel)
+    acceptedChannel.receive(request)
+    await vi.waitFor(() => { expect(acceptedChannel.frames).toHaveLength(1) })
+    expect(accepted).toHaveBeenCalledOnce()
+    expect(cancelled).not.toHaveBeenCalled()
+    expect(decodeJsonFrame(acceptedChannel.frames[0]!)).toMatchObject({ responseKind: 'ok' })
+
+    const unregistered = new DesktopControlBridgeServer({
+      backend: backend(async () => acquireResponse(request)),
+      now: () => 10_000,
+    })
+    const rejectedChannel = new FakeChannel(2)
+    unregistered.attach(rejectedChannel)
+    rejectedChannel.receive(request)
+    await vi.waitFor(() => { expect(rejectedChannel.frames).toHaveLength(1) })
+    expect(decodeJsonFrame(rejectedChannel.frames[0]!)).toMatchObject({
+      responseKind: 'error', error: { code: 'INTERNAL' },
     })
   })
 

@@ -13,6 +13,7 @@ import {
   type SessionId,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
 import type {
+  DesktopControlAcquisitionCompletion,
   DesktopControlBackend,
   DesktopControlDispatchContext,
 } from './bridge-server.ts'
@@ -244,6 +245,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
   #transportOpen = true
   #cleanupPending = 0
   #cleanupFailed = false
+  #resumeRequired = false
 
   constructor(options: DesktopControlCoordinatorOptions) {
     this.#options = options
@@ -316,11 +318,21 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     this.#transportOpen = true
     if (this.#leases.activeSnapshot() !== null || this.#pendingAcquire !== undefined
       || this.#cleanupPending !== 0) return
-    if (this.#cleanupFailed && this.#shutdownPromise === undefined) return
+    if (this.#resumeRequired || (this.#cleanupFailed && this.#shutdownPromise === undefined)) return
     this.#closing = false
     this.#shutdownPromise = undefined
     this.#cleanupFailed = false
     this.#admission = true
+  }
+
+  /** Reopen control only after the main process has actually made the owner window visible. */
+  resumeAdmission(): boolean {
+    if (!this.#transportOpen || this.#closing || this.#cleanupFailed
+      || this.#leases.activeSnapshot() !== null || this.#pendingAcquire !== undefined
+      || this.#cleanupPending !== 0) return false
+    this.#resumeRequired = false
+    this.#admission = true
+    return true
   }
 
   transportClosed(_reason: string): void {
@@ -356,6 +368,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       return
     }
     this.#admission = false
+    if (reason === 'close-to-tray') this.#resumeRequired = true
     this.#abortPendingAcquire(reason)
     const active = this.#leases.activeSnapshot()
     if (active !== null) this.#leases.revoke(reason)
@@ -365,7 +378,6 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       this.#cleanupFailed = true
       throw new ControlAuthorityError('INTERNAL', 'control cleanup failed')
     }
-    if (this.#transportOpen && !this.#closing && !this.#cleanupFailed) this.#admission = true
   }
 
   async drainCleanup(): Promise<void> {
@@ -389,8 +401,12 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     let install: PreparedLeaseInstall | undefined
     let installAttempted = false
     let activated: ActiveControlLease | null = null
+    let activationTransferred = false
+    let activationIdentity: ControlLeaseAcquireResult | undefined
+    let acquisitionCompletion: DesktopControlAcquisitionCompletion | undefined
     try {
       const initial = await adapter.acquireFacts(request, controller.signal)
+      this.#throwIfAborted(controller.signal)
       const facts = this.#leaseFacts(request, initial, settings)
       const agentId = this.#options.getAgentDisplayName(request.sessionId)
       prepared = this.#leases.prepareAcquire(request, facts, agentId)
@@ -398,11 +414,13 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       const descriptor = this.#leases.preparedDescriptor(prepared)
       const approvalScope = this.#leaseApprovalScope(request.sessionId, descriptor, settings.revision)
       const approval = await this.#approvals.request(approvalScope, controller.signal)
+      this.#throwIfAborted(controller.signal)
       if (approval === 'BUSY') throw new ControlAuthorityError('BUSY', 'another approval is pending')
       if (approval === 'DENIED') throw new ControlAuthorityError('POLICY_DENIED', 'native approval denied')
 
       const currentSettings = this.#settings()
       const current = await adapter.acquireFacts(request, controller.signal)
+      this.#throwIfAborted(controller.signal)
       const currentFacts = this.#leaseFacts(request, current, currentSettings)
       if (!this.#approvals.consumeBeforeDispatch(
         approval,
@@ -424,36 +442,58 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
           signal: controller.signal,
           timeoutMs: effectiveHelperTimeoutMs(context.timeoutMs, CONTROL_LEASE_HARD_MS),
         })
+        this.#throwIfAborted(controller.signal)
       }
 
       const activationSettings = this.#settings()
-      const activationFacts = this.#leaseFacts(
-        request,
-        await adapter.acquireFacts(request, controller.signal),
-        activationSettings,
-      )
+      const latest = await adapter.acquireFacts(request, controller.signal)
+      this.#throwIfAborted(controller.signal)
+      const activationFacts = this.#leaseFacts(request, latest, activationSettings)
       if (activationSettings.revision !== approvalScope.allowlistRevision) {
         throw new ControlAuthorityError('POLICY_DENIED', 'allowlist changed before activation')
       }
+      this.#throwIfAborted(controller.signal)
+      activationTransferred = true
+      activationIdentity = descriptor
       const result = this.#leases.activatePrepared(prepared, request, activationFacts)
       prepared = undefined
       activated = this.#leases.activeSnapshot()
+      if (activated === null) throw new ControlAuthorityError('INTERNAL', 'activated lease is unavailable')
+      acquisitionCompletion = this.#bindActivatedAcquisition(activated, context.signal)
+      if (!context.registerAcquisition(acquisitionCompletion)) {
+        await acquisitionCompletion.cancel()
+        throw new ControlAuthorityError('CANCELLED', 'acquisition response is no longer pending')
+      }
+      this.#throwIfAborted(controller.signal)
       try {
         this.#shortcut.activate(activationSettings.settings.emergencyAccelerator)
       } catch {
         await this.#awaitReleased(activated)
         throw new ControlAuthorityError('INTERNAL', 'emergency shortcut registration failed')
       }
-      await this.#audit({
+      void this.#bounded(async () => { await this.#audit({
         sessionId: request.sessionId,
         appId: result.targets.length === 1 ? result.targets[0]?.appId ?? null : null,
         action: 'lease-granted',
         outcome: 'granted',
-      })
+      }) }).catch(() => undefined)
+      this.#throwIfAborted(controller.signal)
       return result
     } catch (error) {
+      if (acquisitionCompletion !== undefined) {
+        await acquisitionCompletion.cancel().catch(() => undefined)
+      }
       if (prepared !== undefined) this.#leases.cancelPrepared(prepared)
-      if (activated === null && installAttempted && install !== undefined) {
+      const transferredCleanup = activationTransferred && activationIdentity !== undefined
+        ? this.#released.get(leaseKey({
+          sessionId: request.sessionId,
+          leaseId: activationIdentity.leaseId,
+          leaseRevision: activationIdentity.leaseRevision,
+        }))
+        : undefined
+      if (transferredCleanup !== undefined) {
+        await transferredCleanup.catch(() => undefined)
+      } else if (installAttempted && install !== undefined) {
         const attemptedInstall = install
         await this.#bounded(async (signal) => {
           await adapter.rollbackLeaseInstall?.(attemptedInstall, {
@@ -582,6 +622,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       this.#cleanupPending -= 1
       this.#cleanupByGeneration.delete(event.generation)
       if (this.#transportOpen && !this.#closing && !this.#cleanupFailed
+        && !this.#resumeRequired
         && this.#cleanupPending === 0
         && this.#leases.activeSnapshot() === null
         && this.#pendingAcquire === undefined) this.#admission = true
@@ -652,6 +693,44 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     if (pending === undefined) return
     pending.controller.abort(new Error(reason))
     this.#leases.cancelPrepared(pending.prepared)
+  }
+
+  #bindActivatedAcquisition(
+    active: ActiveControlLease,
+    signal: AbortSignal,
+  ): DesktopControlAcquisitionCompletion {
+    let state: 'pending' | 'accepted' | 'cancelled' = 'pending'
+    let cancellation: Promise<void> | undefined
+    const onAbort = (): void => { void cancel().catch(() => undefined) }
+    const cancel = (): Promise<void> => {
+      if (state === 'accepted') return Promise.resolve()
+      if (cancellation !== undefined) return cancellation
+      state = 'cancelled'
+      signal.removeEventListener('abort', onAbort)
+      this.#leases.revokeExact(
+        active.sessionId,
+        active.leaseId,
+        active.leaseRevision,
+        'request-aborted',
+      )
+      cancellation = this.#awaitReleased(active)
+      return cancellation
+    }
+    const completion: DesktopControlAcquisitionCompletion = Object.freeze({
+      accept: () => {
+        if (state !== 'pending') return
+        state = 'accepted'
+        signal.removeEventListener('abort', onAbort)
+      },
+      cancel,
+    })
+    signal.addEventListener('abort', onAbort, { once: true })
+    if (signal.aborted) onAbort()
+    return completion
+  }
+
+  #throwIfAborted(signal: AbortSignal): void {
+    if (signal.aborted) throw new ControlAuthorityError('CANCELLED', 'control request was cancelled')
   }
 
   #settings(): ControlSettingsAuthoritySnapshot {
