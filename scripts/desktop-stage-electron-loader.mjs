@@ -16,6 +16,7 @@ export async function load(url, context, nextLoad) {
       export const app = Object.freeze({
         dock: Object.freeze({ setIcon: noop }),
         isPackaged: false,
+        isReady: () => false,
         setName: noop,
         getPath: () => process.env.DSH_DESKTOP_STAGE_SMOKE_USER_DATA,
         getVersion: () => 'stage-import-smoke',
@@ -28,6 +29,11 @@ export async function load(url, context, nextLoad) {
       export class BrowserWindow {}
       export class Tray {}
       export class WebContentsView {}
+      export const dialog = Object.freeze({ showMessageBox: async () => Object.freeze({ response: 0 }) })
+      export const globalShortcut = Object.freeze({
+        register: () => false,
+        unregister: noop,
+      })
       export const ipcMain = Object.freeze({ on: noop, handle: noop })
       export const Menu = Object.freeze({ buildFromTemplate: () => Object.freeze([]), setApplicationMenu: noop })
       export const screen = Object.freeze({ getAllDisplays: () => Object.freeze([]) })
