@@ -123,6 +123,13 @@ function status(sessionId = SESSION): Extract<BridgeRequest, { requestKind: 'des
   return { ...requestBase('desktop.status', sessionId) }
 }
 
+function stop(
+  requestKind: 'browser.stop' | 'computer.stop',
+  sessionId = SESSION,
+): Extract<BridgeRequest, { requestKind: 'browser.stop' | 'computer.stop' }> {
+  return { ...requestBase(requestKind, sessionId) }
+}
+
 interface TestAcquisitionCompletion {
   accept(): void
   cancel(): Promise<void>
@@ -326,6 +333,36 @@ describe('DesktopControlCoordinator', () => {
       message: { responseKind: 'error', error: { code: 'CANCELLED' } },
     })
     expect(retryPendingCleanup).toHaveBeenCalledWith(SESSION, expect.any(AbortSignal))
+  })
+
+  it('routes browser.stop without an active lease through same-session failed-mount cleanup', async () => {
+    const browser = adapter('browser')
+    const retryPendingCleanup = vi.fn(async () => true)
+    browser.retryPendingCleanup = retryPendingCleanup
+    const { coordinator } = setup({ browser })
+
+    await expect(coordinator.dispatch(stop('browser.stop'), context())).resolves.toMatchObject({
+      message: { responseKind: 'ok', result: { stopped: true } },
+    })
+    expect(retryPendingCleanup).toHaveBeenCalledWith(SESSION, expect.any(AbortSignal))
+  })
+
+  it('keeps an uncleared browser cleanup BUSY without touching computer.stop or a foreign session', async () => {
+    const browser = adapter('browser')
+    const retryPendingCleanup = vi.fn(async () => false)
+    browser.retryPendingCleanup = retryPendingCleanup
+    const { coordinator } = setup({ browser, computer: adapter('computer') })
+
+    await expect(coordinator.dispatch(stop('browser.stop'), context())).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'BUSY' } },
+    })
+    await expect(coordinator.dispatch(stop('computer.stop'), context())).resolves.toMatchObject({
+      message: { responseKind: 'ok', result: { stopped: true } },
+    })
+    await expect(coordinator.dispatch(stop('browser.stop', FOREIGN_SESSION), context())).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'UNAUTHORIZED' } },
+    })
+    expect(retryPendingCleanup).toHaveBeenCalledOnce()
   })
 
   it('withholds an effective descriptor until native approval and helper install both succeed', async () => {

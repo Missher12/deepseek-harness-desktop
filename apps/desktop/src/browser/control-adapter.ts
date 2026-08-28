@@ -203,7 +203,7 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
   async retryPendingCleanup(sessionId: string, signal: AbortSignal): Promise<boolean> {
     throwIfAborted(signal)
     const cleanup = this.cleanupLedger
-    if (cleanup === undefined) return false
+    if (cleanup === undefined) return true
     if (cleanup.sessionId !== sessionId) {
       throw new AgentBrowserError('BUSY', 'another session owns browser cleanup')
     }

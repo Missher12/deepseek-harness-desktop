@@ -304,6 +304,8 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
             computerSupported: this.#supported(this.#options.computer),
           }))
         case 'browser.stop':
+          await this.#stopBrowserSession(request.sessionId, context.signal)
+          return okEnvelope(request, Object.freeze({ stopped: true }))
         case 'computer.stop':
           await this.#stopSession(request.sessionId)
           return okEnvelope(request, Object.freeze({ stopped: true }))
@@ -962,6 +964,21 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     if (active?.sessionId !== sessionId) return
     this.#leases.revokeSession(sessionId, 'user-stop')
     await this.#awaitReleased(active)
+  }
+
+  async #stopBrowserSession(sessionId: SessionId, signal: AbortSignal): Promise<void> {
+    const active = this.#leases.activeSnapshot()
+    if (active?.sessionId === sessionId) {
+      this.#leases.revokeSession(sessionId, 'user-stop')
+      await this.#awaitReleased(active)
+      return
+    }
+    const adapter = this.#options.browser
+    if (adapter?.retryPendingCleanup === undefined) return
+    const cleared = await adapter.retryPendingCleanup(sessionId, signal)
+    if (!cleared) {
+      throw new ControlAuthorityError('BUSY', 'browser cleanup still owns the session')
+    }
   }
 
   #forwardAbort(source: AbortSignal, target: AbortController): () => void {
