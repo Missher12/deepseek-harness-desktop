@@ -18,6 +18,7 @@ describe('Windows installed Computer Use acceptance', () => {
     expect(source).toContain('CreateProcessWithTokenW')
     expect(source).toContain('CreateProcessAsUserW')
     expect(source).toContain('TokenLinkedToken')
+    expect(source).toContain('New-Object -ComObject Shell.Application')
     expect(source).toContain('private const uint LUA_TOKEN = 0x4;')
     expect(source).toContain('-MediumIntegrityChild')
     expect(source).toContain("-RequestKind 'list'")

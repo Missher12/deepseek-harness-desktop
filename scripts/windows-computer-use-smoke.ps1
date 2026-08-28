@@ -262,8 +262,40 @@ catch {
 "@
   $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childSource))
   $pwsh = (Get-Process -Id $PID).Path
-  $commandLine = "`"$pwsh`" -NoLogo -NoProfile -NonInteractive -STA -EncodedCommand $encoded"
+  $arguments = "-NoLogo -NoProfile -NonInteractive -STA -EncodedCommand $encoded"
+  $commandLine = "`"$pwsh`" $arguments"
   try {
+    $shell = $null
+    $shellLaunched = $false
+    try {
+      $shell = New-Object -ComObject Shell.Application
+      $shell.ShellExecute($pwsh, $arguments, (Split-Path -Parent $ScriptPath), 'open', 1)
+      $shellLaunched = $true
+    }
+    catch {
+      Write-Host 'Windows shell launch was unavailable; using the restricted-token fallback.'
+    }
+    finally {
+      if ($null -ne $shell) {
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+      }
+    }
+
+    if ($shellLaunched) {
+      $shellDeadline = [DateTime]::UtcNow.AddSeconds(60)
+      while (-not (Test-Path -LiteralPath $resultPath) -and [DateTime]::UtcNow -lt $shellDeadline) {
+        Start-Sleep -Milliseconds 200
+      }
+      if (Test-Path -LiteralPath $resultPath) {
+        $result = (Get-Content -LiteralPath $resultPath -Raw).Trim()
+        if ($result -ne 'PASS') {
+          throw "Windows Computer Use shell acceptance failed: $result"
+        }
+        Write-Host 'Windows Computer Use medium-integrity acceptance passed.'
+        return
+      }
+    }
+
     $exitCode = [DshWindowsSmoke.LimitedProcess]::Run(
       $pwsh,
       $commandLine,
