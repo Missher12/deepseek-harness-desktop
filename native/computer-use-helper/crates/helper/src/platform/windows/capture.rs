@@ -2,6 +2,8 @@
 
 use std::io::Write;
 
+#[cfg(any(test, target_os = "windows"))]
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "windows")]
 use std::sync::mpsc;
 #[cfg(target_os = "windows")]
@@ -48,6 +50,8 @@ use windows::Win32::System::WinRT::Direct3D11::{
 #[cfg(target_os = "windows")]
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
 #[cfg(target_os = "windows")]
+use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize, RoUninitialize};
+#[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
 #[cfg(target_os = "windows")]
 use windows::core::{IInspectable, Interface};
@@ -63,6 +67,29 @@ const MAX_NATIVE_CAPTURE_WIDTH: u32 = 2_048;
 const MAX_NATIVE_CAPTURE_HEIGHT: u32 = 2_048;
 #[cfg(any(test, target_os = "windows"))]
 const MAX_NATIVE_CAPTURE_PIXELS: usize = 4_194_304;
+
+#[cfg(target_os = "windows")]
+static CAPTURE_WORKER: CaptureWorkerGate = CaptureWorkerGate::new();
+
+#[cfg(any(test, target_os = "windows"))]
+struct CaptureWorkerGate(AtomicBool);
+
+#[cfg(any(test, target_os = "windows"))]
+impl CaptureWorkerGate {
+    const fn new() -> Self {
+        Self(AtomicBool::new(false))
+    }
+
+    fn try_acquire(&self) -> bool {
+        self.0
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    fn release(&self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CapturedFrame {
@@ -90,6 +117,69 @@ pub(crate) struct CaptureLimits {
 /// immutable PNG envelope.
 #[cfg(target_os = "windows")]
 pub(crate) fn capture_exact_window(
+    hwnd: HWND,
+    expected_identity: WindowIdentity,
+    expected_bounds: PhysicalRect,
+    epoch: &Instant,
+    deadline_ms: u64,
+    cancel: &CancellationToken,
+) -> Result<CapturedFrame, &'static str> {
+    if !CAPTURE_WORKER.try_acquire() {
+        return Err("BUSY");
+    }
+    let worker_cancel = cancel.clone();
+    let worker_epoch = *epoch;
+    let worker_hwnd = hwnd.0 as usize;
+    let (sender, receiver) = mpsc::sync_channel(1);
+    if std::thread::Builder::new()
+        .name("dsh-windows-capture".to_owned())
+        .spawn(move || {
+            struct ReleaseCaptureWorker;
+            impl Drop for ReleaseCaptureWorker {
+                fn drop(&mut self) {
+                    CAPTURE_WORKER.release();
+                }
+            }
+            let _release = ReleaseCaptureWorker;
+            let initialized = unsafe { RoInitialize(RO_INIT_MULTITHREADED) }.is_ok();
+            let result = if initialized {
+                let hwnd = HWND(worker_hwnd as *mut _);
+                capture_exact_window_on_worker(
+                    hwnd,
+                    expected_identity,
+                    expected_bounds,
+                    &worker_epoch,
+                    deadline_ms,
+                    &worker_cancel,
+                )
+            } else {
+                Err("NOT_SUPPORTED")
+            };
+            if initialized {
+                unsafe { RoUninitialize() };
+            }
+            let _ = sender.send(result);
+        })
+        .is_err()
+    {
+        CAPTURE_WORKER.release();
+        return Err("INTERNAL");
+    }
+
+    loop {
+        check_request(epoch, deadline_ms, cancel)?;
+        let now_ms = u64::try_from(epoch.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let wait_ms = deadline_ms.saturating_sub(now_ms).clamp(1, 10);
+        match receiver.recv_timeout(Duration::from_millis(wait_ms)) {
+            Ok(result) => return result,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => return Err("INTERNAL"),
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn capture_exact_window_on_worker(
     hwnd: HWND,
     expected_identity: WindowIdentity,
     expected_bounds: PhysicalRect,
@@ -565,10 +655,20 @@ fn crc32(bytes: &[u8]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        CaptureLimits, CapturedFrame, bounded_dimensions, copy_tight_bgra, encode_bounded_png,
+        CaptureLimits, CaptureWorkerGate, CapturedFrame, bounded_dimensions, copy_tight_bgra,
+        encode_bounded_png,
     };
     use crate::platform::windows::identity::WindowIdentity;
     use crate::platform::windows::scale::PhysicalRect;
+
+    #[test]
+    fn bounds_native_capture_to_one_worker_until_cleanup_finishes() {
+        let gate = CaptureWorkerGate::new();
+        assert!(gate.try_acquire());
+        assert!(!gate.try_acquire());
+        gate.release();
+        assert!(gate.try_acquire());
+    }
 
     fn identity(created: u64) -> WindowIdentity {
         WindowIdentity::new(5, 7, created).expect("identity")

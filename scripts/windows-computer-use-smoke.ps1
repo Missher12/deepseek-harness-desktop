@@ -715,7 +715,7 @@ function Invoke-HelperRequest {
   }
 
   $png = $null
-  if ($ExpectPng) {
+  if ($ExpectPng -and $response.responseKind -eq 'ok') {
     $pngFrame = Read-HelperFrame -Stream $OutputStream
     if ($pngFrame.Body[0] -ne 0x02 -or $pngFrame.Body.Length -lt 25) {
       throw 'Native helper did not return a valid adjacent PNG frame.'

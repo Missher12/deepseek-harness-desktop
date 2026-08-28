@@ -42,6 +42,7 @@ describe('Windows installed Computer Use acceptance', () => {
     expect(source).toContain("-RequestKind 'lease.install'")
     expect(source).toContain("-RequestKind 'snapshot'")
     expect(source).toContain('includeImage = $true')
+    expect(source).toContain("$ExpectPng -and $response.responseKind -eq 'ok'")
     expect(source).toContain("-RequestKind 'click'")
     expect(source).toContain("-RequestKind 'focus'")
     expect(source).toContain("-RequestKind 'stop'")
