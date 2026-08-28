@@ -12,9 +12,9 @@ Status: implemented
 
 `@deepseek-ai/dsh-browser-control` 注册唯一的 `ctx.browserControl` Service Definition。`@deepseek-ai/dsh-computer-control` 注册唯一的 `ctx.computerControl` Service Definition。Cordis 会拒绝这两个稳定服务键各自的第二个提供方。
 
-两个包都从 `@deepseek-ai/dsh-desktop-control-protocol` 导入并重新导出跨进程 request、result 和 brand。它们的本地类型只覆盖同进程所有权事实与验证：浏览器 ref 绑定会话、surface、mount generation 与 snapshot revision；计算机 ref 绑定会话、应用、PID、进程创建身份、窗口、snapshot revision 与 display scale。工厂函数在协议上限内分离并冻结提供方输出；在 Electron 创建的更窄 lease quota 之前，服务层每轮次操作上限为 64。
+两个包都从 `@deepseek-ai/dsh-desktop-control-protocol` 导入并重新导出跨进程 request、result 和 brand。它们的本地类型只覆盖同进程所有权事实与验证：浏览器 ref 绑定会话、surface、mount generation 与 snapshot revision；计算机 ref 绑定会话、应用、PID、进程创建身份、窗口、snapshot revision 与 display scale。工厂函数会拒绝 boxed 或可强制转换字段，重新构建品牌化原语值与严格五字段的 PNG 元数据对象，并在协议上限内分离及深冻结提供方输出；在 Electron 创建的更窄 lease quota 之前，服务层每轮次操作上限为 64。
 
-共享的纯分类器与原生服务策略放在一起，只返回 `ALLOW`、`APPROVAL_REQUIRED` 或 `DENY`。已知安全敏感目标，以及无法确定的敏感性／效果都会被拒绝。无目标的 status／list request 携带 `not-applicable`；匹配 surface 上的 Stop 无需目标分类且始终免审批。普通只读操作会获准。外部副作用与持久 human browser 变更需要后续 Electron 原生审批；模型输出与页面文本不能提供分类器所需的权威事实。
+共享的纯分类器与原生服务策略放在一起，只返回 `ALLOW`、`APPROVAL_REQUIRED` 或 `DENY`。它的运行时边界只接受普通对象和精确的 request kind、surface、sensitivity 与 effect 清单值；敌意或未知值会在不抛异常的情况下被拒绝。已知安全敏感目标，以及无法确定的敏感性／效果都会被拒绝。无目标的 status／list request 携带 `not-applicable`；匹配 surface 上的 Stop 只有在封闭清单校验后才无需目标分类并保持免审批。普通只读操作会获准。外部副作用与持久 human browser 变更需要后续 Electron 原生审批；模型输出与页面文本不能提供分类器所需的权威事实。
 
 ## 考虑过的替代方案
 

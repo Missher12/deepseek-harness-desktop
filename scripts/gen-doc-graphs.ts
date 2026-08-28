@@ -107,6 +107,20 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'The host commits accepted images before session events; provider adapters resolve authorized durable references into provider-native content.',
   },
   {
+    key: 'browserControl',
+    pkg: 'browser-control',
+    title: 'Semantic browser-control seam',
+    mode: 'seam',
+    note: 'Owns the stable Host contract for bounded snapshots, the exact ten-action roster, owner-bound opaque refs, and per-session surface revocation; later adapters provide the implementation.',
+  },
+  {
+    key: 'computerControl',
+    pkg: 'computer-control',
+    title: 'Native computer-control seam',
+    mode: 'seam',
+    note: 'Owns the stable Host contract for bounded native observation, the exact eight-action roster, owner-bound opaque refs, fail-closed policy, and per-session Stop; later adapters provide the implementation.',
+  },
+  {
     key: 'llm',
     pkg: 'llm',
     title: 'LLM adapter registry',

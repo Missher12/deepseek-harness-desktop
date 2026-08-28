@@ -502,6 +502,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'browserControl',
+    summary: 'Abstract semantic browser-control seam.',
+    description: 'Abstract semantic browser-control seam. A single Service Provider owns the visible surface, current reference registry, session revocation, and all browser-side cleanup.',
+    methods: [
+      {
+        signature: 'abstract snapshot(request: BrowserSnapshotRequest, signal: AbortSignal): Promise<BrowserSnapshot>',
+        description: 'Capture bounded semantics and an optional image for the current browser surface.',
+        parameters: [{ name: 'request', description: 'Strict protocol request received from the Desktop bridge.' }, { name: 'signal', description: 'Caller lifetime.' }],
+        returns: 'an immutable bounded protocol snapshot.',
+      },
+      {
+        signature: 'abstract act(request: BrowserActionRequest, signal: AbortSignal): Promise<BrowserActionResult>',
+        description: 'Execute one action from the closed browser request roster.',
+        parameters: [{ name: 'request', description: 'Strict protocol action DTO.' }, { name: 'signal', description: 'Caller lifetime.' }],
+        returns: 'the protocol result associated with the action family.',
+      },
+      {
+        signature: 'abstract revokeSession(sessionId: SessionId): Promise<void>',
+        description: 'Revoke a session\'s browser ownership and await complete surface cleanup.',
+        parameters: [{ name: 'sessionId', description: 'Official Harness session identity to revoke.' }],
+      },
+    ],
+  },
+  {
     key: 'clientModules',
     summary: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index injection rows.',
     description: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index injection rows. Construction runs the activation scan synchronously — a malformed declaration or missing bundle among the already-loaded entries aggregates into one loud throw (FAILED fiber; the boot activation audit reports it).',
@@ -616,6 +640,42 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'start', description: 'first surface seq, inclusive.' }, { name: 'end', description: 'last surface seq, inclusive.' }, { name: 'agent', description: 'context whose session is mutated and whose routing options guide summarization.' }, { name: 'signal', description: 'optional cancellation; model-backed implementations must forward it.' }],
         returns: 'the appended event seqs, summary, replaced range, and token accounting.',
         throws: ['when compaction is active or the range is missing, reversed, or unbalanced.'],
+      },
+    ],
+  },
+  {
+    key: 'computerControl',
+    summary: 'Abstract native Computer Control seam.',
+    description: 'Abstract native Computer Control seam. A single Service Provider owns authorization, app/window identity, reference freshness, stop, and native resource cleanup.',
+    methods: [
+      {
+        signature: 'abstract status(): Promise<ComputerControlStatus>',
+        description: 'Read the bounded local platform support and permission snapshot.',
+        parameters: [],
+        returns: 'current platform support and permission states.',
+      },
+      {
+        signature: 'abstract list(request: ComputerListRequest, signal: AbortSignal): Promise<ComputerListResult>',
+        description: 'List only applications and windows eligible for an explicit user grant.',
+        parameters: [{ name: 'request', description: 'Strict protocol list request.' }, { name: 'signal', description: 'Caller lifetime.' }],
+        returns: 'an immutable bounded protocol collection.',
+      },
+      {
+        signature: 'abstract snapshot(request: ComputerSnapshotRequest, signal: AbortSignal): Promise<ComputerSnapshot>',
+        description: 'Capture bounded semantics and an optional image for one authorized window.',
+        parameters: [{ name: 'request', description: 'Strict target-scoped protocol request.' }, { name: 'signal', description: 'Caller lifetime.' }],
+        returns: 'an immutable bounded protocol snapshot.',
+      },
+      {
+        signature: 'abstract act(request: ComputerActionRequest, signal: AbortSignal): Promise<ComputerActionResult>',
+        description: 'Execute one action from the closed native request roster.',
+        parameters: [{ name: 'request', description: 'Strict target-scoped protocol action DTO.' }, { name: 'signal', description: 'Caller lifetime.' }],
+        returns: 'the protocol result associated with the action family.',
+      },
+      {
+        signature: 'abstract stop(sessionId: SessionId): Promise<void>',
+        description: 'Stop a session\'s native control and await release of its native resources.',
+        parameters: [{ name: 'sessionId', description: 'Official Harness session identity to stop.' }],
       },
     ],
   },
@@ -2879,6 +2939,10 @@ export const EVENT_API: readonly EventApiEntry[] = [
 /** Shapes of every exported type the Service and Event signatures reference (transitively), sorted by name. */
 export const TYPE_API: readonly TypeApiEntry[] = [
   {
+    name: 'ActionResult',
+    declaration: 'export interface ActionResult {\n    readonly acted: true;\n    readonly snapshotRevision: number;\n}',
+  },
+  {
     name: 'AdapterRegistrationHandle',
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
@@ -3055,6 +3119,74 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type Branded<B extends string> = string & {\n    readonly [BRAND]: B;\n};',
   },
   {
+    name: 'BridgeRequest',
+    declaration: 'export type BridgeRequest = DesktopStatusRequest | BrowserSnapshotRequest | BrowserNavigateRequest | BrowserClickRequest | BrowserTypeRequest | BrowserKeyRequest | BrowserSelectRequest | BrowserScrollRequest | BrowserWaitRequest | BrowserNavigationRequest | BrowserStopRequest | ComputerStatusRequest | ComputerListRequest | ComputerSnapshotRequest | ComputerFocusRequest | ComputerClickRequest | ComputerDragRequest | ComputerTypeRequest | ComputerKeyRequest | ComputerScrollRequest | ComputerWaitRequest | ComputerStopRequest;',
+  },
+  {
+    name: 'BrowserActionRequest',
+    declaration: 'export type BrowserActionRequest = Exclude<Extract<BridgeRequest, {\n    readonly requestKind: `browser.${string}`;\n}>, Extract<BridgeRequest, {\n    readonly requestKind: \'browser.snapshot\';\n}> | BrowserStopRequest>;',
+  },
+  {
+    name: 'BrowserActionResult',
+    declaration: 'export type BrowserActionResult = DesktopControlResultMap[BrowserActionRequest[\'requestKind\']];',
+  },
+  {
+    name: 'BrowserClickRequest',
+    declaration: 'export type BrowserClickRequest = BridgeRequestBase<\'browser.click\'> & LeaseFields & {\n    readonly ref: BrowserRef;\n};',
+  },
+  {
+    name: 'BrowserKeyRequest',
+    declaration: 'export type BrowserKeyRequest = BridgeRequestBase<\'browser.key\'> & LeaseFields & {\n    readonly key: string;\n    readonly modifiers: readonly KeyModifier[];\n};',
+  },
+  {
+    name: 'BrowserNavigateRequest',
+    declaration: 'export type BrowserNavigateRequest = BridgeRequestBase<\'browser.navigate\'> & LeaseFields & {\n    readonly url: string;\n};',
+  },
+  {
+    name: 'BrowserNavigationRequest',
+    declaration: 'export type BrowserNavigationRequest = BridgeRequestBase<\'browser.back\' | \'browser.forward\' | \'browser.reload\'> & LeaseFields;',
+  },
+  {
+    name: 'BrowserNavigationResult',
+    declaration: 'export interface BrowserNavigationResult {\n    readonly url: string;\n    readonly snapshotRevision: number;\n}',
+  },
+  {
+    name: 'BrowserRef',
+    declaration: 'export type BrowserRef = Branded<\'DesktopBrowserRef\'>;',
+  },
+  {
+    name: 'BrowserScrollRequest',
+    declaration: 'export type BrowserScrollRequest = BridgeRequestBase<\'browser.scroll\'> & LeaseFields & {\n    readonly ref?: BrowserRef;\n    readonly deltaX: number;\n    readonly deltaY: number;\n};',
+  },
+  {
+    name: 'BrowserSelectRequest',
+    declaration: 'export type BrowserSelectRequest = BridgeRequestBase<\'browser.select\'> & LeaseFields & {\n    readonly ref: BrowserRef;\n    readonly value: string;\n};',
+  },
+  {
+    name: 'BrowserSemanticRef',
+    declaration: 'export interface BrowserSemanticRef {\n    readonly ref: BrowserRef;\n    readonly role: string;\n    readonly name: string;\n}',
+  },
+  {
+    name: 'BrowserSnapshotRequest',
+    declaration: 'export type BrowserSnapshotRequest = BridgeRequestBase<\'browser.snapshot\'> & LeaseFields & {\n    readonly includeImage: boolean;\n};',
+  },
+  {
+    name: 'BrowserSnapshotResult',
+    declaration: 'export interface BrowserSnapshotResult {\n    readonly surfaceId: string;\n    readonly url: string;\n    readonly title: string;\n    readonly snapshotRevision: number;\n    readonly semanticText: string;\n    readonly refs: readonly BrowserSemanticRef[];\n    readonly image?: PngMetadata;\n}',
+  },
+  {
+    name: 'BrowserStopRequest',
+    declaration: 'export type BrowserStopRequest = BridgeRequestBase<\'browser.stop\'>;',
+  },
+  {
+    name: 'BrowserTypeRequest',
+    declaration: 'export type BrowserTypeRequest = BridgeRequestBase<\'browser.type\'> & LeaseFields & {\n    readonly ref: BrowserRef;\n    readonly text: string;\n};',
+  },
+  {
+    name: 'BrowserWaitRequest',
+    declaration: 'export type BrowserWaitRequest = BridgeRequestBase<\'browser.wait\'> & LeaseFields & ({\n    readonly mode: \'duration\';\n    readonly durationMs: number;\n} | {\n    readonly mode: \'navigation\' | \'loading-idle\';\n    readonly durationMs?: never;\n});',
+  },
+  {
     name: 'CancelOptions',
     declaration: 'export interface CancelOptions {\n    keepInbox?: boolean | undefined;\n}',
   },
@@ -3141,6 +3273,78 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CompactionTrigger',
     declaration: 'export type CompactionTrigger = \'pressure\' | \'context-overflow\';',
+  },
+  {
+    name: 'ComputerActionRequest',
+    declaration: 'export type ComputerActionRequest = Exclude<Extract<BridgeRequest, {\n    readonly requestKind: `computer.${string}`;\n}>, Extract<BridgeRequest, {\n    readonly requestKind: \'computer.status\' | \'computer.list\' | \'computer.snapshot\';\n}> | ComputerStopRequest>;',
+  },
+  {
+    name: 'ComputerActionResult',
+    declaration: 'export type ComputerActionResult = DesktopControlResultMap[ComputerActionRequest[\'requestKind\']];',
+  },
+  {
+    name: 'ComputerClickRequest',
+    declaration: 'export type ComputerClickRequest = BridgeRequestBase<\'computer.click\' | \'computer.double-click\'> & TargetFields & ({\n    readonly ref: ComputerRef;\n    readonly x?: never;\n    readonly y?: never;\n    readonly button: PointerButton;\n} | {\n    readonly ref?: never;\n    readonly x: number;\n    readonly y: number;\n    readonly button: PointerButton;\n});',
+  },
+  {
+    name: 'ComputerDragRequest',
+    declaration: 'export type ComputerDragRequest = BridgeRequestBase<\'computer.drag\'> & TargetFields & {\n    readonly fromX: number;\n    readonly fromY: number;\n    readonly toX: number;\n    readonly toY: number;\n    readonly button: PointerButton;\n};',
+  },
+  {
+    name: 'ComputerFocusRequest',
+    declaration: 'export type ComputerFocusRequest = BridgeRequestBase<\'computer.focus\'> & TargetFields;',
+  },
+  {
+    name: 'ComputerKeyRequest',
+    declaration: 'export type ComputerKeyRequest = BridgeRequestBase<\'computer.key\'> & TargetFields & {\n    readonly key: string;\n    readonly modifiers: readonly KeyModifier[];\n};',
+  },
+  {
+    name: 'ComputerListRequest',
+    declaration: 'export type ComputerListRequest = BridgeRequestBase<\'computer.list\'>;',
+  },
+  {
+    name: 'ComputerListResult',
+    declaration: 'export interface ComputerListResult {\n    readonly apps: readonly GrantableApplication[];\n}',
+  },
+  {
+    name: 'ComputerRef',
+    declaration: 'export type ComputerRef = Branded<\'DesktopComputerRef\'>;',
+  },
+  {
+    name: 'ComputerScrollRequest',
+    declaration: 'export type ComputerScrollRequest = BridgeRequestBase<\'computer.scroll\'> & TargetFields & ({\n    readonly ref: ComputerRef;\n    readonly x?: never;\n    readonly y?: never;\n    readonly deltaX: number;\n    readonly deltaY: number;\n} | {\n    readonly ref?: never;\n    readonly x: number;\n    readonly y: number;\n    readonly deltaX: number;\n    readonly deltaY: number;\n});',
+  },
+  {
+    name: 'ComputerSemanticRef',
+    declaration: 'export interface ComputerSemanticRef {\n    readonly ref: ComputerRef;\n    readonly role: string;\n    readonly name: string;\n}',
+  },
+  {
+    name: 'ComputerSnapshotRequest',
+    declaration: 'export type ComputerSnapshotRequest = BridgeRequestBase<\'computer.snapshot\'> & TargetFields & {\n    readonly includeImage: boolean;\n};',
+  },
+  {
+    name: 'ComputerSnapshotResult',
+    declaration: 'export interface ComputerSnapshotResult {\n    readonly appId: string;\n    readonly windowId: string;\n    readonly snapshotRevision: number;\n    readonly semanticText: string;\n    readonly refs: readonly ComputerSemanticRef[];\n    readonly image?: PngMetadata;\n}',
+  },
+  {
+    name: 'ComputerStatusRequest',
+    declaration: 'export type ComputerStatusRequest = BridgeRequestBase<\'computer.status\'>;',
+  },
+  {
+    name: 'ComputerStatusResult',
+    declaration: 'export interface ComputerStatusResult {\n    readonly viewing: \'granted\' | \'denied\' | \'unknown\';\n    readonly assistive: \'granted\' | \'denied\' | \'unknown\';\n    readonly supported: boolean;\n}',
+  },
+  {
+    name: 'ComputerStopRequest',
+    declaration: 'export type ComputerStopRequest = BridgeRequestBase<\'computer.stop\'>;',
+  },
+  {
+    name: 'ComputerTypeRequest',
+    declaration: 'export type ComputerTypeRequest = BridgeRequestBase<\'computer.type\'> & TargetFields & {\n    readonly ref: ComputerRef;\n    readonly text: string;\n};',
+  },
+  {
+    name: 'ComputerWaitRequest',
+    declaration: 'export type ComputerWaitRequest = BridgeRequestBase<\'computer.wait\'> & TargetFields & {\n    readonly durationMs: number;\n};',
   },
   {
     name: 'ConfinedArgv',
@@ -3261,6 +3465,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CredentialRef',
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
+  },
+  {
+    name: 'DesktopControlResultMap',
+    declaration: 'export interface DesktopControlResultMap {\n    readonly \'desktop.status\': DesktopStatusResult;\n    readonly \'browser.snapshot\': BrowserSnapshotResult;\n    readonly \'browser.navigate\': BrowserNavigationResult;\n    readonly \'browser.click\': ActionResult;\n    readonly \'browser.type\': ActionResult;\n    readonly \'browser.key\': ActionResult;\n    readonly \'browser.select\': ActionResult;\n    readonly \'browser.scroll\': ActionResult;\n    readonly \'browser.wait\': WaitResult;\n    readonly \'browser.back\': BrowserNavigationResult;\n    readonly \'browser.forward\': BrowserNavigationResult;\n    readonly \'browser.reload\': BrowserNavigationResult;\n    readonly \'browser.stop\': StopResult;\n    readonly \'computer.status\': ComputerStatusResult;\n    readonly \'computer.list\': ComputerListResult;\n    readonly \'computer.snapshot\': ComputerSnapshotResult;\n    readonly \'computer.focus\': ActionResult;\n    readonly \'computer.click\': ActionResult;\n    readonly \'computer.double-click\': ActionResult;\n    readonly \'computer.drag\': ActionResult;\n    readonly \'computer.type\': ActionResult;\n    readonly \'computer.key\': ActionResult;\n    readonly \'computer.scroll\': ActionResult;\n    readonly \'computer.wait\': WaitResult;\n    readonly \'computer.stop\': StopResult;\n}',
+  },
+  {
+    name: 'DesktopStatusRequest',
+    declaration: 'export type DesktopStatusRequest = BridgeRequestBase<\'desktop.status\'>;',
+  },
+  {
+    name: 'DesktopStatusResult',
+    declaration: 'export interface DesktopStatusResult {\n    readonly browserSupported: boolean;\n    readonly computerSupported: boolean;\n}',
   },
   {
     name: 'DiffCallView',
@@ -3479,6 +3695,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface GoalView extends GoalSnapshot {\n    readonly roundsStarted: number;\n    readonly createdAt: number;\n    readonly updatedAt: number;\n    readonly activation: GoalActivation;\n}',
   },
   {
+    name: 'GrantableApplication',
+    declaration: 'export interface GrantableApplication {\n    readonly appId: string;\n    readonly name: string;\n    readonly windows: readonly {\n        readonly windowId: string;\n        readonly title: string;\n    }[];\n}',
+  },
+  {
     name: 'GrantRecord',
     declaration: 'export interface GrantRecord {\n    readonly kind: \'grant\';\n    readonly payload: unknown;\n}',
   },
@@ -3609,6 +3829,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'JsonValue',
     declaration: 'export type JsonValue = null | boolean | number | string | JsonValue[] | {\n    [key: string]: JsonValue;\n};',
+  },
+  {
+    name: 'KeyModifier',
+    declaration: 'export type KeyModifier = \'Alt\' | \'Control\' | \'Meta\' | \'Shift\';',
   },
   {
     name: 'KnobState',
@@ -3845,6 +4069,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
+  },
+  {
+    name: 'PngMetadata',
+    declaration: 'export interface PngMetadata {\n    readonly transferId: PngTransferId;\n    readonly byteLength: number;\n    readonly sha256: string;\n    readonly width: number;\n    readonly height: number;\n}',
+  },
+  {
+    name: 'PngTransferId',
+    declaration: 'export type PngTransferId = Branded<\'DesktopPngTransferId\'>;',
+  },
+  {
+    name: 'PointerButton',
+    declaration: 'export type PointerButton = \'left\' | \'middle\' | \'right\';',
   },
   {
     name: 'PostToolDecision',
@@ -4483,6 +4719,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SpillSource {\n    toolName: string;\n    callId: CallId;\n    label: string;\n}',
   },
   {
+    name: 'StopResult',
+    declaration: 'export interface StopResult {\n    readonly stopped: true;\n}',
+  },
+  {
     name: 'StorageBackend',
     declaration: 'export interface StorageBackend {\n    readonly kv?: KvFacet;\n    close(): Promise<void>;\n}',
   },
@@ -4993,6 +5233,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UserQuestionProvider',
     declaration: 'export interface UserQuestionProvider {\n    ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer>;\n}',
+  },
+  {
+    name: 'WaitResult',
+    declaration: 'export interface WaitResult {\n    readonly waited: true;\n    readonly snapshotRevision: number;\n}',
   },
   {
     name: 'WebBootEntry',

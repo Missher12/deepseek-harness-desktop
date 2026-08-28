@@ -1,4 +1,5 @@
-import type { BrowserRef, ComputerRef, ControlLeaseId, PngTransferId, RequestId, SessionId } from './brand.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { BrowserRef, ComputerRef, ControlLeaseId, PngTransferId, RequestId } from './brand.ts'
 
 /** Protocol version accepted by both Desktop control peers. */
 export const PROTOCOL_VERSION = 1 as const

@@ -4,6 +4,7 @@ import {
   BrowserRef,
   ComputerRef,
   ControlLeaseId,
+  PngTransferId,
   RequestId,
   SessionId,
   type ComputerClickRequest as ProtocolComputerClickRequest,
@@ -28,6 +29,7 @@ import ComputerControl, {
   type ComputerControlStatus,
   type ComputerReferenceBinding,
   type ComputerSnapshot,
+  type ControlPolicyInput,
   type ControlTargetSensitivity,
 } from '../src/index.ts'
 
@@ -63,6 +65,11 @@ function clickRequest(): ProtocolComputerClickRequest {
     ref: REF,
     button: 'left',
   }
+}
+
+function inheritedClickRequest(): unknown {
+  const request = Object.create({ inherited: true }) as object
+  return Object.assign(request, clickRequest())
 }
 
 class StubComputerControl extends ComputerControl {
@@ -117,6 +124,20 @@ describe('ComputerControl service seam', () => {
     expectTypeOf<ComputerControlStatus>().toEqualTypeOf<ComputerStatusResult>()
     expectTypeOf<ComputerSnapshot>().toEqualTypeOf<ComputerSnapshotResult>()
   })
+
+  it('keeps act on the exact eight-action computer roster', () => {
+    type ExpectedComputerActionKind =
+      | 'computer.focus' | 'computer.click' | 'computer.double-click'
+      | 'computer.drag' | 'computer.type' | 'computer.key'
+      | 'computer.scroll' | 'computer.wait'
+    type NonActionKind = Extract<
+      ComputerActionRequest['requestKind'],
+      'desktop.status' | 'computer.status' | 'computer.list' | 'computer.snapshot' | 'computer.stop'
+    >
+
+    expectTypeOf<ComputerActionRequest['requestKind']>().toEqualTypeOf<ExpectedComputerActionKind>()
+    expectTypeOf<NonActionKind>().toEqualTypeOf<never>()
+  })
 })
 
 describe('computer reference ownership and bounds', () => {
@@ -139,15 +160,17 @@ describe('computer reference ownership and bounds', () => {
     expect(() => {
       ;(value as { displayScale: number }).displayScale = 1
     }).toThrow()
-    expect(() => assertComputerReferenceCurrent(value, {
-      sessionId: SESSION,
-      appId: 'com.example.editor',
-      processId: 4242,
-      processIdentity: 'launch-identity-1',
-      windowId: 'window-1',
-      snapshotRevision: 7,
-      displayScale: 2,
-    })).not.toThrow()
+    expect(() => {
+      assertComputerReferenceCurrent(value, {
+        sessionId: SESSION,
+        appId: 'com.example.editor',
+        processId: 4242,
+        processIdentity: 'launch-identity-1',
+        windowId: 'window-1',
+        snapshotRevision: 7,
+        displayScale: 2,
+      })
+    }).not.toThrow()
   })
 
   it('bounds process identity and display scale at the service owner', () => {
@@ -166,19 +189,46 @@ describe('computer reference ownership and bounds', () => {
     expect(() => bindComputerReference({ ...base, displayScale: 0.24 })).toThrow(TypeError)
     expect(() => bindComputerReference({ ...base, displayScale: 8.01 })).toThrow(TypeError)
     expect(() => bindComputerReference({ ...base, processIdentity: 'x'.repeat(65) }))
-      .toThrowError(expect.objectContaining<Partial<ComputerControlError>>({ code: 'QUOTA_EXCEEDED' }))
+      .toThrow(expect.objectContaining<Partial<ComputerControlError>>({ code: 'QUOTA_EXCEEDED' }))
   })
 
-  it('rejects a foreign session before revealing native target freshness', () => {
-    expect(() => assertComputerReferenceCurrent(binding(), {
-      sessionId: OTHER_SESSION,
+  it('rejects boxed and object-coercible computer binding primitives', () => {
+    const base = {
+      ref: REF,
+      sessionId: SESSION,
       appId: 'com.example.editor',
       processId: 4242,
       processIdentity: 'launch-identity-1',
       windowId: 'window-1',
       snapshotRevision: 7,
       displayScale: 2,
-    })).toThrowError(expect.objectContaining<Partial<ComputerControlError>>({ code: 'UNAUTHORIZED' }))
+    } as const
+    expect(() => bindComputerReference({
+      ...base,
+      ref: { toString: () => String(REF) } as unknown as typeof REF,
+    })).toThrow(TypeError)
+    expect(() => bindComputerReference({
+      ...base,
+      sessionId: new String(SESSION) as unknown as typeof SESSION,
+    })).toThrow(TypeError)
+    expect(() => bindComputerReference({
+      ...base,
+      processIdentity: new String('launch-identity-1') as unknown as string,
+    })).toThrow(TypeError)
+  })
+
+  it('rejects a foreign session before revealing native target freshness', () => {
+    expect(() => {
+      assertComputerReferenceCurrent(binding(), {
+        sessionId: OTHER_SESSION,
+        appId: 'com.example.editor',
+        processId: 4242,
+        processIdentity: 'launch-identity-1',
+        windowId: 'window-1',
+        snapshotRevision: 7,
+        displayScale: 2,
+      })
+    }).toThrow(expect.objectContaining<Partial<ComputerControlError>>({ code: 'UNAUTHORIZED' }))
   })
 
   it.each([
@@ -188,22 +238,24 @@ describe('computer reference ownership and bounds', () => {
     { snapshotRevision: 8 },
     { displayScale: 1 },
   ])('rejects stale native reference scope %#', (change) => {
-    expect(() => assertComputerReferenceCurrent(binding(), {
-      sessionId: SESSION,
-      appId: 'com.example.editor',
-      processId: 4242,
-      processIdentity: 'launch-identity-1',
-      windowId: 'window-1',
-      snapshotRevision: 7,
-      displayScale: 2,
-      ...change,
-    })).toThrowError(expect.objectContaining<Partial<ComputerControlError>>({ code: 'STALE_REF' }))
+    expect(() => {
+      assertComputerReferenceCurrent(binding(), {
+        sessionId: SESSION,
+        appId: 'com.example.editor',
+        processId: 4242,
+        processIdentity: 'launch-identity-1',
+        windowId: 'window-1',
+        snapshotRevision: 7,
+        displayScale: 2,
+        ...change,
+      })
+    }).toThrow(expect.objectContaining<Partial<ComputerControlError>>({ code: 'STALE_REF' }))
   })
 
   it('enforces action and collection bounds and freezes returned collections', () => {
     expect(assertComputerActionCount(MAX_COMPUTER_ACTIONS_PER_TURN)).toBe(MAX_COMPUTER_ACTIONS_PER_TURN)
     expect(() => assertComputerActionCount(MAX_COMPUTER_ACTIONS_PER_TURN + 1))
-      .toThrowError(expect.objectContaining<Partial<ComputerControlError>>({ code: 'QUOTA_EXCEEDED' }))
+      .toThrow(expect.objectContaining<Partial<ComputerControlError>>({ code: 'QUOTA_EXCEEDED' }))
 
     const source: ComputerListResult = { apps: [{ appId: 'app', name: 'App', windows: [{ windowId: 'window', title: 'Window' }] }] }
     const frozen = freezeComputerList(source)
@@ -215,9 +267,9 @@ describe('computer reference ownership and bounds', () => {
     }).toThrow()
 
     expect(() => freezeComputerList({ apps: Array.from({ length: 129 }, (_, index) => ({ appId: `app-${index}`, name: 'App', windows: [] })) }))
-      .toThrowError(expect.objectContaining<Partial<ComputerControlError>>({ code: 'QUOTA_EXCEEDED' }))
+      .toThrow(expect.objectContaining<Partial<ComputerControlError>>({ code: 'QUOTA_EXCEEDED' }))
     expect(() => freezeComputerList({ apps: [{ appId: 'app', name: 'App', windows: Array.from({ length: 257 }, (_, index) => ({ windowId: `${index}`, title: '' })) }] }))
-      .toThrowError(expect.objectContaining<Partial<ComputerControlError>>({ code: 'QUOTA_EXCEEDED' }))
+      .toThrow(expect.objectContaining<Partial<ComputerControlError>>({ code: 'QUOTA_EXCEEDED' }))
   })
 
   it('returns a detached deeply frozen bounded snapshot', () => {
@@ -228,6 +280,72 @@ describe('computer reference ownership and bounds', () => {
     expect(Object.isFrozen(frozen)).toBe(true)
     expect(Object.isFrozen(frozen.refs)).toBe(true)
     expect(Object.isFrozen(frozen.refs[0])).toBe(true)
+  })
+
+  it('canonicalizes and deeply freezes only the five PNG metadata fields', () => {
+    const secret = { value: 'must-not-cross' }
+    const image = {
+      transferId: PngTransferId('00000000-0000-4000-8000-000000000199'),
+      byteLength: 24,
+      sha256: 'b'.repeat(64),
+      width: 1,
+      height: 1,
+      secret,
+    }
+    const frozen = freezeComputerSnapshot({ ...snapshot(), image })
+    expect(frozen.image).toEqual({
+      transferId: image.transferId,
+      byteLength: 24,
+      sha256: 'b'.repeat(64),
+      width: 1,
+      height: 1,
+    })
+    expect(frozen.image).not.toBe(image)
+    expect(Object.isFrozen(frozen.image)).toBe(true)
+    expect(frozen.image).not.toHaveProperty('secret')
+    secret.value = 'changed'
+    expect(frozen.image).not.toHaveProperty('secret')
+  })
+
+  it('rejects pseudo-string list, snapshot, and PNG metadata primitives', () => {
+    expect(() => freezeComputerList({
+      apps: [{
+        appId: new String('com.example.editor') as unknown as string,
+        name: 'Editor',
+        windows: [],
+      }],
+    })).toThrow(TypeError)
+    expect(() => freezeComputerSnapshot({
+      ...snapshot(),
+      refs: [{
+        ref: { toString: () => String(REF) } as unknown as typeof REF,
+        role: 'button',
+        name: 'Save',
+      }],
+    })).toThrow(TypeError)
+    expect(() => freezeComputerSnapshot({
+      ...snapshot(),
+      image: {
+        transferId: { toString: () => '00000000-0000-4000-8000-000000000199' } as unknown as ReturnType<typeof PngTransferId>,
+        byteLength: 24,
+        sha256: 'b'.repeat(64),
+        width: 1,
+        height: 1,
+      },
+    })).toThrow(TypeError)
+  })
+
+  it('rejects invalid PNG metadata ranges and hashes', () => {
+    const image = {
+      transferId: PngTransferId('00000000-0000-4000-8000-000000000199'),
+      byteLength: 24,
+      sha256: 'b'.repeat(64),
+      width: 1,
+      height: 1,
+    } as const
+    expect(() => freezeComputerSnapshot({ ...snapshot(), image: { ...image, byteLength: 4_194_305 } })).toThrow(TypeError)
+    expect(() => freezeComputerSnapshot({ ...snapshot(), image: { ...image, sha256: 'g'.repeat(64) } })).toThrow(TypeError)
+    expect(() => freezeComputerSnapshot({ ...snapshot(), image: { ...image, height: 0 } })).toThrow(TypeError)
   })
 })
 
@@ -311,6 +429,19 @@ describe('closed control policy', () => {
       request: {
         protocolVersion: 1,
         messageKind: 'request',
+        requestKind: 'browser.stop',
+        requestId: REQUEST,
+        sessionId: SESSION,
+        deadlineUnixMs: Date.now() + 1_000,
+      },
+      surface: 'browser-human-persistent',
+      sensitivity: 'secure-text',
+      effect: 'external-side-effect',
+    })).toBe('ALLOW')
+    expect(classifyControlPolicy({
+      request: {
+        protocolVersion: 1,
+        messageKind: 'request',
         requestKind: 'computer.stop',
         requestId: REQUEST,
         sessionId: SESSION,
@@ -349,6 +480,19 @@ describe('closed control policy', () => {
         deadlineUnixMs: Date.now() + 1_000,
       },
       surface: 'native-application',
+      sensitivity: 'not-applicable',
+      effect: 'not-applicable',
+    })).toBe('DENY')
+    expect(classifyControlPolicy({
+      request: {
+        protocolVersion: 1,
+        messageKind: 'request',
+        requestKind: 'computer.stop',
+        requestId: REQUEST,
+        sessionId: SESSION,
+        deadlineUnixMs: Date.now() + 1_000,
+      },
+      surface: 'browser-ephemeral',
       sensitivity: 'not-applicable',
       effect: 'not-applicable',
     })).toBe('DENY')
@@ -393,5 +537,108 @@ describe('closed control policy', () => {
       sensitivity: 'ordinary',
       effect: 'read-only',
     })).toBe('DENY')
+  })
+
+  it.each([
+    ['non-object input', null],
+    ['array input', []],
+    ['non-plain input', Object.assign(Object.create({ inherited: true }), {
+      request: clickRequest(),
+      surface: 'native-application',
+      sensitivity: 'ordinary',
+      effect: 'local-interaction',
+    })],
+    ['unknown request kind', {
+      request: { ...clickRequest(), requestKind: 'computer.launch' },
+      surface: 'native-application',
+      sensitivity: 'ordinary',
+      effect: 'local-interaction',
+    }],
+    ['non-string request kind', {
+      request: { ...clickRequest(), requestKind: 7 },
+      surface: 'native-application',
+      sensitivity: 'ordinary',
+      effect: 'local-interaction',
+    }],
+    ['unknown surface', {
+      request: {
+        protocolVersion: 1,
+        messageKind: 'request',
+        requestKind: 'browser.click',
+        requestId: REQUEST,
+        sessionId: SESSION,
+        deadlineUnixMs: Date.now() + 1_000,
+        leaseId: LEASE,
+        leaseRevision: 1,
+        ref: BrowserRef('browser:00000000000000000000000000000016'),
+      },
+      surface: 'browser-popup',
+      sensitivity: 'ordinary',
+      effect: 'local-interaction',
+    }],
+    ['non-string surface', {
+      request: clickRequest(),
+      surface: 1,
+      sensitivity: 'ordinary',
+      effect: 'local-interaction',
+    }],
+    ['unknown sensitivity', {
+      request: clickRequest(),
+      surface: 'native-application',
+      sensitivity: 'routine',
+      effect: 'local-interaction',
+    }],
+    ['non-string sensitivity', {
+      request: clickRequest(),
+      surface: 'native-application',
+      sensitivity: {},
+      effect: 'local-interaction',
+    }],
+    ['unknown effect', {
+      request: clickRequest(),
+      surface: 'native-application',
+      sensitivity: 'ordinary',
+      effect: 'visual-only',
+    }],
+    ['non-string effect', {
+      request: clickRequest(),
+      surface: 'native-application',
+      sensitivity: 'ordinary',
+      effect: {},
+    }],
+    ['non-plain request', {
+      request: inheritedClickRequest(),
+      surface: 'native-application',
+      sensitivity: 'ordinary',
+      effect: 'local-interaction',
+    }],
+  ])('denies hostile runtime policy input: %s', (_label, input) => {
+    expect(() => classifyControlPolicy(input as unknown as ControlPolicyInput)).not.toThrow()
+    expect(classifyControlPolicy(input as unknown as ControlPolicyInput)).toBe('DENY')
+  })
+
+  it('denies throwing accessors without invoking a default allow path', () => {
+    const input = Object.defineProperty({}, 'request', {
+      enumerable: true,
+      get: () => { throw new Error('hostile getter') },
+    })
+    expect(() => classifyControlPolicy(input as unknown as ControlPolicyInput)).not.toThrow()
+    expect(classifyControlPolicy(input as unknown as ControlPolicyInput)).toBe('DENY')
+  })
+
+  it('validates the runtime fact rosters before allowing Stop', () => {
+    expect(classifyControlPolicy({
+      request: {
+        protocolVersion: 1,
+        messageKind: 'request',
+        requestKind: 'computer.stop',
+        requestId: REQUEST,
+        sessionId: SESSION,
+        deadlineUnixMs: Date.now() + 1_000,
+      },
+      surface: 'native-application',
+      sensitivity: 'not-applicable',
+      effect: 'bogus',
+    } as unknown as ControlPolicyInput)).toBe('DENY')
   })
 })

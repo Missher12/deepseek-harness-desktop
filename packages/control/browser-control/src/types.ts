@@ -1,12 +1,15 @@
 import {
   BrowserRef as brandBrowserRef,
+  PngTransferId as brandPngTransferId,
   PROTOCOL_LIMITS,
+  SessionId as brandSessionId,
   type BridgeRequest,
   type BrowserRef,
   type BrowserSnapshotResult,
   type BrowserStopRequest,
   type DesktopControlErrorCode,
   type DesktopControlResultMap,
+  type PngMetadata,
   type SessionId,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
 
@@ -54,17 +57,80 @@ export class BrowserControlError extends Error {
 }
 
 const utf8 = new TextEncoder()
+const SHA256 = /^[0-9a-f]{64}$/
 
-function assertBoundedText(value: string, name: string, maxBytes: number, allowEmpty = false): void {
+function assertPlainObject(value: unknown, name: string): object {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${name} must be a plain object`)
+  }
+  const prototype: unknown = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new TypeError(`${name} must be a plain object`)
+  }
+  return value
+}
+
+function ownData(value: object, key: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key)
+  if (!descriptor || !Object.hasOwn(descriptor, 'value')) {
+    throw new TypeError(`${key} must be an own data property`)
+  }
+  return descriptor.value
+}
+
+function assertBoundedText(value: unknown, name: string, maxBytes: number, allowEmpty = false): string {
+  if (typeof value !== 'string') throw new TypeError(`${name} must be a string primitive`)
   if ((!allowEmpty && value.length === 0) || utf8.encode(value).byteLength > maxBytes) {
     throw new BrowserControlError('QUOTA_EXCEEDED', `${name} exceeds its service bound`)
   }
+  return value
 }
 
-function assertPositiveRevision(value: number, name: string): void {
-  if (!Number.isSafeInteger(value) || value < PROTOCOL_LIMITS.minRevision) {
+function assertSafeInteger(value: unknown, name: string, minimum: number, maximum: number): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || Object.is(value, -0)
+    || value < minimum || value > maximum) {
+    throw new TypeError(`${name} must be a safe integer in the supported range`)
+  }
+  return value
+}
+
+function assertPositiveRevision(value: unknown, name: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < PROTOCOL_LIMITS.minRevision) {
     throw new TypeError(`${name} must be a positive safe integer`)
   }
+  return value
+}
+
+function freezePngMetadata(value: unknown): PngMetadata {
+  const image = assertPlainObject(value, 'image')
+  const rawTransferId = ownData(image, 'transferId')
+  if (typeof rawTransferId !== 'string') throw new TypeError('transferId must be a string primitive')
+  const transferId = brandPngTransferId(assertBoundedText(
+    rawTransferId,
+    'transferId',
+    PROTOCOL_LIMITS.identifierBytes,
+  ))
+  const byteLength = assertSafeInteger(
+    ownData(image, 'byteLength'),
+    'byteLength',
+    PROTOCOL_LIMITS.minPngBytes,
+    PROTOCOL_LIMITS.pngBytes,
+  )
+  const sha256 = assertBoundedText(ownData(image, 'sha256'), 'sha256', PROTOCOL_LIMITS.sha256Bytes)
+  if (!SHA256.test(sha256)) throw new TypeError('sha256 must be lower-case hexadecimal')
+  const width = assertSafeInteger(
+    ownData(image, 'width'),
+    'width',
+    PROTOCOL_LIMITS.minPngDimension,
+    PROTOCOL_LIMITS.maxPngDimension,
+  )
+  const height = assertSafeInteger(
+    ownData(image, 'height'),
+    'height',
+    PROTOCOL_LIMITS.minPngDimension,
+    PROTOCOL_LIMITS.maxPngDimension,
+  )
+  return Object.freeze({ transferId, byteLength, sha256, width, height })
 }
 
 /**
@@ -73,17 +139,21 @@ function assertPositiveRevision(value: number, name: string): void {
  * @returns a detached immutable binding.
  */
 export function bindBrowserReference(input: BrowserReferenceBinding): BrowserReferenceBinding {
-  brandBrowserRef(String(input.ref))
-  assertBoundedText(String(input.sessionId), 'sessionId', PROTOCOL_LIMITS.sessionIdBytes)
-  assertBoundedText(input.surfaceId, 'surfaceId', PROTOCOL_LIMITS.surfaceIdBytes)
-  assertPositiveRevision(input.surfaceGeneration, 'surfaceGeneration')
-  assertPositiveRevision(input.snapshotRevision, 'snapshotRevision')
+  const source = assertPlainObject(input, 'browser reference binding')
+  const rawRef = ownData(source, 'ref')
+  if (typeof rawRef !== 'string') throw new TypeError('ref must be a string primitive')
+  const ref = brandBrowserRef(rawRef)
+  const rawSessionId = assertBoundedText(ownData(source, 'sessionId'), 'sessionId', PROTOCOL_LIMITS.sessionIdBytes)
+  const sessionId = brandSessionId(rawSessionId)
+  const surfaceId = assertBoundedText(ownData(source, 'surfaceId'), 'surfaceId', PROTOCOL_LIMITS.surfaceIdBytes)
+  const surfaceGeneration = assertPositiveRevision(ownData(source, 'surfaceGeneration'), 'surfaceGeneration')
+  const snapshotRevision = assertPositiveRevision(ownData(source, 'snapshotRevision'), 'snapshotRevision')
   return Object.freeze({
-    ref: input.ref,
-    sessionId: input.sessionId,
-    surfaceId: input.surfaceId,
-    surfaceGeneration: input.surfaceGeneration,
-    snapshotRevision: input.snapshotRevision,
+    ref,
+    sessionId,
+    surfaceId,
+    surfaceGeneration,
+    snapshotRevision,
   })
 }
 
@@ -128,27 +198,44 @@ export function assertBrowserActionCount(count: number): number {
  * @returns a detached immutable protocol result.
  */
 export function freezeBrowserSnapshot(snapshot: BrowserSnapshotResult): BrowserSnapshotResult {
-  assertBoundedText(snapshot.surfaceId, 'surfaceId', PROTOCOL_LIMITS.surfaceIdBytes)
-  assertBoundedText(snapshot.url, 'url', PROTOCOL_LIMITS.urlBytes)
-  assertBoundedText(snapshot.title, 'title', PROTOCOL_LIMITS.browserTitleBytes, true)
-  assertPositiveRevision(snapshot.snapshotRevision, 'snapshotRevision')
-  assertBoundedText(snapshot.semanticText, 'semanticText', PROTOCOL_LIMITS.semanticTextBytes, true)
-  if (snapshot.refs.length > PROTOCOL_LIMITS.maxSemanticRefs) {
+  const source = assertPlainObject(snapshot, 'browser snapshot')
+  const surfaceId = assertBoundedText(ownData(source, 'surfaceId'), 'surfaceId', PROTOCOL_LIMITS.surfaceIdBytes)
+  const url = assertBoundedText(ownData(source, 'url'), 'url', PROTOCOL_LIMITS.urlBytes)
+  const title = assertBoundedText(ownData(source, 'title'), 'title', PROTOCOL_LIMITS.browserTitleBytes, true)
+  const snapshotRevision = assertPositiveRevision(ownData(source, 'snapshotRevision'), 'snapshotRevision')
+  const semanticText = assertBoundedText(
+    ownData(source, 'semanticText'),
+    'semanticText',
+    PROTOCOL_LIMITS.semanticTextBytes,
+    true,
+  )
+  const rawRefs = ownData(source, 'refs')
+  if (!Array.isArray(rawRefs)) throw new TypeError('refs must be an array')
+  if (rawRefs.length > PROTOCOL_LIMITS.maxSemanticRefs) {
     throw new BrowserControlError('QUOTA_EXCEEDED', 'browser snapshot contains too many semantic references')
   }
-  const refs = Object.freeze(snapshot.refs.map((entry) => {
-    brandBrowserRef(String(entry.ref))
-    assertBoundedText(entry.role, 'role', PROTOCOL_LIMITS.semanticRoleBytes)
-    assertBoundedText(entry.name, 'name', PROTOCOL_LIMITS.semanticNameBytes, true)
-    return Object.freeze({ ref: entry.ref, role: entry.role, name: entry.name })
+  const refs = Object.freeze(rawRefs.map((value, index) => {
+    const entry = assertPlainObject(value, `refs[${index}]`)
+    const rawRef = ownData(entry, 'ref')
+    if (typeof rawRef !== 'string') throw new TypeError(`refs[${index}].ref must be a string primitive`)
+    const ref = brandBrowserRef(rawRef)
+    const role = assertBoundedText(ownData(entry, 'role'), `refs[${index}].role`, PROTOCOL_LIMITS.semanticRoleBytes)
+    const name = assertBoundedText(
+      ownData(entry, 'name'),
+      `refs[${index}].name`,
+      PROTOCOL_LIMITS.semanticNameBytes,
+      true,
+    )
+    return Object.freeze({ ref, role, name })
   }))
-  const image = snapshot.image === undefined ? undefined : Object.freeze({ ...snapshot.image })
+  const rawImage = Object.hasOwn(source, 'image') ? ownData(source, 'image') : undefined
+  const image = rawImage === undefined ? undefined : freezePngMetadata(rawImage)
   return Object.freeze({
-    surfaceId: snapshot.surfaceId,
-    url: snapshot.url,
-    title: snapshot.title,
-    snapshotRevision: snapshot.snapshotRevision,
-    semanticText: snapshot.semanticText,
+    surfaceId,
+    url,
+    title,
+    snapshotRevision,
+    semanticText,
     refs,
     ...image === undefined ? {} : { image },
   })

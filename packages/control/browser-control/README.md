@@ -10,7 +10,7 @@ The Browser Control Service Definition registers one `ctx.browserControl` provid
 - `act(request, signal)` accepts only the protocol's navigation, semantic-reference, key, selection, scroll, and wait actions. Browser coordinate actions do not exist.
 - `revokeSession(sessionId)` awaits teardown for exactly one session; implementations own exclusive surface lifetime and reference invalidation.
 - `bindBrowserReference()` and `assertBrowserReferenceCurrent()` keep opaque refs bound to the official session, surface identity, mount generation, and snapshot revision. Ownership is checked before freshness so a foreign session cannot probe a surface.
-- `freezeBrowserSnapshot()` detaches and deeply freezes provider output while applying the protocol's semantic collection and UTF-8 bounds. `assertBrowserActionCount()` applies the service's 64-action per-turn ceiling; Electron-authored lease quotas may be narrower.
+- `freezeBrowserSnapshot()` accepts only primitive own-data fields, rebuilds detached protocol output, and deeply freezes it while applying semantic collection and UTF-8 bounds. Optional PNG metadata is reconstructed from exactly its five protocol fields after brand, hash, byte, and dimension validation. `assertBrowserActionCount()` applies the service's 64-action per-turn ceiling; Electron-authored lease quotas may be narrower.
 
 Page text remains untrusted and cannot authorize actions. This seam does not claim that accessibility semantics can prove hostile page JavaScript has no external side effects. The Electron adapter owns the surface, debugger, URL/redirect validation, lease, and native approval challenge.
 

@@ -1,4 +1,5 @@
-import type { ComputerRef, ControlLeaseId, RequestId, SessionId } from './brand.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ComputerRef, ControlLeaseId, RequestId } from './brand.ts'
 import type {
   ActionResult,
   ComputerListResult,

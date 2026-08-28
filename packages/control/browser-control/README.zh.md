@@ -10,7 +10,7 @@ Browser Control Service Definition 为 Desktop 所有的可见浏览器 surface 
 - `act(request, signal)` 只接受协议中的导航、语义引用、按键、选择、滚动与等待操作。浏览器坐标操作不存在。
 - `revokeSession(sessionId)` 等待恰好一个会话的拆卸完成；surface 的独占生命周期和引用失效由实现负责。
 - `bindBrowserReference()` 与 `assertBrowserReferenceCurrent()` 把不透明 ref 绑定到官方会话、surface 身份、mount generation 和 snapshot revision。所有权先于新鲜度检查，避免外来会话探测 surface。
-- `freezeBrowserSnapshot()` 分离并深度冻结提供方输出，同时执行协议的语义集合与 UTF-8 上限。`assertBrowserActionCount()` 执行服务的每轮次 64 次操作上限；Electron 创建的 lease quota 可以更窄。
+- `freezeBrowserSnapshot()` 只接受原语 own-data 字段，重新构建分离的协议输出，并在执行语义集合与 UTF-8 上限后深度冻结。可选 PNG 元数据只有在 brand、hash、字节和尺寸校验后，才会严格按协议的五个字段重建。`assertBrowserActionCount()` 执行服务的每轮次 64 次操作上限；Electron 创建的 lease quota 可以更窄。
 
 页面文本始终不受信任，不能授权操作。此 seam 不声称 accessibility 语义能够证明恶意页面 JavaScript 不会产生外部副作用。surface、debugger、URL／redirect 验证、lease 和原生审批挑战均由 Electron 适配器负责。
 

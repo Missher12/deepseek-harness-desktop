@@ -3,6 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import {
   BrowserRef,
   ControlLeaseId,
+  PngTransferId,
   RequestId,
   SessionId,
   type BrowserClickRequest as ProtocolBrowserClickRequest,
@@ -99,6 +100,20 @@ describe('BrowserControl service seam', () => {
     expectTypeOf<BrowserClickRequest>().toEqualTypeOf<ProtocolBrowserClickRequest>()
     expectTypeOf<BrowserSnapshot>().toEqualTypeOf<BrowserSnapshotResult>()
   })
+
+  it('keeps act on the exact ten-action browser roster', () => {
+    type ExpectedBrowserActionKind =
+      | 'browser.navigate' | 'browser.click' | 'browser.type' | 'browser.key'
+      | 'browser.select' | 'browser.scroll' | 'browser.wait' | 'browser.back'
+      | 'browser.forward' | 'browser.reload'
+    type NonActionKind = Extract<
+      BrowserActionRequest['requestKind'],
+      'desktop.status' | 'browser.snapshot' | 'browser.stop'
+    >
+
+    expectTypeOf<BrowserActionRequest['requestKind']>().toEqualTypeOf<ExpectedBrowserActionKind>()
+    expectTypeOf<NonActionKind>().toEqualTypeOf<never>()
+  })
 })
 
 describe('browser reference ownership and bounds', () => {
@@ -118,21 +133,47 @@ describe('browser reference ownership and bounds', () => {
     expect(() => {
       ;(value as { surfaceGeneration: number }).surfaceGeneration = 99
     }).toThrow()
-    expect(() => assertBrowserReferenceCurrent(value, {
+    expect(() => {
+      assertBrowserReferenceCurrent(value, {
+        sessionId: SESSION,
+        surfaceId: 'surface-1',
+        surfaceGeneration: 2,
+        snapshotRevision: 4,
+      })
+    }).not.toThrow()
+  })
+
+  it('rejects boxed and object-coercible browser binding primitives', () => {
+    const base = {
+      ref: REF,
       sessionId: SESSION,
       surfaceId: 'surface-1',
       surfaceGeneration: 2,
       snapshotRevision: 4,
-    })).not.toThrow()
+    } as const
+    expect(() => bindBrowserReference({
+      ...base,
+      ref: { toString: () => String(REF) } as unknown as typeof REF,
+    })).toThrow(TypeError)
+    expect(() => bindBrowserReference({
+      ...base,
+      sessionId: new String(SESSION) as unknown as typeof SESSION,
+    })).toThrow(TypeError)
+    expect(() => bindBrowserReference({
+      ...base,
+      surfaceId: new String('surface-1') as unknown as string,
+    })).toThrow(TypeError)
   })
 
   it('rejects a foreign session before revealing target freshness', () => {
-    expect(() => assertBrowserReferenceCurrent(binding(), {
-      sessionId: OTHER_SESSION,
-      surfaceId: 'surface-1',
-      surfaceGeneration: 2,
-      snapshotRevision: 4,
-    })).toThrowError(expect.objectContaining<Partial<BrowserControlError>>({ code: 'UNAUTHORIZED' }))
+    expect(() => {
+      assertBrowserReferenceCurrent(binding(), {
+        sessionId: OTHER_SESSION,
+        surfaceId: 'surface-1',
+        surfaceGeneration: 2,
+        snapshotRevision: 4,
+      })
+    }).toThrow(expect.objectContaining<Partial<BrowserControlError>>({ code: 'UNAUTHORIZED' }))
   })
 
   it.each([
@@ -140,14 +181,15 @@ describe('browser reference ownership and bounds', () => {
     { surfaceId: 'surface-1', surfaceGeneration: 3, snapshotRevision: 4 },
     { surfaceId: 'surface-1', surfaceGeneration: 2, snapshotRevision: 5 },
   ])('rejects stale browser reference scope %#', (scope) => {
-    expect(() => assertBrowserReferenceCurrent(binding(), { sessionId: SESSION, ...scope }))
-      .toThrowError(expect.objectContaining<Partial<BrowserControlError>>({ code: 'STALE_REF' }))
+    expect(() => {
+      assertBrowserReferenceCurrent(binding(), { sessionId: SESSION, ...scope })
+    }).toThrow(expect.objectContaining<Partial<BrowserControlError>>({ code: 'STALE_REF' }))
   })
 
   it('enforces the per-turn action bound', () => {
     expect(assertBrowserActionCount(MAX_BROWSER_ACTIONS_PER_TURN)).toBe(MAX_BROWSER_ACTIONS_PER_TURN)
     expect(() => assertBrowserActionCount(MAX_BROWSER_ACTIONS_PER_TURN + 1))
-      .toThrowError(expect.objectContaining<Partial<BrowserControlError>>({ code: 'QUOTA_EXCEEDED' }))
+      .toThrow(expect.objectContaining<Partial<BrowserControlError>>({ code: 'QUOTA_EXCEEDED' }))
     expect(() => assertBrowserActionCount(0.5)).toThrow(TypeError)
   })
 
@@ -164,14 +206,77 @@ describe('browser reference ownership and bounds', () => {
     }).toThrow()
   })
 
+  it('canonicalizes and deeply freezes only the five PNG metadata fields', () => {
+    const secret = { value: 'must-not-cross' }
+    const image = {
+      transferId: PngTransferId('00000000-0000-4000-8000-000000000099'),
+      byteLength: 24,
+      sha256: 'a'.repeat(64),
+      width: 1,
+      height: 1,
+      secret,
+    }
+    const frozen = freezeBrowserSnapshot({ ...browserSnapshot(), image })
+    expect(frozen.image).toEqual({
+      transferId: image.transferId,
+      byteLength: 24,
+      sha256: 'a'.repeat(64),
+      width: 1,
+      height: 1,
+    })
+    expect(frozen.image).not.toBe(image)
+    expect(Object.isFrozen(frozen.image)).toBe(true)
+    expect(frozen.image).not.toHaveProperty('secret')
+    secret.value = 'changed'
+    expect(frozen.image).not.toHaveProperty('secret')
+  })
+
+  it('rejects pseudo-string snapshot and PNG metadata primitives', () => {
+    expect(() => freezeBrowserSnapshot({
+      ...browserSnapshot(),
+      title: new String('Example') as unknown as string,
+    })).toThrow(TypeError)
+    expect(() => freezeBrowserSnapshot({
+      ...browserSnapshot(),
+      refs: [{
+        ref: { toString: () => String(REF) } as unknown as typeof REF,
+        role: 'button',
+        name: 'Example',
+      }],
+    })).toThrow(TypeError)
+    expect(() => freezeBrowserSnapshot({
+      ...browserSnapshot(),
+      image: {
+        transferId: { toString: () => '00000000-0000-4000-8000-000000000099' } as unknown as ReturnType<typeof PngTransferId>,
+        byteLength: 24,
+        sha256: 'a'.repeat(64),
+        width: 1,
+        height: 1,
+      },
+    })).toThrow(TypeError)
+  })
+
+  it('rejects invalid PNG metadata ranges and hashes', () => {
+    const image = {
+      transferId: PngTransferId('00000000-0000-4000-8000-000000000099'),
+      byteLength: 24,
+      sha256: 'a'.repeat(64),
+      width: 1,
+      height: 1,
+    } as const
+    expect(() => freezeBrowserSnapshot({ ...browserSnapshot(), image: { ...image, byteLength: 0 } })).toThrow(TypeError)
+    expect(() => freezeBrowserSnapshot({ ...browserSnapshot(), image: { ...image, sha256: 'A'.repeat(64) } })).toThrow(TypeError)
+    expect(() => freezeBrowserSnapshot({ ...browserSnapshot(), image: { ...image, width: 100_001 } })).toThrow(TypeError)
+  })
+
   it('rejects snapshots beyond protocol collection and UTF-8 limits', () => {
     expect(() => freezeBrowserSnapshot({
       ...browserSnapshot(),
       refs: Array.from({ length: 301 }, () => ({ ref: REF, role: 'button', name: 'x' })),
-    })).toThrowError(expect.objectContaining<Partial<BrowserControlError>>({ code: 'QUOTA_EXCEEDED' }))
+    })).toThrow(expect.objectContaining<Partial<BrowserControlError>>({ code: 'QUOTA_EXCEEDED' }))
     expect(() => freezeBrowserSnapshot({
       ...browserSnapshot(),
       semanticText: '😀'.repeat(12_289),
-    })).toThrowError(expect.objectContaining<Partial<BrowserControlError>>({ code: 'QUOTA_EXCEEDED' }))
+    })).toThrow(expect.objectContaining<Partial<BrowserControlError>>({ code: 'QUOTA_EXCEEDED' }))
   })
 })
