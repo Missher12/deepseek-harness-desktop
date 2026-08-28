@@ -268,8 +268,8 @@ catch {
 }
 "@
   $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childSource))
-  $pwsh = (Get-Process -Id $PID).Path
-  $arguments = "-NoLogo -NoProfile -NonInteractive -STA -EncodedCommand $encoded"
+  $pwsh = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+  $arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -STA -EncodedCommand $encoded"
   $commandLine = "`"$pwsh`" $arguments"
   try {
     $exitCode = [DshWindowsSmoke.LimitedProcess]::Run(
@@ -619,7 +619,7 @@ function Invoke-HelperRequest {
   }
   $jsonBytes = [byte[]]$frame.Body[1..($frame.Body.Length - 1)]
   $responseText = [Text.Encoding]::UTF8.GetString($jsonBytes)
-  $response = $responseText | ConvertFrom-Json -Depth 16
+  $response = $responseText | ConvertFrom-Json
   if ($response.requestId -ne $Request.requestId -or $response.requestKind -ne $Request.requestKind) {
     throw 'Native helper response correlation did not match the request.'
   }
@@ -700,12 +700,7 @@ if ('$Kind' -eq 'protected') {
   $fixtureInfo.UseShellExecute = $false
   $fixtureInfo.CreateNoWindow = $false
   $fixtureInfo.RedirectStandardError = $true
-  [void]$fixtureInfo.ArgumentList.Add('-STA')
-  [void]$fixtureInfo.ArgumentList.Add('-NoLogo')
-  [void]$fixtureInfo.ArgumentList.Add('-NoProfile')
-  [void]$fixtureInfo.ArgumentList.Add('-NonInteractive')
-  [void]$fixtureInfo.ArgumentList.Add('-EncodedCommand')
-  [void]$fixtureInfo.ArgumentList.Add($encoded)
+  $fixtureInfo.Arguments = "-STA -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encoded"
   $fixture = [System.Diagnostics.Process]::Start($fixtureInfo)
   if ($null -eq $fixture) {
     throw "Windows did not start fixture window: $Title"
@@ -754,7 +749,7 @@ function Stop-FixtureProcess {
     if (-not $Process.HasExited) {
       [void]$Process.CloseMainWindow()
       if (-not $Process.WaitForExit(3000)) {
-        $Process.Kill($true)
+        $Process.Kill()
         [void]$Process.WaitForExit(5000)
       }
     }
@@ -919,7 +914,7 @@ finally {
     if (-not $helper.HasExited) {
       try { $helper.StandardInput.Close() } catch { }
       if (-not $helper.WaitForExit(3000)) {
-        $helper.Kill($true)
+        $helper.Kill()
         [void]$helper.WaitForExit(5000)
       }
     }
