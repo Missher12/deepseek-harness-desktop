@@ -195,6 +195,24 @@ describe('sandbox context façade — inject gate on services', () => {
     expect(authorities.calls.computer).toBe(0)
   })
 
+  it.each([
+    ['a boxed String', 'new String("browserControl")'],
+    ['a single-item array', '["browserControl"]'],
+    ['an object with toString', '({ toString() { throw new Error("coercion ran") } })'],
+  ])('rejects %s before ctx.get can coerce it into a privileged service key', async (_label, expression) => {
+    const harness = await setup()
+    const authorities = await provideControlAuthorities(harness)
+
+    await expect(mount(harness, `
+      return {
+        name: 'coercible-authority-probe',
+        inject: ['browserControl'],
+        apply(ctx) { ctx.get(${expression}).acquireLease() },
+      }
+    `)).rejects.toThrow(/primitive string/i)
+    expect(authorities.calls.browser).toBe(0)
+  })
+
   it('does not advertise withheld control authorities through the in operator', async () => {
     const harness = await setup()
     await provideControlAuthorities(harness)

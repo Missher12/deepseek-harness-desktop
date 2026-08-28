@@ -736,7 +736,10 @@ function sandboxContext(ctx: Context, reportFailure: (error: Error) => void): Co
   }
   // `get` is optional lookup; property access requires a declaration. `tools`
   // is the façade's own API on either path.
-  const readService = (name: string, requireDeclaration: boolean): unknown => {
+  const readService = (name: unknown, requireDeclaration: boolean): unknown => {
+    if (typeof name !== 'string') {
+      return rejectGuard(reportFailure, 'ctx.get service name must be a primitive string')
+    }
     if (name === 'tools') return tools
     if (isPrivilegedControlService(name)) {
       return rejectGuard(reportFailure,
@@ -748,7 +751,7 @@ function sandboxContext(ctx: Context, reportFailure: (error: Error) => void): Co
     if (service === null || (typeof service !== 'object' && typeof service !== 'function')) return service
     return guardedService(service, name, reportFailure)
   }
-  const get = (name: string): unknown => readService(name, false)
+  const get = (name: unknown): unknown => readService(name, false)
   // The browser half builds the same façade over its own Context
   // (`@deepseek-ai/dsh-cordis-client-runner`, whose CTX_VERBS names this one its
   // twin), and the sameness is the point: a package author meets ONE contract on

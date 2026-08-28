@@ -29,6 +29,34 @@ import BrowserControl, {
   type BrowserReferenceBinding,
 } from '../src/index.ts'
 
+function browserSnapshotEnvelopeTypeContracts(
+  result: Omit<BrowserSnapshotResult, 'image'>,
+  png: ImmutablePng,
+): void {
+  const withoutImage: BrowserSnapshotEnvelope = { result }
+  void withoutImage
+  const image = {
+    transferId: PngTransferId('00000000-0000-4000-8000-000000000099'),
+    byteLength: 1,
+    sha256: 'a'.repeat(64),
+    width: 1,
+    height: 1,
+  }
+  const withImage: BrowserSnapshotEnvelope = { result: { ...result, image }, png }
+  void withImage
+
+  // @ts-expect-error -- image metadata cannot cross the Service seam without its paired PNG owner.
+  const metadataWithoutPng: BrowserSnapshotEnvelope = {
+    result: { ...result, image },
+  }
+  void metadataWithoutPng
+
+  // @ts-expect-error -- PNG bytes cannot cross the Service seam without matching protocol metadata.
+  const pngWithoutMetadata: BrowserSnapshotEnvelope = { result, png }
+  void pngWithoutMetadata
+}
+void browserSnapshotEnvelopeTypeContracts
+
 const SESSION = SessionId('browser-session')
 const OTHER_SESSION = SessionId('other-session')
 const REQUEST = RequestId('00000000-0000-4000-8000-000000000001')

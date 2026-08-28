@@ -26,13 +26,20 @@ export type BrowserActionRequest = Exclude<
 /** Closed protocol result union for a browser action request. */
 export type BrowserActionResult = DesktopControlResultMap[BrowserActionRequest['requestKind']]
 
-/** Service-owned immutable snapshot result plus its codec-verified image bytes, when present. */
-export interface BrowserSnapshotEnvelope {
-  /** Detached, bounded protocol snapshot metadata and semantics. */
-  readonly result: BrowserSnapshotResult
-  /** Protocol-owned immutable PNG paired by the frame decoder. */
-  readonly png?: ImmutablePng
+/** Browser snapshot result whose protocol metadata declares no image transfer. */
+export type BrowserSnapshotWithoutImage = Omit<BrowserSnapshotResult, 'image'> & {
+  readonly image?: never
 }
+
+/** Browser snapshot result whose protocol metadata requires one adjacent verified PNG. */
+export type BrowserSnapshotWithImage = Omit<BrowserSnapshotResult, 'image'> & {
+  readonly image: NonNullable<BrowserSnapshotResult['image']>
+}
+
+/** Service-owned snapshot envelope that encodes image metadata/bytes co-presence in its type. */
+export type BrowserSnapshotEnvelope =
+  | Readonly<{ readonly result: BrowserSnapshotWithoutImage; readonly png?: never }>
+  | Readonly<{ readonly result: BrowserSnapshotWithImage; readonly png: ImmutablePng }>
 
 /** Authoritative browser surface scope used to validate one opaque reference. */
 export interface BrowserReferenceScope {
@@ -256,14 +263,18 @@ export function freezeBrowserSnapshot(snapshot: BrowserSnapshotResult): BrowserS
  * @param envelope - Provider-owned snapshot result and codec-produced PNG owner.
  * @returns an exact immutable service envelope with no caller-owned byte aliases.
  */
-export function freezeBrowserSnapshotEnvelope(envelope: BrowserSnapshotEnvelope): BrowserSnapshotEnvelope {
+export function freezeBrowserSnapshotEnvelope(
+  envelope: Readonly<{ readonly result: BrowserSnapshotResult; readonly png?: ImmutablePng }>,
+): BrowserSnapshotEnvelope {
   const source = assertPlainObject(envelope, 'browser snapshot envelope')
   const result = freezeBrowserSnapshot(ownData(source, 'result') as BrowserSnapshotResult)
   const rawPng = Object.hasOwn(source, 'png') ? ownData(source, 'png') : undefined
   if ((result.image === undefined) !== (rawPng === undefined)) {
     throw new TypeError('browser snapshot image metadata and PNG must be present together')
   }
-  if (rawPng === undefined) return Object.freeze({ result })
+  if (rawPng === undefined) {
+    return Object.freeze({ result: result as BrowserSnapshotWithoutImage })
+  }
   if (!(rawPng instanceof ImmutablePng)) throw new TypeError('png must be an ImmutablePng')
   let png: ImmutablePng
   try {
@@ -271,5 +282,5 @@ export function freezeBrowserSnapshotEnvelope(envelope: BrowserSnapshotEnvelope)
   } catch {
     throw new TypeError('png must be a genuine ImmutablePng')
   }
-  return Object.freeze({ result, png })
+  return Object.freeze({ result: result as BrowserSnapshotWithImage, png })
 }
