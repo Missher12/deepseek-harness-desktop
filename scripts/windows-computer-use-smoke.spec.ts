@@ -16,6 +16,7 @@ describe('Windows installed Computer Use acceptance', () => {
     expect(source).toContain('$fixtureInfo.RedirectStandardError = $true')
     expect(source).toContain('CreateRestrictedToken')
     expect(source).toContain('CreateProcessWithTokenW')
+    expect(source).toContain('CreateProcessAsUserW')
     expect(source).toContain('private const uint LUA_TOKEN = 0x4;')
     expect(source).toContain('-MediumIntegrityChild')
     expect(source).toContain("-RequestKind 'list'")

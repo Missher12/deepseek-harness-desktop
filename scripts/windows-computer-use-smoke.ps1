@@ -108,6 +108,20 @@ namespace DshWindowsSmoke
             ref STARTUPINFO startupInfo,
             out PROCESS_INFORMATION processInformation);
 
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool CreateProcessAsUserW(
+            IntPtr token,
+            string applicationName,
+            StringBuilder commandLine,
+            IntPtr processAttributes,
+            IntPtr threadAttributes,
+            bool inheritHandles,
+            uint creationFlags,
+            IntPtr environment,
+            string currentDirectory,
+            ref STARTUPINFO startupInfo,
+            out PROCESS_INFORMATION processInformation);
+
         public static int Run(
             string applicationPath,
             string commandLine,
@@ -136,7 +150,7 @@ namespace DshWindowsSmoke
                 STARTUPINFO startup = new STARTUPINFO();
                 startup.cb = (uint)Marshal.SizeOf<STARTUPINFO>();
                 StringBuilder mutableCommand = new StringBuilder(commandLine);
-                if (!CreateProcessWithTokenW(
+                bool created = CreateProcessWithTokenW(
                         limitedToken,
                         0,
                         applicationPath,
@@ -145,8 +159,32 @@ namespace DshWindowsSmoke
                         IntPtr.Zero,
                         workingDirectory,
                         ref startup,
-                        out process))
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateProcessWithTokenW failed");
+                        out process);
+                int withTokenError = created ? 0 : Marshal.GetLastWin32Error();
+                if (!created)
+                {
+                    mutableCommand = new StringBuilder(commandLine);
+                    created = CreateProcessAsUserW(
+                        limitedToken,
+                        applicationPath,
+                        mutableCommand,
+                        IntPtr.Zero,
+                        IntPtr.Zero,
+                        false,
+                        CREATE_NEW_CONSOLE | CREATE_UNICODE_ENVIRONMENT,
+                        IntPtr.Zero,
+                        workingDirectory,
+                        ref startup,
+                        out process);
+                }
+                if (!created)
+                {
+                    int asUserError = Marshal.GetLastWin32Error();
+                    throw new Win32Exception(
+                        asUserError,
+                        "Limited process creation failed (with-token=" + withTokenError +
+                        ", as-user=" + asUserError + ")");
+                }
 
                 uint wait = WaitForSingleObject(process.hProcess, (uint)timeoutMilliseconds);
                 if (wait == WAIT_TIMEOUT)
