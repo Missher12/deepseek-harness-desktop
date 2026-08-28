@@ -1,5 +1,6 @@
 //! Platform-neutral monotonic lease enforcement and read-only helper dispatch.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -86,11 +87,15 @@ struct Target {
 struct Quotas {
     operations: u64,
     snapshots: u64,
+    pointer_actions: u64,
+    key_actions: u64,
+    text_bytes: u64,
 }
 
 struct Lease {
     revision: u64,
     targets: Vec<Target>,
+    capabilities: HashSet<String>,
     quotas: Quotas,
     installed_at_ms: u64,
     last_activity_ms: u64,
@@ -191,13 +196,14 @@ where
             "input.release" => HelperResponse::ok(request, json!({"released":true})),
             // Input actions are intentionally absent from this delivery. Never invoke an OS API.
             "focus" | "click" | "double-click" | "drag" | "type" | "key" | "scroll" | "wait" => {
-                HelperResponse::error(request, "NOT_SUPPORTED", false)
+                self.disabled_input(request)
             }
             _ => HelperResponse::error(request, "NOT_SUPPORTED", false),
         }
     }
 
     fn install_lease(&mut self, request: &HelperRequest) -> HelperResponse {
+        self.expire_active(self.clock.now_ms());
         let lease_id = required_string(request, "leaseId");
         let revision = required_integer(request, "leaseRevision");
         if revision <= self.last_revision {
@@ -231,13 +237,24 @@ where
             .field("quotas")
             .and_then(Value::as_object)
             .expect("validated quotas");
+        let capabilities = request
+            .field("capabilities")
+            .and_then(Value::as_array)
+            .expect("validated capabilities")
+            .iter()
+            .map(|value| value.as_str().expect("validated capability").to_owned())
+            .collect();
         let now_ms = self.clock.now_ms();
         let lease = Lease {
             revision,
             targets,
+            capabilities,
             quotas: Quotas {
                 operations: quotas["operations"].as_u64().expect("validated quota"),
                 snapshots: quotas["snapshots"].as_u64().expect("validated quota"),
+                pointer_actions: quotas["pointerActions"].as_u64().expect("validated quota"),
+                key_actions: quotas["keyActions"].as_u64().expect("validated quota"),
+                text_bytes: quotas["textBytes"].as_u64().expect("validated quota"),
             },
             installed_at_ms: now_ms,
             last_activity_ms: now_ms,
@@ -260,23 +277,13 @@ where
         cancel: &CancellationToken,
     ) -> HelperResponse {
         let now_ms = self.clock.now_ms();
-        let session_id = request.session_id();
-        let lease_id = required_string(request, "leaseId");
-        let revision = required_integer(request, "leaseRevision");
-        let Some(active) = self.active.as_ref() else {
-            return HelperResponse::error(request, "LEASE_REVOKED", false);
+        let lease = match self.active_lease_for(request, now_ms) {
+            Ok(lease) => lease,
+            Err(code) => return HelperResponse::error(request, code, false),
         };
-        if active.session_id != session_id
-            || active.lease_id != lease_id
-            || active.lease.revision != revision
-        {
-            return HelperResponse::error(request, "LEASE_REVOKED", false);
+        if !lease.capabilities.contains("observe") {
+            return HelperResponse::error(request, "UNAUTHORIZED", false);
         }
-        if active.lease.expired(now_ms) {
-            self.active = None;
-            return HelperResponse::error(request, "LEASE_EXPIRED", false);
-        }
-        let lease = &mut self.active.as_mut().expect("active lease checked").lease;
         if !lease.permits(
             required_string(request, "appId"),
             required_string(request, "windowId"),
@@ -297,16 +304,84 @@ where
     }
 
     fn stop(&mut self, request: &HelperRequest) -> HelperResponse {
-        let Some(active) = self.active.as_ref() else {
-            return HelperResponse::error(request, "LEASE_REVOKED", false);
-        };
-        if active.session_id != request.session_id()
-            || active.lease_id != required_string(request, "leaseId")
-            || active.lease.revision != required_integer(request, "leaseRevision")
-        {
-            return HelperResponse::error(request, "LEASE_REVOKED", false);
+        if let Err(code) = self.active_lease_for(request, self.clock.now_ms()) {
+            return HelperResponse::error(request, code, false);
         }
+        self.active = None;
         HelperResponse::ok(request, json!({"stopped":true}))
+    }
+
+    fn disabled_input(&mut self, request: &HelperRequest) -> HelperResponse {
+        let lease = match self.active_lease_for(request, self.clock.now_ms()) {
+            Ok(lease) => lease,
+            Err(code) => return HelperResponse::error(request, code, false),
+        };
+        if !lease.permits(
+            required_string(request, "appId"),
+            required_string(request, "windowId"),
+        ) {
+            return HelperResponse::error(request, "UNAUTHORIZED", false);
+        }
+        let kind = request.request_kind();
+        let capability = match kind {
+            "focus" | "click" | "double-click" | "drag" | "scroll" => "pointer",
+            "type" | "key" => "keyboard",
+            "wait" => "observe",
+            _ => return HelperResponse::error(request, "NOT_SUPPORTED", false),
+        };
+        if !lease.capabilities.contains(capability) {
+            return HelperResponse::error(request, "UNAUTHORIZED", false);
+        }
+        let category_available = match kind {
+            "focus" | "click" | "double-click" | "drag" | "scroll" => {
+                lease.quotas.pointer_actions > 0
+            }
+            "key" => lease.quotas.key_actions > 0,
+            "type" => {
+                lease.quotas.key_actions > 0
+                    && request
+                        .string("text")
+                        .is_some_and(|text| text.len() as u64 <= lease.quotas.text_bytes)
+            }
+            "wait" => true,
+            _ => false,
+        };
+        if lease.quotas.operations == 0 || !category_available {
+            return HelperResponse::error(request, "QUOTA_EXCEEDED", false);
+        }
+        HelperResponse::error(request, "NOT_SUPPORTED", false)
+    }
+
+    fn expire_active(&mut self, now_ms: u64) -> Option<ActiveLease> {
+        if self
+            .active
+            .as_ref()
+            .is_some_and(|active| active.lease.expired(now_ms))
+        {
+            return self.active.take();
+        }
+        None
+    }
+
+    fn active_lease_for(
+        &mut self,
+        request: &HelperRequest,
+        now_ms: u64,
+    ) -> std::result::Result<&mut Lease, &'static str> {
+        if let Some(expired) = self.expire_active(now_ms) {
+            return Err(if active_matches(&expired, request) {
+                "LEASE_EXPIRED"
+            } else {
+                "LEASE_REVOKED"
+            });
+        }
+        let Some(active) = self.active.as_mut() else {
+            return Err("LEASE_REVOKED");
+        };
+        if !active_matches(active, request) {
+            return Err("LEASE_REVOKED");
+        }
+        Ok(&mut active.lease)
     }
 
     fn handle_control(&mut self, control: &ControlMessage) {
@@ -346,6 +421,12 @@ where
             _ => {}
         }
     }
+}
+
+fn active_matches(active: &ActiveLease, request: &HelperRequest) -> bool {
+    active.session_id == request.session_id()
+        && active.lease_id == required_string(request, "leaseId")
+        && active.lease.revision == required_integer(request, "leaseRevision")
 }
 
 fn platform_response(

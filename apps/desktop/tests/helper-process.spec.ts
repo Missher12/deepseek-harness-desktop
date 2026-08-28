@@ -34,15 +34,23 @@ function asChild(child: FakeChild): ChildProcessWithoutNullStreams {
   return child as unknown as ChildProcessWithoutNullStreams
 }
 
-function statusRequest(): HelperRequest {
+function statusRequest(requestId = '00000000-0000-4000-8000-000000000001'): HelperRequest {
   return {
     protocolVersion: 1,
     messageKind: 'request',
     requestKind: 'status',
-    requestId: RequestId('00000000-0000-4000-8000-000000000001'),
+    requestId: RequestId(requestId),
     sessionId: SessionId('session-1'),
     timeoutMs: 1_000,
   }
+}
+
+function framedMessages(chunks: readonly Uint8Array[]): Record<string, unknown>[] {
+  const decoder = new LengthPrefixedFrameDecoder()
+  return chunks.flatMap(chunk => decoder.push(chunk)).map((frame) => {
+    expect(frame[0]).toBe(0x01)
+    return JSON.parse(new TextDecoder().decode(frame.subarray(1))) as Record<string, unknown>
+  })
 }
 
 describe('NativeHelperProcess', () => {
@@ -128,6 +136,8 @@ describe('NativeHelperProcess', () => {
 
   it('ends stdin on shutdown and waits for the exact owned child', async () => {
     const child = new FakeChild()
+    const written: Uint8Array[] = []
+    child.stdin.on('data', (chunk: Buffer) => { written.push(new Uint8Array(chunk)) })
     const helper = new NativeHelperProcess({
       binaryPath: '/verified/computer-use-helper',
       spawn: () => asChild(child),
@@ -145,6 +155,11 @@ describe('NativeHelperProcess', () => {
 
     const shutdown = helper.shutdown()
     expect(child.stdin.writableEnded).toBe(true)
+    expect(framedMessages(written).at(-1)).toEqual({
+      protocolVersion: 1,
+      messageKind: 'control',
+      controlKind: 'parent.shutdown',
+    })
     child.exit()
     await expect(shutdown).resolves.toBeUndefined()
     expect(helper.running).toBe(false)
@@ -181,5 +196,48 @@ describe('NativeHelperProcess', () => {
 
     child.exit()
     expect(helper.running).toBe(false)
+  })
+
+  it('sends exact timeout and abort cancellation before settling and ignores late tombstoned replies', async () => {
+    const child = new FakeChild()
+    const written: Uint8Array[] = []
+    child.stdin.on('data', (chunk: Buffer) => { written.push(new Uint8Array(chunk)) })
+    const helper = new NativeHelperProcess({
+      binaryPath: '/verified/computer-use-helper',
+      spawn: () => asChild(child),
+    })
+    const timedRequest = { ...statusRequest(), timeoutMs: 1 }
+
+    await expect(helper.request(timedRequest)).rejects.toEqual(expect.objectContaining({ code: 'TIMEOUT' }))
+    expect(framedMessages(written)).toContainEqual({
+      protocolVersion: 1,
+      messageKind: 'control',
+      controlKind: 'request.cancel',
+      sessionId: 'session-1',
+      requestId: timedRequest.requestId,
+    })
+
+    child.stdout.write(encodeLengthPrefixedFrame(encodeJsonFrame({
+      protocolVersion: 1,
+      messageKind: 'response',
+      responseKind: 'ok',
+      requestKind: 'status',
+      requestId: timedRequest.requestId,
+      result: { viewing: 'unknown', assistive: 'unknown', supported: false },
+    })))
+    expect(helper.running).toBe(true)
+
+    const controller = new AbortController()
+    const abortedRequest = statusRequest('00000000-0000-4000-8000-000000000002')
+    const aborted = helper.request(abortedRequest, controller.signal)
+    controller.abort()
+    await expect(aborted).rejects.toEqual(expect.objectContaining({ code: 'CANCELLED' }))
+    expect(framedMessages(written)).toContainEqual({
+      protocolVersion: 1,
+      messageKind: 'control',
+      controlKind: 'request.cancel',
+      sessionId: 'session-1',
+      requestId: abortedRequest.requestId,
+    })
   })
 })

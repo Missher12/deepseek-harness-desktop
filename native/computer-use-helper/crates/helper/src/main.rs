@@ -103,6 +103,12 @@ impl RequestRegistry {
         self.lock().remove(request_id);
     }
 
+    fn cancel_all(&self) {
+        for request in self.lock().values() {
+            request.token.cancel();
+        }
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, ActiveRequest>> {
         self.0
             .lock()
@@ -162,6 +168,7 @@ where
 {
     thread::spawn(move || {
         if read_frames(input, &sender, &registry).is_err() {
+            registry.cancel_all();
             let _ = sender.send(WorkItem::Fatal);
         }
     });
@@ -181,6 +188,7 @@ where
     loop {
         let read = input.read(&mut chunk).map_err(|_| ())?;
         if read == 0 {
+            registry.cancel_all();
             lengths.finish().map_err(|_| ())?;
             envelopes.finish().map_err(|_| ())?;
             sender.send(WorkItem::Eof).map_err(|_| ())?;
@@ -214,6 +222,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex, mpsc};
     use std::thread;
+    use std::time::Duration;
 
     use computer_use_core::{
         CancellationToken, ComputerUseCore, MonotonicClock, ObservationPlatform, PlatformResult,
@@ -343,7 +352,7 @@ mod tests {
         })
     }
 
-    fn assert_high_priority_control(control: Value) {
+    fn assert_high_priority_termination(control: Option<Value>) {
         let (input_tx, input_rx) = mpsc::channel();
         let reader = ChannelReader {
             receiver: input_rx,
@@ -369,10 +378,19 @@ mod tests {
             .send(Some(framed(&snapshot_request())))
             .expect("snapshot");
         entered_rx.recv().expect("snapshot entered");
-        let shuts_down = control.pointer("/controlKind") == Some(&json!("parent.shutdown"));
-        input_tx.send(Some(framed(&control))).expect("control");
-        cancelled_rx.recv().expect("platform observed cancel");
-        if !shuts_down {
+        let shuts_down = control
+            .as_ref()
+            .is_some_and(|value| value.pointer("/controlKind") == Some(&json!("parent.shutdown")));
+        let has_control = control.is_some();
+        if let Some(control) = control {
+            input_tx.send(Some(framed(&control))).expect("control");
+        } else {
+            input_tx.send(None).expect("eof");
+        }
+        cancelled_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("platform observed cancel");
+        if !shuts_down && has_control {
             input_tx
                 .send(Some(framed(&json!({
                     "protocolVersion":1,
@@ -381,7 +399,9 @@ mod tests {
                 }))))
                 .expect("shutdown");
         }
-        input_tx.send(None).expect("eof");
+        if has_control {
+            input_tx.send(None).expect("eof");
+        }
         runtime
             .join()
             .expect("runtime thread")
@@ -395,13 +415,13 @@ mod tests {
 
     #[test]
     fn high_priority_cancel_reaches_blocked_platform_and_suppresses_late_result() {
-        assert_high_priority_control(json!({
+        assert_high_priority_termination(Some(json!({
             "protocolVersion":1,
             "messageKind":"control",
             "controlKind":"request.cancel",
             "sessionId":"session-1",
             "requestId":"00000000-0000-4000-8000-000000000003"
-        }));
+        })));
     }
 
     #[test]
@@ -427,7 +447,12 @@ mod tests {
                 "controlKind":"parent.shutdown"
             }),
         ] {
-            assert_high_priority_control(control);
+            assert_high_priority_termination(Some(control));
         }
+    }
+
+    #[test]
+    fn eof_cancels_blocked_platform_work_before_worker_shutdown() {
+        assert_high_priority_termination(None);
     }
 }

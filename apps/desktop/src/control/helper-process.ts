@@ -14,6 +14,7 @@ import {
 } from '@deepseek-ai/dsh-desktop-control-protocol'
 
 const MAX_PENDING = 32
+const MAX_TOMBSTONES = 256
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 1_000
 const HELPER_KINDS: ReadonlySet<string> = new Set(HELPER_REQUEST_KINDS)
 
@@ -50,7 +51,9 @@ export class NativeHelperProcessError extends Error {
 }
 
 interface PendingRequest {
+  readonly requestId: HelperRequest['requestId']
   readonly requestKind: HelperRequest['requestKind']
+  readonly sessionId: HelperRequest['sessionId']
   readonly resolve: (value: DecodedDesktopControlEnvelope) => void
   readonly reject: (error: NativeHelperProcessError) => void
   readonly timer: NodeJS.Timeout
@@ -70,6 +73,7 @@ export class NativeHelperProcess {
   private lengths: LengthPrefixedFrameDecoder | undefined
   private frames: DesktopControlFrameDecoder | undefined
   private readonly pending = new Map<string, PendingRequest>()
+  private readonly tombstones = new Map<string, HelperRequest['requestKind']>()
   private closing = false
   private linkFailed = false
   private exitPromise: Promise<void> | undefined
@@ -94,7 +98,9 @@ export class NativeHelperProcess {
     if (signal?.aborted === true) return Promise.reject(new NativeHelperProcessError('CANCELLED'))
     if (this.pending.size >= MAX_PENDING) return Promise.reject(new NativeHelperProcessError('TOO_MANY_PENDING'))
     const requestId = String(request.requestId)
-    if (this.pending.has(requestId)) return Promise.reject(new NativeHelperProcessError('TOO_MANY_PENDING'))
+    if (this.pending.has(requestId) || this.tombstones.has(requestId)) {
+      return Promise.reject(new NativeHelperProcessError('TOO_MANY_PENDING'))
+    }
     let child: ChildProcessWithoutNullStreams
     try {
       child = this.ensureChild()
@@ -104,15 +110,13 @@ export class NativeHelperProcess {
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        const pending = this.pending.get(requestId)
-        if (pending === undefined) return
-        this.pending.delete(requestId)
-        pending.detachAbort?.()
-        reject(new NativeHelperProcessError('TIMEOUT'))
+        this.cancelOne(child, requestId, 'TIMEOUT')
       }, request.timeoutMs)
       timer.unref()
       const pending: PendingRequest = {
+        requestId: request.requestId,
         requestKind: request.requestKind,
+        sessionId: request.sessionId,
         resolve,
         reject,
         timer,
@@ -120,9 +124,7 @@ export class NativeHelperProcess {
       }
       if (signal !== undefined) {
         const abort = () => {
-          if (!this.pending.delete(requestId)) return
-          clearTimeout(timer)
-          reject(new NativeHelperProcessError('CANCELLED'))
+          this.cancelOne(child, requestId, 'CANCELLED')
         }
         signal.addEventListener('abort', abort, { once: true })
         pending.detachAbort = () => { signal.removeEventListener('abort', abort) }
@@ -147,6 +149,11 @@ export class NativeHelperProcess {
     if (child === undefined) return Promise.resolve()
     if (this.shutdownPromise !== undefined) return this.shutdownPromise
     this.closing = true
+    this.write(child, encodeLengthPrefixedFrame(encodeJsonFrame({
+      protocolVersion: 1,
+      messageKind: 'control',
+      controlKind: 'parent.shutdown',
+    })))
     this.rejectPending('CANCELLED')
     this.shutdownPromise = this.shutdownOwnedChild(child)
     return this.shutdownPromise
@@ -204,10 +211,15 @@ export class NativeHelperProcess {
     if (message.messageKind !== 'response') throw new DesktopControlProtocolError('helper response expected')
     const requestId = String(message.requestId)
     const pending = this.pending.get(requestId)
-    if (pending === undefined || pending.requestKind !== message.requestKind) {
+    if (pending === undefined) {
+      if (this.tombstones.get(requestId) === message.requestKind) return
+      throw new DesktopControlProtocolError('helper response correlation mismatch')
+    }
+    if (pending.requestKind !== message.requestKind) {
       throw new DesktopControlProtocolError('helper response correlation mismatch')
     }
     this.pending.delete(requestId)
+    this.rememberTerminal(requestId, pending.requestKind)
     clearTimeout(pending.timer)
     pending.detachAbort?.()
     pending.resolve(envelope)
@@ -226,6 +238,7 @@ export class NativeHelperProcess {
     const pending = this.pending.get(requestId)
     if (pending === undefined) return
     this.pending.delete(requestId)
+    this.rememberTerminal(requestId, pending.requestKind)
     clearTimeout(pending.timer)
     pending.detachAbort?.()
     pending.reject(new NativeHelperProcessError(code))
@@ -233,6 +246,31 @@ export class NativeHelperProcess {
 
   private rejectPending(code: NativeHelperProcessError['code']): void {
     for (const requestId of [...this.pending.keys()]) this.rejectOne(requestId, code)
+  }
+
+  private cancelOne(
+    child: ChildProcessWithoutNullStreams,
+    requestId: string,
+    code: 'TIMEOUT' | 'CANCELLED',
+  ): void {
+    const pending = this.pending.get(requestId)
+    if (pending === undefined) return
+    this.write(child, encodeLengthPrefixedFrame(encodeJsonFrame({
+      protocolVersion: 1,
+      messageKind: 'control',
+      controlKind: 'request.cancel',
+      sessionId: pending.sessionId,
+      requestId: pending.requestId,
+    })))
+    this.rejectOne(requestId, code)
+  }
+
+  private rememberTerminal(requestId: string, requestKind: HelperRequest['requestKind']): void {
+    if (this.tombstones.has(requestId)) return
+    this.tombstones.set(requestId, requestKind)
+    if (this.tombstones.size <= MAX_TOMBSTONES) return
+    const oldest = this.tombstones.keys().next().value
+    if (oldest !== undefined) this.tombstones.delete(oldest)
   }
 
   private failLink(child: ChildProcessWithoutNullStreams): void {
@@ -261,6 +299,7 @@ export class NativeHelperProcess {
     this.linkFailed = false
     this.lengths = undefined
     this.frames = undefined
+    this.tombstones.clear()
     this.resolveExit?.()
     this.resolveExit = undefined
     this.exitPromise = undefined

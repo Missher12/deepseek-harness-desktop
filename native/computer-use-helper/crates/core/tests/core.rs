@@ -45,6 +45,22 @@ fn request_for_session(session_id: &str, kind: &str, fields: Value) -> Value {
 }
 
 fn install(session_id: &str, lease_id: &str, revision: u64) -> Value {
+    install_with(
+        session_id,
+        lease_id,
+        revision,
+        json!(["observe"]),
+        json!({"operations":3,"snapshots":2,"pointerActions":0,"keyActions":0,"textBytes":0}),
+    )
+}
+
+fn install_with(
+    session_id: &str,
+    lease_id: &str,
+    revision: u64,
+    capabilities: Value,
+    quotas: Value,
+) -> Value {
     request_for_session(
         session_id,
         "lease.install",
@@ -53,8 +69,8 @@ fn install(session_id: &str, lease_id: &str, revision: u64) -> Value {
             "leaseRevision": revision,
             "agentId": "agent-1",
             "targets": [{"appId":"app","windowIds":["window"]}],
-            "capabilities": ["observe"],
-            "quotas": {"operations":3,"snapshots":2,"pointerActions":0,"keyActions":0,"textBytes":0},
+            "capabilities": capabilities,
+            "quotas": quotas,
             "idleExpiresAfterMs": 50,
             "hardExpiresAfterMs": 200
         }),
@@ -103,7 +119,7 @@ fn null_platform_reports_honest_status_and_never_exposes_input_injection() {
         )
         .expect("response")
         .into_value();
-    assert_eq!(code(&typed), Some("NOT_SUPPORTED"));
+    assert_eq!(code(&typed), Some("LEASE_REVOKED"));
 }
 
 #[test]
@@ -335,4 +351,156 @@ fn platform_observes_cancellation_and_late_snapshot_result_is_rejected() {
     cancel_rx.recv().expect("platform observed cancellation");
     let response = worker.join().expect("worker joined");
     assert_eq!(code(&response), Some("CANCELLED"));
+}
+
+#[test]
+fn exact_stop_and_expiry_release_the_process_wide_lease_for_a_new_revision() {
+    let now = Arc::new(AtomicU64::new(10));
+    let mut core = ComputerUseCore::new(AtomicClock(now.clone()), NullObservationPlatform);
+    core.handle(decode_helper_input(install("session-1", LEASE_ID, 1)).expect("install"));
+
+    let stopped = core
+        .handle(
+            decode_helper_input(request(
+                "stop",
+                json!({"leaseId":LEASE_ID,"leaseRevision":1}),
+            ))
+            .expect("stop"),
+        )
+        .expect("stop response")
+        .into_value();
+    assert_eq!(stopped.pointer("/result/stopped"), Some(&json!(true)));
+    assert_eq!(core.active_lease_count(), 0);
+    let after_stop = core
+        .handle(
+            decode_helper_input(install("session-2", OTHER_LEASE_ID, 2))
+                .expect("install after stop"),
+        )
+        .expect("install response")
+        .into_value();
+    assert_eq!(after_stop.pointer("/result/leaseRevision"), Some(&json!(2)));
+
+    now.store(60, Ordering::SeqCst);
+    let after_expiry = core
+        .handle(
+            decode_helper_input(install("session-1", LEASE_ID, 3)).expect("install after expiry"),
+        )
+        .expect("install response")
+        .into_value();
+    assert_eq!(
+        after_expiry.pointer("/result/leaseRevision"),
+        Some(&json!(3))
+    );
+    assert_eq!(core.active_lease_count(), 1);
+}
+
+#[test]
+fn capability_and_quota_checks_precede_the_disabled_input_backend() {
+    let clock = AtomicClock(Arc::new(AtomicU64::new(10)));
+    let mut core = ComputerUseCore::new(clock, NullObservationPlatform);
+    core.handle(
+        decode_helper_input(install_with(
+            "session-1",
+            LEASE_ID,
+            1,
+            json!(["pointer"]),
+            json!({"operations":3,"snapshots":2,"pointerActions":1,"keyActions":0,"textBytes":0}),
+        ))
+        .expect("pointer lease"),
+    );
+
+    let snapshot = core
+        .handle(
+            decode_helper_input(request(
+                "snapshot",
+                json!({
+                    "leaseId":LEASE_ID,"leaseRevision":1,"appId":"app","windowId":"window",
+                    "snapshotRevision":1,"includeImage":false
+                }),
+            ))
+            .expect("snapshot"),
+        )
+        .expect("snapshot response")
+        .into_value();
+    assert_eq!(code(&snapshot), Some("UNAUTHORIZED"));
+
+    let typed = core
+        .handle(
+            decode_helper_input(request(
+                "type",
+                json!({
+                    "leaseId":LEASE_ID,"leaseRevision":1,"appId":"app","windowId":"window",
+                    "snapshotRevision":1,"ref":"computer:00000000000000000000000000000001",
+                    "text":"hello"
+                }),
+            ))
+            .expect("type"),
+        )
+        .expect("type response")
+        .into_value();
+    assert_eq!(code(&typed), Some("UNAUTHORIZED"));
+
+    let revoke = json!({
+        "protocolVersion":1,"messageKind":"control","controlKind":"lease.revoke",
+        "sessionId":"session-1","leaseId":LEASE_ID,"leaseRevision":1
+    });
+    core.handle(decode_helper_input(revoke).expect("revoke"));
+    core.handle(
+        decode_helper_input(install_with(
+            "session-1",
+            LEASE_ID,
+            2,
+            json!(["keyboard"]),
+            json!({"operations":3,"snapshots":0,"pointerActions":0,"keyActions":0,"textBytes":10}),
+        ))
+        .expect("keyboard lease"),
+    );
+    let quota_denied = core
+        .handle(
+            decode_helper_input(request(
+                "type",
+                json!({
+                    "leaseId":LEASE_ID,"leaseRevision":2,"appId":"app","windowId":"window",
+                    "snapshotRevision":1,"ref":"computer:00000000000000000000000000000001",
+                    "text":"hello"
+                }),
+            ))
+            .expect("type"),
+        )
+        .expect("type response")
+        .into_value();
+    assert_eq!(code(&quota_denied), Some("QUOTA_EXCEEDED"));
+
+    core.handle(
+        decode_helper_input(json!({
+            "protocolVersion":1,"messageKind":"control","controlKind":"lease.revoke",
+            "sessionId":"session-1","leaseId":LEASE_ID,"leaseRevision":2
+        }))
+        .expect("revoke"),
+    );
+    core.handle(
+        decode_helper_input(install_with(
+            "session-1",
+            LEASE_ID,
+            3,
+            json!(["keyboard"]),
+            json!({"operations":3,"snapshots":0,"pointerActions":0,"keyActions":1,"textBytes":10}),
+        ))
+        .expect("enabled keyboard lease"),
+    );
+    let backend_disabled = core
+        .handle(
+            decode_helper_input(request(
+                "type",
+                json!({
+                    "leaseId":LEASE_ID,"leaseRevision":3,"appId":"app","windowId":"window",
+                    "snapshotRevision":1,"ref":"computer:00000000000000000000000000000001",
+                    "text":"hello"
+                }),
+            ))
+            .expect("type"),
+        )
+        .expect("type response")
+        .into_value();
+    assert_eq!(code(&backend_disabled), Some("NOT_SUPPORTED"));
 }
