@@ -336,6 +336,7 @@ pub trait ObservationPlatform {
     fn snapshot(
         &mut self,
         request: &HelperRequest,
+        snapshot_revision: u64,
         deadline_ms: u64,
         cancel: &CancellationToken,
     ) -> PlatformResult;
@@ -365,6 +366,7 @@ impl ObservationPlatform for NullObservationPlatform {
     fn snapshot(
         &mut self,
         _request: &HelperRequest,
+        _snapshot_revision: u64,
         _deadline_ms: u64,
         _cancel: &CancellationToken,
     ) -> PlatformResult {
@@ -427,6 +429,7 @@ pub struct ComputerUseCore<C, P> {
     platform: P,
     active: Option<ActiveLease>,
     last_revision: u64,
+    last_snapshot_revision: u64,
 }
 
 impl<C, P> ComputerUseCore<C, P>
@@ -442,6 +445,7 @@ where
             platform,
             active: None,
             last_revision: 0,
+            last_snapshot_revision: 0,
         }
     }
 
@@ -599,7 +603,17 @@ where
         lease.quotas.operations -= 1;
         lease.quotas.snapshots -= 1;
         lease.last_activity_ms = now_ms;
-        let result = self.platform.snapshot(request, deadline_ms, cancel);
+        let Some(snapshot_revision) = self
+            .last_snapshot_revision
+            .checked_add(1)
+            .filter(|revision| *revision <= 9_007_199_254_740_991)
+        else {
+            return HelperResponse::error(request, "INTERNAL", false);
+        };
+        self.last_snapshot_revision = snapshot_revision;
+        let result = self
+            .platform
+            .snapshot(request, snapshot_revision, deadline_ms, cancel);
         let png = self.platform.take_png();
         platform_response(request, result, cancel, png)
     }

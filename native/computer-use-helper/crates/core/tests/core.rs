@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
@@ -297,6 +297,7 @@ impl ObservationPlatform for BlockingPlatform {
     fn snapshot(
         &mut self,
         _request: &HelperRequest,
+        _snapshot_revision: u64,
         _deadline_ms: u64,
         cancel: &CancellationToken,
     ) -> PlatformResult {
@@ -309,6 +310,69 @@ impl ObservationPlatform for BlockingPlatform {
             .expect("announce cancellation");
         Ok(json!({"revision":1,"elements":[]}))
     }
+}
+
+struct RevisionPlatform {
+    observed: Rc<RefCell<Vec<u64>>>,
+}
+
+impl ObservationPlatform for RevisionPlatform {
+    fn status(&mut self, _deadline_ms: u64, _cancel: &CancellationToken) -> PlatformResult {
+        unreachable!("status is not used")
+    }
+
+    fn list(&mut self, _deadline_ms: u64, _cancel: &CancellationToken) -> PlatformResult {
+        unreachable!("list is not used")
+    }
+
+    fn snapshot(
+        &mut self,
+        _request: &HelperRequest,
+        snapshot_revision: u64,
+        _deadline_ms: u64,
+        _cancel: &CancellationToken,
+    ) -> PlatformResult {
+        self.observed.borrow_mut().push(snapshot_revision);
+        Ok(json!({"snapshotRevision":snapshot_revision,"refs":[]}))
+    }
+}
+
+#[test]
+fn snapshot_revisions_are_internal_and_strictly_monotonic() {
+    let observed = Rc::new(RefCell::new(Vec::new()));
+    let mut core = ComputerUseCore::new(
+        FakeClock(Rc::new(Cell::new(10))),
+        RevisionPlatform {
+            observed: observed.clone(),
+        },
+    );
+    core.handle(decode_helper_input(install("session-1", LEASE_ID, 1)).expect("install"));
+
+    let mut revisions = Vec::new();
+    for caller_revision in [1, 1] {
+        let response = core
+            .handle(
+                decode_helper_input(request(
+                    "snapshot",
+                    json!({
+                        "leaseId":LEASE_ID,"leaseRevision":1,"appId":"app","windowId":"window",
+                        "snapshotRevision":caller_revision,"includeImage":false
+                    }),
+                ))
+                .expect("snapshot"),
+            )
+            .expect("snapshot response")
+            .into_value();
+        revisions.push(
+            response
+                .pointer("/result/snapshotRevision")
+                .and_then(Value::as_u64)
+                .expect("internal revision"),
+        );
+    }
+
+    assert_eq!(revisions, vec![1, 2]);
+    assert_eq!(*observed.borrow(), vec![1, 2]);
 }
 
 #[test]

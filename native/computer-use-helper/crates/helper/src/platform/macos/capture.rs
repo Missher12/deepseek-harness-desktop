@@ -1,7 +1,7 @@
 //! ScreenCaptureKit-only exact-window enumeration and bounded still capture.
 
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
@@ -19,6 +19,74 @@ const MAX_PNG_BYTES: usize = 4_194_304;
 const MAX_CAPTURE_EDGE: u32 = 2_048;
 const MAX_CAPTURE_PIXELS: u64 = 4_194_304;
 const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+const CAPTURE_ACTIVE: u8 = 0;
+const CAPTURE_SUBMITTED: u8 = 1;
+const CAPTURE_CANCELED: u8 = 2;
+const CAPTURE_COMPLETED: u8 = 3;
+
+struct CaptureSubmissionGate(AtomicU8);
+
+impl CaptureSubmissionGate {
+    fn new() -> Self {
+        Self(AtomicU8::new(CAPTURE_ACTIVE))
+    }
+
+    fn is_active(&self) -> bool {
+        self.0.load(Ordering::SeqCst) == CAPTURE_ACTIVE
+    }
+
+    fn is_submitted(&self) -> bool {
+        self.0.load(Ordering::SeqCst) == CAPTURE_SUBMITTED
+    }
+
+    fn submit(&self, submit: impl FnOnce()) -> bool {
+        if self
+            .0
+            .compare_exchange(
+                CAPTURE_ACTIVE,
+                CAPTURE_SUBMITTED,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .is_err()
+        {
+            return false;
+        }
+        submit();
+        true
+    }
+
+    fn complete_active(&self) -> bool {
+        self.0
+            .compare_exchange(
+                CAPTURE_ACTIVE,
+                CAPTURE_COMPLETED,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .is_ok()
+    }
+
+    fn complete_submission(&self) -> bool {
+        self.0
+            .compare_exchange(
+                CAPTURE_SUBMITTED,
+                CAPTURE_COMPLETED,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .is_ok()
+    }
+
+    fn cancel(&self) {
+        let _ = self
+            .0
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |state| match state {
+                CAPTURE_ACTIVE | CAPTURE_SUBMITTED => Some(CAPTURE_CANCELED),
+                _ => None,
+            });
+    }
+}
 
 #[link(name = "ScreenCaptureKit", kind = "framework")]
 unsafe extern "C" {}
@@ -113,24 +181,24 @@ pub fn capture_exact_window(
     let filter_class = AnyClass::get(c"SCContentFilter").ok_or("NOT_SUPPORTED")?;
     let configuration_class = AnyClass::get(c"SCStreamConfiguration").ok_or("NOT_SUPPORTED")?;
     let (sender, receiver) = mpsc::channel();
-    let accepted = Arc::new(AtomicBool::new(true));
-    let callback_accepted = accepted.clone();
+    let gate = Arc::new(CaptureSubmissionGate::new());
+    let callback_gate = gate.clone();
     let callback_expected = expected.clone();
 
     let block: RcBlock<dyn Fn(*mut AnyObject, *mut AnyObject)> =
         RcBlock::new(move |content: *mut AnyObject, error: *mut AnyObject| {
-            if !callback_accepted.load(Ordering::SeqCst) {
+            if !callback_gate.is_active() {
                 return;
             }
             if !error.is_null() || content.is_null() {
-                finish(&callback_accepted, &sender, Err("TARGET_CLOSED"));
+                finish_active(&callback_gate, &sender, Err("TARGET_CLOSED"));
                 return;
             }
             autoreleasepool(|_| {
                 // SAFETY: All objects are callback-scoped SCK objects and selectors are fixed.
                 unsafe {
                     let Some(window) = find_exact_window(&*content, &callback_expected) else {
-                        finish(&callback_accepted, &sender, Err("TARGET_CLOSED"));
+                        finish_active(&callback_gate, &sender, Err("TARGET_CLOSED"));
                         return;
                     };
                     if process_identity(
@@ -140,7 +208,7 @@ pub fn capture_exact_window(
                     .as_ref()
                         != Some(&callback_expected.identity)
                     {
-                        finish(&callback_accepted, &sender, Err("TARGET_CLOSED"));
+                        finish_active(&callback_gate, &sender, Err("TARGET_CLOSED"));
                         return;
                     }
 
@@ -153,7 +221,7 @@ pub fn capture_exact_window(
                         f64::from(point_pixel_scale),
                         attempt,
                     ) else {
-                        finish(&callback_accepted, &sender, Err("INTERNAL"));
+                        finish_active(&callback_gate, &sender, Err("INTERNAL"));
                         return;
                     };
                     let configuration: Retained<NSObject> = msg_send![configuration_class, new];
@@ -163,11 +231,11 @@ pub fn capture_exact_window(
                     let _: () = msg_send![&configuration, setScalesToFit: true];
                     let _: () = msg_send![&configuration, setPreservesAspectRatio: true];
 
-                    let image_accepted = callback_accepted.clone();
+                    let image_gate = callback_gate.clone();
                     let image_sender = sender.clone();
                     let image_block: RcBlock<dyn Fn(*const c_void, *mut AnyObject)> =
                         RcBlock::new(move |image: *const c_void, capture_error: *mut AnyObject| {
-                            if !image_accepted.swap(false, Ordering::SeqCst) {
+                            if !image_gate.is_submitted() {
                                 return;
                             }
                             let result = if !capture_error.is_null() || image.is_null() {
@@ -176,14 +244,18 @@ pub fn capture_exact_window(
                                 // SAFETY: SCK supplied a live CGImage for this callback.
                                 encode_png(image)
                             };
-                            let _ = image_sender.send(result);
+                            if image_gate.complete_submission() {
+                                let _ = image_sender.send(result);
+                            }
                         });
-                    let _: () = msg_send![
-                        screenshot_class,
-                        captureImageWithFilter: &*filter,
-                        configuration: &*configuration,
-                        completionHandler: &*image_block
-                    ];
+                    callback_gate.submit(|| {
+                        let _: () = msg_send![
+                            screenshot_class,
+                            captureImageWithFilter: &*filter,
+                            configuration: &*configuration,
+                            completionHandler: &*image_block
+                        ];
+                    });
                 }
             });
         });
@@ -196,7 +268,7 @@ pub fn capture_exact_window(
             completionHandler: &*block
         ];
     }
-    let png = wait_for(receiver, accepted, epoch, deadline_ms, cancel)?;
+    let png = wait_for_capture(receiver, gate, epoch, deadline_ms, cancel)?;
     let refreshed = query_windows(epoch, deadline_ms, cancel)?;
     if !unique_fresh_target(expected, &refreshed) {
         return Err("TARGET_CLOSED");
@@ -244,12 +316,41 @@ fn wait_for<T>(
     }
 }
 
-fn finish<T>(
-    accepted: &AtomicBool,
+fn wait_for_capture<T>(
+    receiver: mpsc::Receiver<Result<T, &'static str>>,
+    gate: Arc<CaptureSubmissionGate>,
+    epoch: &Instant,
+    deadline_ms: u64,
+    cancel: &CancellationToken,
+) -> Result<T, &'static str> {
+    loop {
+        if cancel.is_cancelled() {
+            gate.cancel();
+            return Err("CANCELLED");
+        }
+        let now_ms = u64::try_from(epoch.elapsed().as_millis()).unwrap_or(u64::MAX);
+        if now_ms >= deadline_ms {
+            gate.cancel();
+            return Err("TIMEOUT");
+        }
+        let wait_ms = deadline_ms.saturating_sub(now_ms).min(10);
+        match receiver.recv_timeout(Duration::from_millis(wait_ms)) {
+            Ok(result) => return result,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                gate.cancel();
+                return Err("INTERNAL");
+            }
+        }
+    }
+}
+
+fn finish_active<T>(
+    gate: &CaptureSubmissionGate,
     sender: &mpsc::Sender<Result<T, &'static str>>,
     result: Result<T, &'static str>,
 ) {
-    if accepted.swap(false, Ordering::SeqCst) {
+    if gate.complete_active() {
         let _ = sender.send(result);
     }
 }
@@ -407,9 +508,11 @@ fn bounded_nsstring(value: &NSString, maximum_characters: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use computer_use_core::ObservationBounds;
 
-    use super::unique_fresh_target;
+    use super::{CaptureSubmissionGate, unique_fresh_target};
     use crate::platform::macos::{MacProcessIdentity, WindowDescriptor};
 
     fn window(start_microseconds: u64) -> WindowDescriptor {
@@ -445,5 +548,21 @@ mod tests {
             &[expected.clone(), expected.clone()]
         ));
         assert!(!unique_fresh_target(&expected, &[window(56)]));
+    }
+
+    #[test]
+    fn cancellation_winning_the_submission_gate_never_calls_capture() {
+        let gate = CaptureSubmissionGate::new();
+        let native_calls = Cell::new(0);
+        gate.cancel();
+
+        assert!(!gate.submit(|| native_calls.set(native_calls.get() + 1)));
+        assert_eq!(native_calls.get(), 0);
+
+        let submitted = CaptureSubmissionGate::new();
+        assert!(submitted.submit(|| native_calls.set(native_calls.get() + 1)));
+        submitted.cancel();
+        assert_eq!(native_calls.get(), 1);
+        assert!(!submitted.complete_submission());
     }
 }

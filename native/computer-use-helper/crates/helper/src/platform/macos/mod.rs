@@ -140,6 +140,7 @@ impl ObservationPlatform for MacObservationPlatform {
     fn snapshot(
         &mut self,
         request: &HelperRequest,
+        snapshot_revision: u64,
         deadline_ms: u64,
         cancel: &CancellationToken,
     ) -> PlatformResult {
@@ -153,7 +154,6 @@ impl ObservationPlatform for MacObservationPlatform {
         }
         let app_id = request.string("appId").ok_or("INTERNAL")?;
         let window_id = request.string("windowId").ok_or("INTERNAL")?;
-        let revision = request.integer("snapshotRevision").ok_or("INTERNAL")?;
         let windows = capture::query_windows(&self.epoch, deadline_ms, cancel)?;
         let mut matching = windows
             .into_iter()
@@ -172,7 +172,7 @@ impl ObservationPlatform for MacObservationPlatform {
             &target,
             app_id,
             window_id,
-            revision,
+            snapshot_revision,
             &self.epoch,
             deadline_ms,
             cancel,
@@ -194,7 +194,7 @@ impl ObservationPlatform for MacObservationPlatform {
         let result = json!({
             "appId": app_id,
             "windowId": window_id,
-            "snapshotRevision": revision,
+            "snapshotRevision": snapshot_revision,
             "semanticText": projection.semantic_text,
             "refs": refs,
         });

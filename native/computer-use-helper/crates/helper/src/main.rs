@@ -14,6 +14,8 @@ use computer_use_protocol::{
     decode_helper_input, encode_json_value, encode_length_prefixed,
 };
 
+const OUTPUT_CHUNK_BYTES: usize = 16 * 1024;
+
 struct SystemMonotonicClock(Instant);
 
 impl MonotonicClock for SystemMonotonicClock {
@@ -43,43 +45,63 @@ fn run() -> Result<(), ()> {
 }
 
 enum WorkItem {
-    Request(HelperRequest, CancellationToken),
+    Request(HelperRequest, RequestTicket),
     Control(ControlMessage),
     Eof,
     Fatal,
 }
 
 struct ActiveRequest {
+    generation: u64,
     session_id: String,
     lease: Option<(String, u64)>,
     token: CancellationToken,
+    output_claimed: bool,
+}
+
+struct RequestTicket {
+    generation: u64,
+    token: CancellationToken,
+}
+
+#[derive(Default)]
+struct RegistryState {
+    requests: HashMap<String, ActiveRequest>,
+    last_generation: u64,
 }
 
 #[derive(Clone, Default)]
-struct RequestRegistry(Arc<Mutex<HashMap<String, ActiveRequest>>>);
+struct RequestRegistry(Arc<Mutex<RegistryState>>);
 
 impl RequestRegistry {
-    fn register(&self, request: &HelperRequest) -> CancellationToken {
+    fn register(&self, request: &HelperRequest) -> Result<RequestTicket, ()> {
         let token = CancellationToken::new();
         let lease = request
             .string("leaseId")
             .zip(request.integer("leaseRevision"));
+        let mut state = self.lock();
+        let generation = state.last_generation.checked_add(1).ok_or(())?;
+        state.last_generation = generation;
         let entry = ActiveRequest {
+            generation,
             session_id: request.session_id().to_owned(),
             lease: lease.map(|(id, revision)| (id.to_owned(), revision)),
             token: token.clone(),
+            output_claimed: false,
         };
-        let mut requests = self.lock();
-        if let Some(previous) = requests.insert(request.request_id().to_owned(), entry) {
+        if let Some(previous) = state
+            .requests
+            .insert(request.request_id().to_owned(), entry)
+        {
             previous.token.cancel();
             token.cancel();
         }
-        token
+        Ok(RequestTicket { generation, token })
     }
 
     fn apply_control(&self, control: &ControlMessage) {
-        let mut requests = self.lock();
-        for (request_id, request) in requests.iter_mut() {
+        let mut state = self.lock();
+        for (request_id, request) in &mut state.requests {
             let matches = match control.control_kind() {
                 "request.cancel" => {
                     control.string("requestId") == Some(request_id.as_str())
@@ -102,21 +124,84 @@ impl RequestRegistry {
         }
     }
 
-    fn complete(&self, request_id: &str) {
-        self.lock().remove(request_id);
+    fn try_begin_output(&self, request_id: &str, generation: u64) -> bool {
+        let mut state = self.lock();
+        let Some(request) = state.requests.get_mut(request_id) else {
+            return false;
+        };
+        if request.generation != generation
+            || request.output_claimed
+            || request.token.is_cancelled()
+        {
+            return false;
+        }
+        request.output_claimed = true;
+        true
+    }
+
+    fn complete(&self, request_id: &str, generation: u64) {
+        let mut state = self.lock();
+        if state
+            .requests
+            .get(request_id)
+            .is_some_and(|request| request.generation == generation)
+        {
+            state.requests.remove(request_id);
+        }
     }
 
     fn cancel_all(&self) {
-        for request in self.lock().values() {
+        for request in self.lock().requests.values() {
             request.token.cancel();
         }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, ActiveRequest>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, RegistryState> {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OutputWrite {
+    Complete,
+    Canceled,
+}
+
+fn write_cancelable<W: Write>(
+    output: &mut W,
+    framed: &[u8],
+    token: &CancellationToken,
+) -> Result<OutputWrite, ()> {
+    let mut wrote_any = false;
+    for chunk in framed.chunks(OUTPUT_CHUNK_BYTES) {
+        let mut offset = 0;
+        while offset < chunk.len() {
+            if token.is_cancelled() {
+                return if wrote_any {
+                    Err(())
+                } else {
+                    Ok(OutputWrite::Canceled)
+                };
+            }
+            let written = output.write(&chunk[offset..]).map_err(|_| ())?;
+            if written == 0 {
+                return Err(());
+            }
+            wrote_any = true;
+            offset += written;
+        }
+    }
+    if token.is_cancelled() {
+        return if wrote_any {
+            Err(())
+        } else {
+            Ok(OutputWrite::Canceled)
+        };
+    }
+    output.flush().map_err(|_| ())?;
+    Ok(OutputWrite::Complete)
 }
 
 fn run_io<R, W, C, P>(input: R, mut output: W, mut core: ComputerUseCore<C, P>) -> Result<(), ()>
@@ -132,11 +217,12 @@ where
 
     while let Ok(work) = receiver.recv() {
         match work {
-            WorkItem::Request(request, token) => {
+            WorkItem::Request(request, ticket) => {
                 let request_id = request.request_id().to_owned();
-                let response = core.handle_with_cancellation(HelperInput::Request(request), &token);
-                if token.is_cancelled() {
-                    registry.complete(&request_id);
+                let response =
+                    core.handle_with_cancellation(HelperInput::Request(request), &ticket.token);
+                if ticket.token.is_cancelled() {
+                    registry.complete(&request_id, ticket.generation);
                     continue;
                 }
                 if let Some(response) = response {
@@ -146,14 +232,23 @@ where
                         let png = png.encode_frame().map_err(|_| ())?;
                         framed.extend_from_slice(&encode_length_prefixed(&png).map_err(|_| ())?);
                     }
-                    if token.is_cancelled() {
-                        registry.complete(&request_id);
+                    if !registry.try_begin_output(&request_id, ticket.generation) {
+                        registry.complete(&request_id, ticket.generation);
                         continue;
                     }
-                    output.write_all(&framed).map_err(|_| ())?;
-                    output.flush().map_err(|_| ())?;
+                    match write_cancelable(&mut output, &framed, &ticket.token) {
+                        Ok(OutputWrite::Complete) => {}
+                        Ok(OutputWrite::Canceled) => {
+                            registry.complete(&request_id, ticket.generation);
+                            continue;
+                        }
+                        Err(()) => {
+                            registry.complete(&request_id, ticket.generation);
+                            return Err(());
+                        }
+                    }
                 }
-                registry.complete(&request_id);
+                registry.complete(&request_id, ticket.generation);
             }
             WorkItem::Control(control) => {
                 let shutdown = control.control_kind() == "parent.shutdown";
@@ -208,9 +303,9 @@ where
                 }
                 match decode_helper_input(envelope.message).map_err(|_| ())? {
                     HelperInput::Request(request) => {
-                        let token = registry.register(&request);
+                        let ticket = registry.register(&request)?;
                         sender
-                            .send(WorkItem::Request(request, token))
+                            .send(WorkItem::Request(request, ticket))
                             .map_err(|_| ())?;
                     }
                     HelperInput::Control(control) => {
@@ -240,7 +335,7 @@ mod tests {
     };
     use serde_json::{Value, json};
 
-    use super::run_io;
+    use super::{OUTPUT_CHUNK_BYTES, RequestRegistry, run_io, write_cancelable};
 
     #[derive(Clone)]
     struct AtomicClock(Arc<AtomicU64>);
@@ -273,6 +368,7 @@ mod tests {
         fn snapshot(
             &mut self,
             request: &HelperRequest,
+            snapshot_revision: u64,
             _deadline_ms: u64,
             _cancel: &CancellationToken,
         ) -> PlatformResult {
@@ -280,7 +376,7 @@ mod tests {
             Ok(json!({
                 "appId": request.string("appId").expect("app"),
                 "windowId": request.string("windowId").expect("window"),
-                "snapshotRevision": request.integer("snapshotRevision").expect("revision"),
+                "snapshotRevision": snapshot_revision,
                 "semanticText": "",
                 "refs": [],
             }))
@@ -303,6 +399,7 @@ mod tests {
         fn snapshot(
             &mut self,
             _request: &HelperRequest,
+            _snapshot_revision: u64,
             _deadline_ms: u64,
             cancel: &CancellationToken,
         ) -> PlatformResult {
@@ -587,5 +684,64 @@ mod tests {
             snapshot[0].png.as_ref().expect("correlated PNG").read(),
             png
         );
+    }
+
+    #[test]
+    fn canceled_or_stale_generations_cannot_commit_output() {
+        let registry = RequestRegistry::default();
+        let request = match computer_use_protocol::decode_helper_input(snapshot_request())
+            .expect("snapshot")
+        {
+            computer_use_protocol::HelperInput::Request(request) => request,
+            computer_use_protocol::HelperInput::Control(_) => unreachable!(),
+        };
+        let first = registry.register(&request).expect("first generation");
+        registry.complete(request.request_id(), first.generation);
+        let second = registry.register(&request).expect("second generation");
+
+        assert!(!registry.try_begin_output(request.request_id(), first.generation));
+        second.token.cancel();
+        assert!(!registry.try_begin_output(request.request_id(), second.generation));
+
+        let mut output = Vec::new();
+        let outcome = write_cancelable(&mut output, b"must not be written", &second.token)
+            .expect("cancel before write is clean");
+        assert_eq!(outcome, super::OutputWrite::Canceled);
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn response_writes_are_cancelable_between_bounded_chunks() {
+        struct CancelAfterFirstChunk {
+            token: CancellationToken,
+            bytes: Vec<u8>,
+            writes: usize,
+        }
+
+        impl Write for CancelAfterFirstChunk {
+            fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+                self.bytes.extend_from_slice(buffer);
+                self.writes += 1;
+                if self.writes == 1 {
+                    self.token.cancel();
+                }
+                Ok(buffer.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let token = CancellationToken::new();
+        let mut output = CancelAfterFirstChunk {
+            token: token.clone(),
+            bytes: Vec::new(),
+            writes: 0,
+        };
+        let framed = vec![7_u8; OUTPUT_CHUNK_BYTES * 3];
+
+        assert!(write_cancelable(&mut output, &framed, &token).is_err());
+        assert_eq!(output.bytes.len(), OUTPUT_CHUNK_BYTES);
     }
 }

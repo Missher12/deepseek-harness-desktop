@@ -86,6 +86,27 @@ struct AxSource<'a> {
     app_hidden: bool,
 }
 
+enum VisibilityRead<T> {
+    Hidden,
+    Minimized,
+    Visible(T),
+}
+
+fn read_after_visibility<T, E>(
+    app_hidden: bool,
+    read_hidden: impl FnOnce() -> Result<bool, E>,
+    read_minimized: impl FnOnce() -> Result<bool, E>,
+    read_visible: impl FnOnce() -> Result<T, E>,
+) -> Result<VisibilityRead<T>, E> {
+    if app_hidden || read_hidden()? {
+        return Ok(VisibilityRead::Hidden);
+    }
+    if read_minimized()? {
+        return Ok(VisibilityRead::Minimized);
+    }
+    read_visible().map(VisibilityRead::Visible)
+}
+
 impl AxSource<'_> {
     fn check(&self) -> Result<(), &'static str> {
         if self.cancel.is_cancelled() {
@@ -251,21 +272,46 @@ impl AccessibilityNodeSource for AxSource<'_> {
         node: &Self::Node,
     ) -> Result<AccessibilityNode<Self::Node>, &'static str> {
         self.check()?;
-        let role = self.string(node, b"AXRole\0", 256)?;
-        let title = self.string(node, b"AXTitle\0", 2_048)?;
-        let name = if title.is_empty() {
-            self.string(node, b"AXDescription\0", 2_048)?
-        } else {
-            title
-        };
-        Ok(AccessibilityNode {
-            role,
-            name,
-            bounds: self.bounds(node)?,
-            hidden: self.app_hidden || self.boolean(node, b"AXHidden\0")?,
-            minimized: self.boolean(node, b"AXMinimized\0")?,
-            children: self.children(node)?,
-        })
+        match read_after_visibility(
+            self.app_hidden,
+            || self.boolean(node, b"AXHidden\0"),
+            || self.boolean(node, b"AXMinimized\0"),
+            || {
+                let role = self.string(node, b"AXRole\0", 256)?;
+                let title = self.string(node, b"AXTitle\0", 2_048)?;
+                let name = if title.is_empty() {
+                    self.string(node, b"AXDescription\0", 2_048)?
+                } else {
+                    title
+                };
+                Ok(AccessibilityNode {
+                    role,
+                    name,
+                    bounds: self.bounds(node)?,
+                    hidden: false,
+                    minimized: false,
+                    children: self.children(node)?,
+                })
+            },
+        )? {
+            VisibilityRead::Hidden => Ok(AccessibilityNode {
+                role: String::new(),
+                name: String::new(),
+                bounds: None,
+                hidden: true,
+                minimized: false,
+                children: Vec::new(),
+            }),
+            VisibilityRead::Minimized => Ok(AccessibilityNode {
+                role: String::new(),
+                name: String::new(),
+                bounds: None,
+                hidden: false,
+                minimized: true,
+                children: Vec::new(),
+            }),
+            VisibilityRead::Visible(description) => Ok(description),
+        }
     }
 }
 
@@ -320,6 +366,7 @@ pub fn observe_exact_window(
         let mut window_pid = 0_i32;
         if unsafe { AXUIElementGetPid(window.as_ptr(), &mut window_pid) } != AX_SUCCESS
             || window_pid != target.identity.pid
+            || source.boolean(&window, b"AXHidden\0")?
             || source.boolean(&window, b"AXMinimized\0")?
         {
             continue;
@@ -436,4 +483,109 @@ unsafe extern "C" {
     fn CFArrayGetTypeID() -> usize;
     fn CFArrayGetCount(value: CFTypeRef) -> isize;
     fn CFArrayGetValueAtIndex(value: CFTypeRef, index: isize) -> CFTypeRef;
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use super::{VisibilityRead, read_after_visibility};
+
+    #[test]
+    fn hidden_and_minimized_nodes_never_read_content() {
+        let hidden_reads = Cell::new(0);
+        let minimized_reads = Cell::new(0);
+        let content_reads = Cell::new(0);
+
+        let app_hidden = read_after_visibility(
+            true,
+            || {
+                hidden_reads.set(hidden_reads.get() + 1);
+                Ok::<_, ()>(false)
+            },
+            || {
+                minimized_reads.set(minimized_reads.get() + 1);
+                Ok::<_, ()>(false)
+            },
+            || {
+                content_reads.set(content_reads.get() + 1);
+                Ok::<_, ()>(())
+            },
+        )
+        .expect("app visibility");
+        assert!(matches!(app_hidden, VisibilityRead::Hidden));
+        assert_eq!(
+            (
+                hidden_reads.get(),
+                minimized_reads.get(),
+                content_reads.get()
+            ),
+            (0, 0, 0)
+        );
+
+        let ax_hidden = read_after_visibility(
+            false,
+            || {
+                hidden_reads.set(hidden_reads.get() + 1);
+                Ok::<_, ()>(true)
+            },
+            || {
+                minimized_reads.set(minimized_reads.get() + 1);
+                Ok::<_, ()>(false)
+            },
+            || {
+                content_reads.set(content_reads.get() + 1);
+                Ok::<_, ()>(())
+            },
+        )
+        .expect("AX hidden");
+        assert!(matches!(ax_hidden, VisibilityRead::Hidden));
+        assert_eq!(
+            (
+                hidden_reads.get(),
+                minimized_reads.get(),
+                content_reads.get()
+            ),
+            (1, 0, 0)
+        );
+
+        let minimized = read_after_visibility(
+            false,
+            || {
+                hidden_reads.set(hidden_reads.get() + 1);
+                Ok::<_, ()>(false)
+            },
+            || {
+                minimized_reads.set(minimized_reads.get() + 1);
+                Ok::<_, ()>(true)
+            },
+            || {
+                content_reads.set(content_reads.get() + 1);
+                Ok::<_, ()>(())
+            },
+        )
+        .expect("AX minimized");
+        assert!(matches!(minimized, VisibilityRead::Minimized));
+        assert_eq!(
+            (
+                hidden_reads.get(),
+                minimized_reads.get(),
+                content_reads.get()
+            ),
+            (2, 1, 0)
+        );
+
+        let visible = read_after_visibility(
+            false,
+            || Ok::<_, ()>(false),
+            || Ok::<_, ()>(false),
+            || {
+                content_reads.set(content_reads.get() + 1);
+                Ok::<_, ()>(7)
+            },
+        )
+        .expect("visible");
+        assert!(matches!(visible, VisibilityRead::Visible(7)));
+        assert_eq!(content_reads.get(), 1);
+    }
 }
