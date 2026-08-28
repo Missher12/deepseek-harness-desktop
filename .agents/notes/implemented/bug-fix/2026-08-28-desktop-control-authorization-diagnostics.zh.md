@@ -14,6 +14,8 @@ Status: implemented
 
 一次超时的原生任务询问还会在没有活动租约时保留首个 Harness 官方会话。全局 Stop 只检查活动租约，因此后续会话会持续收到 `UNAUTHORIZED`，直到 Desktop 进程重启，尽管界面并未显示活动控制者。
 
+生产 Electron 把带小数的 `performance.now()` 直接传给只接受非负安全整数单调毫秒的租约权威。因此原生批准和 helper 安装虽然成功，每次租约激活仍会在首个快照或动作前内部失败；只使用整数的 FakeClock 掩盖了这处生产接线错误。
+
 ## 决策
 
 Protocol 错误清单加入 `CONTROL_DISABLED`、`TARGET_NOT_AUTHORIZED` 和 `APPROVAL_DENIED`。Electron main 只在自身持有的判断点返回对应错误。原生应用 Surface 关闭或请求中没有白名单应用时，在原生询问前失败；原生询问被取消时，在询问后失败。`PERMISSION_DENIED` 继续表示操作系统结果，`TARGET_CLOSED` 表示已允许但不再有效的目标，`POLICY_DENIED` 继续表示目标受保护。电脑工具把每项错误码映射为长度受限的纠正文字，绝不转发 Provider 诊断。
@@ -25,6 +27,8 @@ Helper 构建把与最终裸可执行文件名称一致的 `computer-use-helper`
 macOS 辅助功能绑定现在会在已经验证的进程中，选择唯一一个有限且与所选 ScreenCaptureKit 窗口几何边界精确匹配的可见 AX 窗口。框架标题只属于展示数据，不再充当身份。零匹配与重复边界仍然失败关闭；ScreenCaptureKit 窗口号、进程启动身份、Bundle 身份，以及观察完成后的 ScreenCaptureKit 新鲜枚举全部保留。
 
 main 持有的全局 Stop 路径现在会优先撤销活动租约会话；若租约尚未激活，则撤销已经声明的官方会话。撤销仍会等待未完成清理，浏览器清理失败时继续失败关闭；只有精确会话清理成功后，才会把所有权交给后续 Harness 会话。
+
+Electron 会在时钟边界对 `performance.now()` 向下取整，在满足租约权威精确整数约定的同时保留单调毫秒顺序。Manifest 接线测试会锁定这条生产边界，并保留权威层已有的带小数时钟拒绝测试。
 
 ## 考虑过的替代方案
 
@@ -43,3 +47,5 @@ main 持有的全局 Stop 路径现在会优先撤销活动租约会话；若租
 普通 Chrome 窗口不会再因为 ScreenCaptureKit 与辅助功能框架采用不同标题格式而失败。真实验收会针对一个 `about:blank` Chrome 窗口验证有界语义与 PNG 截图；PID 或边界存在歧义时仍硬性返回 `TARGET_CLOSED`。
 
 原生任务询问被取消或超时后，可见 Stop 操作也会清除遗留会话声明。新任务无需重启 DeepSeek Harness 即可重新申请控制；清理失败时则仍会阻止所有权转移。
+
+租约激活现在会继续进入原生 Adapter，不再在批准后返回笼统的 `INTERNAL`。该修复不会放宽到期边界比较，也没有用墙上时钟替换单调时钟。

@@ -355,7 +355,7 @@ const computerControlAdapter = new ComputerDesktopControlAdapter({
 
 const controlCoordinator = new DesktopControlCoordinator({
   clock: {
-    now: () => performance.now(),
+    now: () => Math.floor(performance.now()),
     setTimeout: (callback, delayMs) => {
       const timer = setTimeout(callback, delayMs)
       timer.unref()

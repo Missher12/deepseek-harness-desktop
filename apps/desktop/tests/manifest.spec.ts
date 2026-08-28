@@ -71,6 +71,7 @@ describe('desktop package manifest', () => {
       mainSource.indexOf('controlCoordinator.helperCrashed()'),
     )
     expect(mainSource).toContain('active?.sessionId ?? officialControlSession')
+    expect(mainSource).toContain('now: () => Math.floor(performance.now())')
   })
 
   it('maps browser enablement to a distinct native confirmation', () => {

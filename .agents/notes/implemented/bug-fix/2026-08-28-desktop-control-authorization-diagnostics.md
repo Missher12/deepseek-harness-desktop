@@ -14,6 +14,8 @@ Chrome exposed a second live interoperability failure after both permissions and
 
 A timed-out native challenge also left the first official Harness session claimed without an active lease. The global Stop path checked only the active lease, so a later session received `UNAUTHORIZED` until the Desktop process restarted even though the UI showed no active controller.
 
+Production Electron passed fractional `performance.now()` values into a lease authority that intentionally accepts only non-negative safe-integer monotonic milliseconds. Native approval and helper installation therefore succeeded, but every lease activation failed internally before the first snapshot or action; integer-only fake clocks hid the wiring defect.
+
 ## Decision
 
 The protocol error roster includes `CONTROL_DISABLED`, `TARGET_NOT_AUTHORIZED`, and `APPROVAL_DENIED`. Electron main emits each only at its owned decision point. A disabled native-application surface and a request with no allowlisted application fail before the native challenge; a cancelled native challenge fails afterward. `PERMISSION_DENIED` remains an operating-system result, `TARGET_CLOSED` describes an allowed target that is no longer current, and `POLICY_DENIED` remains the protected-target result. The Computer tool maps each code to bounded corrective text and never forwards provider diagnostics.
@@ -25,6 +27,8 @@ The helper build assigns `computer-use-helper`, matching the final bare executab
 The macOS Accessibility binding now selects the only visible AX window in the already verified process whose finite geometry exactly matches the selected ScreenCaptureKit window. Framework titles are presentation data rather than identity. Zero matches and duplicate matching bounds still fail closed; the ScreenCaptureKit window number, process start identity, bundle identity, and fresh post-observation ScreenCaptureKit enumeration remain unchanged.
 
 The main-owned global Stop path now revokes the active lease session when present, or the claimed official session when no lease became active. Revocation still awaits pending cleanup and keeps failed browser cleanup fail-closed; only a successful exact-session cleanup releases ownership for a later Harness session.
+
+Electron floors `performance.now()` at the clock boundary, preserving monotonic millisecond ordering while satisfying the lease authority's exact integer contract. The manifest wiring test locks this production boundary in addition to the authority's existing fractional-clock rejection tests.
 
 ## Alternatives considered
 
@@ -43,3 +47,5 @@ The staged and packaged macOS helper now keeps a stable nested identifier and pa
 Ordinary Chrome windows no longer fail solely because ScreenCaptureKit and Accessibility format their titles differently. Live acceptance verifies bounded semantics and PNG capture against one `about:blank` Chrome window; ambiguity in PID or bounds remains a hard `TARGET_CLOSED` result.
 
 After a cancelled or timed-out native challenge, the visible Stop action also clears the orphaned session claim. A new task can then acquire control without restarting DeepSeek Harness, while a cleanup failure continues to block ownership transfer.
+
+Lease activation now reaches the native adapter instead of returning a generic `INTERNAL` after approval. The correction does not weaken expiry comparisons or replace the monotonic clock with wall time.
