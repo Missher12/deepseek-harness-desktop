@@ -369,6 +369,23 @@ fn classify_input(role: &str, subrole: &str, name: &str) -> InputSafety {
     }
 }
 
+fn unique_window_bounds_index(
+    target: ObservationBounds,
+    candidates: &[ObservationBounds],
+) -> Option<usize> {
+    let mut matched = None;
+    for (index, bounds) in candidates.iter().copied().enumerate() {
+        if !close_bounds(bounds, target) {
+            continue;
+        }
+        if matched.is_some() {
+            return None;
+        }
+        matched = Some(index);
+    }
+    matched
+}
+
 /// Bind one exact SCK target to one unique AX window, then project it breadth-first.
 pub fn observe_exact_window(
     target: &WindowDescriptor,
@@ -414,7 +431,7 @@ pub fn observe_exact_window(
         return Err("TARGET_CLOSED");
     }
     let windows = source.children_for_attribute(&application, b"AXWindows\0", 256)?;
-    let mut matching = Vec::new();
+    let mut candidates = Vec::new();
     for window in windows {
         source.check()?;
         let mut window_pid = 0_i32;
@@ -425,18 +442,17 @@ pub fn observe_exact_window(
         {
             continue;
         }
-        let title = source.string(&window, b"AXTitle\0", 1_024)?;
         let Some(bounds) = source.bounds(&window)? else {
             continue;
         };
-        if title == target.title && close_bounds(bounds, target.bounds) {
-            matching.push(window);
-        }
+        candidates.push((window, bounds));
     }
-    if matching.len() != 1 {
-        return Err("TARGET_CLOSED");
-    }
-    let root = matching.pop().expect("exactly one AX window");
+    let bounds = candidates
+        .iter()
+        .map(|(_, bounds)| *bounds)
+        .collect::<Vec<_>>();
+    let matched = unique_window_bounds_index(target.bounds, &bounds).ok_or("TARGET_CLOSED")?;
+    let root = candidates.swap_remove(matched).0;
     let mut source = AxSource {
         epoch,
         deadline_ms,
@@ -543,7 +559,25 @@ unsafe extern "C" {
 mod tests {
     use std::cell::Cell;
 
-    use super::{VisibilityRead, read_after_visibility};
+    use computer_use_core::ObservationBounds;
+
+    use super::{VisibilityRead, read_after_visibility, unique_window_bounds_index};
+
+    #[test]
+    fn exact_unique_geometry_binds_sck_and_ax_windows_without_title_equality() {
+        let target = ObservationBounds {
+            x: 0.0,
+            y: 25.0,
+            width: 2_048.0,
+            height: 1_191.0,
+        };
+        assert_eq!(unique_window_bounds_index(target, &[target]), Some(0));
+        assert_eq!(unique_window_bounds_index(target, &[target, target]), None);
+        assert_eq!(
+            unique_window_bounds_index(target, &[ObservationBounds { x: 1.0, ..target }],),
+            None,
+        );
+    }
 
     #[test]
     fn hidden_and_minimized_nodes_never_read_content() {

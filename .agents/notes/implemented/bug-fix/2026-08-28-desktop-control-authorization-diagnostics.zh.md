@@ -10,6 +10,8 @@ Status: implemented
 
 本地 macOS 包还会对嵌套原生 helper 做临时签名，但既没有固定标识，也没有显式共享签名流程。因此 helper 获得了由哈希派生的身份，而系统设置显示的是外层应用。替换构建后，两项可见开关可能仍保持开启，但 TCC 会把实际执行预检的 helper 当成另一份代码。
 
+两项权限与 Chrome 应用白名单都有效后，真实验收还暴露了第二个互操作问题：ScreenCaptureKit 把普通窗口命名为 `about:blank`，而辅助功能框架把同一 PID、同一几何边界的窗口命名为 `about:blank - Google Chrome - <profile>`。要求两套框架的展示标题逐字相同，会在读取语义或像素前把当前窗口误判为已关闭。
+
 ## 决策
 
 Protocol 错误清单加入 `CONTROL_DISABLED`、`TARGET_NOT_AUTHORIZED` 和 `APPROVAL_DENIED`。Electron main 只在自身持有的判断点返回对应错误。原生应用 Surface 关闭或请求中没有白名单应用时，在原生询问前失败；原生询问被取消时，在询问后失败。`PERMISSION_DENIED` 继续表示操作系统结果，`TARGET_CLOSED` 表示已允许但不再有效的目标，`POLICY_DENIED` 继续表示目标受保护。电脑工具把每项错误码映射为长度受限的纠正文字，绝不转发 Provider 诊断。
@@ -17,6 +19,8 @@ Protocol 错误清单加入 `CONTROL_DISABLED`、`TARGET_NOT_AUTHORIZED` 和 `AP
 电脑控制可用且已开启、但枚举应用均未获允许时，设置页应用区域会显示纠正状态。页面会说明应用出现在列表中不代表已授权；每个新任务使用独立的 Electron 原生批准，Harness 普通 `ask` 或 `never` 策略不能替代它。应用修改继续使用现有 main 持有的确认与持久白名单；Renderer 或模型字段都不能生成租约或批准。
 
 Helper 构建把与最终裸可执行文件名称一致的 `computer-use-helper` 设为嵌套代码标识，macOS 打包再把该可执行文件列入 Electron Builder 的显式二进制签名清单。因此使用证书的包会以同一稳定身份签署应用与 helper。默认本地临时签名仍然绑定 CDHash，不能描述为可持久使用；正式发布必须使用 Developer ID 签名与公证。
+
+macOS 辅助功能绑定现在会在已经验证的进程中，选择唯一一个有限且与所选 ScreenCaptureKit 窗口几何边界精确匹配的可见 AX 窗口。框架标题只属于展示数据，不再充当身份。零匹配与重复边界仍然失败关闭；ScreenCaptureKit 窗口号、进程启动身份、Bundle 身份，以及观察完成后的 ScreenCaptureKit 新鲜枚举全部保留。
 
 ## 考虑过的替代方案
 
@@ -31,3 +35,5 @@ Helper 构建把与最终裸可执行文件名称一致的 `computer-use-helper`
 零白名单安装现在会在原生批准前失败，并给出精确设置指引；允许应用后则会进入独立的原生任务询问。macOS 权限失败与目标受保护继续失败关闭，并显示不同原因。Wire 清单增加三个错误码，TypeScript 与 Rust 校验同一份 Manifest。对 `DesktopControlErrorCode` 做穷举判断的现有调用方必须处理新增值。
 
 暂存与打包后的 macOS helper 现在会保持稳定嵌套标识，并进入应用签名流程。替换旧的哈希标识本地 helper 后，仍可能需要最后手动刷新一次权限。未来本地重建必须复用同一证书才能保持 TCC 身份；只有临时签名不能提供该保证。
+
+普通 Chrome 窗口不会再因为 ScreenCaptureKit 与辅助功能框架采用不同标题格式而失败。真实验收会针对一个 `about:blank` Chrome 窗口验证有界语义与 PNG 截图；PID 或边界存在歧义时仍硬性返回 `TARGET_CLOSED`。
