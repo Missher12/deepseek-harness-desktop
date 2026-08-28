@@ -15,6 +15,7 @@ function setup(withProvider = true) {
     getSettings: () => settings,
     writeSettings: write,
     getControlStatus: () => ({
+      browserSupported: true,
       computerSupported: withProvider,
       active: { surfaceKind: 'native-application', agentName: 'Agent', appId: 'app.notes' },
       action: 'computer.type',
@@ -38,16 +39,17 @@ describe('ComputerControlUiAuthority', () => {
     const { authority } = setup()
     const snapshot = await authority.snapshot()
     expect(snapshot).toMatchObject({
-      supported: true,
-      browserEnabled: false,
+      browser: { availability: 'available', enabled: false },
+      computer: { availability: 'available', enabled: true },
       permissions: { screenViewing: 'granted', assistiveControl: 'denied' },
+      refresh: { status: { state: 'ready' }, apps: { state: 'ready' } },
       ordinaryApps: [
         { appId: 'app.notes', name: 'Notes', allowed: true },
         { appId: 'app.mail', name: 'Mail', allowed: false },
       ],
       active: { agentName: 'Agent', appName: 'Notes', action: 'Type' },
     })
-    expect(JSON.stringify(snapshot)).not.toMatch(/session|lease|windowId|ref/i)
+    expect(JSON.stringify(snapshot)).not.toMatch(/"(?:sessionId|leaseId|windowId|ref)"/i)
   })
 
   it('persists browser enablement only after the main-owned confirmation', async () => {
@@ -77,10 +79,49 @@ describe('ComputerControlUiAuthority', () => {
   it('fails a provider-less startup locally and never blocks status rendering', async () => {
     const { authority } = setup(false)
     await expect(authority.snapshot()).resolves.toMatchObject({
-      supported: false,
+      browser: { availability: 'available', enabled: false },
+      computer: { availability: 'unavailable', enabled: true },
       permissions: { screenViewing: 'unknown', assistiveControl: 'unknown' },
+      refresh: { status: { state: 'ready' }, apps: { state: 'ready' } },
       ordinaryApps: [],
     })
+  })
+
+  it('settles native status and application enumeration independently', async () => {
+    let settings: ControlSettings = { ...DEFAULT_CONTROL_SETTINGS }
+    const status = vi.fn()
+      .mockResolvedValueOnce({ viewing: 'granted', assistive: 'granted', supported: true })
+      .mockRejectedValueOnce(new Error('private status detail'))
+    const list = vi.fn()
+      .mockResolvedValueOnce({ apps: [{
+        appId: 'app.notes', name: 'Notes', windows: [{ windowId: 'w1', title: 'Notes' }],
+      }] })
+      .mockRejectedValueOnce(new Error('private list detail'))
+    const authority = new ComputerControlUiAuthority({
+      getSettings: () => settings,
+      writeSettings: async (next) => { settings = next },
+      getControlStatus: () => ({
+        browserSupported: true, computerSupported: true, active: null, action: null, stopping: false,
+      }),
+      stopActive: async () => undefined,
+      confirmExpansion: async () => true,
+      provider: { status, list },
+    })
+
+    const first = await authority.snapshot()
+    expect(first.ordinaryApps).toEqual([{ appId: 'app.notes', name: 'Notes', allowed: false }])
+    const second = await authority.snapshot()
+    expect(second).toMatchObject({
+      browser: { availability: 'available' },
+      computer: { availability: 'available' },
+      permissions: { screenViewing: 'granted', assistiveControl: 'granted' },
+      refresh: {
+        status: { state: 'failed', message: 'Computer status could not be refreshed.' },
+        apps: { state: 'failed', message: 'Applications could not be refreshed.' },
+      },
+      ordinaryApps: [{ appId: 'app.notes', name: 'Notes', allowed: false }],
+    })
+    expect(JSON.stringify(second)).not.toContain('private')
   })
 
   it('allows only enumerated app expansion and awaits the global stop path', async () => {

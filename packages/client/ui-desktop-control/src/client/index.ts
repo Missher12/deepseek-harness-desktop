@@ -16,7 +16,11 @@ import { en, zh, type DesktopControlLabels, type DesktopControlLocaleKey } from 
 type StoreHandle = ReturnType<typeof createDesktopControlStore>
 type Bound = BoundActions<StoreHandle>
 type CapsuleInjected = { stop(): void }
-type SettingsInjected = { mutate(mutation: DesktopControlUiMutation): void }
+type SettingsInjected = {
+  mutate(mutation: DesktopControlUiMutation): Promise<void>
+  retry(): Promise<void>
+  stop(): Promise<void>
+}
 type CapsuleProps = PropsRuntime<'layout.status'> & PropsStore<StoreHandle> & PropsLocale<'desktop.control'> & CapsuleInjected
 type SettingsProps = PropsRuntime<'settings.section'> & PropsStore<StoreHandle> & PropsLocale<'desktop.control'> & SettingsInjected
 
@@ -39,7 +43,9 @@ function CapsuleSeat(props: CapsuleProps) {
 function SettingsSeat(props: SettingsProps) {
   return createElement(DesktopControlSettings, {
     snapshot: props.useStore(state => state.snapshot),
-    onMutation: (mutation) => { props.mutate(mutation) },
+    onMutation: async (mutation) => { await props.mutate(mutation) },
+    onRetry: async () => { await props.retry() },
+    onStop: async () => { await props.stop() },
     labels: localized(props.t),
   })
 }
@@ -55,7 +61,8 @@ export function apply(ctx: ClientContext): void {
     if (!isDesktopControlUiSnapshot(value)) return
     for (const actions of bound) actions.sync(value)
   }
-  const invoke = (operation: () => Promise<unknown>): void => { void operation().then(sync).catch(() => undefined) }
+  const request = async (operation: () => Promise<unknown>): Promise<void> => { sync(await operation()) }
+  const invoke = (operation: () => Promise<unknown>): void => { void request(operation).catch(() => undefined) }
   const bind = (actions: Bound): (() => void) => {
     bound.add(actions)
     invoke(() => bridge.getComputerControlStatus())
@@ -75,7 +82,11 @@ export function apply(ctx: ClientContext): void {
     label: () => ctx.locale.bind(NS)('section'), store: createDesktopControlStore, locale: NS,
     inject: (actions: Bound): SettingsInjected => {
       ctx.effect(() => bind(actions), 'ui-desktop-control: bind settings store')
-      return { mutate: (mutation) => { invoke(() => bridge.setComputerControlSetting(mutation)) } }
+      return {
+        mutate: async (mutation) => { await request(() => bridge.setComputerControlSetting(mutation)) },
+        retry: async () => { await request(() => bridge.getComputerControlStatus()) },
+        stop: async () => { await request(() => bridge.stopComputerControl()) },
+      }
     },
   }, SettingsSeat))
 }

@@ -145,6 +145,7 @@ export interface DesktopControlCoordinatorOptions {
 
 /** Path-free state for native Desktop UI; lease/session/ref authority never crosses this seam. */
 export interface DesktopControlCoordinatorStatus {
+  readonly browserSupported: boolean
   readonly computerSupported: boolean
   readonly active: null | {
     readonly surfaceKind: ControlLeaseSurfaceKind
@@ -306,6 +307,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
   controlStatus(): DesktopControlCoordinatorStatus {
     const active = this.#leases.activeSnapshot() ?? this.#stoppingLease
     return Object.freeze({
+      browserSupported: this.#supported(this.#options.browser),
       computerSupported: this.#supported(this.#options.computer),
       active: active === null ? null : Object.freeze({
         surfaceKind: active.surfaceKind,

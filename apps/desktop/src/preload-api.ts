@@ -46,15 +46,28 @@ export interface BrowserTakeoverStatus {
 }
 
 export type DesktopControlPermissionState = 'granted' | 'denied' | 'unknown'
+export type DesktopControlAvailability = 'available' | 'unavailable' | 'unknown'
+
+export interface DesktopControlCapabilityState {
+  readonly availability: DesktopControlAvailability
+  readonly enabled: boolean
+}
+
+export type DesktopControlRefreshState =
+  | { readonly state: 'ready' | 'checking' }
+  | { readonly state: 'failed'; readonly message: string }
 
 /** Renderer-visible status only; deliberately excludes sessions, leases, refs, and coordinates. */
 export interface DesktopControlUiSnapshot {
-  readonly supported: boolean
-  readonly browserEnabled: boolean
-  readonly computerEnabled: boolean
+  readonly browser: DesktopControlCapabilityState
+  readonly computer: DesktopControlCapabilityState
   readonly permissions: {
     readonly screenViewing: DesktopControlPermissionState
     readonly assistiveControl: DesktopControlPermissionState
+  }
+  readonly refresh: {
+    readonly status: DesktopControlRefreshState
+    readonly apps: DesktopControlRefreshState
   }
   readonly ordinaryApps: readonly {
     readonly appId: string
@@ -80,6 +93,7 @@ export type DesktopControlUiMutation =
 function plainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     && Object.getPrototypeOf(value) === Object.prototype
+    && Object.values(Object.getOwnPropertyDescriptors(value)).every(descriptor => 'value' in descriptor)
 }
 
 function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
@@ -91,19 +105,33 @@ function boundedText(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= max
 }
 
+function isCapabilityState(value: unknown): value is DesktopControlCapabilityState {
+  return plainRecord(value) && exactKeys(value, ['availability', 'enabled'])
+    && (['available', 'unavailable', 'unknown'] as readonly unknown[]).includes(value.availability)
+    && typeof value.enabled === 'boolean'
+}
+
+function isRefreshState(value: unknown): value is DesktopControlRefreshState {
+  if (!plainRecord(value) || typeof value.state !== 'string') return false
+  if (value.state === 'ready' || value.state === 'checking') return exactKeys(value, ['state'])
+  return value.state === 'failed' && exactKeys(value, ['state', 'message'])
+    && boundedText(value.message, 160)
+}
+
 export function isDesktopControlUiSnapshot(value: unknown): value is DesktopControlUiSnapshot {
   if (!plainRecord(value) || !exactKeys(value, [
-    'supported', 'browserEnabled', 'computerEnabled', 'permissions', 'ordinaryApps',
+    'browser', 'computer', 'permissions', 'refresh', 'ordinaryApps',
     'emergencyAccelerator', 'active', 'stopping',
   ])) return false
-  if (typeof value.supported !== 'boolean' || typeof value.browserEnabled !== 'boolean'
-    || typeof value.computerEnabled !== 'boolean'
+  if (!isCapabilityState(value.browser) || !isCapabilityState(value.computer)
     || typeof value.stopping !== 'boolean' || !boundedText(value.emergencyAccelerator, 128)
     || !plainRecord(value.permissions)
     || !exactKeys(value.permissions, ['screenViewing', 'assistiveControl'])) return false
   const permissionStates: readonly unknown[] = ['granted', 'denied', 'unknown']
   if (!permissionStates.includes(value.permissions.screenViewing)
     || !permissionStates.includes(value.permissions.assistiveControl)) return false
+  if (!plainRecord(value.refresh) || !exactKeys(value.refresh, ['status', 'apps'])
+    || !isRefreshState(value.refresh.status) || !isRefreshState(value.refresh.apps)) return false
   if (!Array.isArray(value.ordinaryApps) || value.ordinaryApps.length > 128
     || !value.ordinaryApps.every(app => plainRecord(app)
       && exactKeys(app, ['appId', 'name', 'allowed'])

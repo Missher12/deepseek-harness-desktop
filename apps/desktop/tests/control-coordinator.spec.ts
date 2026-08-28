@@ -298,6 +298,7 @@ describe('DesktopControlCoordinator', () => {
     await approve(dialog)
     await expect(pending).resolves.toMatchObject({ message: { responseKind: 'ok' } })
     expect(coordinator.controlStatus()).toMatchObject({
+      browserSupported: false,
       computerSupported: true,
       active: { agentName: 'Visible Agent only', appId: 'app.allowed' },
       action: null,

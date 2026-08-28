@@ -5,10 +5,10 @@ export interface DesktopControlUiState { snapshot: DesktopControlUiSnapshot }
 type DesktopControlUiActions = { sync: (draft: DesktopControlUiState, snapshot: DesktopControlUiSnapshot) => void }
 
 export const EMPTY_DESKTOP_CONTROL_SNAPSHOT: DesktopControlUiSnapshot = {
-  supported: false,
-  browserEnabled: false,
-  computerEnabled: false,
+  browser: { availability: 'unknown', enabled: false },
+  computer: { availability: 'unknown', enabled: false },
   permissions: { screenViewing: 'unknown', assistiveControl: 'unknown' },
+  refresh: { status: { state: 'checking' }, apps: { state: 'checking' } },
   ordinaryApps: [],
   emergencyAccelerator: 'CommandOrControl+Shift+F12',
   active: null,

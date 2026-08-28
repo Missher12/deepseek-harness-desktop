@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DesktopControlCapsule,
@@ -13,10 +13,10 @@ import { apply } from '../src/client/index.ts'
 import { zh } from '../src/client/locales.ts'
 
 const snapshot: DesktopControlUiSnapshot = {
-  supported: true,
-  browserEnabled: false,
-  computerEnabled: true,
+  browser: { availability: 'available', enabled: false },
+  computer: { availability: 'available', enabled: true },
   permissions: { screenViewing: 'granted', assistiveControl: 'denied' },
+  refresh: { status: { state: 'ready' }, apps: { state: 'ready' } },
   ordinaryApps: [
     { appId: 'com.example.notes', name: 'Notes', allowed: true },
     { appId: 'com.example.mail', name: 'Mail', allowed: false },
@@ -49,7 +49,7 @@ describe('Desktop control UI', () => {
     expect(stop).toHaveBeenCalledOnce()
   })
 
-  it('shows both OS permission states, the ordinary allowlist, and shortcut setting', () => {
+  it('shows both OS permission states, the ordinary allowlist, and commits the shortcut on blur', () => {
     const mutate = vi.fn()
     const view = render(<DesktopControlSettings snapshot={snapshot} onMutation={mutate} />)
     fireEvent.click(view.getByRole('checkbox', { name: 'Browser control' }))
@@ -60,12 +60,21 @@ describe('Desktop control UI', () => {
     expect(view.getByText('Denied')).toBeTruthy()
     fireEvent.click(view.getByRole('checkbox', { name: 'Mail' }))
     expect(mutate).toHaveBeenCalledWith({ kind: 'set-app-allowed', appId: 'com.example.mail', allowed: true })
-    fireEvent.change(view.getByLabelText('Emergency shortcut'), { target: { value: 'CommandOrControl+Shift+F11' } })
+    fireEvent.change(view.getByLabelText('Emergency Stop shortcut'), { target: { value: 'CommandOrControl+Shift+F11' } })
+    expect(mutate).not.toHaveBeenCalledWith({ kind: 'set-emergency-accelerator', accelerator: 'CommandOrControl+Shift+F11' })
+    fireEvent.blur(view.getByLabelText('Emergency Stop shortcut'))
     expect(mutate).toHaveBeenCalledWith({ kind: 'set-emergency-accelerator', accelerator: 'CommandOrControl+Shift+F11' })
+    expect(view.getByText('2 capabilities available')).toBeTruthy()
+    expect(view.getByText('Available · Not enabled')).toBeTruthy()
+    expect(view.getByText('Available · Enabled')).toBeTruthy()
   })
 
   it('keeps browser enablement in the strict renderer snapshot and Chinese settings', () => {
     expect(isDesktopControlUiSnapshot(snapshot)).toBe(true)
+    expect(isDesktopControlUiSnapshot({ ...snapshot, supported: true })).toBe(false)
+    expect(isDesktopControlUiSnapshot({
+      ...snapshot, browser: { availability: new String('available'), enabled: false },
+    })).toBe(false)
     const mutate = vi.fn()
     const view = render(<DesktopControlSettings snapshot={snapshot} onMutation={mutate} labels={zh} />)
     fireEvent.click(view.getByRole('checkbox', { name: '浏览器控制' }))
@@ -74,9 +83,54 @@ describe('Desktop control UI', () => {
 
   it('keeps an unavailable provider as a local status instead of throwing', () => {
     const view = render(<DesktopControlSettings
-      snapshot={{ ...snapshot, supported: false, ordinaryApps: [], active: null }}
+      snapshot={{
+        ...snapshot,
+        computer: { availability: 'unavailable', enabled: false },
+        ordinaryApps: [],
+        active: null,
+      }}
       onMutation={vi.fn()}
     />)
-    expect(view.getByText('Unavailable')).toBeTruthy()
+    expect(view.getByText('Unavailable · Not enabled')).toBeTruthy()
+    expect(view.getByText('1 capability available')).toBeTruthy()
+  })
+
+  it('keeps last-known rows visible and offers a bounded refresh retry', () => {
+    const retry = vi.fn()
+    const view = render(<DesktopControlSettings
+      snapshot={{
+        ...snapshot,
+        refresh: {
+          status: { state: 'failed', message: 'Computer status could not be refreshed.' },
+          apps: { state: 'ready' },
+        },
+      }}
+      onMutation={vi.fn()}
+      onRetry={retry}
+    />)
+    expect(view.getByText('Computer status could not be refreshed.')).toBeTruthy()
+    expect(view.getByText('Notes')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Retry status' }))
+    expect(retry).toHaveBeenCalledOnce()
+  })
+
+  it('blocks duplicate mutations only for the affected row and reports rejection', async () => {
+    let rejectBrowser: ((reason: Error) => void) | undefined
+    const browserPending = new Promise<void>((_resolve, reject) => { rejectBrowser = reject })
+    const mutate = vi.fn((mutation: { kind: string }) => mutation.kind === 'set-browser-enabled'
+      ? browserPending
+      : Promise.resolve())
+    const view = render(<DesktopControlSettings snapshot={snapshot} onMutation={mutate} />)
+
+    fireEvent.click(view.getByRole('checkbox', { name: 'Browser control' }))
+    expect(view.getByRole('checkbox', { name: 'Browser control' })).toHaveProperty('disabled', true)
+    expect(view.getByRole('checkbox', { name: 'Computer control' })).toHaveProperty('disabled', false)
+    fireEvent.click(view.getByRole('checkbox', { name: 'Browser control' }))
+    fireEvent.click(view.getByRole('checkbox', { name: 'Computer control' }))
+    expect(mutate).toHaveBeenCalledTimes(2)
+
+    rejectBrowser?.(new Error('private mutation detail'))
+    await waitFor(() => { expect(view.getByRole('alert').textContent).toBe('The setting could not be changed.') })
+    expect(view.queryByText(/private mutation/i)).toBeNull()
   })
 })

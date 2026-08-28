@@ -4,6 +4,7 @@ import type {
 } from '@deepseek-ai/dsh-desktop-control-protocol'
 import {
   isDesktopControlUiMutation,
+  type DesktopControlRefreshState,
   type DesktopControlUiMutation,
   type DesktopControlUiSnapshot,
 } from '../preload-api.ts'
@@ -35,6 +36,8 @@ function actionLabel(kind: string | null): string {
 export class ComputerControlUiAuthority {
   readonly #options: ComputerControlUiAuthorityOptions
   #mutationTail: Promise<void> = Promise.resolve()
+  #lastNativeStatus: ComputerStatusResult | undefined
+  #lastApps: readonly { readonly appId: string; readonly name: string }[] | undefined
 
   constructor(options: ComputerControlUiAuthorityOptions) {
     this.#options = options
@@ -43,23 +46,33 @@ export class ComputerControlUiAuthority {
   async snapshot(): Promise<DesktopControlUiSnapshot> {
     const settings = this.#options.getSettings()
     const provider = this.#options.provider
-    let nativeStatus: ComputerStatusResult = {
-      viewing: 'unknown', assistive: 'unknown', supported: false,
-    }
-    let list: ComputerListResult = { apps: [] }
+    let statusRefresh: DesktopControlRefreshState = Object.freeze({ state: 'ready' })
+    let appsRefresh: DesktopControlRefreshState = Object.freeze({ state: 'ready' })
     if (provider !== undefined) {
-      try {
-        [nativeStatus, list] = await Promise.all([
-          provider.status(),
-          provider.list(new AbortController().signal),
-        ])
-      } catch {
-        nativeStatus = { viewing: 'unknown', assistive: 'unknown', supported: false }
-        list = { apps: [] }
+      const [statusResult, listResult] = await Promise.allSettled([
+        provider.status(),
+        provider.list(new AbortController().signal),
+      ])
+      if (statusResult.status === 'fulfilled') {
+        this.#lastNativeStatus = Object.freeze({ ...statusResult.value })
+      } else {
+        statusRefresh = Object.freeze({
+          state: 'failed', message: 'Computer status could not be refreshed.',
+        })
+      }
+      if (listResult.status === 'fulfilled') {
+        this.#lastApps = Object.freeze(listResult.value.apps.map(app => Object.freeze({
+          appId: app.appId, name: app.name,
+        })))
+      } else {
+        appsRefresh = Object.freeze({
+          state: 'failed', message: 'Applications could not be refreshed.',
+        })
       }
     }
     const coordinator = this.#options.getControlStatus()
-    const apps = list.apps.map(app => Object.freeze({
+    const nativeStatus = this.#lastNativeStatus
+    const apps = (this.#lastApps ?? []).map(app => Object.freeze({
       appId: app.appId,
       name: app.name,
       allowed: settings.ordinaryAppIds.includes(app.appId),
@@ -72,13 +85,21 @@ export class ComputerControlUiAuthority {
       action: actionLabel(coordinator.action),
     })
     return Object.freeze({
-      supported: nativeStatus.supported && coordinator.computerSupported,
-      browserEnabled: settings.browserEnabled,
-      computerEnabled: settings.computerEnabled,
-      permissions: Object.freeze({
-        screenViewing: nativeStatus.viewing,
-        assistiveControl: nativeStatus.assistive,
+      browser: Object.freeze({
+        availability: coordinator.browserSupported ? 'available' : 'unavailable',
+        enabled: settings.browserEnabled,
       }),
+      computer: Object.freeze({
+        availability: !coordinator.computerSupported || provider === undefined
+          ? 'unavailable'
+          : nativeStatus === undefined ? 'unknown' : nativeStatus.supported ? 'available' : 'unavailable',
+        enabled: settings.computerEnabled,
+      }),
+      permissions: Object.freeze({
+        screenViewing: nativeStatus?.viewing ?? 'unknown',
+        assistiveControl: nativeStatus?.assistive ?? 'unknown',
+      }),
+      refresh: Object.freeze({ status: statusRefresh, apps: appsRefresh }),
       ordinaryApps: Object.freeze(apps),
       emergencyAccelerator: settings.emergencyAccelerator,
       active,

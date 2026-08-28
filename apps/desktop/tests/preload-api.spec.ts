@@ -68,10 +68,10 @@ describe('desktop preload vocabulary', () => {
 
   it('accepts only the path-free Desktop control UI snapshot', () => {
     const snapshot = {
-      supported: true,
-      browserEnabled: false,
-      computerEnabled: true,
+      browser: { availability: 'available', enabled: false },
+      computer: { availability: 'available', enabled: true },
       permissions: { screenViewing: 'granted', assistiveControl: 'denied' },
+      refresh: { status: { state: 'ready' }, apps: { state: 'ready' } },
       ordinaryApps: [{ appId: 'com.example.notes', name: 'Notes', allowed: true }],
       emergencyAccelerator: 'CommandOrControl+Shift+F12',
       active: { agentName: 'Agent', appName: 'Notes', action: 'Typing' },
@@ -81,6 +81,19 @@ describe('desktop preload vocabulary', () => {
     expect(isDesktopControlUiSnapshot({ ...snapshot, sessionId: 'renderer' })).toBe(false)
     expect(isDesktopControlUiSnapshot({ ...snapshot, permissions: { screenViewing: 'yes', assistiveControl: 'denied' } })).toBe(false)
     expect(isDesktopControlUiSnapshot({ ...snapshot, active: { ...snapshot.active, leaseId: 'secret' } })).toBe(false)
+    expect(isDesktopControlUiSnapshot({ ...snapshot, supported: true })).toBe(false)
+    expect(isDesktopControlUiSnapshot({
+      ...snapshot, browser: { availability: new String('available'), enabled: false },
+    })).toBe(false)
+    expect(isDesktopControlUiSnapshot({
+      ...snapshot,
+      computer: Object.defineProperty({ enabled: true }, 'availability', {
+        enumerable: true, get: () => 'available',
+      }),
+    })).toBe(false)
+    expect(isDesktopControlUiSnapshot({ ...snapshot, refresh: {
+      status: { state: 'failed', message: 'x'.repeat(161) }, apps: { state: 'ready' },
+    } })).toBe(false)
     expect(isDesktopControlUiSnapshot(Object.create(snapshot))).toBe(false)
   })
 
