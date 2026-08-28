@@ -49,7 +49,13 @@ mac:
         - x64
   category: public.app-category.developer-tools
   icon: assets/icon.icns
-  identity: null
+  # Local release candidates still need a valid code identity so macOS TCC can
+  # attribute Screen Recording and Accessibility checks to this app. Official
+  # distribution should override this with a Developer ID identity.
+  identity: "-"
+  # Ad-hoc signatures have no Team ID. Electron's pre-signed frameworks would
+  # otherwise be rejected by hardened library validation at launch.
+  hardenedRuntime: false
   extraResources:
     - from: "native-bin/darwin-x64/computer-use-helper"
       to: "native/computer-use-helper"

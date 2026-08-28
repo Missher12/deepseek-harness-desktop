@@ -17,6 +17,8 @@ interface BuilderConfiguration {
   files?: string[]
   mac?: {
     icon?: string
+    identity?: string | null
+    hardenedRuntime?: boolean
     extraResources?: Array<{ from?: string; to?: string }>
   }
   win?: {
@@ -125,6 +127,17 @@ describe('desktop package manifest', () => {
     )
     expect(rootManifest.scripts['desktop:pack']).toContain('desktop:stage')
     expect(rootManifest.scripts['desktop:dmg']).toContain('desktop:stage')
+  })
+
+  it('ad-hoc signs local Mac artifacts so TCC can attribute accessibility requests', () => {
+    const builder = yaml.load(
+      readFileSync(new URL('../electron-builder.yml', import.meta.url), 'utf8'),
+    ) as BuilderConfiguration
+
+    expect(builder.mac).toMatchObject({
+      identity: '-',
+      hardenedRuntime: false,
+    })
   })
 
   it('keeps packaged update metadata aligned with the Desktop and Harness versions', () => {
