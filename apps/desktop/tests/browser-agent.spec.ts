@@ -64,11 +64,29 @@ class FakeWebContents extends EventEmitter {
   url = 'https://example.test/'
   title = 'Example'
   readonly loadedUrls: string[] = []
+  historyActiveIndex = 1
+  historyEntries: { readonly url: string }[] = [
+    { url: 'https://previous.test/' },
+    { url: 'https://example.test/' },
+    { url: 'https://next.test/' },
+  ]
   readonly navigationHistory = {
-    canGoBack: () => true,
-    canGoForward: () => true,
-    goBack: vi.fn(),
-    goForward: vi.fn(),
+    canGoBack: () => this.historyActiveIndex > 0,
+    canGoForward: () => this.historyActiveIndex + 1 < this.historyEntries.length,
+    getActiveIndex: () => this.historyActiveIndex,
+    getEntryAtIndex: (index: number) => this.historyEntries[index],
+    goBack: vi.fn(() => {
+      this.historyActiveIndex -= 1
+      this.url = this.historyEntries[this.historyActiveIndex]?.url ?? this.url
+    }),
+    goForward: vi.fn(() => {
+      this.historyActiveIndex += 1
+      this.url = this.historyEntries[this.historyActiveIndex]?.url ?? this.url
+    }),
+    goToIndex: vi.fn((index: number) => {
+      this.historyActiveIndex = index
+      this.url = this.historyEntries[index]?.url ?? this.url
+    }),
   }
   readonly reload = vi.fn()
 
@@ -103,20 +121,31 @@ function installTree(
   nodes: readonly AxNode[],
   descriptions: Readonly<Record<number, readonly string[]>> = {},
 ): void {
+  let pendingFocusBackendNodeId: number | undefined
+  let focusedBackendNodeId: number | undefined
   contents.debugger.handlers.set('Page.setInterceptFileChooserDialog', () => ({}))
   contents.debugger.handlers.set('Accessibility.getRootAXNode', () => ({
     node: { nodeId: 'root', role: { value: 'RootWebArea' }, childIds: ['children'] } satisfies AxNode,
   }))
   contents.debugger.handlers.set('Accessibility.getChildAXNodes', ({ id }) => ({
-    nodes: id === 'root' ? nodes : [],
+    nodes: id === 'root' ? nodes.map((node) => {
+      const properties = (node.properties ?? []).filter(property => property.name !== 'focused')
+      if (node.backendDOMNodeId !== focusedBackendNodeId) return { ...node, properties }
+      return { ...node, properties: [...properties, { name: 'focused', value: { value: true } }] }
+    }) : [],
   }))
   contents.debugger.handlers.set('DOM.describeNode', ({ backendNodeId }) => ({
     node: { attributes: descriptions[backendNodeId as number] ?? [] },
   }))
-  contents.debugger.handlers.set('DOM.getBoxModel', () => ({
-    model: { content: [0, 0, 100, 0, 100, 40, 0, 40] },
-  }))
-  for (const method of ['Input.dispatchMouseEvent', 'Input.dispatchKeyEvent', 'Input.insertText']) {
+  contents.debugger.handlers.set('DOM.getBoxModel', ({ backendNodeId }) => {
+    pendingFocusBackendNodeId = backendNodeId as number
+    return { model: { content: [0, 0, 100, 0, 100, 40, 0, 40] } }
+  })
+  contents.debugger.handlers.set('Input.dispatchMouseEvent', ({ type }) => {
+    if (type === 'mouseReleased') focusedBackendNodeId = pendingFocusBackendNodeId
+    return {}
+  })
+  for (const method of ['Input.dispatchKeyEvent', 'Input.insertText']) {
     contents.debugger.handlers.set(method, () => ({}))
   }
 }
@@ -128,7 +157,7 @@ function adapterFor(
   const pinnedNavigationTransport: AgentBrowserPinnedNavigationTransport = {
     load: async (request) => {
       await request.resolveAndValidate(request.url)
-      await contents.loadURL(request.url)
+      await request.commit()
     },
   }
   return new CdpBrowserAdapter({
@@ -255,6 +284,20 @@ describe('semantic Agent browser adapter', () => {
     await expect(adapter.stop()).resolves.toBeUndefined()
     expect(contents.debugger.detachCalls).toBe(2)
     expect(contents.debugger.attached).toBe(false)
+  })
+
+  it('does not issue stale chooser or detach cleanup after debugger ownership is externally lost', async () => {
+    const contents = new FakeWebContents()
+    installTree(contents, [])
+    const adapter = adapterFor(contents)
+    await adapter.start()
+    contents.debugger.calls.length = 0
+
+    contents.debugger.emitDetach()
+    await adapter.stop()
+
+    expect(contents.debugger.calls).toEqual([])
+    expect(contents.debugger.detachCalls).toBe(0)
   })
 
   it.each([
@@ -473,6 +516,54 @@ describe('semantic Agent browser adapter', () => {
     ])
   })
 
+  it.each([
+    ['type', {
+      nodeId: 'field', backendDOMNodeId: 1, role: { value: 'textbox' }, name: { value: 'Search' },
+    } satisfies AxNode, ['type', 'text', 'autocomplete', 'off'],
+    (ref: string) => ({ kind: 'type', ref, text: 'secret' }) as const],
+    ['select', {
+      nodeId: 'select', backendDOMNodeId: 1, role: { value: 'combobox' }, name: { value: 'Country' },
+    } satisfies AxNode, ['type', 'text', 'autocomplete', 'off'],
+    (ref: string) => ({ kind: 'select', ref, value: 'Canada' }) as const],
+  ])('rejects %s when click retargets focus before any text or Enter dispatch', async (
+    _label,
+    safeNode,
+    safeAttributes,
+    action,
+  ) => {
+    const contents = new FakeWebContents()
+    let currentNodes: readonly AxNode[] = [safeNode]
+    installTree(contents, [], {
+      1: safeAttributes,
+      2: ['type', 'password', 'autocomplete', 'one-time-code'],
+    })
+    contents.debugger.handlers.set('Accessibility.getChildAXNodes', ({ id }) => ({
+      nodes: id === 'root' ? currentNodes : [],
+    }))
+    contents.debugger.handlers.set('Input.dispatchMouseEvent', ({ type }) => {
+      if (type === 'mouseReleased') {
+        currentNodes = [
+          safeNode,
+          {
+            nodeId: 'retargeted-password',
+            backendDOMNodeId: 2,
+            role: { value: 'textbox' },
+            name: { value: 'Verification code' },
+            properties: [{ name: 'focused', value: { value: true } }],
+          },
+        ]
+      }
+      return {}
+    })
+    const adapter = adapterFor(contents)
+    const ref = await snapshotButton(adapter)
+    contents.debugger.calls.length = 0
+
+    await expect(adapter.act(action(ref))).rejects.toMatchObject({ code: 'STALE_REF' })
+    expect(contents.debugger.calls.some(call => call.method === 'Input.insertText')).toBe(false)
+    expect(contents.debugger.calls.some(call => call.method === 'Input.dispatchKeyEvent')).toBe(false)
+  })
+
   it('rejects a ref whose live AX role or accessible name changed after snapshot', async () => {
     const contents = new FakeWebContents()
     let current: AxNode = buttonNode(1, 'Continue')
@@ -579,6 +670,76 @@ describe('semantic Agent browser adapter', () => {
     await expect(adapter.act({ kind: 'navigate', url: 'https://public.test/' }))
       .rejects.toMatchObject({ code: 'POLICY_DENIED' })
     expect(contents.loadedUrls).toEqual([])
+  })
+
+  it.each(['back', 'forward', 'reload'] as const)(
+    'never invokes native hostname %s without a pinned navigation transport',
+    async (kind) => {
+      const contents = new FakeWebContents()
+      installTree(contents, [])
+      const adapter = new CdpBrowserAdapter({
+        webContents: contents,
+        surfaceId: 'surface-1',
+        surfaceGeneration: 1,
+        viewport: () => ({ width: 1280, height: 720, deviceScaleFactor: 1 }),
+        urlPolicy: new AgentBrowserUrlPolicy({ lookup: async () => ['93.184.216.34'] }),
+      })
+
+      await expect(adapter.act({ kind })).rejects.toMatchObject({ code: 'POLICY_DENIED' })
+      expect(contents.navigationHistory.goBack).not.toHaveBeenCalled()
+      expect(contents.navigationHistory.goForward).not.toHaveBeenCalled()
+      expect(contents.navigationHistory.goToIndex).not.toHaveBeenCalled()
+      expect(contents.reload).not.toHaveBeenCalled()
+      expect(contents.loadedUrls).toEqual([])
+    },
+  )
+
+  it.each(['back', 'forward', 'reload'] as const)(
+    'fails closed before native hostname %s when request-time DNS becomes private',
+    async (kind) => {
+      const contents = new FakeWebContents()
+      installTree(contents, [])
+      const answers: string[][] = [['93.184.216.34'], ['127.0.0.1']]
+      const lookup = vi.fn(async (): Promise<readonly string[]> => answers.shift() ?? ['127.0.0.1'])
+      const connect = vi.fn()
+      const pinnedNavigationTransport: AgentBrowserPinnedNavigationTransport = {
+        load: async (request) => {
+          const binding = await request.resolveAndValidate(request.url)
+          await connect(binding.addresses[0] ?? '')
+        },
+      }
+      const adapter = adapterFor(contents, {
+        urlPolicy: new AgentBrowserUrlPolicy({ lookup }),
+        pinnedNavigationTransport,
+      })
+
+      await expect(adapter.act({ kind })).rejects.toMatchObject({ code: 'POLICY_DENIED' })
+      expect(lookup).toHaveBeenCalledTimes(2)
+      expect(connect).not.toHaveBeenCalled()
+      expect(contents.navigationHistory.goBack).not.toHaveBeenCalled()
+      expect(contents.navigationHistory.goForward).not.toHaveBeenCalled()
+      expect(contents.navigationHistory.goToIndex).not.toHaveBeenCalled()
+      expect(contents.reload).not.toHaveBeenCalled()
+      expect(contents.loadedUrls).toEqual([])
+    },
+  )
+
+  it('rejects a late native commit after the pinned transport has failed', async () => {
+    const contents = new FakeWebContents()
+    installTree(contents, [])
+    let lateCommit: (() => Promise<void>) | undefined
+    const pinnedNavigationTransport: AgentBrowserPinnedNavigationTransport = {
+      load: async (request) => {
+        await request.resolveAndValidate(request.url)
+        lateCommit = request.commit
+        throw new Error('transport failed')
+      },
+    }
+    const adapter = adapterFor(contents, { pinnedNavigationTransport })
+
+    await expect(adapter.act({ kind: 'reload' })).rejects.toMatchObject({ code: 'INTERNAL' })
+    await expect(lateCommit?.()).rejects.toMatchObject({ code: 'POLICY_DENIED' })
+    expect(contents.reload).not.toHaveBeenCalled()
   })
 
   it('loads an authorized public IP literal without hostname transport or URL rewriting', async () => {
@@ -914,7 +1075,7 @@ describe('BrowserSurfaceManager', () => {
       return { dispose: () => {
         log.push(`dispose-guards:${generation}`)
         disposeAttempts += 1
-        if (disposeAttempts === 1) throw new Error('dispose failed')
+        if (disposeAttempts < 3) throw new Error('dispose failed')
       } }
     }
     failed.mount = async (mountToken) => { log.push(`mount:${mountToken}`); throw new Error('mount failed') }
@@ -939,10 +1100,17 @@ describe('BrowserSurfaceManager', () => {
     expect(createCalls).toBe(1)
     await expect(manager.retryFailedMountCleanup({ sessionId: 'next-session', generation: 1 }))
       .rejects.toMatchObject({ code: 'BUSY' })
+    await expect(manager.retryFailedMountCleanup({ sessionId: 'owner-session', generation: 2 }))
+      .rejects.toMatchObject({ code: 'STALE_REF' })
 
-    await manager.retryFailedMountCleanup({ sessionId: 'owner-session', generation: 1 })
+    await expect(manager.retryFailedMountCleanup({ sessionId: 'owner-session', generation: 1 }))
+      .rejects.toMatchObject({ code: 'INTERNAL' })
     expect(log.filter(item => item === 'dispose-guards:1')).toHaveLength(2)
     expect(log.filter(item => item === 'detach')).toHaveLength(1)
+    await expect(manager.acquire({ sessionId: 'next-session' })).rejects.toMatchObject({ code: 'BUSY' })
+
+    await manager.retryFailedMountCleanup({ sessionId: 'owner-session', generation: 1 })
+    expect(log.filter(item => item === 'dispose-guards:1')).toHaveLength(3)
     await expect(manager.acquire({ sessionId: 'next-session' })).resolves.toMatchObject({
       sessionId: 'next-session', generation: 2, surfaceId: 'replacement', visible: true,
     })

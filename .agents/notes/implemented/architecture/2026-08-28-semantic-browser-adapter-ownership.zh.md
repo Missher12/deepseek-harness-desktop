@@ -30,7 +30,7 @@ Desktop 浏览器层把全局表层所有权、页面策略与封闭的 CDP 适�
 
 CDP 方法闭集仅包含 `Accessibility.getRootAXNode`、有界广度优先的 `Accessibility.getChildAXNodes`、只读 `DOM.describeNode`、`DOM.getBoxModel`、固定的 `Input.dispatchMouseEvent`、`Input.dispatchKeyEvent` 与 `Input.insertText`、可见 viewport 的 `Page.captureScreenshot`，以及文件选择器拦截。`DOM.describeNode` 只贡献 `type`、`autocomplete`、`disabled` 与 `readonly`。系统不暴露任何 `Runtime` 方法、JavaScript 求值、selector、任意 CDP dispatch、remote-debugging port、坐标动作或文件设置路径。
 
-遍历会在 2,000 个原始节点、32 层深度、512 次 CDP 调用或 2,000 ms 时停止。投影最多保留 300 个可动作 ref、49,152 个 UTF-8 语义字节与 65,536 字节的编码 JSON 结果。ref 会绑定表层 generation、适配器 revision、AX identity、后端 DOM identity 与 registry 位置。快照不包含可编辑值；策略会在 ref 进入 registry 前拒绝密码、一次性验证码、支付、文件、上传、disabled、readonly 与敏感性不确定的可编辑目标。在每个基于 ref 的变更动作执行前，适配器会再次完成有界 AX 读取与 `DOM.describeNode`，根据实时 role、name、editability、type、autocomplete、disabled 与 readonly 重新分类；一旦目标变得敏感，或 AX identity／语义发生变化，就会在发出任何 `Input` 命令前拒绝。
+遍历会在 2,000 个原始节点、32 层深度、512 次 CDP 调用或 2,000 ms 时停止。投影最多保留 300 个可动作 ref、49,152 个 UTF-8 语义字节与 65,536 字节的编码 JSON 结果。ref 会绑定表层 generation、适配器 revision、AX identity、后端 DOM identity 与 registry 位置。快照不包含可编辑值；策略会在 ref 进入 registry 前拒绝密码、一次性验证码、支付、文件、上传、disabled、readonly 与敏感性不确定的可编辑目标。在每个基于 ref 的变更动作执行前，适配器会再次完成有界 AX 读取与 `DOM.describeNode`，根据实时 role、name、editability、type、autocomplete、disabled 与 readonly 重新分类；一旦目标变得敏感，或 AX identity／语义发生变化，就会在发出任何 `Input` 命令前拒绝。type 与 select 会拆分为多段受检步骤：click 后重新读取 AX 与 DOM，要求有且仅有一个带后端节点身份的 focused 节点且必须与 ref 相同，并在 `Input.insertText` 前再次检查敏感性与可编辑性；select 还会在插入文本之后、发出 Enter 之前再次执行相同的焦点身份与策略检查。
 
 动作校验器只接受 navigate、基于 ref 的 click 和 type、有界 key chord、基于 ref 的 select、有界 viewport 或基于 ref 的 scroll、有界 duration/navigation/loading-idle wait、历史导航、reload，以及外围生命周期中的 Stop。浏览器输入只会在解析当前 ref 后计算内部 box center；调用方无法提供 selector 或坐标。
 
@@ -38,13 +38,13 @@ CDP 方法闭集仅包含 `Accessibility.getRootAXNode`、有界广度优先的 
 
 `AgentBrowserUrlPolicy` 只接受没有 userinfo 的 HTTP(S) URL。它没有 Node DNS fallback：组合层必须适配拥有该表层的精确 Electron `Session` 的 `resolveHost()`。策略会校验字面与解析后的目标，包括 IPv4-mapped IPv6，并且拒绝 loopback、link-local、private、carrier-grade NAT、site-local、unspecified、multicast、格式错误的解析器输出与 localhost 保留名称，除非用户拥有的 allowlist 明确允许精确目标。适配器会先取消页面驱动的导航与每一跳 redirect，再独立授权下一跳；页面文本不能改变 allowlist。
 
-先检查一次 DNS 结果再调用普通 `loadURL()` 并不能防御 rebinding，因为 Chromium 仍可能在连接前再次解析。public IP literal 经策略校验后保留直接加载；hostname 则必须使用属于该表层的 pinned-navigation transport。注入的 Task 8 transport contract 会获得 request-time `resolveAndValidate` 能力，并且必须对初始、redirect 与 subresource 的每次 CONNECT 使用该能力，只把 socket 连接到返回的某个 public address，同时保留原 URL hostname 供 HTTP Host、HTTPS SNI 与证书校验使用。没有该 transport 时，hostname 导航会封闭失败且绝不回退到 `loadURL`；Task 7 不会用 `webRequest` 或 URL-to-IP 重写伪装成地址固定。
+先检查一次 DNS 结果再调用普通 `loadURL()` 并不能防御 rebinding，因为 Chromium 仍可能在连接前再次解析。public IP literal 经策略校验后保留直接加载；hostname 则必须使用属于该表层的 pinned-navigation transport。navigate、back、forward 与 reload 都会先取得并授权其精确目标 URL，再把对应的一次性原生 commit 交给同一 transport；只有完成 request-time 校验后才能执行 commit，并且 transport 返回或失败后的延迟 commit 会被拒绝。注入的 Task 8 transport contract 会获得 request-time `resolveAndValidate` 能力，并且必须对初始、redirect 与 subresource 的每次 CONNECT 使用该能力，只把 socket 连接到返回的某个 public address，同时保留原 URL hostname 供 HTTP Host、HTTPS SNI 与证书校验使用。没有该 transport 时，每条 hostname 导航路径都会封闭失败且绝不回退到 `loadURL` 或原生 history／reload；Task 7 不会用 `webRequest` 或 URL-to-IP 重写伪装成地址固定。
 
 截图只覆盖可见 viewport，并设置 `captureBeyondViewport: false`。适配器会在捕获前确定性选择不大于 1 的 scale，确保预期输出的任一边都不超过 2,048 像素，面积也不超过 4,194,304 像素。编码过大时会按几何比例降低 scale，总尝试次数最多为 3，并且不会分配无界的解码 buffer。交付的图片必须先通过规范 base64 解码、PNG signature 与 IHDR 校验、精确缩放尺寸、4,194,304 字节与像素边界、UUID transfer ID 校验和 SHA-256 计算，之后 metadata 与分离的 PNG 字节才能进入保持配对的快照 envelope。
 
 ## 验证
 
-[`browser-agent.spec.ts`](../../../../apps/desktop/tests/browser-agent.spec.ts)、[`browser-policy.spec.ts`](../../../../apps/desktop/tests/browser-policy.spec.ts) 与 [`browser-contracts.spec.ts`](../../../../apps/desktop/tests/browser-contracts.spec.ts) 使用 fake debugger、WebContents、Session 与表层资源。focused suite 固定了附加所有权与竞态、延迟响应与 ref 失效、所有资源边界、snapshot-to-action 敏感性变化、CDP 和动作闭集、截图缩减与校验、public-to-private DNS rebinding 且不 load／connect、稳定恢复人工 handler、会话原子所有权、陈旧 token、持久化转移、failed-mount reservation 与生命周期重试，以及 revoke。三个 spec 共 63 个测试通过；Desktop package 的 `tsc --noEmit` 通过，实现与测试的仓库 scoped oxlint 也通过。
+[`browser-agent.spec.ts`](../../../../apps/desktop/tests/browser-agent.spec.ts)、[`browser-policy.spec.ts`](../../../../apps/desktop/tests/browser-policy.spec.ts) 与 [`browser-contracts.spec.ts`](../../../../apps/desktop/tests/browser-contracts.spec.ts) 使用 fake debugger、WebContents、Session 与表层资源。focused suite 固定了附加所有权与竞态、延迟响应与 ref 失效、所有资源边界、snapshot-to-action 敏感性变化、click 时的焦点重定向、CDP 和动作闭集、截图缩减与校验、直接及 history／reload 路径中的 public-to-private DNS rebinding 且不 load／connect、稳定恢复人工 handler、会话原子所有权、陈旧 token、持久化转移、反复失败的 mount-cleanup reservation 与精确 generation 生命周期重试，以及 revoke。三个 spec 共 73 个测试通过；Desktop package 的 `tsc --noEmit` 通过，实现与测试的仓库 scoped oxlint 也通过。
 
 ## 备选方案
 

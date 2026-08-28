@@ -36,8 +36,9 @@ export interface BrowserAdapterWebContents {
   readonly navigationHistory: {
     canGoBack(): boolean
     canGoForward(): boolean
-    goBack(): void
-    goForward(): void
+    getActiveIndex(): number
+    getEntryAtIndex(index: number): { readonly url: string } | null | undefined
+    goToIndex(index: number): void
   }
   isDestroyed(): boolean
   isLoading(): boolean
@@ -61,6 +62,7 @@ export interface AgentBrowserPinnedNavigationRequest {
   readonly url: string
   readonly signal?: AbortSignal
   readonly resolveAndValidate: (url: string, signal?: AbortSignal) => Promise<AgentBrowserResolvedNavigation>
+  readonly commit: () => Promise<void>
 }
 
 /**
@@ -110,6 +112,7 @@ interface AxNode {
   readonly name: string
   readonly disabled: boolean
   readonly readonly: boolean
+  readonly focused: boolean
 }
 
 interface BrowserReferenceBinding {
@@ -183,6 +186,7 @@ function axNode(value: unknown): AxNode | undefined {
     name: stringValue(source.name),
     disabled: booleanProperty(source.properties, 'disabled'),
     readonly: booleanProperty(source.properties, 'readonly'),
+    focused: booleanProperty(source.properties, 'focused'),
   }
 }
 
@@ -411,12 +415,31 @@ export class CdpBrowserAdapter {
       await this.loadAuthorized(target, signal)
       return Object.freeze({ url: target, snapshotRevision: this.revision })
     }
-    if (action.kind === 'back' || action.kind === 'forward' || action.kind === 'reload') {
+    if (action.kind === 'back' || action.kind === 'forward') {
+      const history = this.webContents.navigationHistory
+      const allowed = action.kind === 'back' ? history.canGoBack() : history.canGoForward()
+      if (!allowed) {
+        this.invalidate()
+        return Object.freeze({ url: this.webContents.getURL(), snapshotRevision: this.revision })
+      }
+      const activeIndex = history.getActiveIndex()
+      const targetIndex = activeIndex + (action.kind === 'back' ? -1 : 1)
+      const entry = Number.isSafeInteger(activeIndex) ? history.getEntryAtIndex(targetIndex) : undefined
+      if (entry === undefined || entry === null || typeof entry.url !== 'string' || entry.url.length === 0) {
+        throw new AgentBrowserError('INTERNAL', 'browser history target is unavailable')
+      }
+      const target = await this.urlPolicy.authorize(entry.url, signal)
+      this.assertOpen()
       this.invalidate()
-      if (action.kind === 'back' && this.webContents.navigationHistory.canGoBack()) this.webContents.navigationHistory.goBack()
-      else if (action.kind === 'forward' && this.webContents.navigationHistory.canGoForward()) this.webContents.navigationHistory.goForward()
-      else if (action.kind === 'reload') this.webContents.reload()
-      return Object.freeze({ url: this.webContents.getURL(), snapshotRevision: this.revision })
+      await this.loadAuthorized(target, signal, () => { history.goToIndex(targetIndex) })
+      return Object.freeze({ url: target, snapshotRevision: this.revision })
+    }
+    if (action.kind === 'reload') {
+      const target = await this.urlPolicy.authorize(this.webContents.getURL(), signal)
+      this.assertOpen()
+      this.invalidate()
+      await this.loadAuthorized(target, signal, () => { this.webContents.reload() })
+      return Object.freeze({ url: target, snapshotRevision: this.revision })
     }
     if (action.kind === 'wait') {
       await this.wait(action, signal)
@@ -436,11 +459,17 @@ export class CdpBrowserAdapter {
       else if (action.kind === 'type') {
         if (!binding.editable) throw new AgentBrowserError('POLICY_DENIED', 'browser target is not editable')
         await this.click(binding, budget, signal)
+        const focused = await this.revalidateBinding(binding, budget, signal, true)
+        if (!focused.editable) throw new AgentBrowserError('POLICY_DENIED', 'browser target is no longer editable')
         await this.command('Input.insertText', { text: action.text }, budget, signal)
       } else {
         if (!binding.selectable) throw new AgentBrowserError('POLICY_DENIED', 'browser target is not selectable')
         await this.click(binding, budget, signal)
+        const focused = await this.revalidateBinding(binding, budget, signal, true)
+        if (!focused.selectable) throw new AgentBrowserError('POLICY_DENIED', 'browser target is no longer selectable')
         await this.command('Input.insertText', { text: action.value }, budget, signal)
+        const stillFocused = await this.revalidateBinding(focused, budget, signal, true)
+        if (!stillFocused.selectable) throw new AgentBrowserError('POLICY_DENIED', 'browser target is no longer selectable')
         await this.pressKey('Enter', [], budget, signal)
       }
     }
@@ -714,12 +743,21 @@ export class CdpBrowserAdapter {
     binding: BrowserReferenceBinding,
     budget: OperationBudget,
     signal?: AbortSignal,
+    requireFocused = false,
   ): Promise<BrowserReferenceBinding> {
     const liveNodes = await this.walkAccessibilityTree(budget, signal)
     const matches = liveNodes.filter(node => node.backendDOMNodeId === binding.backendDOMNodeId)
     if (matches.length !== 1) throw new AgentBrowserError('STALE_REF', 'browser target no longer has one live AX node')
     const live = matches[0]
     if (live === undefined) throw new AgentBrowserError('STALE_REF', 'browser target is stale')
+    if (requireFocused) {
+      const focusedBackendNodeIds = new Set(liveNodes.flatMap(node => (
+        node.focused && node.backendDOMNodeId !== undefined ? [node.backendDOMNodeId] : []
+      )))
+      if (focusedBackendNodeIds.size !== 1 || !focusedBackendNodeIds.has(binding.backendDOMNodeId)) {
+        throw new AgentBrowserError('STALE_REF', 'browser focus moved away from the referenced target')
+      }
+    }
     const editable = EDITABLE_ROLES.has(live.role)
     const selectable = SELECTABLE_ROLES.has(live.role)
     const targetAttributes = attributes(await this.command(
@@ -925,25 +963,46 @@ export class CdpBrowserAdapter {
     }
   }
 
-  private async loadAuthorized(target: string, signal?: AbortSignal): Promise<void> {
+  private async loadAuthorized(
+    target: string,
+    signal?: AbortSignal,
+    commit: () => void | Promise<unknown> = async () => await this.webContents.loadURL(target),
+  ): Promise<void> {
     this.approvedNavigation = target
     try {
       const hostname = new URL(target).hostname.replace(/^\[|\]$/gu, '')
       if (isIP(hostname) !== 0) {
-        await this.webContents.loadURL(target)
+        await commit()
       } else {
         const transport = this.pinnedNavigationTransport
         if (transport === undefined) {
           throw new AgentBrowserError('POLICY_DENIED', 'browser hostname navigation requires a pinned transport')
         }
-        await transport.load({
-          url: target,
-          ...(signal === undefined ? {} : { signal }),
-          resolveAndValidate: async (value, requestSignal) => await this.urlPolicy.resolveForConnect(
-            value,
-            requestSignal ?? signal,
-          ),
-        })
+        const navigationState = { committed: false, targetValidated: false, transportReturned: false }
+        try {
+          await transport.load({
+            url: target,
+            ...(signal === undefined ? {} : { signal }),
+            resolveAndValidate: async (value, requestSignal) => {
+              const resolved = await this.urlPolicy.resolveForConnect(value, requestSignal ?? signal)
+              if (resolved.url === target) navigationState.targetValidated = true
+              return resolved
+            },
+            commit: async () => {
+              if (navigationState.transportReturned || navigationState.committed
+                || !navigationState.targetValidated) {
+                throw new AgentBrowserError('POLICY_DENIED', 'browser pinned navigation commit is not authorized')
+              }
+              navigationState.committed = true
+              await commit()
+            },
+          })
+        } finally {
+          navigationState.transportReturned = true
+        }
+        if (!navigationState.committed) {
+          throw new AgentBrowserError('INTERNAL', 'browser pinned transport did not commit navigation')
+        }
       }
     } catch (error) {
       if (error instanceof AgentBrowserError) throw error
