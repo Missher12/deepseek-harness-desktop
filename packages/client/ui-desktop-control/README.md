@@ -8,6 +8,8 @@ The optional preload bridge exposes only validated, path-free status and setting
 
 Settings show explicit Browser Agent and Computer Control enablement, Screen Viewing and Assistive Control separately, the main-owned ordinary application allowlist, the emergency shortcut, and current control. Native status and application enumeration settle independently. Main retains the latest validated status and list in memory; a later failure marks only its refresh row, exposes a bounded generic Retry message, and never discards unrelated valid display state. Both controls remain disabled by default; enabling either is confirmed and persisted by Electron main. Give records only a browser takeover intent and never enables Browser Agent control. Static UI strings ship in English and Chinese.
 
+When Computer Control is enabled and applications are visible but none is allowed, the application section shows a corrective status instead of implying that enumeration granted control. It also explains that each new task has a separate Electron-native approval and that the ordinary Harness `ask` or `never` policy cannot replace it.
+
 ## Model Experience
 
 None, as this package only presents main-owned Desktop control state and fixed setting intents. It does not register tools, assemble prompts, select models, or send provider requests.

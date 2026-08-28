@@ -2,7 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { AttachmentId, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { closeToolParameters } from './closed-tool.ts'
 import type { ComputerToolController } from './controller.ts'
 import { computerCall } from './presentation.ts'
@@ -82,8 +82,13 @@ function renderSnapshot(value: SnapshotValue) {
   return blocks
 }
 
-/** Build the strict native snapshot tool. */
-export function computerSnapshotTool(ctx: Context, controller: ComputerToolController) {
+/**
+ * Build the strict native snapshot tool.
+ * @param ctx active Cordis context used for attachment persistence and route checks.
+ * @param controller turn-local Computer Control authority adapter.
+ * @returns the closed semantic snapshot tool definition.
+ */
+export function computerSnapshotTool(ctx: Context, controller: ComputerToolController): ToolDefinition {
   return closeToolParameters(defineTool({
     name: 'computer_snapshot',
     description: 'Capture bounded accessibility semantics for one app window. A screenshot attachment is requested only for the exact active vision-capable route; pixels never expand the authorized app/window set.',

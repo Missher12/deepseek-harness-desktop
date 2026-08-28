@@ -122,11 +122,14 @@ function own(value: object, key: string): unknown {
 }
 
 function stringArray(value: unknown, label: string): readonly string[] {
-  if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) {
-    throw new Error(`${label} must be a string array`)
+  if (!Array.isArray(value)) throw new Error(`${label} must be a string array`)
+  const result: string[] = []
+  for (const item of value as readonly unknown[]) {
+    if (typeof item !== 'string') throw new Error(`${label} must be a string array`)
+    result.push(item)
   }
-  if (new Set(value).size !== value.length) throw new Error(`${label} must not contain duplicates`)
-  return Object.freeze([...value])
+  if (new Set(result).size !== result.length) throw new Error(`${label} must not contain duplicates`)
+  return Object.freeze(result)
 }
 
 function copiedObject(value: unknown, label: string): object {

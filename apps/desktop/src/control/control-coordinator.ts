@@ -509,7 +509,12 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       const approval = await this.#approvals.request(approvalScope, controller.signal)
       this.#throwIfAborted(controller.signal)
       if (approval === 'BUSY') throw new ControlAuthorityError('BUSY', 'another approval is pending')
-      if (approval === 'DENIED') throw new ControlAuthorityError('POLICY_DENIED', 'native approval denied')
+      if (approval === 'DENIED') {
+        const code = effectiveRequest.surfaceKind === 'native-application'
+          ? 'APPROVAL_DENIED'
+          : 'POLICY_DENIED'
+        throw new ControlAuthorityError(code, 'native approval denied')
+      }
 
       const currentSettings = this.#settings()
       const current = await adapter.acquireFacts(request, controller.signal)
@@ -889,9 +894,20 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       throw new ControlAuthorityError('POLICY_DENIED', 'surface authority facts are stale')
     }
     this.#assertSurfaceEnabled(facts.surfaceKind, settings.settings)
+    const authorizedRequests = request.surfaceKind === 'native-application'
+      ? request.targets.filter(target => settings.settings.ordinaryAppIds.includes(target.appId))
+      : request.targets
+    if (request.surfaceKind === 'native-application'
+      && request.targets.length > 0
+      && authorizedRequests.length === 0) {
+      throw new ControlAuthorityError('TARGET_NOT_AUTHORIZED', 'no requested application is authorized')
+    }
     const targets = request.surfaceKind === 'native-application'
       ? facts.targets.filter(target => settings.settings.ordinaryAppIds.includes(target.appId))
       : facts.targets
+    if (request.surfaceKind === 'native-application' && request.targets.length > 0 && targets.length === 0) {
+      throw new ControlAuthorityError('TARGET_CLOSED', 'no requested application target is current')
+    }
     return Object.freeze({
       officialSessionId: this.#officialSession(),
       surfaceKind: facts.surfaceKind,
@@ -1004,7 +1020,10 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     const enabled = surface === 'native-application'
       ? settings.computerEnabled
       : settings.browserEnabled
-    if (!enabled) throw new ControlAuthorityError('POLICY_DENIED', 'control surface is disabled')
+    if (!enabled) {
+      const code = surface === 'native-application' ? 'CONTROL_DISABLED' : 'POLICY_DENIED'
+      throw new ControlAuthorityError(code, 'control surface is disabled')
+    }
   }
 
   #supported(adapter: DesktopControlSurfaceAdapter | undefined): boolean {

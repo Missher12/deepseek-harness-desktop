@@ -10,6 +10,8 @@ The model never supplies a session, lease, approval, request ID, deadline, proce
 
 Semantic refs are preferred. Screenshot coordinates are accepted only on the exact active route that supports image input. `computer_snapshot` commits a validated PNG through `AttachmentStore`; raw PNG bytes never enter text results, logs, telemetry, memory, or MSE inputs. Protected password, OTP, payment, file, installation, deletion, permission, and OS-security targets remain provider-denied.
 
+Safe tool errors keep five decisions distinct. Disabled Computer Control, a missing application allowlist entry, denied operating-system permissions, a declined native task challenge, and a protected target each produce bounded corrective text. The ordinary Harness `ask` or `never` tool policy does not replace Electron's per-task native approval and cannot pre-authorize an application.
+
 ## Model Experience
 
 ### Tool schemas

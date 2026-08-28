@@ -5,7 +5,12 @@ import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-llm'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 
-/** Return true only when the active route can consume a stored PNG attachment. */
+/**
+ * Return true only when the active route can consume a stored PNG attachment.
+ * @param ctx active Cordis context containing optional attachment and LLM services.
+ * @param exec active tool execution with the exact routed provider and model.
+ * @returns whether PNG storage and the selected route both support images.
+ */
 export async function routeCanSeeImages(ctx: Context, exec: ToolRunContext): Promise<boolean> {
   const attachments = ctx.get('attachments')
   if (attachments === undefined || !attachments.imageLimits.mediaTypes.includes('image/png')) return false

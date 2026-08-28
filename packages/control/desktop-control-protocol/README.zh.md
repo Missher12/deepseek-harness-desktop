@@ -6,7 +6,7 @@
 
 ## Protocol v1
 
-[`protocol-v1.json`](protocol-v1.json) 是 TypeScript 和本地实现共用的机器可读清单、字段矩阵、嵌套 lease 字段与限制真源。如果 TypeScript 常量发生偏离，导入时的 `assertProtocolManifest()` 就会失败。三类请求都是封闭的：27 种 bridge、14 种 helper 和 4 种 control。响应会回显精确的请求种类，并与显式结果类型或 17 种错误码之一配对；不存在通用结果逃逸口。
+[`protocol-v1.json`](protocol-v1.json) 是 TypeScript 和本地实现共用的机器可读清单、字段矩阵、嵌套 lease 字段与限制真源。如果 TypeScript 常量发生偏离，导入时的 `assertProtocolManifest()` 就会失败。三类请求都是封闭的：27 种 bridge、14 种 helper 和 4 种 control。响应会回显精确的请求种类，并与显式结果类型或 20 种错误码之一配对；不存在通用结果逃逸口。
 
 Bridge 清单包含仅供内部使用的 `control.lease.acquire` 与 `control.lease.release`。Acquire 携带一种封闭 surface kind、非空且不重复的 capability 子集，以及保持 `{ appId, windowIds[] }` 配对的目标。浏览器目标必须为空；原生 lease 至少包含一个唯一应用，且每个应用至少包含一个唯一窗口。结果只公开生效的 lease id／revision、surface、targets、capabilities 与相对 idle／hard 时长。Release 只返回 `{ released: true }`。请求和结果都不能携带审批声明、quota、action digest 或 clock 值。
 

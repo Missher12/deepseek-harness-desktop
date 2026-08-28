@@ -98,6 +98,18 @@
 .guidance { margin-top: -9px !important; color: var(--dsw-alias-label-secondary); font-size: 13px; }
 .applications { display: grid; gap: 0; min-inline-size: 0; margin: 0; padding: 0 14px 10px; }
 .applications legend { padding: 0 6px; font-weight: 650; }
+.authorizationNotice {
+  display: grid;
+  gap: 3px;
+  margin: 5px 0 8px;
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-button-primary-fill) 30%, var(--dsw-alias-border-l2));
+  border-radius: 10px;
+  color: var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-alias-button-primary-fill) 9%, transparent);
+}
+.authorizationNotice span, .approvalGuidance { color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.approvalGuidance { padding-top: 8px; }
 .appList { max-height: 114px; overflow-y: auto; scrollbar-gutter: stable; }
 .appList > p { padding: 10px 0 2px; color: var(--dsw-alias-label-secondary); }
 .appRow { display: flex; align-items: center; gap: 9px; min-height: 38px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
@@ -134,6 +146,6 @@
 
 @media (forced-colors: active) {
   .capsule, .group, .applications, .current, .shortcut { border: 1px solid CanvasText; background: Canvas; }
-  .iconWell, .summary, .capabilityStatus, .notice { border: 1px solid CanvasText; color: CanvasText; background: Canvas; }
+  .iconWell, .summary, .capabilityStatus, .notice, .authorizationNotice { border: 1px solid CanvasText; color: CanvasText; background: Canvas; }
   .switch span { border: 1px solid CanvasText; }
 }

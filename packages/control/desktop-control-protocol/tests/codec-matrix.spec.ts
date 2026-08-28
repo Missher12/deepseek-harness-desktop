@@ -172,7 +172,8 @@ describe('closed response result matrices', () => {
   it('round-trips every error code with a closed response', () => {
     const codes = [
       'NOT_SUPPORTED', 'UNAUTHORIZED', 'LEASE_EXPIRED', 'LEASE_REVOKED', 'STALE_REF',
-      'TARGET_CLOSED', 'PERMISSION_DENIED', 'POLICY_DENIED', 'DUPLICATE_REQUEST',
+      'TARGET_CLOSED', 'PERMISSION_DENIED', 'POLICY_DENIED', 'CONTROL_DISABLED',
+      'TARGET_NOT_AUTHORIZED', 'APPROVAL_DENIED', 'DUPLICATE_REQUEST',
       'TOO_MANY_PENDING', 'QUOTA_EXCEEDED', 'BINARY_MISMATCH', 'BUSY', 'TIMEOUT',
       'CANCELLED', 'DISCONNECTED', 'INTERNAL',
     ]
@@ -235,19 +236,26 @@ describe('hostile syntax and cross-field combinations', () => {
 
   it('rejects unknown top-level message kinds and malformed manifest values', () => {
     expect(() => decodeJsonFrame(Uint8Array.from([0x01, 0x7b, 0x7d]))).toThrow(/messageKind/i)
-    expect(() => validateProtocolManifest(null)).toThrow(/object/i)
-    expect(() => validateProtocolManifest({ ...PROTOCOL_MANIFEST, bridgeRequestKinds: [1] })).toThrow(/string array/i)
-    expect(() => validateProtocolManifest({ ...PROTOCOL_MANIFEST, protocolVersion: 2 })).toThrow(/version/i)
-    expect(() => validateProtocolManifest({ ...PROTOCOL_MANIFEST, limits: { ...PROTOCOL_MANIFEST.limits, spare: 1 } })).toThrow(/limits/i)
-    expect(() => validateProtocolManifest({
+    expect(() => { validateProtocolManifest(null) }).toThrow(/object/i)
+    expect(() => { validateProtocolManifest({ ...PROTOCOL_MANIFEST, bridgeRequestKinds: [1] }) }).toThrow(/string array/i)
+    expect(() => { validateProtocolManifest({ ...PROTOCOL_MANIFEST, protocolVersion: 2 }) }).toThrow(/version/i)
+    expect(() => {
+      validateProtocolManifest({ ...PROTOCOL_MANIFEST, limits: { ...PROTOCOL_MANIFEST.limits, spare: 1 } })
+    }).toThrow(/limits/i)
+    expect(() => { validateProtocolManifest({
       ...PROTOCOL_MANIFEST,
       limits: { ...PROTOCOL_MANIFEST.limits, minRevision: -1 },
-    })).toThrow(/non-negative/i)
-    expect(() => validateProtocolManifest({ ...PROTOCOL_MANIFEST, controlFields: { ...PROTOCOL_MANIFEST.controlFields, 'parent.shutdown': 'none' } })).toThrow(/string array/i)
-    expect(() => validateProtocolManifest({
+    }) }).toThrow(/non-negative/i)
+    expect(() => {
+      validateProtocolManifest({
+        ...PROTOCOL_MANIFEST,
+        controlFields: { ...PROTOCOL_MANIFEST.controlFields, 'parent.shutdown': 'none' },
+      })
+    }).toThrow(/string array/i)
+    expect(() => { validateProtocolManifest({
       ...PROTOCOL_MANIFEST,
       controlFields: { ...PROTOCOL_MANIFEST.controlFields, 'parent.shutdown': ['leaseId'] },
-    })).toThrow(/field matrix/i)
+    }) }).toThrow(/field matrix/i)
   })
 })
 
@@ -271,11 +279,11 @@ describe('binary decoder failures', () => {
     expect(() => decodePngFrame(Uint8Array.of(0x02))).toThrow(/body/i)
     const stream = new LengthPrefixedFrameDecoder()
     stream.push(Uint8Array.of(0, 0))
-    expect(() => stream.finish()).toThrow(/truncated/i)
+    expect(() => { stream.finish() }).toThrow(/truncated/i)
     expect(() => stream.push(Uint8Array.of(0, 0))).toThrow(/closed/i)
     const invalid = new DesktopControlFrameDecoder()
     expect(() => invalid.pushFrame(Uint8Array.of(0x03))).toThrow()
-    expect(() => invalid.finish()).toThrow(/closed/i)
+    expect(() => { invalid.finish() }).toThrow(/closed/i)
     expect(() => decodePngFrame(encodePngFrame(transferId, png))).not.toThrow()
     expect(() => new LengthPrefixedFrameDecoder().push(new Uint8Array())).not.toThrow()
     expect(() => new DesktopControlFrameDecoder().pushFrame(encodeJsonFrame(bridge('desktop.status')))).not.toThrow()

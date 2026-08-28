@@ -48,7 +48,19 @@ function providerCode(error: unknown): DesktopControlErrorCode | undefined {
 function mapProviderError(error: unknown): never {
   const code = providerCode(error)
   if (code === undefined) throw error
-  if (code === 'POLICY_DENIED' || code === 'PERMISSION_DENIED') {
+  if (code === 'CONTROL_DISABLED') {
+    throw new Error('Computer control is disabled. Enable it in Settings > Browser & Computer Control, then retry.', { cause: error })
+  }
+  if (code === 'TARGET_NOT_AUTHORIZED') {
+    throw new Error('The requested app is not authorized for Computer Control. Authorize it in Settings > Browser & Computer Control, then retry.', { cause: error })
+  }
+  if (code === 'APPROVAL_DENIED') {
+    throw new Error('Desktop control was not allowed in the native approval dialog. Retry and choose Allow.', { cause: error })
+  }
+  if (code === 'PERMISSION_DENIED') {
+    throw new Error('Computer control needs operating-system Screen Viewing and Assistive Control permissions. Grant both to DeepSeek Harness, restart the app, then retry.', { cause: error })
+  }
+  if (code === 'POLICY_DENIED') {
     throw new Error('Computer control was denied because the requested operation or target is protected.', { cause: error })
   }
   if (code === 'STALE_REF') {
@@ -107,12 +119,20 @@ export class ComputerToolController {
     ctx.effect(() => () => { this.#sessions.clear() }, 'tool-computer-control: forget turn-local target ownership')
   }
 
-  /** Read availability without creating a lease. */
+  /**
+   * Read availability without creating a lease.
+   * @param exec active tool execution used to derive the official session.
+   * @returns provider-owned Computer Control support and permission state.
+   */
   async status(exec: ToolRunContext): Promise<ComputerControlStatus> {
     try { return await this.provider.status(sessionOf(exec)) } catch (error: unknown) { mapProviderError(error) }
   }
 
-  /** Enumerate and retain the exact grantable target pairs for this turn. */
+  /**
+   * Enumerate and retain the exact grantable target pairs for this turn.
+   * @param exec active tool execution used to derive the official session.
+   * @returns bounded provider-owned applications and windows.
+   */
   async list(exec: ToolRunContext): Promise<ComputerListResult> {
     const sessionId = sessionOf(exec)
     try {
@@ -133,7 +153,13 @@ export class ComputerToolController {
     }
   }
 
-  /** Capture one target and update the provider-authored target revision. */
+  /**
+   * Capture one target and update the provider-authored target revision.
+   * @param target exact app and window pair selected from the current list.
+   * @param exec active tool execution and cancellation signal.
+   * @param includeImage whether the exact route can consume a PNG attachment.
+   * @returns immutable semantic snapshot with an optional paired PNG.
+   */
   async snapshot(target: Target, exec: ToolRunContext, includeImage: boolean): Promise<ComputerSnapshotEnvelope> {
     const { sessionId, state, lease } = await this.#lease(target, exec)
     try {
@@ -153,7 +179,12 @@ export class ComputerToolController {
     }
   }
 
-  /** Dispatch one closed target action and update its provider-authored revision. */
+  /**
+   * Dispatch one closed target action and update its provider-authored revision.
+   * @param body closed action payload without authority fields.
+   * @param exec active tool execution and cancellation signal.
+   * @returns provider-authored action result and fresh snapshot revision.
+   */
   async act(body: ActionBody, exec: ToolRunContext): Promise<ComputerActionResult> {
     const target = { appId: body.appId, windowId: body.windowId }
     const { sessionId, state, lease } = await this.#lease(target, exec)
@@ -175,7 +206,11 @@ export class ComputerToolController {
     }
   }
 
-  /** Stop without acquiring a lease or invoking Harness approval. */
+  /**
+   * Stop without acquiring a lease or invoking Harness approval.
+   * @param exec active tool execution used to derive the official session.
+   * @returns an acknowledgement after provider cleanup completes.
+   */
   async stop(exec: ToolRunContext): Promise<{ stopped: true }> {
     const sessionId = sessionOf(exec)
     this.#sessions.delete(sessionId)

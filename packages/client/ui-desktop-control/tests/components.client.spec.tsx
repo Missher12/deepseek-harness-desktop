@@ -96,6 +96,21 @@ describe('Desktop control UI', () => {
     expect(view.getByText('1 capability available')).toBeTruthy()
   })
 
+  it('explains the application allowlist and the separate task approval before control can start', () => {
+    const view = render(<DesktopControlSettings
+      snapshot={{
+        ...snapshot,
+        ordinaryApps: snapshot.ordinaryApps.map(app => ({ ...app, allowed: false })),
+        active: null,
+      }}
+      onMutation={vi.fn()}
+    />)
+
+    expect(view.getByRole('status').textContent).toContain('Select at least one application')
+    expect(view.getByText('Listing an application does not authorize it.')).toBeTruthy()
+    expect(view.getByText('Each new task uses a separate native approval. The Harness ask/never policy does not replace it.')).toBeTruthy()
+  })
+
   it('keeps last-known rows visible and offers a bounded refresh retry', () => {
     const retry = vi.fn()
     const view = render(<DesktopControlSettings

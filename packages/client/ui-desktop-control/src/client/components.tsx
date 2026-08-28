@@ -92,6 +92,11 @@ export function DesktopControlSettings({
   useEffect(() => { setAcceleratorDraft(snapshot.emergencyAccelerator) }, [snapshot.emergencyAccelerator])
   const availableCount = [snapshot.browser, snapshot.computer]
     .filter(capability => capability.availability === 'available').length
+  const needsApplicationAuthorization = snapshot.computer.availability === 'available'
+    && snapshot.computer.enabled
+    && snapshot.refresh.apps.state === 'ready'
+    && snapshot.ordinaryApps.length > 0
+    && !snapshot.ordinaryApps.some(app => app.allowed)
   const finish = (key: string): void => {
     pendingKeys.current.delete(key)
     setPending(new Set(pendingKeys.current))
@@ -162,6 +167,10 @@ export function DesktopControlSettings({
 
       <fieldset className={css.applications}>
         <legend>{labels.authorizedApps}</legend>
+        {needsApplicationAuthorization && <div className={css.authorizationNotice} role="status">
+          <strong>{labels.authorizationRequired}</strong>
+          <span>{labels.enumerationNotAuthorization}</span>
+        </div>}
         {snapshot.refresh.apps.state === 'failed' && <div className={css.notice} role="status">
           <span>{snapshot.refresh.apps.message}</span>
           {onRetry !== undefined && <button type="button" onClick={() => { submit('retry', onRetry) }}>{labels.retryApps}</button>}
@@ -183,6 +192,7 @@ export function DesktopControlSettings({
               </label>
             ))}
         </div>
+        <p className={css.approvalGuidance}>{labels.taskApprovalGuidance}</p>
       </fieldset>
 
       <label className={`${css.detailRow} ${css.shortcut}`}>

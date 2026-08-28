@@ -74,8 +74,15 @@ describe('closed protocol manifest', () => {
     expect(CONTROL_KINDS).toEqual([
       'request.cancel', 'session.revoke', 'lease.revoke', 'parent.shutdown',
     ])
-    expect(ERROR_CODES).toHaveLength(17)
-    expect(() => assertProtocolManifest()).not.toThrow()
+    expect(ERROR_CODES).toEqual([
+      'NOT_SUPPORTED', 'UNAUTHORIZED', 'LEASE_EXPIRED', 'LEASE_REVOKED',
+      'STALE_REF', 'TARGET_CLOSED', 'PERMISSION_DENIED', 'POLICY_DENIED',
+      'CONTROL_DISABLED', 'TARGET_NOT_AUTHORIZED', 'APPROVAL_DENIED',
+      'DUPLICATE_REQUEST', 'TOO_MANY_PENDING', 'QUOTA_EXCEEDED',
+      'BINARY_MISMATCH', 'BUSY', 'TIMEOUT', 'CANCELLED', 'DISCONNECTED',
+      'INTERNAL',
+    ])
+    expect(() => { assertProtocolManifest() }).not.toThrow()
     expect(Object.isFrozen(BRIDGE_REQUEST_KINDS)).toBe(true)
     expect(Object.isFrozen(HELPER_REQUEST_KINDS)).toBe(true)
     expect(Object.isFrozen(CONTROL_KINDS)).toBe(true)
@@ -324,10 +331,10 @@ describe('strict JSON codec', () => {
 
   it('validates bridge deadlines only when the caller supplies its current time', () => {
     const nowUnixMs = 1_000
-    expect(() => assertBridgeDeadline({ ...statusRequest(), deadlineUnixMs: nowUnixMs }, nowUnixMs)).toThrow(/future/i)
-    expect(() => assertBridgeDeadline({ ...statusRequest(), deadlineUnixMs: nowUnixMs + 1 }, nowUnixMs)).not.toThrow()
-    expect(() => assertBridgeDeadline({ ...statusRequest(), deadlineUnixMs: nowUnixMs + 30_000 }, nowUnixMs)).not.toThrow()
-    expect(() => assertBridgeDeadline({ ...statusRequest(), deadlineUnixMs: nowUnixMs + 30_001 }, nowUnixMs)).toThrow(/30 seconds/i)
+    expect(() => { assertBridgeDeadline({ ...statusRequest(), deadlineUnixMs: nowUnixMs }, nowUnixMs) }).toThrow(/future/i)
+    expect(() => { assertBridgeDeadline({ ...statusRequest(), deadlineUnixMs: nowUnixMs + 1 }, nowUnixMs) }).not.toThrow()
+    expect(() => { assertBridgeDeadline({ ...statusRequest(), deadlineUnixMs: nowUnixMs + 30_000 }, nowUnixMs) }).not.toThrow()
+    expect(() => { assertBridgeDeadline({ ...statusRequest(), deadlineUnixMs: nowUnixMs + 30_001 }, nowUnixMs) }).toThrow(/30 seconds/i)
   })
 
   it('enforces helper timeout limits and Electron-only field matrices', () => {
@@ -342,7 +349,7 @@ describe('strict JSON codec', () => {
       buttons: ['left'],
     }
     expect(() => encodeJsonFrame(release)).not.toThrow()
-    expect(() => encodeJsonFrame({ ...release, timeoutMs: 0 } as never)).toThrow(/timeoutMs/i)
+    expect(() => encodeJsonFrame({ ...release, timeoutMs: 0 })).toThrow(/timeoutMs/i)
     expect(() => encodeJsonFrame({ ...release, leaseId: LEASE_ID } as never)).toThrow(/leaseId/i)
   })
 })
@@ -391,7 +398,7 @@ describe('binary framing', () => {
     const frames = decoder.push(stream.subarray(7))
     expect(frames).toHaveLength(2)
     expect(decodeJsonFrame(frames[0]!)).toMatchObject({ requestId: REQUEST_ID })
-    expect(() => decoder.finish()).not.toThrow()
+    expect(() => { decoder.finish() }).not.toThrow()
   })
 })
 
@@ -453,7 +460,7 @@ describe('PNG correlation and immutability', () => {
     const late = new DesktopControlFrameDecoder()
     late.pushFrame(metadataFrame)
     expect(() => late.pushFrame(encodeJsonFrame(statusRequest()))).toThrow(/expected.*PNG/i)
-    expect(() => new DesktopControlFrameDecoder().finish()).not.toThrow()
+    expect(() => { new DesktopControlFrameDecoder().finish() }).not.toThrow()
     expect(() => new DesktopControlFrameDecoder().pushFrame(Uint8Array.of(0x02))).toThrow()
   })
 
@@ -506,7 +513,7 @@ describe('PNG correlation and immutability', () => {
     const metadataFrame = new Uint8Array(await readFile(resolve(import.meta.dirname, '../fixtures/browser-snapshot-json.bin')))
     const decoder = new DesktopControlFrameDecoder()
     decoder.pushFrame(metadataFrame)
-    expect(() => decoder.finish()).toThrow(/PNG/i)
+    expect(() => { decoder.finish() }).toThrow(/PNG/i)
     expect(() => decoder.pushFrame(metadataFrame)).toThrow(/closed/i)
   })
 })

@@ -13,6 +13,7 @@ import { LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import {
   ComputerControl,
+  ComputerControlError,
   ComputerRef,
   ControlLeaseId,
   ImmutablePng,
@@ -48,6 +49,7 @@ class FakeComputerControl extends ComputerControl {
   readonly actionRequests: ComputerActionRequest[] = []
   readonly stopped: SessionIdType[] = []
   readonly statusSessions: SessionIdType[] = []
+  acquireError?: ComputerControlError
   nextSnapshot: ComputerSnapshotEnvelope = {
     result: {
       appId: APP,
@@ -60,6 +62,7 @@ class FakeComputerControl extends ComputerControl {
 
   override acquireLease(request: ControlLeaseAcquireRequest): Promise<ControlLeaseAcquireResult> {
     this.acquireRequests.push(request)
+    if (this.acquireError !== undefined) return Promise.reject(this.acquireError)
     return Promise.resolve({
       leaseId: ControlLeaseId('00000000-0000-4000-8000-000000000301'),
       leaseRevision: 3,
@@ -264,5 +267,22 @@ describe('closed ComputerControl tools', () => {
     expect(stopped.isError).toBe(false)
     expect(computer?.acquireRequests).toEqual([])
     expect(computer?.stopped).toEqual([SESSION])
+  })
+
+  it.each([
+    ['CONTROL_DISABLED', 'Error: Computer control is disabled. Enable it in Settings > Browser & Computer Control, then retry.'],
+    ['TARGET_NOT_AUTHORIZED', 'Error: The requested app is not authorized for Computer Control. Authorize it in Settings > Browser & Computer Control, then retry.'],
+    ['APPROVAL_DENIED', 'Error: Desktop control was not allowed in the native approval dialog. Retry and choose Allow.'],
+    ['PERMISSION_DENIED', 'Error: Computer control needs operating-system Screen Viewing and Assistive Control permissions. Grant both to DeepSeek Harness, restart the app, then retry.'],
+    ['POLICY_DENIED', 'Error: Computer control was denied because the requested operation or target is protected.'],
+  ] as const)('maps %s to safe actionable guidance', async (code, expected) => {
+    const { ctx, computer } = await setup(true)
+    computer!.acquireError = new ComputerControlError(code, 'private native target and window detail')
+
+    const result = await call(ctx, 'computer_snapshot', { app_id: APP, window_id: WINDOW })
+
+    expect(result.isError).toBe(true)
+    expect(result.content).toEqual([{ type: 'text', text: expected }])
+    expect(JSON.stringify(result)).not.toContain('private native target')
   })
 })

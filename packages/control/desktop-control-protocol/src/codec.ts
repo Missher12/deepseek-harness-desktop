@@ -189,9 +189,9 @@ function finiteNumber(value: unknown, label: string, minimum: number, maximum: n
   return value
 }
 
-function literal<T extends string>(value: unknown, allowed: ReadonlySet<string>, label: string): T {
+function literal(value: unknown, allowed: ReadonlySet<string>, label: string): string {
   if (typeof value !== 'string' || !allowed.has(value)) fail(`${label} is unknown`)
-  return value as T
+  return value
 }
 
 function stringList(value: unknown, label: string, maximum = PROTOCOL_LIMITS.maxStringListItems): readonly string[] {
@@ -206,7 +206,7 @@ function controlLeaseCapabilities(value: unknown): void {
   }
   const seen = new Set<string>()
   for (const item of value) {
-    const capability = literal<string>(item, LEASE_CAPABILITIES, 'capability')
+    const capability = literal(item, LEASE_CAPABILITIES, 'capability')
     if (seen.has(capability)) fail('capabilities must be unique')
     seen.add(capability)
   }
@@ -246,7 +246,7 @@ function controlLeaseTargets(value: unknown, requireNativeTargets: boolean): voi
 }
 
 function controlLeaseSurface(value: unknown): ControlLeaseSurfaceKind {
-  return literal<ControlLeaseSurfaceKind>(value, LEASE_SURFACES, 'surfaceKind')
+  return literal(value, LEASE_SURFACES, 'surfaceKind') as ControlLeaseSurfaceKind
 }
 
 function sessionId(value: unknown): SessionId {
@@ -281,7 +281,7 @@ function modifiers(value: unknown): void {
   if (!Array.isArray(value) || value.length > PROTOCOL_LIMITS.maxModifiers) fail('modifiers must be a bounded array')
   const seen = new Set<string>()
   for (const item of value) {
-    const modifier = literal<string>(item, MODIFIERS, 'modifier')
+    const modifier = literal(item, MODIFIERS, 'modifier')
     if (seen.has(modifier)) fail('modifiers must be unique')
     seen.add(modifier)
   }
@@ -392,7 +392,7 @@ function validateBridgeRequest(value: object, kind: typeof BRIDGE_REQUEST_KINDS[
     case 'browser.wait': {
       bridgeKeys(value, kind, ['durationMs'])
       browserLease(value)
-      const mode = literal<string>(at(value, 'mode'), new Set(['duration', 'navigation', 'loading-idle']), 'mode')
+      const mode = literal(at(value, 'mode'), new Set(['duration', 'navigation', 'loading-idle']), 'mode')
       if (mode === 'duration') safeInteger(at(value, 'durationMs'), 'durationMs', PROTOCOL_LIMITS.minWaitDurationMs, PROTOCOL_LIMITS.maxWaitDurationMs)
       else if (has(value, 'durationMs')) fail('durationMs is only valid for duration waits')
       break
@@ -635,8 +635,8 @@ function validateResponse(value: object): DesktopControlOkResponse | DesktopCont
   RequestId(stringValue(at(value, 'requestId'), 'requestId', PROTOCOL_LIMITS.identifierBytes))
   const rawKind = at(value, 'requestKind')
   const allKinds = new Set<string>([...BRIDGE_REQUEST_KINDS, ...HELPER_REQUEST_KINDS])
-  const kind = literal<keyof DesktopControlResultMap | keyof HelperResultMap>(rawKind, allKinds, 'requestKind')
-  const responseKind = literal<string>(at(value, 'responseKind'), new Set(['ok', 'error']), 'responseKind')
+  const kind = literal(rawKind, allKinds, 'requestKind') as keyof DesktopControlResultMap | keyof HelperResultMap
+  const responseKind = literal(at(value, 'responseKind'), new Set(['ok', 'error']), 'responseKind')
   if (responseKind === 'ok') {
     keys(value, ['protocolVersion', 'messageKind', 'responseKind', 'requestKind', 'requestId', 'result'])
     validateResult(at(value, 'result'), kind)
@@ -654,7 +654,7 @@ function validateResponse(value: object): DesktopControlOkResponse | DesktopCont
 function validateControl(value: object): DesktopControlControl {
   if (at(value, 'protocolVersion') !== 1) fail('protocolVersion must be 1')
   if (at(value, 'messageKind') !== 'control') fail('messageKind must be control')
-  const kind = literal<typeof CONTROL_KINDS[number]>(at(value, 'controlKind'), new Set(CONTROL_KINDS), 'controlKind')
+  const kind = literal(at(value, 'controlKind'), new Set(CONTROL_KINDS), 'controlKind') as typeof CONTROL_KINDS[number]
   if (kind === 'request.cancel') {
     controlKeys(value, kind)
     sessionId(at(value, 'sessionId')); RequestId(stringValue(at(value, 'requestId'), 'requestId', PROTOCOL_LIMITS.identifierBytes))

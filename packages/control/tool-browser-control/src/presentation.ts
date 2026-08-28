@@ -2,7 +2,12 @@
 
 import type { GenericCallView } from '@deepseek-ai/dsh-tools'
 
-/** A compact pending card that never repeats typed text or protected page content. */
+/**
+ * Build a compact pending card that never repeats typed text or protected page content.
+ * @param title fixed action title shown in the activity card.
+ * @param rawInput optional bounded non-sensitive input summary.
+ * @returns a generic replay-safe call presentation.
+ */
 export function browserCall(title: string, rawInput?: string | number): GenericCallView {
   return {
     card: 'generic',

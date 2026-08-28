@@ -116,9 +116,10 @@ abstract acquireLease( request: ControlLeaseAcquireRequest, signal: AbortSignal,
 
 /**
  * Read the bounded local platform support and permission snapshot.
+ * @param sessionId - Official live Harness session requesting the snapshot.
  * @returns current platform support and permission states.
  */
-abstract status(): Promise<ComputerControlStatus>
+abstract status(sessionId: SessionId): Promise<ComputerControlStatus>
 
 /**
  * List only applications and windows eligible for an explicit user grant.

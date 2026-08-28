@@ -111,7 +111,12 @@ function pointerTarget(args: { ref?: string; x?: number; y?: number }):
   return { x: args.x, y: args.y }
 }
 
-/** Build status, list, actions, wait, and approval-free Stop. */
+/**
+ * Build status, list, actions, wait, and approval-free Stop.
+ * @param ctx active Cordis context used for exact-route capability checks.
+ * @param controller turn-local Computer Control authority adapter.
+ * @returns the closed non-snapshot Computer Control tool roster.
+ */
 export function computerActionTools(ctx: Context, controller: ComputerToolController): ToolDefinition[] {
   const simple = (
     name: 'computer_focus',

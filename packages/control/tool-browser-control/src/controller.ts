@@ -100,7 +100,12 @@ export class BrowserToolController {
     }
   }
 
-  /** Capture one semantic snapshot, requesting verified PNG bytes only when the caller has opted in. */
+  /**
+   * Capture one semantic snapshot, requesting verified PNG bytes only when the caller has opted in.
+   * @param exec active tool execution and cancellation signal.
+   * @param includeImage whether the exact route can consume a PNG attachment.
+   * @returns immutable semantic snapshot with an optional paired PNG.
+   */
   async snapshot(exec: ToolRunContext, includeImage: boolean): Promise<BrowserSnapshotEnvelope> {
     const { sessionId, lease } = await this.#lease(exec)
     try {
@@ -116,7 +121,12 @@ export class BrowserToolController {
     }
   }
 
-  /** Dispatch one member of the protocol-owned browser action roster. */
+  /**
+   * Dispatch one member of the protocol-owned browser action roster.
+   * @param body closed browser action without authority fields.
+   * @param exec active tool execution and cancellation signal.
+   * @returns provider-authored browser action result.
+   */
   async act(body: RequestBody, exec: ToolRunContext): Promise<BrowserActionResult> {
     const { sessionId, lease } = await this.#lease(exec)
     const request = {
@@ -133,7 +143,11 @@ export class BrowserToolController {
     }
   }
 
-  /** Stop takeover without lease acquisition or approval. */
+  /**
+   * Stop takeover without lease acquisition or approval.
+   * @param exec active tool execution used to derive the official session.
+   * @returns an acknowledgement after provider cleanup completes.
+   */
   async stop(exec: ToolRunContext): Promise<{ stopped: true }> {
     const sessionId = sessionOf(exec)
     this.#leases.delete(sessionId)

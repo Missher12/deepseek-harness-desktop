@@ -7,7 +7,11 @@ import {
   type ToolDefinition,
 } from '@deepseek-ai/dsh-tools'
 
-/** Close a model parameter root and validate it before privileged dispatch. */
+/**
+ * Close a model parameter root and validate it before privileged dispatch.
+ * @param definition tool definition whose root parameter object must reject extras.
+ * @returns a detached definition with strict input validation wrappers.
+ */
 export function closeToolParameters(definition: ToolDefinition): ToolDefinition {
   const parameters = { ...definition.parameters, additionalProperties: false } as JsonSchemaNode
   const validate = (args: unknown) => validateJsonSchemaValue(parameters, args, '')

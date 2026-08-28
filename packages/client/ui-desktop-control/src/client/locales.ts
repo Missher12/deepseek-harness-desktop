@@ -1,3 +1,4 @@
+/** English labels for the Desktop control settings and active-control capsule. */
 export const en = {
   section: 'Browser & Computer Control', sectionDescription: 'Let the Agent work in the built-in browser or authorized Mac apps.',
   capabilityAvailable: 'capability available', capabilitiesAvailable: 'capabilities available',
@@ -9,13 +10,19 @@ export const en = {
   granted: 'Granted', denied: 'Denied',
   permissionGuidance: 'Open system settings to grant access. Harness never changes OS permissions automatically.',
   authorizedApps: 'Authorized applications', noApps: 'No ordinary apps available.', emergencyShortcut: 'Emergency Stop shortcut',
+  authorizationRequired: 'Select at least one application before an Agent can request control.',
+  enumerationNotAuthorization: 'Listing an application does not authorize it.',
+  taskApprovalGuidance: 'Each new task uses a separate native approval. The Harness ask/never policy does not replace it.',
   currentControl: 'Current control', idle: 'No Agent control is active.', retryStatus: 'Retry status', retryApps: 'Retry applications',
   settingFailed: 'The setting could not be changed.',
 } as const
 
+/** One key in the closed Desktop control locale dictionary. */
 export type DesktopControlLocaleKey = keyof typeof en
+/** Complete label dictionary required by Desktop control UI. */
 export type DesktopControlLabels = Readonly<Record<DesktopControlLocaleKey, string>>
 
+/** Chinese labels for the Desktop control settings and active-control capsule. */
 export const zh: DesktopControlLabels = {
   section: '浏览器与电脑控制', sectionDescription: '允许 Agent 操作内置浏览器或你授权的 Mac 应用。',
   capabilityAvailable: '项能力可用', capabilitiesAvailable: '项能力可用',
@@ -27,6 +34,9 @@ export const zh: DesktopControlLabels = {
   granted: '已授权', denied: '已拒绝',
   permissionGuidance: '请前往系统设置手动授权。Harness 绝不会自动修改系统权限。',
   authorizedApps: '授权应用', noApps: '没有可用的普通应用。', emergencyShortcut: '紧急停止快捷键',
+  authorizationRequired: '请至少选择一个应用，Agent 才能请求控制。',
+  enumerationNotAuthorization: '应用出现在列表中不代表已经授权。',
+  taskApprovalGuidance: '每个新任务都使用独立的原生批准；Harness 的 ask/never 策略不能替代它。',
   currentControl: '当前控制', idle: '当前没有 Agent 正在控制。', retryStatus: '重试状态', retryApps: '重试应用列表',
   settingFailed: '无法修改此设置。',
 }

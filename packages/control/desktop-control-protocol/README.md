@@ -6,7 +6,7 @@ The sole TypeScript source of cross-process Desktop-control actions, results, er
 
 ## Protocol v1
 
-[`protocol-v1.json`](protocol-v1.json) is the machine-readable roster, field-matrix, nested lease-field, and limit source for TypeScript and the native implementation. Import-time `assertProtocolManifest()` fails when the TypeScript constants diverge. The three request families are closed: 27 bridge kinds, 14 helper kinds, and four control kinds. Responses echo their exact request kind and pair it with an explicit result type or one of 17 error codes; there is no generic result escape.
+[`protocol-v1.json`](protocol-v1.json) is the machine-readable roster, field-matrix, nested lease-field, and limit source for TypeScript and the native implementation. Import-time `assertProtocolManifest()` fails when the TypeScript constants diverge. The three request families are closed: 27 bridge kinds, 14 helper kinds, and four control kinds. Responses echo their exact request kind and pair it with an explicit result type or one of 20 error codes; there is no generic result escape.
 
 The bridge roster includes internal-only `control.lease.acquire` and `control.lease.release` requests. Acquire carries one closed surface kind, a non-empty unique capability subset, and pair-preserving `{ appId, windowIds[] }` targets. Browser targets are empty; a native lease contains one or more unique apps and at least one unique window per app. Its result exposes only the effective lease id/revision, surface, targets, capabilities, and relative idle/hard durations. Release returns only `{ released: true }`. Neither request nor result can carry approval assertions, quotas, action digests, or clock values.
 

@@ -54,7 +54,7 @@ function acquire(overrides: object = {}): ControlLeaseAcquireRequest {
     targets: TARGETS,
     capabilities: CAPABILITIES,
     ...overrides,
-  } as ControlLeaseAcquireRequest
+  }
 }
 
 function release(overrides: object = {}): ControlLeaseReleaseRequest {
@@ -68,7 +68,7 @@ function release(overrides: object = {}): ControlLeaseReleaseRequest {
     leaseId: LEASE_ID,
     leaseRevision: 4,
     ...overrides,
-  } as ControlLeaseReleaseRequest
+  }
 }
 
 function install(overrides: object = {}): HelperLeaseInstallRequest {
@@ -94,7 +94,7 @@ function install(overrides: object = {}): HelperLeaseInstallRequest {
     idleExpiresAfterMs: 300_000,
     hardExpiresAfterMs: 1_200_000,
     ...overrides,
-  } as HelperLeaseInstallRequest
+  }
 }
 
 describe('closed lease lifecycle roster and types', () => {
@@ -134,7 +134,7 @@ describe('closed lease lifecycle roster and types', () => {
     ['target fields', { controlLeaseTargetFields: ['appId'] }],
     ['quota fields', { controlLeaseQuotaFields: ['snapshots'] }],
   ])('rejects a divergent %s in the machine manifest', (_name, override) => {
-    expect(() => validateProtocolManifest({ ...PROTOCOL_MANIFEST, ...override })).toThrow(/mismatch/i)
+    expect(() => { validateProtocolManifest({ ...PROTOCOL_MANIFEST, ...override }) }).toThrow(/mismatch/i)
   })
 
   it('keeps lease DTOs in the closed bridge union', () => {
@@ -150,7 +150,7 @@ describe('lease acquire and release codec', () => {
   it('rejects inherited or hidden serialization hooks before they can rewrite lease wire bytes', () => {
     const inheritedAcquire = Object.assign(Object.create({
       toJSON: () => release(),
-    }) as object, acquire()) as ControlLeaseAcquireRequest
+    }) as object, acquire())
     const hiddenRelease = release()
     Object.defineProperty(hiddenRelease, 'toJSON', {
       value: () => acquire(),
@@ -165,7 +165,7 @@ describe('lease acquire and release codec', () => {
     const customPrototypeInstall = Object.assign(
       Object.create({ inheritedAuthority: true }) as object,
       install(),
-    ) as HelperLeaseInstallRequest
+    )
 
     expect(() => encodeJsonFrame(customPrototypeInstall)).toThrow(/plain|serializ|prototype/i)
   })

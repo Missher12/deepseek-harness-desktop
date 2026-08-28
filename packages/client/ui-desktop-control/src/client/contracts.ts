@@ -1,17 +1,24 @@
+/** Closed operating-system permission states shown by Desktop control UI. */
 export const DESKTOP_CONTROL_PERMISSION_STATES = ['granted', 'denied', 'unknown'] as const
+/** One operating-system permission state shown by Desktop control UI. */
 export type DesktopControlPermissionState = typeof DESKTOP_CONTROL_PERMISSION_STATES[number]
+/** Closed adapter availability states shown by Desktop control UI. */
 export const DESKTOP_CONTROL_AVAILABILITY_STATES = ['available', 'unavailable', 'unknown'] as const
+/** One adapter availability state shown by Desktop control UI. */
 export type DesktopControlAvailability = typeof DESKTOP_CONTROL_AVAILABILITY_STATES[number]
 
+/** Availability and enablement for one Desktop control capability. */
 export interface DesktopControlCapabilityState {
   readonly availability: DesktopControlAvailability
   readonly enabled: boolean
 }
 
+/** Independent refresh state for a main-owned Desktop control observation. */
 export type DesktopControlRefreshState =
   | { readonly state: 'ready' | 'checking' }
   | { readonly state: 'failed'; readonly message: string }
 
+/** Strict path-free snapshot rendered by the Desktop control settings UI. */
 export interface DesktopControlUiSnapshot {
   readonly browser: DesktopControlCapabilityState
   readonly computer: DesktopControlCapabilityState
@@ -37,12 +44,14 @@ export interface DesktopControlUiSnapshot {
   readonly stopping: boolean
 }
 
+/** Closed renderer intent accepted by the main-owned Desktop control settings authority. */
 export type DesktopControlUiMutation =
   | { readonly kind: 'set-browser-enabled'; readonly enabled: boolean }
   | { readonly kind: 'set-computer-enabled'; readonly enabled: boolean }
   | { readonly kind: 'set-app-allowed'; readonly appId: string; readonly allowed: boolean }
   | { readonly kind: 'set-emergency-accelerator'; readonly accelerator: string }
 
+/** Frozen preload surface for Desktop control status and setting intents. */
 export interface DesktopControlBridge {
   getComputerControlStatus(): Promise<DesktopControlUiSnapshot>
   stopComputerControl(): Promise<DesktopControlUiSnapshot>
@@ -78,6 +87,11 @@ function isRefreshState(value: unknown): value is DesktopControlRefreshState {
     && shortText(value.message, 160)
 }
 
+/**
+ * Validate an untrusted preload value as a strict Desktop control snapshot.
+ * @param value value received across the preload boundary.
+ * @returns whether the value has the exact bounded snapshot shape.
+ */
 export function isDesktopControlUiSnapshot(value: unknown): value is DesktopControlUiSnapshot {
   if (!plainRecord(value) || !exactKeys(value, [
     'browser', 'computer', 'permissions', 'refresh', 'ordinaryApps',
@@ -104,6 +118,11 @@ export function isDesktopControlUiSnapshot(value: unknown): value is DesktopCont
     && shortText(value.active.action, 128)
 }
 
+/**
+ * Validate the optional preload Desktop control bridge.
+ * @param value candidate bridge exposed by preload.
+ * @returns whether every required bridge method is callable.
+ */
 export function isDesktopControlBridge(value: unknown): value is DesktopControlBridge {
   if (typeof value !== 'object' || value === null) return false
   const bridge = value as Record<string, unknown>

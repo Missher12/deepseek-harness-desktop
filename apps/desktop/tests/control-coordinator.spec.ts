@@ -217,6 +217,7 @@ function setup(options: {
   audit?: (action: string) => void | Promise<void>
   unclaimedSession?: boolean
   computerEnabled?: boolean
+  ordinaryAppIds?: readonly string[]
 } = {}) {
   const dialog = options.dialog ?? new FakeDialog()
   const shortcuts = new FakeShortcutRegistrar()
@@ -237,7 +238,7 @@ function setup(options: {
     getSettings: () => ({
       settings: {
         ...DEFAULT_CONTROL_SETTINGS,
-        ordinaryAppIds: ['app.allowed'],
+        ordinaryAppIds: options.ordinaryAppIds ?? ['app.allowed'],
         browserEnabled: true,
         computerEnabled: options.computerEnabled ?? true,
       },
@@ -267,6 +268,45 @@ async function approve(dialog: FakeDialog): Promise<void> {
 }
 
 describe('DesktopControlCoordinator', () => {
+  it('distinguishes disabled, unauthorized-target, and native-approval denials', async () => {
+    const computer = adapter('computer')
+    const disabled = setup({ computer, computerEnabled: false })
+    await expect(disabled.coordinator.dispatch(acquire(), context())).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'CONTROL_DISABLED' } },
+    })
+    expect(disabled.dialog.calls).toHaveLength(0)
+
+    const unauthorized = setup({ computer, ordinaryAppIds: [] })
+    await expect(unauthorized.coordinator.dispatch(acquire(), context())).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'TARGET_NOT_AUTHORIZED' } },
+    })
+    expect(unauthorized.dialog.calls).toHaveLength(0)
+
+    const declined = setup({ computer })
+    const pending = declined.coordinator.dispatch(acquire(), context())
+    await vi.waitFor(() => { expect(declined.dialog.answers).toHaveLength(1) })
+    declined.dialog.answers[0]?.resolve({ response: 0 })
+    await expect(pending).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'APPROVAL_DENIED' } },
+    })
+  })
+
+  it('does not misreport an authorized target that disappeared as an allowlist denial', async () => {
+    const computer = adapter('computer')
+    computer.acquireFacts = async () => ({
+      surfaceKind: 'native-application',
+      targets: [],
+      capabilities: ['observe', 'pointer', 'keyboard'],
+      policyAllowed: true,
+    })
+    const { coordinator, dialog } = setup({ computer })
+
+    await expect(coordinator.dispatch(acquire(), context())).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'TARGET_CLOSED' } },
+    })
+    expect(dialog.calls).toHaveLength(0)
+  })
+
   it('allows targetless computer status while native control is disabled', async () => {
     const computer = adapter('computer')
     computer.operationFacts = async () => ({

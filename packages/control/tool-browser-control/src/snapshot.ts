@@ -2,7 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { AttachmentId, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { defineTool, type ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { defineTool, type ToolDefinition, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-llm'
 import { closeToolParameters } from './closed-tool.ts'
 import type { BrowserToolController } from './controller.ts'
@@ -109,8 +109,13 @@ async function routeCanSeeImages(ctx: Context, exec: ToolRunContext): Promise<bo
   }
 }
 
-/** Build the closed semantic snapshot tool. */
-export function browserSnapshotTool(ctx: Context, controller: BrowserToolController) {
+/**
+ * Build the closed semantic snapshot tool.
+ * @param ctx active Cordis context used for attachment persistence and route checks.
+ * @param controller turn-local Browser Control authority adapter.
+ * @returns the closed semantic snapshot tool definition.
+ */
+export function browserSnapshotTool(ctx: Context, controller: BrowserToolController): ToolDefinition {
   return closeToolParameters(defineTool({
     name: 'browser_snapshot',
     description: 'Capture the controlled browser\'s current URL, title, revision-bound semantic refs, and bounded semantic tree. A screenshot is attached only when the exact active model supports image input. Screenshot pixels never authorize coordinate actions.',

@@ -66,7 +66,11 @@ function assertScrollDelta(name: 'delta_x' | 'delta_y', value: number): void {
   }
 }
 
-/** Build all approval-free model schemas; persistent-surface authorization remains provider-owned. */
+/**
+ * Build all approval-free model schemas; persistent-surface authorization remains provider-owned.
+ * @param controller turn-local Browser Control authority adapter.
+ * @returns the closed non-snapshot Browser Control tool roster.
+ */
 export function browserActionTools(controller: BrowserToolController): ToolDefinition[] {
   return [
     closeToolParameters(defineTool({

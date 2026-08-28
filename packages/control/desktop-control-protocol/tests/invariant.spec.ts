@@ -34,7 +34,7 @@ describe('protocol invariant companion', () => {
     if (installed === undefined) throw new Error('invariant was not registered')
     const invariant = installed
     state.failure = undefined
-    invariant(ctx, fail)
+    void invariant(ctx, fail)
     expect(fail).not.toHaveBeenCalled()
     state.failure = new Error('bad manifest')
     expect(() => invariant(ctx, fail)).toThrow('bad manifest')
