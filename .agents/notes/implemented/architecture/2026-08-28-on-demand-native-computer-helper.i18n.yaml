@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-28-on-demand-native-computer-helper.md
-2026-08-28-on-demand-native-computer-helper.md: 23c3daf8b7cb9637bc2fc808e336ca435d678808
-2026-08-28-on-demand-native-computer-helper.zh.md: 0bc6839d517b6e775a02c3e6cecb8d99e1f236da
+2026-08-28-on-demand-native-computer-helper.md: 84ebee4fb06b99e7752e2021446deb9da32c2ed9
+2026-08-28-on-demand-native-computer-helper.zh.md: eaa73cc4a6d483aac2cecf7caca2067215e1c4f2

@@ -154,6 +154,12 @@ try {
   }
   $uninstaller = $uninstallers[0].FullName
 
+  $nativeHelpers = @(Get-ChildItem -LiteralPath $installRoot -Filter 'computer-use-helper.exe' -File -Recurse)
+  if ($nativeHelpers.Count -ne 1) {
+    throw "Setup smoke expected one packaged Computer Use helper, found $($nativeHelpers.Count)."
+  }
+  & ./scripts/windows-computer-use-smoke.ps1 -HelperPath $nativeHelpers[0].FullName
+
   $env:DSH_WINDOWS_DESKTOP_EXECUTABLE = $executable
   $env:DSH_DESKTOP_SMOKE_ROOT = $temporaryRoot
   $env:DSH_DESKTOP_SMOKE_DSH_HOME = $harnessHome

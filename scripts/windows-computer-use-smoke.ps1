@@ -1,0 +1,379 @@
+param(
+  [Parameter(Mandatory = $true)]
+  [string]$HelperPath
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+function Read-ExactBytes {
+  param(
+    [Parameter(Mandatory = $true)]
+    [System.IO.Stream]$Stream,
+    [Parameter(Mandatory = $true)]
+    [int]$Count
+  )
+
+  $buffer = [byte[]]::new($Count)
+  $offset = 0
+  while ($offset -lt $Count) {
+    $read = $Stream.Read($buffer, $offset, $Count - $offset)
+    if ($read -eq 0) {
+      throw "Native helper closed stdout with $($Count - $offset) byte(s) still expected."
+    }
+    $offset += $read
+  }
+  return ,$buffer
+}
+
+function Read-HelperFrame {
+  param([Parameter(Mandatory = $true)][System.IO.Stream]$Stream)
+
+  $header = Read-ExactBytes -Stream $Stream -Count 4
+  [Array]::Reverse($header)
+  $length = [BitConverter]::ToUInt32($header, 0)
+  if ($length -lt 1 -or $length -gt 4194321) {
+    throw "Native helper returned an invalid frame length: $length"
+  }
+  return [PSCustomObject]@{ Body = Read-ExactBytes -Stream $Stream -Count ([int]$length) }
+}
+
+function Write-HelperJson {
+  param(
+    [Parameter(Mandatory = $true)]
+    [System.IO.Stream]$Stream,
+    [Parameter(Mandatory = $true)]
+    [System.Collections.IDictionary]$Message
+  )
+
+  $json = $Message | ConvertTo-Json -Compress -Depth 16
+  $payload = [Text.Encoding]::UTF8.GetBytes($json)
+  $body = [byte[]]::new($payload.Length + 1)
+  $body[0] = 0x01
+  [Buffer]::BlockCopy($payload, 0, $body, 1, $payload.Length)
+  $prefix = [BitConverter]::GetBytes([uint32]$body.Length)
+  [Array]::Reverse($prefix)
+  $Stream.Write($prefix, 0, $prefix.Length)
+  $Stream.Write($body, 0, $body.Length)
+  $Stream.Flush()
+}
+
+function New-HelperRequest {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RequestKind,
+    [Parameter(Mandatory = $true)]
+    [string]$SessionId,
+    [System.Collections.IDictionary]$Fields = @{}
+  )
+
+  $message = [ordered]@{
+    protocolVersion = 1
+    messageKind = 'request'
+    requestKind = $RequestKind
+    requestId = [Guid]::NewGuid().ToString('D').ToLowerInvariant()
+    sessionId = $SessionId
+    timeoutMs = 10000
+  }
+  foreach ($key in $Fields.Keys) {
+    $message[$key] = $Fields[$key]
+  }
+  return $message
+}
+
+function Invoke-HelperRequest {
+  param(
+    [Parameter(Mandatory = $true)]
+    [System.IO.Stream]$InputStream,
+    [Parameter(Mandatory = $true)]
+    [System.IO.Stream]$OutputStream,
+    [Parameter(Mandatory = $true)]
+    [System.Collections.IDictionary]$Request,
+    [switch]$ExpectPng
+  )
+
+  Write-HelperJson -Stream $InputStream -Message $Request
+  $frame = Read-HelperFrame -Stream $OutputStream
+  if ($frame.Body[0] -ne 0x01) {
+    throw 'Native helper response was not a JSON frame.'
+  }
+  $jsonBytes = [byte[]]$frame.Body[1..($frame.Body.Length - 1)]
+  $responseText = [Text.Encoding]::UTF8.GetString($jsonBytes)
+  $response = $responseText | ConvertFrom-Json -Depth 16
+  if ($response.requestId -ne $Request.requestId -or $response.requestKind -ne $Request.requestKind) {
+    throw 'Native helper response correlation did not match the request.'
+  }
+
+  $png = $null
+  if ($ExpectPng) {
+    $pngFrame = Read-HelperFrame -Stream $OutputStream
+    if ($pngFrame.Body[0] -ne 0x02 -or $pngFrame.Body.Length -lt 25) {
+      throw 'Native helper did not return a valid adjacent PNG frame.'
+    }
+    $png = [byte[]]$pngFrame.Body[17..($pngFrame.Body.Length - 1)]
+    $signature = [byte[]](0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
+    for ($index = 0; $index -lt $signature.Length; $index++) {
+      if ($png[$index] -ne $signature[$index]) {
+        throw 'Native helper PNG frame has an invalid signature.'
+      }
+    }
+  }
+  return [PSCustomObject]@{ Response = $response; Text = $responseText; Png = $png }
+}
+
+function Assert-HelperSuccess {
+  param([Parameter(Mandatory = $true)]$Exchange)
+  if ($Exchange.Response.responseKind -ne 'ok') {
+    throw "Native helper request failed: $($Exchange.Response.error.code)"
+  }
+}
+
+function Assert-HelperError {
+  param(
+    [Parameter(Mandatory = $true)]$Exchange,
+    [Parameter(Mandatory = $true)][string]$Code
+  )
+  if ($Exchange.Response.responseKind -ne 'error' -or $Exchange.Response.error.code -ne $Code) {
+    throw "Expected native helper error $Code, got: $($Exchange.Text)"
+  }
+}
+
+function Start-FixtureWindow {
+  param(
+    [Parameter(Mandatory = $true)][string]$Title,
+    [Parameter(Mandatory = $true)][ValidateSet('button', 'protected')][string]$Kind,
+    [Parameter(Mandatory = $true)][int]$Left
+  )
+
+  $fixtureSource = @"
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+`$form = [System.Windows.Forms.Form]::new()
+`$form.Text = '$Title'
+`$form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+`$form.Location = [System.Drawing.Point]::new($Left, 160)
+`$form.Size = [System.Drawing.Size]::new(420, 220)
+if ('$Kind' -eq 'protected') {
+  `$field = [System.Windows.Forms.TextBox]::new()
+  `$field.Name = 'ProtectedInput'
+  `$field.AccessibleName = 'Protected input'
+  `$field.UseSystemPasswordChar = `$true
+  `$field.Text = 'DSH_SECRET_DO_NOT_EXPOSE'
+  `$field.Location = [System.Drawing.Point]::new(80, 70)
+  `$field.Size = [System.Drawing.Size]::new(240, 30)
+  `$form.Controls.Add(`$field)
+} else {
+  `$button = [System.Windows.Forms.Button]::new()
+  `$button.Name = 'HarmlessAction'
+  `$button.AccessibleName = 'Harmless action'
+  `$button.Text = 'Harmless action'
+  `$button.Location = [System.Drawing.Point]::new(110, 65)
+  `$button.Size = [System.Drawing.Size]::new(180, 45)
+  `$form.Controls.Add(`$button)
+}
+`$form.Add_Shown({ `$form.Activate() })
+[void]`$form.ShowDialog()
+"@
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($fixtureSource))
+  $pwsh = (Get-Process -Id $PID).Path
+  return Start-Process -FilePath $pwsh -ArgumentList @(
+    '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded
+  ) -PassThru
+}
+
+function Find-ListedWindow {
+  param(
+    [Parameter(Mandatory = $true)]$Apps,
+    [Parameter(Mandatory = $true)][string]$Title
+  )
+  foreach ($app in @($Apps)) {
+    foreach ($window in @($app.windows)) {
+      if ($window.title -eq $Title) {
+        return [PSCustomObject]@{
+          appId = [string]$app.appId
+          windowId = [string]$window.windowId
+          title = [string]$window.title
+        }
+      }
+    }
+  }
+  return $null
+}
+
+function Stop-FixtureProcess {
+  param([System.Diagnostics.Process]$Process)
+  if ($null -eq $Process) { return }
+  try {
+    if (-not $Process.HasExited) {
+      [void]$Process.CloseMainWindow()
+      if (-not $Process.WaitForExit(3000)) {
+        $Process.Kill($true)
+        [void]$Process.WaitForExit(5000)
+      }
+    }
+  }
+  finally {
+    $Process.Dispose()
+  }
+}
+
+$resolvedHelper = (Resolve-Path -LiteralPath $HelperPath).Path
+$helperInfo = [System.Diagnostics.ProcessStartInfo]::new($resolvedHelper)
+$helperInfo.UseShellExecute = $false
+$helperInfo.CreateNoWindow = $true
+$helperInfo.RedirectStandardInput = $true
+$helperInfo.RedirectStandardOutput = $true
+$helperInfo.RedirectStandardError = $true
+$helper = $null
+$fixtures = @()
+$sessionId = 'windows-native-acceptance'
+$leaseId = [Guid]::NewGuid().ToString('D').ToLowerInvariant()
+$leaseRevision = 1
+
+try {
+  $fixtures = @(
+    Start-FixtureWindow -Title 'DSH Computer Fixture Alpha' -Kind button -Left 120
+    Start-FixtureWindow -Title 'DSH Computer Fixture Beta' -Kind button -Left 620
+    Start-FixtureWindow -Title 'DSH Protected Fixture' -Kind protected -Left 360
+  )
+  $helper = [System.Diagnostics.Process]::Start($helperInfo)
+  if ($null -eq $helper) {
+    throw 'Windows did not start the packaged Computer Use helper.'
+  }
+  $inputStream = $helper.StandardInput.BaseStream
+  $outputStream = $helper.StandardOutput.BaseStream
+
+  $statusRequest = New-HelperRequest -RequestKind 'status' -SessionId $sessionId
+  $status = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $statusRequest
+  Assert-HelperSuccess $status
+  if ($status.Response.result.supported -ne $true -or
+      $status.Response.result.viewing -ne 'granted' -or
+      $status.Response.result.assistive -ne 'granted') {
+    throw "Windows native Computer Use is unavailable: $($status.Text)"
+  }
+
+  $alpha = $null
+  $beta = $null
+  $protected = $null
+  $listDeadline = [DateTime]::UtcNow.AddSeconds(20)
+  do {
+    $listRequest = New-HelperRequest -RequestKind 'list' -SessionId $sessionId
+    $listed = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $listRequest
+    Assert-HelperSuccess $listed
+    $alpha = Find-ListedWindow -Apps $listed.Response.result.apps -Title 'DSH Computer Fixture Alpha'
+    $beta = Find-ListedWindow -Apps $listed.Response.result.apps -Title 'DSH Computer Fixture Beta'
+    $protected = Find-ListedWindow -Apps $listed.Response.result.apps -Title 'DSH Protected Fixture'
+    if ($null -eq $alpha -or $null -eq $beta -or $null -eq $protected) {
+      Start-Sleep -Milliseconds 250
+    }
+  } while (($null -eq $alpha -or $null -eq $beta -or $null -eq $protected) -and
+    [DateTime]::UtcNow -lt $listDeadline)
+  if ($null -eq $alpha -or $null -eq $beta -or $null -eq $protected) {
+    throw 'Native Computer Use did not enumerate all three exact fixture windows.'
+  }
+
+  $targets = @($alpha, $beta, $protected) | ForEach-Object {
+    [ordered]@{ appId = $_.appId; windowIds = @($_.windowId) }
+  }
+  $installRequest = New-HelperRequest -RequestKind 'lease.install' -SessionId $sessionId -Fields ([ordered]@{
+    leaseId = $leaseId
+    leaseRevision = $leaseRevision
+    agentId = 'windows-native-acceptance'
+    targets = $targets
+    capabilities = @('observe', 'pointer', 'keyboard')
+    quotas = [ordered]@{ operations = 100; snapshots = 10; pointerActions = 50; keyActions = 20; textBytes = 1024 }
+    idleExpiresAfterMs = 300000
+    hardExpiresAfterMs = 1200000
+  })
+  $installedLease = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $installRequest
+  Assert-HelperSuccess $installedLease
+
+  $alphaSnapshotRequest = New-HelperRequest -RequestKind 'snapshot' -SessionId $sessionId -Fields ([ordered]@{
+    leaseId = $leaseId; leaseRevision = $leaseRevision; appId = $alpha.appId; windowId = $alpha.windowId
+    snapshotRevision = 1; includeImage = $false
+  })
+  $alphaSnapshot = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $alphaSnapshotRequest
+  Assert-HelperSuccess $alphaSnapshot
+  $alphaButton = @($alphaSnapshot.Response.result.refs | Where-Object {
+    $_.role -eq 'button' -and $_.name -eq 'Harmless action'
+  })
+  if ($alphaButton.Count -ne 1) {
+    throw 'UI Automation did not expose the exact harmless Alpha button.'
+  }
+  $clickRequest = New-HelperRequest -RequestKind 'click' -SessionId $sessionId -Fields ([ordered]@{
+    leaseId = $leaseId; leaseRevision = $leaseRevision; appId = $alpha.appId; windowId = $alpha.windowId
+    snapshotRevision = [uint64]$alphaSnapshot.Response.result.snapshotRevision
+    ref = [string]$alphaButton[0].ref; button = 'left'
+  })
+  $clicked = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $clickRequest
+  Assert-HelperSuccess $clicked
+
+  $betaSnapshotRequest = New-HelperRequest -RequestKind 'snapshot' -SessionId $sessionId -Fields ([ordered]@{
+    leaseId = $leaseId; leaseRevision = $leaseRevision; appId = $beta.appId; windowId = $beta.windowId
+    snapshotRevision = 2; includeImage = $true
+  })
+  $betaSnapshot = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $betaSnapshotRequest -ExpectPng
+  Assert-HelperSuccess $betaSnapshot
+  if ($betaSnapshot.Png.Length -ne [int]$betaSnapshot.Response.result.image.byteLength) {
+    throw 'Windows Graphics Capture PNG length did not match its metadata.'
+  }
+  $pngStream = [System.IO.MemoryStream]::new($betaSnapshot.Png, $false)
+  try {
+    $pngHash = (Get-FileHash -InputStream $pngStream -Algorithm SHA256).Hash.ToLowerInvariant()
+  }
+  finally {
+    $pngStream.Dispose()
+  }
+  if ($pngHash -ne $betaSnapshot.Response.result.image.sha256) {
+    throw 'Windows Graphics Capture PNG hash did not match its metadata.'
+  }
+  $focusRequest = New-HelperRequest -RequestKind 'focus' -SessionId $sessionId -Fields ([ordered]@{
+    leaseId = $leaseId; leaseRevision = $leaseRevision; appId = $beta.appId; windowId = $beta.windowId
+    snapshotRevision = [uint64]$betaSnapshot.Response.result.snapshotRevision
+  })
+  $focused = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $focusRequest
+  Assert-HelperSuccess $focused
+
+  $protectedSnapshotRequest = New-HelperRequest -RequestKind 'snapshot' -SessionId $sessionId -Fields ([ordered]@{
+    leaseId = $leaseId; leaseRevision = $leaseRevision; appId = $protected.appId; windowId = $protected.windowId
+    snapshotRevision = 3; includeImage = $false
+  })
+  $protectedSnapshot = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $protectedSnapshotRequest
+  Assert-HelperError -Exchange $protectedSnapshot -Code 'PERMISSION_DENIED'
+  if ($protectedSnapshot.Text.Contains('DSH_SECRET_DO_NOT_EXPOSE')) {
+    throw 'Protected UI Automation content leaked into the helper response.'
+  }
+
+  $stopRequest = New-HelperRequest -RequestKind 'stop' -SessionId $sessionId -Fields ([ordered]@{
+    leaseId = $leaseId; leaseRevision = $leaseRevision
+  })
+  $stopped = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $stopRequest
+  Assert-HelperSuccess $stopped
+  $afterStop = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $focusRequest
+  Assert-HelperError -Exchange $afterStop -Code 'LEASE_REVOKED'
+
+  $inputStream.Close()
+  if (-not $helper.WaitForExit(10000)) {
+    throw 'Packaged Computer Use helper did not exit after stdin EOF.'
+  }
+  $stderr = $helper.StandardError.ReadToEnd()
+  if ($helper.ExitCode -ne 0 -or $stderr.Length -ne 0) {
+    throw "Packaged Computer Use helper exited unexpectedly: $stderr"
+  }
+  Write-Host 'Windows Computer Use smoke passed: UIA, WGC PNG, SendInput, protected-target denial, Stop, EOF, and two harmless windows.'
+}
+finally {
+  if ($null -ne $helper) {
+    if (-not $helper.HasExited) {
+      try { $helper.StandardInput.Close() } catch { }
+      if (-not $helper.WaitForExit(3000)) {
+        $helper.Kill($true)
+        [void]$helper.WaitForExit(5000)
+      }
+    }
+    $helper.Dispose()
+  }
+  foreach ($fixture in $fixtures) {
+    Stop-FixtureProcess -Process $fixture
+  }
+}
