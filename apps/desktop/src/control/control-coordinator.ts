@@ -509,6 +509,9 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       const approval = await this.#approvals.request(approvalScope, controller.signal)
       this.#throwIfAborted(controller.signal)
       if (approval === 'BUSY') throw new ControlAuthorityError('BUSY', 'another approval is pending')
+      if (approval === 'UNAVAILABLE') {
+        throw new ControlAuthorityError('INTERNAL', 'native approval was unavailable')
+      }
       if (approval === 'DENIED') {
         const code = effectiveRequest.surfaceKind === 'native-application'
           ? 'APPROVAL_DENIED'
@@ -520,6 +523,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       const current = await adapter.acquireFacts(request, controller.signal)
       this.#throwIfAborted(controller.signal)
       const currentFacts = this.#leaseFacts(effectiveRequest, current, currentSettings)
+      this.#assertApprovedNativeTargetsCurrent(approvalScope, currentFacts)
       if (!this.#approvals.consumeBeforeDispatch(
         approval,
         approvalScope,
@@ -542,6 +546,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       const latest = await adapter.acquireFacts(request, controller.signal)
       this.#throwIfAborted(controller.signal)
       const activationFacts = this.#leaseFacts(effectiveRequest, latest, activationSettings)
+      this.#assertApprovedNativeTargetsCurrent(approvalScope, activationFacts)
       if (activationSettings.revision !== approvalScope.allowlistRevision) {
         throw new ControlAuthorityError('POLICY_DENIED', 'allowlist changed before activation')
       }
@@ -657,6 +662,9 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
         })
         const approved = await this.#approvals.request(approvalScope, controller.signal)
         if (approved === 'BUSY') throw new ControlAuthorityError('BUSY', 'another approval is pending')
+        if (approved === 'UNAVAILABLE') {
+          throw new ControlAuthorityError('INTERNAL', 'action approval was unavailable')
+        }
         if (approved === 'DENIED') throw new ControlAuthorityError('POLICY_DENIED', 'action approval denied')
         facts = await adapter.operationFacts(request, controller.signal)
         operationFacts = this.#operationFacts(request, facts)
@@ -982,6 +990,15 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       && targetsContained(scope.targets, facts.targets)
       && scope.capabilities.every(capability => facts.capabilities.includes(capability))
       && facts.policyAllowed
+  }
+
+  #assertApprovedNativeTargetsCurrent(
+    scope: NativeApprovalScope,
+    facts: LeaseAcquisitionFacts,
+  ): void {
+    if (scope.surfaceKind === 'native-application' && !targetsContained(scope.targets, facts.targets)) {
+      throw new ControlAuthorityError('TARGET_CLOSED', 'an approved application target is no longer current')
+    }
   }
 
   #actionApprovalCurrent(

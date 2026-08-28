@@ -289,6 +289,13 @@ describe('DesktopControlCoordinator', () => {
     await expect(pending).resolves.toMatchObject({
       message: { responseKind: 'error', error: { code: 'APPROVAL_DENIED' } },
     })
+
+    const invalidated = setup({ computer, revalidate: () => false })
+    const invalidatedPending = invalidated.coordinator.dispatch(acquire(), context())
+    await approve(invalidated.dialog)
+    await expect(invalidatedPending).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'INTERNAL' } },
+    })
   })
 
   it('does not misreport an authorized target that disappeared as an allowlist denial', async () => {
@@ -305,6 +312,30 @@ describe('DesktopControlCoordinator', () => {
       message: { responseKind: 'error', error: { code: 'TARGET_CLOSED' } },
     })
     expect(dialog.calls).toHaveLength(0)
+  })
+
+  it('reports a partially disappeared approved target as closed', async () => {
+    const computer = adapter('computer')
+    let factsRead = 0
+    computer.acquireFacts = async () => {
+      factsRead += 1
+      return {
+        surfaceKind: 'native-application',
+        targets: [{
+          appId: 'app.allowed',
+          windowIds: factsRead === 1 ? ['window-a', 'window-b'] : ['window-a'],
+        }],
+        capabilities: ['observe', 'pointer', 'keyboard'],
+        policyAllowed: true,
+      }
+    }
+    const { coordinator, dialog } = setup({ computer })
+    const pending = coordinator.dispatch(acquire(), context())
+    await approve(dialog)
+
+    await expect(pending).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'TARGET_CLOSED' } },
+    })
   })
 
   it('allows targetless computer status while native control is disabled', async () => {

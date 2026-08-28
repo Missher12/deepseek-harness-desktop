@@ -53,7 +53,7 @@ export interface NativeApprovalTicket {
   readonly [NATIVE_APPROVAL_TICKET]: true
 }
 
-export type NativeApprovalResult = NativeApprovalTicket | 'DENIED' | 'BUSY'
+export type NativeApprovalResult = NativeApprovalTicket | 'DENIED' | 'UNAVAILABLE' | 'BUSY'
 
 export const NATIVE_APPROVAL_TICKET_LIFETIME_MS = 30_000
 
@@ -325,19 +325,19 @@ export class NativeApprovalCoordinator {
       scope = canonicalScope(input)
       key = scopeKey(scope)
     } catch {
-      return Promise.resolve('DENIED')
+      return Promise.resolve('UNAVAILABLE')
     }
     if (processPendingApproval !== undefined) return Promise.resolve('BUSY')
-    if (signal?.aborted) return Promise.resolve('DENIED')
+    if (signal?.aborted) return Promise.resolve('UNAVAILABLE')
 
     let ownerWindow: NativeApprovalOwnerWindow | undefined
     try {
       ownerWindow = this.dependencies.getOwnerWindow()
       if (!ownerWindow || ownerWindow.isDestroyed() || !ownerWindow.isVisible()) {
-        return Promise.resolve('DENIED')
+        return Promise.resolve('UNAVAILABLE')
       }
     } catch {
-      return Promise.resolve('DENIED')
+      return Promise.resolve('UNAVAILABLE')
     }
 
     let settled = false
@@ -359,7 +359,7 @@ export class NativeApprovalCoordinator {
       invalidate: () => {
         pending.invalidated = true
         cleanup()
-        pending.settle('DENIED')
+        pending.settle('UNAVAILABLE')
       },
       abortCleanups: [],
       invalidated: false,
@@ -397,8 +397,12 @@ export class NativeApprovalCoordinator {
       }
       const dialogResult = this.dependencies.dialog.showMessageBox(ownerWindow, challengeOptions(scope))
       void Promise.resolve(dialogResult).then(async (result) => {
-        if (result.response !== 1 || !pendingWindowIsValid(pending)) {
+        if (result.response !== 1) {
           finish('DENIED')
+          return
+        }
+        if (!pendingWindowIsValid(pending)) {
+          finish('UNAVAILABLE')
           return
         }
         let current = false
@@ -409,24 +413,24 @@ export class NativeApprovalCoordinator {
           current = false
         }
         if (!current || !pendingWindowIsValid(pending)) {
-          finish('DENIED')
+          finish('UNAVAILABLE')
           return
         }
         let issuedAt: number
         try {
           issuedAt = this.#now()
         } catch {
-          finish('DENIED')
+          finish('UNAVAILABLE')
           return
         }
         const ticket = Object.freeze({}) as NativeApprovalTicket
         this.#tickets.set(ticket, Object.freeze({ key, issuedAt }))
         finish(ticket)
       }).catch(() => {
-        finish('DENIED')
+        finish('UNAVAILABLE')
       })
     } catch {
-      finish('DENIED')
+      finish('UNAVAILABLE')
     }
     return promise
   }

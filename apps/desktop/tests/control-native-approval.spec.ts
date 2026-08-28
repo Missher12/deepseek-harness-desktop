@@ -139,28 +139,28 @@ describe('native control approval', () => {
     await expect(cancelled).resolves.toBe('DENIED')
   })
 
-  it('denies before opening when the owner window is missing, hidden, destroyed, or already aborted', async () => {
+  it('distinguishes an unavailable challenge from an explicit user denial', async () => {
     const missingDialog = new FakeDialog()
-    await expect(coordinator(missingDialog, undefined).request(scope())).resolves.toBe('DENIED')
+    await expect(coordinator(missingDialog, undefined).request(scope())).resolves.toBe('UNAVAILABLE')
     expect(missingDialog.calls).toHaveLength(0)
 
     const hidden = new FakeWindow()
     hidden.visible = false
     const hiddenDialog = new FakeDialog()
-    await expect(coordinator(hiddenDialog, hidden).request(scope())).resolves.toBe('DENIED')
+    await expect(coordinator(hiddenDialog, hidden).request(scope())).resolves.toBe('UNAVAILABLE')
     expect(hiddenDialog.calls).toHaveLength(0)
 
     const destroyed = new FakeWindow()
     destroyed.destroyed = true
     const destroyedDialog = new FakeDialog()
-    await expect(coordinator(destroyedDialog, destroyed).request(scope())).resolves.toBe('DENIED')
+    await expect(coordinator(destroyedDialog, destroyed).request(scope())).resolves.toBe('UNAVAILABLE')
     expect(destroyedDialog.calls).toHaveLength(0)
 
     const abortedDialog = new FakeDialog()
     await expect(coordinator(abortedDialog, new FakeWindow()).request(
       scope(),
       AbortSignal.abort('caller stopped'),
-    )).resolves.toBe('DENIED')
+    )).resolves.toBe('UNAVAILABLE')
     expect(abortedDialog.calls).toHaveLength(0)
   })
 
@@ -199,7 +199,7 @@ describe('native control approval', () => {
       else if (event === 'close') window.close()
       else controller.abort('cancelled')
 
-      await expect(pending).resolves.toBe('DENIED')
+      await expect(pending).resolves.toBe('UNAVAILABLE')
       dialog.answers[0]?.resolve({ response: 1 })
       await Promise.resolve()
       await Promise.resolve()
@@ -229,6 +229,7 @@ describe('native control approval', () => {
 
     expect(ticket).not.toBe('APPROVED')
     expect(ticket).not.toBe('DENIED')
+    expect(ticket).not.toBe('UNAVAILABLE')
     expect(ticket).not.toBe('BUSY')
     expect(Reflect.ownKeys(ticket as object)).toEqual([])
     expect(JSON.stringify(ticket)).toBe('{}')
@@ -250,14 +251,14 @@ describe('native control approval', () => {
   it('denies dialog exceptions and a window that silently becomes invalid', async () => {
     const throwingDialog = new FakeDialog()
     throwingDialog.error = new Error('native dialog failed')
-    await expect(coordinator(throwingDialog, new FakeWindow()).request(scope())).resolves.toBe('DENIED')
+    await expect(coordinator(throwingDialog, new FakeWindow()).request(scope())).resolves.toBe('UNAVAILABLE')
 
     const dialog = new FakeDialog()
     const window = new FakeWindow()
     const pending = coordinator(dialog, window).request(scope())
     window.destroyed = true
     dialog.answers[0]?.resolve({ response: 1 })
-    await expect(pending).resolves.toBe('DENIED')
+    await expect(pending).resolves.toBe('UNAVAILABLE')
   })
 
   it.each([
@@ -269,13 +270,13 @@ describe('native control approval', () => {
     const dialog = new FakeDialog()
     const pending = coordinator(dialog, new FakeWindow(), isCurrent).request(scope())
     dialog.answers[0]?.resolve({ response: 1 })
-    await expect(pending).resolves.toBe('DENIED')
+    await expect(pending).resolves.toBe('UNAVAILABLE')
   })
 
   it('rejects renderer-style approval claims instead of treating data as authority', async () => {
     const dialog = new FakeDialog()
     const untrusted = { ...scope(), approved: true }
-    await expect(coordinator(dialog, new FakeWindow()).request(untrusted as NativeApprovalScope)).resolves.toBe('DENIED')
+    await expect(coordinator(dialog, new FakeWindow()).request(untrusted as NativeApprovalScope)).resolves.toBe('UNAVAILABLE')
     expect(dialog.calls).toHaveLength(0)
   })
 
@@ -286,7 +287,7 @@ describe('native control approval', () => {
       targets: TARGETS,
     }))
     expect(dialog.calls).toHaveLength(0)
-    await expect(result).resolves.toBe('DENIED')
+    await expect(result).resolves.toBe('UNAVAILABLE')
   })
 
   it('requires revalidation to return the boolean true exactly', async () => {
@@ -296,7 +297,7 @@ describe('native control approval', () => {
     ) => boolean
     const pending = coordinator(dialog, new FakeWindow(), untypedApproval).request(scope())
     dialog.answers[0]?.resolve({ response: 1 })
-    await expect(pending).resolves.toBe('DENIED')
+    await expect(pending).resolves.toBe('UNAVAILABLE')
   })
 
   it('binds a persistent-browser native challenge to one exact main-authored action digest', async () => {
@@ -308,7 +309,7 @@ describe('native control approval', () => {
       targets: [],
     }))
     dialog.answers[0]?.resolve({ response: 0 })
-    await expect(missingDigest).resolves.toBe('DENIED')
+    await expect(missingDigest).resolves.toBe('UNAVAILABLE')
     expect(dialog.calls).toHaveLength(0)
 
     const digest = 'a'.repeat(64)
