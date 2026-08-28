@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { isIP } from 'node:net'
 import { performance } from 'node:perf_hooks'
 import {
   AgentBrowserError,
@@ -11,7 +12,11 @@ import {
   type AgentBrowserSnapshotEnvelope,
   type AgentBrowserSnapshotResult,
 } from './contracts.ts'
-import { classifyBrowserTarget, type AgentBrowserUrlPolicy } from './policy.ts'
+import {
+  classifyBrowserTarget,
+  type AgentBrowserResolvedNavigation,
+  type AgentBrowserUrlPolicy,
+} from './policy.ts'
 
 type Listener = (...args: unknown[]) => void
 
@@ -51,13 +56,29 @@ export interface BrowserViewport {
   readonly deviceScaleFactor: number
 }
 
+/** Hostname transport contract implemented by Task 8 with an address-pinning HTTPS CONNECT proxy. */
+export interface AgentBrowserPinnedNavigationRequest {
+  readonly url: string
+  readonly signal?: AbortSignal
+  readonly resolveAndValidate: (url: string, signal?: AbortSignal) => Promise<AgentBrowserResolvedNavigation>
+}
+
+/**
+ * Loads through a surface-owned transport that connects only to an address returned by
+ * resolveAndValidate while preserving the original URL hostname, HTTPS SNI, and certificate checks.
+ */
+export interface AgentBrowserPinnedNavigationTransport {
+  load(request: AgentBrowserPinnedNavigationRequest): Promise<void>
+}
+
 /** Construction dependencies kept narrow for Electron integration and deterministic tests. */
 export interface CdpBrowserAdapterOptions {
   readonly webContents: BrowserAdapterWebContents
   readonly surfaceId: string
   readonly surfaceGeneration: number
   readonly viewport: () => BrowserViewport
-  readonly urlPolicy: Pick<AgentBrowserUrlPolicy, 'authorize'>
+  readonly urlPolicy: Pick<AgentBrowserUrlPolicy, 'authorize' | 'resolveForConnect'>
+  readonly pinnedNavigationTransport?: AgentBrowserPinnedNavigationTransport
   readonly now?: () => number
   readonly delay?: (durationMs: number, signal?: AbortSignal) => Promise<void>
   readonly createTransferId?: () => string
@@ -93,8 +114,10 @@ interface AxNode {
 
 interface BrowserReferenceBinding {
   readonly ref: AgentBrowserRef
+  readonly axNodeId: string
   readonly backendDOMNodeId: number
   readonly role: string
+  readonly name: string
   readonly editable: boolean
   readonly selectable: boolean
   readonly revision: number
@@ -256,13 +279,16 @@ export class CdpBrowserAdapter {
   private readonly surfaceId: string
   private readonly surfaceGeneration: number
   private readonly viewport: () => BrowserViewport
-  private readonly urlPolicy: Pick<AgentBrowserUrlPolicy, 'authorize'>
+  private readonly urlPolicy: Pick<AgentBrowserUrlPolicy, 'authorize' | 'resolveForConnect'>
+  private readonly pinnedNavigationTransport: AgentBrowserPinnedNavigationTransport | undefined
   private readonly now: () => number
   private readonly delay: (durationMs: number, signal?: AbortSignal) => Promise<void>
   private readonly createTransferId: () => string
   private attachedByUs = false
   private listenersInstalled = false
   private stopped = false
+  private stopOperation: Promise<void> | undefined
+  private ownedDebuggerCleanupRequired = false
   private destroyed = false
   private epoch = 1
   private revision = 1
@@ -275,6 +301,7 @@ export class CdpBrowserAdapter {
     this.surfaceGeneration = options.surfaceGeneration
     this.viewport = options.viewport
     this.urlPolicy = options.urlPolicy
+    this.pinnedNavigationTransport = options.pinnedNavigationTransport
     this.now = options.now ?? (() => performance.now())
     this.delay = options.delay ?? defaultDelay
     this.createTransferId = options.createTransferId ?? randomUUID
@@ -381,7 +408,7 @@ export class CdpBrowserAdapter {
       const target = await this.urlPolicy.authorize(action.url, signal)
       this.assertOpen()
       this.invalidate()
-      await this.loadAuthorized(target)
+      await this.loadAuthorized(target, signal)
       return Object.freeze({ url: target, snapshotRevision: this.revision })
     }
     if (action.kind === 'back' || action.kind === 'forward' || action.kind === 'reload') {
@@ -397,9 +424,14 @@ export class CdpBrowserAdapter {
     }
     const budget = this.createBudget()
     if (action.kind === 'key') await this.pressKey(action.key, action.modifiers, budget, signal)
-    else if (action.kind === 'scroll') await this.scroll(action.ref, action.deltaX, action.deltaY, budget, signal)
+    else if (action.kind === 'scroll') {
+      const binding = action.ref === undefined
+        ? undefined
+        : await this.revalidateBinding(this.currentBinding(action.ref), budget, signal)
+      await this.scroll(binding, action.deltaX, action.deltaY, budget, signal)
+    }
     else {
-      const binding = this.currentBinding(action.ref)
+      const binding = await this.revalidateBinding(this.currentBinding(action.ref), budget, signal)
       if (action.kind === 'click') await this.click(binding, budget, signal)
       else if (action.kind === 'type') {
         if (!binding.editable) throw new AgentBrowserError('POLICY_DENIED', 'browser target is not editable')
@@ -417,14 +449,42 @@ export class CdpBrowserAdapter {
 
   /** Invalidate refs and detach only a debugger this adapter attached itself. */
   stop(): Promise<void> {
-    if (this.stopped) return Promise.resolve()
-    this.stopped = true
-    const detach = this.attachedByUs && this.webContents.debugger.isAttached()
+    if (this.stopOperation !== undefined) return this.stopOperation
+    if (this.stopped && !this.ownedDebuggerCleanupRequired) return Promise.resolve()
+    if (this.attachedByUs && this.webContents.debugger.isAttached()) this.ownedDebuggerCleanupRequired = true
     this.attachedByUs = false
-    this.removeListeners()
-    this.invalidate()
-    if (detach) this.webContents.debugger.detach()
-    return Promise.resolve()
+    if (!this.stopped) {
+      this.stopped = true
+      this.removeListeners()
+      this.invalidate()
+    }
+    const operation = this.releaseOwnedDebugger()
+    this.stopOperation = operation
+    void operation.finally(() => { this.stopOperation = undefined }).catch(() => {
+      // The caller awaits the original cleanup failure; a lifecycle retry is allowed afterward.
+    })
+    return operation
+  }
+
+  private async releaseOwnedDebugger(): Promise<void> {
+    if (!this.ownedDebuggerCleanupRequired) return
+    try {
+      await this.awaitCdpResponse(
+        this.webContents.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false }),
+        BROWSER_AGENT_LIMITS.wallMs,
+      )
+    } catch {
+      // Detach below is itself sufficient to remove an owned debugger's chooser interception.
+    }
+    try {
+      if (this.webContents.debugger.isAttached()) this.webContents.debugger.detach()
+    } catch {
+      // The attachment state below is authoritative for whether lifecycle retry is required.
+    }
+    if (this.webContents.debugger.isAttached()) {
+      throw new AgentBrowserError('INTERNAL', 'browser debugger cleanup did not reach quiescence')
+    }
+    this.ownedDebuggerCleanupRequired = false
   }
 
   private createBudget(): OperationBudget {
@@ -559,8 +619,10 @@ export class CdpBrowserAdapter {
       const semantic = Object.freeze({ ref, role, name })
       const binding = Object.freeze({
         ref,
+        axNodeId: node.nodeId,
         backendDOMNodeId: node.backendDOMNodeId,
         role,
+        name,
         editable,
         selectable: SELECTABLE_ROLES.has(node.role),
         revision: this.revision,
@@ -648,6 +710,42 @@ export class CdpBrowserAdapter {
     }
   }
 
+  private async revalidateBinding(
+    binding: BrowserReferenceBinding,
+    budget: OperationBudget,
+    signal?: AbortSignal,
+  ): Promise<BrowserReferenceBinding> {
+    const liveNodes = await this.walkAccessibilityTree(budget, signal)
+    const matches = liveNodes.filter(node => node.backendDOMNodeId === binding.backendDOMNodeId)
+    if (matches.length !== 1) throw new AgentBrowserError('STALE_REF', 'browser target no longer has one live AX node')
+    const live = matches[0]
+    if (live === undefined) throw new AgentBrowserError('STALE_REF', 'browser target is stale')
+    const editable = EDITABLE_ROLES.has(live.role)
+    const selectable = SELECTABLE_ROLES.has(live.role)
+    const targetAttributes = attributes(await this.command(
+      'DOM.describeNode',
+      { backendNodeId: binding.backendDOMNodeId, depth: 0, pierce: false },
+      budget,
+      signal,
+    ))
+    if (classifyBrowserTarget({
+      role: live.role,
+      name: live.name,
+      editable,
+      ...(typeof targetAttributes.type === 'string' ? { type: targetAttributes.type } : {}),
+      ...(typeof targetAttributes.autocomplete === 'string' ? { autocomplete: targetAttributes.autocomplete } : {}),
+      disabled: live.disabled || targetAttributes.disabled === true,
+      readonly: live.readonly || targetAttributes.readonly === true,
+    }) === 'DENY') {
+      throw new AgentBrowserError('POLICY_DENIED', 'browser target is no longer safe to mutate')
+    }
+    if (live.nodeId !== binding.axNodeId || live.role !== binding.role || live.name !== binding.name
+      || editable !== binding.editable || selectable !== binding.selectable) {
+      throw new AgentBrowserError('STALE_REF', 'browser target semantics changed after snapshot')
+    }
+    return binding
+  }
+
   private async click(binding: BrowserReferenceBinding, budget: OperationBudget, signal?: AbortSignal): Promise<void> {
     const point = await this.boxCenter(binding, budget, signal)
     await this.command('Input.dispatchMouseEvent', {
@@ -670,16 +768,16 @@ export class CdpBrowserAdapter {
   }
 
   private async scroll(
-    ref: AgentBrowserRef | undefined,
+    binding: BrowserReferenceBinding | undefined,
     deltaX: number,
     deltaY: number,
     budget: OperationBudget,
     signal?: AbortSignal,
   ): Promise<void> {
     const viewport = this.checkedViewport()
-    const point = ref === undefined
+    const point = binding === undefined
       ? { x: viewport.width / 2, y: viewport.height / 2 }
-      : await this.boxCenter(this.currentBinding(ref), budget, signal)
+      : await this.boxCenter(binding, budget, signal)
     await this.command('Input.dispatchMouseEvent', {
       type: 'mouseWheel', x: point.x, y: point.y, deltaX, deltaY,
     }, budget, signal)
@@ -827,11 +925,28 @@ export class CdpBrowserAdapter {
     }
   }
 
-  private async loadAuthorized(target: string): Promise<void> {
+  private async loadAuthorized(target: string, signal?: AbortSignal): Promise<void> {
     this.approvedNavigation = target
     try {
-      await this.webContents.loadURL(target)
-    } catch {
+      const hostname = new URL(target).hostname.replace(/^\[|\]$/gu, '')
+      if (isIP(hostname) !== 0) {
+        await this.webContents.loadURL(target)
+      } else {
+        const transport = this.pinnedNavigationTransport
+        if (transport === undefined) {
+          throw new AgentBrowserError('POLICY_DENIED', 'browser hostname navigation requires a pinned transport')
+        }
+        await transport.load({
+          url: target,
+          ...(signal === undefined ? {} : { signal }),
+          resolveAndValidate: async (value, requestSignal) => await this.urlPolicy.resolveForConnect(
+            value,
+            requestSignal ?? signal,
+          ),
+        })
+      }
+    } catch (error) {
+      if (error instanceof AgentBrowserError) throw error
       throw new AgentBrowserError('INTERNAL', 'browser navigation failed')
     } finally {
       if (this.approvedNavigation === target) this.approvedNavigation = undefined

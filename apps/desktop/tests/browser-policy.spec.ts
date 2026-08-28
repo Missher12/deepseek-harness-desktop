@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   AgentBrowserUrlPolicy,
   classifyBrowserTarget,
+  createBrowserSecurityHandlerOwner,
   installBrowserSecurityHandlers,
 } from '../src/browser/policy.ts'
 
@@ -26,9 +27,11 @@ class FakeEventTarget {
 }
 
 class FakePolicyContents extends FakeEventTarget {
-  windowOpenHandler: ((details: { url: string }) => { action: 'deny' }) | undefined
+  windowOpenHandler: ((details: { url: string }) => { action: 'allow' | 'deny' }) | undefined
+  windowOpenSetterCalls = 0
 
-  setWindowOpenHandler(handler: (details: { url: string }) => { action: 'deny' }): void {
+  setWindowOpenHandler(handler: (details: { url: string }) => { action: 'allow' | 'deny' }): void {
+    this.windowOpenSetterCalls += 1
     this.windowOpenHandler = handler
   }
 }
@@ -36,16 +39,30 @@ class FakePolicyContents extends FakeEventTarget {
 class FakePolicySession extends FakeEventTarget {
   permissionCheckHandler: ((...args: unknown[]) => boolean) | null = null
   permissionRequestHandler: ((contents: unknown, permission: string, callback: (allowed: boolean) => void) => void) | null = null
+  permissionCheckSetterCalls = 0
+  permissionRequestSetterCalls = 0
 
   setPermissionCheckHandler(handler: ((...args: unknown[]) => boolean) | null): void {
+    this.permissionCheckSetterCalls += 1
     this.permissionCheckHandler = handler
   }
 
   setPermissionRequestHandler(
     handler: ((contents: unknown, permission: string, callback: (allowed: boolean) => void) => void) | null,
   ): void {
+    this.permissionRequestSetterCalls += 1
     this.permissionRequestHandler = handler
   }
+}
+
+function ownerFor(contents: FakePolicyContents, session: FakePolicySession) {
+  return createBrowserSecurityHandlerOwner({
+    contents,
+    session,
+    baseWindowOpenHandler: () => ({ action: 'allow' }),
+    basePermissionCheckHandler: () => true,
+    basePermissionRequestHandler: (_contents, _permission, callback) => { callback(true) },
+  })
 }
 
 describe('Agent browser policy', () => {
@@ -121,9 +138,10 @@ describe('Agent browser policy', () => {
   it('denies popups, downloads, navigation escapes, and every permission', () => {
     const contents = new FakePolicyContents()
     const session = new FakePolicySession()
+    const owner = ownerFor(contents, session)
     const registration = installBrowserSecurityHandlers({
-      contents,
-      session,
+      owner,
+      generation: 1,
       allowsNavigation: url => url === 'https://allowed.test/',
     })
 
@@ -148,35 +166,101 @@ describe('Agent browser policy', () => {
     expect(session.listeners.get('will-download')?.size ?? 0).toBe(0)
     expect(contents.listeners.get('will-navigate')?.size ?? 0).toBe(0)
     expect(contents.listeners.get('will-redirect')?.size ?? 0).toBe(0)
-    expect(session.permissionCheckHandler).toBeNull()
-    expect(session.permissionRequestHandler).toBeNull()
+    expect(session.permissionCheckHandler?.()).toBe(true)
+    const restored = vi.fn()
+    session.permissionRequestHandler?.(undefined, 'camera', restored)
+    expect(restored).toHaveBeenCalledWith(true)
   })
 
   it('does not let stale generation cleanup remove newer handlers', () => {
     const contents = new FakePolicyContents()
     const session = new FakePolicySession()
-    const first = installBrowserSecurityHandlers({ contents, session, allowsNavigation: () => false })
+    const owner = ownerFor(contents, session)
+    const first = installBrowserSecurityHandlers({ owner, generation: 1, allowsNavigation: () => false })
     const firstCheck = session.permissionCheckHandler
-    const second = installBrowserSecurityHandlers({ contents, session, allowsNavigation: () => true })
+    const second = installBrowserSecurityHandlers({ owner, generation: 2, allowsNavigation: () => true })
     const secondCheck = session.permissionCheckHandler
 
     first.dispose()
     expect(session.permissionCheckHandler).toBe(secondCheck)
-    expect(session.permissionCheckHandler).not.toBe(firstCheck)
+    expect(session.permissionCheckHandler).toBe(firstCheck)
     expect(contents.listeners.get('will-navigate')?.size).toBe(1)
     second.dispose()
-    expect(session.permissionCheckHandler).toBeNull()
+    expect(session.permissionCheckHandler?.()).toBe(true)
     expect(contents.listeners.get('will-navigate')?.size ?? 0).toBe(0)
   })
 
   it('rejects privileged navigation even when the generation predicate is permissive', () => {
     const contents = new FakePolicyContents()
     const session = new FakePolicySession()
-    const registration = installBrowserSecurityHandlers({ contents, session, allowsNavigation: () => true })
+    const owner = ownerFor(contents, session)
+    const registration = installBrowserSecurityHandlers({ owner, generation: 1, allowsNavigation: () => true })
     const privileged = { preventDefault: vi.fn() }
 
     contents.emit('will-navigate', privileged, 'file:///tmp/untrusted')
     expect(privileged.preventDefault).toHaveBeenCalledOnce()
     registration.dispose()
+  })
+
+  it('layers Agent guards over preexisting human handlers without replacing or nulling them', () => {
+    const contents = new FakePolicyContents()
+    const session = new FakePolicySession()
+    const humanWindowOpen = vi.fn(() => ({ action: 'allow' as const }))
+    const humanPermissionCheck = vi.fn((_contents: unknown, permission: string) => permission === 'clipboard-read')
+    const humanPermissionRequest = vi.fn((
+      _contents: unknown,
+      permission: string,
+      callback: (allowed: boolean) => void,
+    ) => { callback(permission === 'clipboard-read') })
+    const humanDownload = vi.fn()
+    session.on('will-download', humanDownload)
+    const owner = createBrowserSecurityHandlerOwner({
+      contents,
+      session,
+      baseWindowOpenHandler: humanWindowOpen,
+      basePermissionCheckHandler: humanPermissionCheck,
+      basePermissionRequestHandler: humanPermissionRequest,
+    })
+    const installedWindowDispatcher = contents.windowOpenHandler
+    const installedCheckDispatcher = session.permissionCheckHandler
+    const installedRequestDispatcher = session.permissionRequestHandler
+
+    expect(contents.windowOpenHandler?.({ url: 'https://human.test/' })).toEqual({ action: 'allow' })
+    expect(session.permissionCheckHandler?.(undefined, 'clipboard-read')).toBe(true)
+    const before = vi.fn()
+    session.permissionRequestHandler?.(undefined, 'clipboard-read', before)
+    expect(before).toHaveBeenCalledWith(true)
+
+    const registration = installBrowserSecurityHandlers({
+      owner,
+      generation: 7,
+      allowsNavigation: () => false,
+    })
+    expect(contents.windowOpenHandler?.({ url: 'https://human.test/' })).toEqual({ action: 'deny' })
+    expect(session.permissionCheckHandler?.(undefined, 'clipboard-read')).toBe(false)
+    const during = vi.fn()
+    session.permissionRequestHandler?.(undefined, 'clipboard-read', during)
+    expect(during).toHaveBeenCalledWith(false)
+    const download = { preventDefault: vi.fn() }
+    session.emit('will-download', download)
+    expect(download.preventDefault).toHaveBeenCalledOnce()
+    expect(humanDownload).toHaveBeenCalledOnce()
+
+    registration.dispose()
+    expect(contents.windowOpenHandler).toBe(installedWindowDispatcher)
+    expect(session.permissionCheckHandler).toBe(installedCheckDispatcher)
+    expect(session.permissionRequestHandler).toBe(installedRequestDispatcher)
+    expect(contents.windowOpenSetterCalls).toBe(1)
+    expect(session.permissionCheckSetterCalls).toBe(1)
+    expect(session.permissionRequestSetterCalls).toBe(1)
+    expect(contents.windowOpenHandler?.({ url: 'https://human.test/' })).toEqual({ action: 'allow' })
+    expect(session.permissionCheckHandler?.(undefined, 'clipboard-read')).toBe(true)
+    const after = vi.fn()
+    session.permissionRequestHandler?.(undefined, 'clipboard-read', after)
+    expect(after).toHaveBeenCalledWith(true)
+    const laterDownload = { preventDefault: vi.fn() }
+    session.emit('will-download', laterDownload)
+    expect(laterDownload.preventDefault).not.toHaveBeenCalled()
+    expect(humanDownload).toHaveBeenCalledTimes(2)
   })
 })

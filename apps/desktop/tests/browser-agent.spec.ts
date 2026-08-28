@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 import { AgentBrowserError, BROWSER_AGENT_LIMITS } from '../src/browser/contracts.ts'
-import { CdpBrowserAdapter } from '../src/browser/cdp-adapter.ts'
+import {
+  CdpBrowserAdapter,
+  type AgentBrowserPinnedNavigationTransport,
+} from '../src/browser/cdp-adapter.ts'
 import { AgentBrowserUrlPolicy } from '../src/browser/policy.ts'
 import { BrowserSurfaceManager, type BrowserSurfaceResource } from '../src/browser/surface-manager.ts'
 
@@ -122,12 +125,19 @@ function adapterFor(
   contents: FakeWebContents,
   options: Partial<ConstructorParameters<typeof CdpBrowserAdapter>[0]> = {},
 ): CdpBrowserAdapter {
+  const pinnedNavigationTransport: AgentBrowserPinnedNavigationTransport = {
+    load: async (request) => {
+      await request.resolveAndValidate(request.url)
+      await contents.loadURL(request.url)
+    },
+  }
   return new CdpBrowserAdapter({
     webContents: contents,
     surfaceId: 'surface-1',
     surfaceGeneration: 1,
     viewport: () => ({ width: 1280, height: 720, deviceScaleFactor: 1 }),
     urlPolicy: new AgentBrowserUrlPolicy({ lookup: async () => ['93.184.216.34'] }),
+    pinnedNavigationTransport,
     createTransferId: () => '00000000-0000-4000-8000-000000000003',
     ...options,
   })
@@ -220,6 +230,31 @@ describe('semantic Agent browser adapter', () => {
     await adapter.stop()
     expect(contents.debugger.attachCalls).toBe(1)
     expect(contents.debugger.detachCalls).toBe(1)
+    expect(contents.debugger.calls.filter(call => call.method === 'Page.setInterceptFileChooserDialog'))
+      .toEqual([
+        { method: 'Page.setInterceptFileChooserDialog', params: { enabled: true } },
+        { method: 'Page.setInterceptFileChooserDialog', params: { enabled: false } },
+      ])
+  })
+
+  it('keeps owned debugger cleanup retryable when detach has not reached quiescence', async () => {
+    const contents = new FakeWebContents()
+    installTree(contents, [])
+    let detachAttempts = 0
+    contents.debugger.detach = () => {
+      contents.debugger.detachCalls += 1
+      detachAttempts += 1
+      if (detachAttempts === 1) throw new Error('detach failed')
+      contents.debugger.attached = false
+    }
+    const adapter = adapterFor(contents)
+    await adapter.start()
+
+    await expect(adapter.stop()).rejects.toMatchObject({ code: 'INTERNAL' })
+    expect(contents.debugger.attached).toBe(true)
+    await expect(adapter.stop()).resolves.toBeUndefined()
+    expect(contents.debugger.detachCalls).toBe(2)
+    expect(contents.debugger.attached).toBe(false)
   })
 
   it.each([
@@ -402,6 +437,63 @@ describe('semantic Agent browser adapter', () => {
     expect((adapter as unknown as { sendCommand?: unknown }).sendCommand).toBeUndefined()
   })
 
+  it.each([
+    ['click', buttonNode(1, 'Continue'), [] as string[], ['type', 'file'],
+      (ref: string) => ({ kind: 'click', ref }) as const],
+    ['type', {
+      nodeId: 'field', backendDOMNodeId: 1, role: { value: 'textbox' }, name: { value: 'Search' },
+    } satisfies AxNode, ['type', 'text', 'autocomplete', 'off'], ['type', 'password'],
+    (ref: string) => ({ kind: 'type', ref, text: 'secret' }) as const],
+    ['select', {
+      nodeId: 'select', backendDOMNodeId: 1, role: { value: 'combobox' }, name: { value: 'Country' },
+    } satisfies AxNode, ['type', 'text', 'autocomplete', 'off'], ['disabled', ''],
+    (ref: string) => ({ kind: 'select', ref, value: 'Canada' }) as const],
+    ['ref scroll', buttonNode(1, 'Continue'), [] as string[], ['readonly', ''],
+      (ref: string) => ({ kind: 'scroll', ref, deltaX: 0, deltaY: 100 }) as const],
+  ])('revalidates a ref immediately before %s and rejects a newly sensitive target', async (
+    _label,
+    node,
+    initialAttributes,
+    mutatedAttributes,
+    action,
+  ) => {
+    const contents = new FakeWebContents()
+    const descriptions: Record<number, readonly string[]> = { 1: initialAttributes }
+    installTree(contents, [node], descriptions)
+    const adapter = adapterFor(contents)
+    const ref = await snapshotButton(adapter)
+    descriptions[1] = mutatedAttributes
+    contents.debugger.calls.length = 0
+
+    await expect(adapter.act(action(ref))).rejects.toMatchObject({ code: 'POLICY_DENIED' })
+    expect(contents.debugger.calls).toEqual([
+      { method: 'Accessibility.getRootAXNode', params: {} },
+      { method: 'Accessibility.getChildAXNodes', params: { id: 'root' } },
+      { method: 'DOM.describeNode', params: { backendNodeId: 1, depth: 0, pierce: false } },
+    ])
+  })
+
+  it('rejects a ref whose live AX role or accessible name changed after snapshot', async () => {
+    const contents = new FakeWebContents()
+    let current: AxNode = buttonNode(1, 'Continue')
+    installTree(contents, [])
+    contents.debugger.handlers.set('Accessibility.getChildAXNodes', ({ id }) => ({
+      nodes: id === 'root' ? [current] : [],
+    }))
+    const adapter = adapterFor(contents)
+    const ref = await snapshotButton(adapter)
+    current = {
+      nodeId: 'changed',
+      backendDOMNodeId: 1,
+      role: { value: 'textbox' },
+      name: { value: 'Verification code' },
+    }
+    contents.debugger.calls.length = 0
+
+    await expect(adapter.act({ kind: 'click', ref })).rejects.toMatchObject({ code: 'POLICY_DENIED' })
+    expect(contents.debugger.calls.some(call => call.method.startsWith('Input.'))).toBe(false)
+  })
+
   it('invalidates refs across a navigation race before dispatching input', async () => {
     const contents = new FakeWebContents()
     installTree(contents, [buttonNode()])
@@ -427,7 +519,12 @@ describe('semantic Agent browser adapter', () => {
       if (value.includes('127.0.0.1')) throw new AgentBrowserError('POLICY_DENIED', 'private destination')
       return new URL(value).href
     })
-    const adapter = adapterFor(contents, { urlPolicy: { authorize } })
+    const resolveForConnect = vi.fn(async (value: string) => ({
+      url: new URL(value).href,
+      hostname: new URL(value).hostname,
+      addresses: ['93.184.216.34'],
+    }))
+    const adapter = adapterFor(contents, { urlPolicy: { authorize, resolveForConnect } })
     await adapter.start()
 
     const denied = { preventDefault: vi.fn() }
@@ -441,6 +538,63 @@ describe('semantic Agent browser adapter', () => {
     await vi.waitFor(() => { expect(contents.loadedUrls).toEqual(['https://public.test/next']) })
     expect(allowed.preventDefault).toHaveBeenCalledOnce()
     expect(authorize).toHaveBeenCalledTimes(2)
+    expect(resolveForConnect).toHaveBeenCalledOnce()
+  })
+
+  it('fails closed before load or connect when Chromium DNS rebinds from public to private', async () => {
+    const contents = new FakeWebContents()
+    installTree(contents, [])
+    const answers: string[][] = [['93.184.216.34'], ['127.0.0.1']]
+    const lookup = vi.fn(async (): Promise<readonly string[]> => answers.shift() ?? ['127.0.0.1'])
+    const connect = vi.fn(async (_address: string) => { await contents.loadURL('https://rebind.test/') })
+    const pinnedNavigationTransport: AgentBrowserPinnedNavigationTransport = {
+      load: async (request) => {
+        const binding = await request.resolveAndValidate(request.url)
+        await connect(binding.addresses[0] ?? '')
+      },
+    }
+    const adapter = adapterFor(contents, {
+      urlPolicy: new AgentBrowserUrlPolicy({ lookup }),
+      pinnedNavigationTransport,
+    })
+
+    await expect(adapter.act({ kind: 'navigate', url: 'https://rebind.test/' }))
+      .rejects.toMatchObject({ code: 'POLICY_DENIED' })
+    expect(lookup).toHaveBeenCalledTimes(2)
+    expect(connect).not.toHaveBeenCalled()
+    expect(contents.loadedUrls).toEqual([])
+  })
+
+  it('never falls back to loadURL for a hostname without a pinned navigation transport', async () => {
+    const contents = new FakeWebContents()
+    installTree(contents, [])
+    const adapter = new CdpBrowserAdapter({
+      webContents: contents,
+      surfaceId: 'surface-1',
+      surfaceGeneration: 1,
+      viewport: () => ({ width: 1280, height: 720, deviceScaleFactor: 1 }),
+      urlPolicy: new AgentBrowserUrlPolicy({ lookup: async () => ['93.184.216.34'] }),
+    })
+
+    await expect(adapter.act({ kind: 'navigate', url: 'https://public.test/' }))
+      .rejects.toMatchObject({ code: 'POLICY_DENIED' })
+    expect(contents.loadedUrls).toEqual([])
+  })
+
+  it('loads an authorized public IP literal without hostname transport or URL rewriting', async () => {
+    const contents = new FakeWebContents()
+    installTree(contents, [])
+    const adapter = new CdpBrowserAdapter({
+      webContents: contents,
+      surfaceId: 'surface-1',
+      surfaceGeneration: 1,
+      viewport: () => ({ width: 1280, height: 720, deviceScaleFactor: 1 }),
+      urlPolicy: new AgentBrowserUrlPolicy({ lookup: async () => { throw new Error('literal IP must not resolve') } }),
+    })
+
+    await expect(adapter.act({ kind: 'navigate', url: 'https://93.184.216.34/' }))
+      .resolves.toMatchObject({ url: 'https://93.184.216.34/' })
+    expect(contents.loadedUrls).toEqual(['https://93.184.216.34/'])
   })
 
   it('does not retain a navigation approval after loadURL fails', async () => {
@@ -448,7 +602,12 @@ describe('semantic Agent browser adapter', () => {
     installTree(contents, [])
     contents.loadURL = async (url) => { contents.loadedUrls.push(url); throw new Error('navigation failed') }
     const authorize = vi.fn(async (value: string) => new URL(value).href)
-    const adapter = adapterFor(contents, { urlPolicy: { authorize } })
+    const resolveForConnect = vi.fn(async (value: string) => ({
+      url: new URL(value).href,
+      hostname: new URL(value).hostname,
+      addresses: ['93.184.216.34'],
+    }))
+    const adapter = adapterFor(contents, { urlPolicy: { authorize, resolveForConnect } })
     await adapter.start()
 
     await expect(adapter.act({ kind: 'navigate', url: 'https://public.test/next' }))
@@ -746,29 +905,47 @@ describe('BrowserSurfaceManager', () => {
     await expect(manager.acquire({ sessionId: 'other-session' })).rejects.toMatchObject({ code: 'BUSY' })
   })
 
-  it('cleans and revokes a failed mount even when handler disposal also fails', async () => {
+  it('keeps a failed-mount cleanup reservation BUSY until lifecycle-only retry succeeds', async () => {
     const log: string[] = []
-    const surface = new FakeSurface('surface', 'dsh-agent-browser-1-owner', 'ephemeral', log)
-    surface.installSecurityHandlers = (generation) => {
+    const failed = new FakeSurface('surface', 'dsh-agent-browser-1-owner', 'ephemeral', log)
+    let disposeAttempts = 0
+    failed.installSecurityHandlers = (generation) => {
       log.push(`guards:${generation}`)
-      return { dispose: () => { log.push(`dispose-guards:${generation}`); throw new Error('dispose failed') } }
+      return { dispose: () => {
+        log.push(`dispose-guards:${generation}`)
+        disposeAttempts += 1
+        if (disposeAttempts === 1) throw new Error('dispose failed')
+      } }
     }
-    surface.mount = async (mountToken) => { log.push(`mount:${mountToken}`); throw new Error('mount failed') }
+    failed.mount = async (mountToken) => { log.push(`mount:${mountToken}`); throw new Error('mount failed') }
+    const replacement = new FakeSurface('replacement', 'dsh-agent-browser-2-next', 'ephemeral', log)
+    let createCalls = 0
     const manager = new BrowserSurfaceManager({
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async () => undefined,
         revoke: async (sessionId, generation) => { log.push(`revoke:${sessionId}:${generation}`) },
       },
-      createEphemeral: async () => surface,
-      createNonce: () => 'owner',
-      createMountToken: () => 'mount-owner',
+      createEphemeral: async () => createCalls++ === 0 ? failed : replacement,
+      createNonce: () => createCalls === 0 ? 'owner' : 'next',
+      createMountToken: generation => `mount-${generation}`,
     })
 
     await expect(manager.acquire({ sessionId: 'owner-session' })).rejects.toMatchObject({ code: 'INTERNAL' })
     expect(log).toEqual([
-      'guards:1', 'mount:mount-owner', 'dispose-guards:1', 'detach', 'teardown', 'clear',
+      'guards:1', 'mount:mount-1', 'dispose-guards:1', 'detach', 'teardown', 'clear',
       'revoke:owner-session:1',
     ])
+    await expect(manager.acquire({ sessionId: 'next-session' })).rejects.toMatchObject({ code: 'BUSY' })
+    expect(createCalls).toBe(1)
+    await expect(manager.retryFailedMountCleanup({ sessionId: 'next-session', generation: 1 }))
+      .rejects.toMatchObject({ code: 'BUSY' })
+
+    await manager.retryFailedMountCleanup({ sessionId: 'owner-session', generation: 1 })
+    expect(log.filter(item => item === 'dispose-guards:1')).toHaveLength(2)
+    expect(log.filter(item => item === 'detach')).toHaveLength(1)
+    await expect(manager.acquire({ sessionId: 'next-session' })).resolves.toMatchObject({
+      sessionId: 'next-session', generation: 2, surfaceId: 'replacement', visible: true,
+    })
   })
 
   it('revokes its reservation when ephemeral creation fails before returning a resource', async () => {

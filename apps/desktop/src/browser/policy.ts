@@ -1,4 +1,3 @@
-import { lookup as dnsLookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 import { AgentBrowserError, normalizeAgentBrowserTarget } from './contracts.ts'
 
@@ -10,8 +9,16 @@ export type AgentBrowserPrivateAllowlist = (url: URL, address: string) => boolea
 
 /** Agent navigation policy dependencies. */
 export interface AgentBrowserUrlPolicyOptions {
-  readonly lookup?: AgentBrowserLookup
+  /** Chromium resolver for the exact Electron Session that owns the surface. */
+  readonly lookup: AgentBrowserLookup
   readonly allowPrivateDestination?: AgentBrowserPrivateAllowlist
+}
+
+/** Canonical destination plus addresses that a pinned transport may connect to directly. */
+export interface AgentBrowserResolvedNavigation {
+  readonly url: string
+  readonly hostname: string
+  readonly addresses: readonly string[]
 }
 
 function ipv4Parts(address: string): readonly number[] | undefined {
@@ -92,25 +99,31 @@ export function isBlockedAgentBrowserAddress(address: string): boolean {
   return isPrivateIpv4(address) || isPrivateIpv6(address)
 }
 
-async function defaultLookup(hostname: string, signal?: AbortSignal): Promise<readonly string[]> {
-  assertNavigationActive(signal)
-  const answers = await dnsLookup(hostname, { all: true, order: 'verbatim' })
-  assertNavigationActive(signal)
-  return answers.map(answer => answer.address)
-}
-
 /** Redirect-safe URL authority that validates userinfo, literal IPs, and every DNS answer. */
 export class AgentBrowserUrlPolicy {
   private readonly lookup: AgentBrowserLookup
   private readonly allowPrivateDestination: AgentBrowserPrivateAllowlist
 
-  constructor(options: AgentBrowserUrlPolicyOptions = {}) {
-    this.lookup = options.lookup ?? defaultLookup
+  constructor(options: AgentBrowserUrlPolicyOptions) {
+    this.lookup = options.lookup
     this.allowPrivateDestination = options.allowPrivateDestination ?? (() => false)
   }
 
   /** Authorize one initial or redirected destination and return its canonical URL. */
   async authorize(value: string, signal?: AbortSignal): Promise<string> {
+    return (await this.resolve(value, signal)).url
+  }
+
+  /** Re-resolve one CONNECT destination immediately before a trusted transport pins its socket. */
+  async resolveForConnect(value: string, signal?: AbortSignal): Promise<AgentBrowserResolvedNavigation> {
+    return await this.resolve(value, signal, true)
+  }
+
+  private async resolve(
+    value: string,
+    signal?: AbortSignal,
+    connectTime = false,
+  ): Promise<AgentBrowserResolvedNavigation> {
     assertNavigationActive(signal)
     const normalized = normalizeAgentBrowserTarget(value)
     if (normalized === undefined) throw new AgentBrowserError('POLICY_DENIED', 'browser destination is not allowed')
@@ -120,14 +133,14 @@ export class AgentBrowserUrlPolicy {
       if (!this.allowPrivateDestination(url, hostname)) {
         throw new AgentBrowserError('POLICY_DENIED', 'browser destination is not allowed')
       }
-      return normalized
+      if (!connectTime) return Object.freeze({ url: normalized, hostname, addresses: Object.freeze([hostname]) })
     }
     const literalKind = isIP(hostname)
     if (literalKind !== 0) {
       if (isBlockedAgentBrowserAddress(hostname) && !this.allowPrivateDestination(url, hostname)) {
         throw new AgentBrowserError('POLICY_DENIED', 'browser destination is not allowed')
       }
-      return normalized
+      return Object.freeze({ url: normalized, hostname, addresses: Object.freeze([hostname]) })
     }
     let addresses: readonly string[]
     try {
@@ -141,7 +154,7 @@ export class AgentBrowserUrlPolicy {
       || isBlockedAgentBrowserAddress(address) && !this.allowPrivateDestination(url, address))) {
       throw new AgentBrowserError('POLICY_DENIED', 'browser destination is not allowed')
     }
-    return normalized
+    return Object.freeze({ url: normalized, hostname, addresses: Object.freeze([...addresses]) })
   }
 }
 
@@ -189,88 +202,122 @@ export function classifyBrowserTarget(input: BrowserTargetPolicyInput): 'ALLOW' 
 }
 
 type BrowserListener = (...args: unknown[]) => void
+type BrowserPermissionCheckHandler = (...args: unknown[]) => boolean
+type BrowserPermissionRequestHandler = (
+  contents: unknown,
+  permission: string,
+  callback: (allowed: boolean) => void,
+  ...details: unknown[]
+) => void
+type BrowserWindowOpenResponse = { readonly action: 'allow' | 'deny'; readonly [key: string]: unknown }
+type BrowserWindowOpenHandler = (details: { readonly url: string }) => BrowserWindowOpenResponse
 
 /** Minimal WebContents face needed to install generation-owned browser guards. */
 export interface BrowserSecurityWebContents {
   on(event: string, listener: BrowserListener): unknown
   removeListener(event: string, listener: BrowserListener): unknown
-  setWindowOpenHandler(handler: (details: { readonly url: string }) => { readonly action: 'deny' }): void
+  setWindowOpenHandler(handler: BrowserWindowOpenHandler): void
 }
 
 /** Minimal Electron Session face needed to deny downloads and every permission. */
 export interface BrowserSecuritySession {
   on(event: string, listener: BrowserListener): unknown
   removeListener(event: string, listener: BrowserListener): unknown
-  setPermissionCheckHandler(handler: ((...args: unknown[]) => boolean) | null): void
-  setPermissionRequestHandler(
-    handler: ((contents: unknown, permission: string, callback: (allowed: boolean) => void) => void) | null,
-  ): void
+  setPermissionCheckHandler(handler: BrowserPermissionCheckHandler | null): void
+  setPermissionRequestHandler(handler: BrowserPermissionRequestHandler | null): void
 }
 
-/** Security handler installation parameters for one manager generation. */
-export interface BrowserSecurityHandlerOptions {
+/** Human behavior captured when main creates one long-lived handler owner. */
+export interface BrowserSecurityHandlerOwnerOptions {
   readonly contents: BrowserSecurityWebContents
   readonly session: BrowserSecuritySession
+  readonly baseWindowOpenHandler: BrowserWindowOpenHandler
+  readonly basePermissionCheckHandler: BrowserPermissionCheckHandler
+  readonly basePermissionRequestHandler: BrowserPermissionRequestHandler
+}
+
+/** Generation registration parameters; the owner keeps Electron's single-slot dispatchers stable. */
+export interface BrowserSecurityGenerationOptions {
+  readonly generation: number
   readonly allowsNavigation: (url: string) => boolean
 }
 
 /** Idempotent disposer that removes only one owned handler generation. */
 export interface BrowserSecurityHandlerRegistration { dispose(): void }
 
-interface PermissionLayer {
-  readonly check: (...args: unknown[]) => boolean
-  readonly request: (contents: unknown, permission: string, callback: (allowed: boolean) => void) => void
+/** Main-process multiplexer installed before human and Agent browser lifecycles share a session. */
+export interface BrowserSecurityHandlerOwner {
+  install(options: BrowserSecurityGenerationOptions): BrowserSecurityHandlerRegistration
 }
 
-const permissionLayers = new WeakMap<object, PermissionLayer[]>()
+interface BrowserSecurityLayer { readonly generation: number }
+
+class BrowserSecurityHandlerOwnerImpl implements BrowserSecurityHandlerOwner {
+  private readonly layers: BrowserSecurityLayer[] = []
+
+  constructor(private readonly options: BrowserSecurityHandlerOwnerOptions) {
+    options.contents.setWindowOpenHandler(details => this.layers.length > 0
+      ? { action: 'deny' }
+      : options.baseWindowOpenHandler(details))
+    options.session.setPermissionCheckHandler((...args) => this.layers.length > 0
+      ? false
+      : options.basePermissionCheckHandler(...args))
+    options.session.setPermissionRequestHandler((contents, permission, callback, ...details) => {
+      if (this.layers.length > 0) callback(false)
+      else options.basePermissionRequestHandler(contents, permission, callback, ...details)
+    })
+  }
+
+  install(options: BrowserSecurityGenerationOptions): BrowserSecurityHandlerRegistration {
+    if (!Number.isSafeInteger(options.generation) || options.generation < 1
+      || this.layers.some(layer => layer.generation === options.generation)) {
+      throw new AgentBrowserError('INTERNAL', 'browser security handler generation is invalid')
+    }
+    const denyDownload: BrowserListener = (event) => {
+      if (hasPreventDefault(event)) event.preventDefault()
+    }
+    const guardNavigation: BrowserListener = (event, url) => {
+      if (typeof url === 'string') {
+        const normalized = normalizeAgentBrowserTarget(url)
+        if (normalized !== undefined && options.allowsNavigation(normalized)) return
+      }
+      if (hasPreventDefault(event)) event.preventDefault()
+    }
+    const layer: BrowserSecurityLayer = { generation: options.generation }
+    this.layers.push(layer)
+    this.options.contents.on('will-navigate', guardNavigation)
+    this.options.contents.on('will-redirect', guardNavigation)
+    this.options.session.on('will-download', denyDownload)
+    let disposed = false
+    return Object.freeze({
+      dispose: (): void => {
+        if (disposed) return
+        this.options.contents.removeListener('will-navigate', guardNavigation)
+        this.options.contents.removeListener('will-redirect', guardNavigation)
+        this.options.session.removeListener('will-download', denyDownload)
+        const index = this.layers.indexOf(layer)
+        if (index >= 0) this.layers.splice(index, 1)
+        disposed = true
+      },
+    })
+  }
+}
+
+/** Install stable single-slot dispatchers once and retain the supplied human behavior as the base layer. */
+export function createBrowserSecurityHandlerOwner(
+  options: BrowserSecurityHandlerOwnerOptions,
+): BrowserSecurityHandlerOwner {
+  return new BrowserSecurityHandlerOwnerImpl(options)
+}
+
+/** Security handler installation parameters for one manager generation. */
+export interface BrowserSecurityHandlerOptions extends BrowserSecurityGenerationOptions {
+  readonly owner: BrowserSecurityHandlerOwner
+}
 
 /** Install popup, download, navigation, and deny-all permission guards for one surface generation. */
 export function installBrowserSecurityHandlers(
   options: BrowserSecurityHandlerOptions,
 ): BrowserSecurityHandlerRegistration {
-  const denyWindowOpen = (): { readonly action: 'deny' } => ({ action: 'deny' })
-  const denyDownload: BrowserListener = (event) => {
-    if (hasPreventDefault(event)) event.preventDefault()
-  }
-  const guardNavigation: BrowserListener = (event, url) => {
-    if (typeof url === 'string') {
-      const normalized = normalizeAgentBrowserTarget(url)
-      if (normalized !== undefined && options.allowsNavigation(normalized)) return
-    }
-    if (hasPreventDefault(event)) event.preventDefault()
-  }
-  const layer: PermissionLayer = {
-    check: () => false,
-    request: (_contents, _permission, callback) => { callback(false) },
-  }
-  const sessionKey: object = options.session
-  const layers = permissionLayers.get(sessionKey) ?? []
-  layers.push(layer)
-  permissionLayers.set(sessionKey, layers)
-  options.contents.setWindowOpenHandler(denyWindowOpen)
-  options.contents.on('will-navigate', guardNavigation)
-  options.contents.on('will-redirect', guardNavigation)
-  options.session.on('will-download', denyDownload)
-  options.session.setPermissionCheckHandler(layer.check)
-  options.session.setPermissionRequestHandler(layer.request)
-  let disposed = false
-  return Object.freeze({
-    dispose(): void {
-      if (disposed) return
-      disposed = true
-      options.contents.removeListener('will-navigate', guardNavigation)
-      options.contents.removeListener('will-redirect', guardNavigation)
-      options.session.removeListener('will-download', denyDownload)
-      const current = permissionLayers.get(sessionKey)
-      if (current === undefined) return
-      const wasTop = current.at(-1) === layer
-      const index = current.indexOf(layer)
-      if (index >= 0) current.splice(index, 1)
-      if (!wasTop) return
-      const previous = current.at(-1)
-      options.session.setPermissionCheckHandler(previous?.check ?? null)
-      options.session.setPermissionRequestHandler(previous?.request ?? null)
-      if (current.length === 0) permissionLayers.delete(sessionKey)
-    },
-  })
+  return options.owner.install(options)
 }
