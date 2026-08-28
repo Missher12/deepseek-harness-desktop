@@ -477,7 +477,7 @@ function collectVendored(): VendoredRow[] {
 }
 
 /** Whether a parsed TOML value is a table rather than an array or scalar. */
-function isTomlTable(value: TomlValueWithoutBigInt | undefined): value is TomlTableWithoutBigInt {
+function isTomlTable(value: unknown): value is TomlTableWithoutBigInt {
   return value !== undefined && typeof value === 'object' && !Array.isArray(value)
 }
 
