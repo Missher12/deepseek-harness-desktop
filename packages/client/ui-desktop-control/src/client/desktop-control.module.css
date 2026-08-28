@@ -24,7 +24,7 @@
 }
 .capsule button:disabled, .current button:disabled { opacity: 0.55; }
 
-.settings { display: grid; gap: 18px; min-width: 0; }
+.settings { display: grid; gap: 16px; min-width: 0; }
 .settings h2, .settings h3, .settings p { margin: 0; }
 .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .header h2 { margin-bottom: 5px; font-size: 18px; }
@@ -98,7 +98,8 @@
 .guidance { margin-top: -9px !important; color: var(--dsw-alias-label-secondary); font-size: 13px; }
 .applications { display: grid; gap: 0; min-inline-size: 0; margin: 0; padding: 0 14px 10px; }
 .applications legend { padding: 0 6px; font-weight: 650; }
-.applications > p { padding: 10px 0 2px; color: var(--dsw-alias-label-secondary); }
+.appList { max-height: 114px; overflow-y: auto; scrollbar-gutter: stable; }
+.appList > p { padding: 10px 0 2px; color: var(--dsw-alias-label-secondary); }
 .appRow { display: flex; align-items: center; gap: 9px; min-height: 38px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .appRow:last-child { border-bottom: 0; }
 .shortcut { padding: 11px 14px; }
@@ -124,6 +125,7 @@
   .rowCopy span { white-space: normal; }
   .detailRow { align-items: flex-start; flex-direction: column; gap: 7px; padding-block: 11px; }
   .shortcut input { width: 100%; min-width: 0; box-sizing: border-box; }
+  .appList { max-height: 114px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

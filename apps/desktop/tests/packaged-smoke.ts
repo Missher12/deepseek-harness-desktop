@@ -1247,6 +1247,29 @@ async function exercisePluginMarket(
   await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
 }
 
+async function exerciseDesktopControlSettings(page: Page, platform: NodeJS.Platform): Promise<void> {
+  const settingsTrigger = page.locator('[data-dsh-desktop-command="open-settings"]')
+  if (await settingsTrigger.getAttribute('aria-expanded') !== 'true') await settingsTrigger.click()
+  const settingsDialog = page.getByRole('dialog').last()
+  await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
+  await settingsDialog.getByRole('button', { name: /^(?:Browser & Computer Control|浏览器与电脑控制)$/u }).click()
+
+  const module = settingsDialog.locator('[data-desktop-control-settings]')
+  await module.waitFor({ state: 'visible', timeout: 30_000 })
+  await expect.poll(() => module.locator('input[type="checkbox"]').count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(2)
+  await expect.poll(async () => {
+    const text = await module.innerText()
+    return (text.match(/(?:Available · Not enabled|可用 · 未开启)/gu) ?? []).length
+  }, { timeout: 30_000 }).toBe(2)
+  expect(await module.getByRole('heading', { name: /^(?:macOS permissions|macOS 权限)$/u }).count()).toBe(1)
+  expect(await module.getByRole('heading', { name: /^(?:Current control|当前控制)$/u }).count()).toBe(1)
+  await module.screenshot({
+    path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-control-${platform}.png`),
+  })
+  await page.keyboard.press('Escape')
+  await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
+}
+
 async function exerciseUsageInsights(
   page: Page,
   platform: NodeJS.Platform,
@@ -1603,6 +1626,8 @@ export async function runPackagedDesktopSmoke(
     })
     await expect.poll(() => credentialDialog.count(), { timeout: 30_000 }).toBe(0)
     expect(await page.locator('#root').evaluate((element: HTMLElement) => !element.inert)).toBe(true)
+
+    await exerciseDesktopControlSettings(page, platform)
 
     try {
       await exerciseWindowsClipboard(page, nativeApp, clipboardSeed)

@@ -58,6 +58,7 @@ describe('Desktop control UI', () => {
     expect(view.getByText('Assistive Control')).toBeTruthy()
     expect(view.getByText('Granted')).toBeTruthy()
     expect(view.getByText('Denied')).toBeTruthy()
+    expect(view.container.querySelector('[data-desktop-control-app-list]')).toBeTruthy()
     fireEvent.click(view.getByRole('checkbox', { name: 'Mail' }))
     expect(mutate).toHaveBeenCalledWith({ kind: 'set-app-allowed', appId: 'com.example.mail', allowed: true })
     fireEvent.change(view.getByLabelText('Emergency Stop shortcut'), { target: { value: 'CommandOrControl+Shift+F11' } })

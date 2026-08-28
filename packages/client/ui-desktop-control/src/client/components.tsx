@@ -166,21 +166,23 @@ export function DesktopControlSettings({
           <span>{snapshot.refresh.apps.message}</span>
           {onRetry !== undefined && <button type="button" onClick={() => { submit('retry', onRetry) }}>{labels.retryApps}</button>}
         </div>}
-        {snapshot.ordinaryApps.length === 0
-          ? <p>{labels.noApps}</p>
-          : snapshot.ordinaryApps.map(app => (
-            <label className={css.appRow} key={app.appId}>
-              <input
-                type="checkbox"
-                checked={app.allowed}
-                disabled={snapshot.computer.availability !== 'available' || pending.has(`app:${app.appId}`)}
-                onChange={(event) => { submit(`app:${app.appId}`, () => onMutation({
-                  kind: 'set-app-allowed', appId: app.appId, allowed: event.currentTarget.checked,
-                })) }}
-              />
-              {app.name}
-            </label>
-          ))}
+        <div className={css.appList} data-desktop-control-app-list>
+          {snapshot.ordinaryApps.length === 0
+            ? <p>{labels.noApps}</p>
+            : snapshot.ordinaryApps.map(app => (
+              <label className={css.appRow} key={app.appId}>
+                <input
+                  type="checkbox"
+                  checked={app.allowed}
+                  disabled={snapshot.computer.availability !== 'available' || pending.has(`app:${app.appId}`)}
+                  onChange={(event) => { submit(`app:${app.appId}`, () => onMutation({
+                    kind: 'set-app-allowed', appId: app.appId, allowed: event.currentTarget.checked,
+                  })) }}
+                />
+                {app.name}
+              </label>
+            ))}
+        </div>
       </fieldset>
 
       <label className={`${css.detailRow} ${css.shortcut}`}>
