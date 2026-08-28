@@ -31,6 +31,7 @@ describe('Windows installed Computer Use acceptance', () => {
     expect(source).toContain('-ProgressPath')
     expect(source).toContain("Set-SmokeProgress 'helper-started'")
     expect(source).toContain('Standard-user smoke stalled at')
+    expect(source).toContain('Medium-integrity smoke stalled at')
     expect(source).toContain('60000')
     expect(source).toContain('Invoke-MediumIntegritySmoke -ScriptPath $PSCommandPath')
     expect(source).toContain('S-1-16-8192')

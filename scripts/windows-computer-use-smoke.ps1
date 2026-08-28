@@ -319,13 +319,16 @@ namespace DshWindowsSmoke
   }
 
   $resultPath = Join-Path ([IO.Path]::GetTempPath()) "dsh-windows-control-$([Guid]::NewGuid().ToString('N')).txt"
+  $progressPath = Join-Path ([IO.Path]::GetTempPath()) "dsh-windows-control-$([Guid]::NewGuid().ToString('N')).progress"
   $scriptLiteral = $ScriptPath.Replace("'", "''")
   $helperLiteral = $ResolvedHelperPath.Replace("'", "''")
   $resultLiteral = $resultPath.Replace("'", "''")
+  $progressLiteral = $progressPath.Replace("'", "''")
   $childSource = @"
 `$ErrorActionPreference = 'Stop'
 try {
-  & '$scriptLiteral' -HelperPath '$helperLiteral' -MediumIntegrityChild
+  [IO.File]::WriteAllText('$progressLiteral', 'wrapper-started', [Text.UTF8Encoding]::new(`$false))
+  & '$scriptLiteral' -HelperPath '$helperLiteral' -MediumIntegrityChild -ProgressPath '$progressLiteral'
   [IO.File]::WriteAllText('$resultLiteral', 'PASS', [Text.UTF8Encoding]::new(`$false))
   exit 0
 }
@@ -341,12 +344,22 @@ catch {
   $arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -STA -EncodedCommand $encoded"
   $commandLine = "`"$pwsh`" $arguments"
   try {
-    $exitCode = [DshWindowsSmoke.LimitedProcess]::Run(
-      $pwsh,
-      $commandLine,
-      (Split-Path -Parent $ScriptPath),
-      60000
-    )
+    try {
+      $exitCode = [DshWindowsSmoke.LimitedProcess]::Run(
+        $pwsh,
+        $commandLine,
+        (Split-Path -Parent $ScriptPath),
+        60000
+      )
+    }
+    catch {
+      $progress = if (Test-Path -LiteralPath $progressPath) {
+        (Get-Content -LiteralPath $progressPath -Raw).Trim()
+      } else {
+        'process-not-started'
+      }
+      throw "Medium-integrity smoke stalled at '$progress': $($_.Exception.Message)"
+    }
     $result = if (Test-Path -LiteralPath $resultPath) {
       (Get-Content -LiteralPath $resultPath -Raw).Trim()
     } else {
@@ -359,6 +372,7 @@ catch {
   }
   finally {
     Remove-Item -LiteralPath $resultPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $progressPath -Force -ErrorAction SilentlyContinue
   }
 }
 
