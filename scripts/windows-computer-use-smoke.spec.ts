@@ -11,6 +11,9 @@ describe('Windows installed Computer Use acceptance', () => {
     expect(source).toContain('DSH Computer Fixture Alpha')
     expect(source).toContain('DSH Computer Fixture Beta')
     expect(source).toContain('DSH Protected Fixture')
+    expect(source).toContain('[System.Diagnostics.ProcessStartInfo]::new($pwsh)')
+    expect(source).toContain("ArgumentList.Add('-STA')")
+    expect(source).toContain('$fixtureInfo.RedirectStandardError = $true')
     expect(source).toContain("-RequestKind 'list'")
     expect(source).toContain("-RequestKind 'lease.install'")
     expect(source).toContain("-RequestKind 'snapshot'")
@@ -37,5 +40,18 @@ describe('Windows installed Computer Use acceptance', () => {
     expect(nativeAcceptance).toBeGreaterThan(-1)
     expect(packagedLifecycle).toBeGreaterThan(nativeAcceptance)
     expect(uninstall).toBeGreaterThan(packagedLifecycle)
+  })
+
+  it('runs once against the freshly built helper before the expensive Setup build', () => {
+    const workflow = readFileSync(
+      new URL('../.github/workflows/windows-desktop.yml', import.meta.url),
+      'utf8',
+    )
+    const nativeAcceptance = workflow.indexOf('../../scripts/windows-computer-use-smoke.ps1')
+    const immutableInstall = workflow.indexOf('Install immutable dependencies')
+
+    expect(workflow).toContain('cargo build --locked --release')
+    expect(nativeAcceptance).toBeGreaterThan(-1)
+    expect(immutableInstall).toBeGreaterThan(nativeAcceptance)
   })
 })

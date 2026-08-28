@@ -176,9 +176,36 @@ if ('$Kind' -eq 'protected') {
 "@
   $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($fixtureSource))
   $pwsh = (Get-Process -Id $PID).Path
-  return Start-Process -FilePath $pwsh -ArgumentList @(
-    '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded
-  ) -PassThru
+  $fixtureInfo = [System.Diagnostics.ProcessStartInfo]::new($pwsh)
+  $fixtureInfo.UseShellExecute = $false
+  $fixtureInfo.CreateNoWindow = $false
+  $fixtureInfo.RedirectStandardError = $true
+  [void]$fixtureInfo.ArgumentList.Add('-STA')
+  [void]$fixtureInfo.ArgumentList.Add('-NoLogo')
+  [void]$fixtureInfo.ArgumentList.Add('-NoProfile')
+  [void]$fixtureInfo.ArgumentList.Add('-NonInteractive')
+  [void]$fixtureInfo.ArgumentList.Add('-EncodedCommand')
+  [void]$fixtureInfo.ArgumentList.Add($encoded)
+  $fixture = [System.Diagnostics.Process]::Start($fixtureInfo)
+  if ($null -eq $fixture) {
+    throw "Windows did not start fixture window: $Title"
+  }
+  return $fixture
+}
+
+function Assert-FixtureProcessesRunning {
+  param([Parameter(Mandatory = $true)][System.Diagnostics.Process[]]$Processes)
+
+  for ($index = 0; $index -lt $Processes.Count; $index++) {
+    $process = $Processes[$index]
+    if ($process.HasExited) {
+      $stderr = $process.StandardError.ReadToEnd().Trim()
+      if ($stderr.Length -gt 512) {
+        $stderr = $stderr.Substring(0, 512)
+      }
+      throw "Fixture process $index exited before enumeration (code=$($process.ExitCode), stderr=$stderr)."
+    }
+  }
 }
 
 function Find-ListedWindow {
@@ -257,6 +284,7 @@ try {
   $protected = $null
   $listDeadline = [DateTime]::UtcNow.AddSeconds(20)
   do {
+    Assert-FixtureProcessesRunning -Processes $fixtures
     $listRequest = New-HelperRequest -RequestKind 'list' -SessionId $sessionId
     $listed = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $listRequest
     Assert-HelperSuccess $listed
@@ -269,7 +297,8 @@ try {
   } while (($null -eq $alpha -or $null -eq $beta -or $null -eq $protected) -and
     [DateTime]::UtcNow -lt $listDeadline)
   if ($null -eq $alpha -or $null -eq $beta -or $null -eq $protected) {
-    throw 'Native Computer Use did not enumerate all three exact fixture windows.'
+    $appCount = @($listed.Response.result.apps).Count
+    throw "Native Computer Use did not enumerate all exact fixture windows (apps=$appCount, alpha=$($null -ne $alpha), beta=$($null -ne $beta), protected=$($null -ne $protected))."
   }
 
   $targets = @($alpha, $beta, $protected) | ForEach-Object {
