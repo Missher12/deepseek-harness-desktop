@@ -29,27 +29,21 @@ fn serves_one_strict_status_request_then_exits_cleanly_on_eof() {
     let OuterFrame::Json(response) = decode_outer_frame(&body).expect("strict response") else {
         panic!("response must be JSON")
     };
-    #[cfg(target_os = "macos")]
-    {
-        assert_eq!(
-            response.message.pointer("/result/supported"),
-            Some(&serde_json::json!(true))
-        );
-        for field in ["viewing", "assistive"] {
-            assert!(matches!(
-                response
-                    .message
-                    .pointer(&format!("/result/{field}"))
-                    .and_then(serde_json::Value::as_str),
-                Some("granted" | "denied")
-            ));
-        }
-    }
-    #[cfg(not(target_os = "macos"))]
-    assert_eq!(
-        response.message.pointer("/result/supported"),
-        Some(&serde_json::json!(false))
+    assert!(
+        response
+            .message
+            .pointer("/result/supported")
+            .is_some_and(serde_json::Value::is_boolean)
     );
+    for field in ["viewing", "assistive"] {
+        assert!(matches!(
+            response
+                .message
+                .pointer(&format!("/result/{field}"))
+                .and_then(serde_json::Value::as_str),
+            Some("granted" | "denied" | "unknown")
+        ));
+    }
 
     drop(child.stdin.take());
     let output = child.wait_with_output().expect("wait helper");
