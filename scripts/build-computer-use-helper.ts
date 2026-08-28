@@ -3,6 +3,9 @@ import { chmod, copyFile, mkdir, readFile, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+/** Stable nested identifier retained when the packaged app uses a stable signing identity. */
+export const MACOS_COMPUTER_USE_HELPER_IDENTIFIER = 'ai.deepseek.harness.desktop.computer-use-helper'
+
 /** Exact native target and output selected for one supported Desktop build host. */
 export interface ComputerUseHelperBuildSpec {
   readonly rustTarget: 'x86_64-apple-darwin' | 'x86_64-pc-windows-msvc'
@@ -105,7 +108,12 @@ export async function buildComputerUseHelper(
   const target = join(nativeBin, spec.nativeRelativePath)
   await dependencies.makeDirectory(dirname(target))
   await dependencies.copy(artifact, target)
-  if (dependencies.platform === 'darwin') await dependencies.makeExecutable(target)
+  if (dependencies.platform === 'darwin') {
+    await dependencies.makeExecutable(target)
+    dependencies.run('codesign', [
+      '--force', '--sign', '-', '--identifier', MACOS_COMPUTER_USE_HELPER_IDENTIFIER, target,
+    ], root)
+  }
   assertComputerUseHelperArchitecture(await dependencies.read(target), dependencies.platform, dependencies.arch)
   return target
 }

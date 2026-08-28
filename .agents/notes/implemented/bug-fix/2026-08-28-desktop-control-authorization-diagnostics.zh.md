@@ -8,11 +8,15 @@ Status: implemented
 
 电脑控制曾把操作系统权限拒绝、产品策略关闭、应用白名单为空、原生任务询问被拒和目标受保护合并为一条模型可见消息。应用枚举仍会在租约申请前成功，因此即使用户已授予两项 macOS 权限，也可能看到所有窗口、让每项操作都返回同一条目标受保护错误，并且始终到不了原生任务询问。设置模块没有说明枚举、持久化应用白名单、Harness 普通工具审批与 Desktop 任务租约分别属于独立判断。
 
+本地 macOS 包还会对嵌套原生 helper 做临时签名，但既没有固定标识，也没有显式共享签名流程。因此 helper 获得了由哈希派生的身份，而系统设置显示的是外层应用。替换构建后，两项可见开关可能仍保持开启，但 TCC 会把实际执行预检的 helper 当成另一份代码。
+
 ## 决策
 
 Protocol 错误清单加入 `CONTROL_DISABLED`、`TARGET_NOT_AUTHORIZED` 和 `APPROVAL_DENIED`。Electron main 只在自身持有的判断点返回对应错误。原生应用 Surface 关闭或请求中没有白名单应用时，在原生询问前失败；原生询问被取消时，在询问后失败。`PERMISSION_DENIED` 继续表示操作系统结果，`TARGET_CLOSED` 表示已允许但不再有效的目标，`POLICY_DENIED` 继续表示目标受保护。电脑工具把每项错误码映射为长度受限的纠正文字，绝不转发 Provider 诊断。
 
 电脑控制可用且已开启、但枚举应用均未获允许时，设置页应用区域会显示纠正状态。页面会说明应用出现在列表中不代表已授权；每个新任务使用独立的 Electron 原生批准，Harness 普通 `ask` 或 `never` 策略不能替代它。应用修改继续使用现有 main 持有的确认与持久白名单；Renderer 或模型字段都不能生成租约或批准。
+
+Helper 构建把 `ai.deepseek.harness.desktop.computer-use-helper` 设为嵌套代码标识，macOS 打包再把该可执行文件列入 Electron Builder 的显式二进制签名清单。因此使用证书的包会以同一稳定身份签署应用与 helper。默认本地临时签名仍然绑定 CDHash，不能描述为可持久使用；正式发布必须使用 Developer ID 签名与公证。
 
 ## 考虑过的替代方案
 
@@ -25,3 +29,5 @@ Protocol 错误清单加入 `CONTROL_DISABLED`、`TARGET_NOT_AUTHORIZED` 和 `AP
 ## 后果
 
 零白名单安装现在会在原生批准前失败，并给出精确设置指引；允许应用后则会进入独立的原生任务询问。macOS 权限失败与目标受保护继续失败关闭，并显示不同原因。Wire 清单增加三个错误码，TypeScript 与 Rust 校验同一份 Manifest。对 `DesktopControlErrorCode` 做穷举判断的现有调用方必须处理新增值。
+
+暂存与打包后的 macOS helper 现在会保持稳定嵌套标识，并进入应用签名流程。替换旧的哈希标识本地 helper 后，仍可能需要最后手动刷新一次权限。未来本地重建必须复用同一证书才能保持 TCC 身份；只有临时签名不能提供该保证。

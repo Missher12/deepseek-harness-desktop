@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
+  MACOS_COMPUTER_USE_HELPER_IDENTIFIER,
   assertComputerUseHelperArchitecture,
+  buildComputerUseHelper,
   computerUseHelperBuildSpec,
 } from './build-computer-use-helper.ts'
 
@@ -48,7 +50,39 @@ describe('Computer Use helper architecture gate', () => {
     })
   })
 
-  it('uses only the approved macOS observation APIs and still contains no input implementation', () => {
+  it('assigns the staged macOS helper a stable nested code identifier', async () => {
+    const commands: Array<{ command: string; args: readonly string[]; cwd: string }> = []
+    const target = await buildComputerUseHelper('/repo', {
+      platform: 'darwin',
+      arch: 'x64',
+      run: (command, args, cwd) => { commands.push({ command, args, cwd }) },
+      remove: async () => undefined,
+      read: async () => machoX64(),
+      makeDirectory: async () => undefined,
+      copy: async () => undefined,
+      makeExecutable: async () => undefined,
+    })
+
+    expect(target).toBe('/repo/apps/desktop/native-bin/darwin-x64/computer-use-helper')
+    expect(commands).toEqual([
+      {
+        command: 'cargo',
+        args: ['build', '--locked', '--release', '--target', 'x86_64-apple-darwin'],
+        cwd: '/repo/native/computer-use-helper',
+      },
+      {
+        command: 'codesign',
+        args: [
+          '--force', '--sign', '-', '--identifier',
+          MACOS_COMPUTER_USE_HELPER_IDENTIFIER,
+          '/repo/apps/desktop/native-bin/darwin-x64/computer-use-helper',
+        ],
+        cwd: '/repo',
+      },
+    ])
+  })
+
+  it('keeps macOS observation free of fallback capture and permission-request APIs', () => {
     const macosRoot = new URL('../native/computer-use-helper/crates/helper/src/platform/macos/', import.meta.url)
     expect(existsSync(new URL('mod.rs', macosRoot))).toBe(true)
     const source = [

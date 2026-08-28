@@ -49,13 +49,17 @@ mac:
         - x64
   category: public.app-category.developer-tools
   icon: assets/icon.icns
-  # Local release candidates still need a valid code identity so macOS TCC can
-  # attribute Screen Recording and Accessibility checks to this app. Official
-  # distribution should override this with a Developer ID identity.
+  # Ad-hoc signing gives an exact local candidate a valid code identity, but its
+  # designated requirement remains CDHash-bound. Durable TCC grants require a
+  # stable certificate; official distribution must use Developer ID signing.
   identity: "-"
   # Ad-hoc signatures have no Team ID. Electron's pre-signed frameworks would
   # otherwise be rejected by hardened library validation at launch.
   hardenedRuntime: false
+  # Keep the native Computer Use process inside the same signing envelope as
+  # the Electron app when a stable local or Developer ID identity is supplied.
+  binaries:
+    - Contents/Resources/native/computer-use-helper
   extraResources:
     - from: "native-bin/darwin-x64/computer-use-helper"
       to: "native/computer-use-helper"

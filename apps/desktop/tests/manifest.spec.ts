@@ -19,6 +19,7 @@ interface BuilderConfiguration {
     icon?: string
     identity?: string | null
     hardenedRuntime?: boolean
+    binaries?: string[]
     extraResources?: Array<{ from?: string; to?: string }>
   }
   win?: {
@@ -129,7 +130,7 @@ describe('desktop package manifest', () => {
     expect(rootManifest.scripts['desktop:dmg']).toContain('desktop:stage')
   })
 
-  it('ad-hoc signs local Mac artifacts so TCC can attribute accessibility requests', () => {
+  it('signs the packaged native helper with the same Mac identity as the app', () => {
     const builder = yaml.load(
       readFileSync(new URL('../electron-builder.yml', import.meta.url), 'utf8'),
     ) as BuilderConfiguration
@@ -137,6 +138,7 @@ describe('desktop package manifest', () => {
     expect(builder.mac).toMatchObject({
       identity: '-',
       hardenedRuntime: false,
+      binaries: ['Contents/Resources/native/computer-use-helper'],
     })
   })
 
