@@ -16,6 +16,7 @@
     { "path": "../../attachment/attachment" },
     { "path": "../desktop-control-protocol" },
     { "path": "../browser-control" },
+    { "path": "../desktop-control-host" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

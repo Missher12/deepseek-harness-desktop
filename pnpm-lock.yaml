@@ -4532,6 +4532,9 @@ importers:
       '@deepseek-ai/dsh-browser-control':
         specifier: workspace:^
         version: link:../browser-control
+      '@deepseek-ai/dsh-desktop-control-host':
+        specifier: workspace:^
+        version: link:../desktop-control-host
       '@deepseek-ai/dsh-desktop-control-protocol':
         specifier: workspace:^
         version: link:../desktop-control-protocol

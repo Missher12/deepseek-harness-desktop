@@ -1,4 +1,8 @@
-import { BrowserControl, freezeBrowserSnapshotEnvelope } from '@deepseek-ai/dsh-browser-control'
+import {
+  BrowserControl,
+  BrowserControlError,
+  freezeBrowserSnapshotEnvelope,
+} from '@deepseek-ai/dsh-browser-control'
 import type { BrowserActionRequest, BrowserActionResult, BrowserSnapshotEnvelope } from '@deepseek-ai/dsh-browser-control'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
@@ -25,6 +29,19 @@ function exactOk(
   return message
 }
 
+/**
+ * Close the privileged IPC error boundary before errors enter ordinary Host services.
+ *
+ * Electron diagnostics may contain page or target detail, so only the closed error
+ * code crosses this boundary. A model-turn abort keeps its original reason, while
+ * unrelated programming errors remain untouched for their owning layer to diagnose.
+ */
+function rethrowBrowserProviderError(error: unknown, signal?: AbortSignal): never {
+  if (!(error instanceof DesktopControlIpcError)) throw error
+  if (error.code === 'CANCELLED' && signal?.aborted) signal.throwIfAborted()
+  throw new BrowserControlError(error.code, `Desktop browser control failed (${error.code}).`)
+}
+
 /** Desktop Host provider forwarding BrowserControl through the one owned-child IPC client. */
 export class DesktopBrowserControl extends BrowserControl {
   /** Create the browser provider over the process-wide requester and cache. */
@@ -41,35 +58,51 @@ export class DesktopBrowserControl extends BrowserControl {
     request: ControlLeaseAcquireRequest,
     signal: AbortSignal,
   ): Promise<ControlLeaseAcquireResult> {
-    const message = exactOk(await this.requester.request(request, signal), request.requestKind)
-    if (message.requestKind !== 'control.lease.acquire') {
-      throw new DesktopControlIpcError('INTERNAL', 'Desktop browser lease response is invalid.')
+    try {
+      const message = exactOk(await this.requester.request(request, signal), request.requestKind)
+      if (message.requestKind !== 'control.lease.acquire') {
+        throw new DesktopControlIpcError('INTERNAL', 'Desktop browser lease response is invalid.')
+      }
+      return this.leaseCache.remember(request.sessionId, message.result)
+    } catch (error: unknown) {
+      rethrowBrowserProviderError(error, signal)
     }
-    return this.leaseCache.remember(request.sessionId, message.result)
   }
 
   /** Return a service-owned immutable metadata/PNG pair from the verified codec envelope. */
   async snapshot(request: BrowserSnapshotRequest, signal: AbortSignal): Promise<BrowserSnapshotEnvelope> {
-    const envelope = await this.requester.request(request, signal)
-    const message = exactOk(envelope, request.requestKind)
-    if (message.requestKind !== 'browser.snapshot') {
-      throw new DesktopControlIpcError('INTERNAL', 'Desktop browser snapshot response is invalid.')
+    try {
+      const envelope = await this.requester.request(request, signal)
+      const message = exactOk(envelope, request.requestKind)
+      if (message.requestKind !== 'browser.snapshot') {
+        throw new DesktopControlIpcError('INTERNAL', 'Desktop browser snapshot response is invalid.')
+      }
+      return freezeBrowserSnapshotEnvelope({
+        result: message.result,
+        ...(envelope.png === undefined ? {} : { png: envelope.png }),
+      })
+    } catch (error: unknown) {
+      rethrowBrowserProviderError(error, signal)
     }
-    return freezeBrowserSnapshotEnvelope({
-      result: message.result,
-      ...(envelope.png === undefined ? {} : { png: envelope.png }),
-    })
   }
 
   /** Forward one closed browser action and return only its associated result type. */
   async act(request: BrowserActionRequest, signal: AbortSignal): Promise<BrowserActionResult> {
-    const message = exactOk(await this.requester.request(request, signal), request.requestKind)
-    return message.result as BrowserActionResult
+    try {
+      const message = exactOk(await this.requester.request(request, signal), request.requestKind)
+      return message.result as BrowserActionResult
+    } catch (error: unknown) {
+      rethrowBrowserProviderError(error, signal)
+    }
   }
 
   /** Invalidate local ownership before sending the exact session revoke control. */
   async revokeSession(sessionId: SessionId): Promise<void> {
     this.leaseCache.take(sessionId)
-    await this.requester.revokeSession(sessionId)
+    try {
+      await this.requester.revokeSession(sessionId)
+    } catch (error: unknown) {
+      rethrowBrowserProviderError(error)
+    }
   }
 }

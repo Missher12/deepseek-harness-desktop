@@ -11,11 +11,12 @@ import {
   type ControlLeaseAcquireRequest,
   type DecodedDesktopControlEnvelope,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
-import type { BrowserSnapshotEnvelope } from '@deepseek-ai/dsh-browser-control'
+import { BrowserControlError, type BrowserSnapshotEnvelope } from '@deepseek-ai/dsh-browser-control'
 import type { ComputerSnapshotEnvelope } from '@deepseek-ai/dsh-computer-control'
 import {
   DesktopBrowserControl,
   DesktopComputerControl,
+  DesktopControlIpcError,
   installDesktopControlHost,
   type DesktopControlRequester,
 } from '../src/index.ts'
@@ -64,6 +65,58 @@ describe('Desktop control Host providers', () => {
     expect(result.png?.byteLength).toBeGreaterThan(0)
     expect(Object.isFrozen(result)).toBe(true)
     expectTypeOf(result).toEqualTypeOf<BrowserSnapshotEnvelope>()
+  })
+
+  it('closes exact browser IPC errors without exposing their privileged detail', async () => {
+    const raw = 'SENSITIVE ELECTRON TARGET DETAIL'
+    const ctx = new Context()
+    const requester: DesktopControlRequester = {
+      request: vi.fn(async () => {
+        throw new DesktopControlIpcError('POLICY_DENIED', raw)
+      }),
+      revokeSession: vi.fn(async () => undefined),
+    }
+    const provider = new DesktopBrowserControl(ctx, requester)
+
+    let thrown: unknown
+    try {
+      await provider.snapshot(browserRequest(), new AbortController().signal)
+    } catch (error: unknown) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(BrowserControlError)
+    expect(thrown).toMatchObject({
+      code: 'POLICY_DENIED',
+      message: 'Desktop browser control failed (POLICY_DENIED).',
+    })
+    expect((thrown as Error).message).not.toContain(raw)
+  })
+
+  it('preserves the model-turn abort reason and unrelated programming failures', async () => {
+    const ctx = new Context()
+    const abortReason = new Error('official turn abort')
+    const controller = new AbortController()
+    controller.abort(abortReason)
+    const cancelledRequester: DesktopControlRequester = {
+      request: vi.fn(async () => {
+        throw new DesktopControlIpcError('CANCELLED', 'raw IPC cancellation')
+      }),
+      revokeSession: vi.fn(async () => undefined),
+    }
+    const cancelledProvider = new DesktopBrowserControl(ctx, cancelledRequester)
+    await expect(cancelledProvider.snapshot(browserRequest(), controller.signal)).rejects.toBe(abortReason)
+
+    const programmingError = new TypeError('provider invariant failed')
+    const failingRequester: DesktopControlRequester = {
+      request: vi.fn(async () => {
+        throw programmingError
+      }),
+      revokeSession: vi.fn(async () => undefined),
+    }
+    const failingProvider = new DesktopBrowserControl(new Context(), failingRequester)
+    await expect(failingProvider.snapshot(browserRequest(), new AbortController().signal))
+      .rejects.toBe(programmingError)
   })
 
   it('maps native status/list/snapshot/action responses through their closed result types', async () => {

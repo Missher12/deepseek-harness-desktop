@@ -47,6 +47,7 @@
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-browser-control": "workspace:^",
+    "@deepseek-ai/dsh-desktop-control-host": "workspace:^",
     "@deepseek-ai/dsh-desktop-control-protocol": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
