@@ -533,6 +533,13 @@ if (-not $MediumIntegrityChild) {
 }
 
 Set-SmokeProgress 'child-entered'
+$integrityText = (& whoami.exe /groups /fo csv /nh | Out-String)
+$integrityMatch = [regex]::Match($integrityText, 'S-1-16-[0-9]+')
+if (-not $integrityMatch.Success -or $integrityMatch.Value -ne 'S-1-16-8192') {
+  $observedIntegrity = if ($integrityMatch.Success) { $integrityMatch.Value } else { 'unknown' }
+  throw "Windows acceptance process integrity was $observedIntegrity instead of Medium."
+}
+Set-SmokeProgress 'medium-integrity-confirmed'
 
 function Read-ExactBytes {
   param(
@@ -786,11 +793,31 @@ try {
     Start-FixtureWindow -Title 'DSH Protected Fixture' -Kind protected -Left 360
   )
   Set-SmokeProgress 'fixtures-started'
+  $fixtureDeadline = [DateTime]::UtcNow.AddSeconds(15)
+  do {
+    $readyFixtures = 0
+    foreach ($fixture in $fixtures) {
+      $fixture.Refresh()
+      if (-not $fixture.HasExited -and $fixture.MainWindowHandle -ne [IntPtr]::Zero) {
+        $readyFixtures++
+      }
+    }
+    if ($readyFixtures -lt $fixtures.Count) {
+      Start-Sleep -Milliseconds 200
+    }
+  } while ($readyFixtures -lt $fixtures.Count -and [DateTime]::UtcNow -lt $fixtureDeadline)
+  if ($readyFixtures -ne $fixtures.Count) {
+    throw "Windows fixtures did not expose all visible top-level windows (ready=$readyFixtures)."
+  }
+  Set-SmokeProgress 'fixture-windows-visible'
   $helper = [System.Diagnostics.Process]::Start($helperInfo)
   if ($null -eq $helper) {
     throw 'Windows did not start the packaged Computer Use helper.'
   }
   Set-SmokeProgress 'helper-started'
+  if (@($fixtures | Where-Object { $_.SessionId -ne $helper.SessionId }).Count -ne 0) {
+    throw 'Windows fixtures and helper did not run in the same Windows session.'
+  }
   $inputStream = $helper.StandardInput.BaseStream
   $outputStream = $helper.StandardOutput.BaseStream
 
