@@ -2,13 +2,29 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use computer_use_protocol::{
-    Direction, EnvelopeDecoder, LengthPrefixedDecoder, decode_outer_frame, encode_length_prefixed,
-    encode_outer_frame, validate_embedded_manifest,
+    AuthoredPng, Direction, EnvelopeDecoder, LengthPrefixedDecoder, decode_outer_frame,
+    encode_length_prefixed, encode_outer_frame, validate_embedded_manifest,
 };
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../../packages/control/desktop-control-protocol/fixtures")
+}
+
+#[test]
+fn authors_a_bounded_png_frame_with_deterministic_correlated_metadata() {
+    let fixture = fs::read(fixtures().join("browser-snapshot-png.bin")).expect("png");
+    let png = fixture[17..].to_vec();
+    let authored = AuthoredPng::for_request("00000000-0000-4000-8000-000000000001", png.clone())
+        .expect("bounded authored PNG");
+
+    assert_eq!(authored.metadata()["byteLength"], png.len());
+    let encoded = authored.encode_frame().expect("PNG outer frame");
+    assert!(matches!(
+        decode_outer_frame(&encoded),
+        Ok(computer_use_protocol::OuterFrame::Png(_))
+    ));
+    assert!(AuthoredPng::for_request("not-a-uuid", png).is_err());
 }
 
 #[test]

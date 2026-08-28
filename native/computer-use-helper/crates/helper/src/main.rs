@@ -4,10 +4,11 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Instant;
 
-use computer_use_core::{
-    CancellationToken, ComputerUseCore, MonotonicClock, NullObservationPlatform,
-    ObservationPlatform,
-};
+#[cfg(not(target_os = "macos"))]
+use computer_use_core::NullObservationPlatform;
+use computer_use_core::{CancellationToken, ComputerUseCore, MonotonicClock, ObservationPlatform};
+#[cfg(target_os = "macos")]
+use computer_use_helper::platform::macos::MacObservationPlatform;
 use computer_use_protocol::{
     ControlMessage, Direction, EnvelopeDecoder, HelperInput, HelperRequest, LengthPrefixedDecoder,
     decode_helper_input, encode_json_value, encode_length_prefixed,
@@ -29,13 +30,15 @@ fn main() {
 }
 
 fn run() -> Result<(), ()> {
+    let epoch = Instant::now();
+    #[cfg(target_os = "macos")]
+    let platform = MacObservationPlatform::new(epoch);
+    #[cfg(not(target_os = "macos"))]
+    let platform = NullObservationPlatform;
     run_io(
         io::stdin(),
         io::stdout(),
-        ComputerUseCore::new(
-            SystemMonotonicClock(Instant::now()),
-            NullObservationPlatform,
-        ),
+        ComputerUseCore::new(SystemMonotonicClock(epoch), platform),
     )
 }
 
@@ -138,7 +141,11 @@ where
                 }
                 if let Some(response) = response {
                     let json = encode_json_value(response.value()).map_err(|_| ())?;
-                    let framed = encode_length_prefixed(&json).map_err(|_| ())?;
+                    let mut framed = encode_length_prefixed(&json).map_err(|_| ())?;
+                    if let Some(png) = response.png() {
+                        let png = png.encode_frame().map_err(|_| ())?;
+                        framed.extend_from_slice(&encode_length_prefixed(&png).map_err(|_| ())?);
+                    }
                     if token.is_cancelled() {
                         registry.complete(&request_id);
                         continue;
@@ -227,7 +234,10 @@ mod tests {
     use computer_use_core::{
         CancellationToken, ComputerUseCore, MonotonicClock, ObservationPlatform, PlatformResult,
     };
-    use computer_use_protocol::{HelperRequest, encode_json_value, encode_length_prefixed};
+    use computer_use_protocol::{
+        Direction, EnvelopeDecoder, HelperRequest, LengthPrefixedDecoder, encode_json_value,
+        encode_length_prefixed,
+    };
     use serde_json::{Value, json};
 
     use super::run_io;
@@ -244,6 +254,41 @@ mod tests {
     struct BlockingPlatform {
         entered: mpsc::Sender<()>,
         cancelled: mpsc::Sender<()>,
+    }
+
+    struct PngPlatform {
+        png: Vec<u8>,
+        pending: Option<Vec<u8>>,
+    }
+
+    impl ObservationPlatform for PngPlatform {
+        fn status(&mut self, _deadline_ms: u64, _cancel: &CancellationToken) -> PlatformResult {
+            unreachable!()
+        }
+
+        fn list(&mut self, _deadline_ms: u64, _cancel: &CancellationToken) -> PlatformResult {
+            unreachable!()
+        }
+
+        fn snapshot(
+            &mut self,
+            request: &HelperRequest,
+            _deadline_ms: u64,
+            _cancel: &CancellationToken,
+        ) -> PlatformResult {
+            self.pending = Some(self.png.clone());
+            Ok(json!({
+                "appId": request.string("appId").expect("app"),
+                "windowId": request.string("windowId").expect("window"),
+                "snapshotRevision": request.integer("snapshotRevision").expect("revision"),
+                "semanticText": "",
+                "refs": [],
+            }))
+        }
+
+        fn take_png(&mut self) -> Option<Vec<u8>> {
+            self.pending.take()
+        }
     }
 
     impl ObservationPlatform for BlockingPlatform {
@@ -454,5 +499,93 @@ mod tests {
     #[test]
     fn eof_cancels_blocked_platform_work_before_worker_shutdown() {
         assert_high_priority_termination(None);
+    }
+
+    #[test]
+    fn writes_declaring_json_and_exact_png_as_one_adjacent_response() {
+        struct SignallingWriter {
+            bytes: Arc<Mutex<Vec<u8>>>,
+            flushed: mpsc::Sender<()>,
+        }
+
+        impl Write for SignallingWriter {
+            fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+                self.bytes
+                    .lock()
+                    .expect("writer lock")
+                    .extend_from_slice(buffer);
+                Ok(buffer.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                self.flushed
+                    .send(())
+                    .map_err(|_| io::ErrorKind::BrokenPipe.into())
+            }
+        }
+
+        let fixture = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../../packages/control/desktop-control-protocol/fixtures/browser-snapshot-png.bin"
+        ))
+        .expect("shared PNG fixture");
+        let png = fixture[17..].to_vec();
+        let mut snapshot = snapshot_request();
+        snapshot["includeImage"] = json!(true);
+        let (input_tx, input_rx) = mpsc::channel();
+        let reader = ChannelReader {
+            receiver: input_rx,
+            current: Cursor::new(Vec::new()),
+        };
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let (flush_tx, flush_rx) = mpsc::channel();
+        let output = SignallingWriter {
+            bytes: bytes.clone(),
+            flushed: flush_tx,
+        };
+        let platform_png = png.clone();
+        let runtime = thread::spawn(move || {
+            run_io(
+                reader,
+                output,
+                ComputerUseCore::new(
+                    AtomicClock(Arc::new(AtomicU64::new(10))),
+                    PngPlatform {
+                        png: platform_png,
+                        pending: None,
+                    },
+                ),
+            )
+        });
+        input_tx
+            .send(Some(framed(&install_request())))
+            .expect("install");
+        flush_rx.recv().expect("install response");
+        input_tx.send(Some(framed(&snapshot))).expect("snapshot");
+        flush_rx.recv().expect("snapshot response");
+        input_tx.send(None).expect("eof");
+        runtime
+            .join()
+            .expect("runtime thread")
+            .expect("bounded runtime");
+
+        let bytes = bytes.lock().expect("output lock").clone();
+        let mut lengths = LengthPrefixedDecoder::new();
+        let frames = lengths.push(&bytes).expect("framed output");
+        lengths.finish().expect("complete frames");
+        assert_eq!(frames.len(), 3, "install JSON plus snapshot JSON/PNG");
+        let mut envelopes = EnvelopeDecoder::new(Direction::HelperToElectron);
+        assert_eq!(envelopes.push(&frames[0]).expect("install").len(), 1);
+        assert!(
+            envelopes
+                .push(&frames[1])
+                .expect("snapshot JSON")
+                .is_empty()
+        );
+        let snapshot = envelopes.push(&frames[2]).expect("snapshot PNG");
+        assert_eq!(
+            snapshot[0].png.as_ref().expect("correlated PNG").read(),
+            png
+        );
     }
 }

@@ -1,11 +1,301 @@
 //! Platform-neutral monotonic lease enforcement and read-only helper dispatch.
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use computer_use_protocol::{ControlMessage, HelperInput, HelperRequest, HelperResponse};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+
+/// Maximum Accessibility traversal depth, including a depth-zero root.
+pub const MAX_ACCESSIBILITY_DEPTH: u8 = 32;
+/// Maximum native nodes inspected for one snapshot.
+pub const MAX_RAW_ACCESSIBILITY_NODES: usize = 2_000;
+/// Maximum semantic references returned for one snapshot.
+pub const MAX_SEMANTIC_REFS: usize = 300;
+/// Maximum UTF-8 semantic text bytes returned for one snapshot.
+pub const MAX_SEMANTIC_TEXT_BYTES: usize = 49_152;
+/// Maximum UTF-8 role bytes retained per reference.
+pub const MAX_ROLE_BYTES: usize = 128;
+/// Maximum UTF-8 accessible-name bytes retained per reference.
+pub const MAX_NAME_BYTES: usize = 1_024;
+/// Maximum screenshot edge in pixels.
+pub const MAX_CAPTURE_EDGE: u32 = 2_048;
+/// Maximum screenshot pixel count.
+pub const MAX_CAPTURE_PIXELS: u64 = 4_194_304;
+
+const MAX_PROJECTED_JSON_BYTES: usize = 55_000;
+
+/// A finite native rectangle in desktop points.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ObservationBounds {
+    /// Desktop-space origin on the x axis.
+    pub x: f64,
+    /// Desktop-space origin on the y axis.
+    pub y: f64,
+    /// Width in desktop points.
+    pub width: f64,
+    /// Height in desktop points.
+    pub height: f64,
+}
+
+impl ObservationBounds {
+    fn valid(self) -> bool {
+        self.x.is_finite()
+            && self.y.is_finite()
+            && self.width.is_finite()
+            && self.height.is_finite()
+            && self.width > 0.0
+            && self.height > 0.0
+    }
+
+    fn intersects(self, other: Self) -> bool {
+        self.valid()
+            && other.valid()
+            && self.x < other.x + other.width
+            && other.x < self.x + self.width
+            && self.y < other.y + other.height
+            && other.y < self.y + self.height
+    }
+}
+
+/// Safe attributes required by the platform-neutral accessibility projector.
+///
+/// Platform implementations deliberately must not provide an editable value.
+pub struct AccessibilityNode<N> {
+    /// Bounded semantic role source.
+    pub role: String,
+    /// Bounded accessible title/description source, never an input value.
+    pub name: String,
+    /// Element bounds, when exposed by the platform.
+    pub bounds: Option<ObservationBounds>,
+    /// Whether the element or its application is hidden.
+    pub hidden: bool,
+    /// Whether the element is minimized.
+    pub minimized: bool,
+    /// Child nodes in native order.
+    pub children: Vec<N>,
+}
+
+/// Read-only, fakeable native accessibility seam.
+pub trait AccessibilityNodeSource {
+    /// Opaque, cloneable native node handle.
+    type Node: Clone;
+
+    /// Read only safe structural attributes for one node.
+    fn describe(
+        &mut self,
+        node: &Self::Node,
+    ) -> std::result::Result<AccessibilityNode<Self::Node>, &'static str>;
+}
+
+/// Exact identity and geometry bound to one projection.
+pub struct ProjectionScope<'a> {
+    /// Exact process-stable application identity.
+    pub app_id: &'a str,
+    /// Exact process-stable native window identity.
+    pub window_id: &'a str,
+    /// Caller-selected snapshot revision.
+    pub snapshot_revision: u64,
+    /// Exact selected window bounds.
+    pub window_bounds: ObservationBounds,
+}
+
+/// One bounded semantic reference.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProjectedRef {
+    /// Stable opaque reference for this exact target and revision.
+    pub ref_id: String,
+    /// Truncated safe role.
+    pub role: String,
+    /// Truncated safe accessible name.
+    pub name: String,
+}
+
+/// Output of one bounded breadth-first projection.
+pub struct AccessibilityProjection {
+    /// Compact text representation including geometry.
+    pub semantic_text: String,
+    /// Bounded structured references.
+    pub refs: Vec<ProjectedRef>,
+    /// Number of raw nodes inspected, including skipped nodes.
+    pub raw_nodes: usize,
+}
+
+/// Project an accessibility tree with fixed fail-closed bounds.
+pub fn project_accessibility_tree<S>(
+    source: &mut S,
+    root: S::Node,
+    scope: ProjectionScope<'_>,
+    cancel: &CancellationToken,
+) -> PlatformResultProjection
+where
+    S: AccessibilityNodeSource,
+{
+    if !scope.window_bounds.valid() {
+        return Err("TARGET_CLOSED");
+    }
+    let mut queue = VecDeque::from([(root, 0_u8)]);
+    let mut semantic_text = String::new();
+    let mut refs = Vec::new();
+    let mut raw_nodes = 0_usize;
+
+    while let Some((node, depth)) = queue.pop_front() {
+        if cancel.is_cancelled() {
+            return Err("CANCELLED");
+        }
+        if raw_nodes >= MAX_RAW_ACCESSIBILITY_NODES {
+            break;
+        }
+        raw_nodes += 1;
+        let described = source.describe(&node)?;
+        let visible_bounds = described
+            .bounds
+            .filter(|bounds| bounds.intersects(scope.window_bounds));
+        if described.hidden || described.minimized || visible_bounds.is_none() {
+            continue;
+        }
+        if depth < MAX_ACCESSIBILITY_DEPTH {
+            let remaining = MAX_RAW_ACCESSIBILITY_NODES
+                .saturating_sub(raw_nodes)
+                .saturating_sub(queue.len());
+            queue.extend(
+                described
+                    .children
+                    .into_iter()
+                    .take(remaining)
+                    .map(|child| (child, depth.saturating_add(1))),
+            );
+        }
+        if refs.len() >= MAX_SEMANTIC_REFS {
+            continue;
+        }
+
+        let role = truncate_utf8(&described.role, MAX_ROLE_BYTES);
+        let name = truncate_utf8(&described.name, MAX_NAME_BYTES);
+        let bounds = visible_bounds.expect("visible bounds checked");
+        let ref_id = computer_ref(
+            scope.app_id,
+            scope.window_id,
+            scope.snapshot_revision,
+            refs.len(),
+        );
+        let line = format!(
+            "[ref={ref_id}] role={} name={} bounds={},{},{},{}\n",
+            sanitize_text(&role),
+            sanitize_text(&name),
+            format_coordinate(bounds.x),
+            format_coordinate(bounds.y),
+            format_coordinate(bounds.width),
+            format_coordinate(bounds.height),
+        );
+        let projected_size = semantic_text
+            .len()
+            .saturating_add(line.len())
+            .saturating_add(
+                refs.iter()
+                    .map(|item: &ProjectedRef| {
+                        item.ref_id.len() + item.role.len() + item.name.len() + 40
+                    })
+                    .sum::<usize>(),
+            )
+            .saturating_add(ref_id.len() + role.len() + name.len() + 40);
+        if projected_size > MAX_PROJECTED_JSON_BYTES {
+            continue;
+        }
+        push_truncated(&mut semantic_text, &line, MAX_SEMANTIC_TEXT_BYTES);
+        refs.push(ProjectedRef { ref_id, role, name });
+    }
+
+    Ok(AccessibilityProjection {
+        semantic_text,
+        refs,
+        raw_nodes,
+    })
+}
+
+/// Projection-specific result alias with protocol error codes only.
+pub type PlatformResultProjection = std::result::Result<AccessibilityProjection, &'static str>;
+
+fn computer_ref(app_id: &str, window_id: &str, revision: u64, index: usize) -> String {
+    let mut digest = Sha256::new();
+    digest.update(app_id.as_bytes());
+    digest.update([0]);
+    digest.update(window_id.as_bytes());
+    digest.update([0]);
+    digest.update(revision.to_be_bytes());
+    digest.update((index as u64).to_be_bytes());
+    let digest = digest.finalize();
+    let suffix = digest[..16]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("computer:{suffix}")
+}
+
+fn truncate_utf8(value: &str, maximum: usize) -> String {
+    if value.len() <= maximum {
+        return value.to_owned();
+    }
+    let mut end = maximum;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value[..end].to_owned()
+}
+
+fn sanitize_text(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect()
+}
+
+fn push_truncated(output: &mut String, value: &str, maximum: usize) {
+    let remaining = maximum.saturating_sub(output.len());
+    if remaining == 0 {
+        return;
+    }
+    let mut end = remaining.min(value.len());
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    output.push_str(&value[..end]);
+}
+
+fn format_coordinate(value: f64) -> String {
+    format!("{:.0}", value)
+}
+
+/// Convert point geometry and backing scale to deterministic bounded pixels.
+#[must_use]
+pub fn capture_dimensions(bounds: ObservationBounds, scale: f64) -> Option<(u32, u32)> {
+    if !bounds.valid() || !scale.is_finite() || scale <= 0.0 {
+        return None;
+    }
+    let source_width = bounds.width * scale;
+    let source_height = bounds.height * scale;
+    if !source_width.is_finite() || !source_height.is_finite() {
+        return None;
+    }
+    let edge_scale = (f64::from(MAX_CAPTURE_EDGE) / source_width)
+        .min(f64::from(MAX_CAPTURE_EDGE) / source_height)
+        .min(1.0);
+    let pixel_scale = ((MAX_CAPTURE_PIXELS as f64) / (source_width * source_height))
+        .sqrt()
+        .min(1.0);
+    let reduction = edge_scale.min(pixel_scale);
+    let width = (source_width * reduction).round().max(1.0) as u32;
+    let height = (source_height * reduction).round().max(1.0) as u32;
+    Some((width.min(MAX_CAPTURE_EDGE), height.min(MAX_CAPTURE_EDGE)))
+}
 
 /// Monotonic time source; wall-clock time is deliberately excluded from lease expiry.
 pub trait MonotonicClock {
@@ -49,6 +339,11 @@ pub trait ObservationPlatform {
         deadline_ms: u64,
         cancel: &CancellationToken,
     ) -> PlatformResult;
+
+    /// Take the exact PNG produced by the immediately preceding successful snapshot.
+    fn take_png(&mut self) -> Option<Vec<u8>> {
+        None
+    }
 }
 
 /// Closed platform result: success JSON or a protocol error code only.
@@ -186,10 +481,18 @@ where
         }
         let deadline_ms = self.clock.now_ms().saturating_add(request.timeout_ms());
         match request.request_kind() {
-            "status" => {
-                platform_response(request, self.platform.status(deadline_ms, cancel), cancel)
-            }
-            "list" => platform_response(request, self.platform.list(deadline_ms, cancel), cancel),
+            "status" => platform_response(
+                request,
+                self.platform.status(deadline_ms, cancel),
+                cancel,
+                None,
+            ),
+            "list" => platform_response(
+                request,
+                self.platform.list(deadline_ms, cancel),
+                cancel,
+                None,
+            ),
             "lease.install" => self.install_lease(request),
             "snapshot" => self.snapshot(request, deadline_ms, cancel),
             "stop" => self.stop(request),
@@ -296,11 +599,9 @@ where
         lease.quotas.operations -= 1;
         lease.quotas.snapshots -= 1;
         lease.last_activity_ms = now_ms;
-        platform_response(
-            request,
-            self.platform.snapshot(request, deadline_ms, cancel),
-            cancel,
-        )
+        let result = self.platform.snapshot(request, deadline_ms, cancel);
+        let png = self.platform.take_png();
+        platform_response(request, result, cancel, png)
     }
 
     fn stop(&mut self, request: &HelperRequest) -> HelperResponse {
@@ -433,12 +734,16 @@ fn platform_response(
     request: &HelperRequest,
     result: PlatformResult,
     cancel: &CancellationToken,
+    png: Option<Vec<u8>>,
 ) -> HelperResponse {
     if cancel.is_cancelled() {
         return HelperResponse::error(request, "CANCELLED", false);
     }
     match result {
-        Ok(result) => HelperResponse::ok(request, result),
+        Ok(result) => match png {
+            Some(png) => HelperResponse::ok_with_png(request, result, png),
+            None => HelperResponse::ok(request, result),
+        },
         Err(code) => HelperResponse::error(request, code, matches!(code, "BUSY" | "TIMEOUT")),
     }
 }

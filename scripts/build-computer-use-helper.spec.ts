@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   assertComputerUseHelperArchitecture,
@@ -48,12 +48,25 @@ describe('Computer Use helper architecture gate', () => {
     })
   })
 
-  it('contains no native observation or input API implementation in this delivery', () => {
+  it('uses only the approved macOS observation APIs and still contains no input implementation', () => {
+    const macosRoot = new URL('../native/computer-use-helper/crates/helper/src/platform/macos/', import.meta.url)
+    expect(existsSync(new URL('mod.rs', macosRoot))).toBe(true)
     const source = [
       '../native/computer-use-helper/crates/protocol/src/lib.rs',
       '../native/computer-use-helper/crates/core/src/lib.rs',
       '../native/computer-use-helper/crates/helper/src/main.rs',
+      '../native/computer-use-helper/crates/helper/src/platform/macos/mod.rs',
+      '../native/computer-use-helper/crates/helper/src/platform/macos/accessibility.rs',
+      '../native/computer-use-helper/crates/helper/src/platform/macos/capture.rs',
+      '../native/computer-use-helper/crates/helper/src/platform/macos/permissions.rs',
+      '../native/computer-use-helper/crates/helper/src/platform/macos/scale.rs',
     ].map(path => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n')
-    expect(source).not.toMatch(/AXUIElement|SCScreenshot|CGEvent|SendInput|AppleScript|PowerShell|std::net/)
+    expect(source).toMatch(/AXUIElement/)
+    expect(source).toMatch(/SCScreenshotManager/)
+    expect(source).toMatch(/SCContentFilter/)
+    expect(source).toMatch(/SCStreamConfiguration/)
+    expect(source).not.toMatch(/CGWindowListCreateImage|CGDisplayCreateImage|CGRequestScreenCaptureAccess|AXIsProcessTrustedWithOptions/)
+    expect(source).not.toContain('b"AXValue\\0"')
+    expect(source).not.toMatch(/CGEvent|SendInput|AppleScript|PowerShell|std::net/)
   })
 })

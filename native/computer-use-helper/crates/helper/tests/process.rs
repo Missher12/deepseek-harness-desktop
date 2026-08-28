@@ -29,6 +29,23 @@ fn serves_one_strict_status_request_then_exits_cleanly_on_eof() {
     let OuterFrame::Json(response) = decode_outer_frame(&body).expect("strict response") else {
         panic!("response must be JSON")
     };
+    #[cfg(target_os = "macos")]
+    {
+        assert_eq!(
+            response.message.pointer("/result/supported"),
+            Some(&serde_json::json!(true))
+        );
+        for field in ["viewing", "assistive"] {
+            assert!(matches!(
+                response
+                    .message
+                    .pointer(&format!("/result/{field}"))
+                    .and_then(serde_json::Value::as_str),
+                Some("granted" | "denied")
+            ));
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
     assert_eq!(
         response.message.pointer("/result/supported"),
         Some(&serde_json::json!(false))

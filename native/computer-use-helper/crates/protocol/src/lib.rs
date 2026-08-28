@@ -801,6 +801,64 @@ impl ImmutablePng {
     }
 }
 
+/// A helper-authored PNG and the metadata derived from its exact bytes.
+pub struct AuthoredPng {
+    transfer_id: String,
+    png: Vec<u8>,
+    width: u32,
+    height: u32,
+    sha256: String,
+}
+
+impl AuthoredPng {
+    /// Create a deterministic, request-bound transfer without introducing a second protocol.
+    pub fn for_request(request_id: &str, png: Vec<u8>) -> Result<Self> {
+        uuid(&Value::String(request_id.to_owned()), "requestId")?;
+        if png.is_empty() || png.len() > MAX_PNG_BYTES {
+            return Err(ProtocolError::new("PNG payload is out of bounds"));
+        }
+        let (width, height) = png_dimensions(&png)?;
+        let sha256 = format!("{:x}", Sha256::digest(&png));
+        let mut transfer = Sha256::new();
+        transfer.update(request_id.as_bytes());
+        transfer.update(sha256.as_bytes());
+        let digest = transfer.finalize();
+        let mut bytes: [u8; 16] = digest[..16].try_into().expect("16-byte digest prefix");
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        let transfer_id = bytes_to_uuid(&bytes)?;
+        Ok(Self {
+            transfer_id,
+            png,
+            width,
+            height,
+            sha256,
+        })
+    }
+
+    /// Exact protocol image metadata for the adjacent frame.
+    #[must_use]
+    pub fn metadata(&self) -> Value {
+        serde_json::json!({
+            "transferId": self.transfer_id,
+            "byteLength": self.png.len(),
+            "sha256": self.sha256,
+            "width": self.width,
+            "height": self.height,
+        })
+    }
+
+    /// Encode the bounded binary outer frame adjacent to the declaring JSON response.
+    pub fn encode_frame(&self) -> Result<Vec<u8>> {
+        let mut frame = Vec::with_capacity(self.png.len() + 17);
+        frame.push(PNG_TAG);
+        frame.extend_from_slice(&uuid_to_bytes(&self.transfer_id)?);
+        frame.extend_from_slice(&self.png);
+        decode_outer_frame(&frame)?;
+        Ok(frame)
+    }
+}
+
 /// A decoded PNG transfer frame.
 #[derive(Clone)]
 pub struct PngFrame {
@@ -889,6 +947,22 @@ fn bytes_to_uuid(bytes: &[u8]) -> Result<String> {
     );
     uuid(&Value::String(value.clone()), "transferId")?;
     Ok(value)
+}
+
+fn uuid_to_bytes(value: &str) -> Result<[u8; 16]> {
+    uuid(&Value::String(value.to_owned()), "transferId")?;
+    let compact = value
+        .bytes()
+        .filter(|byte| *byte != b'-')
+        .collect::<Vec<_>>();
+    let mut result = [0_u8; 16];
+    for (index, pair) in compact.chunks_exact(2).enumerate() {
+        let text = std::str::from_utf8(pair)
+            .map_err(|_| ProtocolError::new("transfer UUID is invalid"))?;
+        result[index] = u8::from_str_radix(text, 16)
+            .map_err(|_| ProtocolError::new("transfer UUID is invalid"))?;
+    }
+    Ok(result)
 }
 
 fn png_dimensions(bytes: &[u8]) -> Result<(u32, u32)> {
@@ -1128,20 +1202,49 @@ pub fn decode_helper_input(value: Value) -> Result<HelperInput> {
 }
 
 /// One helper-authored response, validated again immediately before encoding.
-pub struct HelperResponse(Value);
+pub struct HelperResponse {
+    value: Value,
+    png: Option<AuthoredPng>,
+}
 
 impl HelperResponse {
     /// Construct a successful response bound to its exact request.
     #[must_use]
     pub fn ok(request: &HelperRequest, result: Value) -> Self {
-        Self(serde_json::json!({
-            "protocolVersion": 1,
-            "messageKind": "response",
-            "responseKind": "ok",
-            "requestKind": request.request_kind,
-            "requestId": request.request_id,
-            "result": result
-        }))
+        Self {
+            value: serde_json::json!({
+                "protocolVersion": 1,
+                "messageKind": "response",
+                "responseKind": "ok",
+                "requestKind": request.request_kind,
+                "requestId": request.request_id,
+                "result": result
+            }),
+            png: None,
+        }
+    }
+
+    /// Construct a successful response and bind exact image metadata to its adjacent PNG.
+    #[must_use]
+    pub fn ok_with_png(request: &HelperRequest, mut result: Value, png: Vec<u8>) -> Self {
+        let Ok(authored) = AuthoredPng::for_request(request.request_id(), png) else {
+            return Self::error(request, "INTERNAL", false);
+        };
+        let Some(result) = result.as_object_mut() else {
+            return Self::error(request, "INTERNAL", false);
+        };
+        result.insert("image".to_owned(), authored.metadata());
+        Self {
+            value: serde_json::json!({
+                "protocolVersion": 1,
+                "messageKind": "response",
+                "responseKind": "ok",
+                "requestKind": request.request_kind,
+                "requestId": request.request_id,
+                "result": Value::Object(result.clone())
+            }),
+            png: Some(authored),
+        }
     }
 
     /// Construct a bounded generic error without carrying provider or OS text.
@@ -1152,30 +1255,39 @@ impl HelperResponse {
         } else {
             "INTERNAL"
         };
-        Self(serde_json::json!({
-            "protocolVersion": 1,
-            "messageKind": "response",
-            "responseKind": "error",
-            "requestKind": request.request_kind,
-            "requestId": request.request_id,
-            "error": {
-                "code": code,
-                "message": "Native Computer Use request was not completed.",
-                "retryable": retryable
-            }
-        }))
+        Self {
+            value: serde_json::json!({
+                "protocolVersion": 1,
+                "messageKind": "response",
+                "responseKind": "error",
+                "requestKind": request.request_kind,
+                "requestId": request.request_id,
+                "error": {
+                    "code": code,
+                    "message": "Native Computer Use request was not completed.",
+                    "retryable": retryable
+                }
+            }),
+            png: None,
+        }
     }
 
     /// Consume the response as a JSON wire value.
     #[must_use]
     pub fn into_value(self) -> Value {
-        self.0
+        self.value
     }
 
     /// Borrow the response for strict encoding.
     #[must_use]
     pub fn value(&self) -> &Value {
-        &self.0
+        &self.value
+    }
+
+    /// Borrow the correlated authored PNG, when this is an image snapshot.
+    #[must_use]
+    pub fn png(&self) -> Option<&AuthoredPng> {
+        self.png.as_ref()
     }
 }
 
