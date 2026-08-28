@@ -944,6 +944,7 @@ try {
   })
   $installedLease = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $installRequest
   Assert-HelperSuccess $installedLease
+  Set-SmokeProgress 'lease-installed'
 
   $alphaSnapshotRequest = New-HelperRequest -RequestKind 'snapshot' -SessionId $sessionId -Fields ([ordered]@{
     leaseId = $leaseId; leaseRevision = $leaseRevision; appId = $alpha.appId; windowId = $alpha.windowId
@@ -951,6 +952,7 @@ try {
   })
   $alphaSnapshot = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $alphaSnapshotRequest
   Assert-HelperSuccess $alphaSnapshot
+  Set-SmokeProgress 'alpha-snapshot-complete'
   $alphaButton = @($alphaSnapshot.Response.result.refs | Where-Object {
     $_.role -eq 'button' -and $_.name -eq 'Harmless action'
   })
@@ -964,6 +966,7 @@ try {
   })
   $clicked = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $clickRequest
   Assert-HelperSuccess $clicked
+  Set-SmokeProgress 'alpha-click-complete'
 
   $betaSnapshotRequest = New-HelperRequest -RequestKind 'snapshot' -SessionId $sessionId -Fields ([ordered]@{
     leaseId = $leaseId; leaseRevision = $leaseRevision; appId = $beta.appId; windowId = $beta.windowId
@@ -971,6 +974,7 @@ try {
   })
   $betaSnapshot = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $betaSnapshotRequest -ExpectPng
   Assert-HelperSuccess $betaSnapshot
+  Set-SmokeProgress 'beta-image-snapshot-complete'
   if ($betaSnapshot.Png.Length -ne [int]$betaSnapshot.Response.result.image.byteLength) {
     throw 'Windows Graphics Capture PNG length did not match its metadata.'
   }
@@ -990,6 +994,7 @@ try {
   })
   $focused = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $focusRequest
   Assert-HelperSuccess $focused
+  Set-SmokeProgress 'beta-focus-complete'
 
   $protectedSnapshotRequest = New-HelperRequest -RequestKind 'snapshot' -SessionId $sessionId -Fields ([ordered]@{
     leaseId = $leaseId; leaseRevision = $leaseRevision; appId = $protected.appId; windowId = $protected.windowId
@@ -997,6 +1002,7 @@ try {
   })
   $protectedSnapshot = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $protectedSnapshotRequest
   Assert-HelperError -Exchange $protectedSnapshot -Code 'PERMISSION_DENIED'
+  Set-SmokeProgress 'protected-denial-complete'
   if ($protectedSnapshot.Text.Contains('DSH_SECRET_DO_NOT_EXPOSE')) {
     throw 'Protected UI Automation content leaked into the helper response.'
   }
@@ -1008,6 +1014,7 @@ try {
   Assert-HelperSuccess $stopped
   $afterStop = Invoke-HelperRequest -InputStream $inputStream -OutputStream $outputStream -Request $focusRequest
   Assert-HelperError -Exchange $afterStop -Code 'LEASE_REVOKED'
+  Set-SmokeProgress 'stop-complete'
 
   $inputStream.Close()
   if (-not $helper.WaitForExit(10000)) {
@@ -1017,6 +1024,7 @@ try {
   if ($helper.ExitCode -ne 0 -or $stderr.Length -ne 0) {
     throw "Packaged Computer Use helper exited unexpectedly: $stderr"
   }
+  Set-SmokeProgress 'eof-complete'
   Write-Host 'Windows Computer Use smoke passed: UIA, WGC PNG, SendInput, protected-target denial, Stop, EOF, and two harmless windows.'
 }
 finally {

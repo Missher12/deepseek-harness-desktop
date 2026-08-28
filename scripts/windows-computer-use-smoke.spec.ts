@@ -37,6 +37,7 @@ describe('Windows installed Computer Use acceptance', () => {
     expect(source).toContain('S-1-16-8192')
     expect(source).toContain('MainWindowHandle')
     expect(source).toContain('same Windows session')
+    expect(source).toContain("Set-SmokeProgress 'beta-image-snapshot-complete'")
     expect(source).toContain("-RequestKind 'list'")
     expect(source).toContain("-RequestKind 'lease.install'")
     expect(source).toContain("-RequestKind 'snapshot'")
