@@ -26,6 +26,7 @@ namespace DshWindowsSmoke
     {
         private const uint TOKEN_ALL_ACCESS = 0x000F01FF;
         private const uint LUA_TOKEN = 0x4;
+        private const int TokenLinkedToken = 19;
         private const uint CREATE_NEW_CONSOLE = 0x10;
         private const uint CREATE_UNICODE_ENVIRONMENT = 0x400;
         private const uint WAIT_OBJECT_0 = 0;
@@ -63,6 +64,12 @@ namespace DshWindowsSmoke
             public uint dwThreadId;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct TOKEN_LINKED_TOKEN
+        {
+            public IntPtr LinkedToken;
+        }
+
         [DllImport("kernel32.dll")]
         private static extern IntPtr GetCurrentProcess();
 
@@ -83,6 +90,14 @@ namespace DshWindowsSmoke
             IntPtr process,
             uint desiredAccess,
             out IntPtr token);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool GetTokenInformation(
+            IntPtr token,
+            int tokenInformationClass,
+            out TOKEN_LINKED_TOKEN tokenInformation,
+            uint tokenInformationLength,
+            out uint returnLength);
 
         [DllImport("advapi32.dll", SetLastError = true)]
         private static extern bool CreateRestrictedToken(
@@ -135,17 +150,32 @@ namespace DshWindowsSmoke
             {
                 if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, out sourceToken))
                     throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenProcessToken failed");
-                if (!CreateRestrictedToken(
+                TOKEN_LINKED_TOKEN linked;
+                uint linkedLength;
+                if (GetTokenInformation(
                         sourceToken,
-                        LUA_TOKEN,
-                        0,
-                        IntPtr.Zero,
-                        0,
-                        IntPtr.Zero,
-                        0,
-                        IntPtr.Zero,
-                        out limitedToken))
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateRestrictedToken failed");
+                        TokenLinkedToken,
+                        out linked,
+                        (uint)Marshal.SizeOf<TOKEN_LINKED_TOKEN>(),
+                        out linkedLength))
+                {
+                    limitedToken = linked.LinkedToken;
+                }
+                else if (!CreateRestrictedToken(
+                             sourceToken,
+                             LUA_TOKEN,
+                             0,
+                             IntPtr.Zero,
+                             0,
+                             IntPtr.Zero,
+                             0,
+                             IntPtr.Zero,
+                             out limitedToken))
+                {
+                    throw new Win32Exception(
+                        Marshal.GetLastWin32Error(),
+                        "Linked and restricted token creation failed");
+                }
 
                 STARTUPINFO startup = new STARTUPINFO();
                 startup.cb = (uint)Marshal.SizeOf<STARTUPINFO>();
