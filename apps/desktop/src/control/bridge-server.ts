@@ -442,6 +442,10 @@ export class DesktopControlBridgeServer implements HarnessControlLifecycle {
       || state.closed
       || state.generation !== pending.generation
       || state.pending.get(id) !== pending) return
+    if (this.now() >= pending.deadlineUnixMs) {
+      this.settleError(state, pending, 'TIMEOUT', 'Desktop control request timed out.')
+      return
+    }
     const message = envelope.message
     if (message.messageKind !== 'response'
       || message.requestId !== pending.request.requestId

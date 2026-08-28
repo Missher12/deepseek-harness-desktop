@@ -351,6 +351,43 @@ describe('DesktopControlBridgeServer', () => {
     }
   })
 
+  it('rejects a backend microtask completion when absolute time reached the deadline before its timer ran', async () => {
+    vi.useFakeTimers()
+    try {
+      let nowUnixMs = 10_000
+      let resolve!: (value: DecodedDesktopControlEnvelope) => void
+      const held = new Promise<DecodedDesktopControlEnvelope>((done) => { resolve = done })
+      let active = true
+      const accepted = vi.fn()
+      const cancelled = vi.fn(async () => { active = false })
+      const request = acquireRequest(10_001)
+      const server = new DesktopControlBridgeServer({
+        backend: backend(async (_request, context) => {
+          expect(context.registerAcquisition({ accept: accepted, cancel: cancelled })).toBe(true)
+          return await held
+        }),
+        now: () => nowUnixMs,
+      })
+      const channel = new FakeChannel(1)
+      server.attach(channel)
+      channel.receive(request)
+      await Promise.resolve()
+
+      nowUnixMs = request.deadlineUnixMs
+      resolve(acquireResponse(request))
+      for (let index = 0; index < 4; index += 1) await Promise.resolve()
+
+      expect(decodeJsonFrame(channel.frames[0]!)).toMatchObject({
+        responseKind: 'error', error: { code: 'TIMEOUT' },
+      })
+      expect(accepted).not.toHaveBeenCalled()
+      expect(cancelled).toHaveBeenCalledOnce()
+      expect(active).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('accepts only a registered acquisition while the exact response remains pending', async () => {
     const request = acquireRequest()
     const accepted = vi.fn()
