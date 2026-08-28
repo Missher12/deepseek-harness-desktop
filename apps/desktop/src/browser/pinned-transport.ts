@@ -1,3 +1,4 @@
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import { connect as connectSocket, isIP, type SocketConnectOpts } from 'node:net'
 import type { Duplex } from 'node:stream'
@@ -11,7 +12,7 @@ import { isBlockedAgentBrowserAddress } from './policy.ts'
 /** Narrow Electron Session proxy surface used by the main-owned tunnel. */
 export interface PinnedNavigationProxySession {
   setProxy(configuration: {
-    readonly mode: 'direct' | 'fixed_servers'
+    readonly mode: 'direct' | 'fixed_servers' | 'system'
     readonly proxyRules?: string
     readonly proxyBypassRules?: string
   }): Promise<void>
@@ -28,7 +29,65 @@ export interface LoopbackPinnedNavigationTransportOptions {
   readonly connect?: PinnedNavigationConnect
 }
 
+/** Narrow Electron proxy challenge facts; credentials stay inside main. */
+export interface PinnedProxyAuthenticationInfo {
+  readonly isProxy: boolean
+  readonly scheme: string
+  readonly host: string
+  readonly port: number
+  readonly realm: string
+}
+
+export type PinnedProxyAuthenticationCallback = (username?: string, password?: string) => void
+
+export interface PinnedProxyAuthenticator {
+  handleAuthentication(
+    authInfo: PinnedProxyAuthenticationInfo,
+    callback: PinnedProxyAuthenticationCallback,
+  ): boolean
+}
+
+interface ActiveProxyAuthenticator {
+  readonly contents: unknown
+  readonly generation: number
+  readonly authenticator: PinnedProxyAuthenticator
+}
+
+/** Main-process single-slot proxy challenge router with generation-owned cleanup. */
+export class BrowserProxyAuthenticationOwner {
+  private active: ActiveProxyAuthenticator | undefined
+
+  register(contents: unknown, generation: number, authenticator: PinnedProxyAuthenticator): { dispose(): void } {
+    if (this.active !== undefined) throw new AgentBrowserError('BUSY', 'browser proxy authentication is busy')
+    if (!Number.isSafeInteger(generation) || generation < 1) {
+      throw new AgentBrowserError('INTERNAL', 'browser proxy generation is invalid')
+    }
+    const active = Object.freeze({ contents, generation, authenticator })
+    this.active = active
+    let disposed = false
+    return Object.freeze({
+      dispose: () => {
+        if (disposed) return
+        disposed = true
+        if (this.active === active) this.active = undefined
+      },
+    })
+  }
+
+  handle(
+    contents: unknown,
+    authInfo: PinnedProxyAuthenticationInfo,
+    callback: PinnedProxyAuthenticationCallback,
+  ): boolean {
+    const active = this.active
+    return active !== undefined && active.contents === contents
+      && active.authenticator.handleAuthentication(authInfo, callback)
+  }
+}
+
 type Resolver = AgentBrowserPinnedNavigationRequest['resolveAndValidate']
+const PROXY_IO_TIMEOUT_MS = 1_000
+const PROXY_MAX_HEADER_BYTES = 4_096
 
 function assertHttpsTarget(value: string): URL {
   let target: URL
@@ -59,7 +118,10 @@ function parseConnectAuthority(authority: string | undefined, hostHeader: string
 
 function endProxyRequest(socket: Duplex, status: string): void {
   if (socket.destroyed) return
-  socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`)
+  const challenge = status.startsWith('407 ')
+    ? 'Proxy-Authenticate: Basic realm="dsh-agent-browser"\r\n'
+    : ''
+  socket.end(`HTTP/1.1 ${status}\r\n${challenge}Connection: close\r\nContent-Length: 0\r\n\r\n`)
 }
 
 /**
@@ -71,6 +133,10 @@ export class LoopbackPinnedNavigationTransport implements AgentBrowserPinnedNavi
   private readonly generation: number
   private readonly isGenerationActive: (generation: number) => boolean
   private readonly connect: PinnedNavigationConnect
+  private readonly proxyUsername = randomBytes(24).toString('base64url')
+  private readonly proxyPassword = randomBytes(32).toString('base64url')
+  private readonly authorizationDigest: Buffer
+  private readonly lifetime = new AbortController()
   private readonly sockets = new Set<Duplex>()
   private server: Server | undefined
   private resolver: Resolver | undefined
@@ -82,6 +148,23 @@ export class LoopbackPinnedNavigationTransport implements AgentBrowserPinnedNavi
     this.generation = options.generation
     this.isGenerationActive = options.isGenerationActive
     this.connect = options.connect ?? (options => connectSocket(options))
+    this.authorizationDigest = createHash('sha256')
+      .update(`Basic ${Buffer.from(`${this.proxyUsername}:${this.proxyPassword}`).toString('base64')}`)
+      .digest()
+  }
+
+  /** Answer only Chromium's exact active loopback proxy challenge without returning credentials. */
+  handleAuthentication(
+    authInfo: PinnedProxyAuthenticationInfo,
+    callback: PinnedProxyAuthenticationCallback,
+  ): boolean {
+    const address = this.server?.address()
+    if (!this.generationActive() || typeof address !== 'object' || address === null
+      || !authInfo.isProxy || authInfo.scheme.toLowerCase() !== 'basic'
+      || authInfo.host !== '127.0.0.1' || authInfo.port !== address.port
+      || authInfo.realm !== 'dsh-agent-browser') return false
+    callback(this.proxyUsername, this.proxyPassword)
+    return true
   }
 
   /** Configure the owning Electron Session and commit one hostname navigation through the tunnel. */
@@ -98,7 +181,7 @@ export class LoopbackPinnedNavigationTransport implements AgentBrowserPinnedNavi
     this.assertActive()
     // Treat setProxy as committed before awaiting it: Electron may apply the
     // configuration even when the promise rejects, so disposal must restore
-    // direct mode on every partial-failure path.
+    // the system proxy baseline on every partial-failure path.
     this.proxyConfigured = true
     await this.session.setProxy({
       mode: 'fixed_servers',
@@ -113,9 +196,10 @@ export class LoopbackPinnedNavigationTransport implements AgentBrowserPinnedNavi
     await request.commit()
   }
 
-  /** Close every tunnel and return only this surface Session to direct networking. */
+  /** Close every tunnel and restore this surface Session to Electron's system proxy baseline. */
   async dispose(): Promise<void> {
     this.disposed = true
+    this.lifetime.abort(new AgentBrowserError('CANCELLED', 'browser proxy generation was disposed'))
     this.resolver = undefined
     for (const socket of this.sockets) socket.destroy()
     this.sockets.clear()
@@ -123,9 +207,12 @@ export class LoopbackPinnedNavigationTransport implements AgentBrowserPinnedNavi
     const failures: unknown[] = []
     if (server !== undefined) {
       try {
-        await new Promise<void>((resolve, reject) => {
+        const closed = new Promise<void>((resolve, reject) => {
           server.close((error) => { if (error === undefined) resolve(); else reject(error) })
         })
+        server.closeIdleConnections()
+        server.closeAllConnections()
+        await closed
         if (this.server === server) this.server = undefined
       } catch (error) {
         if (!server.listening && this.server === server) this.server = undefined
@@ -134,7 +221,7 @@ export class LoopbackPinnedNavigationTransport implements AgentBrowserPinnedNavi
     }
     if (this.proxyConfigured) {
       try {
-        await this.session.setProxy({ mode: 'direct' })
+        await this.session.setProxy({ mode: 'system' })
         await this.session.forceReloadProxyConfig()
         this.proxyConfigured = false
       } catch (error) { failures.push(error) }
@@ -160,12 +247,37 @@ export class LoopbackPinnedNavigationTransport implements AgentBrowserPinnedNavi
   private async ensureListening(): Promise<number> {
     const current = this.server?.address()
     if (typeof current === 'object' && current !== null) return current.port
-    const server = createServer((_request, response) => {
+    const server = createServer({
+      maxHeaderSize: PROXY_MAX_HEADER_BYTES,
+      headersTimeout: PROXY_IO_TIMEOUT_MS,
+      requestTimeout: PROXY_IO_TIMEOUT_MS,
+    }, (request, response) => {
+      if (!this.isAuthorized(request.headers['proxy-authorization'])) {
+        response.writeHead(407, {
+          'Proxy-Authenticate': 'Basic realm="dsh-agent-browser"',
+          Connection: 'close',
+          'Content-Length': '0',
+        })
+        response.end()
+        return
+      }
       response.writeHead(405, { Connection: 'close', 'Content-Length': '0' })
       response.end()
     })
     server.on('connect', (request, client, head) => {
-      void this.handleConnect(request.url, request.headers.host, client, head)
+      void this.handleConnect(
+        request.url,
+        request.headers.host,
+        request.headers['proxy-authorization'],
+        client,
+        head,
+      )
+    })
+    server.maxHeadersCount = 32
+    server.keepAliveTimeout = PROXY_IO_TIMEOUT_MS
+    server.on('connection', (socket) => {
+      socket.setTimeout(PROXY_IO_TIMEOUT_MS, () => { socket.destroy() })
+      this.trackSocket(socket)
     })
     server.on('clientError', (_error, socket) => { endProxyRequest(socket, '400 Bad Request') })
     this.server = server
@@ -186,17 +298,22 @@ export class LoopbackPinnedNavigationTransport implements AgentBrowserPinnedNavi
   private async handleConnect(
     authority: string | undefined,
     hostHeader: string | string[] | undefined,
+    proxyAuthorization: string | string[] | undefined,
     client: Duplex,
     head: Buffer,
   ): Promise<void> {
     const target = parseConnectAuthority(authority, hostHeader)
     const resolver = this.resolver
+    if (!this.isAuthorized(proxyAuthorization)) {
+      endProxyRequest(client, '407 Proxy Authentication Required')
+      return
+    }
     if (target === undefined || resolver === undefined || !this.generationActive()) {
       endProxyRequest(client, '403 Forbidden')
       return
     }
     try {
-      const binding = await resolver(target.href, undefined)
+      const binding = await resolver(target.href, this.lifetime.signal)
       if (!this.generationActive()
         || binding.url !== target.href || binding.hostname !== target.hostname
         || !this.validAddresses(binding.addresses)) {
@@ -205,7 +322,6 @@ export class LoopbackPinnedNavigationTransport implements AgentBrowserPinnedNavi
       }
       const address = binding.addresses[0]
       const upstream = this.connect({ host: address, port: 443 })
-      this.trackSocket(client)
       this.trackSocket(upstream)
       let established = false
       upstream.once('connect', () => {
@@ -234,5 +350,10 @@ export class LoopbackPinnedNavigationTransport implements AgentBrowserPinnedNavi
   private trackSocket(socket: Duplex): void {
     this.sockets.add(socket)
     socket.once('close', () => { this.sockets.delete(socket) })
+  }
+
+  private isAuthorized(value: string | string[] | undefined): boolean {
+    const received = createHash('sha256').update(typeof value === 'string' ? value : '').digest()
+    return timingSafeEqual(received, this.authorizationDigest)
   }
 }

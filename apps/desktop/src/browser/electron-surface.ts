@@ -134,6 +134,8 @@ export function createElectronEphemeralSurface(
       await session.clearCache()
       await session.clearAuthCache()
     },
+    commitTransfer() { return Promise.resolve() },
+    releaseTransfer() { return Promise.resolve() },
   }
   unregister = options.registry.register(resource)
   return resource

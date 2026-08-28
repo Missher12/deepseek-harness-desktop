@@ -12,10 +12,12 @@ export interface BrowserSurfaceResource {
   readonly kind: 'ephemeral' | 'human-persistent'
   installSecurityHandlers(generation: number): { dispose(): void }
   mount(mountToken: string): Promise<void>
+  commitTransfer(): Promise<void>
   hide(mountToken: string): Promise<void>
   detachDebugger(): Promise<void>
   teardownView(): Promise<void>
   clearStorage(): Promise<void>
+  releaseTransfer(): Promise<void>
 }
 
 /** Trusted coordinator seam; renderer state never enters this interface. */
@@ -79,7 +81,10 @@ interface PendingSurface {
   readonly promise: Promise<BrowserSurfaceMount>
 }
 
-interface CleanupOperation { run(): Promise<void> }
+interface CleanupOperation {
+  run(): Promise<void>
+  readonly requiresPriorSuccess?: boolean
+}
 
 interface FailedMountCleanup {
   readonly sessionId: string
@@ -221,6 +226,7 @@ export class BrowserSurfaceManager {
       nonEmpty(mountToken, 'browser mount token')
       handlers = resource.installSecurityHandlers(generation)
       await resource.mount(mountToken)
+      await resource.commitTransfer()
       const mount = Object.freeze({
         sessionId,
         surfaceId: resource.surfaceId,
@@ -257,6 +263,7 @@ export class BrowserSurfaceManager {
     await attempt(() => active.resource.teardownView())
     if (active.resource.kind === 'ephemeral') await attempt(() => active.resource.clearStorage())
     await attempt(() => this.coordinator.revoke(active.mount.sessionId, active.mount.generation))
+    if (failure === undefined) await attempt(() => active.resource.releaseTransfer())
     if (failure !== undefined) throw new AgentBrowserError('INTERNAL', 'browser surface cleanup did not reach quiescence')
     if (this.active === active) this.active = undefined
   }
@@ -275,6 +282,10 @@ export class BrowserSurfaceManager {
         ...resource.kind === 'ephemeral' ? [{ run: () => resource.clearStorage() }] : [],
       ],
       { run: () => this.coordinator.revoke(sessionId, generation) },
+      ...resource === undefined ? [] : [{
+        run: () => resource.releaseTransfer(),
+        requiresPriorSuccess: true,
+      }],
     ]
     return await this.runCleanupOperations(operations)
   }
@@ -290,11 +301,17 @@ export class BrowserSurfaceManager {
 
   private async runCleanupOperations(operations: readonly CleanupOperation[]): Promise<readonly CleanupOperation[]> {
     const failed: CleanupOperation[] = []
+    let priorFailure = false
     for (const operation of operations) {
+      if (operation.requiresPriorSuccess === true && priorFailure) {
+        failed.push(operation)
+        continue
+      }
       try {
         await operation.run()
       } catch {
         failed.push(operation)
+        priorFailure = true
       }
     }
     return failed

@@ -53,7 +53,10 @@ import { CdpBrowserAdapter } from './browser/cdp-adapter.ts'
 import { AgentBrowserUrlPolicy } from './browser/policy.ts'
 import { BrowserSurfaceManager } from './browser/surface-manager.ts'
 import { BrowserDesktopControlAdapter } from './browser/control-adapter.ts'
-import { LoopbackPinnedNavigationTransport } from './browser/pinned-transport.ts'
+import {
+  BrowserProxyAuthenticationOwner,
+  LoopbackPinnedNavigationTransport,
+} from './browser/pinned-transport.ts'
 import {
   createElectronEphemeralSurface,
   ElectronBrowserSurfaceRegistry,
@@ -190,6 +193,7 @@ function getControlAudit(): Promise<ControlAuditLog | undefined> {
 }
 const controlLifecycle: { bridge?: DesktopControlBridgeServer } = {}
 const browserResources = new ElectronBrowserSurfaceRegistry()
+const browserProxyAuthentication = new BrowserProxyAuthenticationOwner()
 const browserTakeover = new BrowserTakeoverAuthority({
   source: {
     captureVisiblePersistentIntent: () => workbenchBrowser?.captureVisiblePersistentIntent(),
@@ -281,6 +285,11 @@ const browserControlAdapter = new BrowserDesktopControlAdapter({
       generation: mount.generation,
       isGenerationActive: generation => generationActive && generation === mount.generation,
     })
+    const proxyAuthentication = browserProxyAuthentication.register(
+      resource.webContents,
+      mount.generation,
+      transport,
+    )
     const semantic = new CdpBrowserAdapter({
       webContents: resource.webContents,
       surfaceId: mount.surfaceId,
@@ -292,6 +301,7 @@ const browserControlAdapter = new BrowserDesktopControlAdapter({
     return Promise.resolve(Object.freeze({
       semantic,
       disposeTransport: async () => {
+        proxyAuthentication.dispose()
         generationActive = false
         await transport.dispose()
       },
@@ -355,6 +365,12 @@ const controlCoordinator = new DesktopControlCoordinator({
       leaseRevision: event.snapshot.leaseRevision,
     })
   },
+})
+app.on('login', (event, webContents, _details, authInfo, callback) => {
+  browserProxyAuthentication.handle(webContents, authInfo, (username, password) => {
+    event.preventDefault()
+    callback(username, password)
+  })
 })
 const controlBridge = new DesktopControlBridgeServer({
   backend: controlCoordinator,
@@ -656,8 +672,9 @@ ipcMain.handle('desktop:workbench-browser-show', async (event, value: unknown) =
   if (!isHarnessSender(event) || !isDesktopBrowserBounds(value) || workbenchBrowser === undefined) {
     throw new Error('Untrusted workbench Browser request.')
   }
+  const snapshot = await workbenchBrowser.show(value)
   workbenchBrowserBounds = value
-  return await workbenchBrowser.show(value)
+  return snapshot
 })
 
 ipcMain.handle('desktop:workbench-browser-hide', async (event) => {

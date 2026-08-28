@@ -11,6 +11,12 @@ import {
 } from './electron-surface.ts'
 import type { BrowserSecurityHandlerOwner } from './policy.ts'
 
+interface PersistentBrowserTransfer {
+  readonly intent: BrowserPersistentGiveIntent
+  readonly wasVisible: boolean
+  phase: 'reserved' | 'committed'
+}
+
 export class WorkbenchBrowserController implements BrowserPersistentTakeoverSource {
   private view: WebContentsView | undefined
   private error: string | null = null
@@ -19,6 +25,7 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
   private viewGeneration = 0
   private viewIdentity: string | undefined
   private visible = false
+  private transfer: PersistentBrowserTransfer | undefined
   private readonly denyDownload = (event: Electron.Event): void => { event.preventDefault() }
 
   constructor(
@@ -28,6 +35,7 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
   ) {}
 
   show(bounds: DesktopBrowserBounds): Promise<DesktopBrowserSnapshot> {
+    if (this.transfer !== undefined) return Promise.reject(this.transferBusy())
     const view = this.ensureView()
     view.setBounds(this.clip(bounds))
     view.setVisible(true)
@@ -36,6 +44,7 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
   }
 
   async control(request: DesktopBrowserRequest): Promise<DesktopBrowserSnapshot> {
+    this.assertHumanOwned()
     const contents = this.ensureView().webContents
     if (request.kind === 'navigate') {
       const target = normalizeBrowserTarget(request.value)
@@ -52,6 +61,7 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
   }
 
   hide(): Promise<void> {
+    if (this.transfer !== undefined) return Promise.reject(this.transferBusy())
     const view = this.view
     if (view === undefined) return Promise.resolve()
     this.view = undefined
@@ -70,6 +80,7 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
   }
 
   private ensureView(): WebContentsView {
+    this.assertHumanOwned()
     if (this.view !== undefined && !this.view.webContents.isDestroyed()) return this.view
     const view = new WebContentsView({ webPreferences: {
       sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true,
@@ -107,7 +118,8 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
   captureVisiblePersistentIntent(): BrowserPersistentGiveIntent | undefined {
     const view = this.view
     const instanceId = this.viewIdentity
-    if (!this.visible || view === undefined || view.webContents.isDestroyed() || instanceId === undefined) return undefined
+    if (this.transfer !== undefined || !this.visible || view === undefined
+      || view.webContents.isDestroyed() || instanceId === undefined) return undefined
     return Object.freeze({ instanceId, generation: this.viewGeneration })
   }
 
@@ -116,21 +128,25 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
     const view = this.view
     const partition = this.partition
     const owner = this.securityOwner
+    if (this.transfer !== undefined) {
+      throw new AgentBrowserError('BUSY', 'persistent browser transfer is already active')
+    }
     if (!this.visible || view === undefined || partition === undefined || owner === undefined
       || view.webContents.isDestroyed() || intent.instanceId !== this.viewIdentity
       || intent.generation !== this.viewGeneration) {
       throw new AgentBrowserError('STALE_REF', 'visible persistent browser changed before transfer')
     }
     const surfaceId = intent.instanceId
-    this.view = undefined
-    this.partition = undefined
-    this.securityOwner = undefined
-    this.viewIdentity = undefined
-    this.visible = false
+    const transfer: PersistentBrowserTransfer = {
+      intent: Object.freeze({ ...intent }),
+      wasVisible: this.visible,
+      phase: 'reserved',
+    }
+    this.transfer = transfer
     const window = this.window
-    const denyDownload = this.denyDownload
     let mountToken: string | undefined
     let closed = false
+    let released = false
     let unregister = (): void => undefined
     const resource: ElectronBrowserSurfaceResource = {
       surfaceId,
@@ -153,12 +169,24 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
           try { return new URL(value).protocol === 'https:' } catch { return false }
         },
       }),
-      mount(token) {
-        if (closed || mountToken !== undefined && mountToken !== token) {
+      mount: (token) => {
+        if (closed || this.transfer !== transfer
+          || mountToken !== undefined && mountToken !== token) {
           throw new AgentBrowserError('STALE_REF', 'browser mount token is stale')
         }
         mountToken = token
         view.setVisible(true)
+        return Promise.resolve()
+      },
+      commitTransfer: () => {
+        if (closed || this.transfer !== transfer || mountToken === undefined
+          || this.view !== view || this.partition !== partition
+          || this.securityOwner !== owner
+          || this.viewIdentity !== transfer.intent.instanceId
+          || this.viewGeneration !== transfer.intent.generation) {
+          throw new AgentBrowserError('STALE_REF', 'persistent browser transfer is stale')
+        }
+        transfer.phase = 'committed'
         return Promise.resolve()
       },
       hide(token) {
@@ -169,26 +197,52 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
         // CdpBrowserAdapter is the only owner allowed to detach its debugger.
         return Promise.resolve()
       },
-      teardownView() {
+      teardownView: () => {
         if (closed) return Promise.resolve()
         closed = true
-        view.setVisible(false)
-        window.contentView.removeChildView(view)
-        partition.removeListener('will-download', denyDownload)
         unregister()
-        view.webContents.close({ waitForBeforeUnload: false })
         return Promise.resolve()
       },
       async clearStorage() {
         // Persistent human state is intentionally retained across Stop.
       },
+      releaseTransfer: () => {
+        if (released) return Promise.resolve()
+        if (!closed || this.transfer !== transfer
+          || this.view !== view || this.partition !== partition
+          || this.securityOwner !== owner
+          || this.viewIdentity !== transfer.intent.instanceId
+          || this.viewGeneration !== transfer.intent.generation) {
+          throw new AgentBrowserError('STALE_REF', 'persistent browser release is stale')
+        }
+        released = true
+        this.transfer = undefined
+        this.visible = transfer.wasVisible
+        view.setVisible(transfer.wasVisible)
+        this.publish()
+        return Promise.resolve()
+      },
     }
-    unregister = this.registry.register(resource)
+    try {
+      unregister = this.registry.register(resource)
+    } catch (error) {
+      if (this.transfer === transfer) this.transfer = undefined
+      throw error
+    }
     return Promise.resolve(resource)
   }
 
   private publish(): void {
-    if (this.view !== undefined && !this.view.webContents.isDestroyed()) this.emit(this.snapshot())
+    if (this.transfer === undefined && this.view !== undefined
+      && !this.view.webContents.isDestroyed()) this.emit(this.snapshot())
+  }
+
+  private assertHumanOwned(): void {
+    if (this.transfer !== undefined) throw this.transferBusy()
+  }
+
+  private transferBusy(): AgentBrowserError {
+    return new AgentBrowserError('BUSY', 'persistent browser is assigned to an Agent')
   }
 
   private snapshot(): DesktopBrowserSnapshot {

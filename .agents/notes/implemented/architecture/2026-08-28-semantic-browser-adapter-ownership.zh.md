@@ -20,7 +20,7 @@ Desktop 浏览器层把全局表层所有权、页面策略与封闭的 CDP 适�
 
 单个 `BrowserSurfaceManager` 实例拥有进程级唯一 Agent 浏览器位置。acquire 输入携带由受信任提供方得出的官方会话。首次调用会原子保留该会话，并且只会消费 coordinator 已验证、精确指向 `persist:dsh-workbench-browser` 实例的 Give intent；否则，它会创建具备唯一名称的非持久化表层，并在返回前完成可见挂载。只有携带精确会话与 generation 的调用才能复用活动表层；另一个会话只会收到 `BUSY`，不会消费新 intent，也不会对所有者调用 mount、hide 或 teardown。
 
-每次 mount 都有 generation 与 mount token。陈旧的 hide 和 Stop token 不产生影响，清理失败时仍以封闭失败方式保留所有者，不会接纳替代者。Stop 按顺序尝试属于该 generation 的 handler dispose、debugger detach、view teardown、临时存储清理与 coordinator revoke；即使其中一步失败，也会等待所有步骤，并且只在整个序列达到完全停稳（quiescence）后释放所有权。在发布前 mount 失败时遵循同一规则：所有清理步骤都会执行，失败步骤仍绑定未发布的 session 与 generation，所有 acquire 保持 `BUSY`，只有携带精确身份的生命周期重试在这些步骤成功后才能释放位置。被转移的人工持久化表层绝不会清理存储；临时 Agent partition 始终不同于 Workbench partition。
+每次 mount 都有 generation 与 mount token。陈旧的 hide 和 Stop token 不产生影响，清理失败时仍以封闭失败方式保留所有者，不会接纳替代者。持久化转移分为两个阶段：reserve 保留精确的人工 view、owner、identity、bounds、visibility、URL、title 与 tab state，只有安全 mount 与 commit 完成后才发布；从 reserve 开始到精确 cleanup release 结束，renderer 发起的人工 show、control、hide 或隐式创建 view 全部保持 `BUSY`。commit 前失败时绝不会关闭或替换人工 view，并且只会在 handler dispose、debugger detach、view teardown 与 coordinator revoke 全部成功后恢复它。Stop 遵循相同顺序，即使其中一步失败也会等待所有清理步骤，只有最终 release 达到完全停稳（quiescence）后才释放所有权。未发布清理失败时，失败步骤仍绑定原 session 与 generation，所有 acquire 保持 `BUSY`，只有携带精确身份的生命周期重试在这些步骤成功后才能释放位置。被转移的人工持久化表层绝不会清理存储；临时 Agent partition 始终不同于 Workbench partition。
 
 表层资源会在 mount 前安装 popup、导航、下载与权限防护。防护会拒绝所有新窗口、取消下载，并让 permission check 与 permission request 两条路径拒绝所有权限，包括相机、麦克风、位置与剪贴板访问。长期存在的 main-process handler owner 只安装一次 Electron 的 window-open 与 permission 单槽 dispatcher，把既有人工 handler 保留为基础层，并在不把这些槽写回 `null` 的前提下添加或移除 Agent generation；陈旧 dispose 无法移除较新 generation，也无法移除下面的人工行为。既有事件 listener 同样保持原位，每个 generation 只移除自己安装的导航与下载 listener。适配器会在每次自有 debugger 附加时启用 `Page.setInterceptFileChooserDialog`，在 detach 该自有 debugger 前将其关闭，并且不暴露任何设置文件的操作。
 
@@ -28,7 +28,7 @@ Desktop 浏览器层把全局表层所有权、页面策略与封闭的 CDP 适�
 
 [`main.ts`](../../../../apps/desktop/src/main.ts) 拥有唯一的 Electron 表层 registry、`BrowserSurfaceManager`、语义适配器、pinned transport、takeover authority 与 `DesktopControlCoordinator` 浏览器适配器。临时 acquire 会创建使用唯一非持久化 partition、已可见挂载的 `WebContentsView`。经过验证的 Give 只转移精确的可见 Workbench view 及其 `persist:dsh-workbench-browser` partition。两条路径都从官方 provider session 得出 owner，并且通过拥有该 view 的精确 Electron `Session` 上的 `resolveHost()` 获取 DNS 结果。
 
-main 拥有的 loopback transport 会为一个活动 generation 绑定不公开的随机端口，并配置所属 Session 把 HTTP 与 HTTPS 代理流量都送入该端口，同时移除 Chromium 的隐式 loopback bypass。普通 HTTP 请求会失败；CONNECT 只接受没有 userinfo、Host authority 完全匹配且端口为 443 的请求。每个获准 CONNECT 都会通过 Chromium Session 重新解析，并只拨号一个已验证的 public IP；TLS 仍使用原 hostname 完成 SNI 与证书校验。Stop、revoke、activation rollback 与 shutdown 会关闭全部隧道并把 Session 网络恢复为 direct；proxy 配置只完成一部分即失败时也走同一清理路径。
+main 拥有的 loopback transport 会为一个活动 generation 绑定不公开的随机端口，并配置所属 Session 把 HTTP 与 HTTPS 代理流量都送入该端口，同时移除 Chromium 的隐式 loopback bypass。每个 generation 还拥有随机 proxy 凭据；preload、工具与 transport API 都不会暴露这些凭据。main-process Electron `login` handler 只会响应 WebContents、loopback port、Basic scheme 与 realm 都精确匹配的活动 generation，proxy 会以恒定时间比较完整 authorization 值。未认证流量只会收到 proxy authentication challenge；已认证的普通 HTTP 请求仍会失败，CONNECT 也只接受没有 userinfo、Host authority 完全匹配且端口为 443 的请求。每个获准 CONNECT 都会通过 Chromium Session 重新解析，并只拨号一个已验证的 public IP；TLS 仍使用原 hostname 完成 SNI 与证书校验。server 从接收连接起就跟踪每个 client，设置较短的 header 与 request timeout，并在 dispose 时销毁 partial-header、等待 resolver 与已建立的 socket。Stop、revoke、activation rollback 与 shutdown 会关闭全部隧道并把 Session 网络恢复为 system proxy 基线；proxy 配置只完成一部分即失败时也走同一清理路径。
 
 preload 只向受信任 Harness main frame 暴露无参数的 Give、Stop 与 status 方法。Give 为下一次官方 acquire 保存 main 拥有的不透明 intent；status 只暴露 human／given／agent／stopping 阶段与已登录警告。Workbench 工具栏会在 Give 前要求确认，并在清理完成前保持 Stop pending。非 minimal Desktop preset 包含 `tool-browser-control`；它的 Cordis injection 只在 Desktop 拥有的 `BrowserControl` provider 存在期间注册闭集工具。没有该 provider 的 CLI 与 Web 组合不会拥有浏览器工具。
 
@@ -52,7 +52,7 @@ CDP 方法闭集仅包含 `Accessibility.getRootAXNode`、有界广度优先的 
 
 ## 验证
 
-focused browser、policy、pinned-transport、coordinator adapter、takeover、preload、preset 与 Workbench client spec 会使用 fake debugger、WebContents、Session、proxy socket、IPC registry 与表层资源。它们固定了附加所有权与竞态、延迟响应与 ref 失效、所有资源边界、snapshot-to-action 敏感性变化、click 时的焦点重定向、CDP 和动作闭集、截图缩减与校验、public-to-private DNS rebinding 且不 load／connect、CONNECT authority 与 proxy bypass 策略、稳定恢复人工 handler、会话原子所有权、陈旧 token、持久化转移、失败清理的 reservation 与重试、可信无参数 IPC、Stop pending 状态、条件工具注册，以及 revoke。Desktop 与 Workbench TypeScript 检查和仓库 scoped oxlint 覆盖该组合。
+focused browser、policy、pinned-transport、coordinator adapter、takeover、preload、preset 与 Workbench client spec 会使用 fake debugger、WebContents、Session、proxy socket、IPC registry 与表层资源。它们固定了附加所有权与竞态、延迟响应与 ref 失效、所有资源边界、snapshot-to-action 敏感性变化、click 时的焦点重定向、CDP 和动作闭集、截图缩减与校验、public-to-private DNS rebinding 且不 load／connect、带认证的 CONNECT authority 与 proxy bypass 策略、partial-header 和等待 resolver 时的 dispose、system proxy 恢复、稳定恢复人工 handler、会话原子所有权、陈旧 token、两阶段持久化转移、失败清理的 reservation 与重试、可信无参数 IPC、Stop pending 状态、条件工具注册，以及 revoke。Desktop 与 Workbench TypeScript 检查和仓库 scoped oxlint 覆盖该组合。
 
 ## 备选方案
 

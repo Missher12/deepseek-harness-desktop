@@ -18,6 +18,8 @@ function resource(): BrowserSurfaceResource {
   return {
     surfaceId: 'human-surface', partition: 'persist:dsh-workbench-browser', kind: 'human-persistent',
     installSecurityHandlers: () => ({ dispose() {} }),
+    commitTransfer: async () => {},
+    releaseTransfer: async () => {},
     mount: async () => {}, hide: async () => {}, detachDebugger: async () => {},
     teardownView: async () => {}, clearStorage: async () => {},
   }

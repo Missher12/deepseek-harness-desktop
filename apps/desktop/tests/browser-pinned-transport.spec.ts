@@ -1,8 +1,11 @@
 import { Duplex } from 'node:stream'
-import { connect } from 'node:net'
+import { connect, type Socket } from 'node:net'
 import { describe, expect, it, vi } from 'vitest'
 import { AgentBrowserError } from '../src/browser/contracts.ts'
-import { LoopbackPinnedNavigationTransport } from '../src/browser/pinned-transport.ts'
+import {
+  BrowserProxyAuthenticationOwner,
+  LoopbackPinnedNavigationTransport,
+} from '../src/browser/pinned-transport.ts'
 
 class FakeProxySession {
   readonly configurations: Record<string, unknown>[] = []
@@ -11,6 +14,12 @@ class FakeProxySession {
   async setProxy(configuration: Record<string, unknown>): Promise<void> {
     this.configurations.push(configuration)
   }
+}
+
+class Deferred<T> {
+  readonly promise: Promise<T>
+  resolve!: (value: T | PromiseLike<T>) => void
+  constructor() { this.promise = new Promise((resolve) => { this.resolve = resolve }) }
 }
 
 function inertSocket(): Duplex {
@@ -46,12 +55,77 @@ async function rawProxyRequest(port: number, request: string): Promise<string> {
   })
 }
 
+async function openProxySocket(port: number, request: string): Promise<Socket> {
+  const socket = connect({ host: '127.0.0.1', port })
+  await new Promise<void>((resolve, reject) => {
+    const failed = (error: Error): void => { reject(error) }
+    socket.once('error', failed)
+    socket.once('connect', () => {
+      socket.removeListener('error', failed)
+      resolve()
+    })
+  })
+  socket.on('error', () => {})
+  socket.write(request)
+  return socket
+}
+
+async function settlesPromptly(operation: Promise<void>): Promise<'disposed' | 'timeout'> {
+  return await Promise.race([
+    operation.then(() => 'disposed' as const),
+    new Promise<'timeout'>((resolve) => { setTimeout(() => { resolve('timeout') }, 150) }),
+  ])
+}
+
+function proxyAuthorization(transport: LoopbackPinnedNavigationTransport, port: number): string {
+  let credentials: readonly [string, string] | undefined
+  const handled = transport.handleAuthentication({
+    isProxy: true,
+    scheme: 'basic',
+    host: '127.0.0.1',
+    port,
+    realm: 'dsh-agent-browser',
+  }, (username, password) => {
+    if (username !== undefined && password !== undefined) credentials = [username, password]
+  })
+  if (!handled || credentials === undefined) throw new Error('proxy authentication was not supplied')
+  return `Basic ${Buffer.from(credentials.join(':')).toString('base64')}`
+}
+
+function authorizeRequest(request: string, authorization: string): string {
+  return request.replace('\r\n\r\n', `\r\nProxy-Authorization: ${authorization}\r\n\r\n`)
+}
+
 function navigation(url: string, addresses: readonly string[]) {
   return Object.freeze({ url: new URL(url).href, hostname: new URL(url).hostname, addresses })
 }
 
 describe('loopback pinned HTTPS CONNECT transport', () => {
-  it('pins an accepted CONNECT socket to the resolver-selected public IP', async () => {
+  it('routes Chromium proxy challenges only to the exact active generation owner', () => {
+    const owner = new BrowserProxyAuthenticationOwner()
+    const firstContents = {}
+    const secondContents = {}
+    const firstAuthenticator = { handleAuthentication: vi.fn(() => true) }
+    const secondAuthenticator = { handleAuthentication: vi.fn(() => true) }
+    const challenge = {
+      isProxy: true, scheme: 'basic', host: '127.0.0.1', port: 1234, realm: 'dsh-agent-browser',
+    }
+    const callback = vi.fn()
+
+    const first = owner.register(firstContents, 1, firstAuthenticator)
+    expect(owner.handle(secondContents, challenge, callback)).toBe(false)
+    expect(owner.handle(firstContents, challenge, callback)).toBe(true)
+    first.dispose()
+    const second = owner.register(secondContents, 2, secondAuthenticator)
+    first.dispose()
+
+    expect(owner.handle(firstContents, challenge, callback)).toBe(false)
+    expect(owner.handle(secondContents, challenge, callback)).toBe(true)
+    expect(secondAuthenticator.handleAuthentication).toHaveBeenCalledOnce()
+    second.dispose()
+  })
+
+  it('requires generation-private Chromium proxy authentication before pinning CONNECT', async () => {
     const session = new FakeProxySession()
     const connector = vi.fn(() => inertSocket())
     const resolveAndValidate = vi.fn(async (url: string) => navigation(url, ['93.184.216.34']))
@@ -63,14 +137,22 @@ describe('loopback pinned HTTPS CONNECT transport', () => {
     })
 
     await transport.load({ url: 'https://example.test/path', resolveAndValidate, commit: async () => {} })
+    const port = proxyPort(session)
+    const unauthenticated = await rawProxyRequest(
+      port,
+      'CONNECT example.test:443 HTTP/1.1\r\nHost: example.test:443\r\n\r\n',
+    )
+    expect(unauthenticated).toContain('407 Proxy Authentication Required')
+    expect(connector).not.toHaveBeenCalled()
+    const authorization = proxyAuthorization(transport, port)
     const response = await rawProxyRequest(
       proxyPort(session),
-      'CONNECT example.test:443 HTTP/1.1\r\nHost: example.test:443\r\n\r\n',
+      authorizeRequest('CONNECT example.test:443 HTTP/1.1\r\nHost: example.test:443\r\n\r\n', authorization),
     )
 
     expect(response).toContain('200 Connection Established')
     expect(connector).toHaveBeenCalledWith(expect.objectContaining({ host: '93.184.216.34', port: 443 }))
-    expect(resolveAndValidate).toHaveBeenLastCalledWith('https://example.test/', undefined)
+    expect(resolveAndValidate).toHaveBeenLastCalledWith('https://example.test/', expect.any(AbortSignal))
     const configuration = session.configurations[0]
     expect(configuration?.proxyBypassRules).toBe('<-loopback>')
     if (typeof configuration?.proxyRules !== 'string') throw new Error('proxy rules were not configured')
@@ -95,9 +177,10 @@ describe('loopback pinned HTTPS CONNECT transport', () => {
     })
 
     await transport.load({ url: 'https://rebind.test/', resolveAndValidate, commit: async () => {} })
+    const authorization = proxyAuthorization(transport, proxyPort(session))
     const response = await rawProxyRequest(
       proxyPort(session),
-      'CONNECT rebind.test:443 HTTP/1.1\r\nHost: rebind.test:443\r\n\r\n',
+      authorizeRequest('CONNECT rebind.test:443 HTTP/1.1\r\nHost: rebind.test:443\r\n\r\n', authorization),
     )
 
     expect(response).toContain('403 Forbidden')
@@ -124,12 +207,71 @@ describe('loopback pinned HTTPS CONNECT transport', () => {
       commit: async () => {},
     })
 
-    expect(await rawProxyRequest(proxyPort(session), request)).toContain(status)
+    const authorization = proxyAuthorization(transport, proxyPort(session))
+    expect(await rawProxyRequest(proxyPort(session), authorizeRequest(request, authorization))).toContain(status)
     expect(connector).not.toHaveBeenCalled()
     await transport.dispose()
   })
 
-  it('restores direct mode when Electron partially applies a rejected proxy configuration', async () => {
+  it('destroys a client that stalls before completing proxy headers during disposal', async () => {
+    const session = new FakeProxySession()
+    const transport = new LoopbackPinnedNavigationTransport({
+      session,
+      generation: 5,
+      isGenerationActive: () => true,
+    })
+    await transport.load({
+      url: 'https://example.test/',
+      resolveAndValidate: async url => navigation(url, ['93.184.216.34']),
+      commit: async () => {},
+    })
+    const socket = await openProxySocket(proxyPort(session), 'CONNECT example.test:443 HTTP/1.1\r\n')
+
+    const disposal = transport.dispose()
+    const outcome = await settlesPromptly(disposal)
+    socket.destroy()
+    await disposal
+
+    expect(outcome).toBe('disposed')
+  })
+
+  it('destroys an authenticated client while CONNECT resolution is pending', async () => {
+    const session = new FakeProxySession()
+    const pending = new Deferred<ReturnType<typeof navigation>>()
+    const connector = vi.fn(() => inertSocket())
+    let resolutions = 0
+    let connectSignal: AbortSignal | undefined
+    const resolveAndValidate = vi.fn(async (url: string, signal?: AbortSignal) => {
+      resolutions += 1
+      if (resolutions === 2) connectSignal = signal
+      return resolutions === 1 ? navigation(url, ['93.184.216.34']) : await pending.promise
+    })
+    const transport = new LoopbackPinnedNavigationTransport({
+      session,
+      generation: 6,
+      isGenerationActive: () => true,
+      connect: connector,
+    })
+    await transport.load({ url: 'https://example.test/', resolveAndValidate, commit: async () => {} })
+    const port = proxyPort(session)
+    const socket = await openProxySocket(port, authorizeRequest(
+      'CONNECT example.test:443 HTTP/1.1\r\nHost: example.test:443\r\n\r\n',
+      proxyAuthorization(transport, port),
+    ))
+    await vi.waitFor(() => { expect(resolveAndValidate).toHaveBeenCalledTimes(2) })
+
+    const disposal = transport.dispose()
+    const outcome = await settlesPromptly(disposal)
+    expect(connectSignal?.aborted).toBe(true)
+    socket.destroy()
+    pending.resolve(navigation('https://example.test/', ['93.184.216.34']))
+    await disposal
+
+    expect(outcome).toBe('disposed')
+    expect(connector).not.toHaveBeenCalled()
+  })
+
+  it('restores the owning Electron Session to its prior system proxy mode after partial apply', async () => {
     const session = new FakeProxySession()
     const setProxy = vi.spyOn(session, 'setProxy')
       .mockRejectedValueOnce(new Error('proxy apply interrupted'))
@@ -147,7 +289,7 @@ describe('loopback pinned HTTPS CONNECT transport', () => {
     })).rejects.toThrow('proxy apply interrupted')
     await transport.dispose()
 
-    expect(setProxy).toHaveBeenLastCalledWith({ mode: 'direct' })
+    expect(setProxy).toHaveBeenLastCalledWith({ mode: 'system' })
     expect(session.forceReloadProxyConfig).toHaveBeenCalledOnce()
   })
 })

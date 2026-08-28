@@ -225,6 +225,8 @@ class FakeSurface implements BrowserSurfaceResource {
   readonly log: string[]
   visible = false
   hideCalls = 0
+  commitCalls = 0
+  releaseCalls = 0
 
   constructor(
     readonly surfaceId: string,
@@ -244,6 +246,9 @@ class FakeSurface implements BrowserSurfaceResource {
     this.log.push(`mount:${mountToken}`)
     this.visible = true
   }
+
+  async commitTransfer(): Promise<void> { this.commitCalls += 1 }
+  async releaseTransfer(): Promise<void> { this.releaseCalls += 1 }
 
   async hide(mountToken: string): Promise<void> {
     this.log.push(`hide:${mountToken}`)
@@ -1145,6 +1150,8 @@ describe('BrowserSurfaceManager', () => {
       'guards:1', 'mount:mount-owner', 'dispose-guards:1', 'detach', 'teardown', 'clear',
       'revoke:owner-session:1',
     ])
+    expect(surface.commitCalls).toBe(1)
+    expect(surface.releaseCalls).toBe(1)
     await expect(manager.stop({
       sessionId: mount.sessionId, generation: mount.generation, mountToken: mount.mountToken,
     })).resolves.toBeUndefined()
@@ -1173,6 +1180,8 @@ describe('BrowserSurfaceManager', () => {
       'guards:1', 'mount:mount-owner', 'dispose-guards:1', 'detach', 'teardown', 'clear',
       'revoke:owner-session:1',
     ])
+    expect(surface.commitCalls).toBe(1)
+    expect(surface.releaseCalls).toBe(0)
     await expect(manager.acquire({ sessionId: 'other-session' })).rejects.toMatchObject({ code: 'BUSY' })
   })
 
@@ -1206,6 +1215,8 @@ describe('BrowserSurfaceManager', () => {
       'guards:1', 'mount:mount-1', 'dispose-guards:1', 'detach', 'teardown', 'clear',
       'revoke:owner-session:1',
     ])
+    expect(failed.commitCalls).toBe(0)
+    expect(failed.releaseCalls).toBe(0)
     await expect(manager.acquire({ sessionId: 'next-session' })).rejects.toMatchObject({ code: 'BUSY' })
     expect(createCalls).toBe(1)
     await expect(manager.retryFailedMountCleanup({ sessionId: 'next-session', generation: 1 }))
@@ -1221,6 +1232,7 @@ describe('BrowserSurfaceManager', () => {
 
     await manager.retryFailedMountCleanup({ sessionId: 'owner-session', generation: 1 })
     expect(log.filter(item => item === 'dispose-guards:1')).toHaveLength(3)
+    expect(failed.releaseCalls).toBe(1)
     await expect(manager.acquire({ sessionId: 'next-session' })).resolves.toMatchObject({
       sessionId: 'next-session', generation: 2, surfaceId: 'replacement', visible: true,
     })
