@@ -33,8 +33,9 @@ namespace DshWindowsSmoke
     public static class LimitedProcess
     {
         private const uint TOKEN_ALL_ACCESS = 0x000F01FF;
-        private const uint LUA_TOKEN = 0x4;
-        private const int TokenLinkedToken = 19;
+        private const uint SAFER_SCOPEID_USER = 2;
+        private const uint SAFER_LEVELID_NORMALUSER = 0x00020000;
+        private const uint SAFER_LEVEL_OPEN = 1;
         private const uint CREATE_NO_WINDOW = 0x08000000;
         private const uint CREATE_UNICODE_ENVIRONMENT = 0x400;
         private const uint WAIT_OBJECT_0 = 0;
@@ -72,12 +73,6 @@ namespace DshWindowsSmoke
             public uint dwThreadId;
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct TOKEN_LINKED_TOKEN
-        {
-            public IntPtr LinkedToken;
-        }
-
         [DllImport("kernel32.dll")]
         private static extern IntPtr GetCurrentProcess();
 
@@ -100,24 +95,23 @@ namespace DshWindowsSmoke
             out IntPtr token);
 
         [DllImport("advapi32.dll", SetLastError = true)]
-        private static extern bool GetTokenInformation(
-            IntPtr token,
-            int tokenInformationClass,
-            out TOKEN_LINKED_TOKEN tokenInformation,
-            uint tokenInformationLength,
-            out uint returnLength);
+        private static extern bool SaferCreateLevel(
+            uint scopeId,
+            uint levelId,
+            uint openFlags,
+            out IntPtr levelHandle,
+            IntPtr reserved);
 
         [DllImport("advapi32.dll", SetLastError = true)]
-        private static extern bool CreateRestrictedToken(
-            IntPtr existingToken,
+        private static extern bool SaferComputeTokenFromLevel(
+            IntPtr levelHandle,
+            IntPtr inputToken,
+            out IntPtr outputToken,
             uint flags,
-            uint disableSidCount,
-            IntPtr sidsToDisable,
-            uint deletePrivilegeCount,
-            IntPtr privilegesToDelete,
-            uint restrictedSidCount,
-            IntPtr sidsToRestrict,
-            out IntPtr newToken);
+            IntPtr reserved);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool SaferCloseLevel(IntPtr levelHandle);
 
         [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern bool CreateProcessWithTokenW(
@@ -162,6 +156,7 @@ namespace DshWindowsSmoke
         {
             IntPtr sourceToken = IntPtr.Zero;
             IntPtr limitedToken = IntPtr.Zero;
+            IntPtr saferLevel = IntPtr.Zero;
             IntPtr environment = IntPtr.Zero;
             IntPtr desktop = IntPtr.Zero;
             PROCESS_INFORMATION process = new PROCESS_INFORMATION();
@@ -169,32 +164,24 @@ namespace DshWindowsSmoke
             {
                 if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, out sourceToken))
                     throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenProcessToken failed");
-                TOKEN_LINKED_TOKEN linked;
-                uint linkedLength;
-                if (GetTokenInformation(
-                        sourceToken,
-                        TokenLinkedToken,
-                        out linked,
-                        (uint)Marshal.SizeOf<TOKEN_LINKED_TOKEN>(),
-                        out linkedLength))
-                {
-                    limitedToken = linked.LinkedToken;
-                }
-                else if (!CreateRestrictedToken(
-                             sourceToken,
-                             LUA_TOKEN,
-                             0,
-                             IntPtr.Zero,
-                             0,
-                             IntPtr.Zero,
-                             0,
-                             IntPtr.Zero,
-                             out limitedToken))
-                {
+                if (!SaferCreateLevel(
+                        SAFER_SCOPEID_USER,
+                        SAFER_LEVELID_NORMALUSER,
+                        SAFER_LEVEL_OPEN,
+                        out saferLevel,
+                        IntPtr.Zero))
                     throw new Win32Exception(
                         Marshal.GetLastWin32Error(),
-                        "Linked and restricted token creation failed");
-                }
+                        "SaferCreateLevel failed");
+                if (!SaferComputeTokenFromLevel(
+                        saferLevel,
+                        sourceToken,
+                        out limitedToken,
+                        0,
+                        IntPtr.Zero))
+                    throw new Win32Exception(
+                        Marshal.GetLastWin32Error(),
+                        "SaferComputeTokenFromLevel failed");
 
                 STARTUPINFO startup = new STARTUPINFO();
                 startup.cb = (uint)Marshal.SizeOf<STARTUPINFO>();
@@ -260,6 +247,7 @@ namespace DshWindowsSmoke
                 if (process.hProcess != IntPtr.Zero) CloseHandle(process.hProcess);
                 if (environment != IntPtr.Zero) DestroyEnvironmentBlock(environment);
                 if (desktop != IntPtr.Zero) Marshal.FreeHGlobal(desktop);
+                if (saferLevel != IntPtr.Zero) SaferCloseLevel(saferLevel);
                 if (limitedToken != IntPtr.Zero) CloseHandle(limitedToken);
                 if (sourceToken != IntPtr.Zero) CloseHandle(sourceToken);
             }
