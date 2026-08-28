@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '../src/client/index.tsx'
 import { BrowserMode } from '../src/client/BrowserMode.tsx'
-import { en, type DesktopWorkbenchKey } from '../src/client/locales.ts'
+import { en, NS, type DesktopWorkbenchKey } from '../src/client/locales.ts'
 
 class ResizeObserverStub {
   constructor(private readonly callback: () => void) {}
@@ -15,7 +16,9 @@ const snapshot = {
   url: 'https://example.test/', title: 'Example', loading: false,
   canGoBack: false, canGoForward: false, error: null,
 }
-const translate = (key: DesktopWorkbenchKey): string => en[key]
+const translate: PropsLocale<typeof NS>['t'] = key => Object.hasOwn(en, key)
+  ? en[key as DesktopWorkbenchKey]
+  : key
 
 function setup() {
   let takeoverListener: ((value: { phase: 'human' | 'given' | 'agent' | 'stopping'; signedInWarning: true }) => void) | undefined

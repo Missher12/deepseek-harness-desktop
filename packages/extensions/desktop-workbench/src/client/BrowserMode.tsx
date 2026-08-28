@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
 import css from './BrowserMode.module.css'
 
-type Props = PropsRuntime<'layout.utility'> & PropsLocale<typeof NS>
+type Props = PropsLocale<typeof NS>
 interface DesktopBrowserBounds { x: number; y: number; width: number; height: number }
 type DesktopBrowserRequest = { kind: 'navigate'; value: string } | { kind: 'back' | 'forward' | 'reload' | 'stop' }
 interface DesktopBrowserSnapshot {
