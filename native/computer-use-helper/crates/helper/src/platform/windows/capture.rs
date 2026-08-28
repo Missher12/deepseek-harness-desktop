@@ -566,14 +566,10 @@ pub(crate) fn encode_bounded_png(
     if !expected.matches(frame.identity) || expected_bounds != frame.bounds {
         return Err("STALE_REF");
     }
-    let bounds_width = i64::from(frame.bounds.right) - i64::from(frame.bounds.left);
-    let bounds_height = i64::from(frame.bounds.bottom) - i64::from(frame.bounds.top);
     if frame.width == 0
         || frame.height == 0
         || frame.width > limits.max_width
         || frame.height > limits.max_height
-        || bounds_width != i64::from(frame.width)
-        || bounds_height != i64::from(frame.height)
     {
         return Err("POLICY_DENIED");
     }
@@ -714,6 +710,18 @@ mod tests {
         let original = png.clone();
         png[0] = 0;
         assert_eq!(&original[..8], b"\x89PNG\r\n\x1a\n");
+    }
+
+    #[test]
+    fn accepts_bounded_wgc_pixels_when_virtualized_window_bounds_differ() {
+        let mut captured = frame(11);
+        captured.width = 1;
+        captured.height = 1;
+        captured.stride = 4;
+        captured.bgra = vec![0, 0, 255, 255];
+        let png = encode_bounded_png(identity(11), captured.bounds, captured, limits())
+            .expect("bounded WGC PNG");
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
     }
 
     #[test]
