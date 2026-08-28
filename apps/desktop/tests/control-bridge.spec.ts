@@ -319,7 +319,7 @@ describe('DesktopControlBridgeServer', () => {
       const accepted = vi.fn()
       const cancelled = vi.fn(async () => undefined)
       const server = new DesktopControlBridgeServer({
-        backend: backend(async (request, rawContext) => {
+        backend: backend(async (_request, rawContext) => {
           const acquireContext = rawContext as DesktopControlDispatchContext & {
             registerAcquisition(completion: { accept(): void; cancel(): Promise<void> }): boolean
           }

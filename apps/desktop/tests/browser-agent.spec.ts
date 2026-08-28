@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
-import { AgentBrowserError, BROWSER_AGENT_LIMITS } from '../src/browser/contracts.ts'
+import {
+  AgentBrowserError,
+  BROWSER_AGENT_LIMITS,
+  type AgentBrowserRef,
+} from '../src/browser/contracts.ts'
 import {
   CdpBrowserAdapter,
   type AgentBrowserPinnedNavigationTransport,
@@ -214,11 +218,12 @@ function buttonNode(id = 1, name = 'Continue'): AxNode {
   }
 }
 
-async function snapshotButton(adapter: CdpBrowserAdapter): Promise<string> {
+async function snapshotButton(adapter: CdpBrowserAdapter): Promise<AgentBrowserRef> {
   const snapshot = await adapter.snapshot({ includeImage: false })
   const ref = snapshot.result.refs[0]?.ref
   expect(ref).toMatch(/^browser:[0-9a-f]{32}$/u)
-  return ref ?? ''
+  if (ref === undefined) throw new Error('expected button ref')
+  return ref
 }
 
 class FakeSurface implements BrowserSurfaceResource {
@@ -490,11 +495,17 @@ describe('semantic Agent browser adapter', () => {
     expect(snapshot.result.semanticText).not.toMatch(/Password|Verification code|Upload file|Unknown/u)
 
     const refs = new Map(snapshot.result.refs.map(ref => [ref.name, ref.ref]))
-    await adapter.act({ kind: 'click', ref: refs.get('Continue') ?? '' })
-    await adapter.act({ kind: 'type', ref: refs.get('Search') ?? '', text: 'query' })
-    await adapter.act({ kind: 'select', ref: refs.get('Country') ?? '', value: 'Canada' })
+    const continueRef = refs.get('Continue')
+    const searchRef = refs.get('Search')
+    const countryRef = refs.get('Country')
+    if (continueRef === undefined || searchRef === undefined || countryRef === undefined) {
+      throw new Error('expected actionable refs')
+    }
+    await adapter.act({ kind: 'click', ref: continueRef })
+    await adapter.act({ kind: 'type', ref: searchRef, text: 'query' })
+    await adapter.act({ kind: 'select', ref: countryRef, value: 'Canada' })
     await adapter.act({ kind: 'key', key: 'Enter', modifiers: [] })
-    await adapter.act({ kind: 'scroll', ref: refs.get('Continue'), deltaX: 0, deltaY: 120 })
+    await adapter.act({ kind: 'scroll', ref: continueRef, deltaX: 0, deltaY: 120 })
     await adapter.act({ kind: 'scroll', deltaX: 0, deltaY: 120 })
     await adapter.act({ kind: 'wait', mode: 'duration', durationMs: 1 })
 
@@ -520,17 +531,17 @@ describe('semantic Agent browser adapter', () => {
 
   it.each([
     ['click', buttonNode(1, 'Continue'), [] as string[], ['type', 'file'],
-      (ref: string) => ({ kind: 'click', ref }) as const],
+      (ref: AgentBrowserRef) => ({ kind: 'click', ref }) as const],
     ['type', {
       nodeId: 'field', backendDOMNodeId: 1, role: { value: 'textbox' }, name: { value: 'Search' },
     } satisfies AxNode, ['type', 'text', 'autocomplete', 'off'], ['type', 'password'],
-    (ref: string) => ({ kind: 'type', ref, text: 'secret' }) as const],
+    (ref: AgentBrowserRef) => ({ kind: 'type', ref, text: 'secret' }) as const],
     ['select', {
       nodeId: 'select', backendDOMNodeId: 1, role: { value: 'combobox' }, name: { value: 'Country' },
     } satisfies AxNode, ['type', 'text', 'autocomplete', 'off'], ['disabled', ''],
-    (ref: string) => ({ kind: 'select', ref, value: 'Canada' }) as const],
+    (ref: AgentBrowserRef) => ({ kind: 'select', ref, value: 'Canada' }) as const],
     ['ref scroll', buttonNode(1, 'Continue'), [] as string[], ['readonly', ''],
-      (ref: string) => ({ kind: 'scroll', ref, deltaX: 0, deltaY: 100 }) as const],
+      (ref: AgentBrowserRef) => ({ kind: 'scroll', ref, deltaX: 0, deltaY: 100 }) as const],
   ])('revalidates a ref immediately before %s and rejects a newly sensitive target', async (
     _label,
     node,
@@ -558,11 +569,11 @@ describe('semantic Agent browser adapter', () => {
     ['type', {
       nodeId: 'field', backendDOMNodeId: 1, role: { value: 'textbox' }, name: { value: 'Search' },
     } satisfies AxNode, ['type', 'text', 'autocomplete', 'off'],
-    (ref: string) => ({ kind: 'type', ref, text: 'secret' }) as const],
+    (ref: AgentBrowserRef) => ({ kind: 'type', ref, text: 'secret' }) as const],
     ['select', {
       nodeId: 'select', backendDOMNodeId: 1, role: { value: 'combobox' }, name: { value: 'Country' },
     } satisfies AxNode, ['type', 'text', 'autocomplete', 'off'],
-    (ref: string) => ({ kind: 'select', ref, value: 'Canada' }) as const],
+    (ref: AgentBrowserRef) => ({ kind: 'select', ref, value: 'Canada' }) as const],
   ])('rejects %s when click retargets focus before any text or Enter dispatch', async (
     _label,
     safeNode,

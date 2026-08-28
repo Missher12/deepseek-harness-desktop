@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import type {
-  BridgeRequest,
-  ControlLeaseAcquireRequest,
+import {
+  RequestId,
+  type BridgeRequest,
+  type ControlLeaseAcquireRequest,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
 import type { ActiveControlLease } from '../src/control/control-lease.ts'
 import {
@@ -29,7 +30,7 @@ function base<K extends BridgeRequest['requestKind']>(requestKind: K) {
     protocolVersion: 1 as const,
     messageKind: 'request' as const,
     requestKind,
-    requestId: `00000000-0000-4000-8000-${requestKind.length.toString().padStart(12, '0')}`,
+    requestId: RequestId(`00000000-0000-4000-8000-${requestKind.length.toString().padStart(12, '0')}`),
     sessionId: SESSION,
     deadlineUnixMs: Date.now() + 10_000,
   }
@@ -41,7 +42,7 @@ function acquire(): ControlLeaseAcquireRequest {
     surfaceKind: 'browser-ephemeral',
     targets: [],
     capabilities: ['observe', 'pointer', 'keyboard'],
-  } as ControlLeaseAcquireRequest
+  }
 }
 
 function mount(kind: BrowserSurfaceMount['kind'] = 'ephemeral'): BrowserSurfaceMount {
@@ -112,7 +113,9 @@ function lease(surfaceKind: ActiveControlLease['surfaceKind'] = 'browser-ephemer
     issuedAt: 0,
     lastActionAt: 0,
     hardExpiresAt: 1_000,
-    remaining: { snapshots: 1, pointerActions: 1, keyActions: 1, textBytes: 1 },
+    idleExpiresAfterMs: 300_000,
+    hardExpiresAfterMs: 1_200_000,
+    remaining: { operations: 1, snapshots: 1, pointerActions: 1, keyActions: 1, textBytes: 1 },
   }
 }
 
@@ -161,7 +164,7 @@ describe('Browser Desktop control adapter', () => {
     }
     const snapshot = await adapter.dispatch({
       ...base('browser.snapshot'), leaseId: LEASE, leaseRevision: 1, includeImage: true,
-    } as BridgeRequest, context)
+    }, context)
     const click = await adapter.dispatch({
       ...base('browser.click'), leaseId: LEASE, leaseRevision: 1,
       ref: 'browser:00000000000000000000000000000001',

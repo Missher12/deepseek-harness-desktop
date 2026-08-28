@@ -243,12 +243,13 @@ function setup(options: {
       now: () => clock.now(),
     },
     shortcuts,
-    browser: options.browser,
-    computer: options.computer,
+    ...(options.browser === undefined ? {} : { browser: options.browser }),
+    ...(options.computer === undefined ? {} : { computer: options.computer }),
     cleanupTimeoutMs: 1_000,
-    audit: options.audit === undefined
-      ? undefined
-      : { record: async (event) => { await options.audit?.(event.action) }, flush: async () => undefined },
+    ...(options.audit === undefined ? {} : { audit: {
+      record: async (event) => { await options.audit?.(event.action) },
+      flush: async () => undefined,
+    } }),
   })
   return { coordinator, dialog, shortcuts, clock }
 }

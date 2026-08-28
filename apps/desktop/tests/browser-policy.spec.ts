@@ -206,7 +206,7 @@ describe('Agent browser policy', () => {
     const contents = new FakePolicyContents()
     const session = new FakePolicySession()
     const humanWindowOpen = vi.fn(() => ({ action: 'allow' as const }))
-    const humanPermissionCheck = vi.fn((_contents: unknown, permission: string) => permission === 'clipboard-read')
+    const humanPermissionCheck = vi.fn((...args: unknown[]) => args[1] === 'clipboard-read')
     const humanPermissionRequest = vi.fn((
       _contents: unknown,
       permission: string,
