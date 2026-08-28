@@ -1,10 +1,227 @@
 param(
   [Parameter(Mandatory = $true)]
-  [string]$HelperPath
+  [string]$HelperPath,
+  [switch]$MediumIntegrityChild
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+function Invoke-MediumIntegritySmoke {
+  param(
+    [Parameter(Mandatory = $true)][string]$ScriptPath,
+    [Parameter(Mandatory = $true)][string]$ResolvedHelperPath
+  )
+
+  if (-not ('DshWindowsSmoke.LimitedProcess' -as [type])) {
+    Add-Type -Language CSharp -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace DshWindowsSmoke
+{
+    public static class LimitedProcess
+    {
+        private const uint TOKEN_ALL_ACCESS = 0x000F01FF;
+        private const uint LUA_TOKEN = 0x4;
+        private const uint CREATE_NEW_CONSOLE = 0x10;
+        private const uint CREATE_UNICODE_ENVIRONMENT = 0x400;
+        private const uint WAIT_OBJECT_0 = 0;
+        private const uint WAIT_TIMEOUT = 258;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct STARTUPINFO
+        {
+            public uint cb;
+            public IntPtr lpReserved;
+            public IntPtr lpDesktop;
+            public IntPtr lpTitle;
+            public uint dwX;
+            public uint dwY;
+            public uint dwXSize;
+            public uint dwYSize;
+            public uint dwXCountChars;
+            public uint dwYCountChars;
+            public uint dwFillAttribute;
+            public uint dwFlags;
+            public ushort wShowWindow;
+            public ushort cbReserved2;
+            public IntPtr lpReserved2;
+            public IntPtr hStdInput;
+            public IntPtr hStdOutput;
+            public IntPtr hStdError;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PROCESS_INFORMATION
+        {
+            public IntPtr hProcess;
+            public IntPtr hThread;
+            public uint dwProcessId;
+            public uint dwThreadId;
+        }
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GetCurrentProcess();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr handle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetExitCodeProcess(IntPtr process, out uint exitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool TerminateProcess(IntPtr process, uint exitCode);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool OpenProcessToken(
+            IntPtr process,
+            uint desiredAccess,
+            out IntPtr token);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool CreateRestrictedToken(
+            IntPtr existingToken,
+            uint flags,
+            uint disableSidCount,
+            IntPtr sidsToDisable,
+            uint deletePrivilegeCount,
+            IntPtr privilegesToDelete,
+            uint restrictedSidCount,
+            IntPtr sidsToRestrict,
+            out IntPtr newToken);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool CreateProcessWithTokenW(
+            IntPtr token,
+            uint logonFlags,
+            string applicationName,
+            StringBuilder commandLine,
+            uint creationFlags,
+            IntPtr environment,
+            string currentDirectory,
+            ref STARTUPINFO startupInfo,
+            out PROCESS_INFORMATION processInformation);
+
+        public static int Run(
+            string applicationPath,
+            string commandLine,
+            string workingDirectory,
+            int timeoutMilliseconds)
+        {
+            IntPtr sourceToken = IntPtr.Zero;
+            IntPtr limitedToken = IntPtr.Zero;
+            PROCESS_INFORMATION process = new PROCESS_INFORMATION();
+            try
+            {
+                if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, out sourceToken))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenProcessToken failed");
+                if (!CreateRestrictedToken(
+                        sourceToken,
+                        LUA_TOKEN,
+                        0,
+                        IntPtr.Zero,
+                        0,
+                        IntPtr.Zero,
+                        0,
+                        IntPtr.Zero,
+                        out limitedToken))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateRestrictedToken failed");
+
+                STARTUPINFO startup = new STARTUPINFO();
+                startup.cb = (uint)Marshal.SizeOf<STARTUPINFO>();
+                StringBuilder mutableCommand = new StringBuilder(commandLine);
+                if (!CreateProcessWithTokenW(
+                        limitedToken,
+                        0,
+                        applicationPath,
+                        mutableCommand,
+                        CREATE_NEW_CONSOLE | CREATE_UNICODE_ENVIRONMENT,
+                        IntPtr.Zero,
+                        workingDirectory,
+                        ref startup,
+                        out process))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateProcessWithTokenW failed");
+
+                uint wait = WaitForSingleObject(process.hProcess, (uint)timeoutMilliseconds);
+                if (wait == WAIT_TIMEOUT)
+                {
+                    TerminateProcess(process.hProcess, 124);
+                    WaitForSingleObject(process.hProcess, 5000);
+                    throw new TimeoutException("Medium-integrity Windows Computer Use smoke timed out");
+                }
+                if (wait != WAIT_OBJECT_0)
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "WaitForSingleObject failed");
+                if (!GetExitCodeProcess(process.hProcess, out uint exitCode))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "GetExitCodeProcess failed");
+                return unchecked((int)exitCode);
+            }
+            finally
+            {
+                if (process.hThread != IntPtr.Zero) CloseHandle(process.hThread);
+                if (process.hProcess != IntPtr.Zero) CloseHandle(process.hProcess);
+                if (limitedToken != IntPtr.Zero) CloseHandle(limitedToken);
+                if (sourceToken != IntPtr.Zero) CloseHandle(sourceToken);
+            }
+        }
+    }
+}
+'@
+  }
+
+  $resultPath = Join-Path ([IO.Path]::GetTempPath()) "dsh-windows-control-$([Guid]::NewGuid().ToString('N')).txt"
+  $scriptLiteral = $ScriptPath.Replace("'", "''")
+  $helperLiteral = $ResolvedHelperPath.Replace("'", "''")
+  $resultLiteral = $resultPath.Replace("'", "''")
+  $childSource = @"
+`$ErrorActionPreference = 'Stop'
+try {
+  & '$scriptLiteral' -HelperPath '$helperLiteral' -MediumIntegrityChild
+  [IO.File]::WriteAllText('$resultLiteral', 'PASS', [Text.UTF8Encoding]::new(`$false))
+  exit 0
+}
+catch {
+  `$message = [string]`$_.Exception.Message
+  if (`$message.Length -gt 1024) { `$message = `$message.Substring(0, 1024) }
+  [IO.File]::WriteAllText('$resultLiteral', "FAIL: `$message", [Text.UTF8Encoding]::new(`$false))
+  exit 1
+}
+"@
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childSource))
+  $pwsh = (Get-Process -Id $PID).Path
+  $commandLine = "`"$pwsh`" -NoLogo -NoProfile -NonInteractive -STA -EncodedCommand $encoded"
+  try {
+    $exitCode = [DshWindowsSmoke.LimitedProcess]::Run(
+      $pwsh,
+      $commandLine,
+      (Split-Path -Parent $ScriptPath),
+      180000
+    )
+    $result = if (Test-Path -LiteralPath $resultPath) {
+      (Get-Content -LiteralPath $resultPath -Raw).Trim()
+    } else {
+      'FAIL: medium-integrity smoke did not produce a result'
+    }
+    if ($exitCode -ne 0 -or $result -ne 'PASS') {
+      throw "Windows Computer Use medium-integrity acceptance failed (exit=$exitCode): $result"
+    }
+    Write-Host 'Windows Computer Use medium-integrity acceptance passed.'
+  }
+  finally {
+    Remove-Item -LiteralPath $resultPath -Force -ErrorAction SilentlyContinue
+  }
+}
+
+$resolvedHelper = (Resolve-Path -LiteralPath $HelperPath).Path
+if (-not $MediumIntegrityChild) {
+  Invoke-MediumIntegritySmoke -ScriptPath $PSCommandPath -ResolvedHelperPath $resolvedHelper
+  return
+}
 
 function Read-ExactBytes {
   param(
@@ -244,7 +461,6 @@ function Stop-FixtureProcess {
   }
 }
 
-$resolvedHelper = (Resolve-Path -LiteralPath $HelperPath).Path
 $helperInfo = [System.Diagnostics.ProcessStartInfo]::new($resolvedHelper)
 $helperInfo.UseShellExecute = $false
 $helperInfo.CreateNoWindow = $true
