@@ -80,6 +80,26 @@ describe('browser takeover authority', () => {
     gate.resolve()
     await expect(pending).resolves.toEqual({ phase: 'human', signedInWarning: true })
   })
+
+  it('stops a matching consuming session and stays stopping until its rollback is quiescent', async () => {
+    const consumed = new Deferred<BrowserSurfaceResource>()
+    const rolledBack = new Deferred()
+    const stop = vi.fn(async () => {
+      consumed.resolve(resource())
+      await rolledBack.promise
+    })
+    const { authority } = setup({ consume: async () => await consumed.promise, stop })
+    await authority.give()
+    const consuming = authority.consumeVerifiedPersistentGiveIntent('official-session')
+
+    const pending = authority.stop()
+    expect(stop).toHaveBeenCalledWith('official-session')
+    expect(authority.status().phase).toBe('stopping')
+    await consuming
+    expect(authority.status().phase).toBe('stopping')
+    rolledBack.resolve()
+    await expect(pending).resolves.toEqual({ phase: 'human', signedInWarning: true })
+  })
 })
 
 describe('browser takeover IPC', () => {

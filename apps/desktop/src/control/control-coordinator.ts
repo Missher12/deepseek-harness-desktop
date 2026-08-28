@@ -111,6 +111,7 @@ export interface DesktopControlSurfaceAdapter {
   ): Promise<DecodedDesktopControlEnvelope>
   installLease?(snapshot: PreparedLeaseInstall, context: ControlAdapterCallContext): Promise<void>
   rollbackLeaseInstall?(snapshot: PreparedLeaseInstall, context: ControlAdapterCallContext): Promise<void>
+  retryPendingCleanup?(sessionId: SessionId, signal: AbortSignal): Promise<void>
   clearQueue(snapshot: ActiveControlLease, signal: AbortSignal): Promise<void>
   stopLease(snapshot: ActiveControlLease, reason: string, signal: AbortSignal): Promise<void>
   releaseKnownInput?(snapshot: ActiveControlLease, signal: AbortSignal): Promise<void>
@@ -225,6 +226,16 @@ function finiteRevision(value: number): boolean {
   return Number.isSafeInteger(value) && value >= 1
 }
 
+interface PendingControlAcquire {
+  readonly sessionId: SessionId
+  readonly controller: AbortController
+  readonly adapter: DesktopControlSurfaceAdapter
+  prepared?: PreparedControlLease
+  cleanupFailure?: unknown
+  readonly quiescence: Promise<void>
+  readonly resolveQuiescence: () => void
+}
+
 /** The sole Electron-main owner of lease, approval, dispatch, and cleanup authority. */
 export class DesktopControlCoordinator implements DesktopControlBackend {
   readonly #options: DesktopControlCoordinatorOptions
@@ -239,7 +250,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
   #cleanupTail: Promise<void> = Promise.resolve()
   #latestCleanup: Promise<void> = Promise.resolve()
   #shutdownPromise: Promise<void> | undefined
-  #pendingAcquire: { readonly prepared: PreparedControlLease; readonly controller: AbortController } | undefined
+  #pendingAcquire: PendingControlAcquire | undefined
   #admission = true
   #closing = false
   #transportOpen = true
@@ -304,13 +315,31 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     }
   }
 
-  async revokeSession(sessionId: SessionId, _signal: AbortSignal): Promise<void> {
+  async revokeSession(sessionId: SessionId, signal: AbortSignal): Promise<void> {
     this.#assertOfficialSession(sessionId)
+    const pending = this.#abortPendingAcquire('session-revoked', sessionId)
+    let pendingFailure: unknown
+    try { await this.#awaitPendingCleanup(pending) } catch (error) { pendingFailure = error }
+    if (signal.aborted) {
+      throw signal.reason instanceof Error
+        ? signal.reason
+        : new Error('control cleanup aborted', { cause: signal.reason })
+    }
+    if (pending?.adapter.retryPendingCleanup !== undefined) {
+      await pending.adapter.retryPendingCleanup(sessionId, signal)
+      pendingFailure = undefined
+    }
+    if (pendingFailure !== undefined) {
+      throw pendingFailure instanceof Error
+        ? pendingFailure
+        : new Error('pending control cleanup failed', { cause: pendingFailure })
+    }
     const active = this.#leases.activeSnapshot()
     if (active?.sessionId === sessionId) {
       this.#leases.revokeSession(sessionId, 'session-revoked')
       await this.#awaitReleased(active)
     }
+    await this.#options.browser?.retryPendingCleanup?.(sessionId, signal)
     this.#options.releaseOfficialSession?.(sessionId)
   }
 
@@ -369,10 +398,11 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     }
     this.#admission = false
     if (reason === 'close-to-tray') this.#resumeRequired = true
-    this.#abortPendingAcquire(reason)
+    const pending = this.#abortPendingAcquire(reason)
     const active = this.#leases.activeSnapshot()
     if (active !== null) this.#leases.revoke(reason)
     try {
+      await this.#awaitPendingCleanup(pending)
       await this.#latestCleanup
     } catch {
       this.#cleanupFailed = true
@@ -397,6 +427,15 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     this.#assertSurfaceEnabled(request.surfaceKind, settings.settings)
     const controller = new AbortController()
     const detach = this.#forwardAbort(context.signal, controller)
+    let resolveQuiescence!: () => void
+    const pendingAcquire: PendingControlAcquire = {
+      sessionId: request.sessionId,
+      controller,
+      adapter,
+      quiescence: new Promise<void>((resolve) => { resolveQuiescence = resolve }),
+      resolveQuiescence: () => { resolveQuiescence() },
+    }
+    this.#pendingAcquire = pendingAcquire
     let prepared: PreparedControlLease | undefined
     let install: PreparedLeaseInstall | undefined
     let installAttempted = false
@@ -411,7 +450,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       const facts = this.#leaseFacts(effectiveRequest, initial, settings)
       const agentId = this.#options.getAgentDisplayName(request.sessionId)
       prepared = this.#leases.prepareAcquire(effectiveRequest, facts, agentId)
-      this.#pendingAcquire = { prepared, controller }
+      pendingAcquire.prepared = prepared
       const descriptor = this.#leases.preparedDescriptor(prepared)
       install = Object.freeze({
         ...descriptor,
@@ -458,6 +497,7 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       activationIdentity = descriptor
       const result = this.#leases.activatePrepared(prepared, effectiveRequest, activationFacts)
       prepared = undefined
+      delete pendingAcquire.prepared
       activated = this.#leases.activeSnapshot()
       if (activated === null) throw new ControlAuthorityError('INTERNAL', 'activated lease is unavailable')
       acquisitionCompletion = this.#bindActivatedAcquisition(activated, context.signal)
@@ -482,9 +522,14 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
       return result
     } catch (error) {
       if (acquisitionCompletion !== undefined) {
-        await acquisitionCompletion.cancel().catch(() => undefined)
+        try { await acquisitionCompletion.cancel() } catch (cleanupError) {
+          pendingAcquire.cleanupFailure ??= cleanupError
+        }
       }
-      if (prepared !== undefined) this.#leases.cancelPrepared(prepared)
+      if (prepared !== undefined && pendingAcquire.prepared === prepared) {
+        this.#leases.cancelPrepared(prepared)
+        delete pendingAcquire.prepared
+      }
       const transferredCleanup = activationTransferred && activationIdentity !== undefined
         ? this.#released.get(leaseKey({
           sessionId: request.sessionId,
@@ -493,20 +538,25 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
         }))
         : undefined
       if (transferredCleanup !== undefined) {
-        await transferredCleanup.catch(() => undefined)
+        try { await transferredCleanup } catch (cleanupError) {
+          pendingAcquire.cleanupFailure ??= cleanupError
+        }
       } else if (install !== undefined && (installAttempted || adapter.kind === 'browser')) {
         const attemptedInstall = install
-        await this.#bounded(async (signal) => {
-          await adapter.rollbackLeaseInstall?.(attemptedInstall, {
-            signal,
-            timeoutMs: this.#cleanupTimeoutMs,
+        try {
+          await this.#bounded(async (signal) => {
+            await adapter.rollbackLeaseInstall?.(attemptedInstall, {
+              signal,
+              timeoutMs: this.#cleanupTimeoutMs,
+            })
           })
-        }).catch(() => undefined)
+        } catch (cleanupError) { pendingAcquire.cleanupFailure ??= cleanupError }
       }
       throw error
     } finally {
-      if (this.#pendingAcquire?.controller === controller) this.#pendingAcquire = undefined
+      if (this.#pendingAcquire === pendingAcquire) this.#pendingAcquire = undefined
       detach()
+      pendingAcquire.resolveQuiescence()
     }
   }
 
@@ -669,9 +719,10 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
   async #shutdown(signal: AbortSignal): Promise<void> {
     this.#closing = true
     this.#admission = false
-    this.#abortPendingAcquire('shutdown')
+    const pending = this.#abortPendingAcquire('shutdown')
     const active = this.#leases.activeSnapshot()
     if (active !== null) this.#leases.revoke('shutdown')
+    await this.#awaitPendingCleanup(pending).catch(() => undefined)
     await this.#latestCleanup.catch(() => undefined)
     await this.#bounded(async (boundedSignal) => {
       if (signal.aborted) throw signal.reason
@@ -689,11 +740,27 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     try { await cleanup } catch { throw new ControlAuthorityError('INTERNAL', 'lease cleanup failed') }
   }
 
-  #abortPendingAcquire(reason: string): void {
+  #abortPendingAcquire(
+    reason: string,
+    sessionId?: SessionId,
+  ): PendingControlAcquire | undefined {
     const pending = this.#pendingAcquire
-    if (pending === undefined) return
+    if (pending === undefined || sessionId !== undefined && pending.sessionId !== sessionId) return undefined
     pending.controller.abort(new Error(reason))
-    this.#leases.cancelPrepared(pending.prepared)
+    const prepared = pending.prepared
+    if (prepared !== undefined) {
+      this.#leases.cancelPrepared(prepared)
+      delete pending.prepared
+    }
+    return pending
+  }
+
+  async #awaitPendingCleanup(pending: PendingControlAcquire | undefined): Promise<void> {
+    if (pending === undefined) return
+    await pending.quiescence
+    if (pending.cleanupFailure !== undefined) {
+      throw new ControlAuthorityError('INTERNAL', 'pending control rollback failed')
+    }
   }
 
   #bindActivatedAcquisition(

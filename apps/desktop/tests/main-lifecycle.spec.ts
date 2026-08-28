@@ -198,7 +198,7 @@ describe('DesktopApplication', () => {
     const runtime = createRuntime()
     const control = createControl()
     const cleaned = deferred<undefined>()
-    control.cleanup.mockReturnValueOnce(cleaned.promise)
+    control.cleanup.mockResolvedValueOnce(undefined).mockReturnValueOnce(cleaned.promise)
     const controller = new DesktopApplication({
       app,
       createWindow: async () => createWindow(),
@@ -253,6 +253,30 @@ describe('DesktopApplication', () => {
     closeCleanup.resolve(undefined)
     await closing
     expect(control.cleanup).toHaveBeenLastCalledWith('close-to-tray')
+  })
+
+  it('awaits renderer-exit control cleanup before replacing the active renderer', async () => {
+    const app = new FakeApp()
+    const window = createWindow()
+    const control = createControl()
+    const cleaned = deferred<undefined>()
+    control.cleanup.mockReturnValueOnce(cleaned.promise)
+    const controller = new DesktopApplication({
+      app,
+      createWindow: async () => window,
+      runtime: createRuntime(),
+      control,
+      findConflict: async () => undefined,
+      workspace: '/workspace',
+    })
+    await controller.run()
+
+    const exited = controller.rendererExited()
+    expect(control.cleanup).toHaveBeenCalledWith('renderer')
+    expect(window.loadFailure).not.toHaveBeenCalled()
+    cleaned.resolve(undefined)
+    await exited
+    expect(window.loadFailure).toHaveBeenCalledWith('renderer')
   })
 
   it('awaits control cleanup before quit reaches runtime stop', async () => {

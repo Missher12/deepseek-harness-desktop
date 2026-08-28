@@ -31,7 +31,7 @@ export interface RuntimeController {
 }
 
 export type ControlLifecycleReason =
-  | 'startup-failure' | 'runtime-exit' | 'retry' | 'quit' | 'close-to-tray'
+  | 'startup-failure' | 'runtime-exit' | 'renderer' | 'retry' | 'quit' | 'close-to-tray'
 
 /** Awaited Electron-main authority cleanup required before lifecycle transitions. */
 export interface ControlLifecycleController {
@@ -131,6 +131,7 @@ export class DesktopApplication {
   async rendererExited(): Promise<void> {
     if (this.state === 'shutting-down') return
     this.state = 'failure'
+    await this.cleanupControl('renderer')
     await this.options.log?.('Harness renderer exited unexpectedly')
     await this.window?.loadFailure('renderer')
   }

@@ -9,6 +9,7 @@ import type { DesktopControlDispatchContext } from '../control/bridge-server.ts'
 import type { ActiveControlLease } from '../control/control-lease.ts'
 import type {
   DesktopControlSurfaceAdapter,
+  ControlAdapterCallContext,
   PreparedLeaseInstall,
   SurfaceAcquireFacts,
   SurfaceOperationFacts,
@@ -44,18 +45,30 @@ export interface ActivatedBrowserControl {
 }
 
 export interface BrowserDesktopControlAdapterOptions {
-  readonly surfaceManager: Pick<BrowserSurfaceManager, 'acquire' | 'stop'>
+  readonly surfaceManager: Pick<BrowserSurfaceManager, 'acquire' | 'stop' | 'release'>
   readonly activate: (mount: BrowserSurfaceMount) => Promise<ActivatedBrowserControl>
 }
 
 interface ActiveBrowserControl extends ActivatedBrowserControl {
   readonly mount: BrowserSurfaceMount
-  cleanup?: Promise<void>
+  readonly cleanup: BrowserCleanupLedger
 }
 
 interface PendingActivation {
   readonly sessionId: string
   readonly promise: Promise<ActiveBrowserControl>
+}
+
+interface BrowserCleanupStep {
+  readonly run: () => Promise<void>
+  readonly release?: true
+}
+
+interface BrowserCleanupLedger {
+  readonly mount: BrowserSurfaceMount
+  steps: readonly BrowserCleanupStep[]
+  started: boolean
+  pending?: Promise<void>
 }
 
 function surfaceKind(mount: BrowserSurfaceMount): ControlLeaseSurfaceKind {
@@ -111,6 +124,7 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
   private readonly activate: BrowserDesktopControlAdapterOptions['activate']
   private active: ActiveBrowserControl | undefined
   private pending: PendingActivation | undefined
+  private cleanupLedger: BrowserCleanupLedger | undefined
   private closed = false
 
   constructor(options: BrowserDesktopControlAdapterOptions) {
@@ -168,9 +182,27 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
     return okEnvelope(request, result)
   }
 
-  async rollbackLeaseInstall(_snapshot: PreparedLeaseInstall): Promise<void> {
-    const active = this.active
-    if (active !== undefined) await this.cleanup(active)
+  async rollbackLeaseInstall(
+    snapshot: PreparedLeaseInstall,
+    context: ControlAdapterCallContext,
+  ): Promise<void> {
+    throwIfAborted(context.signal)
+    const cleanup = this.cleanupLedger
+    if (cleanup === undefined) return
+    if (surfaceKind(cleanup.mount) !== snapshot.surfaceKind) {
+      throw new AgentBrowserError('STALE_REF', 'browser rollback surface no longer matches')
+    }
+    await this.cleanup(cleanup)
+  }
+
+  async retryPendingCleanup(sessionId: string, signal: AbortSignal): Promise<void> {
+    throwIfAborted(signal)
+    const cleanup = this.cleanupLedger
+    if (cleanup === undefined) return
+    if (cleanup.mount.sessionId !== sessionId) {
+      throw new AgentBrowserError('BUSY', 'another session owns browser cleanup')
+    }
+    await this.cleanup(cleanup)
   }
 
   clearQueue(_snapshot: ActiveControlLease, signal: AbortSignal): Promise<void> {
@@ -180,25 +212,19 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
 
   async stopLease(snapshot: ActiveControlLease, _reason: string, signal: AbortSignal): Promise<void> {
     throwIfAborted(signal)
-    const active = this.active
-    if (active === undefined || active.mount.sessionId !== snapshot.sessionId) return
-    if (surfaceKind(active.mount) !== snapshot.surfaceKind) {
+    const cleanup = this.cleanupLedger
+    if (cleanup === undefined || cleanup.mount.sessionId !== snapshot.sessionId) return
+    if (surfaceKind(cleanup.mount) !== snapshot.surfaceKind) {
       throw new AgentBrowserError('STALE_REF', 'browser lease surface no longer matches')
     }
-    if (active.cleanup === undefined) active.cleanup = this.cleanup(active)
-    try {
-      await active.cleanup
-    } catch (error) {
-      delete active.cleanup
-      throw error
-    }
+    await this.cleanup(cleanup)
   }
 
   async shutdown(signal: AbortSignal): Promise<void> {
     this.closed = true
     throwIfAborted(signal)
-    const active = this.active
-    if (active !== undefined) await this.cleanup(active)
+    const cleanup = this.cleanupLedger
+    if (cleanup !== undefined) await this.cleanup(cleanup)
   }
 
   private async acquire(sessionId: string, signal: AbortSignal): Promise<ActiveBrowserControl> {
@@ -208,7 +234,7 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
       if (current.mount.sessionId !== sessionId) {
         throw new AgentBrowserError('BUSY', 'another session owns the Agent browser surface')
       }
-      if (current.cleanup !== undefined) throw new AgentBrowserError('BUSY', 'browser cleanup is in progress')
+      if (current.cleanup.started) throw new AgentBrowserError('BUSY', 'browser cleanup is in progress')
       await this.surfaceManager.acquire({ sessionId, expectedGeneration: current.mount.generation })
       throwIfAborted(signal)
       return current
@@ -219,6 +245,9 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
         throw new AgentBrowserError('BUSY', 'another session is opening the Agent browser surface')
       }
       return await pending.promise
+    }
+    if (this.cleanupLedger !== undefined) {
+      throw new AgentBrowserError('BUSY', 'browser cleanup is in progress')
     }
     const promise = this.activateSurface(sessionId, signal)
     this.pending = { sessionId, promise }
@@ -232,22 +261,23 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
   private async activateSurface(sessionId: string, signal: AbortSignal): Promise<ActiveBrowserControl> {
     const mount = await this.surfaceManager.acquire({ sessionId })
     let activated: ActivatedBrowserControl | undefined
+    let cleanup: BrowserCleanupLedger | undefined
     try {
       throwIfAborted(signal)
       activated = await this.activate(mount)
+      cleanup = this.createCleanupLedger(mount, activated)
+      this.cleanupLedger = cleanup
       await activated.semantic.start()
       throwIfAborted(signal)
-      const active: ActiveBrowserControl = { mount, ...activated }
+      const active: ActiveBrowserControl = { mount, ...activated, cleanup }
       this.active = active
       return active
     } catch (error) {
-      const failures: unknown[] = []
-      if (activated !== undefined) {
-        try { await activated.semantic.stop() } catch (cleanupError) { failures.push(cleanupError) }
-        try { await activated.disposeTransport() } catch (cleanupError) { failures.push(cleanupError) }
+      cleanup ??= this.createCleanupLedger(mount, activated)
+      this.cleanupLedger ??= cleanup
+      try { await this.cleanup(cleanup) } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], 'browser activation cleanup failed')
       }
-      try { await this.surfaceManager.stop(mount) } catch (cleanupError) { failures.push(cleanupError) }
-      if (failures.length > 0) throw new AggregateError([error, ...failures], 'browser activation cleanup failed')
       throw error
     }
   }
@@ -258,19 +288,54 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
     if (active.mount.sessionId !== sessionId) {
       throw new AgentBrowserError('BUSY', 'another session owns the Agent browser surface')
     }
-    if (active.cleanup !== undefined) throw new AgentBrowserError('BUSY', 'browser cleanup is in progress')
+    if (active.cleanup.started) throw new AgentBrowserError('BUSY', 'browser cleanup is in progress')
     return active
   }
 
-  private async cleanup(active: ActiveBrowserControl): Promise<void> {
-    const failures: unknown[] = []
-    const attempt = async (operation: () => Promise<void>): Promise<void> => {
-      try { await operation() } catch (error) { failures.push(error) }
+  private createCleanupLedger(
+    mount: BrowserSurfaceMount,
+    activated: ActivatedBrowserControl | undefined,
+  ): BrowserCleanupLedger {
+    return {
+      mount,
+      started: false,
+      steps: [
+        ...activated === undefined ? [] : [
+          { run: () => activated.semantic.stop() },
+          { run: activated.disposeTransport },
+        ],
+        { run: () => this.surfaceManager.stop(mount) },
+        { release: true, run: () => this.surfaceManager.release(mount) },
+      ],
     }
-    await attempt(async () => { await active.semantic.stop() })
-    await attempt(async () => { await active.disposeTransport() })
-    await attempt(async () => { await this.surfaceManager.stop(active.mount) })
+  }
+
+  private async cleanup(cleanup: BrowserCleanupLedger): Promise<void> {
+    cleanup.started = true
+    const pending = cleanup.pending
+    if (pending !== undefined) {
+      await pending
+      return
+    }
+    const operation = this.runCleanup(cleanup)
+    cleanup.pending = operation
+    try { await operation } finally { if (cleanup.pending === operation) delete cleanup.pending }
+  }
+
+  private async runCleanup(cleanup: BrowserCleanupLedger): Promise<void> {
+    const remaining: BrowserCleanupStep[] = []
+    const failures: unknown[] = []
+    for (const step of cleanup.steps) {
+      if (step.release === true && failures.length > 0) {
+        remaining.push(step)
+        continue
+      }
+      try { await step.run() } catch (error) { failures.push(error); remaining.push(step) }
+    }
+    cleanup.steps = remaining
     if (failures.length > 0) throw new AggregateError(failures, 'browser control cleanup failed')
-    if (this.active === active) this.active = undefined
+    if (cleanup.steps.length > 0) throw new AgentBrowserError('INTERNAL', 'browser release was deferred')
+    if (this.active?.cleanup === cleanup) this.active = undefined
+    if (this.cleanupLedger === cleanup) this.cleanupLedger = undefined
   }
 }

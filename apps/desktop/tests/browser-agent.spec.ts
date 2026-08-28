@@ -1001,6 +1001,7 @@ describe('BrowserSurfaceManager', () => {
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async () => undefined,
         revoke: async (sessionId, generation) => { log.push(`revoke:${sessionId}:${generation}`) },
+        release: async () => {},
       },
       createEphemeral: async (request) => {
         creates.push(request)
@@ -1028,7 +1029,7 @@ describe('BrowserSurfaceManager', () => {
     const consume = vi.fn(async () => undefined)
     const create = vi.fn(async () => owner)
     const manager = new BrowserSurfaceManager({
-      coordinator: { consumeVerifiedPersistentGiveIntent: consume, revoke: async () => {} },
+      coordinator: { consumeVerifiedPersistentGiveIntent: consume, revoke: async () => {}, release: async () => {} },
       createEphemeral: create,
       createNonce: () => 'owner',
       createMountToken: () => 'mount-owner',
@@ -1054,6 +1055,7 @@ describe('BrowserSurfaceManager', () => {
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async () => { await intent; return undefined },
         revoke: async () => {},
+        release: async () => {},
       },
       createEphemeral: async () => surface,
       createNonce: () => 'owner',
@@ -1070,7 +1072,10 @@ describe('BrowserSurfaceManager', () => {
   it('reuses only the exact owner session and generation', async () => {
     const surface = new FakeSurface('surface', 'dsh-agent-browser-1-owner', 'ephemeral')
     const manager = new BrowserSurfaceManager({
-      coordinator: { consumeVerifiedPersistentGiveIntent: async () => undefined, revoke: async () => {} },
+      coordinator: {
+        consumeVerifiedPersistentGiveIntent: async () => undefined,
+        revoke: async () => {}, release: async () => {},
+      },
       createEphemeral: async () => surface,
       createNonce: () => 'owner',
       createMountToken: () => 'mount-owner',
@@ -1092,6 +1097,7 @@ describe('BrowserSurfaceManager', () => {
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async sessionId => sessionId === 'official-session' ? persistent : undefined,
         revoke: async () => {},
+        release: async () => {},
       },
       createEphemeral: async () => { throw new Error('must not create ephemeral surface') },
       createNonce: () => 'unused',
@@ -1102,6 +1108,7 @@ describe('BrowserSurfaceManager', () => {
     expect(mount.kind).toBe('human-persistent')
     expect(mount.partition).toBe('persist:dsh-workbench-browser')
     await manager.stop({ sessionId: mount.sessionId, generation: mount.generation, mountToken: mount.mountToken })
+    await manager.release(mount)
     expect(persistent.log).not.toContain('clear')
   })
 
@@ -1109,7 +1116,10 @@ describe('BrowserSurfaceManager', () => {
     const surfaces: FakeSurface[] = []
     let nonce = 0
     const manager = new BrowserSurfaceManager({
-      coordinator: { consumeVerifiedPersistentGiveIntent: async () => undefined, revoke: async () => {} },
+      coordinator: {
+        consumeVerifiedPersistentGiveIntent: async () => undefined,
+        revoke: async () => {}, release: async () => {},
+      },
       createEphemeral: async (request) => {
         const surface = new FakeSurface(`surface-${request.generation}`, request.partition, 'ephemeral')
         surfaces.push(surface)
@@ -1120,6 +1130,7 @@ describe('BrowserSurfaceManager', () => {
     })
     const first = await manager.acquire({ sessionId: 'session-one' })
     await manager.stop({ sessionId: first.sessionId, generation: first.generation, mountToken: first.mountToken })
+    await manager.release(first)
     const second = await manager.acquire({ sessionId: 'session-two' })
 
     await expect(manager.hide({
@@ -1138,6 +1149,7 @@ describe('BrowserSurfaceManager', () => {
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async () => undefined,
         revoke: async (sessionId, generation) => { log.push(`revoke:${sessionId}:${generation}`) },
+        release: async () => {},
       },
       createEphemeral: async () => surface,
       createNonce: () => 'owner',
@@ -1151,6 +1163,8 @@ describe('BrowserSurfaceManager', () => {
       'revoke:owner-session:1',
     ])
     expect(surface.commitCalls).toBe(1)
+    expect(surface.releaseCalls).toBe(0)
+    await manager.release(mount)
     expect(surface.releaseCalls).toBe(1)
     await expect(manager.stop({
       sessionId: mount.sessionId, generation: mount.generation, mountToken: mount.mountToken,
@@ -1160,16 +1174,24 @@ describe('BrowserSurfaceManager', () => {
   it('runs every Stop cleanup after one failure and keeps ownership fail closed', async () => {
     const log: string[] = []
     const surface = new FakeSurface('surface', 'dsh-agent-browser-1-owner', 'ephemeral', log)
+    let disposeAttempts = 0
     surface.installSecurityHandlers = (generation) => {
       log.push(`guards:${generation}`)
-      return { dispose: () => { log.push(`dispose-guards:${generation}`); throw new Error('dispose failed') } }
+      return { dispose: () => {
+        log.push(`dispose-guards:${generation}`)
+        disposeAttempts += 1
+        if (disposeAttempts === 1) throw new Error('dispose failed')
+      } }
     }
     const manager = new BrowserSurfaceManager({
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async () => undefined,
         revoke: async (sessionId, generation) => { log.push(`revoke:${sessionId}:${generation}`) },
+        release: async () => {},
       },
-      createEphemeral: async () => surface,
+      createEphemeral: async request => request.generation === 1
+        ? surface
+        : new FakeSurface('replacement', request.partition, 'ephemeral'),
       createNonce: () => 'owner',
       createMountToken: () => 'mount-owner',
     })
@@ -1183,6 +1205,16 @@ describe('BrowserSurfaceManager', () => {
     expect(surface.commitCalls).toBe(1)
     expect(surface.releaseCalls).toBe(0)
     await expect(manager.acquire({ sessionId: 'other-session' })).rejects.toMatchObject({ code: 'BUSY' })
+
+    await expect(manager.stop(mount)).resolves.toBeUndefined()
+    expect(log.filter(item => item === 'dispose-guards:1')).toHaveLength(2)
+    expect(log.filter(item => item === 'detach')).toHaveLength(1)
+    expect(surface.releaseCalls).toBe(0)
+    await expect(manager.acquire({ sessionId: 'other-session' })).rejects.toMatchObject({ code: 'BUSY' })
+
+    await manager.release(mount)
+    expect(surface.releaseCalls).toBe(1)
+    await expect(manager.acquire({ sessionId: 'other-session' })).resolves.toMatchObject({ generation: 2 })
   })
 
   it('keeps a failed-mount cleanup reservation BUSY until lifecycle-only retry succeeds', async () => {
@@ -1204,6 +1236,7 @@ describe('BrowserSurfaceManager', () => {
       coordinator: {
         consumeVerifiedPersistentGiveIntent: async () => undefined,
         revoke: async (sessionId, generation) => { log.push(`revoke:${sessionId}:${generation}`) },
+        release: async () => {},
       },
       createEphemeral: async () => createCalls++ === 0 ? failed : replacement,
       createNonce: () => createCalls === 0 ? 'owner' : 'next',
@@ -1241,7 +1274,7 @@ describe('BrowserSurfaceManager', () => {
   it('revokes its reservation when ephemeral creation fails before returning a resource', async () => {
     const revoke = vi.fn(async () => {})
     const manager = new BrowserSurfaceManager({
-      coordinator: { consumeVerifiedPersistentGiveIntent: async () => undefined, revoke },
+      coordinator: { consumeVerifiedPersistentGiveIntent: async () => undefined, revoke, release: async () => {} },
       createEphemeral: async () => { throw new Error('creation failed') },
       createNonce: () => 'owner',
     })

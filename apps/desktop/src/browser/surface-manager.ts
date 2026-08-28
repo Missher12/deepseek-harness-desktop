@@ -24,6 +24,7 @@ export interface BrowserSurfaceResource {
 export interface BrowserSurfaceCoordinator {
   consumeVerifiedPersistentGiveIntent(sessionId: string): Promise<BrowserSurfaceResource | undefined>
   revoke(sessionId: string, generation: number): Promise<void>
+  release(sessionId: string, generation: number): Promise<void>
 }
 
 /** Exact request used to create one non-persistent session-owned surface. */
@@ -72,7 +73,7 @@ interface ActiveSurface {
   readonly mount: BrowserSurfaceMount
   readonly resource: BrowserSurfaceResource
   readonly handlers: { dispose(): void }
-  cleanup?: Promise<void>
+  cleanup?: SurfaceCleanupLedger
 }
 
 interface PendingSurface {
@@ -83,14 +84,14 @@ interface PendingSurface {
 
 interface CleanupOperation {
   run(): Promise<void>
-  readonly requiresPriorSuccess?: boolean
+  readonly phase: 'stop' | 'release'
 }
 
-interface FailedMountCleanup {
+interface SurfaceCleanupLedger {
   readonly sessionId: string
   readonly generation: number
   operations: readonly CleanupOperation[]
-  cleanup?: Promise<void>
+  pending?: Promise<void>
 }
 
 function nonEmpty(value: string, label: string): void {
@@ -108,7 +109,7 @@ export class BrowserSurfaceManager {
   private nextGeneration = 1
   private active: ActiveSurface | undefined
   private pending: PendingSurface | undefined
-  private failedMountCleanup: FailedMountCleanup | undefined
+  private failedMountCleanup: SurfaceCleanupLedger | undefined
 
   constructor(options: BrowserSurfaceManagerOptions) {
     this.coordinator = options.coordinator
@@ -171,7 +172,7 @@ export class BrowserSurfaceManager {
     return true
   }
 
-  /** Revoke exact ownership and await handlers, debugger, view, storage, and coordinator cleanup. */
+  /** Run retryable non-release cleanup for the exact owner while retaining the slot. */
   async stop(token: BrowserSurfaceToken): Promise<void> {
     const active = this.active
     if (active === undefined || active.mount.generation !== token.generation
@@ -179,8 +180,27 @@ export class BrowserSurfaceManager {
     if (active.mount.sessionId !== token.sessionId) {
       throw new AgentBrowserError('BUSY', 'another session owns the Agent browser surface')
     }
-    if (active.cleanup === undefined) active.cleanup = this.cleanup(active)
-    await active.cleanup
+    active.cleanup ??= this.createCleanupLedger(active)
+    await this.runCleanupLedger(active.cleanup, false)
+  }
+
+  /** Release only an exactly stopped owner after every preceding cleanup step succeeded. */
+  async release(token: BrowserSurfaceToken): Promise<void> {
+    const active = this.active
+    if (active === undefined || active.mount.generation !== token.generation
+      || active.mount.mountToken !== token.mountToken) return
+    if (active.mount.sessionId !== token.sessionId) {
+      throw new AgentBrowserError('BUSY', 'another session owns the Agent browser surface')
+    }
+    const cleanup = active.cleanup
+    if (cleanup === undefined || cleanup.operations.some(operation => operation.phase === 'stop')) {
+      throw new AgentBrowserError('BUSY', 'browser surface has not reached release')
+    }
+    await this.runCleanupLedger(cleanup, true)
+    if (cleanup.operations.length !== 0) {
+      throw new AgentBrowserError('INTERNAL', 'browser surface release did not reach quiescence')
+    }
+    if (this.active === active) this.active = undefined
   }
 
   /** Retry only the failed cleanup steps for an exact unpublished owner generation. */
@@ -194,13 +214,8 @@ export class BrowserSurfaceManager {
     if (failed.generation !== request.generation) {
       throw new AgentBrowserError('STALE_REF', 'browser cleanup generation does not match')
     }
-    if (failed.cleanup === undefined) failed.cleanup = this.retryFailedCleanup(failed)
-    try {
-      await failed.cleanup
-    } catch (error) {
-      delete failed.cleanup
-      throw error
-    }
+    await this.runCleanupLedger(failed, true)
+    if (this.failedMountCleanup === failed) this.failedMountCleanup = undefined
   }
 
   private async createAndMount(sessionId: string, generation: number): Promise<BrowserSurfaceMount> {
@@ -239,9 +254,10 @@ export class BrowserSurfaceManager {
       this.active = { mount, resource, handlers }
       return mount
     } catch (error) {
-      const cleanup = await this.cleanupFailedMount(resource, handlers, sessionId, generation)
-      if (cleanup.length > 0) {
-        this.failedMountCleanup = { sessionId, generation, operations: cleanup }
+      const cleanup = this.createFailedMountCleanup(resource, handlers, sessionId, generation)
+      try { await this.runCleanupLedger(cleanup, true) } catch { /* retained below */ }
+      if (cleanup.operations.length > 0) {
+        this.failedMountCleanup = cleanup
         throw new AgentBrowserError('INTERNAL', 'browser surface mount cleanup did not reach quiescence')
       }
       if (error instanceof AgentBrowserError) throw error
@@ -249,61 +265,74 @@ export class BrowserSurfaceManager {
     }
   }
 
-  private async cleanup(active: ActiveSurface): Promise<void> {
-    let failure: unknown
-    const attempt = async (operation: () => void | Promise<void>): Promise<void> => {
-      try {
-        await operation()
-      } catch (error) {
-        failure ??= error
-      }
+  private createCleanupLedger(active: ActiveSurface): SurfaceCleanupLedger {
+    return {
+      sessionId: active.mount.sessionId,
+      generation: active.mount.generation,
+      operations: [
+        { phase: 'stop', run: () => Promise.resolve().then(() => { active.handlers.dispose() }) },
+        { phase: 'stop', run: () => active.resource.detachDebugger() },
+        { phase: 'stop', run: () => active.resource.teardownView() },
+        ...active.resource.kind === 'ephemeral'
+          ? [{ phase: 'stop' as const, run: () => active.resource.clearStorage() }]
+          : [],
+        {
+          phase: 'stop',
+          run: () => this.coordinator.revoke(active.mount.sessionId, active.mount.generation),
+        },
+        { phase: 'release', run: () => active.resource.releaseTransfer() },
+        {
+          phase: 'release',
+          run: () => this.coordinator.release(active.mount.sessionId, active.mount.generation),
+        },
+      ],
     }
-    await attempt(() => { active.handlers.dispose() })
-    await attempt(() => active.resource.detachDebugger())
-    await attempt(() => active.resource.teardownView())
-    if (active.resource.kind === 'ephemeral') await attempt(() => active.resource.clearStorage())
-    await attempt(() => this.coordinator.revoke(active.mount.sessionId, active.mount.generation))
-    if (failure === undefined) await attempt(() => active.resource.releaseTransfer())
-    if (failure !== undefined) throw new AgentBrowserError('INTERNAL', 'browser surface cleanup did not reach quiescence')
-    if (this.active === active) this.active = undefined
   }
 
-  private async cleanupFailedMount(
+  private createFailedMountCleanup(
     resource: BrowserSurfaceResource | undefined,
     handlers: { dispose(): void } | undefined,
     sessionId: string,
     generation: number,
-  ): Promise<readonly CleanupOperation[]> {
-    const operations: CleanupOperation[] = [
-      ...handlers === undefined ? [] : [{ run: () => Promise.resolve().then(() => { handlers.dispose() }) }],
-      ...resource === undefined ? [] : [
-        { run: () => resource.detachDebugger() },
-        { run: () => resource.teardownView() },
-        ...resource.kind === 'ephemeral' ? [{ run: () => resource.clearStorage() }] : [],
-      ],
-      { run: () => this.coordinator.revoke(sessionId, generation) },
-      ...resource === undefined ? [] : [{
-        run: () => resource.releaseTransfer(),
-        requiresPriorSuccess: true,
+  ): SurfaceCleanupLedger {
+    return { sessionId, generation, operations: [
+      ...handlers === undefined ? [] : [{
+        phase: 'stop' as const,
+        run: () => Promise.resolve().then(() => { handlers.dispose() }),
       }],
-    ]
-    return await this.runCleanupOperations(operations)
+      ...resource === undefined ? [] : [
+        { phase: 'stop' as const, run: () => resource.detachDebugger() },
+        { phase: 'stop' as const, run: () => resource.teardownView() },
+        ...resource.kind === 'ephemeral'
+          ? [{ phase: 'stop' as const, run: () => resource.clearStorage() }]
+          : [],
+      ],
+      { phase: 'stop', run: () => this.coordinator.revoke(sessionId, generation) },
+      ...resource === undefined ? [] : [{
+        phase: 'release' as const,
+        run: () => resource.releaseTransfer(),
+      }],
+      { phase: 'release', run: () => this.coordinator.release(sessionId, generation) },
+    ] }
   }
 
-  private async retryFailedCleanup(failed: FailedMountCleanup): Promise<void> {
-    const remaining = await this.runCleanupOperations(failed.operations)
-    failed.operations = remaining
-    if (remaining.length > 0) {
-      throw new AgentBrowserError('INTERNAL', 'browser surface mount cleanup did not reach quiescence')
+  private async runCleanupLedger(ledger: SurfaceCleanupLedger, allowRelease: boolean): Promise<void> {
+    const pending = ledger.pending
+    if (pending !== undefined) {
+      await pending
+      if (allowRelease && ledger.operations.length > 0) await this.runCleanupLedger(ledger, true)
+      return
     }
-    if (this.failedMountCleanup === failed) this.failedMountCleanup = undefined
+    const operation = this.runCleanupOperations(ledger, allowRelease)
+    ledger.pending = operation
+    try { await operation } finally { if (ledger.pending === operation) delete ledger.pending }
   }
 
-  private async runCleanupOperations(operations: readonly CleanupOperation[]): Promise<readonly CleanupOperation[]> {
+  private async runCleanupOperations(ledger: SurfaceCleanupLedger, allowRelease: boolean): Promise<void> {
     const failed: CleanupOperation[] = []
     let priorFailure = false
-    for (const operation of operations) {
-      if (operation.requiresPriorSuccess === true && priorFailure) {
+    for (const operation of ledger.operations) {
+      if (operation.phase === 'release' && (!allowRelease || priorFailure)) {
         failed.push(operation)
         continue
       }
@@ -314,7 +343,10 @@ export class BrowserSurfaceManager {
         priorFailure = true
       }
     }
-    return failed
+    ledger.operations = failed
+    if (priorFailure) {
+      throw new AgentBrowserError('INTERNAL', 'browser surface cleanup did not reach quiescence')
+    }
   }
 
   private takeGeneration(): number {

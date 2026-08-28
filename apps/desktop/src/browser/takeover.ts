@@ -31,6 +31,7 @@ export class BrowserTakeoverAuthority implements BrowserSurfaceCoordinator {
   private intent: BrowserPersistentGiveIntent | undefined
   private ownerSession: string | undefined
   private consumingSession: string | undefined
+  private revoking: { readonly sessionId: string; readonly generation: number } | undefined
   private phase: BrowserTakeoverStatus['phase'] = 'human'
   private stopping: Promise<BrowserTakeoverStatus> | undefined
 
@@ -42,7 +43,8 @@ export class BrowserTakeoverAuthority implements BrowserSurfaceCoordinator {
 
   /** Record only an opaque identity captured from the current visible persistent human view. */
   give(): Promise<BrowserTakeoverStatus> {
-    if (this.ownerSession !== undefined || this.consumingSession !== undefined || this.stopping !== undefined) {
+    if (this.ownerSession !== undefined || this.consumingSession !== undefined
+      || this.revoking !== undefined || this.stopping !== undefined) {
       throw new AgentBrowserError('BUSY', 'the browser is already assigned to an Agent')
     }
     const intent = this.source.captureVisiblePersistentIntent()
@@ -61,7 +63,8 @@ export class BrowserTakeoverAuthority implements BrowserSurfaceCoordinator {
 
   /** Mark a manager-created ephemeral surface as Agent-owned without consuming human state. */
   claimEphemeralOwner(sessionId: string): void {
-    if (this.intent !== undefined || this.ownerSession !== undefined || this.consumingSession !== undefined) {
+    if (this.intent !== undefined || this.ownerSession !== undefined || this.consumingSession !== undefined
+      || this.revoking !== undefined) {
       throw new AgentBrowserError('BUSY', 'another browser takeover state is active')
     }
     this.ownerSession = sessionId
@@ -89,10 +92,10 @@ export class BrowserTakeoverAuthority implements BrowserSurfaceCoordinator {
         throw new AgentBrowserError('POLICY_DENIED', 'persistent browser transfer is invalid')
       }
       this.ownerSession = sessionId
-      this.publish('agent')
+      if (this.stopping === undefined) this.publish('agent')
       return resource
     } catch (error) {
-      this.publish('human')
+      if (this.stopping === undefined) this.publish('human')
       throw error
     } finally {
       if (this.consumingSession === sessionId) this.consumingSession = undefined
@@ -102,7 +105,7 @@ export class BrowserTakeoverAuthority implements BrowserSurfaceCoordinator {
   /** Await coordinator revocation and every generation-owned cleanup step. */
   stop(): Promise<BrowserTakeoverStatus> {
     if (this.stopping !== undefined) return this.stopping
-    const owner = this.ownerSession
+    const owner = this.ownerSession ?? this.consumingSession
     if (owner === undefined) {
       this.intent = undefined
       return Promise.resolve(this.publish('human'))
@@ -117,10 +120,27 @@ export class BrowserTakeoverAuthority implements BrowserSurfaceCoordinator {
   }
 
   /** Manager cleanup notification for the exact trusted owner session. */
-  revoke(sessionId: string, _generation: number): Promise<void> {
+  revoke(sessionId: string, generation: number): Promise<void> {
     if (this.ownerSession !== sessionId) return Promise.resolve()
-    this.ownerSession = undefined
-    this.publish('human')
+    const revoking = this.revoking
+    if (revoking !== undefined
+      && (revoking.sessionId !== sessionId || revoking.generation !== generation)) {
+      throw new AgentBrowserError('STALE_REF', 'browser revocation generation is stale')
+    }
+    this.revoking ??= Object.freeze({ sessionId, generation })
+    if (this.stopping === undefined) this.publish('stopping')
+    return Promise.resolve()
+  }
+
+  /** Clear the main-owned owner only after exact surface release reaches quiescence. */
+  release(sessionId: string, generation: number): Promise<void> {
+    const revoking = this.revoking
+    if (revoking === undefined || revoking.sessionId !== sessionId || revoking.generation !== generation) {
+      throw new AgentBrowserError('STALE_REF', 'browser release generation is stale')
+    }
+    this.revoking = undefined
+    if (this.ownerSession === sessionId) this.ownerSession = undefined
+    if (this.stopping === undefined) this.publish('human')
     return Promise.resolve()
   }
 
@@ -128,6 +148,7 @@ export class BrowserTakeoverAuthority implements BrowserSurfaceCoordinator {
     try {
       await this.stopActiveSession(sessionId)
       if (this.ownerSession === sessionId) this.ownerSession = undefined
+      if (this.revoking?.sessionId === sessionId) this.revoking = undefined
       return this.publish('human')
     } catch (error) {
       this.publish('agent')

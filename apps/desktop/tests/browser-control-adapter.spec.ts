@@ -113,7 +113,7 @@ describe('Browser Desktop control adapter', () => {
     const current = semantic()
     const acquireSurface = vi.fn(async () => mount(kind))
     const adapter = new BrowserDesktopControlAdapter({
-      surfaceManager: { acquire: acquireSurface, stop: vi.fn(async () => {}) },
+      surfaceManager: { acquire: acquireSurface, stop: vi.fn(async () => {}), release: vi.fn(async () => {}) },
       activate: async () => ({ semantic: current, disposeTransport: async () => {} }),
     })
 
@@ -130,7 +130,9 @@ describe('Browser Desktop control adapter', () => {
   it('maps the closed protocol roster to semantic actions and preserves snapshot PNG pairing', async () => {
     const current = semantic()
     const adapter = new BrowserDesktopControlAdapter({
-      surfaceManager: { acquire: async () => mount(), stop: vi.fn(async () => {}) },
+      surfaceManager: {
+        acquire: async () => mount(), stop: vi.fn(async () => {}), release: vi.fn(async () => {}),
+      },
       activate: async () => ({ semantic: current, disposeTransport: async () => {} }),
     })
     await adapter.acquireFacts(acquire(), new AbortController().signal)
@@ -164,8 +166,9 @@ describe('Browser Desktop control adapter', () => {
     const order: string[] = []
     const current = semantic(() => { order.push('debugger') })
     const stop = vi.fn(async (token: BrowserSurfaceToken) => { order.push(`surface:${token.mountToken}`) })
+    const release = vi.fn(async (token: BrowserSurfaceToken) => { order.push(`release:${token.mountToken}`) })
     const adapter = new BrowserDesktopControlAdapter({
-      surfaceManager: { acquire: async () => mount('human-persistent'), stop },
+      surfaceManager: { acquire: async () => mount('human-persistent'), stop, release },
       activate: async () => ({
         semantic: current,
         disposeTransport: async () => { order.push('transport') },
@@ -183,14 +186,45 @@ describe('Browser Desktop control adapter', () => {
     })
 
     await adapter.stopLease(lease('browser-human-persistent'), 'user-stop', new AbortController().signal)
-    expect(order).toEqual(['debugger', 'transport', 'surface:mount-4'])
+    expect(order).toEqual(['debugger', 'transport', 'surface:mount-4', 'release:mount-4'])
     expect(stop).toHaveBeenCalledOnce()
+    expect(release).toHaveBeenCalledOnce()
+  })
+
+  it('retains the exact generation until failed cleanup retries and every owner reaches release', async () => {
+    const current = semantic()
+    current.stop.mockRejectedValueOnce(new Error('debugger detach failed'))
+    const disposeTransport = vi.fn(async () => {})
+    const stop = vi.fn(async () => {})
+    const release = vi.fn(async () => {})
+    const surfaceManager = { acquire: async () => mount('human-persistent'), stop, release }
+    const adapter = new BrowserDesktopControlAdapter({
+      surfaceManager,
+      activate: async () => ({ semantic: current, disposeTransport }),
+    })
+    await adapter.acquireFacts(acquire(), new AbortController().signal)
+    const snapshot = lease('browser-human-persistent')
+
+    await expect(adapter.stopLease(snapshot, 'user-stop', new AbortController().signal))
+      .rejects.toThrow('browser control cleanup failed')
+    expect(current.stop).toHaveBeenCalledOnce()
+    expect(disposeTransport).toHaveBeenCalledOnce()
+    expect(stop).toHaveBeenCalledOnce()
+    expect(release).not.toHaveBeenCalled()
+    await expect(adapter.acquireFacts(acquire(), new AbortController().signal))
+      .rejects.toMatchObject({ code: 'BUSY' })
+
+    await adapter.stopLease(snapshot, 'user-stop', new AbortController().signal)
+    expect(current.stop).toHaveBeenCalledTimes(2)
+    expect(disposeTransport).toHaveBeenCalledOnce()
+    expect(stop).toHaveBeenCalledOnce()
+    expect(release).toHaveBeenCalledOnce()
   })
 
   it('fails closed for a foreign session without revealing or remounting the owner', async () => {
     const acquireSurface = vi.fn(async () => mount())
     const adapter = new BrowserDesktopControlAdapter({
-      surfaceManager: { acquire: acquireSurface, stop: vi.fn(async () => {}) },
+      surfaceManager: { acquire: acquireSurface, stop: vi.fn(async () => {}), release: vi.fn(async () => {}) },
       activate: async () => ({ semantic: semantic(), disposeTransport: async () => {} }),
     })
     await adapter.acquireFacts(acquire(), new AbortController().signal)

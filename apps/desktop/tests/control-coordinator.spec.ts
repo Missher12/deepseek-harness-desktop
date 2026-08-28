@@ -289,6 +289,28 @@ describe('DesktopControlCoordinator', () => {
     expect(coordinator.activeLease()).toBeNull()
   })
 
+  it('aborts a matching pending acquire and awaits browser rollback before revocation returns', async () => {
+    const rollback = new Deferred<void>()
+    const browser = adapter('browser')
+    const rollbackLeaseInstall = vi.fn(async () => { await rollback.promise })
+    browser.rollbackLeaseInstall = rollbackLeaseInstall
+    const { coordinator, dialog } = setup({ browser })
+    const acquiring = coordinator.dispatch(acquire('browser-ephemeral'), context())
+    await vi.waitFor(() => { expect(dialog.answers).toHaveLength(1) })
+
+    let revoked = false
+    const revoking = coordinator.revokeSession(SESSION, new AbortController().signal)
+      .then(() => { revoked = true })
+    await vi.waitFor(() => { expect(rollbackLeaseInstall).toHaveBeenCalledOnce() })
+    expect(revoked).toBe(false)
+    rollback.resolve()
+
+    await revoking
+    await expect(acquiring).resolves.toMatchObject({
+      message: { responseKind: 'error', error: { code: 'CANCELLED' } },
+    })
+  })
+
   it('withholds an effective descriptor until native approval and helper install both succeed', async () => {
     const order: string[] = []
     const install = new Deferred<void>()
