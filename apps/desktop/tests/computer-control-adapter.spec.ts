@@ -3,7 +3,6 @@ import {
   ComputerRef,
   ControlLeaseId,
   ImmutablePng,
-  PngTransferId,
   RequestId,
   SessionId,
   type BridgeRequest,
@@ -49,7 +48,13 @@ function okEnvelope(
       result,
     }),
     ...(png === undefined ? {} : { png }),
-  }) as DecodedDesktopControlEnvelope
+  }) as unknown as DecodedDesktopControlEnvelope
+}
+
+function responseRequestKind(envelope: DecodedDesktopControlEnvelope): string {
+  expect(envelope.message.messageKind).toBe('response')
+  if (envelope.message.messageKind !== 'response') throw new Error('response expected')
+  return envelope.message.requestKind
 }
 
 class FakeHelper implements ComputerHelperClient {
@@ -253,7 +258,7 @@ describe('ComputerDesktopControlAdapter', () => {
         generation: 1,
         registerAcquisition: () => true,
       })
-      expect(result.message.requestKind).toBe(request.requestKind)
+      expect(responseRequestKind(result)).toBe(request.requestKind)
     }
     expect(helper.requests.map(request => request.requestKind)).toEqual([
       'status', 'list', 'snapshot', 'focus', 'click', 'double-click', 'drag', 'type', 'key', 'scroll', 'wait',
@@ -268,10 +273,7 @@ describe('ComputerDesktopControlAdapter', () => {
 
   it('preserves the adjacent immutable PNG envelope while remapping snapshot response kind', async () => {
     const helper = new FakeHelper()
-    const png = Object.freeze({
-      transferId: PngTransferId('40000000-0000-4000-8000-000000000001'),
-      png: new ImmutablePng(new Uint8Array([1, 2, 3])),
-    })
+    const png = new ImmutablePng(new Uint8Array([1, 2, 3]))
     helper.responder = async request => okEnvelope(request, {
       appId: 'app.one', windowId: 'window.two', snapshotRevision: 9,
       semanticText: '', refs: [],
@@ -286,7 +288,7 @@ describe('ComputerDesktopControlAdapter', () => {
       registerAcquisition: () => true,
     })
 
-    expect(result.message.requestKind).toBe('computer.snapshot')
+    expect(responseRequestKind(result)).toBe('computer.snapshot')
     expect(result.png).toBe(png)
   })
 
