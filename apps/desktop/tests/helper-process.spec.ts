@@ -9,6 +9,7 @@ import {
   encodeJsonFrame,
   encodeLengthPrefixedFrame,
   type HelperRequest,
+  type HelperInputReleaseRequest,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
 import {
   NativeHelperProcess,
@@ -50,6 +51,19 @@ function statusRequest(requestId = '00000000-0000-4000-8000-000000000001'): Help
     requestId: RequestId(requestId),
     sessionId: SessionId('session-1'),
     timeoutMs: 1_000,
+  }
+}
+
+function inputReleaseRequest(): HelperInputReleaseRequest {
+  return {
+    protocolVersion: 1,
+    messageKind: 'request',
+    requestKind: 'input.release',
+    requestId: RequestId('50000000-0000-4000-8000-000000000001'),
+    sessionId: SessionId('session-1'),
+    timeoutMs: 1_000,
+    keys: ['A', 'Meta'],
+    buttons: ['left'],
   }
 }
 
@@ -130,15 +144,16 @@ describe('NativeHelperProcess', () => {
     }))
     child.stdout.write(response)
 
-    await expect(pending).rejects.toEqual(expect.objectContaining({
-      code: 'DISCONNECTED',
-      message: 'Native Computer Use helper disconnected.',
-    }))
+    await Promise.resolve()
     expect(helper.running).toBe(true)
     await expect(helper.request(statusRequest())).rejects.toEqual(expect.objectContaining({
       code: 'DISCONNECTED',
     }))
     child.exit()
+    await expect(pending).rejects.toEqual(expect.objectContaining({
+      code: 'DISCONNECTED',
+      message: 'Native Computer Use helper disconnected.',
+    }))
     expect(helper.running).toBe(false)
   })
 
@@ -284,22 +299,26 @@ describe('NativeHelperProcess', () => {
     expect(spawn).toHaveBeenCalledTimes(2)
   })
 
-  it('retains a confirmed child after error until its real close boundary', async () => {
+  it('retains a confirmed child and its pending request until the real close boundary', async () => {
     const child = new FakeChild()
     const helper = new NativeHelperProcess({
       binaryPath: '/verified/computer-use-helper',
       spawn: () => asChild(child),
     })
+    let settled = false
     const pending = helper.request(statusRequest())
+    void pending.catch(() => {}).finally(() => { settled = true })
     child.spawned()
     child.emit('error', new Error('started child failed'))
 
-    await expect(pending).rejects.toEqual(expect.objectContaining({ code: 'DISCONNECTED' }))
+    await Promise.resolve()
+    expect(settled).toBe(false)
     expect(helper.running).toBe(true)
     await expect(helper.request(statusRequest('00000000-0000-4000-8000-000000000002')))
       .rejects.toEqual(expect.objectContaining({ code: 'DISCONNECTED' }))
 
     child.closed()
+    await expect(pending).rejects.toEqual(expect.objectContaining({ code: 'DISCONNECTED' }))
     expect(helper.running).toBe(false)
   })
 
@@ -336,5 +355,189 @@ describe('NativeHelperProcess', () => {
     third.exit()
     await shutdown
     expect(onUnexpectedExit).toHaveBeenCalledOnce()
+  })
+
+  it('reports a confirmed link failure before rejecting its in-flight action', async () => {
+    const child = new FakeChild()
+    const order: string[] = []
+    const helper = new NativeHelperProcess({
+      binaryPath: '/verified/computer-use-helper',
+      spawn: () => asChild(child),
+      onUnexpectedExit: () => { order.push(helper.running ? 'crash-running' : 'crash-detached') },
+    })
+    const pending = helper.request(statusRequest()).catch((error: unknown) => {
+      order.push('rejected')
+      throw error
+    })
+    child.spawned()
+    child.emit('error', new Error('confirmed link failed'))
+
+    expect(order).toEqual([])
+    child.closed()
+    expect(order).toEqual(['crash-detached'])
+    await expect(pending).rejects.toMatchObject({ code: 'DISCONNECTED' })
+    expect(order).toEqual(['crash-detached', 'rejected'])
+  })
+
+  it('stops only after the last concurrent request and can spawn a new child later', async () => {
+    const first = new FakeChild()
+    const second = new FakeChild()
+    const spawn = vi.fn<SpawnNativeHelper>()
+      .mockReturnValueOnce(asChild(first))
+      .mockReturnValueOnce(asChild(second))
+    const written: Uint8Array[] = []
+    first.stdin.on('data', (chunk: Buffer) => { written.push(new Uint8Array(chunk)) })
+    const helper = new NativeHelperProcess({
+      binaryPath: '/verified/computer-use-helper',
+      spawn,
+    })
+    const firstRequest = statusRequest()
+    const secondRequest = statusRequest('00000000-0000-4000-8000-000000000002')
+    const pendingFirst = helper.request(firstRequest)
+    const pendingSecond = helper.request(secondRequest)
+    first.stdout.write(encodeLengthPrefixedFrame(encodeJsonFrame({
+      protocolVersion: 1, messageKind: 'response', responseKind: 'ok',
+      requestKind: 'status', requestId: firstRequest.requestId,
+      result: { viewing: 'unknown', assistive: 'unknown', supported: false },
+    })))
+    await pendingFirst
+    await helper.stopWhenIdle()
+    expect(framedMessages(written)).not.toContainEqual(expect.objectContaining({ controlKind: 'parent.shutdown' }))
+
+    first.stdout.write(encodeLengthPrefixedFrame(encodeJsonFrame({
+      protocolVersion: 1, messageKind: 'response', responseKind: 'ok',
+      requestKind: 'status', requestId: secondRequest.requestId,
+      result: { viewing: 'unknown', assistive: 'unknown', supported: false },
+    })))
+    await pendingSecond
+    const stopped = helper.stopWhenIdle()
+    expect(framedMessages(written).at(-1)).toMatchObject({ controlKind: 'parent.shutdown' })
+    first.exit()
+    await stopped
+    expect(helper.running).toBe(false)
+
+    const next = helper.request(statusRequest('00000000-0000-4000-8000-000000000003'))
+    second.stdout.write(encodeLengthPrefixedFrame(encodeJsonFrame({
+      protocolVersion: 1, messageKind: 'response', responseKind: 'ok',
+      requestKind: 'status', requestId: RequestId('00000000-0000-4000-8000-000000000003'),
+      result: { viewing: 'unknown', assistive: 'unknown', supported: false },
+    })))
+    await next
+    expect(spawn).toHaveBeenCalledTimes(2)
+  })
+
+  it('makes application shutdown permanent even when no child has started', async () => {
+    const spawn = vi.fn<SpawnNativeHelper>(() => { throw new Error('must remain closed') })
+    const helper = new NativeHelperProcess({ binaryPath: '/verified/computer-use-helper', spawn })
+
+    await helper.shutdown()
+    await expect(helper.request(statusRequest())).rejects.toMatchObject({ code: 'DISCONNECTED' })
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
+  it('uses one fresh helper for concurrent recovery after exact binary re-verification', async () => {
+    const crashed = new FakeChild()
+    const fresh = new FakeChild()
+    const spawn = vi.fn<SpawnNativeHelper>()
+      .mockReturnValueOnce(asChild(crashed))
+      .mockReturnValueOnce(asChild(fresh))
+    const readBinary = vi.fn(() => new Uint8Array([1, 2, 3]))
+    const helper = new NativeHelperProcess({
+      binaryPath: '/verified/computer-use-helper',
+      spawn,
+      lstatBinary: () => ({ isFile: () => true, isSymbolicLink: () => false }),
+      readBinary,
+    })
+    const initial = helper.request(statusRequest())
+    crashed.spawned()
+    crashed.stdout.write(encodeLengthPrefixedFrame(encodeJsonFrame({
+      protocolVersion: 1, messageKind: 'response', responseKind: 'ok',
+      requestKind: 'status', requestId: statusRequest().requestId,
+      result: { viewing: 'unknown', assistive: 'unknown', supported: true },
+    })))
+    await initial
+    crashed.exit(1)
+
+    const recoveryMessages: Record<string, unknown>[] = []
+    const decoder = new LengthPrefixedFrameDecoder()
+    fresh.stdin.on('data', (chunk: Buffer) => {
+      for (const frame of decoder.push(new Uint8Array(chunk))) {
+        const message = JSON.parse(new TextDecoder().decode(frame.subarray(1))) as Record<string, unknown>
+        recoveryMessages.push(message)
+        if (message.requestKind === 'input.release') {
+          fresh.stdout.write(encodeLengthPrefixedFrame(encodeJsonFrame({
+            protocolVersion: 1, messageKind: 'response', responseKind: 'ok',
+            requestKind: 'input.release', requestId: inputReleaseRequest().requestId,
+            result: { released: true },
+          })))
+        } else if (message.controlKind === 'parent.shutdown') fresh.exit()
+      }
+    })
+    const first = helper.recoverInput(inputReleaseRequest())
+    const second = helper.recoverInput(inputReleaseRequest())
+    await Promise.all([first, second])
+
+    expect(spawn).toHaveBeenCalledTimes(2)
+    expect(readBinary).toHaveBeenCalledTimes(3)
+    expect(recoveryMessages.map(message => message.requestKind ?? message.controlKind)).toEqual([
+      'input.release', 'parent.shutdown',
+    ])
+  })
+
+  it('retains fail-closed recovery when the binary changed or the held-input set is empty', async () => {
+    const child = new FakeChild()
+    const fresh = new FakeChild()
+    let bytes = new Uint8Array([1])
+    const spawn = vi.fn<SpawnNativeHelper>()
+      .mockReturnValueOnce(asChild(child))
+      .mockReturnValueOnce(asChild(fresh))
+    const helper = new NativeHelperProcess({
+      binaryPath: '/verified/computer-use-helper',
+      spawn,
+      lstatBinary: () => ({ isFile: () => true, isSymbolicLink: () => false }),
+      readBinary: () => bytes,
+    })
+    const initial = helper.request(statusRequest())
+    child.spawned()
+    child.stdout.write(encodeLengthPrefixedFrame(encodeJsonFrame({
+      protocolVersion: 1, messageKind: 'response', responseKind: 'ok',
+      requestKind: 'status', requestId: statusRequest().requestId,
+      result: { viewing: 'unknown', assistive: 'unknown', supported: true },
+    })))
+    await initial
+    child.exit(1)
+    bytes = new Uint8Array([2])
+
+    await expect(helper.recoverInput(inputReleaseRequest())).rejects.toMatchObject({
+      code: 'BINARY_MISMATCH',
+      message: 'Native Computer Use helper binary did not match.',
+    })
+    await expect(helper.recoverInput({
+      ...inputReleaseRequest(),
+      requestId: RequestId('50000000-0000-4000-8000-000000000002'),
+      keys: [],
+      buttons: [],
+    })).rejects.toMatchObject({ code: 'BINARY_MISMATCH' })
+    expect(spawn).toHaveBeenCalledOnce()
+
+    bytes = new Uint8Array([1])
+    const retry = { ...inputReleaseRequest(), requestId: RequestId('50000000-0000-4000-8000-000000000003') }
+    const decoder = new LengthPrefixedFrameDecoder()
+    fresh.stdin.on('data', (chunk: Buffer) => {
+      for (const frame of decoder.push(new Uint8Array(chunk))) {
+        const message = JSON.parse(new TextDecoder().decode(frame.subarray(1))) as Record<string, unknown>
+        if (message.requestKind === 'input.release') {
+          fresh.stdout.write(encodeLengthPrefixedFrame(encodeJsonFrame({
+            protocolVersion: 1, messageKind: 'response', responseKind: 'ok',
+            requestKind: 'input.release', requestId: retry.requestId,
+            result: { released: true },
+          })))
+        } else if (message.controlKind === 'parent.shutdown') fresh.exit()
+      }
+    })
+    await expect(helper.recoverInput(retry)).resolves.toMatchObject({
+      message: { responseKind: 'ok', requestKind: 'input.release' },
+    })
+    expect(spawn).toHaveBeenCalledTimes(2)
   })
 })

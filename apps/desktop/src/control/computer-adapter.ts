@@ -4,6 +4,7 @@ import {
   PROTOCOL_LIMITS,
   type BridgeRequest,
   type ComputerListResult,
+  type ComputerStatusResult,
   type ControlLeaseAcquireRequest,
   type ControlLeaseCapability,
   type ControlLeaseTarget,
@@ -11,6 +12,7 @@ import {
   type DesktopControlControl,
   type DesktopControlErrorCode,
   type HelperRequest,
+  type HelperInputReleaseRequest,
   type PointerButton,
   type RequestId,
   type SessionId,
@@ -37,6 +39,11 @@ export interface ComputerHelperClient {
   readonly running: boolean
   request(request: HelperRequest, signal?: AbortSignal): Promise<DecodedDesktopControlEnvelope>
   sendControl(control: DesktopControlControl): void
+  stopWhenIdle(): Promise<void>
+  recoverInput(
+    request: HelperInputReleaseRequest,
+    signal?: AbortSignal,
+  ): Promise<DecodedDesktopControlEnvelope>
   shutdown(): Promise<void>
 }
 
@@ -55,32 +62,92 @@ export interface ComputerHelperPathOptions {
   readonly lstat: (path: string) => ComputerHelperPathMetadata
 }
 
-/**
- * Task 11 boundary: implementations may return held input only after verifying
- * the exact helper binary hash and platform signing identity for this recovery.
- */
-export interface VerifiedComputerInputRecovery {
-  verifiedHeldInput(
-    snapshot: ActiveControlLease,
-    signal: AbortSignal,
-  ): Promise<{
-    readonly sessionId: SessionId
-    readonly keys: readonly string[]
-    readonly buttons: readonly PointerButton[]
-  } | undefined>
-  markReleased(): void
-  /** Reverify exact binary bytes/signing identity, use a fresh helper, await release ack, then shut it down. */
-  releaseWithFreshVerifiedHelper(signal: AbortSignal): Promise<void>
-}
-
 export interface ComputerDesktopControlAdapterOptions {
   readonly helper?: ComputerHelperClient | undefined
-  readonly recovery?: VerifiedComputerInputRecovery | undefined
   readonly available?: boolean | undefined
   readonly capabilities?: readonly ControlLeaseCapability[] | undefined
   readonly factsTimeoutMs?: number | undefined
   readonly cleanupTimeoutMs?: number | undefined
   readonly mintRequestId: () => RequestId
+}
+
+interface HeldInputSnapshot {
+  readonly sessionId: SessionId
+  readonly keys: readonly string[]
+  readonly buttons: readonly PointerButton[]
+}
+
+const MAX_POSSIBLY_HELD_INPUTS = 64
+
+class ConservativeInputJournal {
+  readonly #entries = new Map<string, HeldInputSnapshot>()
+  #frozen: HeldInputSnapshot | undefined
+
+  register(request: BridgeRequest): boolean {
+    const entry = possibleHeldInput(request)
+    if (entry === undefined) return false
+    if (this.#frozen !== undefined) throw new ComputerDesktopControlAdapterError('DISCONNECTED')
+    this.#entries.set(String(request.requestId), entry)
+    const combined = this.combine()
+    if (combined.keys.length + combined.buttons.length > MAX_POSSIBLY_HELD_INPUTS) {
+      this.#entries.delete(String(request.requestId))
+      throw new ComputerDesktopControlAdapterError('TOO_MANY_PENDING')
+    }
+    return true
+  }
+
+  settle(requestId: RequestId): void {
+    if (this.#frozen === undefined) this.#entries.delete(String(requestId))
+  }
+
+  freeze(): void {
+    if (this.#frozen !== undefined || this.#entries.size === 0) return
+    this.#frozen = this.combine()
+  }
+
+  current(sessionId: SessionId): HeldInputSnapshot | undefined {
+    const snapshot = this.#frozen ?? (this.#entries.size === 0 ? undefined : this.combine())
+    if (snapshot === undefined || snapshot.sessionId !== sessionId) return undefined
+    return snapshot
+  }
+
+  frozen(): HeldInputSnapshot | undefined {
+    return this.#frozen
+  }
+
+  clear(): void {
+    this.#entries.clear()
+    this.#frozen = undefined
+  }
+
+  private combine(): HeldInputSnapshot {
+    const entries = [...this.#entries.values()]
+    const sessionId = entries[0]?.sessionId
+    if (sessionId === undefined || entries.some(entry => entry.sessionId !== sessionId)) {
+      throw new ComputerDesktopControlAdapterError('BINARY_MISMATCH')
+    }
+    return Object.freeze({
+      sessionId,
+      keys: Object.freeze([...new Set(entries.flatMap(entry => entry.keys))]),
+      buttons: Object.freeze([...new Set(entries.flatMap(entry => entry.buttons))]),
+    })
+  }
+}
+
+function possibleHeldInput(request: BridgeRequest): HeldInputSnapshot | undefined {
+  switch (request.requestKind) {
+    case 'computer.key': return Object.freeze({
+      sessionId: request.sessionId,
+      keys: Object.freeze([...new Set([request.key, ...request.modifiers])]),
+      buttons: Object.freeze([]),
+    })
+    case 'computer.click': case 'computer.double-click': case 'computer.drag': return Object.freeze({
+      sessionId: request.sessionId,
+      keys: Object.freeze([]),
+      buttons: Object.freeze([request.button]),
+    })
+    default: return undefined
+  }
 }
 
 /** Closed adapter failure shape consumed by the coordinator without exposing provider detail. */
@@ -210,17 +277,19 @@ function helperRequest(request: BridgeRequest, timeoutMs: number): HelperRequest
 export class ComputerDesktopControlAdapter implements DesktopControlSurfaceAdapter {
   readonly kind = 'computer' as const
   readonly #helper: ComputerHelperClient | undefined
-  readonly #recovery: VerifiedComputerInputRecovery | undefined
   readonly #available: boolean
   readonly #capabilities: readonly ControlLeaseCapability[]
   readonly #factsTimeoutMs: number
   readonly #cleanupTimeoutMs: number
   readonly #mintRequestId: () => RequestId
+  readonly #journal = new ConservativeInputJournal()
   #closed = false
+  #leaseActive = false
+  #recoveryFailed = false
+  #recoveryPromise: Promise<void> | undefined
 
   constructor(options: ComputerDesktopControlAdapterOptions) {
     this.#helper = options.helper
-    this.#recovery = options.recovery
     this.#available = options.available ?? options.helper !== undefined
     this.#capabilities = Object.freeze([...(options.capabilities ?? OBSERVE_ONLY)])
     this.#factsTimeoutMs = boundedTimeout(options.factsTimeoutMs, DEFAULT_FACTS_TIMEOUT_MS)
@@ -229,21 +298,14 @@ export class ComputerDesktopControlAdapter implements DesktopControlSurfaceAdapt
   }
 
   supported(): boolean {
-    return !this.#closed && this.#available && this.#helper !== undefined
+    return !this.#closed && !this.#recoveryFailed && this.#available && this.#helper !== undefined
   }
 
   async acquireFacts(
     request: ControlLeaseAcquireRequest,
     signal: AbortSignal,
   ): Promise<SurfaceAcquireFacts> {
-    const result = await this.#requestOk({
-      protocolVersion: 1,
-      messageKind: 'request',
-      requestKind: 'list',
-      requestId: this.#mintRequestId(),
-      sessionId: request.sessionId,
-      timeoutMs: this.#factsTimeoutMs,
-    }, signal) as unknown as ComputerListResult
+    const result = await this.list(request.sessionId, signal)
     const grantable = new Map(result.apps.map(application => [
       application.appId,
       new Set(application.windows.map(window => window.windowId)),
@@ -289,16 +351,58 @@ export class ComputerDesktopControlAdapter implements DesktopControlSurfaceAdapt
   ): Promise<DecodedDesktopControlEnvelope> {
     throwIfAborted(context.signal)
     const outbound = helperRequest(request, boundedTimeout(context.timeoutMs, context.timeoutMs))
-    const envelope = await this.#requireHelper().request(outbound, context.signal)
-    const response = envelope.message
-    if (response.messageKind !== 'response' || response.requestId !== outbound.requestId
-      || response.requestKind !== outbound.requestKind) {
+    const journaled = this.#journal.register(request)
+    try {
+      const envelope = await this.#requireHelper().request(outbound, context.signal)
+      const response = envelope.message
+      if (response.messageKind !== 'response' || response.requestId !== outbound.requestId
+        || response.requestKind !== outbound.requestKind) {
+        throw new ComputerDesktopControlAdapterError('DISCONNECTED')
+      }
+      return Object.freeze({
+        message: Object.freeze({ ...response, requestKind: request.requestKind }),
+        ...(envelope.png === undefined ? {} : { png: envelope.png }),
+      }) as DecodedDesktopControlEnvelope
+    } finally {
+      if (journaled) this.#journal.settle(request.requestId)
+      if (request.requestKind === 'computer.status' || request.requestKind === 'computer.list') {
+        await this.#stopHelperWhenIdle()
+      }
+    }
+  }
+
+  async status(sessionId: SessionId, signal = new AbortController().signal): Promise<ComputerStatusResult> {
+    if (this.#journal.frozen() !== undefined) {
       throw new ComputerDesktopControlAdapterError('DISCONNECTED')
     }
-    return Object.freeze({
-      message: Object.freeze({ ...response, requestKind: request.requestKind }),
-      ...(envelope.png === undefined ? {} : { png: envelope.png }),
-    }) as DecodedDesktopControlEnvelope
+    try {
+      return await this.#requestOk({
+        protocolVersion: 1, messageKind: 'request', requestKind: 'status',
+        requestId: this.#mintRequestId(), sessionId, timeoutMs: this.#factsTimeoutMs,
+      }, signal) as unknown as ComputerStatusResult
+    } finally {
+      await this.#stopHelperWhenIdle()
+    }
+  }
+
+  async list(sessionId: SessionId, signal: AbortSignal): Promise<ComputerListResult> {
+    if (this.#journal.frozen() !== undefined) {
+      throw new ComputerDesktopControlAdapterError('DISCONNECTED')
+    }
+    try {
+      return await this.#requestOk({
+        protocolVersion: 1, messageKind: 'request', requestKind: 'list',
+        requestId: this.#mintRequestId(), sessionId, timeoutMs: this.#factsTimeoutMs,
+      }, signal) as unknown as ComputerListResult
+    } finally {
+      await this.#stopHelperWhenIdle()
+    }
+  }
+
+  /** Freeze the conservative journal synchronously before crash cleanup starts. */
+  unexpectedHelperExit(): void {
+    this.#journal.freeze()
+    this.#leaseActive = false
   }
 
   async installLease(snapshot: PreparedLeaseInstall, context: ControlAdapterCallContext): Promise<void> {
@@ -314,12 +418,19 @@ export class ComputerDesktopControlAdapter implements DesktopControlSurfaceAdapt
     if (result.installed !== true || result.leaseRevision !== snapshot.leaseRevision) {
       throw new ComputerDesktopControlAdapterError('DISCONNECTED')
     }
+    this.#leaseActive = true
   }
 
   async rollbackLeaseInstall(snapshot: PreparedLeaseInstall, context: ControlAdapterCallContext): Promise<void> {
-    this.#revoke(snapshot)
-    if (!this.#requireHelper().running) return
-    await this.#stop(snapshot, snapshot.sessionId, context.timeoutMs, context.signal)
+    try {
+      this.#revoke(snapshot)
+      if (this.#requireHelper().running) {
+        await this.#stop(snapshot, snapshot.sessionId, context.timeoutMs, context.signal)
+      }
+    } finally {
+      this.#leaseActive = false
+      await this.#stopHelperWhenIdle()
+    }
   }
 
   clearQueue(snapshot: ActiveControlLease, signal: AbortSignal): Promise<void> {
@@ -331,17 +442,42 @@ export class ComputerDesktopControlAdapter implements DesktopControlSurfaceAdapt
   async stopLease(snapshot: ActiveControlLease, _reason: string, signal: AbortSignal): Promise<void> {
     throwIfAborted(signal)
     const helper = this.#requireHelper()
-    if (!helper.running) return
-    await this.#stop(snapshot, snapshot.sessionId, this.#cleanupTimeoutMs, signal)
+    try {
+      if (helper.running) await this.#stop(snapshot, snapshot.sessionId, this.#cleanupTimeoutMs, signal)
+    } finally {
+      this.#leaseActive = false
+    }
   }
 
   async releaseKnownInput(snapshot: ActiveControlLease, signal: AbortSignal): Promise<void> {
-    await this.#releaseVerifiedInput(snapshot, signal)
+    try {
+      if (this.#journal.frozen() !== undefined) return
+      const held = this.#journal.current(snapshot.sessionId)
+      if (held === undefined) return
+      await this.#releaseWithOwnedHelper(held, signal)
+      this.#journal.clear()
+    } finally {
+      await this.#stopHelperWhenIdle()
+    }
   }
 
   async recoverAfterCrash(signal: AbortSignal): Promise<void> {
     throwIfAborted(signal)
-    await this.#recovery?.releaseWithFreshVerifiedHelper(signal)
+    const held = this.#journal.frozen()
+    if (held === undefined) return
+    if (this.#recoveryPromise === undefined) {
+      this.#recoveryPromise = this.#recoverFrozenInput(held, signal)
+    }
+    const recovery = this.#recoveryPromise
+    try {
+      await recovery
+      this.#recoveryFailed = false
+    } catch (error) {
+      this.#recoveryFailed = true
+      throw error
+    } finally {
+      if (this.#recoveryPromise === recovery) this.#recoveryPromise = undefined
+    }
   }
 
   async shutdown(signal: AbortSignal): Promise<void> {
@@ -373,25 +509,38 @@ export class ComputerDesktopControlAdapter implements DesktopControlSurfaceAdapt
     })
   }
 
-  async #releaseVerifiedInput(
-    snapshot: ActiveControlLease,
+  async #releaseWithOwnedHelper(
+    held: HeldInputSnapshot,
     signal: AbortSignal,
   ): Promise<void> {
     throwIfAborted(signal)
-    const recovery = this.#recovery
-    if (recovery === undefined) return
-    const held = await recovery.verifiedHeldInput(snapshot, signal)
-    if (held === undefined) return
-    if (held.sessionId !== snapshot.sessionId) {
-      throw new ComputerDesktopControlAdapterError('BINARY_MISMATCH')
-    }
     const result = await this.#requestOk({
       protocolVersion: 1, messageKind: 'request', requestKind: 'input.release',
       requestId: this.#mintRequestId(), sessionId: held.sessionId,
       timeoutMs: this.#cleanupTimeoutMs, keys: held.keys, buttons: held.buttons,
     }, signal) as { readonly released?: unknown }
     if (result.released !== true) throw new ComputerDesktopControlAdapterError('DISCONNECTED')
-    recovery.markReleased()
+  }
+
+  async #recoverFrozenInput(held: HeldInputSnapshot, signal: AbortSignal): Promise<void> {
+    const request: HelperInputReleaseRequest = {
+      protocolVersion: 1, messageKind: 'request', requestKind: 'input.release',
+      requestId: this.#mintRequestId(), sessionId: held.sessionId,
+      timeoutMs: this.#cleanupTimeoutMs, keys: held.keys, buttons: held.buttons,
+    }
+    const helper = this.#helper
+    if (helper === undefined) throw new ComputerDesktopControlAdapterError('NOT_SUPPORTED')
+    const envelope = await helper.recoverInput(request, signal)
+    const response = envelope.message
+    if (response.messageKind !== 'response' || response.responseKind !== 'ok'
+      || response.requestKind !== 'input.release' || response.requestId !== request.requestId) {
+      throw new ComputerDesktopControlAdapterError('DISCONNECTED')
+    }
+    this.#journal.clear()
+  }
+
+  async #stopHelperWhenIdle(): Promise<void> {
+    if (!this.#leaseActive) await this.#helper?.stopWhenIdle()
   }
 
   async #requestOk(request: HelperRequest, signal: AbortSignal): Promise<Readonly<Record<string, unknown>>> {

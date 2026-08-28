@@ -9,6 +9,7 @@ import {
   type BridgeRequest,
   type ControlLeaseAcquireRequest,
   type DecodedDesktopControlEnvelope,
+  type HelperInputReleaseRequest,
   type HelperRequest,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
 import type { ActiveControlLease } from '../src/control/control-lease.ts'
@@ -17,7 +18,6 @@ import {
   ComputerDesktopControlAdapter,
   resolveComputerHelperBinaryPath,
   type ComputerHelperClient,
-  type VerifiedComputerInputRecovery,
 } from '../src/control/computer-adapter.ts'
 
 const SESSION = SessionId('computer-adapter-session')
@@ -57,6 +57,11 @@ class FakeHelper implements ComputerHelperClient {
   readonly requests: HelperRequest[] = []
   readonly controls: Parameters<ComputerHelperClient['sendControl']>[0][] = []
   readonly events: string[] = []
+  readonly recoveryRequests: HelperInputReleaseRequest[] = []
+  stopWhenIdleCalls = 0
+  recoveryResponder: (
+    request: HelperInputReleaseRequest,
+  ) => Promise<DecodedDesktopControlEnvelope> = async request => okEnvelope(request, { released: true })
   responder: (request: HelperRequest) => Promise<DecodedDesktopControlEnvelope> = async (request) => {
     switch (request.requestKind) {
       case 'status': return okEnvelope(request, { viewing: 'granted', assistive: 'unknown', supported: true })
@@ -91,13 +96,24 @@ class FakeHelper implements ComputerHelperClient {
     this.events.push('shutdown')
     return Promise.resolve()
   }
+
+  stopWhenIdle(): Promise<void> {
+    this.stopWhenIdleCalls += 1
+    this.events.push('stop-when-idle')
+    return Promise.resolve()
+  }
+
+  async recoverInput(request: HelperInputReleaseRequest): Promise<DecodedDesktopControlEnvelope> {
+    this.recoveryRequests.push(request)
+    this.events.push('recover:input.release')
+    return await this.recoveryResponder(request)
+  }
 }
 
-function adapter(helper: FakeHelper, recovery?: VerifiedComputerInputRecovery): ComputerDesktopControlAdapter {
+function adapter(helper: FakeHelper): ComputerDesktopControlAdapter {
   let next = 10
   return new ComputerDesktopControlAdapter({
     helper,
-    recovery,
     factsTimeoutMs: 432,
     cleanupTimeoutMs: 876,
     mintRequestId: () => RequestId(`30000000-0000-4000-8000-${String(next++).padStart(12, '0')}`),
@@ -301,51 +317,127 @@ describe('ComputerDesktopControlAdapter', () => {
     expect(settled).toBe(true)
   })
 
-  it('orders revoke, stop acknowledgement, verified input release, then process shutdown', async () => {
+  it('journals possible held input before dispatch and uses the live helper during normal release', async () => {
     const helper = new FakeHelper()
-    const markReleased = vi.fn()
-    const recovery: VerifiedComputerInputRecovery = {
-      verifiedHeldInput: vi.fn(async () => ({
-        sessionId: SESSION,
-        keys: Object.freeze(['Meta']),
-        buttons: Object.freeze(['left'] as const),
-      })),
-      markReleased,
-      releaseWithFreshVerifiedHelper: vi.fn(async () => {}),
-    }
-    const computer = adapter(helper, recovery)
-    const lease = active()
-    const signal = new AbortController().signal
+    let finish!: () => void
+    helper.responder = request => request.requestKind === 'key'
+      ? new Promise((resolve) => {
+        finish = () => { resolve(okEnvelope(request, { acted: true, snapshotRevision: 10 })) }
+      })
+      : Promise.resolve(okEnvelope(request, request.requestKind === 'input.release'
+        ? { released: true }
+        : { stopped: true }))
+    const computer = adapter(helper)
+    const dispatched = computer.dispatch({
+      ...requestBase('computer.key'), leaseId: LEASE, leaseRevision: 7,
+      appId: 'app.one', windowId: 'window.two', snapshotRevision: 9,
+      key: 'A', modifiers: ['Meta', 'Shift'],
+    }, {
+      signal: new AbortController().signal, timeoutMs: 321, generation: 1,
+      registerAcquisition: () => true,
+    })
+    await Promise.resolve()
+    await computer.releaseKnownInput(active(), new AbortController().signal)
+    finish()
+    await dispatched
 
-    await computer.clearQueue(lease, signal)
-    await computer.stopLease(lease, 'released', signal)
-    await computer.releaseKnownInput(lease, signal)
-    await computer.shutdown(signal)
-
-    expect(helper.events).toEqual([
-      'control:lease.revoke', 'request:stop', 'request:input.release', 'shutdown',
-    ])
-    expect(markReleased).toHaveBeenCalledOnce()
+    expect(helper.requests.find(request => request.requestKind === 'input.release')).toMatchObject({
+      sessionId: SESSION,
+      keys: ['A', 'Meta', 'Shift'],
+      buttons: [],
+    })
+    expect(helper.events).toContain('stop-when-idle')
   })
 
-  it('does not respawn merely to stop a crashed helper and delegates recovery only to the verified seam', async () => {
+  it('freezes possible held input on unexpected exit and recovers it once through a fresh helper', async () => {
     const helper = new FakeHelper()
-    helper.running = false
-    const verifiedHeldInput = vi.fn(async () => {
-      throw new Error('the crashed helper must not be reused')
-    })
-    const releaseWithFreshVerifiedHelper = vi.fn(async () => {})
-    const recovery: VerifiedComputerInputRecovery = {
-      verifiedHeldInput,
-      markReleased: vi.fn(),
-      releaseWithFreshVerifiedHelper,
+    const computer = adapter(helper)
+    helper.responder = async (request) => {
+      if (request.requestKind !== 'click') return okEnvelope(request, { stopped: true })
+      computer.unexpectedHelperExit()
+      helper.running = false
+      throw Object.assign(new Error('closed'), { code: 'DISCONNECTED' })
     }
-    const computer = adapter(helper, recovery)
-    await computer.stopLease(active(), 'helper-crash', new AbortController().signal)
+    await expect(computer.dispatch({
+      ...requestBase('computer.click'), leaseId: LEASE, leaseRevision: 7,
+      appId: 'app.one', windowId: 'window.two', snapshotRevision: 9,
+      x: 1, y: 2, button: 'right',
+    }, {
+      signal: new AbortController().signal, timeoutMs: 321, generation: 1,
+      registerAcquisition: () => true,
+    })).rejects.toMatchObject({ code: 'DISCONNECTED' })
+
+    await Promise.all([
+      computer.recoverAfterCrash(new AbortController().signal),
+      computer.recoverAfterCrash(new AbortController().signal),
+    ])
+    expect(helper.recoveryRequests).toHaveLength(1)
+    expect(helper.recoveryRequests[0]).toMatchObject({ sessionId: SESSION, keys: [], buttons: ['right'] })
+  })
+
+  it('retains a frozen journal after recovery failure and uses a fresh retry', async () => {
+    const helper = new FakeHelper()
+    const computer = adapter(helper)
+    helper.responder = async (request) => {
+      if (request.requestKind !== 'key') return okEnvelope(request, { stopped: true })
+      computer.unexpectedHelperExit()
+      helper.running = false
+      throw Object.assign(new Error('closed'), { code: 'DISCONNECTED' })
+    }
+    let attempt = 0
+    helper.recoveryResponder = async (request) => {
+      attempt += 1
+      if (attempt === 1) throw Object.assign(new Error('changed'), { code: 'BINARY_MISMATCH' })
+      return okEnvelope(request, { released: true })
+    }
+    await expect(computer.dispatch({
+      ...requestBase('computer.key'), leaseId: LEASE, leaseRevision: 7,
+      appId: 'app.one', windowId: 'window.two', snapshotRevision: 9,
+      key: 'A', modifiers: ['Meta'],
+    }, {
+      signal: new AbortController().signal, timeoutMs: 321, generation: 1,
+      registerAcquisition: () => true,
+    })).rejects.toMatchObject({ code: 'DISCONNECTED' })
+
+    await expect(computer.recoverAfterCrash(new AbortController().signal))
+      .rejects.toMatchObject({ code: 'BINARY_MISMATCH' })
+    expect(computer.supported()).toBe(false)
+    await expect(computer.recoverAfterCrash(new AbortController().signal)).resolves.toBeUndefined()
+
+    expect(helper.recoveryRequests).toHaveLength(2)
+    expect(computer.supported()).toBe(true)
+  })
+
+  it('clears the journal after a normal result and never attempts empty recovery', async () => {
+    const helper = new FakeHelper()
+    const computer = adapter(helper)
+    await computer.dispatch({
+      ...requestBase('computer.key'), leaseId: LEASE, leaseRevision: 7,
+      appId: 'app.one', windowId: 'window.two', snapshotRevision: 9,
+      key: 'A', modifiers: ['Meta'],
+    }, {
+      signal: new AbortController().signal, timeoutMs: 321, generation: 1,
+      registerAcquisition: () => true,
+    })
+    computer.unexpectedHelperExit()
     await computer.recoverAfterCrash(new AbortController().signal)
 
-    expect(helper.requests).toEqual([])
-    expect(verifiedHeldInput).not.toHaveBeenCalled()
-    expect(releaseWithFreshVerifiedHelper).toHaveBeenCalledWith(expect.any(AbortSignal))
+    expect(helper.recoveryRequests).toEqual([])
+  })
+
+  it('exposes fixed-session observation calls and closes the helper after concurrent UI status/list', async () => {
+    const helper = new FakeHelper()
+    const computer = adapter(helper)
+    const uiSession = SessionId('desktop-computer-ui')
+    const [status, list] = await Promise.all([
+      computer.status(uiSession),
+      computer.list(uiSession, new AbortController().signal),
+    ])
+
+    expect(status.supported).toBe(true)
+    expect(list.apps).toEqual([])
+    expect(helper.requests.map(request => request.requestKind)).toEqual(['status', 'list'])
+    expect(helper.requests.every(request => request.sessionId === uiSession)).toBe(true)
+    expect(helper.stopWhenIdleCalls).toBe(2)
   })
 })

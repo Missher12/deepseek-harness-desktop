@@ -55,6 +55,17 @@ describe('desktop package manifest', () => {
     expect(mainSource).toContain("capabilities: ['observe', 'pointer', 'keyboard']")
     expect(mainSource).toContain('app.isPackaged')
     expect(mainSource).toContain('process.resourcesPath')
+    expect(mainSource).toContain('lstatBinary: lstatSync')
+    expect(mainSource).toContain('readBinary: readFileSync')
+    expect(mainSource).toContain("SessionId('desktop-computer-ui')")
+    expect(mainSource).toContain('provider: {')
+    expect(mainSource).toContain('computerControlAdapter.status(COMPUTER_CONTROL_UI_SESSION)')
+    expect(mainSource).toMatch(
+      /computerControlAdapter\.list\(\s*COMPUTER_CONTROL_UI_SESSION,\s*signal,?\s*\)/,
+    )
+    expect(mainSource.indexOf('computerControlAdapter.unexpectedHelperExit()')).toBeLessThan(
+      mainSource.indexOf('controlCoordinator.helperCrashed()'),
+    )
   })
 
   it('uses one rounded icon source with native macOS and Windows containers', () => {

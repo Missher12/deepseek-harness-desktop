@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
-import { lstatSync } from 'node:fs'
+import { lstatSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,7 +18,7 @@ import {
   type IpcMainInvokeEvent,
 } from 'electron'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { RequestId, type SessionId } from '@deepseek-ai/dsh-desktop-control-protocol'
+import { RequestId, SessionId } from '@deepseek-ai/dsh-desktop-control-protocol'
 import { healProfilesModuleFallbackCached } from '@deepseek-ai/dsh-app-boot'
 import {
   DesktopApplication,
@@ -108,6 +108,7 @@ const desktopInstallAnchorPath = fileURLToPath(new URL('../package.json', import
 const updateHelperPath = fileURLToPath(new URL('./update-helper.js', import.meta.url))
 const platformBehavior = desktopPlatformBehavior(process.platform)
 const desktopUpdatesEnabled = supportsDesktopUpdates(process.platform)
+const COMPUTER_CONTROL_UI_SESSION = SessionId('desktop-computer-ui')
 
 function resolveHarnessVersion(): string {
   const manifest = require('@deepseek-ai/dsh/package.json') as { version?: unknown }
@@ -335,7 +336,10 @@ const computerHelper = computerHelperBinaryPath === undefined
   ? undefined
   : new NativeHelperProcess({
     binaryPath: computerHelperBinaryPath,
+    lstatBinary: lstatSync,
+    readBinary: readFileSync,
     onUnexpectedExit: () => {
+      computerControlAdapter.unexpectedHelperExit()
       void controlCoordinator.helperCrashed().catch((error: unknown) => {
         record(`native helper crash cleanup failed: ${error instanceof Error ? error.message : String(error)}`)
       })
@@ -463,8 +467,17 @@ const computerControlUi = new ComputerControlUiAuthority({
     })
     return result.response === 1
   },
-  // Task 11 injects the optional observation-only native status/list provider.
-  // Its absence is intentionally rendered as unavailable and never blocks startup.
+  ...(computerHelper === undefined
+    ? {}
+    : {
+      provider: {
+        status: async () => await computerControlAdapter.status(COMPUTER_CONTROL_UI_SESSION),
+        list: async (signal: AbortSignal) => await computerControlAdapter.list(
+          COMPUTER_CONTROL_UI_SESSION,
+          signal,
+        ),
+      },
+    }),
 })
 app.on('login', (event, webContents, _details, authInfo, callback) => {
   browserProxyAuthentication.handle(webContents, authInfo, (username, password) => {
