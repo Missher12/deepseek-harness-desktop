@@ -65,10 +65,10 @@ class FakeWebContents extends EventEmitter {
   title = 'Example'
   readonly loadedUrls: string[] = []
   historyActiveIndex = 1
-  historyEntries: { readonly url: string }[] = [
-    { url: 'https://previous.test/' },
-    { url: 'https://example.test/' },
-    { url: 'https://next.test/' },
+  historyEntries: { readonly url: string; readonly title: string; readonly pageState: string }[] = [
+    { url: 'https://previous.test/', title: 'Previous', pageState: 'previous-state' },
+    { url: 'https://example.test/', title: 'Example', pageState: 'example-state' },
+    { url: 'https://next.test/', title: 'Next', pageState: 'next-state' },
   ]
   readonly navigationHistory = {
     canGoBack: () => this.historyActiveIndex > 0,
@@ -193,6 +193,16 @@ function deferredPinnedTransport(): {
     ready,
     resume: () => { resume?.() },
   }
+}
+
+function mutateHistoryEntry(
+  contents: FakeWebContents,
+  index: number,
+  change: Partial<{ readonly url: string; readonly title: string; readonly pageState: string }>,
+): void {
+  const entry = contents.historyEntries[index]
+  if (entry === undefined) throw new Error('missing fake history entry')
+  contents.historyEntries[index] = { ...entry, ...change }
 }
 
 function buttonNode(id = 1, name = 'Continue'): AxNode {
@@ -748,17 +758,34 @@ describe('semantic Agent browser adapter', () => {
   )
 
   it.each([
-    ['back active index', 'back', (contents: FakeWebContents) => { contents.historyActiveIndex = 2 }],
-    ['forward target URL', 'forward', (contents: FakeWebContents) => {
-      contents.historyEntries[2] = { url: 'https://changed.test/' }
+    ['adapter revision', (contents: FakeWebContents) => { contents.emit('did-navigate') }],
+    ['current URL', (contents: FakeWebContents) => { contents.url = 'https://changed.test/' }],
+    ['active index', (contents: FakeWebContents) => { contents.historyActiveIndex = 0 }],
+    ['active entry URL', (contents: FakeWebContents) => {
+      mutateHistoryEntry(contents, 1, { url: 'https://changed.test/' })
     }],
-  ] as const)('rejects %s drift while the pinned transport is pending', async (_label, kind, mutate) => {
+    ['active entry title', (contents: FakeWebContents) => {
+      mutateHistoryEntry(contents, 1, { title: 'Changed' })
+    }],
+    ['active entry page state', (contents: FakeWebContents) => {
+      mutateHistoryEntry(contents, 1, { pageState: 'changed-state' })
+    }],
+    ['target entry URL', (contents: FakeWebContents) => {
+      mutateHistoryEntry(contents, 2, { url: 'https://changed.test/' })
+    }],
+    ['target entry title', (contents: FakeWebContents) => {
+      mutateHistoryEntry(contents, 2, { title: 'Changed' })
+    }],
+    ['target entry page state', (contents: FakeWebContents) => {
+      mutateHistoryEntry(contents, 2, { pageState: 'changed-state' })
+    }],
+  ] as const)('rejects history %s drift while the pinned transport is pending', async (_label, mutate) => {
     const contents = new FakeWebContents()
     installTree(contents, [])
     const deferred = deferredPinnedTransport()
     const adapter = adapterFor(contents, { pinnedNavigationTransport: deferred.transport })
 
-    const pending = adapter.act({ kind })
+    const pending = adapter.act({ kind: 'forward' })
     await deferred.ready
     mutate(contents)
     deferred.resume()
@@ -786,6 +813,7 @@ describe('semantic Agent browser adapter', () => {
     deferred.resume()
 
     await expect(pending).rejects.toMatchObject({ code: 'STALE_REF' })
+    expect(contents.navigationHistory.goToIndex).not.toHaveBeenCalled()
     expect(contents.reload).not.toHaveBeenCalled()
     expect(contents.loadedUrls).toEqual([])
   })
