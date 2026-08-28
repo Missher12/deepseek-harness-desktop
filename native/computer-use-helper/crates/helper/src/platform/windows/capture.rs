@@ -189,7 +189,7 @@ fn capture_exact_window_on_worker(
 ) -> Result<CapturedFrame, &'static str> {
     check_request(epoch, deadline_ms, cancel)?;
     validate_exact_target(hwnd, expected_identity, expected_bounds)?;
-    let (width, height) = bounded_dimensions(expected_bounds)?;
+    bounded_dimensions(expected_bounds)?;
 
     if !GraphicsCaptureSession::IsSupported().unwrap_or(false) {
         return Err("NOT_SUPPORTED");
@@ -202,7 +202,8 @@ fn capture_exact_window_on_worker(
     let item: GraphicsCaptureItem =
         unsafe { interop.CreateForWindow(hwnd) }.map_err(|_| "TARGET_CLOSED")?;
     let item_size = item.Size().map_err(|_| "TARGET_CLOSED")?;
-    validate_frame_size(item_size, width, height)?;
+    let (width, height) =
+        bounded_pixel_dimensions(i64::from(item_size.Width), i64::from(item_size.Height))?;
 
     let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
         &device.winrt,
@@ -404,6 +405,11 @@ fn create_capture_device_for(driver_type: D3D_DRIVER_TYPE) -> Result<CaptureDevi
 fn bounded_dimensions(bounds: PhysicalRect) -> Result<(u32, u32), &'static str> {
     let width = i64::from(bounds.right) - i64::from(bounds.left);
     let height = i64::from(bounds.bottom) - i64::from(bounds.top);
+    bounded_pixel_dimensions(width, height)
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn bounded_pixel_dimensions(width: i64, height: i64) -> Result<(u32, u32), &'static str> {
     let width = u32::try_from(width).map_err(|_| "POLICY_DENIED")?;
     let height = u32::try_from(height).map_err(|_| "POLICY_DENIED")?;
     let pixels = usize::try_from(width)
@@ -655,8 +661,8 @@ fn crc32(bytes: &[u8]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        CaptureLimits, CaptureWorkerGate, CapturedFrame, bounded_dimensions, copy_tight_bgra,
-        encode_bounded_png,
+        CaptureLimits, CaptureWorkerGate, CapturedFrame, bounded_dimensions,
+        bounded_pixel_dimensions, copy_tight_bgra, encode_bounded_png,
     };
     use crate::platform::windows::identity::WindowIdentity;
     use crate::platform::windows::scale::PhysicalRect;
@@ -804,5 +810,12 @@ mod tests {
             }),
             Err("POLICY_DENIED"),
         );
+    }
+
+    #[test]
+    fn bounds_wgc_target_size_independently_from_virtualized_window_bounds() {
+        assert_eq!(bounded_pixel_dimensions(584, 381), Ok((584, 381)));
+        assert_eq!(bounded_pixel_dimensions(2_049, 381), Err("POLICY_DENIED"));
+        assert_eq!(bounded_pixel_dimensions(584, 0), Err("POLICY_DENIED"));
     }
 }
