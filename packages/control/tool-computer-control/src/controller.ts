@@ -108,8 +108,8 @@ export class ComputerToolController {
   }
 
   /** Read availability without creating a lease. */
-  async status(_exec: ToolRunContext): Promise<ComputerControlStatus> {
-    try { return await this.provider.status() } catch (error: unknown) { mapProviderError(error) }
+  async status(exec: ToolRunContext): Promise<ComputerControlStatus> {
+    try { return await this.provider.status(sessionOf(exec)) } catch (error: unknown) { mapProviderError(error) }
   }
 
   /** Enumerate and retain the exact grantable target pairs for this turn. */

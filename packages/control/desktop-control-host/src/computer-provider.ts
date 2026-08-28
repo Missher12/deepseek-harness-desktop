@@ -22,7 +22,6 @@ import {
   type DecodedDesktopControlEnvelope,
   type SessionId,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
-import type {} from '@deepseek-ai/dsh-agent'
 import {
   ControlLeaseCache,
   DesktopControlIpcError,
@@ -63,12 +62,8 @@ export class DesktopComputerControl extends ComputerControl {
     return this.leaseCache.remember(request.sessionId, message.result)
   }
 
-  /** Derive the official current agent session for the parameter-free status seam. */
-  async status(): Promise<ComputerStatusResult> {
-    const sessionId = this.ctx.agent?.session.id
-    if (sessionId === undefined) {
-      throw new DesktopControlIpcError('UNAUTHORIZED', 'Desktop computer status requires an active agent session.')
-    }
+  /** Forward the tool-runtime-authored official session for the parameter-free model seam. */
+  async status(sessionId: SessionId): Promise<ComputerStatusResult> {
     const nowUnixMs = Date.now()
     const request = {
       protocolVersion: 1,

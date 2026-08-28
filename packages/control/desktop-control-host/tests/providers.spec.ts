@@ -176,17 +176,19 @@ describe('Desktop control Host providers', () => {
         },
       },
     ]
+    const request = vi.fn(async () => responses.shift()!)
     const requester: DesktopControlRequester = {
-      request: vi.fn(async () => responses.shift()!),
+      request,
       revokeSession: vi.fn(async () => undefined),
     }
-    Object.defineProperty(ctx, 'agent', {
-      configurable: true,
-      value: { session: { id: SESSION } },
-    })
     const provider = new DesktopComputerControl(ctx, requester)
 
-    await expect(provider.status()).resolves.toEqual({ viewing: 'granted', assistive: 'denied', supported: true })
+    await expect(provider.status(SESSION)).resolves.toEqual({ viewing: 'granted', assistive: 'denied', supported: true })
+    expect(request).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ requestKind: 'computer.status', sessionId: SESSION }),
+      expect.any(AbortSignal),
+    )
     const snapshotRequest: ComputerSnapshotRequest = {
       protocolVersion: 1,
       messageKind: 'request',

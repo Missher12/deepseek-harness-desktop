@@ -126,7 +126,7 @@ class StubComputerControl extends ComputerControl {
     }
   }
 
-  async status(): Promise<ComputerStatusResult> {
+  async status(_sessionId: SessionId): Promise<ComputerStatusResult> {
     return { viewing: 'granted', assistive: 'granted', supported: true }
   }
 
@@ -170,7 +170,7 @@ describe('ComputerControl service seam', () => {
       capabilities: ['observe'],
     }, new AbortController().signal)
     expect(acquired.surfaceKind).toBe('native-application')
-    await expect(provider.status()).resolves.toEqual({ viewing: 'granted', assistive: 'granted', supported: true })
+    await expect(provider.status(SESSION)).resolves.toEqual({ viewing: 'granted', assistive: 'granted', supported: true })
     await provider.stop(SESSION)
     expect((ctx.computerControl as StubComputerControl).stopped).toEqual([SESSION])
   })

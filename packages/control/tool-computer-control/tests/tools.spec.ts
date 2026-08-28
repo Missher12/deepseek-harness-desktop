@@ -47,6 +47,7 @@ class FakeComputerControl extends ComputerControl {
   readonly snapshotRequests: ComputerSnapshotRequest[] = []
   readonly actionRequests: ComputerActionRequest[] = []
   readonly stopped: SessionIdType[] = []
+  readonly statusSessions: SessionIdType[] = []
   nextSnapshot: ComputerSnapshotEnvelope = {
     result: {
       appId: APP,
@@ -70,7 +71,8 @@ class FakeComputerControl extends ComputerControl {
     })
   }
 
-  override status(): Promise<ComputerControlStatus> {
+  override status(sessionId: SessionIdType): Promise<ComputerControlStatus> {
+    this.statusSessions.push(sessionId)
     return Promise.resolve({ supported: true, viewing: 'granted', assistive: 'granted' })
   }
 
@@ -193,6 +195,7 @@ describe('closed ComputerControl tools', () => {
     await call(ctx, 'computer_status', {})
     await call(ctx, 'computer_list', {})
     expect(computer?.acquireRequests).toEqual([])
+    expect(computer?.statusSessions).toEqual([SESSION])
 
     await call(ctx, 'computer_snapshot', { app_id: APP, window_id: WINDOW })
     await call(ctx, 'computer_focus', { app_id: APP, window_id: WINDOW })
