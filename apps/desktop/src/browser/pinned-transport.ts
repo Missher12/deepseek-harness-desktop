@@ -86,8 +86,16 @@ export class BrowserProxyAuthenticationOwner {
 }
 
 type Resolver = AgentBrowserPinnedNavigationRequest['resolveAndValidate']
-const PROXY_IO_TIMEOUT_MS = 1_000
+const PROXY_HANDSHAKE_TIMEOUT_MS = 10_000
+const PROXY_TUNNEL_IDLE_TIMEOUT_MS = 60_000
 const PROXY_MAX_HEADER_BYTES = 4_096
+
+function setSocketTimeout(socket: Duplex, timeoutMs: number): void {
+  const candidate = socket as Duplex & {
+    setTimeout?: (duration: number, listener: () => void) => unknown
+  }
+  candidate.setTimeout?.(timeoutMs, () => { socket.destroy() })
+}
 
 function assertHttpsTarget(value: string): URL {
   let target: URL
@@ -249,8 +257,8 @@ export class LoopbackPinnedNavigationTransport implements AgentBrowserPinnedNavi
     if (typeof current === 'object' && current !== null) return current.port
     const server = createServer({
       maxHeaderSize: PROXY_MAX_HEADER_BYTES,
-      headersTimeout: PROXY_IO_TIMEOUT_MS,
-      requestTimeout: PROXY_IO_TIMEOUT_MS,
+      headersTimeout: PROXY_HANDSHAKE_TIMEOUT_MS,
+      requestTimeout: PROXY_HANDSHAKE_TIMEOUT_MS,
     }, (request, response) => {
       if (!this.isAuthorized(request.headers['proxy-authorization'])) {
         response.writeHead(407, {
@@ -274,9 +282,9 @@ export class LoopbackPinnedNavigationTransport implements AgentBrowserPinnedNavi
       )
     })
     server.maxHeadersCount = 32
-    server.keepAliveTimeout = PROXY_IO_TIMEOUT_MS
+    server.keepAliveTimeout = PROXY_HANDSHAKE_TIMEOUT_MS
     server.on('connection', (socket) => {
-      socket.setTimeout(PROXY_IO_TIMEOUT_MS, () => { socket.destroy() })
+      setSocketTimeout(socket, PROXY_HANDSHAKE_TIMEOUT_MS)
       this.trackSocket(socket)
     })
     server.on('clientError', (_error, socket) => { endProxyRequest(socket, '400 Bad Request') })
@@ -331,6 +339,8 @@ export class LoopbackPinnedNavigationTransport implements AgentBrowserPinnedNavi
           return
         }
         established = true
+        setSocketTimeout(client, PROXY_TUNNEL_IDLE_TIMEOUT_MS)
+        setSocketTimeout(upstream, PROXY_TUNNEL_IDLE_TIMEOUT_MS)
         client.write('HTTP/1.1 200 Connection Established\r\n\r\n')
         if (head.length > 0) upstream.write(head)
         upstream.pipe(client)

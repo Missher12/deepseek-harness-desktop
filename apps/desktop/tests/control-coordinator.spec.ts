@@ -518,6 +518,34 @@ describe('DesktopControlCoordinator', () => {
     expect(retryPendingCleanup).toHaveBeenCalledOnce()
   })
 
+  it('recovers same-session computer cleanup through Stop and before read-only status', async () => {
+    const computer = adapter('computer')
+    let supported = false
+    const retryPendingCleanup = vi.fn(async () => {
+      supported = true
+      return true
+    })
+    computer.supported = () => supported
+    computer.retryPendingCleanup = retryPendingCleanup
+    computer.operationFacts = async () => ({
+      surfaceKind: 'native-application',
+      targets: [],
+      capabilities: ['observe'],
+      policy: adapterPolicyFacts('not-applicable', 'read-only'),
+    })
+    const { coordinator } = setup({ computer })
+
+    const recoveredStatus = await coordinator.dispatch(computerStatus(), context())
+    expect(recoveredStatus).toMatchObject({ message: { responseKind: 'ok' } })
+    supported = false
+    await expect(coordinator.dispatch(stop('computer.stop'), context())).resolves.toMatchObject({
+      message: { responseKind: 'ok', result: { stopped: true } },
+    })
+    expect(retryPendingCleanup).toHaveBeenCalledTimes(2)
+    expect(retryPendingCleanup).toHaveBeenNthCalledWith(1, SESSION, expect.any(AbortSignal))
+    expect(retryPendingCleanup).toHaveBeenNthCalledWith(2, SESSION, expect.any(AbortSignal))
+  })
+
   it('withholds an effective descriptor until native approval and helper install both succeed', async () => {
     const order: string[] = []
     const install = new Deferred<void>()

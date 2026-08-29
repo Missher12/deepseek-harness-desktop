@@ -3,6 +3,7 @@ import {
   BRIDGE_REQUEST_KINDS,
   CONTROL_LEASE_CAPABILITIES,
   CONTROL_LEASE_SURFACE_KINDS,
+  CONTROL_KEY_VALUES,
   CONTROL_KINDS,
   ERROR_CODES,
   type BridgeRequest,
@@ -50,6 +51,7 @@ const utf8 = new TextEncoder()
 const utf8Strict = new TextDecoder('utf-8', { fatal: true })
 const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const MODIFIERS = new Set(['Alt', 'Control', 'Meta', 'Shift'])
+const CONTROL_KEYS: ReadonlySet<string> = new Set(CONTROL_KEY_VALUES)
 const BUTTONS = new Set(['left', 'middle', 'right'])
 const PERMISSION_STATES = new Set(['granted', 'denied', 'unknown'])
 const LEASE_SURFACES: ReadonlySet<string> = new Set(CONTROL_LEASE_SURFACE_KINDS)
@@ -376,7 +378,7 @@ function validateBridgeRequest(value: object, kind: typeof BRIDGE_REQUEST_KINDS[
       break
     case 'browser.key':
       bridgeKeys(value, kind)
-      browserLease(value); stringValue(at(value, 'key'), 'key', PROTOCOL_LIMITS.keyBytes); modifiers(at(value, 'modifiers'))
+      browserLease(value); literal(at(value, 'key'), CONTROL_KEYS, 'key'); modifiers(at(value, 'modifiers'))
       break
     case 'browser.select':
       bridgeKeys(value, kind)
@@ -425,7 +427,7 @@ function validateBridgeRequest(value: object, kind: typeof BRIDGE_REQUEST_KINDS[
       break
     case 'computer.key':
       bridgeKeys(value, kind)
-      targetFields(value); stringValue(at(value, 'key'), 'key', PROTOCOL_LIMITS.keyBytes); modifiers(at(value, 'modifiers'))
+      targetFields(value); literal(at(value, 'key'), CONTROL_KEYS, 'key'); modifiers(at(value, 'modifiers'))
       break
     case 'computer.scroll':
       bridgeKeys(value, kind, ['ref', 'x', 'y'])
@@ -455,7 +457,7 @@ function helperTargetAction(value: object, kind: string): void {
   } else if (kind === 'type') {
     ComputerRef(stringValue(at(value, 'ref'), 'ref', PROTOCOL_LIMITS.identifierBytes)); stringValue(at(value, 'text'), 'text', PROTOCOL_LIMITS.semanticTextBytes, true)
   } else if (kind === 'key') {
-    stringValue(at(value, 'key'), 'key', PROTOCOL_LIMITS.keyBytes); modifiers(at(value, 'modifiers'))
+    literal(at(value, 'key'), CONTROL_KEYS, 'key'); modifiers(at(value, 'modifiers'))
   } else if (kind === 'scroll') {
     pointerLocation(value)
     finiteNumber(at(value, 'deltaX'), 'deltaX', -PROTOCOL_LIMITS.maxCoordinate, PROTOCOL_LIMITS.maxCoordinate)
@@ -501,7 +503,14 @@ function validateHelperRequest(value: object, kind: typeof HELPER_REQUEST_KINDS[
     }
     case 'input.release':
       helperKeys(value, kind)
-      stringList(at(value, 'keys'), 'keys', PROTOCOL_LIMITS.maxStringListItems)
+      {
+        const releaseKeys = stringList(at(value, 'keys'), 'keys', PROTOCOL_LIMITS.maxStringListItems)
+        const seen = new Set<string>()
+        for (const key of releaseKeys) {
+          if ((!CONTROL_KEYS.has(key) && !MODIFIERS.has(key)) || seen.has(key)) fail('keys contain an invalid item')
+          seen.add(key)
+        }
+      }
       if (!Array.isArray(at(value, 'buttons')) || (at(value, 'buttons') as unknown[]).some(item => typeof item !== 'string' || !BUTTONS.has(item))) fail('buttons are invalid')
       break
     /* v8 ignore next -- the closed roster check rejects this before dispatch. */

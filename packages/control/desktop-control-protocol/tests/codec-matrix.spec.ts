@@ -59,6 +59,17 @@ const lease = { leaseId, leaseRevision: 1 }
 const target = { ...lease, appId: 'app-1', windowId: 'window-1', snapshotRevision: 1 }
 
 describe('closed request field matrices', () => {
+  it('rejects keyboard values outside the shared closed vocabulary before helper dispatch', () => {
+    for (const value of [
+      bridge('browser.key', { ...lease, key: 'l', modifiers: ['Meta'] }),
+      bridge('computer.key', { ...target, key: 'LaunchApp', modifiers: [] }),
+      helper('key', { ...target, key: 'l', modifiers: ['Meta'] }),
+      helper('input.release', { keys: ['l'], buttons: [] }),
+    ]) {
+      expect(() => decodeJsonFrame(encodeJsonFrame(value))).toThrow(/key/i)
+    }
+  })
+
   it('round-trips every bridge request kind', () => {
     const values = [
       bridge('control.lease.acquire', {

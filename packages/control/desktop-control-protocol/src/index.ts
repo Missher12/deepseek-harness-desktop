@@ -22,6 +22,7 @@ export type {
 export {
   BRIDGE_REQUEST_KINDS,
   CONTROL_LEASE_CAPABILITIES,
+  CONTROL_KEY_VALUES,
   CONTROL_LEASE_SURFACE_KINDS,
   CONTROL_KINDS,
   ERROR_CODES,
@@ -67,6 +68,7 @@ export type {
   ControlLeaseSurfaceKind,
   ControlLeaseTarget,
   ControlKind,
+  ControlKey,
   DesktopControlControl,
   DesktopControlError,
   DesktopControlErrorCode,

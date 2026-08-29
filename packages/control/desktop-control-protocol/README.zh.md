@@ -12,6 +12,8 @@ Bridge 清单包含仅供内部使用的 `control.lease.acquire` 与 `control.le
 
 严格 decoder 会在整份 JSON 解析可以套用 last-wins 行为前拒绝重复 key。它也拒绝危险 key、未知或缺失字段、未知判别值、错误版本、畸形标识符、非有限或超范围数字，以及超过 UTF-8 限制的值。编码只接受按 descriptor 检查过的普通树；自定义 prototype、`toJSON`、accessor、不可枚举或 symbol key、稀疏数组、共享或循环对象都会在序列化前失败。实际发出的 frame 会再次解码并校验，因此校验对象绝不会与传输文本不同。解码后的 JSON 与输入分离并深度冻结。
 
+`controlKeyValues` 是模型工具、Electron 与 Rust helper 共用的唯一键盘词表。Wire 值使用规范的大写 ASCII 字母，以及清单声明的数字、导航、编辑与功能键。模型侧工具可以接受单个小写字母别名，但必须在编码前规范为大写；所有 bridge、helper 与恢复用 `input.release` frame 都会拒绝清单外的值。
+
 ## 分帧与图像
 
 无前缀 frame 以 tag `0x01` 开始时，后续最多为 65,536 个 JSON 字节；以 tag `0x02` 开始时，后续为 16 字节 transfer UUID 和最多 4,194,304 个原始 PNG 字节。`LengthPrefixedFrameDecoder` 接受 helper 流中拆分或合并的输入，其 4 字节大端长度包含 tag 和 body；它会在分配 body 之前拒绝零值与超限长度。

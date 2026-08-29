@@ -352,8 +352,12 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
           await this.#stopBrowserSession(request.sessionId, context.signal)
           return okEnvelope(request, Object.freeze({ stopped: true }))
         case 'computer.stop':
-          await this.#stopSession(request.sessionId)
+          await this.#stopComputerSession(request.sessionId, context.signal)
           return okEnvelope(request, Object.freeze({ stopped: true }))
+        case 'computer.status':
+        case 'computer.list':
+          await this.#retryComputerCleanup(request.sessionId, context.signal)
+          return await this.#dispatchAdapter(request, context)
         default:
           return await this.#dispatchAdapter(request, context)
       }
@@ -1080,13 +1084,6 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     }
   }
 
-  async #stopSession(sessionId: SessionId): Promise<void> {
-    const active = this.#leases.activeSnapshot()
-    if (active?.sessionId !== sessionId) return
-    this.#leases.revokeSession(sessionId, 'user-stop')
-    await this.#awaitReleased(active)
-  }
-
   async #stopBrowserSession(sessionId: SessionId, signal: AbortSignal): Promise<void> {
     const active = this.#leases.activeSnapshot()
     if (active?.sessionId === sessionId) {
@@ -1099,6 +1096,25 @@ export class DesktopControlCoordinator implements DesktopControlBackend {
     const cleared = await adapter.retryPendingCleanup(sessionId, signal)
     if (!cleared) {
       throw new ControlAuthorityError('BUSY', 'browser cleanup still owns the session')
+    }
+  }
+
+  async #stopComputerSession(sessionId: SessionId, signal: AbortSignal): Promise<void> {
+    const active = this.#leases.activeSnapshot()
+    if (active?.sessionId === sessionId) {
+      this.#leases.revokeSession(sessionId, 'user-stop')
+      await this.#awaitReleased(active)
+      return
+    }
+    await this.#retryComputerCleanup(sessionId, signal)
+  }
+
+  async #retryComputerCleanup(sessionId: SessionId, signal: AbortSignal): Promise<void> {
+    const adapter = this.#options.computer
+    if (adapter === undefined || this.#supported(adapter) || adapter.retryPendingCleanup === undefined) return
+    const cleared = await adapter.retryPendingCleanup(sessionId, signal)
+    if (!cleared) {
+      throw new ControlAuthorityError('BUSY', 'computer cleanup still owns the session')
     }
   }
 

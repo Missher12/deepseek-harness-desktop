@@ -2,7 +2,11 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { ComputerRef, type KeyModifier } from '@deepseek-ai/dsh-computer-control'
-import { PROTOCOL_LIMITS } from '@deepseek-ai/dsh-desktop-control-protocol'
+import {
+  CONTROL_KEY_VALUES,
+  PROTOCOL_LIMITS,
+  type ControlKey,
+} from '@deepseek-ai/dsh-desktop-control-protocol'
 import { defineTool, type ToolDefinition, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { closeToolParameters } from './closed-tool.ts'
 import type { ComputerToolController } from './controller.ts'
@@ -68,6 +72,11 @@ const targetParameters = {
 const buttonParameter = {
   type: 'string', enum: ['left', 'middle', 'right'], description: 'Pointer button; defaults to left.',
 } as const
+const CONTROL_KEY_SET: ReadonlySet<string> = new Set(CONTROL_KEY_VALUES)
+const MODEL_KEY_VALUES = Object.freeze([
+  ...CONTROL_KEY_VALUES,
+  ...CONTROL_KEY_VALUES.filter(value => /^[A-Z]$/.test(value)).map(value => value.toLowerCase()),
+])
 const renderJson = (_args: unknown, value: unknown) => [{ type: 'text' as const, text: JSON.stringify(value) }]
 
 function assertCoordinate(name: string, value: number): void {
@@ -90,6 +99,14 @@ function modifiers(value: KeyModifier[] | undefined): readonly KeyModifier[] {
     throw new Error('computer_key modifiers must contain at most one of each declared modifier.')
   }
   return value
+}
+
+function controlKey(value: string): ControlKey {
+  const canonical = /^[a-z]$/.test(value) ? value.toUpperCase() : value
+  if (!CONTROL_KEY_SET.has(canonical)) {
+    throw new Error('computer_key key is outside the closed keyboard vocabulary.')
+  }
+  return canonical as ControlKey
 }
 
 async function requireVision(ctx: Context, exec: ToolRunContext): Promise<void> {
@@ -234,7 +251,7 @@ export function computerActionTools(ctx: Context, controller: ComputerToolContro
       description: 'Send one provider-validated key chord to an authorized app/window. Only the Alt/Control/Meta/Shift modifier vocabulary is accepted.',
       parameters: {
         ...targetParameters,
-        key: { type: 'string', required: true },
+        key: { type: 'string', enum: MODEL_KEY_VALUES, required: true },
         modifiers: { type: 'array', items: { type: 'string', enum: ['Alt', 'Control', 'Meta', 'Shift'] } },
       },
       output: { schema: ACTION_SCHEMA, render: renderJson },
@@ -242,7 +259,7 @@ export function computerActionTools(ctx: Context, controller: ComputerToolContro
       async execute(args, exec) {
         const result = await controller.act({
           requestKind: 'computer.key', appId: args.app_id, windowId: args.window_id,
-          key: args.key, modifiers: modifiers(args.modifiers),
+          key: controlKey(args.key), modifiers: modifiers(args.modifiers),
         }, exec)
         if (!('acted' in result)) throw new Error('ComputerControl returned the wrong action result.')
         return result

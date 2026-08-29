@@ -40,6 +40,70 @@ const CONTROL_KINDS: &[&str] = &[
     "lease.revoke",
     "parent.shutdown",
 ];
+const CONTROL_KEYS: &[&str] = &[
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "Enter",
+    "Tab",
+    "Space",
+    "Backspace",
+    "Escape",
+    "Delete",
+    "Home",
+    "End",
+    "PageUp",
+    "PageDown",
+    "ArrowLeft",
+    "ArrowRight",
+    "ArrowDown",
+    "ArrowUp",
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
+    "F9",
+    "F10",
+    "F11",
+    "F12",
+];
 const ERROR_CODES: &[&str] = &[
     "NOT_SUPPORTED",
     "UNAUTHORIZED",
@@ -91,6 +155,7 @@ pub fn validate_embedded_manifest() -> Result<()> {
     integer(field(root, "protocolVersion")?, "protocolVersion", 1, 1)?;
     exact_string_array(field(root, "helperRequestKinds")?, HELPER_KINDS)?;
     exact_string_array(field(root, "controlKinds")?, CONTROL_KINDS)?;
+    exact_string_array(field(root, "controlKeyValues")?, CONTROL_KEYS)?;
     exact_string_array(field(root, "errorCodes")?, ERROR_CODES)?;
     let limits = object(field(root, "limits")?, "limits")?;
     for (name, expected) in [
@@ -627,70 +692,7 @@ fn validate_literal(value: &Value, allowed: &[&str], label: &str) -> Result<()> 
 }
 
 fn valid_key(value: &str) -> bool {
-    matches!(
-        value,
-        "A" | "B"
-            | "C"
-            | "D"
-            | "E"
-            | "F"
-            | "G"
-            | "H"
-            | "I"
-            | "J"
-            | "K"
-            | "L"
-            | "M"
-            | "N"
-            | "O"
-            | "P"
-            | "Q"
-            | "R"
-            | "S"
-            | "T"
-            | "U"
-            | "V"
-            | "W"
-            | "X"
-            | "Y"
-            | "Z"
-            | "0"
-            | "1"
-            | "2"
-            | "3"
-            | "4"
-            | "5"
-            | "6"
-            | "7"
-            | "8"
-            | "9"
-            | "Enter"
-            | "Tab"
-            | "Space"
-            | "Backspace"
-            | "Escape"
-            | "Delete"
-            | "Home"
-            | "End"
-            | "PageUp"
-            | "PageDown"
-            | "ArrowLeft"
-            | "ArrowRight"
-            | "ArrowDown"
-            | "ArrowUp"
-            | "F1"
-            | "F2"
-            | "F3"
-            | "F4"
-            | "F5"
-            | "F6"
-            | "F7"
-            | "F8"
-            | "F9"
-            | "F10"
-            | "F11"
-            | "F12"
-    )
+    CONTROL_KEYS.contains(&value)
 }
 
 fn validate_lease_fields(message: &Map<String, Value>) -> Result<()> {

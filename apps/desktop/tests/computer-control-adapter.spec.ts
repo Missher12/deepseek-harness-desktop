@@ -20,6 +20,7 @@ import {
 } from '../src/control/computer-adapter.ts'
 
 const SESSION = SessionId('computer-adapter-session')
+const FOREIGN_SESSION = SessionId('computer-adapter-foreign-session')
 const LEASE = ControlLeaseId('10000000-0000-4000-8000-000000000001')
 
 function requestBase<K extends BridgeRequest['requestKind']>(requestKind: K) {
@@ -418,6 +419,39 @@ describe('ComputerDesktopControlAdapter', () => {
     expect(computer.supported()).toBe(false)
     await expect(computer.recoverAfterCrash(new AbortController().signal)).resolves.toBeUndefined()
 
+    expect(helper.recoveryRequests).toHaveLength(2)
+    expect(computer.supported()).toBe(true)
+  })
+
+  it('lets only the owning session explicitly retry a failed crash cleanup', async () => {
+    const helper = new FakeHelper()
+    const computer = adapter(helper)
+    helper.responder = async (request) => {
+      if (request.requestKind !== 'key') return okEnvelope(request, { stopped: true })
+      computer.unexpectedHelperExit()
+      helper.running = false
+      throw Object.assign(new Error('closed'), { code: 'DISCONNECTED' })
+    }
+    let attempt = 0
+    helper.recoveryResponder = async (request) => {
+      attempt += 1
+      if (attempt === 1) throw Object.assign(new Error('transient'), { code: 'DISCONNECTED' })
+      return okEnvelope(request, { released: true })
+    }
+    await expect(computer.dispatch({
+      ...requestBase('computer.key'), leaseId: LEASE, leaseRevision: 7,
+      appId: 'app.one', windowId: 'window.two', snapshotRevision: 9,
+      key: 'A', modifiers: ['Meta'],
+    }, {
+      signal: new AbortController().signal, timeoutMs: 321, generation: 1,
+      registerAcquisition: () => true,
+    })).rejects.toMatchObject({ code: 'DISCONNECTED' })
+    await expect(computer.recoverAfterCrash(new AbortController().signal)).rejects.toBeDefined()
+
+    await expect(computer.retryPendingCleanup(FOREIGN_SESSION, new AbortController().signal))
+      .resolves.toBe(false)
+    await expect(computer.retryPendingCleanup(SESSION, new AbortController().signal))
+      .resolves.toBe(true)
     expect(helper.recoveryRequests).toHaveLength(2)
     expect(computer.supported()).toBe(true)
   })

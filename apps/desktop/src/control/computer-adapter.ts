@@ -7,12 +7,14 @@ import {
   type ComputerStatusResult,
   type ControlLeaseAcquireRequest,
   type ControlLeaseCapability,
+  type ControlKey,
   type ControlLeaseTarget,
   type DecodedDesktopControlEnvelope,
   type DesktopControlControl,
   type DesktopControlErrorCode,
   type HelperRequest,
   type HelperInputReleaseRequest,
+  type KeyModifier,
   type PointerButton,
   type RequestId,
   type SessionId,
@@ -73,7 +75,7 @@ export interface ComputerDesktopControlAdapterOptions {
 
 interface HeldInputSnapshot {
   readonly sessionId: SessionId
-  readonly keys: readonly string[]
+  readonly keys: readonly (ControlKey | KeyModifier)[]
   readonly buttons: readonly PointerButton[]
 }
 
@@ -483,6 +485,14 @@ export class ComputerDesktopControlAdapter implements DesktopControlSurfaceAdapt
     } finally {
       if (this.#recoveryPromise === recovery) this.#recoveryPromise = undefined
     }
+  }
+
+  async retryPendingCleanup(sessionId: SessionId, signal: AbortSignal): Promise<boolean> {
+    const held = this.#journal.frozen()
+    if (held === undefined) return true
+    if (held.sessionId !== sessionId) return false
+    await this.recoverAfterCrash(signal)
+    return this.#journal.frozen() === undefined
   }
 
   async shutdown(signal: AbortSignal): Promise<void> {

@@ -250,7 +250,7 @@ describe('closed BrowserControl tools', () => {
     await call(ctx, 'browser_navigate', { url: 'https://example.test/next' })
     await call(ctx, 'browser_click', { ref: REF_1 })
     await call(ctx, 'browser_type', { ref: REF_2, text: 'hello' })
-    await call(ctx, 'browser_key', { key: 'Enter', modifiers: ['Meta'] })
+    await call(ctx, 'browser_key', { key: 'l', modifiers: ['Meta'] })
     await call(ctx, 'browser_select', { ref: REF_3, value: 'one' })
     await call(ctx, 'browser_scroll', { ref: REF_4, delta_x: 0, delta_y: 600 })
     await call(ctx, 'browser_wait', { mode: 'duration', duration_ms: 250 })
@@ -293,6 +293,19 @@ describe('closed BrowserControl tools', () => {
       expect(request.leaseRevision).toBe(LEASE.leaseRevision)
       expect(request.requestId).toSatisfy((value: string) => /^[0-9a-f-]{36}$/u.test(value))
     }
+    expect(browser?.actionRequests.find(request => request.requestKind === 'browser.key'))
+      .toMatchObject({ key: 'L', modifiers: ['Meta'] })
+  })
+
+  it('publishes a closed key vocabulary with lowercase letter aliases for model calls', async () => {
+    const schemas = (await setup()).ctx.tools.schemas()
+    const key = schemas.find(schema => schema.name === 'browser_key')
+      ?.parameters.properties?.key as { enum?: readonly unknown[] } | undefined
+
+    expect(key?.enum).toContain('l')
+    expect(key?.enum).toContain('L')
+    expect(key?.enum).toContain('Enter')
+    expect(key?.enum).not.toContain('LaunchApp')
   })
 
   it('stops without acquiring or asking approval and revokes the official session', async () => {

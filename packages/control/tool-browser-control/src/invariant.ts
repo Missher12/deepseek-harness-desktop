@@ -10,7 +10,7 @@ export const name = 'tool-browser-control-invariant'
 /** Service required before this package can reserve invariant ownership. */
 export const inject = ['invariants']
 
-/** Runtime invariants are owned by the provider and registry; this package has no independent state to inspect. */
+/** No runtime invariant: the provider and registry own all mutable state. */
 const install: InvariantInstaller = () => {}
 
 /** Reserve this package's invariant ownership with an intentionally inert installer. */

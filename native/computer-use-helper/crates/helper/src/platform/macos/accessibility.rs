@@ -85,6 +85,7 @@ struct AxSource<'a> {
     deadline_ms: u64,
     cancel: &'a CancellationToken,
     app_hidden: bool,
+    focused_node: Option<AxNode>,
 }
 
 enum VisibilityRead<T> {
@@ -194,6 +195,28 @@ impl AxSource<'_> {
         Ok(unsafe { CFBooleanGetValue(value.as_ptr()) != 0 })
     }
 
+    fn element(&self, node: &AxNode, name: &'static [u8]) -> Result<Option<AxNode>, &'static str> {
+        let Some(value) = self.attribute(node, name)? else {
+            return Ok(None);
+        };
+        if unsafe { CFGetTypeID(value.as_ptr()) } != unsafe { AXUIElementGetTypeID() } {
+            return Ok(None);
+        }
+        // SAFETY: The type was checked and the retained reference outlives `value`.
+        Ok(unsafe { AxNode::from_owned(CFRetain(value.as_ptr())) })
+    }
+
+    fn focused(&self, node: &AxNode) -> Result<bool, &'static str> {
+        let application_focused = self
+            .focused_node
+            .as_ref()
+            .is_some_and(|focused| unsafe { CFEqual(node.as_ptr(), focused.as_ptr()) != 0 });
+        Ok(resolve_focused(
+            self.boolean(node, b"AXFocused\0")?,
+            application_focused,
+        ))
+    }
+
     fn bounds(&self, node: &AxNode) -> Result<Option<ObservationBounds>, &'static str> {
         let Some(position) = self.attribute(node, b"AXPosition\0")? else {
             return Ok(None);
@@ -288,7 +311,7 @@ impl AccessibilityNodeSource for AxSource<'_> {
                 };
                 let mut input_safety = classify_input(&role, &subrole, &name);
                 if input_safety.editable || input_safety.sensitive {
-                    input_safety.focused = self.boolean(node, b"AXFocused\0")?;
+                    input_safety.focused = self.focused(node)?;
                 }
                 Ok(AccessibilityNode {
                     role,
@@ -369,6 +392,10 @@ fn classify_input(role: &str, subrole: &str, name: &str) -> InputSafety {
     }
 }
 
+fn resolve_focused(node_focused: bool, application_focused: bool) -> bool {
+    node_focused || application_focused
+}
+
 fn unique_window_bounds_index(
     target: ObservationBounds,
     candidates: &[ObservationBounds],
@@ -425,7 +452,9 @@ pub fn observe_exact_window(
         deadline_ms,
         cancel,
         app_hidden: false,
+        focused_node: None,
     };
+    let focused_node = source.element(&application, b"AXFocusedUIElement\0")?;
     let app_hidden = source.boolean(&application, b"AXHidden\0")?;
     if app_hidden {
         return Err("TARGET_CLOSED");
@@ -458,6 +487,7 @@ pub fn observe_exact_window(
         deadline_ms,
         cancel,
         app_hidden,
+        focused_node,
     };
     let projection = project_accessibility_tree(
         &mut source,
@@ -530,6 +560,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     fn CFRetain(value: CFTypeRef) -> CFTypeRef;
     fn CFRelease(value: CFTypeRef);
+    fn CFEqual(first: CFTypeRef, second: CFTypeRef) -> u8;
     fn CFGetTypeID(value: CFTypeRef) -> usize;
     fn CFStringCreateWithCString(
         allocator: CFTypeRef,
@@ -561,7 +592,16 @@ mod tests {
 
     use computer_use_core::ObservationBounds;
 
-    use super::{VisibilityRead, read_after_visibility, unique_window_bounds_index};
+    use super::{
+        VisibilityRead, read_after_visibility, resolve_focused, unique_window_bounds_index,
+    };
+
+    #[test]
+    fn application_focused_element_is_authoritative_when_child_focus_is_missing() {
+        assert!(resolve_focused(false, true));
+        assert!(resolve_focused(true, false));
+        assert!(!resolve_focused(false, false));
+    }
 
     #[test]
     fn exact_unique_geometry_binds_sck_and_ax_windows_without_title_equality() {

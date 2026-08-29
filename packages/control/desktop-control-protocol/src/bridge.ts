@@ -26,6 +26,16 @@ export const CONTROL_LEASE_CAPABILITIES = Object.freeze([
   'observe', 'pointer', 'keyboard',
 ] as const)
 
+/** Canonical key names accepted by browser, native, and recovery wire messages. */
+export const CONTROL_KEY_VALUES = Object.freeze([
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+  'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+  '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+  'Enter', 'Tab', 'Space', 'Backspace', 'Escape', 'Delete', 'Home', 'End',
+  'PageUp', 'PageDown', 'ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp',
+  'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
+] as const)
+
 /** Control messages accepted by Electron or the helper. */
 export const CONTROL_KINDS = Object.freeze([
   'request.cancel', 'session.revoke', 'lease.revoke', 'parent.shutdown',
@@ -51,6 +61,8 @@ export type DesktopControlErrorCode = typeof ERROR_CODES[number]
 export type ControlLeaseSurfaceKind = typeof CONTROL_LEASE_SURFACE_KINDS[number]
 /** One closed Desktop control capability. */
 export type ControlLeaseCapability = typeof CONTROL_LEASE_CAPABILITIES[number]
+/** One canonical key name accepted on the control wire. */
+export type ControlKey = typeof CONTROL_KEY_VALUES[number]
 
 /** Modifier keys accepted by the closed keyboard actions. */
 export type KeyModifier = 'Alt' | 'Control' | 'Meta' | 'Shift'
@@ -113,7 +125,7 @@ export type BrowserClickRequest = BridgeRequestBase<'browser.click'> & LeaseFiel
 /** Enter text into a current browser semantic reference. */
 export type BrowserTypeRequest = BridgeRequestBase<'browser.type'> & LeaseFields & { readonly ref: BrowserRef; readonly text: string }
 /** Send one closed browser key chord. */
-export type BrowserKeyRequest = BridgeRequestBase<'browser.key'> & LeaseFields & { readonly key: string; readonly modifiers: readonly KeyModifier[] }
+export type BrowserKeyRequest = BridgeRequestBase<'browser.key'> & LeaseFields & { readonly key: ControlKey; readonly modifiers: readonly KeyModifier[] }
 /** Choose a value on a current browser semantic reference. */
 export type BrowserSelectRequest = BridgeRequestBase<'browser.select'> & LeaseFields & { readonly ref: BrowserRef; readonly value: string }
 /** Scroll the browser or one current semantic reference. */
@@ -145,7 +157,7 @@ export type ComputerDragRequest = BridgeRequestBase<'computer.drag'> & TargetFie
 /** Enter text into an authorized accessibility element. */
 export type ComputerTypeRequest = BridgeRequestBase<'computer.type'> & TargetFields & { readonly ref: ComputerRef; readonly text: string }
 /** Send one closed native key chord. */
-export type ComputerKeyRequest = BridgeRequestBase<'computer.key'> & TargetFields & { readonly key: string; readonly modifiers: readonly KeyModifier[] }
+export type ComputerKeyRequest = BridgeRequestBase<'computer.key'> & TargetFields & { readonly key: ControlKey; readonly modifiers: readonly KeyModifier[] }
 /** Scroll an authorized window or accessibility element. */
 export type ComputerScrollRequest = BridgeRequestBase<'computer.scroll'> & TargetFields & (
   | { readonly ref: ComputerRef; readonly x?: never; readonly y?: never; readonly deltaX: number; readonly deltaY: number }

@@ -16,6 +16,11 @@ Accessibility permission. Protected, secure, elevated, or stale targets fail
 closed rather than escalating privileges. Browser Agent and Computer Control
 are both disabled by default and have separate visible settings; enabling either
 requires native main-process confirmation, while Give never changes enablement.
+The Agent Browser's authenticated loopback tunnel keeps DNS validation and
+connection setup bounded separately from established page traffic, so a slower
+Windows resolver cannot turn every navigation into a control timeout. A failed
+native input cleanup remains session-owned and can be retried by Computer Stop,
+status, or list without restarting the application.
 
 The sidebar includes a Codex-style archived-session manager. Archiving keeps
 the session log and its Workspace position; the manager can restore it in

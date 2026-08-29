@@ -3,6 +3,7 @@ import {
   BRIDGE_REQUEST_KINDS,
   CONTROL_LEASE_CAPABILITIES,
   CONTROL_LEASE_SURFACE_KINDS,
+  CONTROL_KEY_VALUES,
   CONTROL_KINDS,
   ERROR_CODES,
   PROTOCOL_VERSION,
@@ -96,6 +97,7 @@ interface ProtocolManifest {
   readonly bridgeRequestKinds: readonly unknown[]
   readonly controlLeaseSurfaceKinds: readonly unknown[]
   readonly controlLeaseCapabilities: readonly unknown[]
+  readonly controlKeyValues: readonly unknown[]
   readonly controlLeaseTargetFields: readonly unknown[]
   readonly controlLeaseQuotaFields: readonly unknown[]
   readonly helperRequestKinds: readonly unknown[]
@@ -204,6 +206,7 @@ function parseManifest(value: unknown): ProtocolManifest {
   const expectedRoot = [
     'protocolVersion', 'limits', 'bridgeRequestKinds', 'helperRequestKinds',
     'controlLeaseSurfaceKinds', 'controlLeaseCapabilities', 'controlKinds',
+    'controlKeyValues',
     'controlLeaseTargetFields', 'controlLeaseQuotaFields', 'errorCodes',
     'bridgeRequestFields', 'helperRequestFields',
     'controlFields', 'resultFields',
@@ -215,6 +218,7 @@ function parseManifest(value: unknown): ProtocolManifest {
     bridgeRequestKinds: stringArray(own(root, 'bridgeRequestKinds'), 'bridgeRequestKinds'),
     controlLeaseSurfaceKinds: stringArray(own(root, 'controlLeaseSurfaceKinds'), 'controlLeaseSurfaceKinds'),
     controlLeaseCapabilities: stringArray(own(root, 'controlLeaseCapabilities'), 'controlLeaseCapabilities'),
+    controlKeyValues: stringArray(own(root, 'controlKeyValues'), 'controlKeyValues'),
     controlLeaseTargetFields: stringArray(own(root, 'controlLeaseTargetFields'), 'controlLeaseTargetFields'),
     controlLeaseQuotaFields: stringArray(own(root, 'controlLeaseQuotaFields'), 'controlLeaseQuotaFields'),
     helperRequestKinds: stringArray(own(root, 'helperRequestKinds'), 'helperRequestKinds'),
@@ -239,6 +243,7 @@ function assertParsedManifest(manifest: ProtocolManifest): void {
   if (!same(manifest.bridgeRequestKinds as readonly string[], BRIDGE_REQUEST_KINDS)) throw new Error('bridge roster mismatch')
   if (!same(manifest.controlLeaseSurfaceKinds as readonly string[], CONTROL_LEASE_SURFACE_KINDS)) throw new Error('lease surface roster mismatch')
   if (!same(manifest.controlLeaseCapabilities as readonly string[], CONTROL_LEASE_CAPABILITIES)) throw new Error('lease capability roster mismatch')
+  if (!same(manifest.controlKeyValues as readonly string[], CONTROL_KEY_VALUES)) throw new Error('key vocabulary mismatch')
   if (!same(manifest.controlLeaseTargetFields as readonly string[], CONTROL_LEASE_TARGET_FIELDS)) throw new Error('lease target field mismatch')
   if (!same(manifest.controlLeaseQuotaFields as readonly string[], CONTROL_LEASE_QUOTA_FIELDS)) throw new Error('lease quota field mismatch')
   if (!same(manifest.helperRequestKinds as readonly string[], HELPER_REQUEST_KINDS)) throw new Error('helper roster mismatch')

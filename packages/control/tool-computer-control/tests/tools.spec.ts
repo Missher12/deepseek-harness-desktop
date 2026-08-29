@@ -204,7 +204,7 @@ describe('closed ComputerControl tools', () => {
     await call(ctx, 'computer_focus', { app_id: APP, window_id: WINDOW })
     await call(ctx, 'computer_click', { app_id: APP, window_id: WINDOW, ref: REF })
     await call(ctx, 'computer_type', { app_id: APP, window_id: WINDOW, ref: REF, text: 'private draft' })
-    await call(ctx, 'computer_key', { app_id: APP, window_id: WINDOW, key: 'Enter', modifiers: ['Meta'] })
+    await call(ctx, 'computer_key', { app_id: APP, window_id: WINDOW, key: 'l', modifiers: ['Meta'] })
     await call(ctx, 'computer_scroll', { app_id: APP, window_id: WINDOW, ref: REF, delta_x: 0, delta_y: 200 })
     await call(ctx, 'computer_wait', { app_id: APP, window_id: WINDOW, duration_ms: 10_000 })
 
@@ -221,6 +221,19 @@ describe('closed ComputerControl tools', () => {
       ['computer.focus', 2], ['computer.click', 3], ['computer.type', 4],
       ['computer.key', 5], ['computer.scroll', 6], ['computer.wait', 7],
     ])
+    expect(computer?.actionRequests.find(request => request.requestKind === 'computer.key'))
+      .toMatchObject({ key: 'L', modifiers: ['Meta'] })
+  })
+
+  it('publishes a closed key vocabulary with lowercase letter aliases for model calls', async () => {
+    const schemas = (await setup(true)).ctx.tools.schemas()
+    const key = schemas.find(schema => schema.name === 'computer_key')
+      ?.parameters.properties?.key as { enum?: readonly unknown[] } | undefined
+
+    expect(key?.enum).toContain('l')
+    expect(key?.enum).toContain('L')
+    expect(key?.enum).toContain('Enter')
+    expect(key?.enum).not.toContain('LaunchApp')
   })
 
   it('denies coordinate actions to text routes and saves screenshots only as vision attachments', async () => {

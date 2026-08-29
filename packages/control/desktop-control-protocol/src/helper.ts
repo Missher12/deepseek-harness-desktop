@@ -5,6 +5,7 @@ import type {
   ComputerListResult,
   ComputerSnapshotResult,
   ComputerStatusResult,
+  ControlKey,
   KeyModifier,
   PointerButton,
   StopResult,
@@ -70,7 +71,7 @@ export type HelperDragRequest = HelperRequestBase<'drag'> & HelperTargetFields &
 /** Enter text through one authorized accessibility element. */
 export type HelperTypeRequest = HelperRequestBase<'type'> & HelperTargetFields & { readonly ref: ComputerRef; readonly text: string }
 /** Send one closed key chord to an authorized target. */
-export type HelperKeyRequest = HelperRequestBase<'key'> & HelperTargetFields & { readonly key: string; readonly modifiers: readonly KeyModifier[] }
+export type HelperKeyRequest = HelperRequestBase<'key'> & HelperTargetFields & { readonly key: ControlKey; readonly modifiers: readonly KeyModifier[] }
 /** Scroll an authorized target. */
 export type HelperScrollRequest = HelperRequestBase<'scroll'> & HelperTargetFields & (
   | { readonly ref: ComputerRef; readonly x?: never; readonly y?: never; readonly deltaX: number; readonly deltaY: number }
@@ -91,7 +92,7 @@ export type HelperLeaseInstallRequest = HelperRequestBase<'lease.install'> & Hel
 }
 /** Release only the input state tracked by Electron after helper recovery. */
 export type HelperInputReleaseRequest = HelperRequestBase<'input.release'> & {
-  readonly keys: readonly string[]
+  readonly keys: readonly (ControlKey | KeyModifier)[]
   readonly buttons: readonly PointerButton[]
 }
 

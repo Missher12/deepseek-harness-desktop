@@ -271,6 +271,41 @@ describe('loopback pinned HTTPS CONNECT transport', () => {
     expect(connector).not.toHaveBeenCalled()
   })
 
+  it('does not kill an authenticated CONNECT while Windows-style resolution exceeds one second', async () => {
+    const session = new FakeProxySession()
+    const pending = new Deferred<ReturnType<typeof navigation>>()
+    const connector = vi.fn(() => inertSocket())
+    let resolutions = 0
+    const transport = new LoopbackPinnedNavigationTransport({
+      session,
+      generation: 8,
+      isGenerationActive: () => true,
+      connect: connector,
+    })
+    await transport.load({
+      url: 'https://slow-resolution.test/',
+      resolveAndValidate: async (url) => {
+        resolutions += 1
+        return resolutions === 1 ? navigation(url, ['93.184.216.34']) : await pending.promise
+      },
+      commit: async () => {},
+    })
+    const port = proxyPort(session)
+    const socket = await openProxySocket(port, authorizeRequest(
+      'CONNECT slow-resolution.test:443 HTTP/1.1\r\nHost: slow-resolution.test:443\r\n\r\n',
+      proxyAuthorization(transport, port),
+    ))
+    await vi.waitFor(() => { expect(resolutions).toBe(2) })
+
+    await new Promise((resolve) => { setTimeout(resolve, 1_100) })
+    expect(socket.destroyed).toBe(false)
+    pending.resolve(navigation('https://slow-resolution.test/', ['93.184.216.34']))
+    await vi.waitFor(() => { expect(connector).toHaveBeenCalledOnce() })
+
+    socket.destroy()
+    await transport.dispose()
+  })
+
   it('restores the owning Electron Session to its prior system proxy mode after partial apply', async () => {
     const session = new FakeProxySession()
     const setProxy = vi.spyOn(session, 'setProxy')

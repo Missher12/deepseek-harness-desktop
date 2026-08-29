@@ -1,7 +1,11 @@
 /** Closed model-facing action roster for the semantic BrowserControl service. */
 
 import { BrowserRef, type KeyModifier } from '@deepseek-ai/dsh-browser-control'
-import { PROTOCOL_LIMITS } from '@deepseek-ai/dsh-desktop-control-protocol'
+import {
+  CONTROL_KEY_VALUES,
+  PROTOCOL_LIMITS,
+  type ControlKey,
+} from '@deepseek-ai/dsh-desktop-control-protocol'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { closeToolParameters } from './closed-tool.ts'
 import type { BrowserToolController } from './controller.ts'
@@ -35,6 +39,11 @@ const STOP_SCHEMA = {
   type: 'object', additionalProperties: false,
   properties: { stopped: { type: 'boolean', const: true, required: true } },
 } as const
+const CONTROL_KEY_SET: ReadonlySet<string> = new Set(CONTROL_KEY_VALUES)
+const MODEL_KEY_VALUES = Object.freeze([
+  ...CONTROL_KEY_VALUES,
+  ...CONTROL_KEY_VALUES.filter(value => /^[A-Z]$/.test(value)).map(value => value.toLowerCase()),
+])
 
 const renderJson = (_args: unknown, value: unknown) => [{ type: 'text' as const, text: JSON.stringify(value) }]
 
@@ -57,6 +66,14 @@ function modifiers(value: KeyModifier[] | undefined): readonly KeyModifier[] {
     throw new Error('browser_key modifiers must contain at most one of each declared modifier.')
   }
   return value
+}
+
+function controlKey(value: string): ControlKey {
+  const canonical = /^[a-z]$/.test(value) ? value.toUpperCase() : value
+  if (!CONTROL_KEY_SET.has(canonical)) {
+    throw new Error('browser_key key is outside the closed keyboard vocabulary.')
+  }
+  return canonical as ControlKey
 }
 
 function assertScrollDelta(name: 'delta_x' | 'delta_y', value: number): void {
@@ -116,7 +133,7 @@ export function browserActionTools(controller: BrowserToolController): ToolDefin
       name: 'browser_key',
       description: 'Send one closed key chord to the controlled browser. The protocol accepts only a key plus the Alt/Control/Meta/Shift modifier vocabulary; no selector, coordinate, file, or authority input exists.',
       parameters: {
-        key: { type: 'string', required: true, description: 'Provider-validated key name.' },
+        key: { type: 'string', enum: MODEL_KEY_VALUES, required: true, description: 'Closed key name; lowercase letters are normalized to the canonical uppercase wire value.' },
         modifiers: {
           type: 'array',
           items: { type: 'string', enum: ['Alt', 'Control', 'Meta', 'Shift'] },
@@ -126,7 +143,7 @@ export function browserActionTools(controller: BrowserToolController): ToolDefin
       output: { schema: ACTION_SCHEMA, render: renderJson },
       presentCall: args => browserCall('Press browser key', args.key),
       async execute(args, exec) {
-        const result = await controller.act({ requestKind: 'browser.key', key: args.key, modifiers: modifiers(args.modifiers) }, exec)
+        const result = await controller.act({ requestKind: 'browser.key', key: controlKey(args.key), modifiers: modifiers(args.modifiers) }, exec)
         if (!('acted' in result)) throw new Error('BrowserControl returned the wrong action result.')
         return result
       },

@@ -111,6 +111,12 @@ describe('closed lease lifecycle roster and types', () => {
     expect(PROTOCOL_MANIFEST.controlLeaseCapabilities).toEqual(CONTROL_LEASE_CAPABILITIES)
     expect(PROTOCOL_MANIFEST.controlLeaseTargetFields).toEqual(CONTROL_LEASE_TARGET_FIELDS)
     expect(PROTOCOL_MANIFEST.controlLeaseQuotaFields).toEqual(CONTROL_LEASE_QUOTA_FIELDS)
+    expect(PROTOCOL_MANIFEST.controlKeyValues).toEqual([
+      ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+      'Enter', 'Tab', 'Space', 'Backspace', 'Escape', 'Delete', 'Home', 'End',
+      'PageUp', 'PageDown', 'ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp',
+      'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
+    ])
     expect(PROTOCOL_MANIFEST.bridgeRequestFields['control.lease.acquire']).toEqual([
       'surfaceKind', 'targets', 'capabilities',
     ])
@@ -133,6 +139,7 @@ describe('closed lease lifecycle roster and types', () => {
     ['capability roster', { controlLeaseCapabilities: ['observe'] }],
     ['target fields', { controlLeaseTargetFields: ['appId'] }],
     ['quota fields', { controlLeaseQuotaFields: ['snapshots'] }],
+    ['key vocabulary', { controlKeyValues: ['Enter'] }],
   ])('rejects a divergent %s in the machine manifest', (_name, override) => {
     expect(() => { validateProtocolManifest({ ...PROTOCOL_MANIFEST, ...override }) }).toThrow(/mismatch/i)
   })

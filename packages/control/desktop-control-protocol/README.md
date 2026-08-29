@@ -12,6 +12,8 @@ The bridge roster includes internal-only `control.lease.acquire` and `control.le
 
 The strict decoder rejects duplicate keys before whole-document JSON parsing could apply last-wins behavior. It also rejects dangerous keys, unknown or missing fields, unknown discriminants, wrong versions, malformed identifiers, non-finite or out-of-range numbers, and values that exceed their UTF-8 limits. Encoding accepts only a descriptor-inspected plain tree: custom prototypes, `toJSON`, accessors, non-enumerable or symbol keys, sparse arrays, and shared or cyclic objects fail before serialization. The exact emitted frame is decoded and validated again, so validation never applies to a different object than the transmitted text. Decoded JSON is detached and deeply frozen.
 
+`controlKeyValues` is the single keyboard vocabulary shared by model tools, Electron, and the Rust helper. Wire values use canonical uppercase ASCII letters plus the declared digit, navigation, editing, and function keys. Model-facing tools may accept a lowercase single-letter alias, but normalize it before encoding; every bridge, helper, and recovery `input.release` frame rejects values outside the manifest roster.
+
 ## Framing and images
 
 An unprefixed frame begins with tag `0x01` for at most 65,536 JSON bytes or tag `0x02` for a 16-byte transfer UUID followed by at most 4,194,304 raw PNG bytes. `LengthPrefixedFrameDecoder` accepts split or coalesced helper stream input with a four-byte big-endian length that includes the tag and body; it rejects zero and oversized lengths before allocating a body.

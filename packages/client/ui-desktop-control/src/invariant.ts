@@ -5,6 +5,7 @@ import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 const PACKAGE_NAME = '@deepseek-ai/dsh-client-ui-desktop-control'
 export const name = 'client-ui-desktop-control-invariant'
 export const inject = ['invariants']
+/** No runtime invariant: Electron main owns authority and this client package only renders snapshots. */
 const install: InvariantInstaller = () => {}
 export const apply = (ctx: Context): Promise<() => void> =>
   Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install))
