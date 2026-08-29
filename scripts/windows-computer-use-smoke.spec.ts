@@ -67,6 +67,24 @@ describe('Windows installed Computer Use acceptance', () => {
     expect(uninstall).toBeGreaterThan(packagedLifecycle)
   })
 
+  it('requires the installed Windows application to expose a real semantic browser tree', () => {
+    const packagedSmoke = readFileSync(
+      new URL('../apps/desktop/tests/packaged-smoke.ts', import.meta.url),
+      'utf8',
+    )
+    const windowsSmoke = readFileSync(
+      new URL('../apps/desktop/tests/windows-packaged-smoke.spec.ts', import.meta.url),
+      'utf8',
+    )
+
+    expect(windowsSmoke).toContain("runPackagedDesktopSmoke(executable, 'win32')")
+    expect(packagedSmoke).toContain("sendCommand('Accessibility.enable')")
+    expect(packagedSmoke).toContain("sendCommand('Accessibility.getRootAXNode')")
+    expect(packagedSmoke).toContain("sendCommand('Accessibility.getChildAXNodes'")
+    expect(packagedSmoke).toContain('<button>Semantic smoke button</button>')
+    expect(packagedSmoke).toContain("roles.includes('button:Semantic smoke button')")
+  })
+
   it('runs once against the freshly built helper before the expensive Setup build', () => {
     const workflow = readFileSync(
       new URL('../.github/workflows/windows-desktop.yml', import.meta.url),

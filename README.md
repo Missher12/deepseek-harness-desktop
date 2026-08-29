@@ -12,7 +12,7 @@ This community repository preserves the official source and adds an unofficial I
 
 Download the DMG or Setup executable from this repository's [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases). The current builds are unsigned; macOS may require **Open** from Finder's context menu on first launch, and Windows may show a SmartScreen prompt.
 
-Desktop 0.4.5 builds the Intel macOS DMG and Windows x64 Setup from the same tested Harness `0.1.1-rc.2` source revision. It retains 0.4.4's control recovery and adds deterministic renderer startup, bounded CDP handshake retries, and an official-tool guard so first-use browser control does not time out or fall back to direct DevTools access. Windows remains installer-updated; the in-app updater is currently available only for Intel macOS.
+Desktop 0.4.6 builds the Intel macOS DMG and Windows x64 Setup from the same tested Harness `0.1.1-rc.2` source revision. It retains 0.4.5's bounded browser startup and repairs semantic snapshots, already-idle waits, initial-page history, post-Stop shell recovery, exact native browser placement, and persistent resizable left and right panels. Both packaged applications must read a real local Accessibility button before release. Windows remains installer-updated; the in-app updater is currently available only for Intel macOS.
 
 ## Developer preview
 
