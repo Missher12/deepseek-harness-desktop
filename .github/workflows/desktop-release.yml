@@ -80,6 +80,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build the Intel macOS DMG
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: pnpm run desktop:dmg
 
       - name: Exercise the packaged application
