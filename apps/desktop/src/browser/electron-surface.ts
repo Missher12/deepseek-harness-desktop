@@ -85,7 +85,9 @@ export function createElectronEphemeralSurface(
   let attached = false
   let closed = false
   let mountToken: string | undefined
+  let rendererReady: Promise<void> | undefined
   let unregister = (): void => undefined
+  const isClosed = (): boolean => closed
   const resource: ElectronBrowserSurfaceResource = {
     surfaceId: `agent-browser-${String(view.webContents.id)}-${String(request.generation)}`,
     partition: request.partition,
@@ -97,7 +99,7 @@ export function createElectronEphemeralSurface(
       generation,
       allowsNavigation: agentNavigationAllowed,
     }),
-    mount(token) {
+    async mount(token) {
       if (closed || mountToken !== undefined && mountToken !== token) {
         throw new AgentBrowserError('STALE_REF', 'browser mount token is stale')
       }
@@ -108,7 +110,13 @@ export function createElectronEphemeralSurface(
       }
       view.setBounds(options.bounds())
       view.setVisible(true)
-      return Promise.resolve()
+      rendererReady ??= view.webContents.loadURL('about:blank').then(() => undefined).catch(() => {
+        throw new AgentBrowserError('INTERNAL', 'browser renderer could not be initialized')
+      })
+      await rendererReady
+      if (isClosed() || mountToken !== token || view.webContents.isDestroyed()) {
+        throw new AgentBrowserError('TARGET_CLOSED', 'browser renderer closed during initialization')
+      }
     },
     hide(token) {
       if (token !== mountToken || closed) return Promise.resolve()

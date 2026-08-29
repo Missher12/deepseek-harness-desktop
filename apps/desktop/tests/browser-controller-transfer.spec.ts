@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const electron = vi.hoisted(() => {
   class FakeEventEmitter {
@@ -74,9 +74,56 @@ vi.mock('electron', () => ({
 }))
 
 import { WorkbenchBrowserController } from '../src/browser/controller.ts'
-import { ElectronBrowserSurfaceRegistry } from '../src/browser/electron-surface.ts'
+import {
+  createElectronEphemeralSurface,
+  ElectronBrowserSurfaceRegistry,
+} from '../src/browser/electron-surface.ts'
+
+beforeEach(() => { electron.views.length = 0 })
 
 describe('persistent Workbench browser transfer', () => {
+  it('starts and awaits an about:blank renderer before an ephemeral mount becomes usable', async () => {
+    const added: unknown[] = []
+    const window = {
+      contentView: {
+        addChildView: (view: unknown) => { added.push(view) },
+        removeChildView: vi.fn(),
+      },
+      getBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }),
+    }
+    const resource = createElectronEphemeralSurface({
+      window: window as never,
+      request: {
+        sessionId: 'renderer-ready-session',
+        generation: 1,
+        partition: 'dsh-agent-browser-1-renderer-ready',
+      },
+      registry: new ElectronBrowserSurfaceRegistry(),
+      bounds: () => ({ x: 10, y: 20, width: 900, height: 600 }),
+    })
+    const view = electron.views.at(-1)
+    if (view === undefined) throw new Error('expected ephemeral view')
+    let finishLoad: (() => void) | undefined
+    view.webContents.loadURL.mockImplementationOnce(async (url: string) => {
+      await new Promise<void>((resolve) => { finishLoad = resolve })
+      view.webContents.url = url
+    })
+    const guards = resource.installSecurityHandlers(1)
+    const mounting = resource.mount('mount-token')
+
+    await vi.waitFor(() => { expect(view.webContents.loadURL).toHaveBeenCalledWith('about:blank') })
+    expect(added).toEqual([view])
+    let settled = false
+    void mounting.then(() => { settled = true })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    finishLoad?.()
+    await mounting
+    expect(view.visible).toBe(true)
+    guards.dispose()
+  })
+
   it('blocks renderer operations and restores the exact reserved tab when mount fails before commit', async () => {
     const added: unknown[] = []
     const removed: unknown[] = []

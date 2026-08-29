@@ -267,6 +267,29 @@ class FakeSurface implements BrowserSurfaceResource {
 }
 
 describe('semantic Agent browser adapter', () => {
+  it('retries the renderer-sensitive debugger handshake exactly once without reattaching', async () => {
+    vi.useFakeTimers()
+    try {
+      const contents = new FakeWebContents()
+      let attempts = 0
+      contents.debugger.handlers.set('Page.setInterceptFileChooserDialog', () => {
+        attempts += 1
+        if (attempts === 1) return new Promise(() => {})
+        return {}
+      })
+      const starting = adapterFor(contents).start()
+
+      await vi.advanceTimersByTimeAsync(BROWSER_AGENT_LIMITS.startupMs / BROWSER_AGENT_LIMITS.startupAttempts)
+      await starting
+
+      expect(attempts).toBe(BROWSER_AGENT_LIMITS.startupAttempts)
+      expect(contents.debugger.attachCalls).toBe(1)
+      expect(contents.debugger.detachCalls).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('returns BUSY for a foreign debugger and never detaches it', async () => {
     const contents = new FakeWebContents()
     contents.debugger.attached = true

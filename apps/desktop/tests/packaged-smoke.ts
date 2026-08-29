@@ -1478,6 +1478,51 @@ async function quitDesktop(application: ElectronApplication, platform: NodeJS.Pl
   })
 }
 
+async function exerciseBrowserRendererHandshake(application: ElectronApplication): Promise<void> {
+  const result = await application.evaluate(async ({ BrowserWindow, WebContentsView }) => {
+    const window = BrowserWindow.getAllWindows()[0]
+    if (window === undefined) throw new Error('Packaged smoke: native window is missing.')
+    const view = new WebContentsView({
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        partition: `dsh-browser-renderer-smoke-${String(Date.now())}`,
+      },
+    })
+    let attached = false
+    try {
+      window.contentView.addChildView(view)
+      attached = true
+      view.setBounds({ x: 0, y: 0, width: 1, height: 1 })
+      view.setVisible(false)
+      await view.webContents.loadURL('about:blank')
+      view.webContents.debugger.attach('1.3')
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      try {
+        await Promise.race([
+          view.webContents.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true }),
+          new Promise<never>((_resolve, reject) => {
+            timeout = setTimeout(() => { reject(new Error('renderer CDP handshake timed out')) }, 10_000)
+          }),
+        ])
+      } finally {
+        if (timeout !== undefined) clearTimeout(timeout)
+      }
+      return {
+        attached: view.webContents.debugger.isAttached(),
+        destroyed: view.webContents.isDestroyed(),
+        url: view.webContents.getURL(),
+      }
+    } finally {
+      if (view.webContents.debugger.isAttached()) view.webContents.debugger.detach()
+      if (attached) window.contentView.removeChildView(view)
+      if (!view.webContents.isDestroyed()) view.webContents.close({ waitForBeforeUnload: false })
+    }
+  })
+  expect(result).toEqual({ attached: true, destroyed: false, url: 'about:blank' })
+}
+
 async function exerciseDesktopPreferences(
   page: Page,
   application: ElectronApplication,
@@ -1586,6 +1631,7 @@ export async function runPackagedDesktopSmoke(
     page.on('pageerror', error => consoleErrors.push(error.message))
     await waitForDesktopSurface(page, userData)
     await exerciseDesktopTitlebarGeometry(page, platform)
+    await exerciseBrowserRendererHandshake(nativeApp)
 
     expect(await page.evaluate(() => (
       typeof window.dshDesktop?.onCommand === 'function'

@@ -18,6 +18,11 @@ import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-session'
 
+interface BrowserFallbackReporter {
+  failed(sessionId: SessionIdType, error: unknown): void
+  succeeded(sessionId: SessionIdType): void
+}
+
 type StripTransport<T> = T extends unknown
   ? Omit<T, 'protocolVersion' | 'messageKind' | 'requestId' | 'sessionId' | 'deadlineUnixMs' | 'leaseId' | 'leaseRevision'>
   : never
@@ -67,6 +72,7 @@ export class BrowserToolController {
   constructor(
     ctx: Context,
     private readonly provider: BrowserControl,
+    private readonly fallbackGuard?: BrowserFallbackReporter,
   ) {
     ctx.on('agent/turn-stopping', ({ agent }) => {
       this.#leases.delete(SessionId(agent.session.id))
@@ -96,6 +102,7 @@ export class BrowserToolController {
     try {
       return { sessionId, lease: await pending }
     } catch (error: unknown) {
+      this.fallbackGuard?.failed(sessionId, error)
       mapProviderError(error)
     }
   }
@@ -109,14 +116,17 @@ export class BrowserToolController {
   async snapshot(exec: ToolRunContext, includeImage: boolean): Promise<BrowserSnapshotEnvelope> {
     const { sessionId, lease } = await this.#lease(exec)
     try {
-      return await this.provider.snapshot({
+      const result = await this.provider.snapshot({
         ...base('browser.snapshot', sessionId),
         leaseId: lease.leaseId,
         leaseRevision: lease.leaseRevision,
         includeImage,
       }, exec.signal)
+      this.fallbackGuard?.succeeded(sessionId)
+      return result
     } catch (error: unknown) {
       this.#forgetRevoked(sessionId, error)
+      this.fallbackGuard?.failed(sessionId, error)
       mapProviderError(error)
     }
   }
@@ -136,9 +146,12 @@ export class BrowserToolController {
       ...body,
     } as BrowserActionRequest
     try {
-      return await this.provider.act(request, exec.signal)
+      const result = await this.provider.act(request, exec.signal)
+      this.fallbackGuard?.succeeded(sessionId)
+      return result
     } catch (error: unknown) {
       this.#forgetRevoked(sessionId, error)
+      this.fallbackGuard?.failed(sessionId, error)
       mapProviderError(error)
     }
   }
@@ -155,6 +168,7 @@ export class BrowserToolController {
       await this.provider.revokeSession(sessionId)
       return { stopped: true }
     } catch (error: unknown) {
+      this.fallbackGuard?.failed(sessionId, error)
       mapProviderError(error)
     }
   }

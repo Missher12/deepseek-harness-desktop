@@ -18,17 +18,19 @@ Every parameter root has `additionalProperties: false`. No tool accepts selector
 
 Known password, OTP, payment, file, upload, and other protected-target refusals arrive from the authoritative BrowserControl provider as policy results. The tools map those failures to a redacted refusal and never render the protected ref or provider diagnostic. Persistent human-surface one-shot native challenges are likewise provider/Electron policy; `ctx.approval` UX and model arguments are not authorization.
 
+While the provider exists, the package contributes an official-browser-only prompt section. Any BrowserControl failure also activates a monotonic per-session, per-turn execution guard: `bash`, `pwsh`, `run_code`, `terminal_open`, and `terminal_send` are denied. A successful official browser snapshot or action clears a recoverable transport, lease, ownership, or internal failure; an authorization, policy, permission, unsupported, quota, or binary failure remains closed until the turn ends. `browser_stop` and one official retry remain available where recovery is valid, so the model cannot turn a failed BrowserControl call into a direct DevTools, remote-debugging-port, script, or shell fallback through the normal tool pipeline.
+
 ## Model Experience
 
 ### Tool schemas
 
 #### What the model sees
 
-The model sees the twelve closed [Browser Control tool schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-browser-control) only while Desktop supplies `BrowserControl`. It first calls `browser_snapshot`, uses only current opaque refs for semantic target actions, and snapshots again after navigation or a stale-ref result. Snapshot text is bounded and a visual route receives one adjacent durable image block without gaining coordinate actions. Pending presentation omits typed text and protected page content.
+The model sees the twelve closed [Browser Control tool schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-browser-control) and the official-browser-only recovery instructions only while Desktop supplies `BrowserControl`. It first calls `browser_snapshot`, uses only current opaque refs for semantic target actions, and snapshots again after navigation or a stale-ref result. Snapshot text is bounded and a visual route receives one adjacent durable image block without gaining coordinate actions. Pending presentation omits typed text and protected page content.
 
 #### Token effect
 
-The fixed schemas add a bounded input cost whenever the Desktop provider is mounted. Snapshot semantics and optional image references are per-call results, so their data-dependent size does not become standing prompt text.
+The fixed schemas and short recovery section add a bounded input cost whenever the Desktop provider is mounted. Snapshot semantics and optional image references are per-call results, so their data-dependent size does not become standing prompt text.
 
 #### KV Cache effect
 
@@ -40,3 +42,4 @@ The roster is prefix-stable while `BrowserControl` availability and the closed s
 - `browser_key` and condition waits are page-level protocol operations and therefore have no element ref. The package does not invent one outside the frozen shared DTO.
 - Image-capability discovery or attachment storage absence falls back to semantic text. It never exposes uncommitted bytes or a data URL.
 - This package does not own the Browser surface, CDP, SSRF/redirect checks, downloads, popups, permissions, file-chooser suppression, native approval challenge, toolbar, or emergency-stop UI.
+- The direct-fallback guard governs model tool execution after an official failure; it is not isolation from a malicious trusted Host plugin or an unrelated external process.

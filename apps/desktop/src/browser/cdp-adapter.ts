@@ -104,6 +104,7 @@ type AllowedCdpMethod =
 interface OperationBudget {
   readonly epoch: number
   readonly startedAt: number
+  readonly wallMs: number
   calls: number
 }
 
@@ -353,7 +354,7 @@ export class CdpBrowserAdapter {
   }
 
   /** Attach the debugger only when no foreign debugger owns it and enable file-chooser interception. */
-  async start(): Promise<void> {
+  async start(signal?: AbortSignal): Promise<void> {
     this.assertOpen()
     if (this.attachedByUs && this.webContents.debugger.isAttached()) return
     if (this.webContents.debugger.isAttached()) {
@@ -363,11 +364,26 @@ export class CdpBrowserAdapter {
       this.webContents.debugger.attach('1.3')
       this.attachedByUs = true
       this.installListeners()
-      await this.command(
-        'Page.setInterceptFileChooserDialog',
-        { enabled: true },
-        this.createBudget(),
-      )
+      const attemptMs = Math.floor(BROWSER_AGENT_LIMITS.startupMs / BROWSER_AGENT_LIMITS.startupAttempts)
+      let initialized = false
+      let failure: unknown
+      for (let attempt = 0; attempt < BROWSER_AGENT_LIMITS.startupAttempts; attempt += 1) {
+        try {
+          await this.command(
+            'Page.setInterceptFileChooserDialog',
+            { enabled: true },
+            this.createBudget(attemptMs),
+            signal,
+          )
+          initialized = true
+          break
+        } catch (error) {
+          failure = error
+          if (error instanceof AgentBrowserError
+            && error.code !== 'INTERNAL' && error.code !== 'TIMEOUT') throw error
+        }
+      }
+      if (!initialized) throw failure
     } catch (error) {
       const foreignDebuggerWonRace = !this.attachedByUs && this.webContents.debugger.isAttached()
       if (this.attachedByUs) {
@@ -388,7 +404,7 @@ export class CdpBrowserAdapter {
     request: { readonly includeImage: boolean },
     signal?: AbortSignal,
   ): Promise<AgentBrowserSnapshotEnvelope> {
-    await this.start()
+    await this.start(signal)
     this.assertSignal(signal)
     const budget = this.createBudget()
     const nodes = await this.walkAccessibilityTree(budget, signal)
@@ -418,7 +434,7 @@ export class CdpBrowserAdapter {
   /** Execute one closed semantic browser action without exposing coordinates or generic CDP. */
   async act(action: AgentBrowserAction, signal?: AbortSignal): Promise<Readonly<Record<string, unknown>>> {
     if (!isAgentBrowserAction(action)) throw new AgentBrowserError('POLICY_DENIED', 'browser action is not allowed')
-    await this.start()
+    await this.start(signal)
     this.assertSignal(signal)
     if (action.kind === 'navigate') {
       const target = await this.urlPolicy.authorize(action.url, signal)
@@ -522,7 +538,7 @@ export class CdpBrowserAdapter {
     try {
       await this.awaitCdpResponse(
         this.webContents.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false }),
-        BROWSER_AGENT_LIMITS.wallMs,
+        BROWSER_AGENT_LIMITS.cleanupMs,
       )
     } catch {
       // Detach below is itself sufficient to remove an owned debugger's chooser interception.
@@ -538,8 +554,8 @@ export class CdpBrowserAdapter {
     this.ownedDebuggerCleanupRequired = false
   }
 
-  private createBudget(): OperationBudget {
-    return { epoch: this.epoch, startedAt: this.now(), calls: 0 }
+  private createBudget(wallMs: number = BROWSER_AGENT_LIMITS.wallMs): OperationBudget {
+    return { epoch: this.epoch, startedAt: this.now(), wallMs, calls: 0 }
   }
 
   private async command(
@@ -550,7 +566,7 @@ export class CdpBrowserAdapter {
   ): Promise<unknown> {
     this.assertSignal(signal)
     this.assertEpoch(budget.epoch)
-    if (this.now() - budget.startedAt > BROWSER_AGENT_LIMITS.wallMs) {
+    if (this.now() - budget.startedAt > budget.wallMs) {
       throw new AgentBrowserError('TIMEOUT', 'browser operation exceeded its wall-time bound')
     }
     budget.calls += 1
@@ -561,7 +577,7 @@ export class CdpBrowserAdapter {
     let result: unknown
     try {
       const response = this.webContents.debugger.sendCommand(method, params)
-      const remainingMs = Math.max(0, BROWSER_AGENT_LIMITS.wallMs - (this.now() - budget.startedAt))
+      const remainingMs = Math.max(0, budget.wallMs - (this.now() - budget.startedAt))
       result = await this.awaitCdpResponse(response, remainingMs, signal)
     } catch (error) {
       this.assertSignal(signal)
@@ -571,7 +587,7 @@ export class CdpBrowserAdapter {
     }
     this.assertSignal(signal)
     this.assertEpoch(budget.epoch)
-    if (this.now() - budget.startedAt > BROWSER_AGENT_LIMITS.wallMs) {
+    if (this.now() - budget.startedAt > budget.wallMs) {
       throw new AgentBrowserError('TIMEOUT', 'browser operation exceeded its wall-time bound')
     }
     return result

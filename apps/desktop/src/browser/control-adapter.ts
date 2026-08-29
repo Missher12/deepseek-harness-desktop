@@ -29,7 +29,7 @@ const BROWSER_CAPABILITIES = Object.freeze([
 
 /** Narrow semantic adapter face retained by the Desktop coordinator adapter. */
 export interface BrowserSemanticControl {
-  start(): Promise<void>
+  start(signal?: AbortSignal): Promise<void>
   snapshot(
     request: { readonly includeImage: boolean },
     signal?: AbortSignal,
@@ -282,7 +282,7 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
       activated = await this.activate(mount)
       cleanup = this.createCleanupLedger(mount, activated)
       this.cleanupLedger = cleanup
-      await activated.semantic.start()
+      await activated.semantic.start(signal)
       throwIfAborted(signal)
       const active: ActiveBrowserControl = { mount, ...activated, cleanup }
       this.active = active

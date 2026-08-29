@@ -18,7 +18,7 @@ Desktop 浏览器层把全局表层所有权、页面策略与封闭的 CDP 适�
 
 ## 所有权与生命周期
 
-单个 `BrowserSurfaceManager` 实例拥有进程级唯一 Agent 浏览器位置。acquire 输入携带由受信任提供方得出的官方会话。首次调用会原子保留该会话，并且只会消费 coordinator 已验证、精确指向 `persist:dsh-workbench-browser` 实例的 Give intent；否则，它会创建具备唯一名称的非持久化表层，并在返回前完成可见挂载。只有携带精确会话与 generation 的调用才能复用活动表层；另一个会话只会收到 `BUSY`，不会消费新 intent，也不会对所有者调用 mount、hide 或 teardown。
+单个 `BrowserSurfaceManager` 实例拥有进程级唯一 Agent 浏览器位置。acquire 输入携带由受信任提供方得出的官方会话。首次调用会原子保留该会话，并且只会消费 coordinator 已验证、精确指向 `persist:dsh-workbench-browser` 实例的 Give intent；否则，它会创建具备唯一名称的非持久化表层，并在返回前完成可见挂载。新的临时 mount 会在附加 `WebContentsView` 后加载并等待 `about:blank`，因此 Windows 与 macOS 都只会在 Electron 启动 renderer target 后发布该表层。只有携带精确会话与 generation 的调用才能复用活动表层；另一个会话只会收到 `BUSY`，不会消费新 intent，也不会对所有者调用 mount、hide 或 teardown。
 
 每次 mount 都有 generation 与 mount token。陈旧的 hide 和 Stop token 不产生影响，清理失败时仍以封闭失败方式保留所有者，不会接纳替代者。持久化转移分为两个阶段：reserve 保留精确的人工 view、owner、identity、bounds、visibility、URL、title 与 tab state，只有安全 mount 与 commit 完成后才发布；从 reserve 开始到精确 cleanup release 结束，renderer 发起的人工 show、control、hide 或隐式创建 view 全部保持 `BUSY`。commit 前失败时绝不会关闭或替换人工 view，并且只会在 handler dispose、debugger detach、view teardown 与 coordinator revoke 全部成功后恢复它。Stop 遵循相同顺序，即使其中一步失败也会等待所有清理步骤，只有最终 release 达到完全停稳（quiescence）后才释放所有权。未发布清理失败时，失败步骤仍绑定原 session 与 generation，所有 acquire 保持 `BUSY`，只有携带精确身份的生命周期重试在这些步骤成功后才能释放位置。被转移的人工持久化表层绝不会清理存储；临时 Agent partition 始终不同于 Workbench partition。
 
@@ -30,15 +30,15 @@ Desktop 浏览器层把全局表层所有权、页面策略与封闭的 CDP 适�
 
 main 拥有的 loopback transport 会为一个活动 generation 绑定不公开的随机端口，并配置所属 Session 把 HTTP 与 HTTPS 代理流量都送入该端口，同时移除 Chromium 的隐式 loopback bypass。每个 generation 还拥有随机 proxy 凭据；preload、工具与 transport API 都不会暴露这些凭据。main-process Electron `login` handler 只会响应 WebContents、loopback port、Basic scheme 与 realm 都精确匹配的活动 generation，proxy 会以恒定时间比较完整 authorization 值。未认证流量只会收到 proxy authentication challenge；已认证的普通 HTTP 请求仍会失败，CONNECT 也只接受没有 userinfo、Host authority 完全匹配且端口为 443 的请求。每个获准 CONNECT 都会通过 Chromium Session 重新解析，并只拨号一个已验证的 public IP；TLS 仍使用原 hostname 完成 SNI 与证书校验。server 从接收连接起就跟踪每个 client，设置较短的 header 与 request timeout，并在 dispose 时销毁 partial-header、等待 resolver 与已建立的 socket。Stop、revoke、activation rollback 与 shutdown 会关闭全部隧道并把 Session 网络恢复为 system proxy 基线；proxy 配置只完成一部分即失败时也走同一清理路径。
 
-preload 只向受信任 Harness main frame 暴露无参数的 Give、Stop 与 status 方法。Give 为下一次官方 acquire 保存 main 拥有的不透明 intent；status 只暴露 human／given／agent／stopping 阶段与已登录警告。Workbench 工具栏会在 Give 前要求确认，并在清理完成前保持 Stop pending。非 minimal Desktop preset 包含 `tool-browser-control`；它的 Cordis injection 只在 Desktop 拥有的 `BrowserControl` provider 存在期间注册闭集工具。没有该 provider 的 CLI 与 Web 组合不会拥有浏览器工具。
+preload 只向受信任 Harness main frame 暴露无参数的 Give、Stop 与 status 方法。Give 为下一次官方 acquire 保存 main 拥有的不透明 intent；status 只暴露 human／given／agent／stopping 阶段与已登录警告。Workbench 工具栏会在 Give 前要求确认，并在清理完成前保持 Stop pending。非 minimal Desktop preset 包含 `tool-browser-control`；它的 Cordis injection 只在 Desktop 拥有的 `BrowserControl` provider 存在期间注册闭集工具与只允许官方浏览器工具的 prompt section。没有该 provider 的 CLI 与 Web 组合不会拥有浏览器工具或相应 prompt 文本。官方 BrowserControl 出现任何失败后，绑定 session 与 turn 的单调 execution guard 会拒绝 Bash、PowerShell、Code Mode 与终端命令入口。官方 browser snapshot 或 action 只会清除可恢复的 transport、lease、ownership 或 internal failure；authorization、policy、permission、unsupported、quota 与 binary failure 则保持封闭直到 turn 结束。在恢复有效时仍允许 Stop 与一次官方重试；普通模型工具流水线无法把失败的官方请求替换成直连 DevTools 或 remote-debugging port 的脚本。
 
 ## CDP 与引用边界
 
-`CdpBrowserAdapter` 会先对已经附加或在附加竞态中胜出的外部 debugger 返回 `BUSY`；它只在自己成功附加后记录 `attachedByUs`，也只在此状态下执行 detach。主文档导航、同文档导航、表层销毁、debugger detach、`Accessibility.nodesUpdated` 与 `DOM.documentUpdated` 都会推进适配器 epoch 和 revision、清除所有 ref，并让每个延迟完成的 CDP 调用无法通过 await 后的 epoch 复检。
+`CdpBrowserAdapter` 会先对已经附加或在附加竞态中胜出的外部 debugger 返回 `BUSY`；它只在自己成功附加后记录 `attachedByUs`，也只在此状态下执行 detach。对 renderer readiness 敏感的 file chooser handshake 拥有独立的 10,000 ms 初始化预算，并在同一次自有 attachment 上最多尝试两次。主文档导航、同文档导航、表层销毁、debugger detach、`Accessibility.nodesUpdated` 与 `DOM.documentUpdated` 都会推进适配器 epoch 和 revision、清除所有 ref，并让每个延迟完成的 CDP 调用无法通过 await 后的 epoch 复检。
 
 CDP 方法闭集仅包含 `Accessibility.getRootAXNode`、有界广度优先的 `Accessibility.getChildAXNodes`、只读 `DOM.describeNode`、`DOM.getBoxModel`、固定的 `Input.dispatchMouseEvent`、`Input.dispatchKeyEvent` 与 `Input.insertText`、可见 viewport 的 `Page.captureScreenshot`，以及文件选择器拦截。`DOM.describeNode` 只贡献 `type`、`autocomplete`、`disabled` 与 `readonly`。系统不暴露任何 `Runtime` 方法、JavaScript 求值、selector、任意 CDP dispatch、remote-debugging port、坐标动作或文件设置路径。
 
-遍历会在 2,000 个原始节点、32 层深度、512 次 CDP 调用或 2,000 ms 时停止。投影最多保留 300 个可动作 ref、49,152 个 UTF-8 语义字节与 65,536 字节的编码 JSON 结果。ref 会绑定表层 generation、适配器 revision、AX identity、后端 DOM identity 与 registry 位置。快照不包含可编辑值；策略会在 ref 进入 registry 前拒绝密码、一次性验证码、支付、文件、上传、disabled、readonly 与敏感性不确定的可编辑目标。在每个基于 ref 的变更动作执行前，适配器会再次完成有界 AX 读取与 `DOM.describeNode`，根据实时 role、name、editability、type、autocomplete、disabled 与 readonly 重新分类；一旦目标变得敏感，或 AX identity／语义发生变化，就会在发出任何 `Input` 命令前拒绝。type 与 select 会拆分为多段受检步骤：click 后重新读取 AX 与 DOM，要求有且仅有一个带后端节点身份的 focused 节点且必须与 ref 相同，并在 `Input.insertText` 前再次检查敏感性与可编辑性；select 还会在插入文本之后、发出 Enter 之前再次执行相同的焦点身份与策略检查。
+遍历会在 2,000 个原始节点、32 层深度、512 次 CDP 调用或 10,000 ms 时停止。debugger cleanup 保留独立的 2,000 ms 边界。投影最多保留 300 个可动作 ref、49,152 个 UTF-8 语义字节与 65,536 字节的编码 JSON 结果。ref 会绑定表层 generation、适配器 revision、AX identity、后端 DOM identity 与 registry 位置。快照不包含可编辑值；策略会在 ref 进入 registry 前拒绝密码、一次性验证码、支付、文件、上传、disabled、readonly 与敏感性不确定的可编辑目标。在每个基于 ref 的变更动作执行前，适配器会再次完成有界 AX 读取与 `DOM.describeNode`，根据实时 role、name、editability、type、autocomplete、disabled 与 readonly 重新分类；一旦目标变得敏感，或 AX identity／语义发生变化，就会在发出任何 `Input` 命令前拒绝。type 与 select 会拆分为多段受检步骤：click 后重新读取 AX 与 DOM，要求有且仅有一个带后端节点身份的 focused 节点且必须与 ref 相同，并在 `Input.insertText` 前再次检查敏感性与可编辑性；select 还会在插入文本之后、发出 Enter 之前再次执行相同的焦点身份与策略检查。
 
 动作校验器只接受 navigate、基于 ref 的 click 和 type、有界 key chord、基于 ref 的 select、有界 viewport 或基于 ref 的 scroll、有界 duration/navigation/loading-idle wait、历史导航、reload，以及外围生命周期中的 Stop。浏览器输入只会在解析当前 ref 后计算内部 box center；调用方无法提供 selector 或坐标。
 
@@ -52,7 +52,7 @@ CDP 方法闭集仅包含 `Accessibility.getRootAXNode`、有界广度优先的 
 
 ## 验证
 
-focused browser、policy、pinned-transport、coordinator adapter、takeover、preload、preset 与 Workbench client spec 会使用 fake debugger、WebContents、Session、proxy socket、IPC registry 与表层资源。它们固定了附加所有权与竞态、延迟响应与 ref 失效、所有资源边界、snapshot-to-action 敏感性变化、click 时的焦点重定向、CDP 和动作闭集、截图缩减与校验、public-to-private DNS rebinding 且不 load／connect、带认证的 CONNECT authority 与 proxy bypass 策略、partial-header 和等待 resolver 时的 dispose、system proxy 恢复、稳定恢复人工 handler、会话原子所有权、陈旧 token、两阶段持久化转移、失败清理的 reservation 与重试、可信无参数 IPC、Stop pending 状态、条件工具注册，以及 revoke。Desktop 与 Workbench TypeScript 检查和仓库 scoped oxlint 覆盖该组合。
+focused browser、policy、pinned-transport、coordinator adapter、takeover、preload、preset 与 Workbench client spec 会使用 fake debugger、WebContents、Session、proxy socket、IPC registry 与表层资源。它们固定了 mount 发布前的 renderer readiness、有界两次 debugger handshake、附加所有权与竞态、延迟响应与 ref 失效、所有资源边界、snapshot-to-action 敏感性变化、click 时的焦点重定向、CDP 和动作闭集、截图缩减与校验、public-to-private DNS rebinding 且不 load／connect、带认证的 CONNECT authority 与 proxy bypass 策略、partial-header 和等待 resolver 时的 dispose、system proxy 恢复、稳定恢复人工 handler、会话原子所有权、陈旧 token、两阶段持久化转移、失败清理的 reservation 与重试、可信无参数 IPC、Stop pending 状态、条件工具与 prompt 注册、执行 fallback 拒绝，以及 revoke。Desktop 与 Workbench TypeScript 检查和仓库 scoped oxlint 覆盖该组合。
 
 ## 备选方案
 
@@ -67,6 +67,8 @@ focused browser、policy、pinned-transport、coordinator adapter、takeover、p
 **清理尝试失败后释放全局所有权。** 当 debugger、view、storage 或 revoke 状态不确定时接纳替代者，可能产生两个有效所有者。清理过程会尝试每个步骤，但仍把失败的 generation 保持为 busy，直到进程所有者解决失败。
 
 **只解析一次 hostname 后调用 `loadURL()`，或把 HTTPS URL 改写成选定 IP。** 前者会在校验与 Chromium 连接之间留下 DNS rebinding 窗口；后者会改变 SNI 与证书身份。因此 hostname 使用由其精确 Electron Session 拥有的地址固定 CONNECT transport。
+
+**只增加共享的两秒 CDP 预算。** 这能减少部分 timeout，却仍保留首次 mount 的 renderer startup 竞态，还会让 cleanup 与语义遍历等待同样长的时间。临时 mount readiness、独立的有界初始化重试、十秒操作预算与保留的两秒 cleanup 边界让每段等待由对应所有者负责。
 
 ## 影响
 

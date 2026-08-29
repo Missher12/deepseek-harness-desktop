@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { AttachmentId, AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type {
@@ -72,7 +72,7 @@ class FakeBrowserControl extends BrowserControl {
       refs: Object.freeze([{ ref: BrowserRef(REF_1), role: 'button', name: 'Continue' }]),
     },
   }
-  rejectWith?: BrowserControlError
+  rejectWith: BrowserControlError | undefined
 
   override async acquireLease(request: ControlLeaseAcquireRequest): Promise<ControlLeaseAcquireResult> {
     this.acquireRequests.push(request)
@@ -199,6 +199,96 @@ describe('closed BrowserControl tools', () => {
     expect(present.ctx.tools.schemas().map(schema => schema.name).sort()).toEqual([...NAMES])
   })
 
+  it('publishes an official-browser-only recovery contract while the provider exists', async () => {
+    const absent = await setup(false)
+    expect((await absent.ctx.systemPrompt.assemble()).sections
+      .some(section => section.name === 'tool:browser-control')).toBe(false)
+
+    const present = await setup(true)
+    const section = (await present.ctx.systemPrompt.assemble()).sections
+      .find(candidate => candidate.name === 'tool:browser-control')
+    expect(section?.text).toContain('browser_* tools exclusively')
+    expect(section?.text).toContain('never use Bash, shell, run_code')
+    expect(section?.text).toContain('DevTools')
+    expect(section?.text).toContain('remote-debugging')
+    expect(section?.text).toContain('browser_stop once')
+    expect(section?.text).toContain('report the official-tool failure')
+  })
+
+  it('denies direct execution fallbacks after a recoverable browser failure in the same session turn', async () => {
+    const { ctx, browser } = await setup()
+    if (!browser) throw new Error('provider missing')
+    let executions = 0
+    ctx.tools.register(defineTool({
+      name: 'bash',
+      description: 'test shell',
+      parameters: { command: { type: 'string', required: true } },
+      output: {
+        schema: {
+          type: 'object', additionalProperties: false,
+          properties: { ok: { type: 'boolean', required: true } },
+        },
+        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+      },
+      execute: async () => { executions += 1; return { ok: true } },
+    }))
+
+    const beforeFailure = await call(ctx, 'bash', { command: 'echo ordinary' })
+    browser.rejectWith = new BrowserControlError('TIMEOUT', 'renderer handshake timed out')
+    const failed = await call(ctx, 'browser_snapshot', {})
+    const blocked = await call(ctx, 'bash', { command: 'curl http://127.0.0.1:9222/json' })
+    await call(ctx, 'browser_stop', {})
+    const stillBlocked = await call(ctx, 'bash', { command: 'echo bypass after stop' })
+    browser.rejectWith = undefined
+    const recovered = await call(ctx, 'browser_snapshot', {})
+    const afterRecovery = await call(ctx, 'bash', { command: 'echo ordinary again' })
+    const otherSession = await call(
+      ctx,
+      'bash',
+      { command: 'echo unrelated' },
+      agent('session-b'),
+    )
+
+    expect(beforeFailure.isError).toBe(false)
+    expect(failed.isError).toBe(true)
+    expect(blocked.isError).toBe(true)
+    expect(text(blocked)).toContain('official browser tools')
+    expect(stillBlocked.isError).toBe(true)
+    expect(recovered.isError).toBe(false)
+    expect(afterRecovery.isError).toBe(false)
+    expect(otherSession.isError).toBe(false)
+    expect(executions).toBe(3)
+  })
+
+  it('keeps policy failures closed for the remainder of the turn even after a read succeeds', async () => {
+    const { ctx, browser } = await setup()
+    if (!browser) throw new Error('provider missing')
+    let executions = 0
+    ctx.tools.register(defineTool({
+      name: 'bash',
+      description: 'test shell',
+      parameters: { command: { type: 'string', required: true } },
+      output: {
+        schema: {
+          type: 'object', additionalProperties: false,
+          properties: { ok: { type: 'boolean', required: true } },
+        },
+        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+      },
+      execute: async () => { executions += 1; return { ok: true } },
+    }))
+
+    browser.rejectWith = new BrowserControlError('POLICY_DENIED', 'protected target detail')
+    expect((await call(ctx, 'browser_snapshot', {})).isError).toBe(true)
+    browser.rejectWith = undefined
+    expect((await call(ctx, 'browser_snapshot', {})).isError).toBe(false)
+    const blocked = await call(ctx, 'bash', { command: 'curl http://127.0.0.1:9222/json' })
+
+    expect(blocked.isError).toBe(true)
+    expect(text(blocked)).toContain('official browser tools')
+    expect(executions).toBe(0)
+  })
+
   it('withdraws all twelve tools when the optional provider fiber is disposed', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
@@ -206,8 +296,12 @@ describe('closed BrowserControl tools', () => {
     await ctx.plugin(BrowserTools)
     const provider = await ctx.plugin(FakeBrowserControl)
     expect(ctx.tools.schemas()).toHaveLength(12)
+    expect((await ctx.systemPrompt.assemble()).sections
+      .some(section => section.name === 'tool:browser-control')).toBe(true)
     await provider.dispose()
     expect(ctx.tools.schemas()).toEqual([])
+    expect((await ctx.systemPrompt.assemble()).sections
+      .some(section => section.name === 'tool:browser-control')).toBe(false)
   })
 
   it('publishes closed schemas with no authority, file, upload, chooser, selector, or coordinate inputs', async () => {
