@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import { computeColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT } from './columns.ts'
+import { computeColumns, SIDEBAR_AUTO_COLLAPSE } from './columns.ts'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
 
@@ -151,7 +151,7 @@ export function AppFrame({
   const sidebarCollapsed = narrow ? !panels.narrowExpanded : panels.sidebar === 0
   const sidebarPreference = sidebarCollapsed
     ? 0
-    : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
+    : panels.sidebar === 0 ? panels.sidebarLastExpanded : panels.sidebar
   const utilityOpen = detailsSession !== undefined && panels.utilityOpen
   const dockedCols = computeColumns(
     viewport,

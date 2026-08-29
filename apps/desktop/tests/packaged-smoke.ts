@@ -1498,29 +1498,70 @@ async function exerciseBrowserRendererHandshake(application: ElectronApplication
       view.setVisible(false)
       await view.webContents.loadURL('about:blank')
       view.webContents.debugger.attach('1.3')
-      let timeout: ReturnType<typeof setTimeout> | undefined
-      try {
-        await Promise.race([
-          view.webContents.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true }),
-          new Promise<never>((_resolve, reject) => {
-            timeout = setTimeout(() => { reject(new Error('renderer CDP handshake timed out')) }, 10_000)
-          }),
-        ])
-      } finally {
-        if (timeout !== undefined) clearTimeout(timeout)
+      const withTimeout = async <T>(operation: Promise<T>, label: string): Promise<T> => {
+        let timeout: ReturnType<typeof setTimeout> | undefined
+        try {
+          return await Promise.race([
+            operation,
+            new Promise<never>((_resolve, reject) => {
+              timeout = setTimeout(() => { reject(new Error(`${label} timed out`)) }, 10_000)
+            }),
+          ])
+        } finally {
+          if (timeout !== undefined) clearTimeout(timeout)
+        }
+      }
+      await withTimeout(
+        view.webContents.debugger.sendCommand('Accessibility.enable'),
+        'renderer Accessibility enable',
+      )
+      await withTimeout(
+        view.webContents.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true }),
+        'renderer CDP handshake',
+      )
+      const semanticUrl = `data:text/html,${encodeURIComponent('<!doctype html><button>Semantic smoke button</button>')}`
+      await withTimeout(view.webContents.loadURL(semanticUrl), 'renderer semantic fixture load')
+      const root = await withTimeout(
+        view.webContents.debugger.sendCommand('Accessibility.getRootAXNode'),
+        'renderer Accessibility root',
+      ) as { node?: { nodeId?: unknown } }
+      if (typeof root.node?.nodeId !== 'string') throw new Error('renderer Accessibility root is invalid')
+      const queue = [root.node.nodeId]
+      const roles: string[] = []
+      for (let cursor = 0; cursor < queue.length && cursor < 64; cursor += 1) {
+        const nodeId = queue[cursor]
+        if (nodeId === undefined) break
+        const response = await withTimeout(
+          view.webContents.debugger.sendCommand('Accessibility.getChildAXNodes', { id: nodeId }),
+          'renderer Accessibility children',
+        ) as { nodes?: readonly {
+          nodeId?: unknown
+          childIds?: readonly unknown[]
+          role?: { value?: unknown }
+          name?: { value?: unknown }
+        }[] }
+        for (const node of response.nodes ?? []) {
+          if (typeof node.role?.value === 'string' && typeof node.name?.value === 'string') {
+            roles.push(`${node.role.value}:${node.name.value}`)
+          }
+          if (typeof node.nodeId === 'string' && (node.childIds?.length ?? 0) > 0) queue.push(node.nodeId)
+        }
       }
       return {
         attached: view.webContents.debugger.isAttached(),
         destroyed: view.webContents.isDestroyed(),
-        url: view.webContents.getURL(),
+        semanticButton: roles.includes('button:Semantic smoke button'),
       }
     } finally {
+      if (view.webContents.debugger.isAttached()) {
+        await view.webContents.debugger.sendCommand('Accessibility.disable').catch(() => {})
+      }
       if (view.webContents.debugger.isAttached()) view.webContents.debugger.detach()
       if (attached) window.contentView.removeChildView(view)
       if (!view.webContents.isDestroyed()) view.webContents.close({ waitForBeforeUnload: false })
     }
   })
-  expect(result).toEqual({ attached: true, destroyed: false, url: 'about:blank' })
+  expect(result).toEqual({ attached: true, destroyed: false, semanticButton: true })
 }
 
 async function exerciseDesktopPreferences(

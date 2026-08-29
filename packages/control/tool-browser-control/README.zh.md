@@ -18,7 +18,7 @@
 
 已知的 password、OTP、payment、file、upload 与其他受保护目标拒绝由权威 BrowserControl 提供方以 policy result 返回。工具会把这些失败映射为脱敏拒绝，绝不渲染受保护 ref 或提供方诊断。持久 human surface 的一次性原生 challenge 同样属于提供方／Electron policy；`ctx.approval` UX 和模型参数都不是授权。
 
-提供方存在期间，本包会贡献一段只允许使用官方浏览器工具的 prompt。任何 BrowserControl 失败还会为该 session 当前 turn 启用单调执行防护，拒绝 `bash`、`pwsh`、`run_code`、`terminal_open` 与 `terminal_send`。官方 browser snapshot 或 action 成功时，可以清除可恢复的 transport、lease、ownership 或 internal failure；authorization、policy、permission、unsupported、quota 或 binary failure 则保持封闭直到 turn 结束。在恢复有效时，`browser_stop` 和一次官方重试仍然可用，因此模型无法通过普通工具流水线把失败的 BrowserControl 调用改成直连 DevTools、remote-debugging port、脚本或 shell 的 fallback。
+提供方存在期间，本包会贡献一段只允许使用官方浏览器工具的 prompt。任何 BrowserControl 失败还会为该 session 当前 turn 启用单调执行防护，拒绝 `bash`、`pwsh`、`run_code`、`terminal_open` 与 `terminal_send`。官方 browser snapshot 或 action 成功时，可以清除可恢复的 transport、lease、ownership 或 internal failure；authorization、policy、permission、unsupported、quota 或 binary failure 则保持封闭直到 turn 结束。成功并等待清理完成的 `browser_stop` 会显式清除该 session 的防护，而失败的 Stop 会继续保持封闭。在恢复有效时，Stop 与一次官方重试仍然可用，因此模型无法通过普通工具流水线把失败的 BrowserControl 调用改成直连 DevTools、remote-debugging port、脚本或 shell 的 fallback。
 
 ## 模型体验
 

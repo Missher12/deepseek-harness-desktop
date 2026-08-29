@@ -73,6 +73,7 @@ class FakeBrowserControl extends BrowserControl {
     },
   }
   rejectWith: BrowserControlError | undefined
+  revokeRejectWith: BrowserControlError | undefined
 
   override async acquireLease(request: ControlLeaseAcquireRequest): Promise<ControlLeaseAcquireResult> {
     this.acquireRequests.push(request)
@@ -99,6 +100,7 @@ class FakeBrowserControl extends BrowserControl {
   }
 
   override async revokeSession(sessionId: SessionIdType): Promise<void> {
+    if (this.revokeRejectWith) throw this.revokeRejectWith
     this.revoked.push(sessionId)
   }
 }
@@ -238,7 +240,7 @@ describe('closed BrowserControl tools', () => {
     const failed = await call(ctx, 'browser_snapshot', {})
     const blocked = await call(ctx, 'bash', { command: 'curl http://127.0.0.1:9222/json' })
     await call(ctx, 'browser_stop', {})
-    const stillBlocked = await call(ctx, 'bash', { command: 'echo bypass after stop' })
+    const afterStop = await call(ctx, 'bash', { command: 'echo ordinary after stop' })
     browser.rejectWith = undefined
     const recovered = await call(ctx, 'browser_snapshot', {})
     const afterRecovery = await call(ctx, 'bash', { command: 'echo ordinary again' })
@@ -253,11 +255,11 @@ describe('closed BrowserControl tools', () => {
     expect(failed.isError).toBe(true)
     expect(blocked.isError).toBe(true)
     expect(text(blocked)).toContain('official browser tools')
-    expect(stillBlocked.isError).toBe(true)
+    expect(afterStop.isError).toBe(false)
     expect(recovered.isError).toBe(false)
     expect(afterRecovery.isError).toBe(false)
     expect(otherSession.isError).toBe(false)
-    expect(executions).toBe(3)
+    expect(executions).toBe(4)
   })
 
   it('keeps policy failures closed for the remainder of the turn even after a read succeeds', async () => {
@@ -409,6 +411,31 @@ describe('closed BrowserControl tools', () => {
     expect(result.isError).toBe(false)
     expect(browser?.acquireRequests).toEqual([])
     expect(browser?.revoked).toEqual(['session-a'])
+  })
+
+  it('keeps direct fallbacks blocked when official Stop itself fails', async () => {
+    const { ctx, browser } = await setup()
+    if (!browser) throw new Error('provider missing')
+    ctx.tools.register(defineTool({
+      name: 'pwsh',
+      description: 'test shell',
+      parameters: { command: { type: 'string', required: true } },
+      output: {
+        schema: {
+          type: 'object', additionalProperties: false,
+          properties: { ok: { type: 'boolean', required: true } },
+        },
+        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+      },
+      execute: async () => ({ ok: true }),
+    }))
+    browser.rejectWith = new BrowserControlError('TIMEOUT', 'renderer unavailable')
+    await call(ctx, 'browser_snapshot', {})
+    browser.rejectWith = undefined
+    browser.revokeRejectWith = new BrowserControlError('TIMEOUT', 'cleanup timed out')
+
+    expect((await call(ctx, 'browser_stop', {})).isError).toBe(true)
+    expect((await call(ctx, 'pwsh', { command: 'Get-Process' })).isError).toBe(true)
   })
 
   it('maps provider policy denial without leaking the protected target', async () => {

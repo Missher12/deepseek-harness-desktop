@@ -1,5 +1,5 @@
 /**
- * Pure concession-chain column solver for the three-column AppFrame.
+ * Pure concession-chain column solver for the four-column AppFrame.
  * Chain order is fixed by contract: keep center >= CENTER_MIN by shrinking
  * details, then auto-closing it (derived zero width — preferred width
  * preferences are never rewritten, so widening the window restores them).
@@ -16,15 +16,15 @@
 /** Resolved widths for one frame; center may drop below CENTER_MIN only at the final fallback. */
 export interface Columns { sidebar: number; center: number; details: number; utility: number }
 
-// Contract-frozen geometry: the three-column concession chain's fixed points.
+// Contract-frozen geometry: the four-column concession chain's fixed points.
 /** Center column floor; only the final fallback may go below it. */
 export const CENTER_MIN = 640
 /** Sidebar drag clamp floor. */
 export const SIDEBAR_MIN = 264
 /** Sidebar drag clamp ceiling. */
-export const SIDEBAR_MAX = 420
+export const SIDEBAR_MAX = 640
 /** Sidebar width before any user drag. */
-export const SIDEBAR_DEFAULT = 280
+export const SIDEBAR_DEFAULT = 320
 /** Closed-sidebar rail: a 24px icon column between 16px horizontal paddings. */
 export const SIDEBAR_COLLAPSED = 56
 /** Viewport width below which the sidebar auto-collapses to the rail (deepsuite
@@ -38,11 +38,11 @@ export const DETAILS_MAX = 520
 /** Details width before any user drag. */
 export const DETAILS_DEFAULT = 360
 /** Utility workbench drag clamp floor. */
-export const UTILITY_MIN = 320
+export const UTILITY_MIN = 420
 /** Utility workbench drag clamp ceiling. */
-export const UTILITY_MAX = 720
+export const UTILITY_MAX = 960
 /** Utility workbench width before any user drag. */
-export const UTILITY_DEFAULT = 420
+export const UTILITY_DEFAULT = 640
 
 /**
  * Clamp a panel width into its contract range.
@@ -56,7 +56,7 @@ export function clampWidth(px: number, min: number, max: number): number {
 }
 
 /**
- * Solve the three column widths for one viewport frame. Pure: no hysteresis —
+ * Solve the four column widths for one viewport frame. Pure: no hysteresis —
  * the output is a function of (viewport, preferences) only, so recovery on
  * re-widening is automatic. Preferences re-clamp here because they cross the
  * store boundary and callers may still supply stale ranges.

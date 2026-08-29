@@ -41,6 +41,8 @@ export function BrowserMode({ t }: Props) {
   })
   const [error, setError] = useState<string>()
   const [takeover, setTakeover] = useState<BrowserTakeoverStatus>({ phase: 'human', signedInWarning: true })
+  const takeoverPhase = useRef(takeover.phase)
+  takeoverPhase.current = takeover.phase
   const invoke = async (request: DesktopBrowserRequest) => {
     const api = desktopApi()
     if (api === undefined) { setError(t('browserDesktopOnly')); return }
@@ -55,35 +57,56 @@ export function BrowserMode({ t }: Props) {
     const element = host.current
     if (api === undefined || element === null) { setError(t('browserDesktopOnly')); return }
     let frame = 0
-    let mounted = true
-    const show = () => {
-      frame = 0
+    const lifecycle = { mounted: true }
+    const isMounted = (): boolean => lifecycle.mounted
+    let syncing = false
+    let pending: DesktopBrowserBounds | undefined
+    let previous: DesktopBrowserBounds | undefined
+    const equal = (left: DesktopBrowserBounds | undefined, right: DesktopBrowserBounds): boolean =>
+      left !== undefined && left.x === right.x && left.y === right.y
+      && left.width === right.width && left.height === right.height
+    const drain = async (): Promise<void> => {
+      if (syncing) return
+      syncing = true
+      while (isMounted() && pending !== undefined && takeoverPhase.current === 'human') {
+        const bounds = pending
+        pending = undefined
+        try {
+          const next = await api.showWorkbenchBrowser(bounds)
+          if (isMounted()) setSnapshot(next)
+        } catch (reason: unknown) {
+          if (isMounted()) setError(reason instanceof Error ? reason.message : String(reason))
+        }
+      }
+      syncing = false
+    }
+    const poll = () => {
       const rect = element.getBoundingClientRect()
       const bounds: DesktopBrowserBounds = { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-      void api.showWorkbenchBrowser(bounds).then((next) => { if (mounted) setSnapshot(next) }, (reason: unknown) => {
-        if (mounted) setError(reason instanceof Error ? reason.message : String(reason))
-      })
+      if (takeoverPhase.current !== 'human') previous = undefined
+      else if (bounds.width > 0 && bounds.height > 0 && !equal(previous, bounds)) {
+        previous = bounds
+        pending = bounds
+        void drain()
+      }
+      frame = requestAnimationFrame(poll)
     }
-    const schedule = () => { if (frame === 0) frame = requestAnimationFrame(show) }
-    const observer = new ResizeObserver(schedule)
-    observer.observe(element)
     const unsubscribe = api.onWorkbenchBrowserState((next) => {
       setSnapshot(next)
       if (next.url !== '') setAddress(next.url)
     })
     const unsubscribeTakeover = api.onBrowserTakeoverStatus?.(setTakeover) ?? (() => {})
     void api.getBrowserTakeoverStatus?.().then((status) => {
-      if (mounted) setTakeover(status)
+      if (isMounted()) setTakeover(status)
     }, (reason: unknown) => {
-      if (mounted) setError(reason instanceof Error ? reason.message : String(reason))
+      if (isMounted()) setError(reason instanceof Error ? reason.message : String(reason))
     })
-    schedule()
+    frame = requestAnimationFrame(poll)
     return () => {
-      mounted = false
-      observer.disconnect()
+      lifecycle.mounted = false
       unsubscribe()
       unsubscribeTakeover()
-      if (frame !== 0) cancelAnimationFrame(frame)
+      cancelAnimationFrame(frame)
       void api.hideWorkbenchBrowser().catch(() => {})
     }
   }, [t])

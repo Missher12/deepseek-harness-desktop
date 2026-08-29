@@ -1,5 +1,5 @@
 /**
- * The root entry's transient layout store: panel geometry as plain widths in
+ * The root entry's persisted layout store: panel geometry as plain widths in
  * px (0 = closed). Module level exports the factory only — a module-level
  * handle would pin the store's identity in the module
  * cache (a de-facto singleton surviving plugin reloads). register() receives
@@ -28,6 +28,7 @@ export type UtilityMode = typeof UTILITY_MODES[number]
  */
 export type LayoutState = {
   sidebar: number
+  sidebarLastExpanded: number
   details: number
   utilityOpen: boolean
   utilityMode: UtilityMode
@@ -54,11 +55,11 @@ type LayoutActions = {
 }
 
 /**
- * Create the layout panel store handle. The preference IS the width, so
- * closing a panel forgets its drag width — reopening restores the contract
- * default. Actions are the complete write set: drag writes clamp
+ * Create the layout panel store handle. Sidebar geometry includes the last
+ * expanded width, so closing and reopening restores the user's drag result.
+ * Actions are the complete write set: drag writes clamp
  * into the panel's contract range and never cross the open/closed line;
- * open/close transitions write 0 / the default explicitly. Below the
+ * open/close transitions write 0 / the remembered width explicitly. Below the
  * auto-collapse breakpoint (AppFrame feeds setNarrow) the sidebar toggle
  * flips the narrowExpanded override instead of the preference.
  * @returns the store handle (spec + type + identity + factory in one).
@@ -67,6 +68,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
   const handle = defineStore({
     init: (): LayoutState => ({
       sidebar: SIDEBAR_DEFAULT,
+      sidebarLastExpanded: SIDEBAR_DEFAULT,
       details: 0,
       utilityOpen: false,
       utilityMode: 'terminal',
@@ -75,14 +77,18 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       narrowExpanded: false,
     }),
     actions: {
-      setSidebar: (d, px: number) => { d.sidebar = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX) },
+      setSidebar: (d, px: number) => {
+        const width = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX)
+        d.sidebar = width
+        d.sidebarLastExpanded = width
+      },
       setDetails: (d, px: number) => { d.details = clampWidth(px, DETAILS_MIN, DETAILS_MAX) },
       setUtilityWidth: (d, px: number) => { d.utilityWidth = clampWidth(px, UTILITY_MIN, UTILITY_MAX) },
       // Narrow toggles flip only the override: the width preference survives
       // untouched, so re-widening restores the pre-squeeze layout.
       toggleSidebar: (d) => {
         if (d.narrow) d.narrowExpanded = !d.narrowExpanded
-        else d.sidebar = d.sidebar === 0 ? SIDEBAR_DEFAULT : 0
+        else d.sidebar = d.sidebar === 0 ? d.sidebarLastExpanded : 0
       },
       // Crossing the breakpoint in either direction drops the override: the
       // narrow default is auto-collapsed, the wide state is the preference.
@@ -113,6 +119,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         if (d.utilityOpen) d.details = 0
       },
     },
+    persist: 'dsh.layout.panels.v2',
   })
   return handle
 }

@@ -50,6 +50,14 @@ export class BrowserFallbackGuard {
     if (this.#blocked.get(sessionId) === 'recoverable') this.#blocked.delete(sessionId)
   }
 
+  /**
+   * Clear the per-turn fallback denial only after an awaited official Stop succeeds.
+   * @param sessionId - official Session whose BrowserControl cleanup reached quiescence.
+   */
+  stopped(sessionId: SessionIdType): void {
+    this.#blocked.delete(sessionId)
+  }
+
   #guard(exec: Readonly<ToolExecution>): string | undefined {
     const sessionId = exec.agent?.session.id
     if (sessionId !== undefined && this.#blocked.has(sessionId)

@@ -12,6 +12,15 @@ class ResizeObserverStub {
   disconnect(): void {}
 }
 
+let rafId = 0
+let rafCallbacks = new Map<number, FrameRequestCallback>()
+
+function flushAnimationFrame(): void {
+  const callbacks = [...rafCallbacks.values()]
+  rafCallbacks.clear()
+  for (const callback of callbacks) callback(0)
+}
+
 const snapshot = {
   url: 'https://example.test/', title: 'Example', loading: false,
   canGoBack: false, canGoForward: false, error: null,
@@ -42,6 +51,14 @@ function setup() {
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+  rafId = 0
+  rafCallbacks = new Map()
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    rafId += 1
+    rafCallbacks.set(rafId, callback)
+    return rafId
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => { rafCallbacks.delete(id) })
 })
 
 afterEach(() => {
@@ -51,6 +68,31 @@ afterEach(() => {
 })
 
 describe('Workbench Browser takeover controls', () => {
+  it('resynchronizes native bounds when the host moves without changing size', async () => {
+    const { api } = setup()
+    render(<BrowserMode t={translate} />)
+    const host = document.querySelector<HTMLElement>('[data-native-browser-host]')
+    if (host === null) throw new Error('native browser host missing')
+    let x = 900
+    vi.spyOn(host, 'getBoundingClientRect').mockImplementation(() => ({
+      x, y: 120, width: 640, height: 720,
+      top: 120, right: x + 640, bottom: 840, left: x,
+      toJSON: () => ({}),
+    }))
+
+    flushAnimationFrame()
+    await waitFor(() => {
+      expect(api.showWorkbenchBrowser).toHaveBeenLastCalledWith({ x: 900, y: 120, width: 640, height: 720 })
+    })
+
+    x = 640
+    flushAnimationFrame()
+    await waitFor(() => {
+      expect(api.showWorkbenchBrowser).toHaveBeenLastCalledWith({ x: 640, y: 120, width: 640, height: 720 })
+    })
+    expect(api.showWorkbenchBrowser).toHaveBeenCalledTimes(2)
+  })
+
   it('warns about the signed-in persistent browser before recording Give intent', async () => {
     const { api } = setup()
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)

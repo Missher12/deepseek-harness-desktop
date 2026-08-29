@@ -91,6 +91,8 @@ export interface CdpBrowserAdapterOptions {
 }
 
 type AllowedCdpMethod =
+  | 'Accessibility.enable'
+  | 'Accessibility.disable'
   | 'Accessibility.getRootAXNode'
   | 'Accessibility.getChildAXNodes'
   | 'DOM.describeNode'
@@ -369,10 +371,12 @@ export class CdpBrowserAdapter {
       let failure: unknown
       for (let attempt = 0; attempt < BROWSER_AGENT_LIMITS.startupAttempts; attempt += 1) {
         try {
+          const budget = this.createBudget(attemptMs)
+          await this.command('Accessibility.enable', {}, budget, signal)
           await this.command(
             'Page.setInterceptFileChooserDialog',
             { enabled: true },
-            this.createBudget(attemptMs),
+            budget,
             signal,
           )
           initialized = true
@@ -452,6 +456,11 @@ export class CdpBrowserAdapter {
         return Object.freeze({ url: this.webContents.getURL(), snapshotRevision: this.revision })
       }
       const historySnapshot = this.captureHistorySnapshot(offset)
+      if (offset === -1 && historySnapshot.targetIndex === 0
+        && historySnapshot.targetEntry.url === 'about:blank') {
+        this.invalidate()
+        return Object.freeze({ url: historySnapshot.sourceUrl, snapshotRevision: this.revision })
+      }
       const authorizationRevision = this.revision
       const target = await this.urlPolicy.authorize(historySnapshot.targetEntry.url, signal)
       this.assertHistorySnapshot(historySnapshot, authorizationRevision, offset)
@@ -535,6 +544,14 @@ export class CdpBrowserAdapter {
 
   private async releaseOwnedDebugger(): Promise<void> {
     if (!this.ownedDebuggerCleanupRequired) return
+    try {
+      await this.awaitCdpResponse(
+        this.webContents.debugger.sendCommand('Accessibility.disable', {}),
+        BROWSER_AGENT_LIMITS.cleanupMs,
+      )
+    } catch {
+      // Detach below also disables Accessibility for the owned debugger session.
+    }
     try {
       await this.awaitCdpResponse(
         this.webContents.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false }),
@@ -626,9 +643,17 @@ export class CdpBrowserAdapter {
   }
 
   private async walkAccessibilityTree(budget: OperationBudget, signal?: AbortSignal): Promise<readonly AxNode[]> {
-    const rootResponse = record(await this.command('Accessibility.getRootAXNode', {}, budget, signal))
-    const root = axNode(rootResponse?.node)
-    if (root === undefined) throw new AgentBrowserError('INTERNAL', 'browser accessibility root is invalid')
+    let root: AxNode | undefined
+    for (let attempt = 0; attempt < BROWSER_AGENT_LIMITS.accessibilityAttempts; attempt += 1) {
+      const rootResponse = record(await this.command('Accessibility.getRootAXNode', {}, budget, signal))
+      root = axNode(rootResponse?.node)
+      if (root !== undefined) break
+      if (attempt + 1 < BROWSER_AGENT_LIMITS.accessibilityAttempts) {
+        await this.delay(BROWSER_AGENT_LIMITS.accessibilityRetryMs, signal)
+        this.assertEpoch(budget.epoch)
+      }
+    }
+    if (root === undefined) throw new AgentBrowserError('INTERNAL', 'browser accessibility root is unavailable')
     const nodes: AxNode[] = [root]
     const queue: { readonly node: AxNode; readonly depth: number }[] = [{ node: root, depth: 0 }]
     let cursor = 0
@@ -867,17 +892,18 @@ export class CdpBrowserAdapter {
       await this.delay(action.durationMs, signal)
       return
     }
-    if (action.mode === 'loading-idle' && !this.webContents.isLoading()) return
-    const events = action.mode === 'navigation'
-      ? ['did-navigate', 'did-navigate-in-page']
-      : ['did-stop-loading']
+    const events = ['did-navigate', 'did-navigate-in-page', 'did-stop-loading', 'did-fail-load']
     await new Promise<void>((resolve, reject) => {
       const cleanup = (): void => {
         clearTimeout(timer)
         for (const event of events) this.webContents.removeListener(event, done)
         signal?.removeEventListener('abort', aborted)
       }
-      const done: Listener = () => { cleanup(); resolve() }
+      const done: Listener = () => {
+        if (this.webContents.isLoading()) return
+        cleanup()
+        resolve()
+      }
       const aborted = (): void => {
         cleanup()
         reject(new AgentBrowserError('CANCELLED', 'browser wait was cancelled'))
@@ -888,6 +914,7 @@ export class CdpBrowserAdapter {
       }, BROWSER_AGENT_LIMITS.waitDurationMs)
       for (const event of events) this.webContents.on(event, done)
       signal?.addEventListener('abort', aborted, { once: true })
+      done()
     })
   }
 

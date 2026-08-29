@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * createLayoutStore unit account: init shape, the action write set (clamp
- * inside actions), and the absence of browser persistence. Uses the
+ * inside actions), and browser persistence. Uses the
  * test-sanctioned path: factory self-call + .create() gives the
  * real engine instance (same create path as production).
  */
@@ -13,7 +13,7 @@ import {
   UTILITY_DEFAULT, UTILITY_MAX, UTILITY_MIN,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 
-const PERSIST_KEY = 'dsh.layout.panels'
+const PERSIST_KEY = 'dsh.layout.panels.v2'
 
 beforeEach(() => { localStorage.clear() })
 
@@ -22,6 +22,7 @@ describe('createLayoutStore', () => {
     const { store } = createLayoutStore().create()
     expect(store.getSnapshot()).toEqual({
       sidebar: SIDEBAR_DEFAULT,
+      sidebarLastExpanded: SIDEBAR_DEFAULT,
       details: 0,
       utilityOpen: false,
       utilityMode: 'terminal',
@@ -50,13 +51,13 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().details).toBe(DETAILS_MAX)
   })
 
-  it('toggleSidebar flips closed <-> contract default (drag width forgotten)', () => {
+  it('toggleSidebar restores the last expanded drag width', () => {
     const { store, actions } = createLayoutStore().create()
     actions.setSidebar(400)
     actions.toggleSidebar()
     expect(store.getSnapshot().sidebar).toBe(0)
     actions.toggleSidebar()
-    expect(store.getSnapshot().sidebar).toBe(SIDEBAR_DEFAULT)
+    expect(store.getSnapshot().sidebar).toBe(400)
   })
 
   it('narrow toggleSidebar flips only the re-expand override; the width preference survives', () => {
@@ -121,22 +122,20 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot()).toMatchObject({ details: DETAILS_DEFAULT, utilityOpen: false })
   })
 
-  it('does not persist panel geometry', () => {
+  it('persists the expanded sidebar and utility geometry across remounts', () => {
     const first = createLayoutStore().create()
-    first.actions.setSidebar(400)
-    first.actions.openDetails()
-    first.actions.setDetails(500)
-    expect(localStorage.getItem(PERSIST_KEY)).toBeNull()
+    first.actions.setSidebar(600)
+    first.actions.setUtilityWidth(880)
+    first.actions.toggleSidebar()
+    expect(localStorage.getItem(PERSIST_KEY)).not.toBeNull()
 
     const second = createLayoutStore().create()
-    expect(second.store.getSnapshot()).toEqual({
-      sidebar: SIDEBAR_DEFAULT,
-      details: 0,
-      utilityOpen: false,
-      utilityMode: 'terminal',
-      utilityWidth: UTILITY_DEFAULT,
-      narrow: false,
-      narrowExpanded: false,
+    expect(second.store.getSnapshot()).toMatchObject({
+      sidebar: 0,
+      sidebarLastExpanded: 600,
+      utilityWidth: 880,
     })
+    second.actions.toggleSidebar()
+    expect(second.store.getSnapshot().sidebar).toBe(600)
   })
 })

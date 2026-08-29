@@ -128,6 +128,8 @@ function installTree(
   let pendingFocusBackendNodeId: number | undefined
   let focusedBackendNodeId: number | undefined
   contents.debugger.handlers.set('Page.setInterceptFileChooserDialog', () => ({}))
+  contents.debugger.handlers.set('Accessibility.enable', () => ({}))
+  contents.debugger.handlers.set('Accessibility.disable', () => ({}))
   contents.debugger.handlers.set('Accessibility.getRootAXNode', () => ({
     node: { nodeId: 'root', role: { value: 'RootWebArea' }, childIds: ['children'] } satisfies AxNode,
   }))
@@ -267,6 +269,27 @@ class FakeSurface implements BrowserSurfaceResource {
 }
 
 describe('semantic Agent browser adapter', () => {
+  it('enables the Accessibility domain and retries an initially empty root before snapshotting', async () => {
+    const contents = new FakeWebContents()
+    installTree(contents, [buttonNode()])
+    let roots = 0
+    contents.debugger.handlers.set('Accessibility.getRootAXNode', () => {
+      roots += 1
+      return roots < 3
+        ? {}
+        : { node: { nodeId: 'root', role: { value: 'RootWebArea' }, childIds: ['children'] } }
+    })
+    const retry = vi.fn(async () => {})
+
+    const result = await adapterFor(contents, { delay: retry }).snapshot({ includeImage: false })
+
+    expect(result.result.refs).toHaveLength(1)
+    expect(roots).toBe(3)
+    expect(retry).toHaveBeenCalledTimes(2)
+    expect(contents.debugger.calls.findIndex(call => call.method === 'Accessibility.enable'))
+      .toBeLessThan(contents.debugger.calls.findIndex(call => call.method === 'Accessibility.getRootAXNode'))
+  })
+
   it('retries the renderer-sensitive debugger handshake exactly once without reattaching', async () => {
     vi.useFakeTimers()
     try {
@@ -329,6 +352,11 @@ describe('semantic Agent browser adapter', () => {
       .toEqual([
         { method: 'Page.setInterceptFileChooserDialog', params: { enabled: true } },
         { method: 'Page.setInterceptFileChooserDialog', params: { enabled: false } },
+      ])
+    expect(contents.debugger.calls.filter(call => call.method.startsWith('Accessibility.')))
+      .toEqual([
+        { method: 'Accessibility.enable', params: {} },
+        { method: 'Accessibility.disable', params: {} },
       ])
   })
 
@@ -443,7 +471,8 @@ describe('semantic Agent browser adapter', () => {
     installTree(callContents, branchNodes)
     await expect(adapterFor(callContents).snapshot({ includeImage: false }))
       .rejects.toMatchObject({ code: 'QUOTA_EXCEEDED' })
-    expect(callContents.debugger.calls.filter(call => call.method !== 'Page.setInterceptFileChooserDialog').length)
+    expect(callContents.debugger.calls.filter(call => call.method !== 'Page.setInterceptFileChooserDialog'
+      && call.method !== 'Accessibility.enable').length)
       .toBeLessThanOrEqual(BROWSER_AGENT_LIMITS.cdpCalls)
 
     const wallContents = new FakeWebContents()
@@ -533,6 +562,7 @@ describe('semantic Agent browser adapter', () => {
     await adapter.act({ kind: 'wait', mode: 'duration', durationMs: 1 })
 
     const allowed = new Set([
+      'Accessibility.enable',
       'Accessibility.getRootAXNode',
       'Accessibility.getChildAXNodes',
       'DOM.describeNode',
@@ -928,25 +958,46 @@ describe('semantic Agent browser adapter', () => {
     expect(pageNavigation.preventDefault).toHaveBeenCalledOnce()
   })
 
-  it('waits only for navigation or loading-idle lifecycle events', async () => {
+  it('treats navigation wait as a current-load barrier and closes the loading-idle subscribe race', async () => {
     const contents = new FakeWebContents()
     installTree(contents, [])
     const adapter = adapterFor(contents)
     await adapter.start()
 
-    const navigation = adapter.act({ kind: 'wait', mode: 'navigation' })
-    await vi.waitFor(() => { expect(contents.listenerCount('did-navigate-in-page')).toBe(2) })
-    contents.emit('did-navigate-in-page')
-    await expect(navigation).resolves.toMatchObject({ waited: true })
+    await expect(adapter.act({ kind: 'wait', mode: 'navigation' }))
+      .resolves.toMatchObject({ waited: true })
 
     contents.loading = true
     const idle = adapter.act({ kind: 'wait', mode: 'loading-idle' })
     await vi.waitFor(() => { expect(contents.listenerCount('did-stop-loading')).toBe(1) })
+    contents.loading = false
     contents.emit('did-stop-loading')
     await expect(idle).resolves.toMatchObject({ waited: true })
-    contents.loading = false
+
+    let stopListenersDuringCheck = 0
+    contents.isLoading = () => {
+      stopListenersDuringCheck = contents.listenerCount('did-stop-loading')
+      return false
+    }
     await expect(adapter.act({ kind: 'wait', mode: 'loading-idle' }))
       .resolves.toMatchObject({ waited: true })
+    expect(stopListenersDuringCheck).toBe(1)
+  })
+
+  it('treats the initial about:blank back entry as a safe no-op instead of a protected target', async () => {
+    const contents = new FakeWebContents()
+    installTree(contents, [])
+    contents.historyEntries = [
+      { url: 'about:blank', title: '', pageState: 'initial' },
+      { url: 'https://example.test/', title: 'Example', pageState: 'example-state' },
+    ]
+    contents.historyActiveIndex = 1
+    contents.url = 'https://example.test/'
+
+    await expect(adapterFor(contents).act({ kind: 'back' }))
+      .resolves.toMatchObject({ url: 'https://example.test/' })
+    expect(contents.navigationHistory.goToIndex).not.toHaveBeenCalled()
+    expect(contents.loadedUrls).toEqual([])
   })
 
   it('pre-scales a high-DPI oversized viewport and validates PNG dimensions and SHA-256', async () => {

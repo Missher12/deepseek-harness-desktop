@@ -21,6 +21,7 @@ import type {} from '@deepseek-ai/dsh-session'
 interface BrowserFallbackReporter {
   failed(sessionId: SessionIdType, error: unknown): void
   succeeded(sessionId: SessionIdType): void
+  stopped(sessionId: SessionIdType): void
 }
 
 type StripTransport<T> = T extends unknown
@@ -166,6 +167,7 @@ export class BrowserToolController {
     this.#leases.delete(sessionId)
     try {
       await this.provider.revokeSession(sessionId)
+      this.fallbackGuard?.stopped(sessionId)
       return { stopped: true }
     } catch (error: unknown) {
       this.fallbackGuard?.failed(sessionId, error)
