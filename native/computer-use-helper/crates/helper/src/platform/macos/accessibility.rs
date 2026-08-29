@@ -291,6 +291,12 @@ impl AxSource<'_> {
 impl AccessibilityNodeSource for AxSource<'_> {
     type Node = AxNode;
 
+    fn node_identity(&self, node: &Self::Node) -> u64 {
+        // SAFETY: AxNode owns a live Core Foundation object. Equal AX elements have
+        // equal CFHash values, so dynamic sibling reordering cannot retarget a ref.
+        unsafe { CFHash(node.as_ptr()) as u64 }
+    }
+
     fn describe(
         &mut self,
         node: &Self::Node,
@@ -561,6 +567,7 @@ unsafe extern "C" {
     fn CFRetain(value: CFTypeRef) -> CFTypeRef;
     fn CFRelease(value: CFTypeRef);
     fn CFEqual(first: CFTypeRef, second: CFTypeRef) -> u8;
+    fn CFHash(value: CFTypeRef) -> usize;
     fn CFGetTypeID(value: CFTypeRef) -> usize;
     fn CFStringCreateWithCString(
         allocator: CFTypeRef,

@@ -25,6 +25,10 @@ struct FakeTree {
 impl AccessibilityNodeSource for FakeTree {
     type Node = u32;
 
+    fn node_identity(&self, node: &Self::Node) -> u64 {
+        u64::from(*node)
+    }
+
     fn describe(
         &mut self,
         node: &Self::Node,
@@ -297,31 +301,115 @@ fn stops_after_depth_32_and_revision_binds_every_reference() {
     assert_ne!(first.refs[0].ref_id, revised.refs[0].ref_id);
 }
 
+#[test]
+fn preserves_reference_identity_when_dynamic_siblings_reorder() {
+    let project = |children| {
+        let mut tree = FakeTree {
+            nodes: HashMap::from([
+                (
+                    0,
+                    FakeNode {
+                        role: "AXWindow".into(),
+                        name: "Window".into(),
+                        bounds: Some(bounds(0.0, 0.0, 800.0, 600.0)),
+                        hidden: false,
+                        minimized: false,
+                        children,
+                    },
+                ),
+                (
+                    1,
+                    FakeNode {
+                        role: "AXTextField".into(),
+                        name: "Address".into(),
+                        bounds: Some(bounds(20.0, 20.0, 400.0, 30.0)),
+                        hidden: false,
+                        minimized: false,
+                        children: vec![],
+                    },
+                ),
+                (
+                    2,
+                    FakeNode {
+                        role: "AXButton".into(),
+                        name: "Dynamic suggestion".into(),
+                        bounds: Some(bounds(20.0, 60.0, 200.0, 30.0)),
+                        hidden: false,
+                        minimized: false,
+                        children: vec![],
+                    },
+                ),
+            ]),
+        };
+        project_accessibility_tree(
+            &mut tree,
+            0,
+            ProjectionScope {
+                app_id: "mac-app:1:10:0:aaaaaaaaaaaaaaaa",
+                window_id: "mac-window:1:10:0:42",
+                snapshot_revision: 9,
+                window_bounds: bounds(0.0, 0.0, 800.0, 600.0),
+            },
+            &CancellationToken::new(),
+        )
+        .expect("bounded projection")
+    };
+
+    let before = project(vec![1, 2]);
+    let after = project(vec![2, 1]);
+    let ref_for = |projection: &computer_use_core::AccessibilityProjection, name: &str| {
+        projection
+            .refs
+            .iter()
+            .find(|item| item.name == name)
+            .expect("named ref")
+            .ref_id
+            .clone()
+    };
+    assert_eq!(ref_for(&before, "Address"), ref_for(&after, "Address"));
+    assert_eq!(
+        ref_for(&before, "Dynamic suggestion"),
+        ref_for(&after, "Dynamic suggestion")
+    );
+}
+
 #[derive(Default)]
 struct LiveNodes {
     current: AtomicUsize,
     peak: AtomicUsize,
+    next: AtomicUsize,
 }
 
-struct TrackedNode(Arc<LiveNodes>);
+struct TrackedNode {
+    live: Arc<LiveNodes>,
+    identity: usize,
+}
 
 impl TrackedNode {
     fn new(live: &Arc<LiveNodes>) -> Self {
         let current = live.current.fetch_add(1, Ordering::SeqCst) + 1;
         live.peak.fetch_max(current, Ordering::SeqCst);
-        Self(live.clone())
+        Self {
+            live: live.clone(),
+            identity: live.next.fetch_add(1, Ordering::SeqCst),
+        }
     }
 }
 
 impl Clone for TrackedNode {
     fn clone(&self) -> Self {
-        Self::new(&self.0)
+        let current = self.live.current.fetch_add(1, Ordering::SeqCst) + 1;
+        self.live.peak.fetch_max(current, Ordering::SeqCst);
+        Self {
+            live: self.live.clone(),
+            identity: self.identity,
+        }
     }
 }
 
 impl Drop for TrackedNode {
     fn drop(&mut self) {
-        self.0.current.fetch_sub(1, Ordering::SeqCst);
+        self.live.current.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -331,6 +419,10 @@ struct BranchingTree {
 
 impl AccessibilityNodeSource for BranchingTree {
     type Node = TrackedNode;
+
+    fn node_identity(&self, node: &Self::Node) -> u64 {
+        node.identity as u64
+    }
 
     fn describe(
         &mut self,

@@ -288,16 +288,14 @@ impl ObservationPlatform for MacObservationPlatform {
             return Ok(json!({"waited":true,"snapshotRevision":snapshot.revision}));
         }
 
-        let (command, expected_ref, require_focused, inspect_focused) =
-            input_command(request, &snapshot)?;
+        let (command, expected_ref, validation) = input_command(request, &snapshot)?;
         let epoch = self.epoch;
         let validation_snapshot = snapshot.clone();
         let mut validate = || {
             validate_live(
                 &validation_snapshot,
                 expected_ref.as_ref(),
-                require_focused,
-                inspect_focused,
+                validation,
                 &epoch,
                 deadline_ms,
                 cancel,
@@ -351,7 +349,7 @@ impl ObservationPlatform for MacObservationPlatform {
 fn input_command(
     request: &HelperRequest,
     snapshot: &LiveSnapshot,
-) -> Result<(InputCommand, Option<ProjectedRef>, bool, bool), &'static str> {
+) -> Result<(InputCommand, Option<ProjectedRef>, LiveValidation), &'static str> {
     let semantic_ref = || -> Result<ProjectedRef, &'static str> {
         let ref_id = request.string("ref").ok_or("INTERNAL")?;
         let reference = snapshot
@@ -378,8 +376,7 @@ fn input_command(
                 y: snapshot.target.bounds.y + snapshot.target.bounds.height.min(24.0) / 2.0,
             }),
             None,
-            false,
-            false,
+            LiveValidation::default(),
         )),
         "click" | "double-click" => {
             let button = Button::parse(request.string("button").ok_or("INTERNAL")?)?;
@@ -407,8 +404,7 @@ fn input_command(
                     },
                 },
                 reference,
-                false,
-                false,
+                LiveValidation::default(),
             ))
         }
         "drag" => {
@@ -420,8 +416,7 @@ fn input_command(
                     button: Button::parse(request.string("button").ok_or("INTERNAL")?)?,
                 },
                 None,
-                false,
-                false,
+                LiveValidation::default(),
             ))
         }
         "type" => {
@@ -436,8 +431,11 @@ fn input_command(
             Ok((
                 InputCommand::Unicode(text.to_owned()),
                 Some(reference),
-                true,
-                false,
+                LiveValidation {
+                    require_focused: true,
+                    allow_ref_mutation: true,
+                    ..LiveValidation::default()
+                },
             ))
         }
         "key" => {
@@ -454,8 +452,10 @@ fn input_command(
                     modifiers,
                 },
                 None,
-                false,
-                true,
+                LiveValidation {
+                    inspect_focused: true,
+                    ..LiveValidation::default()
+                },
             ))
         }
         "scroll" => {
@@ -479,19 +479,24 @@ fn input_command(
                     delta_y: request_delta(request, "deltaY")?,
                 },
                 reference,
-                false,
-                false,
+                LiveValidation::default(),
             ))
         }
         _ => Err("NOT_SUPPORTED"),
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct LiveValidation {
+    require_focused: bool,
+    inspect_focused: bool,
+    allow_ref_mutation: bool,
+}
+
 fn validate_live(
     snapshot: &LiveSnapshot,
     expected_ref: Option<&ProjectedRef>,
-    require_focused: bool,
-    inspect_focused: bool,
+    validation: LiveValidation,
     epoch: &Instant,
     deadline_ms: u64,
     cancel: &CancellationToken,
@@ -516,7 +521,7 @@ fn validate_live(
         return Err("STALE_REF");
     }
     ensure_safe_target(&snapshot.target.app_name, &snapshot.target.title)?;
-    if expected_ref.is_some() || inspect_focused {
+    if expected_ref.is_some() || validation.inspect_focused {
         let projection = accessibility::observe_exact_window(
             &snapshot.target,
             &snapshot.target.app_id(),
@@ -526,7 +531,7 @@ fn validate_live(
             deadline_ms,
             cancel,
         )?;
-        if inspect_focused && projection.focused_sensitive {
+        if validation.inspect_focused && projection.focused_sensitive {
             return Err("POLICY_DENIED");
         }
         let Some(expected) = expected_ref else {
@@ -537,12 +542,7 @@ fn validate_live(
             .iter()
             .find(|item| item.ref_id == expected.ref_id)
             .ok_or("STALE_REF")?;
-        if current.role != expected.role
-            || current.name != expected.name
-            || !close_bounds(current.bounds, expected.bounds)
-            || current.input_safety.sensitive != expected.input_safety.sensitive
-            || current.input_safety.editable != expected.input_safety.editable
-        {
+        if !reference_matches(expected, current, validation.allow_ref_mutation) {
             return Err("STALE_REF");
         }
         ensure_safe_input_text(
@@ -552,13 +552,26 @@ fn validate_live(
             &current.name,
         )?;
         if current.input_safety.sensitive
-            || (require_focused
+            || (validation.require_focused
                 && (!current.input_safety.editable || !current.input_safety.focused))
         {
             return Err("POLICY_DENIED");
         }
     }
     Ok(())
+}
+
+fn reference_matches(
+    expected: &ProjectedRef,
+    current: &ProjectedRef,
+    allow_mutable_details: bool,
+) -> bool {
+    expected.ref_id == current.ref_id
+        && expected.role == current.role
+        && expected.input_safety.sensitive == current.input_safety.sensitive
+        && expected.input_safety.editable == current.input_safety.editable
+        && (allow_mutable_details
+            || (expected.name == current.name && close_bounds(expected.bounds, current.bounds)))
 }
 
 fn wait_exact(
@@ -572,7 +585,14 @@ fn wait_exact(
         .unwrap_or(u64::MAX)
         .saturating_add(duration_ms);
     loop {
-        validate_live(snapshot, None, false, false, epoch, deadline_ms, cancel)?;
+        validate_live(
+            snapshot,
+            None,
+            LiveValidation::default(),
+            epoch,
+            deadline_ms,
+            cancel,
+        )?;
         let now_ms = u64::try_from(epoch.elapsed().as_millis()).unwrap_or(u64::MAX);
         if now_ms >= end_ms {
             return Ok(());
@@ -814,7 +834,9 @@ unsafe extern "C" {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProcBsdInfo, process_identity};
+    use computer_use_core::{InputSafety, ObservationBounds, ProjectedRef};
+
+    use super::{ProcBsdInfo, process_identity, reference_matches};
 
     #[test]
     fn kernel_process_identity_layout_and_lookup_are_exact() {
@@ -823,5 +845,33 @@ mod tests {
             .expect("current process identity");
         assert_eq!(identity.pid, std::process::id() as i32);
         assert!(identity.start_seconds > 0);
+    }
+
+    #[test]
+    fn unicode_revalidation_allows_own_text_mutation_but_not_security_drift() {
+        let expected = ProjectedRef {
+            ref_id: "computer:stable".into(),
+            role: "AXTextField".into(),
+            name: "Address and search".into(),
+            bounds: ObservationBounds {
+                x: 10.0,
+                y: 10.0,
+                width: 400.0,
+                height: 30.0,
+            },
+            input_safety: InputSafety {
+                sensitive: false,
+                editable: true,
+                focused: true,
+            },
+        };
+        let mut changed = expected.clone();
+        changed.name = "https://example.com".into();
+        changed.bounds.width = 420.0;
+
+        assert!(reference_matches(&expected, &changed, true));
+        assert!(!reference_matches(&expected, &changed, false));
+        changed.input_safety.sensitive = true;
+        assert!(!reference_matches(&expected, &changed, true));
     }
 }

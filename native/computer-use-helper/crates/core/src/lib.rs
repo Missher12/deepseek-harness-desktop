@@ -96,6 +96,11 @@ pub trait AccessibilityNodeSource {
     /// Opaque, cloneable native node handle.
     type Node: Clone;
 
+    /// Stable process-local identity for the exact native node.
+    ///
+    /// Equal handles must return the same value even when dynamic siblings reorder.
+    fn node_identity(&self, node: &Self::Node) -> u64;
+
     /// Read only safe structural attributes for one node.
     fn describe(
         &mut self,
@@ -158,6 +163,7 @@ where
     let mut queue = VecDeque::from([(root, 0_u8)]);
     let mut semantic_text = String::new();
     let mut refs = Vec::new();
+    let mut ref_ids = HashSet::new();
     let mut raw_nodes = 0_usize;
     let mut focused_sensitive = false;
 
@@ -169,6 +175,7 @@ where
             break;
         }
         raw_nodes += 1;
+        let node_identity = source.node_identity(&node);
         let described = source.describe(&node)?;
         focused_sensitive |= described.input_safety.focused && described.input_safety.sensitive;
         let visible_bounds = described
@@ -200,8 +207,11 @@ where
             scope.app_id,
             scope.window_id,
             scope.snapshot_revision,
-            refs.len(),
+            node_identity,
         );
+        if !ref_ids.insert(ref_id.clone()) {
+            return Err("BINARY_MISMATCH");
+        }
         let line = format!(
             "[ref={ref_id}] role={} name={} bounds={},{},{},{}\n",
             sanitize_text(&role),
@@ -246,14 +256,14 @@ where
 /// Projection-specific result alias with protocol error codes only.
 pub type PlatformResultProjection = std::result::Result<AccessibilityProjection, &'static str>;
 
-fn computer_ref(app_id: &str, window_id: &str, revision: u64, index: usize) -> String {
+fn computer_ref(app_id: &str, window_id: &str, revision: u64, node_identity: u64) -> String {
     let mut digest = Sha256::new();
     digest.update(app_id.as_bytes());
     digest.update([0]);
     digest.update(window_id.as_bytes());
     digest.update([0]);
     digest.update(revision.to_be_bytes());
-    digest.update((index as u64).to_be_bytes());
+    digest.update(node_identity.to_be_bytes());
     let digest = digest.finalize();
     let suffix = digest[..16]
         .iter()

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-29-desktop-control-runtime-recovery.md
-2026-08-29-desktop-control-runtime-recovery.md: 010c9649d3ecd4e18b4e5d13db9ed3f624fcbbdf
-2026-08-29-desktop-control-runtime-recovery.zh.md: b0409b63898c04d4d6290273e27884516cb8a5eb
+2026-08-29-desktop-control-runtime-recovery.md: bfa8f0d7319ffe2d4bcd6a9319929e87989dfd5b
+2026-08-29-desktop-control-runtime-recovery.zh.md: 6523d5e99d4de73d7cad510d5f7899242485feec
