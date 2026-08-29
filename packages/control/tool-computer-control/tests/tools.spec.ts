@@ -227,8 +227,9 @@ describe('closed ComputerControl tools', () => {
 
   it('publishes a closed key vocabulary with lowercase letter aliases for model calls', async () => {
     const schemas = (await setup(true)).ctx.tools.schemas()
-    const key = schemas.find(schema => schema.name === 'computer_key')
-      ?.parameters.properties?.key as { enum?: readonly unknown[] } | undefined
+    const properties = schemas.find(schema => schema.name === 'computer_key')
+      ?.parameters.properties as Readonly<Record<string, unknown>> | undefined
+    const key = properties?.key as { enum?: readonly unknown[] } | undefined
 
     expect(key?.enum).toContain('l')
     expect(key?.enum).toContain('L')
