@@ -158,6 +158,7 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
     await this.surfaceManager.acquire({
       sessionId: request.sessionId,
       expectedGeneration: active.mount.generation,
+      signal,
     })
     throwIfAborted(signal)
     const readOnly = request.requestKind === 'browser.snapshot' || request.requestKind === 'browser.wait'
@@ -241,7 +242,11 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
         throw new AgentBrowserError('BUSY', 'another session owns the Agent browser surface')
       }
       if (current.cleanup.started) throw new AgentBrowserError('BUSY', 'browser cleanup is in progress')
-      await this.surfaceManager.acquire({ sessionId, expectedGeneration: current.mount.generation })
+      await this.surfaceManager.acquire({
+        sessionId,
+        expectedGeneration: current.mount.generation,
+        signal,
+      })
       throwIfAborted(signal)
       return current
     }
@@ -267,7 +272,7 @@ export class BrowserDesktopControlAdapter implements DesktopControlSurfaceAdapte
   private async activateSurface(sessionId: string, signal: AbortSignal): Promise<ActiveBrowserControl> {
     let mount: BrowserSurfaceMount
     try {
-      mount = await this.surfaceManager.acquire({ sessionId })
+      mount = await this.surfaceManager.acquire({ sessionId, signal })
     } catch (error) {
       const failed = this.surfaceManager.failedMountCleanupFor(sessionId)
       if (failed !== undefined) {

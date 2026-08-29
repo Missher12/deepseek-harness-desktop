@@ -11,7 +11,7 @@ export interface BrowserSurfaceResource {
   readonly partition: string
   readonly kind: 'ephemeral' | 'human-persistent'
   installSecurityHandlers(generation: number): { dispose(): void }
-  mount(mountToken: string): Promise<void>
+  mount(mountToken: string, signal?: AbortSignal): Promise<void>
   commitTransfer(): Promise<void>
   hide(mountToken: string): Promise<void>
   detachDebugger(): Promise<void>
@@ -38,6 +38,7 @@ export interface CreateEphemeralBrowserSurfaceRequest {
 export interface BrowserSurfaceAcquireRequest {
   readonly sessionId: string
   readonly expectedGeneration?: number
+  readonly signal?: AbortSignal
 }
 
 /** Exact generation and mount token required by hide and Stop. */
@@ -149,7 +150,7 @@ export class BrowserSurfaceManager {
       throw new AgentBrowserError('STALE_REF', 'browser surface no longer exists')
     }
     const generation = this.takeGeneration()
-    const promise = this.createAndMount(request.sessionId, generation)
+    const promise = this.createAndMount(request.sessionId, generation, request.signal)
     this.pending = { sessionId: request.sessionId, generation, promise }
     void promise.finally(() => {
       if (this.pending?.promise === promise) this.pending = undefined
@@ -225,7 +226,11 @@ export class BrowserSurfaceManager {
     return Object.freeze({ sessionId: failed.sessionId, generation: failed.generation })
   }
 
-  private async createAndMount(sessionId: string, generation: number): Promise<BrowserSurfaceMount> {
+  private async createAndMount(
+    sessionId: string,
+    generation: number,
+    signal?: AbortSignal,
+  ): Promise<BrowserSurfaceMount> {
     let resource: BrowserSurfaceResource | undefined
     let handlers: { dispose(): void } | undefined
     try {
@@ -247,7 +252,7 @@ export class BrowserSurfaceManager {
       const mountToken = this.createMountToken(generation)
       nonEmpty(mountToken, 'browser mount token')
       handlers = resource.installSecurityHandlers(generation)
-      await resource.mount(mountToken)
+      await resource.mount(mountToken, signal)
       await resource.commitTransfer()
       const mount = Object.freeze({
         sessionId,

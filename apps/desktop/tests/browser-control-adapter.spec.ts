@@ -142,8 +142,13 @@ describe('Browser Desktop control adapter', () => {
       capabilities: ['observe', 'pointer', 'keyboard'],
       policyAllowed: true,
     })
-    await adapter.acquireFacts(acquire(), new AbortController().signal)
-    expect(acquireSurface).toHaveBeenNthCalledWith(2, { sessionId: SESSION, expectedGeneration: 4 })
+    const reuseSignal = new AbortController().signal
+    await adapter.acquireFacts(acquire(), reuseSignal)
+    expect(acquireSurface).toHaveBeenNthCalledWith(2, {
+      sessionId: SESSION,
+      expectedGeneration: 4,
+      signal: reuseSignal,
+    })
   })
 
   it('maps the closed protocol roster to semantic actions and preserves snapshot PNG pairing', async () => {

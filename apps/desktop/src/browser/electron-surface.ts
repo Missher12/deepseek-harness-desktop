@@ -1,6 +1,6 @@
 import { screen, WebContentsView, type BrowserWindow, type Session } from 'electron'
 import type { BrowserAdapterWebContents, BrowserViewport } from './cdp-adapter.ts'
-import { AgentBrowserError } from './contracts.ts'
+import { AgentBrowserError, BROWSER_AGENT_LIMITS } from './contracts.ts'
 import {
   createBrowserSecurityHandlerOwner,
   type BrowserSecurityHandlerOwner,
@@ -52,6 +52,35 @@ function viewport(view: WebContentsView, window: BrowserWindow): BrowserViewport
   })
 }
 
+function awaitRendererStartup(load: Promise<void>, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted === true) {
+    return Promise.reject(new AgentBrowserError('CANCELLED', 'browser renderer startup was cancelled'))
+  }
+  return new Promise<void>((resolve, reject) => {
+    let settled = false
+    const finish = (error?: AgentBrowserError): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      signal?.removeEventListener('abort', onAbort)
+      if (error === undefined) resolve()
+      else reject(error)
+    }
+    const onAbort = (): void => {
+      finish(new AgentBrowserError('CANCELLED', 'browser renderer startup was cancelled'))
+    }
+    const timeout = setTimeout(() => {
+      finish(new AgentBrowserError('TIMEOUT', 'browser renderer startup timed out'))
+    }, BROWSER_AGENT_LIMITS.startupMs)
+    timeout.unref()
+    signal?.addEventListener('abort', onAbort, { once: true })
+    void load.then(
+      () => { finish() },
+      () => { finish(new AgentBrowserError('INTERNAL', 'browser renderer could not be initialized')) },
+    )
+  })
+}
+
 export interface CreateElectronEphemeralSurfaceOptions {
   readonly window: BrowserWindow
   readonly request: CreateEphemeralBrowserSurfaceRequest
@@ -99,7 +128,7 @@ export function createElectronEphemeralSurface(
       generation,
       allowsNavigation: agentNavigationAllowed,
     }),
-    async mount(token) {
+    async mount(token, signal) {
       if (closed || mountToken !== undefined && mountToken !== token) {
         throw new AgentBrowserError('STALE_REF', 'browser mount token is stale')
       }
@@ -110,9 +139,10 @@ export function createElectronEphemeralSurface(
       }
       view.setBounds(options.bounds())
       view.setVisible(true)
-      rendererReady ??= view.webContents.loadURL('about:blank').then(() => undefined).catch(() => {
-        throw new AgentBrowserError('INTERNAL', 'browser renderer could not be initialized')
-      })
+      rendererReady ??= awaitRendererStartup(
+        view.webContents.loadURL('about:blank').then(() => undefined),
+        signal,
+      )
       await rendererReady
       if (isClosed() || mountToken !== token || view.webContents.isDestroyed()) {
         throw new AgentBrowserError('TARGET_CLOSED', 'browser renderer closed during initialization')

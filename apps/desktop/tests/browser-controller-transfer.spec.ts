@@ -14,6 +14,9 @@ const electron = vi.hoisted(() => {
   }
 
   class FakeSession extends FakeEventEmitter {
+    readonly clearStorageData = vi.fn(async () => {})
+    readonly clearCache = vi.fn(async () => {})
+    readonly clearAuthCache = vi.fn(async () => {})
     permissionCheckHandler: ((...args: unknown[]) => boolean) | null = null
     permissionRequestHandler: ((...args: unknown[]) => void) | null = null
     setPermissionCheckHandler(handler: ((...args: unknown[]) => boolean) | null): void {
@@ -78,6 +81,7 @@ import {
   createElectronEphemeralSurface,
   ElectronBrowserSurfaceRegistry,
 } from '../src/browser/electron-surface.ts'
+import { BrowserSurfaceManager } from '../src/browser/surface-manager.ts'
 
 beforeEach(() => { electron.views.length = 0 })
 
@@ -122,6 +126,94 @@ describe('persistent Workbench browser transfer', () => {
     await mounting
     expect(view.visible).toBe(true)
     guards.dispose()
+  })
+
+  it('cancels a stuck renderer mount, releases the pending generation, and permits a fresh acquire', async () => {
+    const removed: unknown[] = []
+    const window = {
+      contentView: {
+        addChildView: vi.fn(),
+        removeChildView: (view: unknown) => { removed.push(view) },
+      },
+      getBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }),
+    }
+    const registry = new ElectronBrowserSurfaceRegistry()
+    let creation = 0
+    const manager = new BrowserSurfaceManager({
+      coordinator: {
+        consumeVerifiedPersistentGiveIntent: async () => undefined,
+        revoke: async () => false,
+        release: async () => {},
+      },
+      createNonce: () => `renderer-${String(creation)}`,
+      createMountToken: generation => `mount-${String(generation)}`,
+      createEphemeral: async (request) => {
+        creation += 1
+        const resource = createElectronEphemeralSurface({
+          window: window as never,
+          request,
+          registry,
+          bounds: () => ({ x: 10, y: 20, width: 900, height: 600 }),
+        })
+        if (creation === 1) {
+          electron.views.at(-1)?.webContents.loadURL.mockImplementationOnce(
+            () => new Promise<void>(() => {}),
+          )
+        }
+        return resource
+      },
+    })
+    const controller = new AbortController()
+    const first = manager.acquire({ sessionId: 'renderer-abort-session', signal: controller.signal })
+
+    await vi.waitFor(() => {
+      expect(electron.views[0]?.webContents.loadURL).toHaveBeenCalledWith('about:blank')
+    })
+    controller.abort()
+    await expect(first).rejects.toMatchObject({ code: 'CANCELLED' })
+    expect(electron.views[0]?.webContents.close).toHaveBeenCalledOnce()
+    expect(removed).toEqual([electron.views[0]])
+
+    await expect(manager.acquire({ sessionId: 'renderer-abort-session' })).resolves.toMatchObject({
+      generation: 2,
+      visible: true,
+    })
+  })
+
+  it('bounds a renderer that never becomes ready to the shared startup deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      const window = {
+        contentView: { addChildView: vi.fn(), removeChildView: vi.fn() },
+        getBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }),
+      }
+      const resource = createElectronEphemeralSurface({
+        window: window as never,
+        request: {
+          sessionId: 'renderer-timeout-session',
+          generation: 1,
+          partition: 'dsh-agent-browser-1-renderer-timeout',
+        },
+        registry: new ElectronBrowserSurfaceRegistry(),
+        bounds: () => ({ x: 10, y: 20, width: 900, height: 600 }),
+      })
+      electron.views.at(-1)?.webContents.loadURL.mockImplementationOnce(
+        () => new Promise<void>(() => {}),
+      )
+      const mounting = resource.mount('mount-timeout')
+      const rejected = expect(mounting).rejects.toMatchObject({ code: 'TIMEOUT' })
+
+      await vi.advanceTimersByTimeAsync(9_999)
+      await expect(Promise.race([
+        mounting.then(() => 'settled', () => 'settled'),
+        Promise.resolve('pending'),
+      ])).resolves.toBe('pending')
+      await vi.advanceTimersByTimeAsync(1)
+      await rejected
+      await resource.teardownView()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('blocks renderer operations and restores the exact reserved tab when mount fails before commit', async () => {
