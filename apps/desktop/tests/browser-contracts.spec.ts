@@ -40,14 +40,16 @@ describe('workbench Browser contracts', () => {
 
   it('pins every Agent browser resource limit to the frozen protocol and plan', () => {
     expect(BROWSER_AGENT_LIMITS).toEqual({
-      rawNodes: 2_000,
+      rawNodes: 10_000,
       depth: 32,
-      cdpCalls: 512,
-      startupMs: 10_000,
+      cdpCalls: 2_048,
+      startupMs: 20_000,
       startupAttempts: 2,
+      accessibilityAttempts: 3,
+      accessibilityRetryMs: 500,
       cleanupMs: 2_000,
       wallMs: 10_000,
-      actionableNodes: 300,
+      actionableNodes: 800,
       semanticUtf8Bytes: 49_152,
       encodedJsonBytes: 65_536,
       pngBytes: 4_194_304,

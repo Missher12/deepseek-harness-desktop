@@ -6,7 +6,7 @@ English | [中文](README.zh.md)
 
 ## Tools and contract
 
-- `browser_snapshot` returns the current URL, title, revision, bounded semantic text, and opaque refs. When the exact active route declares image input and `ctx.attachments` accepts PNG, it requests a provider-validated `ImmutablePng`, commits a fresh byte copy with `attachments.saveImage()`, and renders the durable reference as an `ImageBlock`. PNG bytes are never encoded into text.
+- `browser_snapshot` returns the current URL, title, revision, bounded semantic text, and opaque refs. Complex pages may return a deterministic partial snapshot that prioritizes current actionable controls instead of failing the whole call; the model uses those refs first and changes page state before snapshotting again. When the exact active route declares image input and `ctx.attachments` accepts PNG, it requests a provider-validated `ImmutablePng`, commits a fresh byte copy with `attachments.saveImage()`, and renders the durable reference as an `ImageBlock`. PNG bytes are never encoded into text.
 - `browser_navigate` accepts only an absolute destination URL. URL and redirect policy remains authoritative in Electron.
 - `browser_click`, `browser_type`, and `browser_select` accept only an opaque current `ref` plus their ordinary action value. `browser_scroll` accepts bounded integer deltas and optionally a current `ref`; it has no coordinate form.
 - `browser_key` accepts only a key and the closed `Alt` / `Control` / `Meta` / `Shift` modifier vocabulary. The frozen protocol has no key target ref.

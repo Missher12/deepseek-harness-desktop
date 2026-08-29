@@ -53,6 +53,12 @@ describe('PromptRail presentation', () => {
     expect(ruleBlock(".promptRailMark[data-edge='end'] .promptRailTooltip")).toContain('transform: translateY(-100%);')
   })
 
+  it('subtracts the measured composer stack from the desktop rail height', () => {
+    const track = ruleBlock('.promptRailTrack')
+    expect(track).toContain('var(--dsh-composer-height')
+    expect(track).toContain('100dvh')
+  })
+
   it('pins forced-colors marks to system colors and disables tick motion when requested', () => {
     expect(stylesheet).toContain('.promptRailTick,\n  .promptRailActiveDot {\n    forced-color-adjust: none;')
     expect(stylesheet).toContain('.promptRailTrack::before {\n    background-color: CanvasText !important;')

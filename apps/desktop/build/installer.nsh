@@ -20,7 +20,13 @@
 !macroend
 
 !macro customInstall
-  DetailPrint "Application files installed to $INSTDIR"
+  ; electron-builder suppresses extraction details before invoking this hook.
+  ; Re-enable both the current status line and the visible details list so the
+  ; assisted installer never looks stalled or blank at the end of extraction.
+  SetDetailsPrint both
+  DetailPrint "Application files installed and verified"
+  DetailPrint "Native computer-control helper installed"
   DetailPrint "Desktop and Start menu shortcuts are ready"
   DetailPrint "Existing DeepSeek Harness workspace data was preserved"
+  DetailPrint "DeepSeek Harness is ready to launch"
 !macroend

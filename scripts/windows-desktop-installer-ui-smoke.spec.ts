@@ -2,6 +2,22 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 describe('Windows Desktop assisted installer smoke', () => {
+  it('re-enables visible installer details before reporting bounded setup stages', () => {
+    const source = readFileSync(
+      new URL('../apps/desktop/build/installer.nsh', import.meta.url),
+      'utf8',
+    )
+    const details = source.indexOf('SetDetailsPrint both')
+
+    expect(details).toBeGreaterThan(-1)
+    expect(source.indexOf('Application files installed and verified')).toBeGreaterThan(details)
+    expect(source.indexOf('Native computer-control helper installed')).toBeGreaterThan(details)
+    expect(source.indexOf('Desktop and Start menu shortcuts are ready')).toBeGreaterThan(details)
+    expect(source.indexOf('Existing DeepSeek Harness workspace data was preserved')).toBeGreaterThan(details)
+    expect(source.indexOf('DeepSeek Harness is ready to launch')).toBeGreaterThan(details)
+    expect(source).not.toContain('installed to $INSTDIR')
+  })
+
   it('walks the visible welcome, destination, progress/details, and finish pages', () => {
     const source = readFileSync(
       new URL('./windows-desktop-installer-ui-smoke.ps1', import.meta.url),

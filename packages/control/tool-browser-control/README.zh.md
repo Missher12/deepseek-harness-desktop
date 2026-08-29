@@ -6,7 +6,7 @@
 
 ## 工具与约定
 
-- `browser_snapshot` 返回当前 URL、标题、revision、有界语义文本和不透明 ref。当精确的当前 route 声明支持图片输入，且 `ctx.attachments` 接受 PNG 时，它才请求由提供方验证过的 `ImmutablePng`，通过 `attachments.saveImage()` 提交一份新的字节副本，并把持久引用渲染为 `ImageBlock`。PNG 字节绝不会编码进文本。
+- `browser_snapshot` 返回当前 URL、标题、revision、有界语义文本和不透明 ref。复杂页面可以返回确定性的部分快照，优先保留当前可操作控件，而不是让整次调用失败；模型会先使用这些 ref，并在再次 snapshot 前改变页面状态。当精确的当前 route 声明支持图片输入，且 `ctx.attachments` 接受 PNG 时，它才请求由提供方验证过的 `ImmutablePng`，通过 `attachments.saveImage()` 提交一份新的字节副本，并把持久引用渲染为 `ImageBlock`。PNG 字节绝不会编码进文本。
 - `browser_navigate` 只接受绝对目标 URL。URL 与 redirect 策略仍以 Electron 为权威。
 - `browser_click`、`browser_type` 与 `browser_select` 只接受一个不透明的当前 `ref` 及各自普通操作值。`browser_scroll` 接受有界整数 delta 和可选的当前 `ref`；不存在坐标形式。
 - `browser_key` 只接受一个 key 和封闭的 `Alt`／`Control`／`Meta`／`Shift` modifier 词汇。冻结协议没有 key 目标 ref。

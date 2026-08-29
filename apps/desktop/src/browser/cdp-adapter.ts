@@ -100,6 +100,10 @@ type AllowedCdpMethod =
   | 'Input.dispatchMouseEvent'
   | 'Input.dispatchKeyEvent'
   | 'Input.insertText'
+  | 'Overlay.enable'
+  | 'Overlay.disable'
+  | 'Overlay.highlightQuad'
+  | 'Overlay.hideHighlight'
   | 'Page.captureScreenshot'
   | 'Page.setInterceptFileChooserDialog'
 
@@ -148,6 +152,16 @@ interface CandidateReference {
   readonly line: string
 }
 
+interface AccessibilityWalk {
+  readonly nodes: readonly AxNode[]
+  readonly truncated: boolean
+}
+
+interface CandidateProjection {
+  readonly candidates: readonly CandidateReference[]
+  readonly truncated: boolean
+}
+
 const ACTIONABLE_ROLES = new Set([
   'button', 'link', 'checkbox', 'radio', 'textbox', 'searchbox', 'combobox',
   'listbox', 'menuitem', 'option', 'tab', 'switch', 'spinbutton',
@@ -158,6 +172,7 @@ const MATERIAL_TREE_EVENTS = new Set(['Accessibility.nodesUpdated', 'DOM.documen
 const PNG_SIGNATURE = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
 const TRANSFER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 const utf8 = new TextEncoder()
+const PARTIAL_SNAPSHOT_LINE = '[Partial snapshot: page content was pruned to bounded actionable controls.]'
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -373,6 +388,7 @@ export class CdpBrowserAdapter {
         try {
           const budget = this.createBudget(attemptMs)
           await this.command('Accessibility.enable', {}, budget, signal)
+          await this.command('Overlay.enable', {}, budget, signal)
           await this.command(
             'Page.setInterceptFileChooserDialog',
             { enabled: true },
@@ -411,11 +427,15 @@ export class CdpBrowserAdapter {
     await this.start(signal)
     this.assertSignal(signal)
     const budget = this.createBudget()
-    const nodes = await this.walkAccessibilityTree(budget, signal)
-    const candidates = await this.projectCandidates(nodes, budget, signal)
+    const walk = await this.walkAccessibilityTree(budget, signal)
+    const projection = await this.projectCandidates(walk.nodes, budget, signal)
     const image = request.includeImage ? await this.captureScreenshot(budget, signal) : undefined
     this.assertEpoch(budget.epoch)
-    const fitted = this.fitResult(candidates, image?.metadata)
+    const fitted = this.fitResult(
+      projection.candidates,
+      image?.metadata,
+      walk.truncated || projection.truncated,
+    )
     this.references = new Map(fitted.bindings.map(binding => [binding.ref, binding]))
     if (image === undefined) {
       return Object.freeze({
@@ -561,6 +581,18 @@ export class CdpBrowserAdapter {
       // Detach below is itself sufficient to remove an owned debugger's chooser interception.
     }
     try {
+      await this.awaitCdpResponse(
+        this.webContents.debugger.sendCommand('Overlay.hideHighlight', {}),
+        BROWSER_AGENT_LIMITS.cleanupMs,
+      )
+      await this.awaitCdpResponse(
+        this.webContents.debugger.sendCommand('Overlay.disable', {}),
+        BROWSER_AGENT_LIMITS.cleanupMs,
+      )
+    } catch {
+      // Detach below also removes the main-owned visual Agent pointer.
+    }
+    try {
       if (this.webContents.debugger.isAttached()) this.webContents.debugger.detach()
     } catch {
       // The attachment state below is authoritative for whether lifecycle retry is required.
@@ -642,7 +674,7 @@ export class CdpBrowserAdapter {
     })
   }
 
-  private async walkAccessibilityTree(budget: OperationBudget, signal?: AbortSignal): Promise<readonly AxNode[]> {
+  private async walkAccessibilityTree(budget: OperationBudget, signal?: AbortSignal): Promise<AccessibilityWalk> {
     let root: AxNode | undefined
     for (let attempt = 0; attempt < BROWSER_AGENT_LIMITS.accessibilityAttempts; attempt += 1) {
       const rootResponse = record(await this.command('Accessibility.getRootAXNode', {}, budget, signal))
@@ -657,9 +689,14 @@ export class CdpBrowserAdapter {
     const nodes: AxNode[] = [root]
     const queue: { readonly node: AxNode; readonly depth: number }[] = [{ node: root, depth: 0 }]
     let cursor = 0
+    let truncated = false
     while (cursor < queue.length) {
       const entry = queue[cursor++]
       if (entry === undefined || entry.depth >= BROWSER_AGENT_LIMITS.depth || entry.node.childIds.length === 0) continue
+      if (budget.calls >= BROWSER_AGENT_LIMITS.cdpCalls) {
+        truncated = true
+        break
+      }
       const response = record(await this.command(
         'Accessibility.getChildAXNodes',
         { id: entry.node.nodeId },
@@ -667,32 +704,49 @@ export class CdpBrowserAdapter {
         signal,
       ))
       if (!Array.isArray(response?.nodes)) throw new AgentBrowserError('INTERNAL', 'browser accessibility children are invalid')
-      if (nodes.length + response.nodes.length > BROWSER_AGENT_LIMITS.rawNodes) {
-        throw new AgentBrowserError('QUOTA_EXCEEDED', 'browser accessibility tree exceeds its raw-node bound')
-      }
-      for (const raw of response.nodes) {
+      const remaining = BROWSER_AGENT_LIMITS.rawNodes - nodes.length
+      const acceptedRaw = response.nodes.slice(0, Math.max(0, remaining))
+      if (acceptedRaw.length < response.nodes.length) truncated = true
+      for (const raw of acceptedRaw) {
         const child = axNode(raw)
         if (child === undefined) throw new AgentBrowserError('INTERNAL', 'browser accessibility node is invalid')
         nodes.push(child)
         queue.push({ node: child, depth: entry.depth + 1 })
       }
+      if (truncated) break
     }
-    return nodes
+    return { nodes, truncated }
   }
 
   private async projectCandidates(
     nodes: readonly AxNode[],
     budget: OperationBudget,
     signal?: AbortSignal,
-  ): Promise<readonly CandidateReference[]> {
+  ): Promise<CandidateProjection> {
     const candidates: CandidateReference[] = []
-    for (const node of nodes) {
-      if (candidates.length >= BROWSER_AGENT_LIMITS.actionableNodes || node.ignored
-        || !ACTIONABLE_ROLES.has(node.role) || node.backendDOMNodeId === undefined) continue
+    const actionable = nodes
+      .filter(node => !node.ignored && ACTIONABLE_ROLES.has(node.role) && node.backendDOMNodeId !== undefined)
+      .sort((left, right) => {
+        const priority = (node: AxNode): number => node.focused || EDITABLE_ROLES.has(node.role)
+          || node.role === 'button' || node.role === 'switch'
+          ? 0
+          : node.role === 'link' ? 2 : 1
+        return priority(left) - priority(right)
+      })
+    let truncated = actionable.length > BROWSER_AGENT_LIMITS.actionableNodes
+    for (const node of actionable) {
+      if (candidates.length >= BROWSER_AGENT_LIMITS.actionableNodes) break
+      if (budget.calls >= BROWSER_AGENT_LIMITS.cdpCalls) {
+        truncated = true
+        break
+      }
+      // The filter above proves the backend identity exists.
+      const backendDOMNodeId = node.backendDOMNodeId
+      if (backendDOMNodeId === undefined) continue
       const editable = EDITABLE_ROLES.has(node.role)
       const targetAttributes = attributes(await this.command(
         'DOM.describeNode',
-        { backendNodeId: node.backendDOMNodeId, depth: 0, pierce: false },
+        { backendNodeId: backendDOMNodeId, depth: 0, pierce: false },
         budget,
         signal,
       ))
@@ -712,7 +766,7 @@ export class CdpBrowserAdapter {
       const binding = Object.freeze({
         ref,
         axNodeId: node.nodeId,
-        backendDOMNodeId: node.backendDOMNodeId,
+        backendDOMNodeId,
         role,
         name,
         editable,
@@ -722,31 +776,49 @@ export class CdpBrowserAdapter {
       })
       candidates.push({ semantic, binding, line: `${role} ${JSON.stringify(name)} [ref=${ref}]` })
     }
-    return candidates
+    return { candidates, truncated }
   }
 
   private fitResult(
     candidates: readonly CandidateReference[],
     image?: AgentBrowserImageMetadata,
+    sourceTruncated = false,
   ): { readonly result: AgentBrowserSnapshotResult; readonly bindings: readonly BrowserReferenceBinding[] } {
-    const accepted: CandidateReference[] = []
-    let semanticText = ''
-    for (const candidate of candidates) {
-      const nextText = semanticText === '' ? candidate.line : `${semanticText}\n${candidate.line}`
-      if (utf8.encode(nextText).byteLength > BROWSER_AGENT_LIMITS.semanticUtf8Bytes) break
-      const result: AgentBrowserSnapshotResult = {
-        surfaceId: this.surfaceId,
-        url: this.webContents.getURL(),
-        title: truncateUtf8(this.webContents.getTitle(), 2_048),
-        snapshotRevision: this.revision,
-        semanticText: nextText,
-        refs: [...accepted.map(item => item.semantic), candidate.semantic],
-        ...image === undefined ? {} : { image },
+    const assemble = (showPartial: boolean): {
+      readonly accepted: CandidateReference[]
+      readonly semanticText: string
+      readonly clipped: boolean
+    } => {
+      const accepted: CandidateReference[] = []
+      let semanticText = showPartial ? PARTIAL_SNAPSHOT_LINE : ''
+      let clipped = false
+      for (const candidate of candidates) {
+        const nextText = semanticText === '' ? candidate.line : `${semanticText}\n${candidate.line}`
+        if (utf8.encode(nextText).byteLength > BROWSER_AGENT_LIMITS.semanticUtf8Bytes) {
+          clipped = true
+          break
+        }
+        const candidateResult: AgentBrowserSnapshotResult = {
+          surfaceId: this.surfaceId,
+          url: this.webContents.getURL(),
+          title: truncateUtf8(this.webContents.getTitle(), 2_048),
+          snapshotRevision: this.revision,
+          semanticText: nextText,
+          refs: [...accepted.map(item => item.semantic), candidate.semantic],
+          ...image === undefined ? {} : { image },
+        }
+        if (utf8.encode(JSON.stringify(candidateResult)).byteLength > BROWSER_AGENT_LIMITS.encodedJsonBytes) {
+          clipped = true
+          break
+        }
+        accepted.push(candidate)
+        semanticText = nextText
       }
-      if (utf8.encode(JSON.stringify(result)).byteLength > BROWSER_AGENT_LIMITS.encodedJsonBytes) break
-      accepted.push(candidate)
-      semanticText = nextText
+      return { accepted, semanticText, clipped }
     }
+    let assembled = assemble(sourceTruncated)
+    if (!sourceTruncated && assembled.clipped) assembled = assemble(true)
+    const { accepted, semanticText } = assembled
     const result: AgentBrowserSnapshotResult = Object.freeze({
       surfaceId: this.surfaceId,
       url: this.webContents.getURL(),
@@ -809,12 +881,12 @@ export class CdpBrowserAdapter {
     requireFocused = false,
   ): Promise<BrowserReferenceBinding> {
     const liveNodes = await this.walkAccessibilityTree(budget, signal)
-    const matches = liveNodes.filter(node => node.backendDOMNodeId === binding.backendDOMNodeId)
+    const matches = liveNodes.nodes.filter(node => node.backendDOMNodeId === binding.backendDOMNodeId)
     if (matches.length !== 1) throw new AgentBrowserError('STALE_REF', 'browser target no longer has one live AX node')
     const live = matches[0]
     if (live === undefined) throw new AgentBrowserError('STALE_REF', 'browser target is stale')
     if (requireFocused) {
-      const focusedBackendNodeIds = new Set(liveNodes.flatMap(node => (
+      const focusedBackendNodeIds = new Set(liveNodes.nodes.flatMap(node => (
         node.focused && node.backendDOMNodeId !== undefined ? [node.backendDOMNodeId] : []
       )))
       if (focusedBackendNodeIds.size !== 1 || !focusedBackendNodeIds.has(binding.backendDOMNodeId)) {
@@ -849,6 +921,7 @@ export class CdpBrowserAdapter {
 
   private async click(binding: BrowserReferenceBinding, budget: OperationBudget, signal?: AbortSignal): Promise<void> {
     const point = await this.boxCenter(binding, budget, signal)
+    await this.showAgentPointer(point.x, point.y, budget, signal)
     await this.command('Input.dispatchMouseEvent', {
       type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1,
     }, budget, signal)
@@ -879,8 +952,28 @@ export class CdpBrowserAdapter {
     const point = binding === undefined
       ? { x: viewport.width / 2, y: viewport.height / 2 }
       : await this.boxCenter(binding, budget, signal)
+    await this.showAgentPointer(point.x, point.y, budget, signal)
     await this.command('Input.dispatchMouseEvent', {
       type: 'mouseWheel', x: point.x, y: point.y, deltaX, deltaY,
+    }, budget, signal)
+  }
+
+  private async showAgentPointer(
+    x: number,
+    y: number,
+    budget: OperationBudget,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const radius = 7
+    await this.command('Overlay.highlightQuad', {
+      quad: [
+        x - radius, y - radius,
+        x + radius, y - radius,
+        x + radius, y + radius,
+        x - radius, y + radius,
+      ],
+      color: { r: 45, g: 112, b: 255, a: 0.32 },
+      outlineColor: { r: 45, g: 112, b: 255, a: 0.95 },
     }, budget, signal)
   }
 
@@ -910,7 +1003,7 @@ export class CdpBrowserAdapter {
       }
       const timer = setTimeout(() => {
         cleanup()
-        reject(new AgentBrowserError('TIMEOUT', 'browser wait timed out'))
+        resolve()
       }, BROWSER_AGENT_LIMITS.waitDurationMs)
       for (const event of events) this.webContents.on(event, done)
       signal?.addEventListener('abort', aborted, { once: true })

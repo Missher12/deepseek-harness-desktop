@@ -13,7 +13,7 @@ export interface ComputerUseHelperBuildSpec {
   readonly nativeRelativePath: 'darwin-x64/computer-use-helper' | 'win32-x64/computer-use-helper.exe'
 }
 
-/** Resolve only the two release architectures supported by Desktop 0.4.6. */
+/** Resolve only the two release architectures supported by Desktop 0.4.7. */
 export function computerUseHelperBuildSpec(
   platform: NodeJS.Platform,
   arch: string,

@@ -77,6 +77,7 @@ vi.mock('electron', () => ({
 }))
 
 import { WorkbenchBrowserController } from '../src/browser/controller.ts'
+import { BROWSER_AGENT_LIMITS } from '../src/browser/contracts.ts'
 import {
   createElectronEphemeralSurface,
   ElectronBrowserSurfaceRegistry,
@@ -203,7 +204,7 @@ describe('persistent Workbench browser transfer', () => {
       const mounting = resource.mount('mount-timeout')
       const rejected = expect(mounting).rejects.toMatchObject({ code: 'TIMEOUT' })
 
-      await vi.advanceTimersByTimeAsync(9_999)
+      await vi.advanceTimersByTimeAsync(BROWSER_AGENT_LIMITS.startupMs - 1)
       await expect(Promise.race([
         mounting.then(() => 'settled', () => 'settled'),
         Promise.resolve('pending'),

@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import { computeColumns, SIDEBAR_AUTO_COLLAPSE } from './columns.ts'
+import { computeColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED } from './columns.ts'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
 
@@ -33,17 +33,9 @@ function DetailsColumn(props: { children?: ReactNode }) {
   return <div className={css.detailsCol}>{props.children}</div>
 }
 
-/** Utility workbench column. */
-function UtilityColumn(props: { children?: ReactNode; drawer?: boolean; width?: number }) {
-  return (
-    <div
-      className={props.drawer ? css.utilityDrawer : css.utilityCol}
-      style={props.drawer ? { width: props.width } : undefined}
-      data-utility-drawer={props.drawer || undefined}
-    >
-      {props.children}
-    </div>
-  )
+/** Utility workbench column; always participates in the grid, never overlays the conversation. */
+function UtilityColumn(props: { children?: ReactNode }) {
+  return <div className={css.utilityCol}>{props.children}</div>
 }
 
 /**
@@ -96,7 +88,7 @@ function DragHandle(props: { side: 'sidebar' | 'details' | 'utility'; left: numb
   )
 }
 
-/** The three-column frame (see module doc). */
+/** The four-column frame (see module doc). */
 export function AppFrame({
   useStore,
   useSessions,
@@ -159,19 +151,8 @@ export function AppFrame({
     detailsSession === undefined ? 0 : panels.details,
     utilityOpen ? panels.utilityWidth : 0,
   )
-  // The column solver protects the conversation floor by conceding the
-  // utility column to zero. In that state the workbench must become a drawer
-  // even when the viewport is just above the fixed narrow breakpoint;
-  // otherwise its mounted content is present but completely invisible.
-  const utilityDrawer = utilityOpen && (narrow || dockedCols.utility === 0)
-  const cols = utilityDrawer
-    ? computeColumns(
-      viewport,
-      sidebarPreference,
-      panels.details,
-      0,
-    )
-    : dockedCols
+  const cols = dockedCols
+  const renderedSidebarCollapsed = cols.sidebar === SIDEBAR_COLLAPSED
   const colsRef = useRef(cols)
   colsRef.current = cols
 
@@ -203,8 +184,9 @@ export function AppFrame({
       ref={frameRef}
       className={css.frame}
       style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px ${cols.utility}px` }}
-      data-sidebar-collapsed={sidebarCollapsed || undefined}
+      data-sidebar-collapsed={renderedSidebarCollapsed || undefined}
       data-details-collapsed={cols.details === 0 || undefined}
+      data-utility-focused={utilityOpen && cols.center === 0 || undefined}
       data-dragging={dragging || undefined}
     >
       <div className={css.sidebarCol}>
@@ -214,7 +196,7 @@ export function AppFrame({
             (collapsed follows the resolved rail, so a derived auto-collapse
             renders the rail UI too). */}
         {renderSlot('sidebar', {
-          collapsed: sidebarCollapsed,
+          collapsed: renderedSidebarCollapsed,
           width: cols.sidebar,
         })}
       </div>
@@ -226,15 +208,10 @@ export function AppFrame({
             empty while no session is current. */}
         <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
         <DetailsColumn>{renderSlot('details', {})}</DetailsColumn>
-        {utilityOpen && !utilityDrawer
+        {utilityOpen
           ? <UtilityColumn>{renderSlot('layout.utility', { mode: panels.utilityMode })}</UtilityColumn>
           : <div className={css.utilityCol} />}
       </>
-      {utilityDrawer && (
-        <UtilityColumn drawer width={Math.min(viewport, panels.utilityWidth)}>
-          {renderSlot('layout.utility', { mode: panels.utilityMode })}
-        </UtilityColumn>
-      )}
       <div className={css.statusLayer} data-layout-status>
         {renderSlot('layout.status', {})}
       </div>
@@ -242,7 +219,7 @@ export function AppFrame({
         {renderSlot('shell.overlay', {})}
       </div>
       {/* The collapsed rail is fixed-width: no resize handle while closed. */}
-      {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
+      {!renderedSidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
       {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
       {cols.utility > 0 && <DragHandle side="utility" left={viewport - cols.utility} onStart={onUtilityStart} onDrag={onUtilityDrag} onEnd={onDragEnd} />}
     </div>

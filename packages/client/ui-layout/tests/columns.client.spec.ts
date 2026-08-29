@@ -21,8 +21,8 @@ describe('computeColumns', () => {
   it('offers Codex-scale sidebar and workbench ranges', () => {
     expect(SIDEBAR_DEFAULT).toBeGreaterThanOrEqual(300)
     expect(SIDEBAR_MAX).toBeGreaterThanOrEqual(640)
-    expect(UTILITY_DEFAULT).toBeGreaterThanOrEqual(640)
-    expect(UTILITY_MAX).toBeGreaterThanOrEqual(960)
+    expect(UTILITY_DEFAULT).toBeGreaterThanOrEqual(720)
+    expect(UTILITY_MAX).toBeGreaterThanOrEqual(1_600)
   })
 
   it('step 1: everything fits at preferred widths', () => {
@@ -115,10 +115,38 @@ describe('computeColumns — degenerate viewports', () => {
       utility: UTILITY_DEFAULT,
     })
     expect(computeColumns(SIDEBAR_DEFAULT + UTILITY_MIN + CENTER_MIN - 1, SIDEBAR_DEFAULT, 0, UTILITY_DEFAULT)).toEqual({
-      sidebar: SIDEBAR_DEFAULT,
-      center: UTILITY_MIN + CENTER_MIN - 1,
+      sidebar: SIDEBAR_COLLAPSED,
+      center: CENTER_MIN,
       details: 0,
-      utility: 0,
+      utility: SIDEBAR_DEFAULT + UTILITY_MIN - SIDEBAR_COLLAPSED - 1,
+    })
+  })
+
+  it('concedes the rendered sidebar to preserve a useful conversation and Browser workbench at 1336px', () => {
+    expect(computeColumns(1_336, SIDEBAR_DEFAULT, 0, UTILITY_DEFAULT)).toEqual({
+      sidebar: SIDEBAR_COLLAPSED,
+      center: CENTER_MIN,
+      details: 0,
+      utility: 1_336 - SIDEBAR_COLLAPSED - CENTER_MIN,
+    })
+  })
+
+  it('uses a non-overlapping focused workbench only when two useful panes cannot fit', () => {
+    expect(computeColumns(980, SIDEBAR_DEFAULT, 0, UTILITY_DEFAULT)).toEqual({
+      sidebar: SIDEBAR_COLLAPSED,
+      center: 0,
+      details: 0,
+      utility: 980 - SIDEBAR_COLLAPSED,
+    })
+  })
+
+  it('restores saved widths after automatic sidebar concession', () => {
+    expect(computeColumns(1_336, SIDEBAR_DEFAULT, 0, UTILITY_DEFAULT).sidebar).toBe(SIDEBAR_COLLAPSED)
+    expect(computeColumns(2_400, SIDEBAR_DEFAULT, 0, UTILITY_DEFAULT)).toEqual({
+      sidebar: SIDEBAR_DEFAULT,
+      center: 2_400 - SIDEBAR_DEFAULT - UTILITY_DEFAULT,
+      details: 0,
+      utility: UTILITY_DEFAULT,
     })
   })
 })

@@ -358,6 +358,12 @@ describe('semantic Agent browser adapter', () => {
         { method: 'Accessibility.enable', params: {} },
         { method: 'Accessibility.disable', params: {} },
       ])
+    expect(contents.debugger.calls.filter(call => call.method.startsWith('Overlay.')))
+      .toEqual([
+        { method: 'Overlay.enable', params: {} },
+        { method: 'Overlay.hideHighlight', params: {} },
+        { method: 'Overlay.disable', params: {} },
+      ])
   })
 
   it('keeps owned debugger cleanup retryable when detach has not reached quiescence', async () => {
@@ -461,18 +467,19 @@ describe('semantic Agent browser adapter', () => {
   it('bounds raw nodes, depth, CDP calls, wall time, output refs, semantic UTF-8, and JSON bytes', async () => {
     const rawContents = new FakeWebContents()
     installTree(rawContents, Array.from({ length: BROWSER_AGENT_LIMITS.rawNodes }, (_, index) => buttonNode(index + 1)))
-    await expect(adapterFor(rawContents).snapshot({ includeImage: false }))
-      .rejects.toMatchObject({ code: 'QUOTA_EXCEEDED' })
+    const raw = await adapterFor(rawContents).snapshot({ includeImage: false })
+    expect(raw.result.refs.length).toBeGreaterThan(0)
+    expect(raw.result.semanticText).toContain('[Partial snapshot:')
 
     const callContents = new FakeWebContents()
     const branchNodes = Array.from({ length: BROWSER_AGENT_LIMITS.cdpCalls }, (_, index) => ({
       ...buttonNode(index + 1), childIds: [`leaf-${index}`],
     }))
     installTree(callContents, branchNodes)
-    await expect(adapterFor(callContents).snapshot({ includeImage: false }))
-      .rejects.toMatchObject({ code: 'QUOTA_EXCEEDED' })
+    const callBounded = await adapterFor(callContents).snapshot({ includeImage: false })
+    expect(callBounded.result.semanticText).toContain('[Partial snapshot:')
     expect(callContents.debugger.calls.filter(call => call.method !== 'Page.setInterceptFileChooserDialog'
-      && call.method !== 'Accessibility.enable').length)
+      && call.method !== 'Accessibility.enable' && call.method !== 'Overlay.enable').length)
       .toBeLessThanOrEqual(BROWSER_AGENT_LIMITS.cdpCalls)
 
     const wallContents = new FakeWebContents()
@@ -514,6 +521,45 @@ describe('semantic Agent browser adapter', () => {
     await adapterFor(depthContents).snapshot({ includeImage: false })
     expect(visited).toHaveLength(BROWSER_AGENT_LIMITS.depth)
     expect(visited).not.toContain(`depth-${BROWSER_AGENT_LIMITS.depth}`)
+  })
+
+  it('returns useful prioritized refs from a Bilibili-shaped complex accessibility tree', async () => {
+    const contents = new FakeWebContents()
+    const noise = Array.from({ length: 5_000 }, (_, index): AxNode => ({
+      nodeId: `noise-${index}`,
+      backendDOMNodeId: index + 1,
+      role: { value: index < 900 ? 'link' : 'generic' },
+      name: { value: `decorative item ${index}` },
+    }))
+    const composer: AxNode = {
+      nodeId: 'dynamic-composer', backendDOMNodeId: 9_001,
+      role: { value: 'textbox' }, name: { value: '发布动态' },
+    }
+    const publish = buttonNode(9_002, '发布')
+    installTree(contents, [...noise, composer, publish], {
+      9_001: ['type', 'text', 'autocomplete', 'off'],
+    })
+
+    const snapshot = await adapterFor(contents).snapshot({ includeImage: false })
+
+    expect(snapshot.result.refs.map(ref => ref.name)).toEqual(expect.arrayContaining(['发布动态', '发布']))
+    expect(new TextEncoder().encode(JSON.stringify(snapshot.result)).byteLength)
+      .toBeLessThanOrEqual(BROWSER_AGENT_LIMITS.encodedJsonBytes)
+  })
+
+  it('returns a successful bounded loading wait when no completion event arrives', async () => {
+    vi.useFakeTimers()
+    try {
+      const contents = new FakeWebContents()
+      installTree(contents, [])
+      contents.loading = true
+      const waiting = adapterFor(contents).act({ kind: 'wait', mode: 'loading-idle' })
+      const assertion = expect(waiting).resolves.toMatchObject({ waited: true })
+      await vi.advanceTimersByTimeAsync(BROWSER_AGENT_LIMITS.waitDurationMs)
+      await assertion
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('uses only the closed CDP roster, omits editable values, and denies sensitive/file targets', async () => {
@@ -570,12 +616,24 @@ describe('semantic Agent browser adapter', () => {
       'Input.dispatchMouseEvent',
       'Input.dispatchKeyEvent',
       'Input.insertText',
+      'Overlay.enable',
+      'Overlay.highlightQuad',
       'Page.captureScreenshot',
       'Page.setInterceptFileChooserDialog',
     ])
     expect(contents.debugger.calls.every(call => allowed.has(call.method))).toBe(true)
     expect(contents.debugger.calls.some(call => call.method.startsWith('Runtime.'))).toBe(false)
     expect(contents.debugger.calls.some(call => /evaluate|selector|setFileInputFiles/iu.test(call.method))).toBe(false)
+    const highlight = contents.debugger.calls.findIndex(call => call.method === 'Overlay.highlightQuad')
+    const pointerDown = contents.debugger.calls.findIndex(call => (
+      call.method === 'Input.dispatchMouseEvent' && call.params.type === 'mousePressed'
+    ))
+    expect(highlight).toBeGreaterThan(-1)
+    expect(highlight).toBeLessThan(pointerDown)
+    expect(contents.debugger.calls[highlight]?.params).toMatchObject({
+      color: { r: 45, g: 112, b: 255 },
+      outlineColor: { r: 45, g: 112, b: 255 },
+    })
     expect(contents.debugger.calls).toContainEqual({
       method: 'Page.setInterceptFileChooserDialog', params: { enabled: true },
     })

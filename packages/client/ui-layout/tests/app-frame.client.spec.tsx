@@ -281,27 +281,37 @@ describe('AppFrame', () => {
     expect(queryByTestId('utility-content')).toBeNull()
   })
 
-  it('renders utility as an overlay drawer below the narrow breakpoint', () => {
+  it('renders a focused utility column below the narrow breakpoint without an overlay', () => {
     frameWidth = 980
     const { frame, instance, getByTestId } = mountFrame()
     act(() => { instance.actions.openUtility('browser') })
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0, 0])
-    expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBe('true')
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0, frameWidth - SIDEBAR_COLLAPSED])
+    expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBeNull()
+    expect(frame.getAttribute('data-utility-focused')).toBe('true')
   })
 
-  it('renders utility as an overlay drawer when the center cannot retain its floor', () => {
-    frameWidth = 1180
+  it('auto-concedes the rendered sidebar instead of covering the conversation at the reported width', () => {
+    frameWidth = 1336
     const { frame, instance, getByTestId } = mountFrame()
     act(() => { instance.actions.openUtility('terminal') })
-    expect(tracks(frame)).toEqual([SIDEBAR_DEFAULT, 0, 0])
-    expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBe('true')
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0, frameWidth - SIDEBAR_COLLAPSED - 640])
+    expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBeNull()
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
   })
 
-  it('keeps every narrow utility surface in the overlay drawer even when columns barely fit', () => {
-    frameWidth = 1020
-    const { instance, getByTestId } = mountFrame()
+  it('keeps both non-overlapping dividers when the utility and conversation fit', () => {
+    frameWidth = 1600
+    const { frame, instance, getByTestId } = mountFrame()
     act(() => { instance.actions.openUtility('terminal') })
-    expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBe('true')
+    expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBeNull()
+    expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(2)
+  })
+
+  it('allows a desktop workbench width well beyond the former 960px ceiling', () => {
+    frameWidth = 2560
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.openUtility('browser'); instance.actions.setUtilityWidth(1400) })
+    expect(tracks(frame)).toEqual([SIDEBAR_DEFAULT, 0, 1400])
   })
 
   it('closed sidebar keeps its compact rail with mounted slot content and collapsed owner props', () => {

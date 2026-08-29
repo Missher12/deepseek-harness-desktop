@@ -72,17 +72,6 @@
   background: var(--dsw-alias-bg-base);
 }
 
-.utilityDrawer {
-  position: absolute;
-  inset: var(--dsh-native-titlebar-inset) 0 0 auto;
-  z-index: 12;
-  max-width: 100%;
-  overflow: hidden;
-  border-left: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
-  box-shadow: -16px 0 40px rgb(0 0 0 / 12%);
-}
-
 /* The details subtree stays mounted at zero width, so its border must not paint
    a 1px seam. The collapsed sidebar instead retains a bordered compact rail. */
 .frame[data-details-collapsed] .detailsCol {

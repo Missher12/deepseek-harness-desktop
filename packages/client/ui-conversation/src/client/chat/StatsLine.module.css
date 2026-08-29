@@ -2,9 +2,9 @@
    shared message column axis (--dsh-chat-content-width). */
 
 .root {
-  /* Block, not flex: text-overflow only elides a block's inline content, so
-     an overlong line ends in … instead of a mid-glyph clip. */
-  display: block;
+  /* Two bounded flow lines keep long runtime/accounting state separate from
+     the input card instead of forcing one wide row into the side panes. */
+  display: -webkit-box;
   text-align: center;
   max-width: var(--dsh-chat-content-width);
   width: 100%;
@@ -14,9 +14,12 @@
   font-size: 12px;
   line-height: 20px;
   color: var(--dsw-alias-label-tertiary);
-  white-space: nowrap;
+  max-height: 40px;
+  white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .sep {

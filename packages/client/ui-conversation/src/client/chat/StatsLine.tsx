@@ -367,7 +367,9 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
   useLayoutEffect(() => {
     const el = rootRef.current
     if (el === null) return
-    const measure = () => { setTruncated(el.scrollWidth > el.clientWidth) }
+    const measure = () => {
+      setTruncated(el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight)
+    }
     measure()
     if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(measure)

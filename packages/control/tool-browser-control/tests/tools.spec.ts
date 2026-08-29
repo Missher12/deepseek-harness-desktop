@@ -214,6 +214,8 @@ describe('closed BrowserControl tools', () => {
     expect(section?.text).toContain('DevTools')
     expect(section?.text).toContain('remote-debugging')
     expect(section?.text).toContain('browser_stop once')
+    expect(section?.text).toContain('Partial snapshot')
+    expect(section?.text).toContain('Do not repeat an unchanged browser_snapshot')
     expect(section?.text).toContain('report the official-tool failure')
   })
 

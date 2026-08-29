@@ -66,8 +66,9 @@
   position: absolute;
   right: calc(100% + 12px);
   width: 30px;
-  height: min(62vh, 520px);
-  min-height: 180px;
+  /* The rail lives above the sticky composer. Subtract the live measured
+     composer stack so its end tooltip cannot paint across the input card. */
+  height: max(0px, min(62vh, 520px, calc(100dvh - var(--dsh-composer-height, 152px) - 120px)));
   pointer-events: auto;
 }
 

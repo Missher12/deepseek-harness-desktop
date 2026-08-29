@@ -379,6 +379,19 @@ describe('StatsLine', () => {
     expect(view.container.querySelector('[role="tooltip"]')).toBeNull()
   })
 
+  it('detects vertical two-line clipping as truncation', () => {
+    vi.useFakeTimers()
+    vi.spyOn(Element.prototype, 'scrollWidth', 'get').mockReturnValue(400)
+    vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400)
+    vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(60)
+    vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(40)
+    const { source } = makeSource({ nodes: [assistant(1, 1)] })
+    const view = render(<StatsLine {...props(source)} />)
+    fireEvent.mouseEnter(view.container.firstElementChild!)
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(view.container.querySelector('[role="tooltip"]')).not.toBeNull()
+  })
+
   it('renders window latency and throughput beside the wall-time group', () => {
     const timed: AssistantMessageNode = {
       ...assistant(1, 1, { outputTokens: 60 }),

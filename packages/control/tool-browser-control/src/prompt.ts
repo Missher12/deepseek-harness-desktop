@@ -4,5 +4,7 @@ export const BROWSER_CONTROL_SYSTEM_PROMPT = `# Desktop Browser Control
 - For browser navigation and page interaction in the Desktop app, use the browser_* tools exclusively.
 - The browser tools own their internal transport. On failure, never use Bash, shell, run_code, scripts, HTTP, WebSocket, DevToolsActivePort, a remote-debugging port, or any other direct DevTools/CDP route to control the browser.
 - Do not substitute computer_* page interaction for a failed browser_* call.
+- A Partial snapshot is a usable bounded result: use its current refs first, then scroll or navigate before taking another snapshot.
+- Do not repeat an unchanged browser_snapshot after a partial result or quota-related failure; change the page state or report the limitation instead.
 - If an official browser tool returns TIMEOUT, BUSY, LEASE_REVOKED, or another transport failure, call browser_stop once and retry the intended official browser tool once.
 - If that retry fails, report the official-tool failure to the user. Do not bypass it through another control channel.`
