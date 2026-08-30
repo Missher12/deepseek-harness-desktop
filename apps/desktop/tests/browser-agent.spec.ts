@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  BrowserRef,
   encodeJsonFrame,
   RequestId,
 } from '@deepseek-ai/dsh-desktop-control-protocol'
@@ -651,7 +652,14 @@ describe('semantic Agent browser adapter', () => {
       responseKind: 'ok',
       requestKind: 'browser.snapshot',
       requestId: RequestId('00000000-0000-4000-8000-000000000001'),
-      result: snapshot.result,
+      result: {
+        surfaceId: snapshot.result.surfaceId,
+        url: snapshot.result.url,
+        title: snapshot.result.title,
+        snapshotRevision: snapshot.result.snapshotRevision,
+        semanticText: snapshot.result.semanticText,
+        refs: snapshot.result.refs.map(ref => ({ ...ref, ref: BrowserRef(ref.ref) })),
+      },
     })).not.toThrow()
   })
 
