@@ -714,10 +714,10 @@ async function exerciseDesktopTitlebarGeometry(
 async function exerciseComposerAddMenu(page: Page): Promise<void> {
   const trigger = page.locator('[data-dsh-desktop-command="open-add-menu"]')
   const composer = page.locator('[data-composer-card]').last()
-  const input = composer.locator('textarea')
+  const input = composer.locator('[data-composer-input][contenteditable="true"]')
 
   await trigger.click()
-  const menu = composer.locator('[data-composer-add-menu="true"]')
+  const menu = composer.locator('[data-trigger-menu]')
   await menu.waitFor({ state: 'visible', timeout: 15_000 })
   expect(await menu.evaluate((element) => {
     const bounds = element.getBoundingClientRect()
@@ -726,27 +726,29 @@ async function exerciseComposerAddMenu(page: Page): Promise<void> {
       && bounds.right <= window.innerWidth
       && bounds.bottom <= window.innerHeight
   })).toBe(true)
-  await expect.poll(() => menu.locator('[data-add-section="true"]').allTextContents()).toEqual(
+  await expect.poll(() => menu.locator('[role="presentation"]').allTextContents()).toEqual(
     expect.arrayContaining([expect.stringMatching(/^(?:Add|添加)$/u), expect.stringMatching(/^(?:Commands|命令)$/u)]),
   )
   const options = menu.getByRole('option')
   await expect.poll(() => options.count()).toBeGreaterThanOrEqual(5)
-  expect(await options.evaluateAll(rows => rows.every(row => row.querySelector('svg') !== null))).toBe(true)
   await menu.getByRole('option', { name: /^goal/iu }).waitFor({ state: 'visible' })
   await menu.getByRole('option', { name: /^plan/iu }).waitFor({ state: 'visible' })
   const commandRows = menu.locator('button[id^="dsh-slash-option-command-"]')
   expect(await commandRows.count()).toBeGreaterThanOrEqual(2)
   const skillRows = menu.locator('button[id^="dsh-slash-option-skill-"]')
   if (await skillRows.count() > 0) {
-    expect(await menu.locator('[data-add-section="true"]').allTextContents()).toContainEqual(
+    expect(await menu.locator('[role="presentation"]').allTextContents()).toContainEqual(
       expect.stringMatching(/^(?:Plugins|插件)$/u),
     )
   }
 
   // Files delegates into the existing @ reference pipeline.
   await menu.getByRole('option', { name: /^(?:Files and folders|文件和文件夹)/u }).click()
-  await expect.poll(() => input.inputValue()).toBe('@')
-  await input.fill('')
+  await expect.poll(() => input.textContent()).toBe('@')
+  await input.click()
+  await page.keyboard.press('ControlOrMeta+A')
+  await page.keyboard.press('Backspace')
+  await expect.poll(() => input.textContent()).toBe('')
 
   // Image delegates into the existing attachment intake and preview rail.
   await trigger.click()
@@ -897,6 +899,21 @@ async function exerciseReasoningEffort(
   harnessHome: string,
   platform: NodeJS.Platform,
 ): Promise<void> {
+  const bootEvidence = await page.evaluate(() => {
+    const browser = globalThis as typeof globalThis & {
+      __DSH_BOOT__?: { entries?: readonly { id?: unknown }[] }
+      __DSH_REASONING_EFFORT__?: unknown
+    }
+    return {
+      reasoningEntry: browser.__DSH_BOOT__?.entries?.some(
+        row => row.id === '@deepseek-ai/dsh-reasoning-effort',
+      ) ?? false,
+      preferenceBootstrap: typeof browser.__DSH_REASONING_EFFORT__ === 'object'
+        && browser.__DSH_REASONING_EFFORT__ !== null,
+    }
+  })
+  expect(bootEvidence).toEqual({ reasoningEntry: true, preferenceBootstrap: true })
+
   const trigger = page.locator('button[aria-haspopup="dialog"]')
     .filter({ hasText: 'Native Smoke Thinker' })
   await trigger.waitFor({ state: 'visible', timeout: 30_000 })
@@ -998,7 +1015,7 @@ async function exerciseSessionMessenger(
   await relay.waitFor({ state: 'visible', timeout: 30_000 })
   const relayText = await relay.innerText()
   expect(relayText).toContain(seeded.messengerSourceSessionTitle)
-  expect(relayText).toMatch(/(?:Sent by .* from another chat|由 .* 从另一个聊天发来)/u)
+  expect(relayText).toMatch(/^(?:From |来自 )/u)
   expect(await activeRow.getAttribute('aria-selected')).toBe('true')
   expect(await waitForStableProtectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
   await page.screenshot({
@@ -1011,7 +1028,7 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): 
   // than the narrow-window utility drawer, which intentionally has no drag
   // handle.
   await page.setViewportSize({ width: 1600, height: 1000 })
-  const sessionLog = page.getByRole('button', { name: /^Session log/u })
+  const sessionLog = page.getByRole('button', { name: /^(?:Session log|Session 日志)/u })
   const trigger = page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })
   await trigger.waitFor({ state: 'visible', timeout: 15_000 })
   const [sessionLogBounds, triggerBounds] = await Promise.all([
@@ -1724,6 +1741,7 @@ export async function runPackagedDesktopSmoke(
       await exerciseSessionMessenger(page, clipboardSeed, platform)
       await exerciseComposerAddMenu(page)
       await exerciseDesktopWorkbench(page, platform)
+      expect(consoleErrors).toEqual([])
       await exerciseReasoningEffort(page, harnessHome, platform)
     } catch (error) {
       throw new Error(

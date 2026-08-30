@@ -195,7 +195,7 @@ describe('desktop package manifest', () => {
     )
 
     expect(host).toContain("export const inject = ['settings', 'webServer']")
-    expect(client).toContain("export const inject = ['locale', 'modelDirectories', 'sessions', 'slots']")
+    expect(client).toContain("export const inject = ['locale', 'modelDirectories', 'sessions', 'slots', 'remote', 'remote.session']")
     expect(boot).toContain('entry.fiber === undefined')
     expect(boot).toContain("state === 'pending'")
     expect(boot).toContain('failures.push(`${name}: ${state}`)')

@@ -33,13 +33,15 @@ A removable Harness-native replacement for the single model-selection seat. It k
 
 DeepSeek Harness Desktop mounts this workspace package from its immutable Desktop patch. A standalone profile can use the package's `cordis.patch.yml`, but it must first disable or remove the original `dsh-reasoning-effort` package: both packages compete for `conversation.input.model` and must never be enabled together. Desktop staging rejects a composition that contains both identities.
 
+The Client entry declares every runtime service required by the shared `ModelDirectory`, including `remote` and `remote.session`. Cordis activates the replacement seat only when that complete service set is available.
+
 Disabling or uninstalling this package and reloading the profile releases its priority `-100` entry, so Harness elects the native priority `0` model selector again. This fallback does not rewrite model-provider configuration, session logs, or other plugin data. A render-time component crash also abdicates the replacement seat and lets the native entry return.
 
 Module resolution, missing required services, and plugin `apply` failures occur before a React seat exists. Harness therefore refuses to activate that Web graph and reports the failed or pending entry on its loading surface instead of claiming a native-seat fallback. The Desktop stage separately refuses missing Host, Client, license, notice, or sprite artifacts before packaging.
 
 ## Compatibility and provenance
 
-This fork targets the DeepSeek Harness `0.1.0-rc.8` workspace contract. Its `workspace:^` peers describe that verified source boundary; they do not claim compatibility with the original plugin's `rc.6` dependency set.
+This fork targets the DeepSeek Harness `0.1.2-alpha.2` workspace contract. Its `workspace:^` peers describe that verified source boundary; they do not claim compatibility with the original plugin's `rc.6` dependency set.
 
 The retained Canvas implementation and `chibi-runner-strip.png` come from [`HanaAyane/dsh-reasoning-effort`](https://github.com/HanaAyane/dsh-reasoning-effort) `v0.6.0` at commit `f94622b46078ac8c064f91bdc10ab27e8cf32270`. The complete MIT text, `Copyright (c) 2026 HanaAyane`, source URL, commit, and sprite attribution remain in `LICENSE`, package-local `THIRD_PARTY_NOTICES.md`, and the Desktop artifact's root `THIRD_PARTY_NOTICES.md`.
 
@@ -73,6 +75,6 @@ The plugin does not rewrite conversation history, so it creates no cache-prefix 
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- Compatibility is verified only against the repository's `0.1.0-rc.8` contract; a Harness upgrade requires a fresh peer, service, staged-profile, and visual review.
+- Compatibility is verified only against the repository's `0.1.2-alpha.2` contract; a Harness upgrade requires a fresh peer, service, staged-profile, and visual review.
 - The bounded profile-scoped preferences are not an uninstall scrubber; removing the plugin may leave the inert character opt-in and visual route positions for a later reinstall.
 - Native-seat fallback covers a replacement component that reached the slot and then crashed. Pre-registration failures instead keep the Web graph unactivated and require the reported module, peer, service, or `apply` problem to be fixed.

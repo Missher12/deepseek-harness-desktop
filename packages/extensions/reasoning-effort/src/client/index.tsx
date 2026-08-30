@@ -28,7 +28,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const name = 'reasoning-effort-client'
 
 /** Exact services required by the replacement model seat. */
-export const inject = ['locale', 'modelDirectories', 'sessions', 'slots']
+export const inject = ['locale', 'modelDirectories', 'sessions', 'slots', 'remote', 'remote.session']
 
 /** Register localized dictionaries and the priority -100 single-seat entry. */
 export function apply(ctx: ClientContext): void {

@@ -14,11 +14,13 @@ Each Desktop core update identifies the exact official commit already embedded i
 
 Official package moves are authoritative. Desktop-owned behavior follows the new package owner instead of retaining deleted compatibility packages: Session operations live under the Session Controller, workspace archive and restore live under the Workspace Controller, settings documents live under the Settings Controller, and Client contributions use the current Slot registry and Remote services. Desktop-only Browser Control, Computer Use, installers, managed extensions, layout behavior, and privilege restrictions remain explicit additions on top of that source.
 
+Desktop Client replacements also mirror the transitive runtime injections required by their official owners. A replacement that uses the shared model directory, for example, declares both `remote` and `remote.session`; otherwise Cordis correctly leaves that entry inactive and the Slot registry elects a lower-priority fallback.
+
 One Desktop source commit owns every platform build for a release. macOS qualification produces that commit first; the Windows task consumes the same commit and version rather than rebuilding from an independently resolved source tree. Package installation, generated paths, dependency policy, Host and Client aggregate type checks, focused behavior tests, documentation checks, and packaged application smoke tests run locally with the lockfile in offline mode before a tag is published.
 
 ## Testing
 
-Conflict-marker and unmerged-index checks reject an incomplete integration. Generated path, dependency, package-invariant, Cordis, configuration, documentation, and translation checks reject stale projections. Aggregate Host and Client builds prove that deleted package owners have no surviving imports, while Desktop tests and packaged smokes exercise the preserved native control and installer paths. Platform workflows build from the tagged source commit and publish platform-specific assets under the same Desktop release.
+Conflict-marker and unmerged-index checks reject an incomplete integration. Generated path, dependency, package-invariant, Cordis, configuration, documentation, and translation checks reject stale projections. Aggregate Host and Client builds prove that deleted package owners have no surviving imports, while Desktop tests and packaged smokes exercise the preserved native control, installer paths, and activated Client replacement seats. Platform workflows build from the tagged source commit and publish platform-specific assets under the same Desktop release.
 
 ## Alternatives considered
 

@@ -33,13 +33,15 @@ kind: "package-bundle"
 
 DeepSeek Harness Desktop 从不可变的 Desktop patch 挂载此 workspace 包。独立 profile 可以使用包内的 `cordis.patch.yml`，但必须先停用或移除原版 `dsh-reasoning-effort`：两者会竞争 `conversation.input.model`，绝不能同时启用。Desktop staging 会拒绝同时含有这两个身份的组合。
 
+Client 入口会声明共享 `ModelDirectory` 所需的全部运行时服务，包括 `remote` 与 `remote.session`。只有这组服务完整可用时，Cordis 才会激活替换席位。
+
 停用或卸载本包并重新载入 profile 后，其优先级为 `-100` 的条目会释放，Harness 会重新选中优先级为 `0` 的原生模型选择器。该回退不会改写模型 provider 配置、会话日志或其他插件数据。组件在渲染期崩溃时同样会退出替换席位，让原生条目恢复。
 
 模块解析、必需服务缺失和插件 `apply` 失败都发生在 React 席位存在之前。因此 Harness 会拒绝激活该 Web 图，并在加载界面报告失败或等待中的条目，而不会声称已经走原生席位回退。Desktop stage 还会在打包前分别拒绝缺少 Host、Client、许可证、声明或 sprite 成品的情况。
 
 ## 兼容性与来源
 
-本分支面向 DeepSeek Harness `0.1.0-rc.8` workspace 约定。其 `workspace:^` peer 描述的是这条已验证源码边界，并不声称兼容原版插件的 `rc.6` 依赖集合。
+本分支面向 DeepSeek Harness `0.1.2-alpha.2` workspace 约定。其 `workspace:^` peer 描述的是这条已验证源码边界，并不声称兼容原版插件的 `rc.6` 依赖集合。
 
 保留的 Canvas 实现和 `chibi-runner-strip.png` 来自 [`HanaAyane/dsh-reasoning-effort`](https://github.com/HanaAyane/dsh-reasoning-effort) `v0.6.0` 的提交 `f94622b46078ac8c064f91bdc10ab27e8cf32270`。完整 MIT 文本、`Copyright (c) 2026 HanaAyane`、源码 URL、提交和 sprite 归属均保留在 `LICENSE`、包内 `THIRD_PARTY_NOTICES.md`，以及 Desktop 成品根部的 `THIRD_PARTY_NOTICES.md` 中。
 
@@ -73,6 +75,6 @@ Host 半只拥有一个按 profile 保存的 `chibiThumb` 布尔值、最多 64 
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 兼容性只针对仓库的 `0.1.0-rc.8` 约定完成验证；Harness 升级后必须重新检查 peer、服务、staged profile 和视觉表现。
+- 兼容性只针对仓库的 `0.1.2-alpha.2` 约定完成验证；Harness 升级后必须重新检查 peer、服务、staged profile 和视觉表现。
 - 按 profile 保存的有界偏好不是卸载清理器；移除插件后，可能保留惰性的人物 opt-in 与视觉路由位置供以后重装使用。
 - 原生席位回退覆盖已经进入槽位、随后崩溃的替换组件。注册前失败会让 Web 图保持未激活，必须修复报告中的模块、peer、服务或 `apply` 问题。

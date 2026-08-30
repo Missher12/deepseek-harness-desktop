@@ -8,6 +8,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   EffortControl,
   apply,
+  inject,
   type EffortControlInjected,
 } from '../src/client/index.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -161,6 +162,17 @@ async function flushFrames(): Promise<void> {
 }
 
 describe('reasoning-effort Client registration', () => {
+  it('inherits every runtime dependency required by the shared model directory', () => {
+    expect(inject).toEqual([
+      'locale',
+      'modelDirectories',
+      'sessions',
+      'slots',
+      'remote',
+      'remote.session',
+    ])
+  })
+
   it('registers the single model seat at -100 and never resolves or loads an addressed subagent', () => {
     let registered: { options: Record<string, unknown>; component: unknown } | undefined
     const directoryFor = vi.fn(() => makeController().controller)

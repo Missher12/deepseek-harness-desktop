@@ -14,11 +14,13 @@ Desktop 仓库与官方 Harness 仓库的 Git 历史互不相关，但 Desktop �
 
 官方包移动具有权威性。Desktop 自有行为跟随新的包归属，不保留已删除的兼容包：Session 操作归 Session Controller，workspace 归档与恢复归 Workspace Controller，设置文档归 Settings Controller，Client 贡献使用当前 Slot registry 与 Remote services。Desktop 独有的 Browser Control、Computer Use、安装器、托管扩展、布局行为和特权限制继续作为该源码之上的显式增量。
 
+Desktop 的 Client 替换实现还要同步其官方归属所要求的传递运行时注入。例如，使用共享模型目录的替换实现必须同时声明 `remote` 与 `remote.session`；否则 Cordis 会正确地让该入口保持未激活，Slot registry 随后会选中较低优先级的回退项。
+
 一个 Desktop 源码提交负责同一版本的全部平台构建。macOS 验证先产出该提交；Windows 任务消费相同提交与版本，不从独立解决的源码树重新构建。发布标签创建前，包安装、生成路径、依赖策略、Host 与 Client 聚合类型检查、聚焦行为测试、文档检查和打包应用 smoke 都在 lockfile 离线模式下本地运行。
 
 ## Testing
 
-冲突标记与未合并 index 检查会拒绝不完整整合。生成路径、依赖、包 invariant、Cordis、配置、文档与翻译检查会拒绝陈旧投影。Host 与 Client 聚合构建证明已删除的包归属没有残留 import；Desktop 测试与打包 smoke 会执行保留的原生控制与安装器路径。平台 workflow 从已打标签的源码提交构建，并在同一个 Desktop release 下发布各平台资产。
+冲突标记与未合并 index 检查会拒绝不完整整合。生成路径、依赖、包 invariant、Cordis、配置、文档与翻译检查会拒绝陈旧投影。Host 与 Client 聚合构建证明已删除的包归属没有残留 import；Desktop 测试与打包 smoke 会执行保留的原生控制、安装器路径和已激活的 Client 替换席位。平台 workflow 从已打标签的源码提交构建，并在同一个 Desktop release 下发布各平台资产。
 
 ## Alternatives considered
 
