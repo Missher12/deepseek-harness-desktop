@@ -249,6 +249,8 @@ export interface DesktopApi {
   showWorkbenchBrowser(bounds: DesktopBrowserBounds): Promise<DesktopBrowserSnapshot>
   /** Reflow only the exact existing Browser view; never creates or changes ownership. */
   layoutWorkbenchBrowser(bounds: DesktopBrowserBounds): Promise<void>
+  /** Hide native Browser pixels behind renderer-owned dialogs without destroying the page. */
+  setWorkbenchBrowserDockVisibility(visible: boolean): Promise<void>
   hideWorkbenchBrowser(): Promise<void>
   controlWorkbenchBrowser(request: DesktopBrowserRequest): Promise<DesktopBrowserSnapshot>
   onWorkbenchBrowserState(listener: (snapshot: DesktopBrowserSnapshot) => void): () => void

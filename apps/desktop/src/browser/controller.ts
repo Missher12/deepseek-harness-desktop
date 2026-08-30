@@ -28,6 +28,7 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
   private viewGeneration = 0
   private viewIdentity: string | undefined
   private visible = false
+  private dockVisible = true
   private transfer: PersistentBrowserTransfer | undefined
   private readonly denyDownload = (event: Electron.Event): void => { event.preventDefault() }
 
@@ -41,9 +42,20 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
     if (this.transfer !== undefined) return Promise.reject(this.transferBusy())
     const view = this.ensureView()
     this.applyLayout(view, bounds)
-    view.setVisible(true)
     this.visible = true
+    view.setVisible(this.dockVisible)
     return Promise.resolve(this.snapshot())
+  }
+
+  /** Hide or reveal the already-owned view without changing its page or transfer lifetime. */
+  setDockVisible(visible: boolean): void {
+    this.dockVisible = visible
+    if (this.transfer === undefined) this.view?.setVisible(visible && this.visible)
+  }
+
+  /** Remove native pixels from the Dock while retaining the exact human page for a later tab return. */
+  suspend(): void {
+    this.setDockVisible(false)
   }
 
   /** Reflow the exact existing view without creating, revealing, or transferring authority. */
@@ -129,7 +141,7 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
   captureVisiblePersistentIntent(): BrowserPersistentGiveIntent | undefined {
     const view = this.view
     const instanceId = this.viewIdentity
-    if (this.transfer !== undefined || !this.visible || view === undefined
+    if (this.transfer !== undefined || !this.visible || !this.dockVisible || view === undefined
       || view.webContents.isDestroyed() || instanceId === undefined) return undefined
     return Object.freeze({ instanceId, generation: this.viewGeneration })
   }
@@ -142,7 +154,7 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
     if (this.transfer !== undefined) {
       throw new AgentBrowserError('BUSY', 'persistent browser transfer is already active')
     }
-    if (!this.visible || view === undefined || partition === undefined || owner === undefined
+    if (!this.visible || !this.dockVisible || view === undefined || partition === undefined || owner === undefined
       || view.webContents.isDestroyed() || intent.instanceId !== this.viewIdentity
       || intent.generation !== this.viewGeneration) {
       throw new AgentBrowserError('STALE_REF', 'visible persistent browser changed before transfer')
@@ -157,6 +169,7 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
     const window = this.window
     let mountToken: string | undefined
     let mountActive = false
+    let dockVisible: boolean = this.dockVisible
     let closed = false
     let released = false
     let unregister = (): void => undefined
@@ -172,7 +185,8 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
         }
       },
       setDockVisible: (visible) => {
-        if (!closed && this.transfer === transfer) view.setVisible(visible && mountActive)
+        dockVisible = visible
+        if (!closed && this.transfer === transfer) view.setVisible(dockVisible && mountActive)
       },
       viewport: () => {
         const bounds = view.getBounds()
@@ -196,7 +210,7 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
         }
         mountToken = token
         mountActive = true
-        view.setVisible(true)
+        view.setVisible(dockVisible)
         return Promise.resolve()
       },
       commitTransfer: () => {
@@ -243,7 +257,7 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
         released = true
         this.transfer = undefined
         this.visible = transfer.wasVisible
-        view.setVisible(transfer.wasVisible)
+        view.setVisible(this.dockVisible && transfer.wasVisible)
         this.publish()
         return Promise.resolve()
       },

@@ -208,6 +208,12 @@ const browserResources = new ElectronBrowserSurfaceRegistry()
 const browserDockAnchor = new BrowserDockAnchor()
 const browserProxyAuthentication = new BrowserProxyAuthenticationOwner()
 
+function suspendWorkbenchBrowserDock(): void {
+  browserDockAnchor.clear()
+  browserResources.setDockVisible(false)
+  workbenchBrowser?.suspend()
+}
+
 async function hideWorkbenchBrowserDock(): Promise<void> {
   browserDockAnchor.clear()
   browserResources.setDockVisible(false)
@@ -869,9 +875,17 @@ ipcMain.handle('desktop:workbench-browser-layout', async (event, value: unknown)
   browserResources.layoutMounted(bounds)
 })
 
-ipcMain.handle('desktop:workbench-browser-hide', async (event) => {
+ipcMain.handle('desktop:workbench-browser-dock-visibility', (event, value: unknown) => {
+  if (!isHarnessSender(event) || typeof value !== 'boolean' || workbenchBrowser === undefined) {
+    throw new Error('Untrusted workbench Browser visibility request.')
+  }
+  workbenchBrowser.setDockVisible(value)
+  browserResources.setDockVisible(value)
+})
+
+ipcMain.handle('desktop:workbench-browser-hide', (event) => {
   if (!isHarnessSender(event) || workbenchBrowser === undefined) throw new Error('Untrusted workbench Browser request.')
-  await hideWorkbenchBrowserDock()
+  suspendWorkbenchBrowserDock()
 })
 
 ipcMain.handle('desktop:workbench-browser-control', async (event, value: unknown) => {

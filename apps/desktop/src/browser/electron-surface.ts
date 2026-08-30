@@ -23,12 +23,14 @@ export interface ElectronBrowserSurfaceResource extends BrowserSurfaceResource {
 /** Exact generation resource registry; renderer and protocol payloads never address it. */
 export class ElectronBrowserSurfaceRegistry {
   private readonly resources = new Map<string, ElectronBrowserSurfaceResource>()
+  private dockVisible = true
 
   register(resource: ElectronBrowserSurfaceResource): () => void {
     if (this.resources.has(resource.surfaceId)) {
       throw new AgentBrowserError('INTERNAL', 'browser surface identity is already registered')
     }
     this.resources.set(resource.surfaceId, resource)
+    resource.setDockVisible(this.dockVisible)
     return () => {
       if (this.resources.get(resource.surfaceId) === resource) this.resources.delete(resource.surfaceId)
     }
@@ -44,12 +46,13 @@ export class ElectronBrowserSurfaceRegistry {
   layoutMounted(bounds: Electron.Rectangle): void {
     for (const resource of this.resources.values()) {
       resource.layout(bounds)
-      resource.setDockVisible(true)
+      resource.setDockVisible(this.dockVisible)
     }
   }
 
   /** Hide or reveal only resources with a still-active mount token. */
   setDockVisible(visible: boolean): void {
+    this.dockVisible = visible
     for (const resource of this.resources.values()) resource.setDockVisible(visible)
   }
 }
@@ -131,6 +134,7 @@ export function createElectronEphemeralSurface(
   let closed = false
   let mountToken: string | undefined
   let mountActive = false
+  let dockVisible = true
   let rendererReady: Promise<void> | undefined
   let unregister = (): void => undefined
   const isClosed = (): boolean => closed
@@ -149,8 +153,8 @@ export function createElectronEphemeralSurface(
       applyLayout(bounds)
     },
     setDockVisible(visible) {
-      if (closed || !attached) return
-      view.setVisible(visible && mountActive)
+      dockVisible = visible
+      if (!closed && attached) view.setVisible(dockVisible && mountActive)
     },
     viewport: () => viewport(view, window),
     installSecurityHandlers: generation => owner.install({
@@ -175,7 +179,7 @@ export function createElectronEphemeralSurface(
       }
       applyLayout(bounds)
       mountActive = true
-      view.setVisible(true)
+      view.setVisible(dockVisible)
       rendererReady ??= awaitRendererStartup(
         view.webContents.loadURL('about:blank').then(() => undefined),
         signal,

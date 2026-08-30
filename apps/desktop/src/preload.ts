@@ -71,6 +71,12 @@ const api: DesktopApi = {
     if (!isDesktopBrowserBounds(bounds)) throw new Error('Invalid workbench Browser bounds.')
     await ipcRenderer.invoke('desktop:workbench-browser-layout', bounds)
   },
+  async setWorkbenchBrowserDockVisibility(...args: unknown[]) {
+    if (args.length !== 1 || typeof args[0] !== 'boolean') {
+      throw new TypeError('Workbench Browser visibility requires one boolean.')
+    }
+    await ipcRenderer.invoke('desktop:workbench-browser-dock-visibility', args[0])
+  },
   async hideWorkbenchBrowser() {
     await ipcRenderer.invoke('desktop:workbench-browser-hide')
   },

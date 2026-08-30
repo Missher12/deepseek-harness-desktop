@@ -21,6 +21,7 @@ interface BrowserTakeoverStatus {
 interface DesktopBrowserApi {
   showWorkbenchBrowser(bounds: DesktopBrowserBounds): Promise<DesktopBrowserSnapshot>
   layoutWorkbenchBrowser?(bounds: DesktopBrowserBounds): Promise<void>
+  setWorkbenchBrowserDockVisibility?(visible: boolean): Promise<void>
   hideWorkbenchBrowser(): Promise<void>
   controlWorkbenchBrowser(request: DesktopBrowserRequest): Promise<DesktopBrowserSnapshot>
   onWorkbenchBrowserState(listener: (snapshot: DesktopBrowserSnapshot) => void): () => void
@@ -32,6 +33,28 @@ interface DesktopBrowserApi {
 
 function desktopApi(): DesktopBrowserApi | undefined {
   return (window as unknown as { dshDesktop?: DesktopBrowserApi }).dshDesktop
+}
+
+/** Whether no DOM page surface can be punched through by the native Browser view. */
+function isNativeBrowserHostExposed(element: HTMLElement, owner: Document = document): boolean {
+  if (!element.isConnected || owner.visibilityState === 'hidden'
+    || owner.querySelector('[aria-modal="true"]') !== null) return false
+  const rect = element.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return false
+  if (typeof owner.elementFromPoint !== 'function') return true
+  const insetX = Math.min(8, rect.width / 4)
+  const insetY = Math.min(8, rect.height / 4)
+  const points = [
+    [rect.left + rect.width / 2, rect.top + rect.height / 2],
+    [rect.left + insetX, rect.top + insetY],
+    [rect.right - insetX, rect.top + insetY],
+    [rect.left + insetX, rect.bottom - insetY],
+    [rect.right - insetX, rect.bottom - insetY],
+  ] as const
+  return points.every(([x, y]) => {
+    const top = owner.elementFromPoint(x, y)
+    return top !== null && element.contains(top)
+  })
 }
 
 export function BrowserMode({ t }: Props) {
@@ -63,12 +86,23 @@ export function BrowserMode({ t }: Props) {
     let syncing = false
     let pending: DesktopBrowserBounds | undefined
     let previous: DesktopBrowserBounds | undefined
+    let reportedVisibility: boolean | undefined
+    let visibilitySync = Promise.resolve()
     let previousPhase = takeoverPhase.current
     let takeoverReady = api.getBrowserTakeoverStatus === undefined
     let emittedTakeoverStatus = false
     const equal = (left: DesktopBrowserBounds | undefined, right: DesktopBrowserBounds): boolean =>
       left !== undefined && left.x === right.x && left.y === right.y
       && left.width === right.width && left.height === right.height
+    const reportVisibility = (visible: boolean): void => {
+      if (visible === reportedVisibility) return
+      reportedVisibility = visible
+      visibilitySync = visibilitySync.then(async () => {
+        await api.setWorkbenchBrowserDockVisibility?.(visible)
+      }).catch((reason: unknown) => {
+        if (isMounted()) setError(reason instanceof Error ? reason.message : String(reason))
+      })
+    }
     const drain = async (): Promise<void> => {
       if (syncing) return
       syncing = true
@@ -76,6 +110,7 @@ export function BrowserMode({ t }: Props) {
         const bounds = pending
         pending = undefined
         try {
+          await visibilitySync
           if (takeoverPhase.current === 'human') {
             const next = await api.showWorkbenchBrowser(bounds)
             if (isMounted()) setSnapshot(next)
@@ -91,6 +126,7 @@ export function BrowserMode({ t }: Props) {
     const poll = () => {
       const rect = element.getBoundingClientRect()
       const bounds: DesktopBrowserBounds = { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+      reportVisibility(isNativeBrowserHostExposed(element))
       if (!takeoverReady) {
         frame = requestAnimationFrame(poll)
         return
@@ -120,6 +156,15 @@ export function BrowserMode({ t }: Props) {
     const unsubscribeTakeover = api.onBrowserTakeoverStatus?.((status) => {
       applyTakeoverStatus(status, true)
     }) ?? (() => {})
+    const visibilityObserver = new MutationObserver(() => {
+      reportVisibility(isNativeBrowserHostExposed(element))
+    })
+    visibilityObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['aria-modal', 'hidden'],
+    })
     void api.getBrowserTakeoverStatus?.().then((status) => {
       applyTakeoverStatus(status, false)
     }, (reason: unknown) => {
@@ -131,8 +176,10 @@ export function BrowserMode({ t }: Props) {
       lifecycle.mounted = false
       unsubscribe()
       unsubscribeTakeover()
+      visibilityObserver.disconnect()
       cancelAnimationFrame(frame)
-      void api.hideWorkbenchBrowser().catch(() => {})
+      reportVisibility(false)
+      void visibilitySync.then(async () => { await api.hideWorkbenchBrowser() }).catch(() => {})
     }
   }, [t])
   const give = async () => {

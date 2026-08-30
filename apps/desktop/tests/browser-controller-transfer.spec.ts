@@ -249,8 +249,11 @@ describe('persistent Workbench browser transfer', () => {
     registry.setDockVisible(false)
     expect(view.visible).toBe(false)
     registry.layoutMounted({ x: 700, y: 40, width: 1100, height: 860 })
-    expect(view.visible).toBe(true)
+    expect(view.visible).toBe(false)
     expect(view.bounds).toEqual({ x: 700, y: 40, width: 1100, height: 860 })
+
+    registry.setDockVisible(true)
+    expect(view.visible).toBe(true)
 
     await resource.hide('live-layout-token')
     registry.layoutMounted({ x: 1100, y: 0, width: 700, height: 1000 })
