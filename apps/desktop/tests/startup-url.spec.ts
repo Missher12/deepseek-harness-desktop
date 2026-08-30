@@ -7,6 +7,12 @@ describe('readHarnessUrl', () => {
       .toBe('http://127.0.0.1:54321/')
   })
 
+  it('preserves the one browser launch token printed by current Harness', () => {
+    const token = 'A'.repeat(43)
+    expect(readHarnessUrl(`dsh web: http://127.0.0.1:54321/?token=${token}\n`))
+      .toBe(`http://127.0.0.1:54321/?token=${token}`)
+  })
+
   it('ignores non-URL dsh status lines printed after the startup URL', () => {
     expect(readHarnessUrl([
       'dsh web: http://127.0.0.1:54321',
@@ -21,6 +27,9 @@ describe('readHarnessUrl', () => {
     'dsh web: https://127.0.0.1:54321',
     'dsh web: http://127.0.0.1:0',
     'dsh web: http://127.0.0.1:54321/path',
+    'dsh web: http://127.0.0.1:54321/?token=',
+    'dsh web: http://127.0.0.1:54321/?token=short',
+    `dsh web: http://127.0.0.1:54321/?token=${'A'.repeat(43)}&extra=true`,
     'dsh web: not-a-url',
     'open http://127.0.0.1:54321',
   ])('rejects %s', (line) => {

@@ -1,5 +1,6 @@
 const STARTUP_PREFIX = 'dsh web: '
 const STARTUP_ERROR = 'Harness did not report one valid loopback startup URL.'
+const LAUNCH_TOKEN = /^[A-Za-z0-9_-]{43}$/u
 
 /**
  * Return the one validated loopback URL printed by the owned Harness child.
@@ -16,11 +17,14 @@ export function readHarnessUrl(output: string): string {
       return []
     }
     const port = Number(candidate.port)
+    const query = [...candidate.searchParams]
+    const validQuery = query.length === 0
+      || (query.length === 1 && query[0]?.[0] === 'token' && LAUNCH_TOKEN.test(query[0][1]))
     if (
       candidate.protocol !== 'http:'
       || candidate.hostname !== '127.0.0.1'
       || candidate.pathname !== '/'
-      || candidate.search !== ''
+      || !validQuery
       || candidate.hash !== ''
       || !Number.isInteger(port)
       || port < 1

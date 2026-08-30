@@ -36,6 +36,36 @@ describe('waitForHarness', () => {
     expect(fetch).toHaveBeenCalledOnce()
   })
 
+  it('exchanges the browser launch token before probing the authenticated root', async () => {
+    const token = 'A'.repeat(43)
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response(undefined, {
+        status: 303,
+        headers: {
+          location: '/',
+          'set-cookie': 'dsh-auth-test=cookie-value; Path=/; HttpOnly; SameSite=Strict',
+        },
+      }))
+      .mockResolvedValueOnce(new Response(
+        '<script>globalThis["__DSH_BOOT__"] = {"rev":"authenticated","entries":[]}</script>',
+        { status: 200 },
+      ))
+
+    await expect(waitForHarness(`http://127.0.0.1:1234/?token=${token}`, {
+      fetch,
+      delay: async () => undefined,
+      now: () => 0,
+      timeoutMs: 50,
+    })).resolves.toBeUndefined()
+    expect(fetch).toHaveBeenNthCalledWith(1, `http://127.0.0.1:1234/?token=${token}`, expect.objectContaining({
+      redirect: 'manual',
+    }))
+    expect(fetch).toHaveBeenNthCalledWith(2, 'http://127.0.0.1:1234/', expect.objectContaining({
+      headers: { cookie: 'dsh-auth-test=cookie-value' },
+      redirect: 'manual',
+    }))
+  })
+
   it('reports the readiness deadline after unsuccessful responses', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response('starting', { status: 503 }))
     const now = vi.fn()
