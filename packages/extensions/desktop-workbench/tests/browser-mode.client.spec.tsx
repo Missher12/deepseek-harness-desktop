@@ -85,6 +85,7 @@ describe('Workbench Browser takeover controls', () => {
 
     expect(source).toMatch(/\.browser\s*\{[^}]*height:\s*calc\(100% \+ 36px\)/su)
     expect(source).toMatch(/\.browser\s*\{[^}]*overflow:\s*hidden/su)
+    expect(source).toMatch(/\.host\s*\{[^}]*margin:\s*4px 8px 8px/su)
     expect(source).toMatch(/\.host\s*\{[^}]*overflow:\s*hidden/su)
   })
 

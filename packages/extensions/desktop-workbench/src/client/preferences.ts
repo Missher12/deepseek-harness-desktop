@@ -1,5 +1,8 @@
 import type { ObservableSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ILayout, UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/client'
+import {
+  UTILITY_DEFAULT, UTILITY_MAX, UTILITY_MIN,
+  type ILayout, type UtilityMode,
+} from '@deepseek-ai/dsh-client-ui-layout/client'
 
 /** Local preference key for the utility width. */
 export const WIDTH_KEY = 'dsh.desktop-workbench.width.v1'
@@ -13,13 +16,15 @@ export interface WorkbenchSnapshot { open: boolean; mode: UtilityMode; width: nu
 /**
  * Restore and clamp the persisted workbench width.
  * @param storage - storage containing the optional preference.
- * @returns a width within the 320-720 px contract.
+ * @returns a width within the shared utility-column contract.
  */
 export function loadWidth(storage: StorageReader): number {
   const stored = storage.getItem(WIDTH_KEY)
-  if (stored === null) return 420
+  if (stored === null) return UTILITY_DEFAULT
   const value = Number(stored)
-  return Number.isFinite(value) ? Math.min(720, Math.max(320, Math.round(value))) : 420
+  return Number.isFinite(value)
+    ? Math.min(UTILITY_MAX, Math.max(UTILITY_MIN, Math.round(value)))
+    : UTILITY_DEFAULT
 }
 
 /** Coordinates persisted workbench preferences with the generic layout service. */
@@ -73,7 +78,7 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
    * @param width - requested utility width in pixels.
    */
   setWidth(width: number): void {
-    const next = Math.min(720, Math.max(320, Math.round(width)))
+    const next = Math.min(UTILITY_MAX, Math.max(UTILITY_MIN, Math.round(width)))
     this.storage.setItem(WIDTH_KEY, String(next))
     this.#set({ ...this.#snapshot, width: next })
     this.layout.setUtilityWidth(next)

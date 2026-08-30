@@ -56,10 +56,26 @@ describe('desktop workbench shell', () => {
   })
 
   it('clamps the persisted width', () => {
-    expect(loadWidth({ getItem: () => null })).toBe(420)
-    expect(loadWidth({ getItem: () => '9999' })).toBe(720)
-    expect(loadWidth({ getItem: () => '100' })).toBe(320)
-    expect(loadWidth({ getItem: () => 'nope' })).toBe(420)
+    expect(loadWidth({ getItem: () => null })).toBe(720)
+    expect(loadWidth({ getItem: () => '9999' })).toBe(1_600)
+    expect(loadWidth({ getItem: () => '100' })).toBe(420)
+    expect(loadWidth({ getItem: () => '1_280' })).toBe(720)
+    expect(loadWidth({ getItem: () => '1280' })).toBe(1_280)
+    expect(loadWidth({ getItem: () => 'nope' })).toBe(720)
+  })
+
+  it('persists the same wide utility contract used by the live drag layout', () => {
+    const setItem = vi.fn()
+    const layout = {
+      openUtility: vi.fn(), closeUtility: vi.fn(), toggleUtility: vi.fn(), setUtilityWidth: vi.fn(),
+    }
+    const controller = new WorkbenchController(layout, { getItem: () => null, setItem })
+
+    controller.setWidth(1_400)
+
+    expect(controller.getSnapshot().width).toBe(1_400)
+    expect(layout.setUtilityWidth).toHaveBeenLastCalledWith(1_400)
+    expect(setItem).toHaveBeenLastCalledWith('dsh.desktop-workbench.width.v1', '1400')
   })
 
   it('opens from the compact header button without a duplicate side-chat surface', () => {
