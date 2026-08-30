@@ -156,6 +156,7 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
     this.transfer = transfer
     const window = this.window
     let mountToken: string | undefined
+    let mountActive = false
     let closed = false
     let released = false
     let unregister = (): void => undefined
@@ -169,6 +170,9 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
         if (!closed && this.transfer === transfer && mountToken !== undefined) {
           this.applyLayout(view, bounds)
         }
+      },
+      setDockVisible: (visible) => {
+        if (!closed && this.transfer === transfer) view.setVisible(visible && mountActive)
       },
       viewport: () => {
         const bounds = view.getBounds()
@@ -191,6 +195,7 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
           throw new AgentBrowserError('STALE_REF', 'browser mount token is stale')
         }
         mountToken = token
+        mountActive = true
         view.setVisible(true)
         return Promise.resolve()
       },
@@ -206,7 +211,10 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
         return Promise.resolve()
       },
       hide(token) {
-        if (!closed && token === mountToken) view.setVisible(false)
+        if (!closed && token === mountToken) {
+          mountActive = false
+          view.setVisible(false)
+        }
         return Promise.resolve()
       },
       detachDebugger() {
@@ -216,6 +224,7 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
       teardownView: () => {
         if (closed) return Promise.resolve()
         closed = true
+        mountActive = false
         unregister()
         return Promise.resolve()
       },

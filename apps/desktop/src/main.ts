@@ -50,8 +50,8 @@ import {
   AgentBrowserError,
   isDesktopBrowserBounds,
   isDesktopBrowserRequest,
-  type DesktopBrowserBounds,
 } from './browser/contracts.ts'
+import { BrowserDockAnchor, clampBrowserDockBounds } from './browser/dock-anchor.ts'
 import { CdpBrowserAdapter } from './browser/cdp-adapter.ts'
 import { AgentBrowserUrlPolicy } from './browser/policy.ts'
 import { BrowserSurfaceManager } from './browser/surface-manager.ts'
@@ -161,7 +161,6 @@ const appFacade: AppFacade = {
 let nativeWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 let workbenchBrowser: WorkbenchBrowserController | undefined
-let workbenchBrowserBounds: DesktopBrowserBounds | undefined
 let activeHarnessRoot: string | undefined
 const lifecycle: { controller?: DesktopApplication } = {}
 let desktopPreferences: DesktopPreferencesSnapshot = defaultDesktopPreferences(process.platform)
@@ -206,7 +205,20 @@ function getControlAudit(): Promise<ControlAuditLog | undefined> {
 }
 const controlLifecycle: { bridge?: DesktopControlBridgeServer } = {}
 const browserResources = new ElectronBrowserSurfaceRegistry()
+const browserDockAnchor = new BrowserDockAnchor()
 const browserProxyAuthentication = new BrowserProxyAuthenticationOwner()
+
+async function hideWorkbenchBrowserDock(): Promise<void> {
+  browserDockAnchor.clear()
+  browserResources.setDockVisible(false)
+  try {
+    await workbenchBrowser?.hide()
+  } catch (error) {
+    if (error instanceof AgentBrowserError && error.code === 'BUSY') return
+    throw error
+  }
+}
+
 const browserTakeover = new BrowserTakeoverAuthority({
   source: {
     captureVisiblePersistentIntent: () => workbenchBrowser?.captureVisiblePersistentIntent(),
@@ -229,23 +241,6 @@ const browserTakeover = new BrowserTakeoverAuthority({
     }
   },
 })
-
-function agentBrowserBounds(window: BrowserWindow): Electron.Rectangle {
-  const area = window.getContentBounds()
-  const requested = workbenchBrowserBounds
-  if (requested === undefined) {
-    const width = Math.min(420, area.width)
-    return { x: Math.max(0, area.width - width), y: 0, width: Math.max(1, width), height: Math.max(1, area.height) }
-  }
-  const x = Math.max(0, Math.min(Math.round(requested.x), area.width - 1))
-  const y = Math.max(0, Math.min(Math.round(requested.y), area.height - 1))
-  return {
-    x,
-    y,
-    width: Math.max(1, Math.min(Math.round(requested.width), area.width - x)),
-    height: Math.max(1, Math.min(Math.round(requested.height), area.height - y)),
-  }
-}
 
 async function resolveBrowserHost(
   browserSession: Electron.Session,
@@ -275,12 +270,15 @@ const browserSurfaceManager = new BrowserSurfaceManager({
     if (window === undefined || window.isDestroyed()) {
       throw new AgentBrowserError('TARGET_CLOSED', 'Desktop owner window is unavailable')
     }
+    if (activeHarnessRoot !== undefined) {
+      window.webContents.send('desktop:workbench-browser-dock-request')
+    }
     browserTakeover.claimEphemeralOwner(request.sessionId)
     return Promise.resolve(createElectronEphemeralSurface({
       window,
       request,
       registry: browserResources,
-      bounds: () => agentBrowserBounds(window),
+      waitForBounds: signal => browserDockAnchor.wait(signal),
     }))
   },
 })
@@ -682,7 +680,7 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
     event.preventDefault()
     persistState()
     void controller.beforeCloseToTray().then(async () => {
-      await workbenchBrowser?.hide()
+      await hideWorkbenchBrowserDock()
       if (window.isDestroyed()) return
       if (desktopPreferences.closeBehavior === 'keep-running') {
         window.hide()
@@ -699,7 +697,7 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
 
   const desktopWindow: DesktopWindow = {
     async loadLoading() {
-      await workbenchBrowser?.hide()
+      await hideWorkbenchBrowserDock()
       ownedRoot = undefined
       activeHarnessRoot = undefined
       await window.loadFile(loadingPath)
@@ -710,7 +708,7 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
       await window.loadURL(desktopRendererUrl(url, process.platform))
     },
     async loadFailure(reason: FailureReason) {
-      await workbenchBrowser?.hide()
+      await hideWorkbenchBrowserDock()
       ownedRoot = undefined
       activeHarnessRoot = undefined
       await window.loadFile(failurePath, { query: { reason } })
@@ -848,28 +846,32 @@ if (desktopUpdatesEnabled) {
 }
 
 ipcMain.handle('desktop:workbench-browser-show', async (event, value: unknown) => {
-  if (!isHarnessSender(event) || !isDesktopBrowserBounds(value) || workbenchBrowser === undefined) {
+  const window = nativeWindow
+  if (!isHarnessSender(event) || !isDesktopBrowserBounds(value) || workbenchBrowser === undefined
+    || window === undefined || window.isDestroyed()) {
     throw new Error('Untrusted workbench Browser request.')
   }
-  const snapshot = await workbenchBrowser.show(value)
-  workbenchBrowserBounds = value
+  const bounds = clampBrowserDockBounds(window.getContentBounds(), value)
+  browserDockAnchor.publish(bounds)
+  const snapshot = await workbenchBrowser.show(bounds)
   return snapshot
 })
 
 ipcMain.handle('desktop:workbench-browser-layout', async (event, value: unknown) => {
-  if (!isHarnessSender(event) || !isDesktopBrowserBounds(value) || workbenchBrowser === undefined) {
+  const window = nativeWindow
+  if (!isHarnessSender(event) || !isDesktopBrowserBounds(value) || workbenchBrowser === undefined
+    || window === undefined || window.isDestroyed()) {
     throw new Error('Untrusted workbench Browser request.')
   }
-  workbenchBrowserBounds = value
-  await workbenchBrowser.layout(value)
-  if (nativeWindow !== undefined && !nativeWindow.isDestroyed()) {
-    browserResources.layoutMounted(agentBrowserBounds(nativeWindow))
-  }
+  const bounds = clampBrowserDockBounds(window.getContentBounds(), value)
+  browserDockAnchor.publish(bounds)
+  await workbenchBrowser.layout(bounds)
+  browserResources.layoutMounted(bounds)
 })
 
 ipcMain.handle('desktop:workbench-browser-hide', async (event) => {
   if (!isHarnessSender(event) || workbenchBrowser === undefined) throw new Error('Untrusted workbench Browser request.')
-  await workbenchBrowser.hide()
+  await hideWorkbenchBrowserDock()
 })
 
 ipcMain.handle('desktop:workbench-browser-control', async (event, value: unknown) => {
@@ -897,7 +899,7 @@ app.on('before-quit', () => {
   updateService.dispose()
   tray?.destroy()
   tray = undefined
-  void workbenchBrowser?.hide()
+  void hideWorkbenchBrowserDock()
 })
 
 syncApplicationMenu()

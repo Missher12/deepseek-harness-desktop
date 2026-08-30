@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HeaderButton, type HeaderButtonProps } from '../src/client/HeaderButton.tsx'
 import { WorkbenchPanel, type WorkbenchPanelProps } from '../src/client/WorkbenchPanel.tsx'
 import { WorkbenchController, loadWidth } from '../src/client/preferences.ts'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  Reflect.deleteProperty(window, 'dshDesktop')
+})
 
 const sessionId = 'session-a' as never
 const labels = {
@@ -24,6 +27,7 @@ function setup() {
     sessionId,
     useWorkbench: <T,>(select: (state: ReturnType<typeof controller.getSnapshot>) => T) => select(controller.getSnapshot()),
     toggle: (id: typeof sessionId) => { controller.toggle(id) },
+    open: (id: typeof sessionId, mode: 'browser') => { controller.open(id, mode) },
     close: () => { controller.close() },
     selectMode: (mode: Parameters<typeof controller.selectMode>[0]) => { controller.selectMode(mode) },
     t,
@@ -77,6 +81,26 @@ describe('desktop workbench shell', () => {
     expect(view.container.querySelector('[data-desktop-workbench-panel]')).not.toBeNull()
     expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['终端', '浏览器', '文件', '审阅'])
     expect(screen.queryByRole('tab', { name: '侧边聊天' })).toBeNull()
+  })
+
+  it('opens the Browser Dock for the current session when Electron requests an Agent host', () => {
+    let requestDock: (() => void) | undefined
+    Object.defineProperty(window, 'dshDesktop', {
+      configurable: true,
+      value: {
+        onWorkbenchBrowserDockRequest(listener: () => void) {
+          requestDock = listener
+          return () => { requestDock = undefined }
+        },
+      },
+    })
+    const { controller, layout, common } = setup()
+    render(<HeaderButton {...common as unknown as HeaderButtonProps} />)
+
+    act(() => { requestDock?.() })
+
+    expect(controller.getSnapshot()).toMatchObject({ open: true, mode: 'browser', sessionId })
+    expect(layout.openUtility).toHaveBeenLastCalledWith('browser')
   })
 
   it('switches modes without closing and closes on Escape', () => {

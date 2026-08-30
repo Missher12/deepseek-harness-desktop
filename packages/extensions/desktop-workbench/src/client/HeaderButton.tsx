@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkbenchInjected } from './preferences.ts'
@@ -6,10 +7,19 @@ import css from './WorkbenchPanel.module.css'
 
 export type HeaderButtonProps = PropsRuntime<'conversation.session.header.utilities'> & PropsLocale<typeof NS> & InjectFace<WorkbenchInjected>
 
-export function HeaderButton({ sessionId, useWorkbench, toggle, t }: HeaderButtonProps) {
-  const open = useWorkbench(state => state.open && state.sessionId === sessionId)
+function desktopDockApi(): { onWorkbenchBrowserDockRequest?(listener: () => void): () => void } | undefined {
+  return (window as unknown as {
+    dshDesktop?: { onWorkbenchBrowserDockRequest?(listener: () => void): () => void }
+  }).dshDesktop
+}
+
+export function HeaderButton({ sessionId, useWorkbench, toggle, open, t }: HeaderButtonProps) {
+  const expanded = useWorkbench(state => state.open && state.sessionId === sessionId)
+  useEffect(() => desktopDockApi()?.onWorkbenchBrowserDockRequest?.(() => {
+    open(sessionId, 'browser')
+  }), [open, sessionId])
   return (
-    <button type="button" className={css.trigger} aria-label={open ? t('close') : t('open')} aria-expanded={open}
+    <button type="button" className={css.trigger} aria-label={expanded ? t('close') : t('open')} aria-expanded={expanded}
       onClick={() => { toggle(sessionId) }}>
       <IconPanelLeftOutline16 size={14} />
     </button>

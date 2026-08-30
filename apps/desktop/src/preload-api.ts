@@ -252,6 +252,8 @@ export interface DesktopApi {
   hideWorkbenchBrowser(): Promise<void>
   controlWorkbenchBrowser(request: DesktopBrowserRequest): Promise<DesktopBrowserSnapshot>
   onWorkbenchBrowserState(listener: (snapshot: DesktopBrowserSnapshot) => void): () => void
+  /** Open the current session's Browser utility before an Agent surface requests its host rectangle. */
+  onWorkbenchBrowserDockRequest(listener: () => void): () => void
   /** Give the exact visible persistent human browser to the next official Agent acquire. */
   giveWorkbenchBrowserToAgent(): Promise<BrowserTakeoverStatus>
   /** Await complete cleanup of the active Agent browser surface. */

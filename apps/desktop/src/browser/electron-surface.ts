@@ -16,6 +16,7 @@ export interface ElectronBrowserSurfaceResource extends BrowserSurfaceResource {
   readonly webContents: BrowserAdapterWebContents
   readonly session: Session
   layout(bounds: Electron.Rectangle): void
+  setDockVisible(visible: boolean): void
   viewport(): BrowserViewport
 }
 
@@ -41,7 +42,15 @@ export class ElectronBrowserSurfaceRegistry {
 
   /** Reflow only resources already mounted by main-process authority. */
   layoutMounted(bounds: Electron.Rectangle): void {
-    for (const resource of this.resources.values()) resource.layout(bounds)
+    for (const resource of this.resources.values()) {
+      resource.layout(bounds)
+      resource.setDockVisible(true)
+    }
+  }
+
+  /** Hide or reveal only resources with a still-active mount token. */
+  setDockVisible(visible: boolean): void {
+    for (const resource of this.resources.values()) resource.setDockVisible(visible)
   }
 }
 
@@ -92,7 +101,7 @@ export interface CreateElectronEphemeralSurfaceOptions {
   readonly window: BrowserWindow
   readonly request: CreateEphemeralBrowserSurfaceRequest
   readonly registry: ElectronBrowserSurfaceRegistry
-  readonly bounds: () => Electron.Rectangle
+  readonly waitForBounds: (signal?: AbortSignal) => Promise<Electron.Rectangle>
 }
 
 /** Create one non-persistent, initially detached Agent WebContentsView owned by a manager generation. */
@@ -121,6 +130,7 @@ export function createElectronEphemeralSurface(
   let attached = false
   let closed = false
   let mountToken: string | undefined
+  let mountActive = false
   let rendererReady: Promise<void> | undefined
   let unregister = (): void => undefined
   const isClosed = (): boolean => closed
@@ -138,6 +148,10 @@ export function createElectronEphemeralSurface(
       if (closed || !attached || mountToken === undefined) return
       applyLayout(bounds)
     },
+    setDockVisible(visible) {
+      if (closed || !attached) return
+      view.setVisible(visible && mountActive)
+    },
     viewport: () => viewport(view, window),
     installSecurityHandlers: generation => owner.install({
       generation,
@@ -148,11 +162,19 @@ export function createElectronEphemeralSurface(
         throw new AgentBrowserError('STALE_REF', 'browser mount token is stale')
       }
       mountToken = token
+      const bounds = await options.waitForBounds(signal)
+      if (signal?.aborted === true) {
+        throw new AgentBrowserError('CANCELLED', 'browser dock wait was cancelled')
+      }
+      if (isClosed() || view.webContents.isDestroyed()) {
+        throw new AgentBrowserError('TARGET_CLOSED', 'browser renderer closed before dock mount')
+      }
       if (!attached) {
         window.contentView.addChildView(view)
         attached = true
       }
-      applyLayout(options.bounds())
+      applyLayout(bounds)
+      mountActive = true
       view.setVisible(true)
       rendererReady ??= awaitRendererStartup(
         view.webContents.loadURL('about:blank').then(() => undefined),
@@ -165,6 +187,7 @@ export function createElectronEphemeralSurface(
     },
     hide(token) {
       if (token !== mountToken || closed) return Promise.resolve()
+      mountActive = false
       view.setVisible(false)
       return Promise.resolve()
     },
@@ -175,6 +198,7 @@ export function createElectronEphemeralSurface(
     teardownView() {
       if (closed) return Promise.resolve()
       closed = true
+      mountActive = false
       view.setVisible(false)
       if (attached) window.contentView.removeChildView(view)
       attached = false

@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -69,6 +71,17 @@ afterEach(() => {
 })
 
 describe('Workbench Browser takeover controls', () => {
+  it('sizes the Browser root to the padded utility body and clips the native page host', () => {
+    const source = readFileSync(resolve(
+      process.cwd(),
+      'packages/extensions/desktop-workbench/src/client/BrowserMode.module.css',
+    ), 'utf8')
+
+    expect(source).toMatch(/\.browser\s*\{[^}]*height:\s*calc\(100% \+ 36px\)/su)
+    expect(source).toMatch(/\.browser\s*\{[^}]*overflow:\s*hidden/su)
+    expect(source).toMatch(/\.host\s*\{[^}]*overflow:\s*hidden/su)
+  })
+
   it('resynchronizes native bounds when the host moves without changing size', async () => {
     const { api } = setup()
     render(<BrowserMode t={translate} />)
@@ -81,6 +94,8 @@ describe('Workbench Browser takeover controls', () => {
       toJSON: () => ({}),
     }))
 
+    await waitFor(() => { expect(api.getBrowserTakeoverStatus).toHaveBeenCalledOnce() })
+    await Promise.resolve()
     flushAnimationFrame()
     await waitFor(() => {
       expect(api.showWorkbenchBrowser).toHaveBeenLastCalledWith({ x: 900, y: 120, width: 640, height: 720 })
@@ -117,6 +132,35 @@ describe('Workbench Browser takeover controls', () => {
     flushAnimationFrame()
     await waitFor(() => {
       expect(api.layoutWorkbenchBrowser).toHaveBeenLastCalledWith({ x: 800, y: 100, width: 1080, height: 700 })
+    })
+    expect(api.showWorkbenchBrowser).not.toHaveBeenCalled()
+  })
+
+  it('waits for takeover status before choosing the human or Agent layout path', async () => {
+    const { api } = setup()
+    let resolveStatus: ((status: { phase: 'agent'; signedInWarning: true }) => void) | undefined
+    api.getBrowserTakeoverStatus.mockImplementationOnce(async () => await new Promise((resolve) => {
+      resolveStatus = resolve
+    }))
+    render(<BrowserMode t={translate} />)
+    const host = document.querySelector<HTMLElement>('[data-native-browser-host]')
+    if (host === null) throw new Error('native browser host missing')
+    vi.spyOn(host, 'getBoundingClientRect').mockImplementation(() => ({
+      x: 800, y: 100, width: 720, height: 700,
+      top: 100, right: 1520, bottom: 800, left: 800,
+      toJSON: () => ({}),
+    }))
+
+    flushAnimationFrame()
+    await Promise.resolve()
+    expect(api.showWorkbenchBrowser).not.toHaveBeenCalled()
+    expect(api.layoutWorkbenchBrowser).not.toHaveBeenCalled()
+
+    resolveStatus?.({ phase: 'agent', signedInWarning: true })
+    await screen.findByRole('button', { name: en.browserStopAgent })
+    flushAnimationFrame()
+    await waitFor(() => {
+      expect(api.layoutWorkbenchBrowser).toHaveBeenCalledWith({ x: 800, y: 100, width: 720, height: 700 })
     })
     expect(api.showWorkbenchBrowser).not.toHaveBeenCalled()
   })

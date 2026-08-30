@@ -101,6 +101,7 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
 export interface WorkbenchInjected {
   hooks: { workbench: ObservableSnapshot<WorkbenchSnapshot> }
   toggle(sessionId: SessionId): void
+  open(sessionId: SessionId, mode?: UtilityMode): void
   close(): void
   selectMode(mode: UtilityMode): void
   setWidth(width: number): void

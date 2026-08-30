@@ -64,6 +64,8 @@ export function BrowserMode({ t }: Props) {
     let pending: DesktopBrowserBounds | undefined
     let previous: DesktopBrowserBounds | undefined
     let previousPhase = takeoverPhase.current
+    let takeoverReady = api.getBrowserTakeoverStatus === undefined
+    let emittedTakeoverStatus = false
     const equal = (left: DesktopBrowserBounds | undefined, right: DesktopBrowserBounds): boolean =>
       left !== undefined && left.x === right.x && left.y === right.y
       && left.width === right.width && left.height === right.height
@@ -89,6 +91,10 @@ export function BrowserMode({ t }: Props) {
     const poll = () => {
       const rect = element.getBoundingClientRect()
       const bounds: DesktopBrowserBounds = { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+      if (!takeoverReady) {
+        frame = requestAnimationFrame(poll)
+        return
+      }
       if (takeoverPhase.current !== previousPhase) {
         previousPhase = takeoverPhase.current
         previous = undefined
@@ -104,10 +110,20 @@ export function BrowserMode({ t }: Props) {
       setSnapshot(next)
       if (next.url !== '') setAddress(next.url)
     })
-    const unsubscribeTakeover = api.onBrowserTakeoverStatus?.(setTakeover) ?? (() => {})
-    void api.getBrowserTakeoverStatus?.().then((status) => {
+    const applyTakeoverStatus = (status: BrowserTakeoverStatus, emitted: boolean): void => {
+      if (!emitted && emittedTakeoverStatus) return
+      if (emitted) emittedTakeoverStatus = true
+      takeoverReady = true
+      takeoverPhase.current = status.phase
       if (isMounted()) setTakeover(status)
+    }
+    const unsubscribeTakeover = api.onBrowserTakeoverStatus?.((status) => {
+      applyTakeoverStatus(status, true)
+    }) ?? (() => {})
+    void api.getBrowserTakeoverStatus?.().then((status) => {
+      applyTakeoverStatus(status, false)
     }, (reason: unknown) => {
+      takeoverReady = true
       if (isMounted()) setError(reason instanceof Error ? reason.message : String(reason))
     })
     frame = requestAnimationFrame(poll)

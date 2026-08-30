@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-28-semantic-browser-adapter-ownership.md
-2026-08-28-semantic-browser-adapter-ownership.md: 9e1a18065446523b83508ff54c722415a0a041cc
-2026-08-28-semantic-browser-adapter-ownership.zh.md: 98b15c22e3dd9536a15a2a9c3f8ea17c18d39691
+2026-08-28-semantic-browser-adapter-ownership.md: d13790e4ccb798bde924629c0bea5ef2d9cad846
+2026-08-28-semantic-browser-adapter-ownership.zh.md: 63b3e8fe300d293549967aff3a879a2395be312f

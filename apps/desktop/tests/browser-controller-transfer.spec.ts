@@ -154,7 +154,7 @@ describe('persistent Workbench browser transfer', () => {
         partition: 'dsh-agent-browser-1-renderer-ready',
       },
       registry: new ElectronBrowserSurfaceRegistry(),
-      bounds: () => ({ x: 10, y: 20, width: 900, height: 600 }),
+      waitForBounds: async () => ({ x: 10, y: 20, width: 900, height: 600 }),
     })
     const view = electron.views.at(-1)
     if (view === undefined) throw new Error('expected ephemeral view')
@@ -179,6 +179,47 @@ describe('persistent Workbench browser transfer', () => {
     guards.dispose()
   })
 
+  it('keeps an Agent view detached and hidden until the Browser dock publishes bounds', async () => {
+    const added: unknown[] = []
+    const window = {
+      contentView: {
+        addChildView: (view: unknown) => { added.push(view) },
+        removeChildView: vi.fn(),
+      },
+      getBounds: () => ({ x: 0, y: 0, width: 1600, height: 900 }),
+    }
+    let publishBounds: ((bounds: { x: number; y: number; width: number; height: number }) => void) | undefined
+    const waiting = new Promise<{ x: number; y: number; width: number; height: number }>((resolve) => {
+      publishBounds = resolve
+    })
+    const resource = createElectronEphemeralSurface({
+      window: window as never,
+      request: {
+        sessionId: 'dock-anchor-session',
+        generation: 1,
+        partition: 'dsh-agent-browser-1-dock-anchor',
+      },
+      registry: new ElectronBrowserSurfaceRegistry(),
+      waitForBounds: async () => await waiting,
+    })
+    const view = electron.views.at(-1)
+    if (view === undefined) throw new Error('expected ephemeral view')
+
+    const mounting = resource.mount('dock-anchor-token')
+    await Promise.resolve()
+
+    expect(added).toEqual([])
+    expect(view.visible).toBe(false)
+    expect(view.webContents.loadURL).not.toHaveBeenCalled()
+
+    publishBounds?.({ x: 880, y: 116, width: 720, height: 684 })
+    await mounting
+
+    expect(added).toEqual([view])
+    expect(view.bounds).toEqual({ x: 880, y: 116, width: 720, height: 684 })
+    expect(view.visible).toBe(true)
+  })
+
   it('reflows the mounted Agent browser to the live utility-panel bounds', async () => {
     const registry = new ElectronBrowserSurfaceRegistry()
     const window = {
@@ -193,7 +234,7 @@ describe('persistent Workbench browser transfer', () => {
         partition: 'dsh-agent-browser-1-live-layout',
       },
       registry,
-      bounds: () => ({ x: 1000, y: 0, width: 800, height: 1000 }),
+      waitForBounds: async () => ({ x: 1000, y: 0, width: 800, height: 1000 }),
     })
     const view = electron.views.at(-1)
     if (view === undefined) throw new Error('expected ephemeral view')
@@ -204,6 +245,12 @@ describe('persistent Workbench browser transfer', () => {
     expect(electron.views).toHaveLength(1)
     expect(view.bounds).toEqual({ x: 600, y: 20, width: 1200, height: 900 })
     expect(view.webContents.setZoomFactor).toHaveBeenLastCalledWith(1)
+
+    registry.setDockVisible(false)
+    expect(view.visible).toBe(false)
+    registry.layoutMounted({ x: 700, y: 40, width: 1100, height: 860 })
+    expect(view.visible).toBe(true)
+    expect(view.bounds).toEqual({ x: 700, y: 40, width: 1100, height: 860 })
 
     await resource.hide('live-layout-token')
     registry.layoutMounted({ x: 1100, y: 0, width: 700, height: 1000 })
@@ -237,7 +284,7 @@ describe('persistent Workbench browser transfer', () => {
           window: window as never,
           request,
           registry,
-          bounds: () => ({ x: 10, y: 20, width: 900, height: 600 }),
+          waitForBounds: async () => ({ x: 10, y: 20, width: 900, height: 600 }),
         })
         if (creation === 1) {
           electron.views.at(-1)?.webContents.loadURL.mockImplementationOnce(
@@ -279,7 +326,7 @@ describe('persistent Workbench browser transfer', () => {
           partition: 'dsh-agent-browser-1-renderer-timeout',
         },
         registry: new ElectronBrowserSurfaceRegistry(),
-        bounds: () => ({ x: 10, y: 20, width: 900, height: 600 }),
+        waitForBounds: async () => ({ x: 10, y: 20, width: 900, height: 600 }),
       })
       electron.views.at(-1)?.webContents.loadURL.mockImplementationOnce(
         () => new Promise<void>(() => {}),

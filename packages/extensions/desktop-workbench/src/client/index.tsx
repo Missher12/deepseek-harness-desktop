@@ -20,6 +20,7 @@ export function apply(ctx: ClientContext): void {
   const injected = (_sessionId: SessionId): WorkbenchInjected => ({
     hooks: { workbench: controller },
     toggle: (id) => { controller.toggle(id) },
+    open: (id, mode) => { controller.open(id, mode) },
     close: () => { controller.close() },
     selectMode: (mode) => { controller.selectMode(mode) },
     setWidth: (width) => { controller.setWidth(width) },

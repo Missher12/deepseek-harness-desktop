@@ -87,6 +87,11 @@ const api: DesktopApi = {
     ipcRenderer.on('desktop:workbench-browser-state', handler)
     return () => { ipcRenderer.off('desktop:workbench-browser-state', handler) }
   },
+  onWorkbenchBrowserDockRequest(listener) {
+    const handler = (): void => { listener() }
+    ipcRenderer.on('desktop:workbench-browser-dock-request', handler)
+    return () => { ipcRenderer.off('desktop:workbench-browser-dock-request', handler) }
+  },
   async giveWorkbenchBrowserToAgent(...args: unknown[]) {
     if (args.length !== 0) throw new TypeError('Give to Agent accepts no arguments.')
     const value: unknown = await ipcRenderer.invoke('desktop:browser-takeover-give')
