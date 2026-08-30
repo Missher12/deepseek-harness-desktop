@@ -354,20 +354,30 @@ describe('StatsLine', () => {
     expect(view.container.textContent).toContain(expected)
   })
 
-  it('reveals the full line in a delayed hover tooltip only while the row is clipped', () => {
+  it('expands a clipped stats row inline on click without rendering a floating tooltip', () => {
     vi.useFakeTimers()
     // jsdom lays nothing out; fake a row narrower than its content.
     vi.spyOn(Element.prototype, 'scrollWidth', 'get').mockReturnValue(800)
     vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400)
     const { source } = makeSource({ nodes: [assistant(1, 1)] })
     const view = render(<StatsLine {...props(source, { tokenUsage: tokenUsage(9_995, 5) })} />)
-    expect(view.container.textContent).toContain('Cache hit 99.95%')
-    fireEvent.mouseEnter(view.container.firstElementChild!)
-    act(() => { vi.advanceTimersByTime(499) })
+    const row = view.container.firstElementChild as HTMLElement
+    const fullLine = '1 turns · 1 steps | Cache hit 99.95% | Input 10K tok · Output 1 tok'
+    expect(row.textContent).toBe(fullLine)
+    expect(row.getAttribute('role')).toBe('button')
+    expect(row.getAttribute('aria-expanded')).toBe('false')
+    expect(row.getAttribute('data-expanded')).toBeNull()
+    fireEvent.mouseEnter(row)
+    act(() => { vi.advanceTimersByTime(500) })
     expect(view.container.querySelector('[role="tooltip"]')).toBeNull()
-    act(() => { vi.advanceTimersByTime(1) })
-    expect(view.container.querySelector('[role="tooltip"]')?.textContent)
-      .toBe('1 turns · 1 steps | Cache hit 99.95% | Input 10K tok · Output 1 tok')
+    fireEvent.click(row)
+    expect(row.getAttribute('aria-expanded')).toBe('true')
+    expect(row.getAttribute('data-expanded')).toBe('true')
+    expect(row.textContent).toBe(fullLine)
+    expect(view.container.querySelector('[role="tooltip"]')).toBeNull()
+    fireEvent.click(row)
+    expect(row.getAttribute('aria-expanded')).toBe('false')
+    expect(row.getAttribute('data-expanded')).toBeNull()
   })
 
   it('suppresses the tooltip while the row fits without truncation', () => {
@@ -379,17 +389,20 @@ describe('StatsLine', () => {
     expect(view.container.querySelector('[role="tooltip"]')).toBeNull()
   })
 
-  it('detects vertical two-line clipping as truncation', () => {
-    vi.useFakeTimers()
+  it('expands vertical two-line clipping inline when the row receives focus', () => {
     vi.spyOn(Element.prototype, 'scrollWidth', 'get').mockReturnValue(400)
     vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400)
     vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(60)
     vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(40)
     const { source } = makeSource({ nodes: [assistant(1, 1)] })
     const view = render(<StatsLine {...props(source)} />)
-    fireEvent.mouseEnter(view.container.firstElementChild!)
-    act(() => { vi.advanceTimersByTime(500) })
-    expect(view.container.querySelector('[role="tooltip"]')).not.toBeNull()
+    const row = view.container.firstElementChild as HTMLElement
+    expect(row.getAttribute('role')).toBe('button')
+    expect(row.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.focus(row)
+    expect(row.getAttribute('aria-expanded')).toBe('true')
+    expect(row.getAttribute('data-expanded')).toBe('true')
+    expect(view.container.querySelector('[role="tooltip"]')).toBeNull()
   })
 
   it('renders window latency and throughput beside the wall-time group', () => {

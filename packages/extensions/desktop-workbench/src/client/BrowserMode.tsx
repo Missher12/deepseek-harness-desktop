@@ -35,12 +35,47 @@ function desktopApi(): DesktopBrowserApi | undefined {
   return (window as unknown as { dshDesktop?: DesktopBrowserApi }).dshDesktop
 }
 
+const browserDockCommandTails = new WeakMap<DesktopBrowserApi, Promise<void>>()
+
+function enqueueBrowserDockCommand(api: DesktopBrowserApi, command: () => Promise<void>): Promise<void> {
+  const previous = browserDockCommandTails.get(api) ?? Promise.resolve()
+  const next = previous.then(command, command)
+  browserDockCommandTails.set(api, next.catch(() => {}))
+  return next
+}
+
+function intersects(left: DOMRect, right: DOMRect): boolean {
+  return left.left < right.right && left.right > right.left
+    && left.top < right.bottom && left.bottom > right.top
+}
+
+function isRendered(element: Element, owner: Document): boolean {
+  if (element.hasAttribute('hidden') || element.getAttribute('aria-hidden') === 'true') return false
+  const style = owner.defaultView?.getComputedStyle(element)
+  return style?.display !== 'none' && style?.visibility !== 'hidden' && style?.visibility !== 'collapse'
+    && style?.opacity !== '0'
+}
+
+function isVisibleOccluder(element: Element, host: HTMLElement, hostRect: DOMRect, owner: Document): boolean {
+  if (element === host || host.contains(element) || !isRendered(element, owner)) return false
+  const rect = element.getBoundingClientRect()
+  return rect.width > 0 && rect.height > 0 && intersects(rect, hostRect)
+}
+
 /** Whether no DOM page surface can be punched through by the native Browser view. */
 function isNativeBrowserHostExposed(element: HTMLElement, owner: Document = document): boolean {
-  if (!element.isConnected || owner.visibilityState === 'hidden'
-    || owner.querySelector('[aria-modal="true"]') !== null) return false
+  if (!element.isConnected || owner.visibilityState === 'hidden') return false
   const rect = element.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return false
+  const modal = owner.querySelector('[aria-modal="true"]')
+  if (modal !== null && isRendered(modal, owner)) return false
+  const occluders = owner.querySelectorAll([
+    '[role="dialog"]',
+    '[role="tooltip"]',
+    '[data-native-browser-occluder]',
+    '[data-shell-overlay] > *',
+  ].join(','))
+  if ([...occluders].some(candidate => isVisibleOccluder(candidate, element, rect, owner))) return false
   if (typeof owner.elementFromPoint !== 'function') return true
   const insetX = Math.min(8, rect.width / 4)
   const insetY = Math.min(8, rect.height / 4)
@@ -59,6 +94,8 @@ function isNativeBrowserHostExposed(element: HTMLElement, owner: Document = docu
 
 export function BrowserMode({ t }: Props) {
   const host = useRef<HTMLDivElement>(null)
+  const addressEditRevision = useRef(0)
+  const addressEditing = useRef(false)
   const [address, setAddress] = useState('')
   const [snapshot, setSnapshot] = useState<DesktopBrowserSnapshot>({
     url: '', title: '', loading: false, canGoBack: false, canGoForward: false, error: null,
@@ -72,6 +109,7 @@ export function BrowserMode({ t }: Props) {
     if (api === undefined) { setError(t('browserDesktopOnly')); return }
     try {
       const next = await api.controlWorkbenchBrowser(request)
+      if (request.kind === 'navigate') addressEditing.current = false
       setSnapshot(next)
       if (next.url !== '') setAddress(next.url)
     } catch (reason: unknown) { setError(reason instanceof Error ? reason.message : String(reason)) }
@@ -86,8 +124,14 @@ export function BrowserMode({ t }: Props) {
     let syncing = false
     let pending: DesktopBrowserBounds | undefined
     let previous: DesktopBrowserBounds | undefined
-    let reportedVisibility: boolean | undefined
+    let requestedVisibility: boolean | undefined
+    let visibilityRevision = 0
     let visibilitySync = Promise.resolve()
+    let lastVisibilityError: string | undefined
+    let lastDockError: string | undefined
+    let dockFailureCount = 0
+    let dockRetryAfter = 0
+    let addressHydrated = false
     let previousPhase = takeoverPhase.current
     let takeoverReady = api.getBrowserTakeoverStatus === undefined
     let emittedTakeoverStatus = false
@@ -95,13 +139,30 @@ export function BrowserMode({ t }: Props) {
       left !== undefined && left.x === right.x && left.y === right.y
       && left.width === right.width && left.height === right.height
     const reportVisibility = (visible: boolean): void => {
-      if (visible === reportedVisibility) return
-      reportedVisibility = visible
-      visibilitySync = visibilitySync.then(async () => {
+      if (visible === requestedVisibility) return
+      requestedVisibility = visible
+      visibilityRevision += 1
+      const revision = visibilityRevision
+      visibilitySync = enqueueBrowserDockCommand(api, async () => {
         await api.setWorkbenchBrowserDockVisibility?.(visible)
-      }).catch((reason: unknown) => {
-        if (isMounted()) setError(reason instanceof Error ? reason.message : String(reason))
+      }).then(() => {
+        if (revision !== visibilityRevision || !isMounted() || lastVisibilityError === undefined) return
+        const recovered = lastVisibilityError
+        lastVisibilityError = undefined
+        setError(current => current === recovered ? undefined : current)
+      }, (reason: unknown) => {
+        if (revision !== visibilityRevision) return
+        requestedVisibility = undefined
+        lastVisibilityError = reason instanceof Error ? reason.message : String(reason)
+        if (isMounted()) setError(lastVisibilityError)
       })
+    }
+    const waitForCurrentVisibility = async (): Promise<void> => {
+      while (isMounted()) {
+        const current = visibilitySync
+        await current
+        if (current === visibilitySync) return
+      }
     }
     const drain = async (): Promise<void> => {
       if (syncing) return
@@ -109,16 +170,42 @@ export function BrowserMode({ t }: Props) {
       while (isMounted() && pending !== undefined) {
         const bounds = pending
         pending = undefined
+        if (equal(previous, bounds)) continue
         try {
-          await visibilitySync
+          await waitForCurrentVisibility()
+          if (!isMounted()) break
+          if (!isNativeBrowserHostExposed(element)) {
+            reportVisibility(false)
+            continue
+          }
           if (takeoverPhase.current === 'human') {
+            const editRevision = addressEditRevision.current
             const next = await api.showWorkbenchBrowser(bounds)
-            if (isMounted()) setSnapshot(next)
+            if (isMounted()) {
+              previous = bounds
+              setSnapshot(next)
+              if (!addressHydrated) {
+                addressHydrated = true
+                if (editRevision === addressEditRevision.current) setAddress(next.url)
+              }
+            }
           } else {
             await api.layoutWorkbenchBrowser?.(bounds)
+            previous = bounds
+          }
+          dockFailureCount = 0
+          dockRetryAfter = 0
+          if (lastDockError !== undefined) {
+            const recovered = lastDockError
+            lastDockError = undefined
+            if (isMounted()) setError(current => current === recovered ? undefined : current)
           }
         } catch (reason: unknown) {
-          if (isMounted()) setError(reason instanceof Error ? reason.message : String(reason))
+          previous = undefined
+          dockFailureCount += 1
+          dockRetryAfter = dockFailureCount > 1 ? Date.now() + 250 : 0
+          lastDockError = reason instanceof Error ? reason.message : String(reason)
+          if (isMounted()) setError(lastDockError)
         }
       }
       syncing = false
@@ -134,9 +221,11 @@ export function BrowserMode({ t }: Props) {
       if (takeoverPhase.current !== previousPhase) {
         previousPhase = takeoverPhase.current
         previous = undefined
+        dockFailureCount = 0
+        dockRetryAfter = 0
       }
-      if (bounds.width > 0 && bounds.height > 0 && !equal(previous, bounds)) {
-        previous = bounds
+      const retryReady = Date.now() >= dockRetryAfter
+      if (bounds.width > 0 && bounds.height > 0 && !equal(previous, bounds) && retryReady) {
         pending = bounds
         void drain()
       }
@@ -144,7 +233,7 @@ export function BrowserMode({ t }: Props) {
     }
     const unsubscribe = api.onWorkbenchBrowserState((next) => {
       setSnapshot(next)
-      if (next.url !== '') setAddress(next.url)
+      if (next.url !== '' && !addressEditing.current) setAddress(next.url)
     })
     const applyTakeoverStatus = (status: BrowserTakeoverStatus, emitted: boolean): void => {
       if (!emitted && emittedTakeoverStatus) return
@@ -163,8 +252,18 @@ export function BrowserMode({ t }: Props) {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['aria-modal', 'hidden'],
+      attributeFilter: ['aria-modal', 'aria-hidden', 'role', 'hidden', 'class', 'style'],
     })
+    const handleDocumentVisibility = (): void => {
+      if (document.visibilityState === 'hidden') {
+        reportVisibility(false)
+        return
+      }
+      previous = undefined
+      addressHydrated = false
+      reportVisibility(isNativeBrowserHostExposed(element))
+    }
+    document.addEventListener('visibilitychange', handleDocumentVisibility)
     void api.getBrowserTakeoverStatus?.().then((status) => {
       applyTakeoverStatus(status, false)
     }, (reason: unknown) => {
@@ -177,9 +276,10 @@ export function BrowserMode({ t }: Props) {
       unsubscribe()
       unsubscribeTakeover()
       visibilityObserver.disconnect()
+      document.removeEventListener('visibilitychange', handleDocumentVisibility)
       cancelAnimationFrame(frame)
       reportVisibility(false)
-      void visibilitySync.then(async () => { await api.hideWorkbenchBrowser() }).catch(() => {})
+      void enqueueBrowserDockCommand(api, async () => { await api.hideWorkbenchBrowser() }).catch(() => {})
     }
   }, [t])
   const give = async () => {
@@ -211,7 +311,17 @@ export function BrowserMode({ t }: Props) {
       <button type="button" aria-label={t('forward')} disabled={controlled || !snapshot.canGoForward} onClick={() => { void invoke({ kind: 'forward' }) }}>›</button>
       <button type="button" aria-label={snapshot.loading ? t('stop') : t('reload')} disabled={controlled}
         onClick={() => { void invoke({ kind: snapshot.loading ? 'stop' : 'reload' }) }}>{snapshot.loading ? '×' : '↻'}</button>
-      <input disabled={controlled} value={address} onChange={(event) => { setAddress(event.target.value) }} placeholder={t('browserPlaceholder')} />
+      <input disabled={controlled} value={address}
+        onFocus={() => { addressEditing.current = true }}
+        onBlur={() => {
+          addressEditing.current = false
+          if (snapshot.url !== '') setAddress(snapshot.url)
+        }}
+        onChange={(event) => {
+          addressEditing.current = true
+          addressEditRevision.current += 1
+          setAddress(event.target.value)
+        }} placeholder={t('browserPlaceholder')} />
       {takeover.phase === 'human'
         ? <button className={css.takeoverButton} type="button" aria-label={t('browserGive')} onClick={() => { void give() }}>{t('browserGive')}</button>
         : <button className={css.takeoverButton} type="button"

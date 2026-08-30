@@ -24,6 +24,24 @@ function fakePanels(): PanelActions {
 }
 
 describe('LayoutController', () => {
+  it('exposes the published utility layout as an observable read source', () => {
+    const service = new LayoutController() as unknown as {
+      getSnapshot(): { open: boolean; mode: 'terminal' | 'browser' | 'files' | 'review'; width: number }
+      subscribe(listener: () => void): () => void
+      publishUtilityLayout(snapshot: { open: boolean; mode: 'terminal' | 'browser' | 'files' | 'review'; width: number }): void
+    }
+    expect(typeof service.subscribe).toBe('function')
+    expect(typeof service.publishUtilityLayout).toBe('function')
+    const listener = vi.fn()
+    const unsubscribe = service.subscribe(listener)
+
+    service.publishUtilityLayout({ open: true, mode: 'browser', width: 880 })
+
+    expect(service.getSnapshot()).toEqual({ open: true, mode: 'browser', width: 880 })
+    expect(listener).toHaveBeenCalledOnce()
+    unsubscribe()
+  })
+
   it('forwards panel actions to the attached set', () => {
     const service = new LayoutController()
     const panels = fakePanels()

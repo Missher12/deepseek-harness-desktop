@@ -13,8 +13,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import { computeColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED } from './columns.ts'
+import {
+  computeColumns, DETAILS_MAX, DETAILS_MIN, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED,
+  SIDEBAR_MAX, SIDEBAR_MIN, UTILITY_MAX, UTILITY_MIN,
+} from './columns.ts'
 import type { createLayoutStore } from './stores.ts'
+import type { UtilityLayoutSnapshot } from './service.ts'
 import css from './AppFrame.module.css'
 
 /** Full composed props: runtime share + child-slot render share + store share. */
@@ -22,6 +26,7 @@ export type AppFrameProps =
   & PropsRuntime<'root'>
   & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'layout.utility' | 'layout.status' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
+  & { publishUtilityLayout: (snapshot: UtilityLayoutSnapshot) => void }
 
 /** Center column grid item (session-body building block). */
 function CenterColumn(props: { children?: ReactNode }) {
@@ -42,7 +47,17 @@ function UtilityColumn(props: { children?: ReactNode }) {
  * One drag handle: pointer capture, rAF-throttled dx reports against the drag-start origin.
  * `side` keys the hover-reveal CSS to the owning column.
  */
-function DragHandle(props: { side: 'sidebar' | 'details' | 'utility'; left: number; onStart: () => void; onDrag: (dx: number) => void; onEnd: () => void }) {
+function DragHandle(props: {
+  side: 'sidebar' | 'details' | 'utility'
+  left: number
+  value: number
+  min: number
+  max: number
+  onStart: () => void
+  onDrag: (dx: number) => void
+  onEnd: () => void
+}) {
+  const label = props.side === 'utility' ? 'Resize utility workbench' : `Resize ${props.side}`
   const [dragging, setDragging] = useState(false)
   const origin = useRef(0)
   const latest = useRef(0)
@@ -74,9 +89,23 @@ function DragHandle(props: { side: 'sidebar' | 'details' | 'utility'; left: numb
     setDragging(false)
     callbacks.current.onEnd()
   }, [])
+  const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    callbacks.current.onStart()
+    callbacks.current.onDrag(e.key === 'ArrowLeft' ? -16 : 16)
+    callbacks.current.onEnd()
+  }, [])
 
   return (
     <div
+      role="separator"
+      aria-label={label}
+      tabIndex={0}
+      aria-orientation="vertical"
+      aria-valuemin={props.min}
+      aria-valuemax={props.max}
+      aria-valuenow={props.value}
       className={css.handle}
       style={{ left: props.left }}
       data-side={props.side}
@@ -84,6 +113,7 @@ function DragHandle(props: { side: 'sidebar' | 'details' | 'utility'; left: numb
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onKeyDown={onKeyDown}
     />
   )
 }
@@ -94,8 +124,16 @@ export function AppFrame({
   useSessions,
   actions,
   renderSlot,
+  publishUtilityLayout,
 }: AppFrameProps) {
   const panels = useStore(s => s)
+  useLayoutEffect(() => {
+    publishUtilityLayout({
+      open: panels.utilityOpen,
+      mode: panels.utilityMode,
+      width: panels.utilityWidth,
+    })
+  }, [panels.utilityMode, panels.utilityOpen, panels.utilityWidth, publishUtilityLayout])
   const detailsSession = useSessions((s) => {
     const current = s.current
     return current !== undefined && s.byId[current]?.blank === false ? current : undefined
@@ -219,9 +257,12 @@ export function AppFrame({
         {renderSlot('shell.overlay', {})}
       </div>
       {/* The collapsed rail is fixed-width: no resize handle while closed. */}
-      {!renderedSidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
-      {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
-      {cols.utility > 0 && <DragHandle side="utility" left={viewport - cols.utility} onStart={onUtilityStart} onDrag={onUtilityDrag} onEnd={onDragEnd} />}
+      {!renderedSidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} value={cols.sidebar} min={SIDEBAR_MIN} max={SIDEBAR_MAX}
+        onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
+      {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} value={cols.details} min={DETAILS_MIN} max={DETAILS_MAX}
+        onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
+      {cols.utility > 0 && cols.center > 0 && <DragHandle side="utility" left={viewport - cols.utility} value={cols.utility} min={UTILITY_MIN} max={UTILITY_MAX}
+        onStart={onUtilityStart} onDrag={onUtilityDrag} onEnd={onDragEnd} />}
     </div>
   )
 }

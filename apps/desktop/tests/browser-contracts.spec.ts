@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { PROTOCOL_LIMITS } from '@deepseek-ai/dsh-desktop-control-protocol'
 import {
   BROWSER_AGENT_LIMITS,
   isAgentBrowserAction,
@@ -45,11 +46,12 @@ describe('workbench Browser contracts', () => {
       cdpCalls: 2_048,
       startupMs: 20_000,
       startupAttempts: 2,
+      snapshotAttempts: 3,
       accessibilityAttempts: 3,
       accessibilityRetryMs: 500,
       cleanupMs: 2_000,
       wallMs: 10_000,
-      actionableNodes: 800,
+      actionableNodes: PROTOCOL_LIMITS.maxSemanticRefs,
       semanticUtf8Bytes: 49_152,
       encodedJsonBytes: 65_536,
       pngBytes: 4_194_304,

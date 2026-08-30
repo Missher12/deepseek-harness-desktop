@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '../src/client/index.tsx'
@@ -37,12 +37,17 @@ type TakeoverStatus = Readonly<{
 
 function setup() {
   let takeoverListener: ((value: TakeoverStatus) => void) | undefined
+  let browserListener: ((value: typeof snapshot) => void) | undefined
   const api = {
     showWorkbenchBrowser: vi.fn(async () => snapshot),
     layoutWorkbenchBrowser: vi.fn(async () => {}),
+    setWorkbenchBrowserDockVisibility: vi.fn(async (_visible: boolean) => {}),
     hideWorkbenchBrowser: vi.fn(async () => {}),
     controlWorkbenchBrowser: vi.fn(async () => snapshot),
-    onWorkbenchBrowserState: vi.fn(() => () => {}),
+    onWorkbenchBrowserState: vi.fn((listener: typeof browserListener) => {
+      browserListener = listener
+      return () => { browserListener = undefined }
+    }),
     giveWorkbenchBrowserToAgent: vi.fn(async () => ({ phase: 'given' as const, signedInWarning: true as const })),
     setComputerControlSetting: vi.fn(async () => undefined),
     stopAgentBrowser: vi.fn(async () => ({ phase: 'human' as const, signedInWarning: true as const })),
@@ -55,7 +60,11 @@ function setup() {
     }),
   }
   Object.defineProperty(window, 'dshDesktop', { configurable: true, value: api })
-  return { api, emit: (status: Parameters<NonNullable<typeof takeoverListener>>[0]) => { takeoverListener?.(status) } }
+  return {
+    api,
+    emit: (status: Parameters<NonNullable<typeof takeoverListener>>[0]) => { takeoverListener?.(status) },
+    emitBrowser: (value: typeof snapshot) => { browserListener?.(value) },
+  }
 }
 
 beforeEach(() => {
@@ -73,6 +82,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  Reflect.deleteProperty(document, 'visibilityState')
   Reflect.deleteProperty(window, 'dshDesktop')
 })
 
@@ -114,6 +124,236 @@ describe('Workbench Browser takeover controls', () => {
       expect(api.showWorkbenchBrowser).toHaveBeenLastCalledWith({ x: 640, y: 120, width: 640, height: 720 })
     })
     expect(api.showWorkbenchBrowser).toHaveBeenCalledTimes(2)
+  })
+
+  it('hydrates the address from the preserved native page on first show', async () => {
+    const { api } = setup()
+    render(<BrowserMode t={translate} />)
+    const host = document.querySelector<HTMLElement>('[data-native-browser-host]')
+    if (host === null) throw new Error('native browser host missing')
+    vi.spyOn(host, 'getBoundingClientRect').mockImplementation(() => ({
+      x: 900, y: 120, width: 640, height: 720,
+      top: 120, right: 1540, bottom: 840, left: 900,
+      toJSON: () => ({}),
+    }))
+
+    await waitFor(() => { expect(api.getBrowserTakeoverStatus).toHaveBeenCalledOnce() })
+    await Promise.resolve()
+    flushAnimationFrame()
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(en.browserPlaceholder)).toHaveProperty('value', snapshot.url)
+    })
+  })
+
+  it('retries a rejected native visibility command on the next frame', async () => {
+    const { api } = setup()
+    api.setWorkbenchBrowserDockVisibility
+      .mockRejectedValueOnce(new Error('temporary visibility failure'))
+      .mockResolvedValue(undefined)
+    render(<BrowserMode t={translate} />)
+    const host = document.querySelector<HTMLElement>('[data-native-browser-host]')
+    if (host === null) throw new Error('native browser host missing')
+    vi.spyOn(host, 'getBoundingClientRect').mockImplementation(() => ({
+      x: 900, y: 120, width: 640, height: 720,
+      top: 120, right: 1540, bottom: 840, left: 900,
+      toJSON: () => ({}),
+    }))
+
+    await waitFor(() => { expect(api.getBrowserTakeoverStatus).toHaveBeenCalledOnce() })
+    await Promise.resolve()
+    flushAnimationFrame()
+    await waitFor(() => { expect(api.setWorkbenchBrowserDockVisibility).toHaveBeenCalledTimes(1) })
+    flushAnimationFrame()
+
+    await waitFor(() => {
+      expect(api.setWorkbenchBrowserDockVisibility).toHaveBeenCalledTimes(2)
+      expect(api.setWorkbenchBrowserDockVisibility).toHaveBeenLastCalledWith(true)
+    })
+    flushAnimationFrame()
+    await waitFor(() => { expect(api.showWorkbenchBrowser).toHaveBeenCalledOnce() })
+  })
+
+  it('shows after an initially occluding dialog is removed without a bounds change', async () => {
+    const { api } = setup()
+    const modal = document.createElement('div')
+    modal.setAttribute('role', 'dialog')
+    modal.setAttribute('aria-modal', 'true')
+    document.body.append(modal)
+    render(<BrowserMode t={translate} />)
+    const host = document.querySelector<HTMLElement>('[data-native-browser-host]')
+    if (host === null) throw new Error('native browser host missing')
+    vi.spyOn(host, 'getBoundingClientRect').mockImplementation(() => ({
+      x: 900, y: 120, width: 640, height: 720,
+      top: 120, right: 1540, bottom: 840, left: 900,
+      toJSON: () => ({}),
+    }))
+
+    await waitFor(() => { expect(api.getBrowserTakeoverStatus).toHaveBeenCalledOnce() })
+    await Promise.resolve()
+    flushAnimationFrame()
+    await waitFor(() => { expect(api.setWorkbenchBrowserDockVisibility).toHaveBeenLastCalledWith(false) })
+    expect(api.showWorkbenchBrowser).not.toHaveBeenCalled()
+
+    modal.remove()
+    await Promise.resolve()
+    flushAnimationFrame()
+    await waitFor(() => {
+      expect(api.setWorkbenchBrowserDockVisibility).toHaveBeenLastCalledWith(true)
+      expect(api.showWorkbenchBrowser).toHaveBeenCalledOnce()
+    })
+  })
+
+  it('retries a transient first show failure at unchanged bounds', async () => {
+    const { api } = setup()
+    api.showWorkbenchBrowser
+      .mockRejectedValueOnce(new Error('temporary show failure'))
+      .mockResolvedValue(snapshot)
+    render(<BrowserMode t={translate} />)
+    const host = document.querySelector<HTMLElement>('[data-native-browser-host]')
+    if (host === null) throw new Error('native browser host missing')
+    vi.spyOn(host, 'getBoundingClientRect').mockImplementation(() => ({
+      x: 900, y: 120, width: 640, height: 720,
+      top: 120, right: 1540, bottom: 840, left: 900,
+      toJSON: () => ({}),
+    }))
+
+    await waitFor(() => { expect(api.getBrowserTakeoverStatus).toHaveBeenCalledOnce() })
+    await Promise.resolve()
+    flushAnimationFrame()
+    await waitFor(() => { expect(api.showWorkbenchBrowser).toHaveBeenCalledOnce() })
+    flushAnimationFrame()
+    await waitFor(() => { expect(api.showWorkbenchBrowser).toHaveBeenCalledTimes(2) })
+    await waitFor(() => { expect(screen.queryByText('temporary show failure')).toBeNull() })
+  })
+
+  it('backs off repeated native show failures even while bounds change', async () => {
+    const { api } = setup()
+    let now = 1_000
+    let x = 900
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    api.showWorkbenchBrowser.mockRejectedValue(new Error('persistent show failure'))
+    render(<BrowserMode t={translate} />)
+    const host = document.querySelector<HTMLElement>('[data-native-browser-host]')
+    if (host === null) throw new Error('native browser host missing')
+    vi.spyOn(host, 'getBoundingClientRect').mockImplementation(() => ({
+      x, y: 120, width: 640, height: 720,
+      top: 120, right: x + 640, bottom: 840, left: x,
+      toJSON: () => ({}),
+    }))
+
+    await waitFor(() => { expect(api.getBrowserTakeoverStatus).toHaveBeenCalledOnce() })
+    await Promise.resolve()
+    flushAnimationFrame()
+    await waitFor(() => { expect(api.showWorkbenchBrowser).toHaveBeenCalledOnce() })
+    flushAnimationFrame()
+    await waitFor(() => { expect(api.showWorkbenchBrowser).toHaveBeenCalledTimes(2) })
+
+    x = 880
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      flushAnimationFrame()
+      await Promise.resolve()
+    }
+    expect(api.showWorkbenchBrowser).toHaveBeenCalledTimes(2)
+
+    now += 250
+    flushAnimationFrame()
+    await waitFor(() => { expect(api.showWorkbenchBrowser).toHaveBeenCalledTimes(3) })
+  })
+
+  it('does not replace an address draft with an asynchronous native state event', () => {
+    const { emitBrowser } = setup()
+    render(<BrowserMode t={translate} />)
+    const input = screen.getByPlaceholderText(en.browserPlaceholder)
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'https://draft.example/path' } })
+
+    act(() => { emitBrowser({ ...snapshot, url: 'https://loading.example/' }) })
+
+    expect(input).toHaveProperty('value', 'https://draft.example/path')
+    fireEvent.blur(input)
+    expect(input).toHaveProperty('value', 'https://loading.example/')
+  })
+
+  it('serializes stale cleanup before a remounted Browser becomes visible', async () => {
+    const { api } = setup()
+    let releaseFirst!: () => void
+    api.setWorkbenchBrowserDockVisibility.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => { releaseFirst = resolve })
+    })
+    const first = render(<BrowserMode t={translate} />)
+    const firstHost = document.querySelector<HTMLElement>('[data-native-browser-host]')
+    if (firstHost === null) throw new Error('native browser host missing')
+    vi.spyOn(firstHost, 'getBoundingClientRect').mockImplementation(() => ({
+      x: 900, y: 120, width: 640, height: 720,
+      top: 120, right: 1540, bottom: 840, left: 900,
+      toJSON: () => ({}),
+    }))
+    await waitFor(() => { expect(api.getBrowserTakeoverStatus).toHaveBeenCalledOnce() })
+    await Promise.resolve()
+    flushAnimationFrame()
+    await waitFor(() => { expect(api.setWorkbenchBrowserDockVisibility).toHaveBeenCalledTimes(1) })
+
+    first.unmount()
+    const second = render(<BrowserMode t={translate} />)
+    const secondHost = document.querySelector<HTMLElement>('[data-native-browser-host]')
+    if (secondHost === null) throw new Error('native browser host missing')
+    vi.spyOn(secondHost, 'getBoundingClientRect').mockImplementation(() => ({
+      x: 900, y: 120, width: 640, height: 720,
+      top: 120, right: 1540, bottom: 840, left: 900,
+      toJSON: () => ({}),
+    }))
+    await waitFor(() => { expect(api.getBrowserTakeoverStatus).toHaveBeenCalledTimes(2) })
+    await Promise.resolve()
+    flushAnimationFrame()
+    releaseFirst()
+
+    await waitFor(() => {
+      expect(api.setWorkbenchBrowserDockVisibility).toHaveBeenLastCalledWith(true)
+      expect(api.hideWorkbenchBrowser).toHaveBeenCalledOnce()
+    })
+    const hideOrder = api.hideWorkbenchBrowser.mock.invocationCallOrder[0]
+    const visibilityOrders = api.setWorkbenchBrowserDockVisibility.mock.invocationCallOrder
+    expect(hideOrder).toBeLessThan(visibilityOrders.at(-1) ?? 0)
+    second.unmount()
+  })
+
+  it('forces an equal-bounds reshow after the native window becomes visible again', async () => {
+    const { api } = setup()
+    let visibility: DocumentVisibilityState = 'visible'
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => visibility,
+    })
+    render(<BrowserMode t={translate} />)
+    const host = document.querySelector<HTMLElement>('[data-native-browser-host]')
+    if (host === null) throw new Error('native browser host missing')
+    vi.spyOn(host, 'getBoundingClientRect').mockImplementation(() => ({
+      x: 900, y: 120, width: 640, height: 720,
+      top: 120, right: 1540, bottom: 840, left: 900,
+      toJSON: () => ({}),
+    }))
+    await waitFor(() => { expect(api.getBrowserTakeoverStatus).toHaveBeenCalledOnce() })
+    await Promise.resolve()
+    flushAnimationFrame()
+    await waitFor(() => { expect(api.showWorkbenchBrowser).toHaveBeenCalledTimes(1) })
+
+    visibility = 'hidden'
+    document.dispatchEvent(new Event('visibilitychange'))
+    flushAnimationFrame()
+    await waitFor(() => {
+      expect(api.setWorkbenchBrowserDockVisibility).toHaveBeenLastCalledWith(false)
+    })
+
+    api.showWorkbenchBrowser.mockResolvedValueOnce({ ...snapshot, url: '', title: '' })
+    visibility = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
+    flushAnimationFrame()
+    await waitFor(() => {
+      expect(api.showWorkbenchBrowser).toHaveBeenCalledTimes(2)
+      expect(api.setWorkbenchBrowserDockVisibility).toHaveBeenLastCalledWith(true)
+      expect(screen.getByPlaceholderText(en.browserPlaceholder)).toHaveProperty('value', '')
+    })
   })
 
   it('keeps the exact Agent browser fitted while the utility panel is resized', async () => {

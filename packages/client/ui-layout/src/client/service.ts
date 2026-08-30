@@ -11,9 +11,17 @@
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { createLayoutStore } from './stores.ts'
 import type { UtilityMode } from './stores.ts'
+import { UTILITY_DEFAULT } from './columns.ts'
 
 /** The layout store's bound action set (framework-baked, draft params peeled). */
 export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>
+
+/** Read-only projection of the utility fields owned by the persisted layout store. */
+export interface UtilityLayoutSnapshot {
+  open: boolean
+  mode: UtilityMode
+  width: number
+}
 
 /**
  * The outward layout face (`ctx.layout`): the panel transitions other
@@ -22,6 +30,10 @@ export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>
  * only).
  */
 export interface ILayout {
+  /** Read the utility projection published by the mounted layout store. */
+  getSnapshot(): UtilityLayoutSnapshot
+  /** Subscribe to utility projection changes. */
+  subscribe(listener: () => void): () => void
   /** Toggle the sidebar panel (closed ⟷ last expanded width). */
   toggleSidebar(): void
   /** Open the details panel (no-op when already open). */
@@ -41,6 +53,23 @@ export interface ILayout {
 /** Cross-plugin panel-action face (ctx.layout). */
 export class LayoutController implements ILayout {
   #panels: PanelActions | undefined
+  #snapshot: UtilityLayoutSnapshot = { open: false, mode: 'terminal', width: UTILITY_DEFAULT }
+  #listeners = new Set<() => void>()
+
+  getSnapshot = (): UtilityLayoutSnapshot => this.#snapshot
+  subscribe = (listener: () => void): (() => void) => {
+    this.#listeners.add(listener)
+    return () => { this.#listeners.delete(listener) }
+  }
+
+  /** Adopt the utility projection from the persisted root layout store. */
+  publishUtilityLayout = (snapshot: UtilityLayoutSnapshot): void => {
+    if (snapshot.open === this.#snapshot.open
+      && snapshot.mode === this.#snapshot.mode
+      && snapshot.width === this.#snapshot.width) return
+    this.#snapshot = snapshot
+    for (const listener of this.#listeners) listener()
+  }
 
   /**
    * Adopt the root entry's bound store actions. Called from the root

@@ -3,7 +3,6 @@
 // active conversation scrollport (see ConversationRoot data-conversation-scroll).
 
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationSnapshot, UseProjection } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: merges the sessionStats key into SessionProjectionMap for useProjection.
@@ -360,35 +359,64 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
     financialGroups.push(t(`stats.tier.${pricingTierAt(clock)}`))
   }
   const line = groups.join(' | ')
-  // The row elides with ellipsis when overlong; a delayed hover tooltip carries
-  // the full line, enabled only while content is actually clipped.
+  // Keep clipped details in-flow: a floating tooltip can cross the workbench
+  // boundary and cover either the composer or a native browser surface.
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [truncated, setTruncated] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const pointerFocusRef = useRef(false)
   useLayoutEffect(() => {
     const el = rootRef.current
     if (el === null) return
     const measure = () => {
-      setTruncated(el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight)
+      // An expanded row is intentionally no longer clipped. Preserve its
+      // collapsed measurement until the user closes it again.
+      if (expanded) return
+      const clipped = el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight
+      setTruncated(clipped)
+      if (!clipped) setExpanded(false)
     }
     measure()
     if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(measure)
     observer.observe(el)
     return () => { observer.disconnect() }
-  }, [line])
+  }, [expanded, line])
   if (groups.length === 0 && financialGroups.length === 0) return null
   return (
     <>
-      {groups.length > 0 && <Tooltip label={line} side="top" delayMs={500} disabled={!truncated}>
-        <div ref={rootRef} className={css.root}>
-          {groups.map((group, i) => (
-            <Fragment key={group}>
-              {i > 0 && <>{' '}<span className={css.sep} aria-hidden>|</span>{' '}</>}
-              <span>{group}</span>
-            </Fragment>
-          ))}
-        </div>
-      </Tooltip>}
+      {groups.length > 0 && <div
+        ref={rootRef}
+        className={css.root}
+        role={truncated ? 'button' : undefined}
+        tabIndex={truncated ? 0 : undefined}
+        aria-expanded={truncated ? expanded : undefined}
+        data-truncated={truncated ? 'true' : undefined}
+        data-expanded={expanded ? 'true' : undefined}
+        onPointerDown={truncated ? () => { pointerFocusRef.current = true } : undefined}
+        onPointerCancel={truncated ? () => { pointerFocusRef.current = false } : undefined}
+        onFocus={truncated ? () => {
+          if (!pointerFocusRef.current) setExpanded(true)
+          pointerFocusRef.current = false
+        } : undefined}
+        onBlur={truncated ? () => { pointerFocusRef.current = false } : undefined}
+        onClick={truncated ? () => {
+          pointerFocusRef.current = false
+          setExpanded(value => !value)
+        } : undefined}
+        onKeyDown={truncated ? (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          setExpanded(value => !value)
+        } : undefined}
+      >
+        {groups.map((group, i) => (
+          <Fragment key={group}>
+            {i > 0 && <>{' '}<span className={css.sep} aria-hidden>|</span>{' '}</>}
+            <span>{group}</span>
+          </Fragment>
+        ))}
+      </div>}
       {financialGroups.length > 0 && <div className={`${css.root} ${css.finance}`}>
         {financialGroups.map((group, i) => (
           <Fragment key={group}>

@@ -56,7 +56,7 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('shell.overlay')).toEqual({ kind: 'list', scope: 'root' })
   })
 
-  it('injects no business face and attaches the layout actions', async () => {
+  it('injects the utility publisher and attaches the layout actions', async () => {
     const { ctx, slots } = await bench()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
@@ -65,7 +65,8 @@ describe('ui-layout client apply', () => {
       openUtility: vi.fn(), closeUtility: vi.fn(), toggleUtility: vi.fn(), setUtilityWidth: vi.fn(),
     }
     const injected = (slots.entries('root')[0]!.inject as (actions: never) => object)(actions as never)
-    expect(injected).toEqual({})
+    expect(Object.keys(injected)).toEqual(['publishUtilityLayout'])
+    expect(typeof (injected as { publishUtilityLayout?: unknown }).publishUtilityLayout).toBe('function')
     const layout = ctx.get('layout') as LayoutController
     layout.toggleSidebar()
     expect(actions.toggleSidebar).toHaveBeenCalledOnce()

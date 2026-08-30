@@ -16,7 +16,7 @@ export const name = 'desktop-workbench-client'
 export const inject = ['layout', 'locale', 'slots']
 
 export function apply(ctx: ClientContext): void {
-  const controller = new WorkbenchController(ctx.layout, window.localStorage)
+  const controller = new WorkbenchController(ctx.layout)
   const injected = (_sessionId: SessionId): WorkbenchInjected => ({
     hooks: { workbench: controller },
     toggle: (id) => { controller.toggle(id) },

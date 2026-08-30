@@ -135,4 +135,45 @@ describe('native Browser dock occlusion', () => {
     })
     overlay.remove()
   })
+
+  it.each(['dialog', 'tooltip'] as const)(
+    'hides for a small %s intersecting between the sampled host points',
+    async (role) => {
+      const api = setup()
+      render(<BrowserMode t={translate} />)
+      const host = document.querySelector<HTMLElement>('[data-native-browser-host]')
+      if (host === null) throw new Error('native browser host missing')
+      vi.spyOn(host, 'getBoundingClientRect').mockImplementation(() => ({
+        x: 800, y: 100, width: 720, height: 700,
+        top: 100, right: 1520, bottom: 800, left: 800,
+        toJSON: () => ({}),
+      }))
+      Object.defineProperty(document, 'elementFromPoint', {
+        configurable: true,
+        value: vi.fn(() => host),
+      })
+
+      await waitFor(() => { expect(api.getBrowserTakeoverStatus).toHaveBeenCalledOnce() })
+      await Promise.resolve()
+      flushAnimationFrame()
+      await waitFor(() => {
+        expect(api.setWorkbenchBrowserDockVisibility).toHaveBeenLastCalledWith(true)
+      })
+
+      const dialog = document.createElement('section')
+      dialog.setAttribute('role', role)
+      vi.spyOn(dialog, 'getBoundingClientRect').mockImplementation(() => ({
+        x: 1120, y: 180, width: 80, height: 120,
+        top: 180, right: 1200, bottom: 300, left: 1120,
+        toJSON: () => ({}),
+      }))
+      document.body.append(dialog)
+      flushAnimationFrame()
+
+      await waitFor(() => {
+        expect(api.setWorkbenchBrowserDockVisibility).toHaveBeenLastCalledWith(false)
+      })
+      dialog.remove()
+    },
+  )
 })

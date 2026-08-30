@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HeaderButton, type HeaderButtonProps } from '../src/client/HeaderButton.tsx'
 import { WorkbenchPanel, type WorkbenchPanelProps } from '../src/client/WorkbenchPanel.tsx'
-import { WorkbenchController, loadWidth } from '../src/client/preferences.ts'
+import { WorkbenchController } from '../src/client/preferences.ts'
 
 afterEach(() => {
   cleanup()
@@ -19,10 +18,29 @@ const labels = {
 const t = (key: keyof typeof labels) => labels[key]
 
 function setup() {
-  const layout = {
-    openUtility: vi.fn(), closeUtility: vi.fn(), toggleUtility: vi.fn(), setUtilityWidth: vi.fn(),
+  let snapshot: { open: boolean; mode: 'terminal' | 'browser' | 'files' | 'review'; width: number } = {
+    open: false, mode: 'terminal', width: 720,
   }
-  const controller = new WorkbenchController(layout, { getItem: () => null, setItem: vi.fn() })
+  const listeners = new Set<() => void>()
+  const publish = (next: typeof snapshot) => {
+    snapshot = next
+    for (const listener of listeners) listener()
+  }
+  const layout = {
+    getSnapshot: () => snapshot,
+    subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    openUtility: vi.fn((mode?: typeof snapshot.mode) => {
+      publish({ ...snapshot, open: true, mode: mode ?? snapshot.mode })
+    }),
+    closeUtility: vi.fn(() => { publish({ ...snapshot, open: false }) }),
+    toggleUtility: vi.fn((mode?: typeof snapshot.mode) => {
+      publish(mode !== undefined && mode !== snapshot.mode
+        ? { ...snapshot, open: true, mode }
+        : { ...snapshot, open: !snapshot.open })
+    }),
+    setUtilityWidth: vi.fn((width: number) => { publish({ ...snapshot, width }) }),
+  }
+  const controller = new WorkbenchController(layout as never)
   const common = {
     sessionId,
     useWorkbench: <T,>(select: (state: ReturnType<typeof controller.getSnapshot>) => T) => select(controller.getSnapshot()),
@@ -36,46 +54,50 @@ function setup() {
 }
 
 describe('desktop workbench shell', () => {
-  it('defers persisted width until the first open after the layout root mounts', () => {
-    const layout = new LayoutController()
-    const controller = new WorkbenchController(layout, {
-      getItem: () => '512',
-      setItem: vi.fn(),
-    })
-    const panels = {
-      setSidebar: vi.fn(), setDetails: vi.fn(), toggleSidebar: vi.fn(),
-      openDetails: vi.fn(), closeDetails: vi.fn(), openUtility: vi.fn(),
-      closeUtility: vi.fn(), toggleUtility: vi.fn(), setUtilityWidth: vi.fn(),
-    }
-    layout.attachPanels(panels as never)
-
-    controller.open(sessionId)
-
-    expect(panels.setUtilityWidth).toHaveBeenCalledWith(512)
-    expect(panels.openUtility).toHaveBeenCalledWith('terminal')
-  })
-
-  it('clamps the persisted width', () => {
-    expect(loadWidth({ getItem: () => null })).toBe(720)
-    expect(loadWidth({ getItem: () => '9999' })).toBe(1_600)
-    expect(loadWidth({ getItem: () => '100' })).toBe(420)
-    expect(loadWidth({ getItem: () => '1_280' })).toBe(720)
-    expect(loadWidth({ getItem: () => '1280' })).toBe(1_280)
-    expect(loadWidth({ getItem: () => 'nope' })).toBe(720)
-  })
-
-  it('persists the same wide utility contract used by the live drag layout', () => {
-    const setItem = vi.fn()
-    const layout = {
-      openUtility: vi.fn(), closeUtility: vi.fn(), toggleUtility: vi.fn(), setUtilityWidth: vi.fn(),
-    }
-    const controller = new WorkbenchController(layout, { getItem: () => null, setItem })
+  it('delegates width changes to the layout store', () => {
+    const { controller, layout } = setup()
 
     controller.setWidth(1_400)
 
     expect(controller.getSnapshot().width).toBe(1_400)
     expect(layout.setUtilityWidth).toHaveBeenLastCalledWith(1_400)
-    expect(setItem).toHaveBeenLastCalledWith('dsh.desktop-workbench.width.v1', '1400')
+  })
+
+  it('does not overwrite the layout store width from the retired workbench preference', () => {
+    const snapshot = { open: false, mode: 'terminal' as const, width: 880 }
+    const layout = {
+      getSnapshot: () => snapshot,
+      subscribe: () => () => {},
+      openUtility: vi.fn(), closeUtility: vi.fn(), toggleUtility: vi.fn(), setUtilityWidth: vi.fn(),
+    }
+    const controller = new WorkbenchController(layout as never)
+
+    controller.open(sessionId, 'browser')
+
+    expect(layout.setUtilityWidth).not.toHaveBeenCalled()
+  })
+
+  it('reads open, mode, and width from the observable layout source', () => {
+    const snapshot = { open: true, mode: 'browser' as const, width: 880 }
+    const layout = {
+      getSnapshot: () => snapshot,
+      subscribe: () => () => {},
+      openUtility: vi.fn(), closeUtility: vi.fn(), toggleUtility: vi.fn(), setUtilityWidth: vi.fn(),
+    }
+    const controller = new WorkbenchController(layout as never)
+
+    expect(controller.getSnapshot()).toEqual(snapshot)
+  })
+
+  it('derives the header expanded state from layout, not a second session flag', () => {
+    const { common } = setup()
+    const view = render(<HeaderButton {...{
+      ...common,
+      useWorkbench: (select: (state: { open: boolean; mode: 'browser'; width: number }) => unknown) =>
+        select({ open: true, mode: 'browser', width: 880 }),
+    } as unknown as HeaderButtonProps} />)
+
+    expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('true')
   })
 
   it('opens from the compact header button without a duplicate side-chat surface', () => {
@@ -117,7 +139,7 @@ describe('desktop workbench shell', () => {
 
     act(() => { requestDock?.() })
 
-    expect(controller.getSnapshot()).toMatchObject({ open: true, mode: 'browser', sessionId })
+    expect(controller.getSnapshot()).toMatchObject({ open: true, mode: 'browser' })
     expect(layout.openUtility).toHaveBeenLastCalledWith('browser')
     expect(visibleSessionChanged).toHaveBeenCalledOnce()
   })
@@ -135,11 +157,39 @@ describe('desktop workbench shell', () => {
     expect(layout.closeUtility).toHaveBeenCalledOnce()
   })
 
-  it('restores the saved width once without overwriting later drag widths on reopen', () => {
+  it('leaves arrow keys inside Browser inputs instead of switching workbench tabs', () => {
+    const { controller, layout, common } = setup()
+    controller.open(sessionId, 'browser')
+    layout.openUtility.mockClear()
+    const view = render(<WorkbenchPanel {...common as unknown as WorkbenchPanelProps} mode="browser" />)
+    const address = view.container.querySelector('input')
+    if (address === null) throw new Error('Browser address input missing')
+
+    fireEvent.keyDown(address, { key: 'ArrowRight' })
+
+    expect(layout.openUtility).not.toHaveBeenCalled()
+  })
+
+  it('uses one roving tab stop and labels the active tab panel', () => {
+    const { common } = setup()
+    const view = render(<WorkbenchPanel {...common as unknown as WorkbenchPanelProps} mode="browser" />)
+    const tabs = screen.getAllByRole('tab')
+    const active = screen.getByRole('tab', { name: '浏览器' })
+    const panel = screen.getByRole('tabpanel')
+
+    expect(tabs.map(tab => tab.tabIndex)).toEqual([-1, 0, -1, -1])
+    expect(active.id).not.toBe('')
+    expect(active.getAttribute('aria-controls')).toBe(panel.id)
+    expect(panel.getAttribute('aria-labelledby')).toBe(active.id)
+
+    fireEvent.keyDown(active, { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(view.getByRole('tab', { name: '文件' }))
+  })
+
+  it('opens and reopens without overwriting the layout-owned width', () => {
     const { controller, layout } = setup()
     controller.open(sessionId)
-    expect(layout.setUtilityWidth).toHaveBeenCalledOnce()
-    layout.setUtilityWidth.mockClear()
+    expect(layout.setUtilityWidth).not.toHaveBeenCalled()
 
     controller.close()
     controller.open(sessionId, 'browser')

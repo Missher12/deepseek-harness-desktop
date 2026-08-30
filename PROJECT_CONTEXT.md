@@ -69,9 +69,22 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
-- Version 0.4.3 is the active release candidate. It preserves the 0.4.2
+- Version 0.4.8 hardens the Desktop utility workbench as a single resizable
+  dock. Its Browser remains fitted to the live dock bounds, is hidden behind
+  settings, dialogs, tooltips, minimized windows, and non-Browser utility
+  modes, and restores the same human-owned page after those non-destructive
+  visibility transitions. Closing the Desktop window still follows the
+  lifecycle cleanup path and destroys native browser ownership. A single
+  persisted layout store now owns utility visibility, mode, and width;
+  keyboard-accessible separators resize it without competing caches. Browser
+  IPC validates exact arity, native visibility commands are serialized, URL
+  state cannot overwrite an address being edited, and failed or initially
+  occluded same-bounds mounts remain retryable. Compact conversation status
+  text expands in place rather than rendering a native-browser-punch-through
+  tooltip or overlapping the composer.
+- Version 0.4.3 introduced the release candidate that preserved the 0.4.2
   navigation-only prompt ruler and explicit custom-model image capabilities,
-  and adds visible, revocable Agent control of the built-in browser and
+  and added visible, revocable Agent control of the built-in browser and
   approved desktop applications through bounded semantic and visual tools.
   Electron main owns native approval, one process-wide lease, quotas, target
   identity, emergency Stop, browser transfer, and helper cleanup; the model,

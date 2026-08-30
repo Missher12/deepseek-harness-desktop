@@ -20,7 +20,7 @@ function desktopDockApi(): {
 }
 
 export function HeaderButton({ sessionId, useWorkbench, toggle, open, t }: HeaderButtonProps) {
-  const expanded = useWorkbench(state => state.open && state.sessionId === sessionId)
+  const expanded = useWorkbench(state => state.open)
   useEffect(() => {
     // The no-argument bridge can revoke stale authority but cannot claim or name this Session.
     void desktopDockApi()?.notifyVisibleSessionChanged?.().catch(() => undefined)

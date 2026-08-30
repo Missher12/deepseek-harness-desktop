@@ -1,108 +1,44 @@
 import type { ObservableSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ILayout, UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { ILayout, UtilityLayoutSnapshot, UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/client'
 
-// Cross-plugin value imports are deliberately forbidden by client bundle
-// purity. Keep these literals aligned with ui-layout/columns.ts; the paired
-// client tests lock the shared 420/720/1600 contract at both package seams.
-const WORKBENCH_WIDTH_MIN = 420
-const WORKBENCH_WIDTH_DEFAULT = 720
-const WORKBENCH_WIDTH_MAX = 1_600
+/** Observable workbench UI state projected directly from the layout store. */
+export type WorkbenchSnapshot = UtilityLayoutSnapshot
 
-/** Local preference key for the utility width. */
-export const WIDTH_KEY = 'dsh.desktop-workbench.width.v1'
-/** Minimal readable storage contract. */
-export interface StorageReader { getItem(key: string): string | null }
-/** Minimal writable storage contract. */
-export interface StorageWriter extends StorageReader { setItem(key: string, value: string): void }
-/** Observable workbench UI state. */
-export interface WorkbenchSnapshot { open: boolean; mode: UtilityMode; width: number; sessionId?: SessionId }
-
-/**
- * Restore and clamp the persisted workbench width.
- * @param storage - storage containing the optional preference.
- * @returns a width within the shared utility-column contract.
- */
-export function loadWidth(storage: StorageReader): number {
-  const stored = storage.getItem(WIDTH_KEY)
-  if (stored === null) return WORKBENCH_WIDTH_DEFAULT
-  const value = Number(stored)
-  return Number.isFinite(value)
-    ? Math.min(WORKBENCH_WIDTH_MAX, Math.max(WORKBENCH_WIDTH_MIN, Math.round(value)))
-    : WORKBENCH_WIDTH_DEFAULT
-}
-
-/** Coordinates persisted workbench preferences with the generic layout service. */
+/** Thin workbench action/read facade over the layout store's single state source. */
 export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot> {
-  #listeners = new Set<() => void>()
-  #snapshot: WorkbenchSnapshot
-  #widthApplied = false
+  constructor(private readonly layout: ILayout) {}
 
-  constructor(private readonly layout: Pick<ILayout, 'openUtility' | 'closeUtility' | 'toggleUtility' | 'setUtilityWidth'>, private readonly storage: StorageWriter) {
-    this.#snapshot = { open: false, mode: 'terminal', width: loadWidth(storage) }
-  }
-
-  getSnapshot = (): WorkbenchSnapshot => this.#snapshot
-  subscribe = (listener: () => void): (() => void) => { this.#listeners.add(listener); return () => { this.#listeners.delete(listener) } }
+  getSnapshot = (): WorkbenchSnapshot => this.layout.getSnapshot()
+  subscribe = (listener: () => void): (() => void) => this.layout.subscribe(listener)
 
   /**
    * Toggle the workbench for one session.
-   * @param sessionId - current session whose workbench should toggle.
+   * @param _sessionId - current session retained for the stable workbench API.
    */
-  toggle(sessionId: SessionId): void {
-    const open = this.#snapshot.sessionId === sessionId ? !this.#snapshot.open : true
-    this.#set({ ...this.#snapshot, sessionId, open })
-    if (open) this.#openUtility(this.#snapshot.mode)
-    else this.layout.closeUtility()
-  }
+  toggle(_sessionId: SessionId): void { this.layout.toggleUtility() }
 
   /**
    * Open one workbench mode for a session.
-   * @param sessionId - current ordinary session.
+   * @param _sessionId - current ordinary session retained for the stable API.
    * @param mode - requested utility mode.
    */
-  open(sessionId: SessionId, mode: UtilityMode = this.#snapshot.mode): void {
-    this.#set({ ...this.#snapshot, sessionId, mode, open: true })
-    this.#openUtility(mode)
-  }
+  open(_sessionId: SessionId, mode: UtilityMode = this.layout.getSnapshot().mode): void { this.layout.openUtility(mode) }
 
   /** Close the utility workbench. */
-  close(): void { this.#set({ ...this.#snapshot, open: false }); this.layout.closeUtility() }
+  close(): void { this.layout.closeUtility() }
 
   /**
    * Select and keep open one utility mode.
    * @param mode - requested utility mode.
    */
-  selectMode(mode: UtilityMode): void {
-    this.#set({ ...this.#snapshot, mode, open: true })
-    this.#openUtility(mode)
-  }
+  selectMode(mode: UtilityMode): void { this.layout.openUtility(mode) }
 
   /**
    * Persist and apply one clamped utility width.
    * @param width - requested utility width in pixels.
    */
   setWidth(width: number): void {
-    const next = Math.min(WORKBENCH_WIDTH_MAX, Math.max(WORKBENCH_WIDTH_MIN, Math.round(width)))
-    this.storage.setItem(WIDTH_KEY, String(next))
-    this.#set({ ...this.#snapshot, width: next })
-    this.layout.setUtilityWidth(next)
-    this.#widthApplied = true
-  }
-
-  #set(next: WorkbenchSnapshot): void {
-    this.#snapshot = next
-    for (const listener of this.#listeners) listener()
-  }
-
-  #openUtility(mode: UtilityMode): void {
-    // Restore the saved preference only on the first open. The layout store
-    // owns live drag geometry after that, so switching modes or reopening the
-    // panel must not overwrite the user's current width with a stale value.
-    if (!this.#widthApplied) {
-      this.layout.setUtilityWidth(this.#snapshot.width)
-      this.#widthApplied = true
-    }
-    this.layout.openUtility(mode)
+    this.layout.setUtilityWidth(width)
   }
 }
 

@@ -851,48 +851,52 @@ if (desktopUpdatesEnabled) {
   })
 }
 
-ipcMain.handle('desktop:workbench-browser-show', async (event, value: unknown) => {
+ipcMain.handle('desktop:workbench-browser-show', async (event, ...args: unknown[]) => {
   const window = nativeWindow
-  if (!isHarnessSender(event) || !isDesktopBrowserBounds(value) || workbenchBrowser === undefined
+  if (!isHarnessSender(event) || args.length !== 1 || !isDesktopBrowserBounds(args[0]) || workbenchBrowser === undefined
     || window === undefined || window.isDestroyed()) {
     throw new Error('Untrusted workbench Browser request.')
   }
-  const bounds = clampBrowserDockBounds(window.getContentBounds(), value)
+  const bounds = clampBrowserDockBounds(window.getContentBounds(), args[0])
   browserDockAnchor.publish(bounds)
   const snapshot = await workbenchBrowser.show(bounds)
   return snapshot
 })
 
-ipcMain.handle('desktop:workbench-browser-layout', async (event, value: unknown) => {
+ipcMain.handle('desktop:workbench-browser-layout', async (event, ...args: unknown[]) => {
   const window = nativeWindow
-  if (!isHarnessSender(event) || !isDesktopBrowserBounds(value) || workbenchBrowser === undefined
+  if (!isHarnessSender(event) || args.length !== 1 || !isDesktopBrowserBounds(args[0]) || workbenchBrowser === undefined
     || window === undefined || window.isDestroyed()) {
     throw new Error('Untrusted workbench Browser request.')
   }
-  const bounds = clampBrowserDockBounds(window.getContentBounds(), value)
+  const bounds = clampBrowserDockBounds(window.getContentBounds(), args[0])
   browserDockAnchor.publish(bounds)
   await workbenchBrowser.layout(bounds)
   browserResources.layoutMounted(bounds)
 })
 
-ipcMain.handle('desktop:workbench-browser-dock-visibility', (event, value: unknown) => {
-  if (!isHarnessSender(event) || typeof value !== 'boolean' || workbenchBrowser === undefined) {
+ipcMain.handle('desktop:workbench-browser-dock-visibility', (event, ...args: unknown[]) => {
+  if (!isHarnessSender(event) || args.length !== 1 || typeof args[0] !== 'boolean'
+    || workbenchBrowser === undefined) {
     throw new Error('Untrusted workbench Browser visibility request.')
   }
-  workbenchBrowser.setDockVisible(value)
-  browserResources.setDockVisible(value)
+  workbenchBrowser.setDockVisible(args[0])
+  browserResources.setDockVisible(args[0])
 })
 
-ipcMain.handle('desktop:workbench-browser-hide', (event) => {
-  if (!isHarnessSender(event) || workbenchBrowser === undefined) throw new Error('Untrusted workbench Browser request.')
+ipcMain.handle('desktop:workbench-browser-hide', (event, ...args: unknown[]) => {
+  if (!isHarnessSender(event) || args.length !== 0 || workbenchBrowser === undefined) {
+    throw new Error('Untrusted workbench Browser request.')
+  }
   suspendWorkbenchBrowserDock()
 })
 
-ipcMain.handle('desktop:workbench-browser-control', async (event, value: unknown) => {
-  if (!isHarnessSender(event) || !isDesktopBrowserRequest(value) || workbenchBrowser === undefined) {
+ipcMain.handle('desktop:workbench-browser-control', async (event, ...args: unknown[]) => {
+  if (!isHarnessSender(event) || args.length !== 1 || !isDesktopBrowserRequest(args[0])
+    || workbenchBrowser === undefined) {
     throw new Error('Untrusted workbench Browser request.')
   }
-  return await workbenchBrowser.control(value)
+  return await workbenchBrowser.control(args[0])
 })
 
 const removeBrowserTakeoverIpc = installBrowserTakeoverIpc({

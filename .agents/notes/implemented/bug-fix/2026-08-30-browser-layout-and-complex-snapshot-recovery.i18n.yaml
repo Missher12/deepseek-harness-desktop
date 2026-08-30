@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-30-browser-layout-and-complex-snapshot-recovery.md
-2026-08-30-browser-layout-and-complex-snapshot-recovery.md: d6a06f9dfb0fbea5e6fa714b178699f511c2186a
-2026-08-30-browser-layout-and-complex-snapshot-recovery.zh.md: 8680a5101e547d6e46af94e863f257d0b6a7c46d
+2026-08-30-browser-layout-and-complex-snapshot-recovery.md: 290391ed8b2117f5d88e87e991ddd914e20e7aff
+2026-08-30-browser-layout-and-complex-snapshot-recovery.zh.md: ac256fbe6a4680222d44b7ba6bdc4d760f6a18d6

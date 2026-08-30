@@ -11,7 +11,7 @@
  * resizes are driven through the ResizeObserver stub.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { AppFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
 import type { AppFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
@@ -60,6 +60,7 @@ function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapsho
 function mountFrame() {
   window.innerWidth = frameWidth // first-render viewport source before the observer fires
   const instance = createLayoutStore().create()
+  const publishUtilityLayout = vi.fn()
   const slotCalls: { key: string; props: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
     slotCalls.push({ key, props: owner })
@@ -92,6 +93,7 @@ function mountFrame() {
     <AppFrame
       useStore={hookOf(instance)}
       actions={instance.actions}
+      publishUtilityLayout={publishUtilityLayout}
       renderSlot={renderSlot}
       useSessions={useSessions}
       useWorkspaces={((sel: (s: WorkspaceListState) => unknown) => sel(workspaceState)) as never}
@@ -100,7 +102,7 @@ function mountFrame() {
   )
   const utils = render(element())
   const frame = utils.container.firstElementChild as HTMLElement
-  return { instance, frame, slotCalls, rerenderFrame: () => { utils.rerender(element()) }, ...utils }
+  return { instance, frame, publishUtilityLayout, slotCalls, rerenderFrame: () => { utils.rerender(element()) }, ...utils }
 }
 
 function tracks(frame: HTMLElement): number[] {
@@ -281,6 +283,18 @@ describe('AppFrame', () => {
     expect(queryByTestId('utility-content')).toBeNull()
   })
 
+  it('publishes the persisted utility state as the layout read source', () => {
+    const { instance, publishUtilityLayout } = mountFrame()
+    expect(publishUtilityLayout).toHaveBeenLastCalledWith({ open: false, mode: 'terminal', width: UTILITY_DEFAULT })
+
+    act(() => {
+      instance.actions.setUtilityWidth(880)
+      instance.actions.openUtility('browser')
+    })
+
+    expect(publishUtilityLayout).toHaveBeenLastCalledWith({ open: true, mode: 'browser', width: 880 })
+  })
+
   it('renders a focused utility column below the narrow breakpoint without an overlay', () => {
     frameWidth = 980
     const { frame, instance, getByTestId } = mountFrame()
@@ -305,6 +319,35 @@ describe('AppFrame', () => {
     act(() => { instance.actions.openUtility('terminal') })
     expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBeNull()
     expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(2)
+  })
+
+  it('exposes the utility divider as a keyboard-resizable separator', () => {
+    const { instance, getAllByRole } = mountFrame()
+    act(() => { instance.actions.openUtility('browser') })
+    const separators = getAllByRole('separator')
+    expect(separators.map(separator => separator.getAttribute('aria-label')))
+      .toEqual(['Resize sidebar', 'Resize utility workbench'])
+    const utility = separators.at(-1)
+    if (utility === undefined) throw new Error('utility separator missing')
+
+    expect(utility.getAttribute('aria-orientation')).toBe('vertical')
+    expect(utility.getAttribute('aria-valuemin')).toBe('420')
+    expect(utility.getAttribute('aria-valuemax')).toBe('1600')
+    expect(utility.getAttribute('aria-valuenow')).toBe('720')
+    expect(utility.tabIndex).toBe(0)
+
+    fireEvent.keyDown(utility, { key: 'ArrowLeft' })
+    expect(instance.store.getSnapshot().utilityWidth).toBe(736)
+    fireEvent.keyDown(utility, { key: 'ArrowRight' })
+    expect(instance.store.getSnapshot().utilityWidth).toBe(720)
+  })
+
+  it('omits an inert utility divider when the workbench owns the narrow frame', () => {
+    frameWidth = 560
+    const { instance, queryAllByRole } = mountFrame()
+    act(() => { instance.actions.openUtility('browser') })
+
+    expect(queryAllByRole('separator', { name: 'Resize utility workbench' })).toHaveLength(0)
   })
 
   it('allows a desktop workbench width well beyond the former 960px ceiling', () => {

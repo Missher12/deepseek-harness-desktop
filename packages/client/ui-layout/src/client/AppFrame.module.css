@@ -95,6 +95,11 @@
   transition: left var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
+.handle:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-focus);
+  outline-offset: -2px;
+}
+
 .frame[data-dragging] .handle {
   transition: none;
 }
@@ -128,9 +133,11 @@
 
 .detailsCol:hover ~ .handle[data-side='details']::after,
 .handle[data-side='details']:hover::after,
+.handle[data-side='details']:focus-visible::after,
 .handle[data-side='details'][data-dragging='true']::after,
 .utilityCol:hover ~ .handle[data-side='utility']::after,
 .handle[data-side='utility']:hover::after,
+.handle[data-side='utility']:focus-visible::after,
 .handle[data-side='utility'][data-dragging='true']::after {
   opacity: 1;
 }

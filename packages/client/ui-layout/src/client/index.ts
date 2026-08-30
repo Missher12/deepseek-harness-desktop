@@ -22,7 +22,7 @@ import { ThemePresenter } from './theme-presenter.ts'
 // OwnerShare contracts below are the render-side halves registrants compose
 // against; the frame components and the store factory are package-internal.
 export { LayoutController } from './service.ts'
-export type { ILayout } from './service.ts'
+export type { ILayout, UtilityLayoutSnapshot } from './service.ts'
 export { UTILITY_MODES } from './stores.ts'
 export type { UtilityMode } from './stores.ts'
 
@@ -144,7 +144,7 @@ export function apply(ctx: ClientContext): void {
       // conversation business actions belong to their registrants.
       inject: (actions: PanelActions) => {
         layout.attachPanels(actions)
-        return {}
+        return { publishUtilityLayout: layout.publishUtilityLayout }
       },
     }, AppFrame)
     return () => {

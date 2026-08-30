@@ -61,14 +61,16 @@ const api: DesktopApi = {
       return () => { ipcRenderer.off('desktop:update-state', handler) }
     },
   } : {}),
-  async showWorkbenchBrowser(bounds) {
-    if (!isDesktopBrowserBounds(bounds)) throw new Error('Invalid workbench Browser bounds.')
+  async showWorkbenchBrowser(...args: unknown[]) {
+    if (args.length !== 1 || !isDesktopBrowserBounds(args[0])) throw new Error('Invalid workbench Browser bounds.')
+    const bounds = args[0]
     const value: unknown = await ipcRenderer.invoke('desktop:workbench-browser-show', bounds)
     if (!isDesktopBrowserSnapshot(value)) throw new Error('Invalid workbench Browser state.')
     return value
   },
-  async layoutWorkbenchBrowser(bounds) {
-    if (!isDesktopBrowserBounds(bounds)) throw new Error('Invalid workbench Browser bounds.')
+  async layoutWorkbenchBrowser(...args: unknown[]) {
+    if (args.length !== 1 || !isDesktopBrowserBounds(args[0])) throw new Error('Invalid workbench Browser bounds.')
+    const bounds = args[0]
     await ipcRenderer.invoke('desktop:workbench-browser-layout', bounds)
   },
   async setWorkbenchBrowserDockVisibility(...args: unknown[]) {
@@ -77,11 +79,13 @@ const api: DesktopApi = {
     }
     await ipcRenderer.invoke('desktop:workbench-browser-dock-visibility', args[0])
   },
-  async hideWorkbenchBrowser() {
+  async hideWorkbenchBrowser(...args: unknown[]) {
+    if (args.length !== 0) throw new TypeError('Workbench Browser hide accepts no arguments.')
     await ipcRenderer.invoke('desktop:workbench-browser-hide')
   },
-  async controlWorkbenchBrowser(request) {
-    if (!isDesktopBrowserRequest(request)) throw new Error('Invalid workbench Browser request.')
+  async controlWorkbenchBrowser(...args: unknown[]) {
+    if (args.length !== 1 || !isDesktopBrowserRequest(args[0])) throw new Error('Invalid workbench Browser request.')
+    const request = args[0]
     const value: unknown = await ipcRenderer.invoke('desktop:workbench-browser-control', request)
     if (!isDesktopBrowserSnapshot(value)) throw new Error('Invalid workbench Browser state.')
     return value
