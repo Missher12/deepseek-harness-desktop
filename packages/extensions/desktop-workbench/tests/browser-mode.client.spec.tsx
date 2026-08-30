@@ -30,9 +30,13 @@ const snapshot = {
 const translate: PropsLocale<typeof NS>['t'] = key => Object.hasOwn(en, key)
   ? en[key as DesktopWorkbenchKey]
   : key
+type TakeoverStatus = Readonly<{
+  phase: 'human' | 'given' | 'agent' | 'stopping'
+  signedInWarning: true
+}>
 
 function setup() {
-  let takeoverListener: ((value: { phase: 'human' | 'given' | 'agent' | 'stopping'; signedInWarning: true }) => void) | undefined
+  let takeoverListener: ((value: TakeoverStatus) => void) | undefined
   const api = {
     showWorkbenchBrowser: vi.fn(async () => snapshot),
     layoutWorkbenchBrowser: vi.fn(async () => {}),
@@ -42,7 +46,9 @@ function setup() {
     giveWorkbenchBrowserToAgent: vi.fn(async () => ({ phase: 'given' as const, signedInWarning: true as const })),
     setComputerControlSetting: vi.fn(async () => undefined),
     stopAgentBrowser: vi.fn(async () => ({ phase: 'human' as const, signedInWarning: true as const })),
-    getBrowserTakeoverStatus: vi.fn(async () => ({ phase: 'human' as const, signedInWarning: true as const })),
+    getBrowserTakeoverStatus: vi.fn<() => Promise<TakeoverStatus>>(async () => ({
+      phase: 'human', signedInWarning: true,
+    })),
     onBrowserTakeoverStatus: vi.fn((listener: typeof takeoverListener) => {
       takeoverListener = listener
       return () => { takeoverListener = undefined }
@@ -138,7 +144,7 @@ describe('Workbench Browser takeover controls', () => {
 
   it('waits for takeover status before choosing the human or Agent layout path', async () => {
     const { api } = setup()
-    let resolveStatus: ((status: { phase: 'agent'; signedInWarning: true }) => void) | undefined
+    let resolveStatus: ((status: TakeoverStatus) => void) | undefined
     api.getBrowserTakeoverStatus.mockImplementationOnce(async () => await new Promise((resolve) => {
       resolveStatus = resolve
     }))
