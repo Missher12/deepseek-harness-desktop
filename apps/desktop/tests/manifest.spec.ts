@@ -242,11 +242,18 @@ describe('desktop package manifest', () => {
     expect(mainSource.match(/controlCoordinator\.resumeAdmission\(\)/g)).toHaveLength(2)
   })
 
-  it('bundles every runtime validator into the sandboxed preload artifact', () => {
+  it('keeps the sandboxed preload dependency closure electron-only', () => {
     const bundleConfig = readFileSync(new URL('../tsdown.config.ts', import.meta.url), 'utf8')
     const preloadConfig = bundleConfig.slice(bundleConfig.indexOf("entry: { preload: 'lib/types/preload.js' }"))
+    const preloadSource = readFileSync(new URL('../src/preload.ts', import.meta.url), 'utf8')
+    const preloadApiSource = readFileSync(new URL('../src/preload-api.ts', import.meta.url), 'utf8')
+    const browserUiSource = readFileSync(new URL('../src/browser/ui-contracts.ts', import.meta.url), 'utf8')
 
-    expect(preloadConfig).toContain("alwaysBundle: ['@deepseek-ai/dsh-desktop-control-protocol']")
+    expect(preloadConfig).toContain("neverBundle: ['electron']")
+    expect(preloadConfig).not.toContain('alwaysBundle')
+    expect(preloadSource).toContain("from './browser/ui-contracts.ts'")
+    expect(preloadApiSource).toContain("from './browser/ui-contracts.ts'")
+    expect(browserUiSource).not.toMatch(/@deepseek-ai|node:/u)
   })
 
   it('ships one ordered default-on external-brain stack from immutable release archives', () => {

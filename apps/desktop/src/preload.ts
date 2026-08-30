@@ -16,7 +16,7 @@ import {
 } from './preload-api.ts'
 import {
   isDesktopBrowserBounds, isDesktopBrowserRequest, isDesktopBrowserSnapshot,
-} from './browser/contracts.ts'
+} from './browser/ui-contracts.ts'
 
 const api: DesktopApi = {
   onCommand(listener) {

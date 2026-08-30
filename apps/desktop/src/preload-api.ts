@@ -275,4 +275,4 @@ declare global {
     dshDesktop?: DesktopApi
   }
 }
-import type { DesktopBrowserBounds, DesktopBrowserRequest, DesktopBrowserSnapshot } from './browser/contracts.ts'
+import type { DesktopBrowserBounds, DesktopBrowserRequest, DesktopBrowserSnapshot } from './browser/ui-contracts.ts'

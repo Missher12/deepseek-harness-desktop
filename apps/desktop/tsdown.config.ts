@@ -33,7 +33,6 @@ export default defineConfig([
     clean: false,
     deps: {
       neverBundle: ['electron'],
-      alwaysBundle: ['@deepseek-ai/dsh-desktop-control-protocol'],
     },
   },
   {
