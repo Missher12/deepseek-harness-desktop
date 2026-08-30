@@ -23,7 +23,6 @@ import { ThemePresenter } from './theme-presenter.ts'
 // against; the frame components and the store factory are package-internal.
 export { LayoutController } from './service.ts'
 export type { ILayout } from './service.ts'
-export { UTILITY_DEFAULT, UTILITY_MAX, UTILITY_MIN } from './columns.ts'
 export { UTILITY_MODES } from './stores.ts'
 export type { UtilityMode } from './stores.ts'
 
