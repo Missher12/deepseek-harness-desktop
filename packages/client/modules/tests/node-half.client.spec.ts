@@ -267,7 +267,7 @@ describe('client bundle activation', () => {
     }
     const { service } = constructWithRoute([MODULES_ID], {
       entryBaseUrl: pathToFileURL(join(root!, 'profile')).href + '/',
-      internal: internal as NonNullable<Context['loader']['internal']>,
+      internal: internal as unknown as NonNullable<Context['loader']['internal']>,
     })
 
     expect(service.clientPath(MODULES_ID)).toBe(clientPath)
