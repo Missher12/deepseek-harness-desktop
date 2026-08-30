@@ -240,6 +240,46 @@ describe('HTML bootstrap facade', () => {
 })
 
 describe('client bundle activation', () => {
+  it('follows a packaged module fallback proxy to the original client bundle', () => {
+    const clientPath = writePackage(MODULES_ID)
+    const packageRoot = dirname(dirname(clientPath))
+    const hostPath = join(packageRoot, 'lib', 'index.js')
+    mkdirSync(dirname(hostPath), { recursive: true })
+    writeFileSync(hostPath, 'export default {}\n')
+    writeFileSync(clientPath, 'window.__ModuleLoader__.load({ id: "bootstrap", factory: () => ({}) })\n')
+
+    const proxyRoot = join(root!, 'profile', 'node_modules', ...MODULES_ID.split('/'))
+    const proxyEntry = join(proxyRoot, 'entry-0.js')
+    mkdirSync(proxyRoot, { recursive: true })
+    writeFileSync(join(proxyRoot, 'package.json'), JSON.stringify({
+      name: MODULES_ID,
+      version: '0.0.0-test',
+      private: true,
+      type: 'module',
+      exports: { '.': './entry-0.js' },
+      dsh: { moduleFallback: { targets: { '.': pathToFileURL(hostPath).href } } },
+    }))
+    writeFileSync(proxyEntry, `export * from ${JSON.stringify(pathToFileURL(hostPath).href)}\n`)
+
+    const internal = {
+      version: 'v2' as const,
+      resolveSync: () => ({ format: 'module' as const, url: pathToFileURL(proxyEntry).href }),
+    }
+    const { service } = constructWithRoute([MODULES_ID], {
+      entryBaseUrl: pathToFileURL(join(root!, 'profile')).href + '/',
+      internal: internal as NonNullable<Context['loader']['internal']>,
+    })
+
+    expect(service.clientPath(MODULES_ID)).toBe(clientPath)
+    expect(service.graph().entries.map(entry => entry.id)).toEqual([MODULES_ID])
+    expect(service.graph().batches).toEqual([
+      expect.objectContaining({ phase: 'bootstrap', entries: [MODULES_ID] }),
+    ])
+    expect(bootInjections(service.graph())).toContainEqual(
+      expect.objectContaining({ kind: 'script-src', placement: 'head' }),
+    )
+  })
+
   it.each(['v1', 'v2'] as const)(
     'resolves %s package metadata from the owning entry tree',
     (version) => {

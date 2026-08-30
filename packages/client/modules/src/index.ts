@@ -92,6 +92,15 @@ interface ResolvedPkgMeta {
   meta: PkgMeta
 }
 
+/** Minimal manifest surface identifying an app-boot managed ESM fallback proxy. */
+interface ManagedModuleFallbackManifest {
+  name?: unknown
+  private?: unknown
+  type?: unknown
+  exports?: unknown
+  dsh?: unknown
+}
+
 /** One active Loader source and the browser package manifest it resolves to. */
 interface ClientPackageSource extends ResolvedPkgMeta {
   /** Loader specifier from the active row. */
@@ -104,6 +113,32 @@ interface ClientPackageSource extends ResolvedPkgMeta {
 
 /** Recovery instruction shared by grouped startup and steady-state bundle diagnostics. */
 const CLIENT_BUNDLE_BUILD_INSTRUCTION = 'run `pnpm run build` before launch'
+
+/**
+ * Return the original default-export URL behind one app-boot managed proxy.
+ * The proxy is a Node-only ESM re-export and must never be concatenated into a
+ * browser combo; client metadata and bytes belong to the original package.
+ */
+function managedModuleFallbackTarget(manifest: ManagedModuleFallbackManifest): string | undefined {
+  if (manifest.private !== true || manifest.type !== 'module') return undefined
+  const exports = manifest.exports
+  if (exports === null || typeof exports !== 'object' || Array.isArray(exports)) return undefined
+  const defaultExport = (exports as Record<string, unknown>)['.']
+  if (typeof defaultExport !== 'string' || !/^\.\/entry-\d+\.js$/u.test(defaultExport)) return undefined
+  const dsh = manifest.dsh
+  if (dsh === null || typeof dsh !== 'object' || Array.isArray(dsh)) return undefined
+  const moduleFallback = (dsh as Record<string, unknown>).moduleFallback
+  if (moduleFallback === null || typeof moduleFallback !== 'object' || Array.isArray(moduleFallback)) return undefined
+  const targets = (moduleFallback as Record<string, unknown>).targets
+  if (targets === null || typeof targets !== 'object' || Array.isArray(targets)) return undefined
+  const target = (targets as Record<string, unknown>)['.']
+  if (typeof target !== 'string') return undefined
+  try {
+    return new URL(target).protocol === 'file:' ? target : undefined
+  } catch {
+    return undefined
+  }
+}
 
 /** Missing built client export, retained as structured data for activation-error grouping. */
 class MissingClientBundleError extends Error {
@@ -797,10 +832,8 @@ export class ClientModuleRegistry extends Service {
         return this.nearestPackage(moduleUrl)
       }
       try {
-        return {
-          path: createRequire(baseUrl).resolve(`${expectedPackageName}/package.json`),
-          packageName: expectedPackageName,
-        }
+        const manifestUrl = pathToFileURL(createRequire(baseUrl).resolve(`${expectedPackageName}/package.json`)).href
+        return this.nearestPackage(manifestUrl, expectedPackageName)
       } catch {
         // Without Node internals the owning tree is the only resolver; an
         // unresolvable name is classified exactly as below.
@@ -823,6 +856,8 @@ export class ClientModuleRegistry extends Service {
   private nearestPackage(
     moduleUrl: string,
     expectedPackageName?: string,
+    allowManagedFallback = true,
+    seen = new Set<string>(),
   ): { path: string; packageName: string } | undefined {
     if (!moduleUrl.startsWith('file:')) return undefined
     let dir = dirname(fileURLToPath(moduleUrl))
@@ -830,8 +865,15 @@ export class ClientModuleRegistry extends Service {
       const candidate = join(dir, 'package.json')
       if (existsSync(candidate)) {
         try {
-          const name = (JSON.parse(readFileSync(candidate, 'utf8')) as { name?: unknown }).name
+          if (seen.has(candidate)) return undefined
+          const manifest = JSON.parse(readFileSync(candidate, 'utf8')) as ManagedModuleFallbackManifest
+          const name = manifest.name
           if (typeof name === 'string' && (expectedPackageName === undefined || name === expectedPackageName)) {
+            const fallbackTarget = allowManagedFallback ? managedModuleFallbackTarget(manifest) : undefined
+            if (fallbackTarget !== undefined) {
+              seen.add(candidate)
+              return this.nearestPackage(fallbackTarget, name, false, seen)
+            }
             return { path: candidate, packageName: name }
           }
         } catch {
