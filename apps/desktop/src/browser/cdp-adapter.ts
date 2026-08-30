@@ -335,6 +335,7 @@ export class CdpBrowserAdapter {
   private ownedDebuggerCleanupRequired = false
   private destroyed = false
   private epoch = 1
+  private hardEpoch = 1
   private revision = 1
   private approvedNavigation: string | undefined
   private references = new Map<AgentBrowserRef, BrowserReferenceBinding>()
@@ -362,7 +363,7 @@ export class CdpBrowserAdapter {
     this.invalidate()
   }
   private readonly debuggerMessage: Listener = (_event, method) => {
-    if (typeof method === 'string' && MATERIAL_TREE_EVENTS.has(method)) this.invalidate()
+    if (typeof method === 'string' && MATERIAL_TREE_EVENTS.has(method)) this.invalidate('material')
   }
   private readonly guardNavigation: Listener = (event, url) => {
     if (typeof url !== 'string') {
@@ -440,8 +441,36 @@ export class CdpBrowserAdapter {
     signal?: AbortSignal,
   ): Promise<AgentBrowserSnapshotEnvelope> {
     await this.runDiagnosticStage('start', async () => { await this.start(signal) })
+    const startedAt = this.now()
+    const hardEpoch = this.hardEpoch
+    let failure: unknown
+    for (let attempt = 0; attempt < BROWSER_AGENT_LIMITS.snapshotAttempts; attempt += 1) {
+      const attemptEpoch = this.epoch
+      try {
+        return await this.snapshotAttempt(request, startedAt, signal)
+      } catch (error) {
+        failure = error
+        const materialTreeChanged = error instanceof AgentBrowserError
+          && error.code === 'STALE_REF'
+          && this.hardEpoch === hardEpoch
+          && this.epoch !== attemptEpoch
+        if (!materialTreeChanged || attempt + 1 >= BROWSER_AGENT_LIMITS.snapshotAttempts) throw error
+      }
+    }
+    throw failure
+  }
+
+  private async snapshotAttempt(
+    request: { readonly includeImage: boolean },
+    startedAt: number,
+    signal?: AbortSignal,
+  ): Promise<AgentBrowserSnapshotEnvelope> {
     this.assertSignal(signal)
-    const budget = this.createBudget()
+    const remainingMs = BROWSER_AGENT_LIMITS.wallMs - (this.now() - startedAt)
+    if (remainingMs <= 0) {
+      throw new AgentBrowserError('TIMEOUT', 'browser operation exceeded its wall-time bound')
+    }
+    const budget = this.createBudget(remainingMs)
     const walk = await this.runDiagnosticStage(
       'accessibility',
       async () => await this.walkAccessibilityTree(budget, signal),
@@ -1316,7 +1345,8 @@ export class CdpBrowserAdapter {
     if (hasPreventDefault(event)) event.preventDefault()
   }
 
-  private invalidate(): void {
+  private invalidate(kind: 'hard' | 'material' = 'hard'): void {
+    if (kind === 'hard') this.hardEpoch += 1
     this.epoch += 1
     this.revision += 1
     this.references.clear()

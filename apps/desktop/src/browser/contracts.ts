@@ -13,6 +13,7 @@ export const BROWSER_AGENT_LIMITS = Object.freeze({
   cdpCalls: 2_048,
   startupMs: 20_000,
   startupAttempts: 2,
+  snapshotAttempts: 3,
   accessibilityAttempts: 3,
   accessibilityRetryMs: 500,
   cleanupMs: 2_000,

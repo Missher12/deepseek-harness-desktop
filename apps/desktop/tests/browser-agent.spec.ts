@@ -304,6 +304,52 @@ describe('semantic Agent browser adapter', () => {
       .toBeLessThan(contents.debugger.calls.findIndex(call => call.method === 'Overlay.enable'))
   })
 
+  it('restarts one snapshot internally when the live AX tree changes during its first walk', async () => {
+    const contents = new FakeWebContents()
+    installTree(contents, [buttonNode()])
+    let roots = 0
+    contents.debugger.handlers.set('Accessibility.getRootAXNode', () => {
+      roots += 1
+      if (roots === 1) contents.debugger.emitMessage('Accessibility.nodesUpdated')
+      return { node: { nodeId: 'root', role: { value: 'RootWebArea' }, childIds: ['children'] } }
+    })
+
+    const snapshot = await adapterFor(contents).snapshot({ includeImage: false })
+
+    expect(roots).toBe(2)
+    expect(snapshot.result.refs).toHaveLength(1)
+    expect(snapshot.result.refs[0]?.name).toBe('Continue')
+  })
+
+  it('bounds repeated live AX snapshot restarts and never retries a real navigation', async () => {
+    const changing = new FakeWebContents()
+    installTree(changing, [buttonNode()])
+    let changingRoots = 0
+    changing.debugger.handlers.set('Accessibility.getRootAXNode', () => {
+      changingRoots += 1
+      changing.debugger.emitMessage('Accessibility.nodesUpdated')
+      return { node: { nodeId: 'root', role: { value: 'RootWebArea' }, childIds: ['children'] } }
+    })
+
+    await expect(adapterFor(changing).snapshot({ includeImage: false }))
+      .rejects.toMatchObject({ code: 'STALE_REF' })
+    expect(changingRoots).toBeGreaterThan(1)
+    expect(changingRoots).toBeLessThanOrEqual(3)
+
+    const navigating = new FakeWebContents()
+    installTree(navigating, [buttonNode()])
+    let navigatingRoots = 0
+    navigating.debugger.handlers.set('Accessibility.getRootAXNode', () => {
+      navigatingRoots += 1
+      navigating.emit('did-navigate-in-page')
+      return { node: { nodeId: 'root', role: { value: 'RootWebArea' }, childIds: ['children'] } }
+    })
+
+    await expect(adapterFor(navigating).snapshot({ includeImage: false }))
+      .rejects.toMatchObject({ code: 'STALE_REF' })
+    expect(navigatingRoots).toBe(1)
+  })
+
   it('retries the renderer-sensitive debugger handshake exactly once without reattaching', async () => {
     vi.useFakeTimers()
     try {
