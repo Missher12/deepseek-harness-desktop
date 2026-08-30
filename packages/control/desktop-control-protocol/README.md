@@ -1,8 +1,23 @@
+---
+description: "Closed, strictly decoded Desktop-control wire protocol shared by Harness, Electron, and the native helper"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-desktop-control-protocol
 
 English | [中文](README.zh.md)
 
+## Summary
+
 The sole TypeScript source of cross-process Desktop-control actions, results, errors, and branded identifiers. Harness-to-Electron requests use `BridgeRequest`; Electron-to-helper requests use `HelperRequest`, keeping recovery-only `input.release` and Electron-authored `lease.install` out of the child request union. This package is a pure library with no runtime service or tool registration.
+
+## Table of Contents
+
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+-----
 
 ## Protocol v1
 
@@ -26,6 +41,12 @@ An unprefixed frame begins with tag `0x01` for at most 65,536 JSON bytes or tag 
 
 Bridge deadlines remain wall-clock values so Electron can shorten and convert them; `assertBridgeDeadline(request, nowUnixMs)` accepts only a deadline strictly after the single caller-supplied current time and no more than 30 seconds ahead. Helper requests instead carry `timeoutMs` from 1 through 30,000. `lease.install` reuses the same pair-preserving target and capability types and adds Electron-authored quotas for total `operations`, snapshots, pointer actions, key actions, and text bytes; `agentId` is display metadata, never identity. Stateful request correlation, duplicate-request tombstones, cancellation, and child generations belong to the Host bridge, not this stateless codec. The raw acquire/release fixtures join the existing status and screenshot fixtures as byte-parity inputs for the later Rust helper. The [closed protocol Agent Note](../../../.agents/notes/implemented/architecture/2026-08-28-closed-desktop-control-protocol.md) records the ownership decision.
 
+<a id="dev-note"></a>
+## Dev Note
+
+None.
+
+<a id="model-experience"></a>
 ## Model Experience
 
 None, as this package validates process messages and registers no prompt, tool schema, or model result.
@@ -35,6 +56,8 @@ None, as this package validates process messages and registers no prompt, tool s
 None; this package neither assembles nor sends a model request.
 
 ## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - **Protocol v1 has no negotiation or compatibility adapter** — an unsupported version fails closed under the repository's pre-release compatibility stance.
 - **The codec does not authorize an operation** — Electron and the native helper must enforce leases, policy, quotas, deadlines, and revocation when they consume these validated DTOs.

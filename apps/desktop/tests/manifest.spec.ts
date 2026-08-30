@@ -98,7 +98,7 @@ describe('desktop package manifest', () => {
 
     expect(manifest).toMatchObject({
       name: '@deepseek-ai/dsh-desktop',
-      version: '0.4.8',
+      version: '0.4.9',
       packageManager: 'pnpm@11.7.0',
       private: true,
       main: 'lib/main.js',
@@ -298,7 +298,7 @@ describe('desktop package manifest', () => {
       name: 'dshmarket',
       config: {
         builtins: [
-          expect.objectContaining({ name: '@deepseek-ai/dsh-missher-brain', spec: 'builtin:0.1.1-rc.2', category: 'memory' }),
+          expect.objectContaining({ name: '@deepseek-ai/dsh-missher-brain', spec: 'builtin:0.1.2-alpha.2', category: 'memory' }),
           expect.objectContaining({
             name: 'dsh-missher-memory',
             spec: 'builtin:0.2.0',

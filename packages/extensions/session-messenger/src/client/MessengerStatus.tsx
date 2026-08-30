@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
   IconCheckOutline16,
   IconCopyOutline16,

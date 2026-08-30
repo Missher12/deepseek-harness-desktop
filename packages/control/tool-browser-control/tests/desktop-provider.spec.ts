@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import {
@@ -96,7 +96,7 @@ async function setup(requester: DesktopControlRequester) {
 function call(ctx: Context, name: string, args: unknown) {
   return ctx.tools.execute({
     signal: new AbortController().signal,
-    callId: CallId(`desktop-provider-call-${++callNumber}`),
+    callId: ToolCallId(`desktop-provider-call-${++callNumber}`),
     name,
     arguments: args,
     agent: {

@@ -1,8 +1,23 @@
+---
+description: "Closed native Computer Use tools over the optional DeepSeek Harness ComputerControl provider"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-computer-control
 
 English | [中文](README.zh.md)
 
+## Summary
+
 This optional Consumer exposes Desktop-owned native Computer Use through exactly twelve closed tools: status, list, snapshot, focus, click, double-click, drag, type, key, scroll, wait, and Stop. It registers no model tools unless `ctx.computerControl` exists, so ordinary CLI and Web behavior remains unchanged.
+
+## Table of Contents
+
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+-----
 
 ## Contract
 
@@ -12,6 +27,12 @@ Semantic refs are preferred. Screenshot coordinates are accepted only on the exa
 
 Safe tool errors keep five decisions distinct. Disabled Computer Control, a missing application allowlist entry, denied operating-system permissions, a declined native task challenge, and a protected target each produce bounded corrective text. The ordinary Harness `ask` or `never` tool policy does not replace Electron's per-task native approval and cannot pre-authorize an application.
 
+<a id="dev-note"></a>
+## Dev Note
+
+None.
+
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Tool schemas
@@ -29,6 +50,8 @@ The fixed schemas add a bounded input cost whenever the Desktop provider is moun
 The roster is prefix-stable while `ComputerControl` availability and the closed schemas remain unchanged. Mounting or removing the provider changes tool visibility and may invalidate reuse from that point.
 
 ## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - Accessibility semantics cannot prove every external effect; native policy and visible user control remain authoritative.
 - Coordinate click, double-click, drag, and scroll require a vision-capable route and remain window-relative.

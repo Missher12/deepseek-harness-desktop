@@ -1,8 +1,23 @@
+---
+description: "@deepseek-ai/dsh-reasoning-effort 的中文包参考，涵盖其运行时职责、组合边界与已知限制。"
+kind: "package-bundle"
+---
+
 # @deepseek-ai/dsh-reasoning-effort
 
 [English](README.md) | 中文
 
+## 概述
+
 这是一个可移除、符合 Harness 风格的单席位模型选择控件。它保留 HanaAyane 锁定版本的 Canvas 思考等级特效，弹层优先显示在输入框下方；模型、真实提交值和当前选项读取活动 Host 的 `ModelDirectory`，固定六档视觉标签再安全映射到每个模型的精确能力。
+
+## 目录
+
+- [开发备注](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+
+-----
 
 ## 行为
 
@@ -32,6 +47,12 @@ DeepSeek Harness Desktop 从不可变的 Desktop patch 挂载此 workspace 包�
 
 Host 半只拥有一个按 profile 保存的 `chibiThumb` 布尔值、最多 64 条以确切会话／提供方／模型路由为键的视觉位置，以及一条由每代 capability 鉴权的精确 loopback 偏好端点。这个有界映射不包含 prompt 或回复正文；端点不开放通用设置访问、不启用 CORS，且只接受它持有的两种窄补丁形状。因此 Ultra 视觉选择可跨控件重挂载、会话切换、Desktop 随机端口和应用重启保留，而真实 Host 档位仍是映射后的受支持值。停用插件不会修改会话或 provider 设置，也不承诺删除这些惰性的本地偏好；重新启用时可能继续使用它们。
 
+<a id="dev-note"></a>
+## 开发备注
+
+无。
+
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 已选思考等级
@@ -49,6 +70,8 @@ Host 半只拥有一个按 profile 保存的 `chibiThumb` 布尔值、最多 64 
 本插件不改写会话历史，因此自身不会改变缓存前缀。修改请求级推理配置能否复用 provider 缓存取决于 provider，本包不作保证。
 
 ## 已知限制与欠账
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - 兼容性只针对仓库的 `0.1.0-rc.8` 约定完成验证；Harness 升级后必须重新检查 peer、服务、staged profile 和视觉表现。
 - 按 profile 保存的有界偏好不是卸载清理器；移除插件后，可能保留惰性的人物 opt-in 与视觉路由位置供以后重装使用。

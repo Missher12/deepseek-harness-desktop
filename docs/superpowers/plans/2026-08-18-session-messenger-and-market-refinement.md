@@ -117,11 +117,11 @@ Commit: `git commit -am "feat: add safe session messaging routes"`
 ### Task 3: Render one visible Harness relay card
 
 **Files:**
-- Create target: `packages/client/ui-conversation/src/client/chat/<RelayMessageCard.tsx>`
-- Create target: `packages/client/ui-conversation/src/client/chat/<RelayMessageCard.module.css>`
-- Modify: `packages/client/ui-conversation/src/client/chat/MessageItem.tsx`
+- Create target: `packages/client/ui-chat/src/client/chat/<RelayMessageCard.tsx>`
+- Create target: `packages/client/ui-chat/src/client/chat/<RelayMessageCard.module.css>`
+- Modify: `packages/client/ui-chat/src/client/chat/MessageItem.tsx`
 - Modify: `packages/client/ui-conversation/src/client/locales.ts`
-- Test: `packages/client/ui-conversation/tests/chat-branch-tails.client.spec.tsx`
+- Test: `packages/client/ui-chat/tests/chat-branch-tails.client.spec.tsx`
 
 - [ ] **Step 1: Write failing card and fallback tests**
 
@@ -136,7 +136,7 @@ expect(onReply).toHaveBeenCalledWith(expect.objectContaining({ deliveryId: 'deli
 
 - [ ] **Step 2: Run the conversation test and confirm RED**
 
-Run: `pnpm exec vitest run packages/client/ui-conversation/tests/chat-branch-tails.client.spec.tsx`
+Run: `pnpm exec vitest run packages/client/ui-chat/tests/chat-branch-tails.client.spec.tsx`
 
 Expected: FAIL because every relay still uses the collapsed context row.
 
@@ -152,7 +152,7 @@ return relay === null
 
 - [ ] **Step 4: Run the conversation tests and commit**
 
-Run: `pnpm exec vitest run packages/client/ui-conversation/tests/chat-branch-tails.client.spec.tsx packages/client/ui-conversation/tests/chat-view.client.spec.tsx`
+Run: `pnpm exec vitest run packages/client/ui-chat/tests/chat-branch-tails.client.spec.tsx packages/client/ui-chat/tests/chat-view.client.spec.tsx`
 
 Expected: PASS.
 
@@ -286,7 +286,7 @@ Expected: three updated pairing records.
 
 - [ ] **Step 2: Run focused and repository-wide verification**
 
-Run: `pnpm exec vitest run packages/extensions/session-messenger/tests packages/client/ui-conversation/tests/chat-branch-tails.client.spec.tsx scripts/dshmarket-client-layout.spec.ts scripts/dshmarket-client-artifact.spec.ts scripts/stage-desktop.spec.ts`
+Run: `pnpm exec vitest run packages/extensions/session-messenger/tests packages/client/ui-chat/tests/chat-branch-tails.client.spec.tsx scripts/dshmarket-client-layout.spec.ts scripts/dshmarket-client-artifact.spec.ts scripts/stage-desktop.spec.ts`
 
 Run: `pnpm run typecheck && pnpm run lint && pnpm run doc-sync && git diff --check`
 

@@ -1,9 +1,24 @@
+---
+description: "有界外置大脑 Provider 注册、仲裁、设置投影与顶层轮次上下文注入。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-missher-brain
 
 [English](README.md) | 中文
 
+## 概述
+
 DeepSeek Harness 的本地“外置大脑”中心。它校验并注册相互独立的事实记忆与流程学习 Provider，然后为每个符合条件的顶层轮次选择一批有界上下文。Provider 继续拥有自己的数据库和副作用；中心不拥有任何用户记忆。
 
+## 目录
+
+- [Provider 约定](#provider-contract)
+- [开发备注](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+
+<a id="provider-contract"></a>
 ## Provider 约定
 
 - 每个存活 Provider 都有非空唯一 `id`、协议版本 `1`，以及 1 至 6,000 的整数 byte 预算。
@@ -11,6 +26,12 @@ DeepSeek Harness 的本地“外置大脑”中心。它校验并注册相互独
 - 注册顺序稳定，并返回精确注册的资源释放函数。旧资源释放函数不能移除使用相同 ID 的后继项。
 - 本地设置 Remote 只暴露 Provider ID、状态、有界条目数、字节预算和固定仲裁上限。Provider 异常或超时只会变成 `unavailable` 行；路径和错误细节不会进入浏览器。
 
+<a id="dev-note"></a>
+## 开发备注
+
+无。
+
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 外置大脑候选项
@@ -28,6 +49,8 @@ DeepSeek Harness 的本地“外置大脑”中心。它校验并注册相互独
 注册表不会触碰请求前缀。符合条件的召回只改变该轮外置大脑上下文，可能降低受影响前缀的缓存复用。所有 Provider 共用 150 ms 截止时间；超时、取消、异常输出、接受失败和清理失败都会返回原始下游决策。
 
 ## 已知限制与暂缓事项
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - 协议版本 `1` 只支持本地纯文本贡献。二进制知识、远程 Provider 发现和跨设备同步不属于本包范围。
 - 项目标识是会话绝对工作目录的无路径 SHA-256。它让 Provider 看不到原始路径，但不会合并通过不同符号链接拼写访问的同一项目。

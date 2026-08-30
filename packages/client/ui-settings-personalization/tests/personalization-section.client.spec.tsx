@@ -20,6 +20,7 @@ function props(overrides: Partial<PersonalizationSectionProps> = {}): Personaliz
   return {
     close: vi.fn(),
     useSessions: unusedHook,
+    useSessionPendingInteraction: unusedHook,
     useWorkspaces: unusedHook,
     t: makeTranslate(en),
     load: vi.fn(async () => base),

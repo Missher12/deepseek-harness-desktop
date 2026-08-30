@@ -1,6 +1,13 @@
+---
+description: "Global personalization editor for Web Settings"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-settings-personalization
 
 English | [中文](README.zh.md)
+
+## Summary
 
 Global **Personalization** section for Web and Desktop Settings. The browser plugin registers the localized `personalization` section at order 5 and calls the typed Host Settings API; it never receives a file path and keeps no browser-local copy.
 
@@ -8,6 +15,20 @@ The page edits only the Desktop-owned marked block in the canonical `$DSH_HOME/A
 
 The section paints stable disabled controls before the first response, then provides a bounded custom-instructions editor, UTF-8 byte count, explicit Save action, reply-style selector, and accessible status messages. Existing manual global instructions and more specific project `AGENTS.md` rules remain authoritative outside the managed block.
 
+## Table of Contents
+
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+-----
+
+<a id="dev-note"></a>
+## Dev Note
+
+None.
+
+<a id="model-experience"></a>
 ## Model Experience
 
 Indirectly, through the existing agent-instructions loader, which makes saved text visible from the next request while this browser package adds no second instruction source.
@@ -17,6 +38,8 @@ Indirectly, through the existing agent-instructions loader, which makes saved te
 Changing global instructions changes the prompt prefix for later requests and can invalidate provider prompt-cache reuse for that prefix. Merely opening this Settings page has no model or cache effect.
 
 ## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - **One device-local document** — personalization is stored in the active Harness home and is not cloud-synchronized.
 - **No destructive ownership takeover** — malformed or externally managed targets remain read-only instead of being rewritten.

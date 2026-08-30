@@ -1,8 +1,23 @@
+---
+description: "@deepseek-ai/dsh-session-messenger 的中文包参考，涵盖其运行时职责、组合边界与已知限制。"
+kind: "package-bundle"
+---
+
 # @deepseek-ai/dsh-session-messenger
 
 [English](README.md) | 中文
 
+## 概述
+
 面向 Desktop 的 Host 与 Client 插件，用于在同一个活动 profile 内的普通 DeepSeek Harness 会话之间进行类似 Codex 的有界通信。复制会话 A 的准确 ID，粘贴到会话 B 的普通聊天框，再让 B 的 Agent 发送消息：插件会启动 A 的已有 Agent，A 可以通过可信的来源与 delivery 元数据回复 B。任意一方都能发起、继续或停止一条交流链。它注册五个模型工具，持久化 write-ahead 投递 receipt，通过 Host 所有的 Typert lookup 寻址 live 或 cold 会话，并把交流显示在普通会话历史中，不改变普通 Web 组合。
+
+## 目录
+
+- [开发备注](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+
+-----
 
 ## 工具约定
 
@@ -38,6 +53,12 @@ DeepSeek Harness Desktop 会在 base 与 Web 层之后恰好应用一次相同�
 
 Client 侧维护普通会话消息行所需的受限 receipt 状态；它不注册独立标题栏入口、抽屉、侧边聊天或 overlay。用户复制准确 Session ID，粘贴到普通聊天框，再让当前 Agent 发送或回复。一次被接受的 outgoing 投递会在来源侧追加 ignorable 会话行，目标 relay 则保持普通可见 user-message 行，因此两边会话都能看到交流，同时来源文本不会重复进入模型历史。通知仍然只限站内：没有原生 macOS 通知、替代会话行、独立消息档案或自动 Agent loop。
 
+<a id="dev-note"></a>
+## 开发备注
+
+无。
+
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 五个跨会话工具
@@ -55,6 +76,8 @@ Client 侧维护普通会话消息行所需的受限 receipt 状态；它不注�
 只要插件与展示模式不变，五项定义与 SDK 声明就逐字节稳定，因此会保留相应工具前缀的缓存段。启用或停用插件会改变该段；已投递并领取的 relay 追加在会话尾部，而不会重写先前消息。
 
 ## 已知限制与暂缓事项
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - 通信仅限一个活动 profile，并且只接受普通会话；尚未实现跨 profile、跨设备、subagent、广播、群组或公共网络投递。
 - 协同内容保留在来源和目标会话的普通历史中；不存在第二份消息档案或手动 relay 面板。

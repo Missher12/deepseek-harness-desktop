@@ -1,11 +1,32 @@
+---
+description: "@deepseek-ai/dsh-client-ui-settings-brain 的中文包参考，涵盖其运行时职责、组合边界与已知限制。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-settings-brain
 
 [English](README.md) | 中文
+
+## 概述
 
 Web 与桌面端设置中的统一**外置大脑**概览。浏览器插件以顺序 9 注册本地化分区，并读取一份有界且不含路径的 Host 快照。它不会读取记忆数据库、项目路径或 Provider 错误。
 
 页面会在首个响应之前先绘制三个稳定来源行：项目记忆、经过验证的经验规则，以及对旧记忆库的内置只读兼容；随后再用 Provider 状态和有界条目数替换占位内容。页面还会说明唯一召回路径、最多六条与 4 KB 的上限、150 ms 超时放行边界，以及可恢复的精确重复项自动压缩。
 
+## 目录
+
+- [开发备注](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+
+-----
+
+<a id="dev-note"></a>
+## 开发备注
+
+无。
+
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 外置大脑设置概览
@@ -23,6 +44,8 @@ Web 与桌面端设置中的统一**外置大脑**概览。浏览器插件以顺
 打开本页面不会影响提示词或缓存。符合条件的召回会在 Brain Hub 的文档上限内改变该轮上下文。
 
 ## 已知限制与暂缓事项
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - 各 Provider 的审核、删除与启用控件仍保留在其所属设置分区。
 - Provider 异常或错过状态截止时间时只显示为不可用，不暴露内部错误。

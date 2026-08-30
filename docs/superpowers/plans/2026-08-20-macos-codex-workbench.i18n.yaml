@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-08-20-macos-codex-workbench.md
-2026-08-20-macos-codex-workbench.md: 5bb8a958350c0da5dbf31993a802cb6c75bb3a29
-2026-08-20-macos-codex-workbench.zh.md: 2eb0e7b7fd318a61b9541755a285aee4e7e5fa59
+2026-08-20-macos-codex-workbench.md: 836c8720bbdfcfac88d70f42607c6ffcca07ede2
+2026-08-20-macos-codex-workbench.zh.md: 820a0cb0eeb2d9adc48329c536e3e4f3e50a3fe9

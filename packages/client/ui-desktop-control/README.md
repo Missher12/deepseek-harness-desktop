@@ -1,6 +1,13 @@
+---
+description: "Desktop-only visible Browser and Computer Control status and settings"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-desktop-control
 
 English | [中文](README.zh.md)
+
+## Summary
 
 Desktop-only visible Computer Use UI. It contributes a compact active-control capsule to the additive `layout.status` seat and a compact-list Browser & Computer Control settings section. The capsule shows the Agent, current application, action, and approval-free Stop. Version 0.4.3 has no Pause control.
 
@@ -10,6 +17,20 @@ Settings show explicit Browser Agent and Computer Control enablement, Screen Vie
 
 When Computer Control is enabled and applications are visible but none is allowed, the application section shows a corrective status instead of implying that enumeration granted control. It also explains that each new task has a separate Electron-native approval and that the ordinary Harness `ask` or `never` policy cannot replace it.
 
+## Table of Contents
+
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+-----
+
+<a id="dev-note"></a>
+## Dev Note
+
+None.
+
+<a id="model-experience"></a>
 ## Model Experience
 
 None, as this package only presents main-owned Desktop control state and fixed setting intents. It does not register tools, assemble prompts, select models, or send provider requests.
@@ -19,6 +40,8 @@ None, as this package only presents main-owned Desktop control state and fixed s
 None; this package never participates in a model request or changes its cache behavior.
 
 ## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - Native status/list observation is an optional main-process provider seam supplied with the native adapter.
 - OS permissions must be granted manually in system settings.

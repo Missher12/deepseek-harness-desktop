@@ -12,10 +12,11 @@ import {
   type TouchEvent as ReactTouchEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
-import type { ModelSelection, SessionId, SessionModels } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { ModelDirectory, ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import { IconCheckOutline16, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import chibiRunnerSprite from '../../assets/chibi-runner-strip.png'
 import { drawRadiation, type RadiationState } from './draw-radiation.ts'
 import { usePopupPlacement } from './use-popup-placement.ts'
@@ -510,10 +511,6 @@ interface ActiveEffortControlProps {
   readonly t: Translate
 }
 
-function stateFromModels(models: SessionModels): ModelDirectoryState {
-  return { ...models, status: 'ready', error: null }
-}
-
 /** Active session model/effort control. */
 function ActiveEffortControl({ locked, controller, sessionId, t }: ActiveEffortControlProps) {
   const state = useSyncExternalStore(
@@ -679,14 +676,15 @@ function ActiveEffortControl({ locked, controller, sessionId, t }: ActiveEffortC
     setPreviewIndex(index)
     setError(null)
     try {
-      const fresh = await controller.load()
-      const freshState = stateFromModels(fresh)
+      const freshState = await controller.load()
       const available = sliderLevels(freshState)
       const freshActual = modelEffortLevels(freshState)
       rollbackState = freshState
       rollbackVisualLevels = available
       rollbackActualLevels = freshActual
-      if (fresh.current.provider !== route.provider || fresh.current.model !== route.model) {
+      if (freshState.current === null
+        || freshState.current.provider !== route.provider
+        || freshState.current.model !== route.model) {
         throw new Error(t('error.staleRoute'))
       }
       if (!freshActual.some(level => level.id === target.id)) throw new Error(t('error.staleEffort'))

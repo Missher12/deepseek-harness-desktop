@@ -1,8 +1,23 @@
+---
+description: "@deepseek-ai/dsh-desktop-control-host 的中文包参考，涵盖其运行时职责、组合边界与已知限制。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-desktop-control-host
 
 [English](README.md) | 中文
 
+## 概述
+
 这是 [`BrowserControl`](../browser-control/README.zh.md) 与 [`ComputerControl`](../computer-control/README.zh.md) 的 Desktop 专用 Host provider。一个进程级 client、请求 ledger、callback 驱动的发送队列与 lease descriptor cache，通过 Electron 所有的准确 Harness 子进程 IPC 通道同时服务两个 provider。没有自有 Node IPC 通道时，本插件不会注册任一服务，普通 Harness 启动保持不变。
+
+## 目录
+
+- [开发备注](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+
+-----
 
 ## Transport 与生命周期
 
@@ -15,15 +30,23 @@
 
 这是特权第一方 transport 基础设施，不是模型工具。未来工具 Consumer 会在内部填充协议的官方 session 与 transport 字段；其模型 schema 绝不能暴露 lease acquire、lease／session metadata、approval fact、quota、clock 或 action digest。
 
+<a id="dev-note"></a>
+## 开发备注
+
+无。
+
+<a id="model-experience"></a>
 ## 模型体验
 
-无；该 Host provider 只为后续模型工具 Consumer 传输请求，自身不贡献 prompt、schema 或 result。
+通过后续 Browser 与 Computer Control 工具 Consumer 间接生效；模型 schema 与结果渲染由这些 Consumer 拥有，本 Host provider 只传输请求。
 
 #### KV Cache 影响
 
 无；本包既不组装也不发送 provider request。
 
 ## 已知限制与延后工作
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - **尚无 authority 或原生执行** —— 在后续 control coordinator 接管用户审批、lease 创建、浏览器 dispatch 与 helper 执行之前，注入的 Electron backend 会返回 `NOT_SUPPORTED`。
 - **只支持一个自有子进程** —— transport 有意不提供 renderer relay、loopback server、bearer token、通用 channel 或兼容性协商。

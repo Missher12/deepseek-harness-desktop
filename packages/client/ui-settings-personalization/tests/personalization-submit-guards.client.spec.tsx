@@ -25,7 +25,7 @@ const base = {
 
 function props(load: PersonalizationSectionProps['load'], save: PersonalizationSectionProps['save']): PersonalizationSectionProps {
   return {
-    close: vi.fn(), useSessions: unusedHook, useWorkspaces: unusedHook,
+    close: vi.fn(), useSessions: unusedHook, useSessionPendingInteraction: unusedHook, useWorkspaces: unusedHook,
     t: makeTranslate(en), load, save,
   }
 }

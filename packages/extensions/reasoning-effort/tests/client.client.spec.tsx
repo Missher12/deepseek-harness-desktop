@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ModelSelection, SessionId, SessionModels } from '@deepseek-ai/dsh-api-remotes/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ModelDirectory, ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   EffortControl,
   apply,
@@ -24,7 +25,7 @@ const efforts = [
   { id: 'max', name: 'Max' },
 ]
 
-function models(overrides: Partial<SessionModels> = {}): SessionModels {
+function models(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryState {
   return {
     current: { provider: 'deepseek', model: 'chat', reasoningEffort: 'high' },
     routable: true,
@@ -42,25 +43,19 @@ function models(overrides: Partial<SessionModels> = {}): SessionModels {
       }],
     }],
     failures: [],
+    status: 'ready',
+    error: null,
     ...overrides,
   }
 }
 
-function stateOf(value: SessionModels): ModelDirectoryState {
-  return {
-    ...value,
-    status: 'ready',
-    error: null,
-  }
-}
-
-function makeController(sequence: SessionModels[] = [models()]) {
-  const store = createSnapshotStore<ModelDirectoryState>(stateOf(sequence[0]!))
+function makeController(sequence: ModelDirectoryState[] = [models()]) {
+  const store = createSnapshotStore<ModelDirectoryState>(sequence[0]!)
   let loadIndex = 0
   const load = vi.fn(async () => {
     const value = sequence[Math.min(loadIndex, sequence.length - 1)]!
     loadIndex += 1
-    store.set(stateOf(value))
+    store.set(value)
     return value
   })
   const select = vi.fn(async (selection: ModelSelection) => {
@@ -234,7 +229,7 @@ describe('EffortControl', () => {
     let now = 0
     vi.spyOn(performance, 'now').mockImplementation(() => now)
     const next = models()
-    const pending = deferred<SessionModels>()
+    const pending = deferred<ModelDirectoryState>()
     const store = createSnapshotStore<ModelDirectoryState>({
       current: null,
       routable: false,
@@ -245,7 +240,7 @@ describe('EffortControl', () => {
     })
     const load = vi.fn(async () => {
       const value = await pending.promise
-      store.set(stateOf(value))
+      store.set(value)
       return value
     })
     const controller = {
@@ -295,7 +290,7 @@ describe('EffortControl', () => {
     fireEvent.keyDown(slider, { key: 'Escape' })
     await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
 
-    act(() => { b.store.set(stateOf(sameModelLow)) })
+    act(() => { b.store.set(sameModelLow) })
     trigger = await screen.findByRole('button', { name: /DeepSeek Chat.*Low/ })
     fireEvent.click(trigger)
     await flushFrames()
@@ -305,7 +300,7 @@ describe('EffortControl', () => {
     fireEvent.keyDown(slider, { key: 'Escape' })
     await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
 
-    act(() => { b.store.set(stateOf(changedModelDefaultLow)) })
+    act(() => { b.store.set(changedModelDefaultLow) })
     trigger = await screen.findByRole('button', { name: /DeepSeek Coder.*Low/ })
     fireEvent.click(trigger)
     await flushFrames()

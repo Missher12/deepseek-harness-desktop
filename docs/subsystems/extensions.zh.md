@@ -301,34 +301,23 @@ Types: [Agent](core.zh.md)
 
 Source: [`packages/extensions/cordis-host-runner/src/index.ts`](../../packages/extensions/cordis-host-runner/src/index.ts)
 
-<a id="ctxmissherbrain--brainhub"></a>
+<a id="ctxinspector--inspectorservice"></a>
 
-### `ctx.missherBrain` — `BrainHub`
+### `ctx.inspector` — `InspectorService`
 
-Coordinates bounded local-knowledge providers and exposes pathless status.
+Shared Host/Client service façade over the realm's source publisher.
 
 ```ts cordis-catalog
 /**
- * Register one factual-memory or procedural-learning provider.
- * @param provider Provider whose prepared contributions enter shared arbitration.
- * @returns Disposer for this exact registration.
+ * Publish one JSON observation without waiting for Worker delivery.
+ * @param topic - Domain-owned topic name.
+ * @param payload - JSON value validated before it reaches the carrier.
+ * @param monotonicMs - Source-clock timestamp; defaults to `performance.now()`.
  */
-register(provider: BrainProvider): () => void
-
-/**
- * Snapshot the providers currently participating in recall.
- * @returns Providers in deterministic registration order.
- */
-listProviders(): readonly BrainProvider[]
-
-/**
- * Read only pathless facts; provider failures become unavailable rows.
- * @returns Current provider availability and fixed arbitration limits.
- */
-@Remote('snapshot') async snapshot(): Promise<BrainHubSnapshot>
+publish(topic: string, payload: InspectorJsonValue, monotonicMs?: number): void
 ```
 
-Source: [`packages/brain/missher-brain/src/index.ts`](../../packages/brain/missher-brain/src/index.ts)
+Source: [`packages/experimental/inspector/src/index.ts`](../../packages/experimental/inspector/src/index.ts)
 
 <a id="cordis-events"></a>
 

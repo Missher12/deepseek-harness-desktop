@@ -1,6 +1,7 @@
 /** Browser notification state and authenticated streaming-fetch transport. */
 
-import type { MessageId, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { MessageId } from '@deepseek-ai/dsh-llm'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { MAX_ACK_BODY_BYTES, MAX_ACK_DELIVERY_IDS } from '../protocol.ts'
 
 /** Browser-safe receipt metadata. No message body or reply capability exists here. */
@@ -500,14 +501,14 @@ export class MessengerStore {
    * Read the current external-store state without mutation.
    * @returns the current immutable external-store snapshot.
    */
-  readonly getSnapshot = (): MessengerStoreSnapshot => this.state
+  readonly getSnapshot: () => MessengerStoreSnapshot = () => this.state
 
   /**
    * Subscribe to immutable snapshot replacements.
    * @param listener - callback invoked after each published state change.
    * @returns a disposer that removes the callback.
    */
-  readonly subscribe = (listener: () => void): (() => void) => {
+  readonly subscribe: (listener: () => void) => () => void = (listener) => {
     if (this.disposed) return () => {}
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }

@@ -1,9 +1,11 @@
 /** Harness Client plugin: durable cross-session transport and transcript projection. */
 
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionMessengerKey } from './locales.ts'
 import { en, NS, zh } from './locales.ts'
@@ -41,7 +43,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Cordis Client plugin name. */
 export const name = 'session-messenger-client'
 /** Definition, renderer, locale, and service dependencies. */
-export const inject = ['conversationEvents', 'locale', 'slots']
+export const inject = ['uiConversation', 'locale', 'slots']
 
 /** Provide transport state and the source-side transcript renderer; mount no legacy drawer or button. */
 export function apply(ctx: ClientContext): void {
@@ -63,7 +65,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => async () => { await store.dispose() }, 'session-messenger: browser notification store')
   if (bootstrap !== undefined) ctx.effect(() => store.start(), 'session-messenger: browser metadata stream')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'session-messenger: dictionaries')
-  ctx.conversationEvents.register(outgoingRelayDefinition)
+  ctx.uiConversation.events.register(outgoingRelayDefinition)
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node', key: 'session-relay-outgoing', locale: NS,
     inject: () => ({ messenger: face }),

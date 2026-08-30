@@ -3,7 +3,9 @@ import { cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  IconApiOutline14, IconArchiveOutline20, IconFolderClose16, IconGoalOutline16, IconSendOutline16,
+  IconAlarmClockOutline16, IconApiOutline14, IconArchiveOutline20, IconClockOutline16,
+  IconContextInjectionOutline16, IconDatabaseOutline16, IconFolderClose16, IconGoalOutline16,
+  IconSendOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 afterEach(cleanup)
@@ -16,8 +18,14 @@ const icons = Object.fromEntries(
 const iconNames = Object.keys(icons)
 
 describe('ic_ds_ icon set', () => {
-  it('exports the full icon set (46 deepsuite + 20 figma extracts + five product glyphs outside those sets)', () => {
-    expect(iconNames.length).toBe(71)
+  it('exports the full icon set (46 deepsuite + 21 figma extracts + eight product glyphs outside those sets)', () => {
+    expect(iconNames.length).toBe(75)
+    expect(iconNames).toEqual(expect.arrayContaining([
+      'IconContextInjectionOutline16',
+      'IconDatabaseOutline16',
+      'IconClockOutline16',
+      'IconAlarmClockOutline16',
+    ]))
   })
 
   it.each(iconNames)('%s renders an svg with currentColor fills and no hardcoded palette', (name) => {
@@ -45,6 +53,14 @@ describe('ic_ds_ icon set', () => {
     expect(folder.container.querySelector('svg')!.getAttribute('width')).toBe('16')
     const archive = render(<IconArchiveOutline20 />)
     expect(archive.container.querySelector('svg')!.getAttribute('width')).toBe('20')
+    const alarm = render(<IconAlarmClockOutline16 />)
+    expect(alarm.container.querySelector('svg')!.getAttribute('width')).toBe('16')
+    const contextInjection = render(<IconContextInjectionOutline16 />)
+    expect(contextInjection.container.querySelector('svg')!.getAttribute('width')).toBe('16')
+    const database = render(<IconDatabaseOutline16 />)
+    expect(database.container.querySelector('svg')!.getAttribute('width')).toBe('16')
+    const clock = render(<IconClockOutline16 />)
+    expect(clock.container.querySelector('svg')!.getAttribute('width')).toBe('16')
   })
 
   it('renders reusable goal glyphs without document-global ids', () => {

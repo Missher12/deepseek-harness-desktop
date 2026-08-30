@@ -1,7 +1,20 @@
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {
-  InputTriggerSource, LauncherSource,
-} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+  InputLauncherCandidate, InputLauncherSource, PickOutcome,
+} from '../contract/input.ts'
+
+/** Narrow source contract kept local to avoid a Conversation -> trigger-pipeline package cycle. */
+export interface ComposerAddSource {
+  readonly trigger: '/'
+  readonly name: string
+  readonly launcherOnly: true
+  readonly showGroupTitle: false
+  candidates(session: { readonly sessionId: SessionId }): Promise<readonly InputLauncherCandidate[]>
+  onPick(input: {
+    readonly candidate: InputLauncherCandidate
+    readonly session: { readonly sessionId: SessionId }
+  }): PickOutcome
+}
 
 /** Localized labels owned by the composer's fixed Add actions. */
 export interface ComposerAddCopy {
@@ -39,7 +52,7 @@ export function bindComposerImagePicker(sessionId: SessionId, open: () => void):
  * @param copy - Localized row and section copy.
  * @returns A launcher-only input-trigger source for the fixed actions.
  */
-export function createComposerAddSource(copy: ComposerAddCopy): InputTriggerSource {
+export function createComposerAddSource(copy: ComposerAddCopy): ComposerAddSource {
   return {
     trigger: '/',
     name: 'composer-add',
@@ -77,7 +90,7 @@ export function createComposerAddSource(copy: ComposerAddCopy): InputTriggerSour
  * @param copy - Localized names for the projected sections.
  * @returns Existing sources in the fixed Add, Commands, Plugins order.
  */
-export function composerAddLauncherSources(copy: ComposerAddLaunchCopy): readonly LauncherSource[] {
+export function composerAddLauncherSources(copy: ComposerAddLaunchCopy): readonly InputLauncherSource[] {
   const featured = ['goal', 'plan'] as const
   const featuredName = (name: string): name is typeof featured[number] =>
     featured.includes(name as typeof featured[number])

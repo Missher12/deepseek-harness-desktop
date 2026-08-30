@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import {
   bindComposerImagePicker, composerAddLauncherSources, createComposerAddSource,
 } from '../src/client/input/composer-add-source.ts'
@@ -17,10 +17,7 @@ describe('composer add source', () => {
       section: '添加',
     })
 
-    expect(await source.candidates(
-      { sessionId: sid('a') },
-      { query: '', quoted: false, position: 'leading', signal: new AbortController().signal },
-    )).toEqual([
+    expect(await source.candidates({ sessionId: sid('a') })).toEqual([
       {
         name: '文件和文件夹',
         value: 'files',
@@ -42,10 +39,7 @@ describe('composer add source', () => {
       files: '文件和文件夹', filesDescription: '引用工作区内容',
       image: '添加图片', imageDescription: 'PNG、JPG、WebP 或 GIF', section: '添加',
     })
-    expect(await source.candidates(
-      { sessionId: sid('without-images') },
-      { query: '', quoted: false, position: 'leading', signal: new AbortController().signal },
-    )).toEqual([{
+    expect(await source.candidates({ sessionId: sid('without-images') })).toEqual([{
       name: '文件和文件夹',
       value: 'files',
       description: '引用工作区内容',
@@ -61,17 +55,11 @@ describe('composer add source', () => {
     const source = createComposerAddSource({
       files: 'Files and folders', filesDescription: '', image: 'Add image', imageDescription: '', section: 'Add',
     })
-    const base = {
-      position: 'leading' as const,
-      via: 'menu' as const,
-      span: { start: 0, end: 0, draftRev: 1 },
-    }
-
     expect(source.onPick({
-      ...base, session: { sessionId: sid('a') }, candidate: { name: 'files', value: 'files' },
+      session: { sessionId: sid('a') }, candidate: { name: 'files', value: 'files' },
     })).toEqual({ text: '@', continue: true })
     expect(source.onPick({
-      ...base, session: { sessionId: sid('b') }, candidate: { name: 'image', value: 'image' },
+      session: { sessionId: sid('b') }, candidate: { name: 'image', value: 'image' },
     })).toBe('handled')
     expect(openA).not.toHaveBeenCalled()
     expect(openB).toHaveBeenCalledTimes(1)
@@ -93,9 +81,6 @@ describe('composer add source', () => {
     source.onPick({
       session: { sessionId: sid('a') },
       candidate: { name: 'image', value: 'image' },
-      position: 'leading',
-      via: 'menu',
-      span: { start: 0, end: 0, draftRev: 1 },
     })
 
     expect(stale).not.toHaveBeenCalled()

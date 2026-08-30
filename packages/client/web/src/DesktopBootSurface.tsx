@@ -4,6 +4,7 @@
  * can activate.
  */
 import css from './DesktopBootSurface.module.css'
+import { desktopBootCopy as copy } from './locales/desktop-boot.ts'
 
 export { isDesktopSurface } from './desktop-surface.ts'
 
@@ -38,20 +39,20 @@ export function DesktopBootSurface(props: DesktopBootSurfaceProps) {
       <div className={css.brand}>
         <div className={css.mark} aria-hidden="true" />
         <div className={css.copy}>
-          <div className={css.eyebrow}>Local intelligence system</div>
-          <div className={css.title}>DeepSeek <span>Harness</span></div>
+          <div className={css.eyebrow}>{copy.eyebrow}</div>
+          <div className={css.title}>{copy.brand} <span>{copy.product}</span></div>
           {!loud
             ? (
               <>
                 <div className={css.systemLine}>
                   <span className={css.pulse} aria-hidden="true" />
-                  Desktop runtime ready
+                  {copy.ready}
                 </div>
                 <div
                   className={css.progress}
                   role="progressbar"
-                  aria-label="正在启动"
-                  aria-valuetext="正在初始化桌面运行时"
+                  aria-label={copy.progressLabel}
+                  aria-valuetext={copy.progressValue}
                 >
                   <span aria-hidden="true" />
                 </div>
@@ -59,7 +60,7 @@ export function DesktopBootSurface(props: DesktopBootSurfaceProps) {
             )
             : (
               <div className={css.failed}>
-                <div className={css.failedTitle}>Failed to load plugins</div>
+                <div className={css.failedTitle}>{copy.failed}</div>
                 {props.failed.map(([id]) => <div key={id} className={css.failedItem}>{id}</div>)}
                 {props.error !== undefined && <div className={css.failedItem}>{props.error}</div>}
               </div>

@@ -1,8 +1,23 @@
+---
+description: "Desktop-only Host provider and owned-child IPC client for closed browser and native control services"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-desktop-control-host
 
 English | [中文](README.zh.md)
 
+## Summary
+
 The Desktop-only Host provider for [`BrowserControl`](../browser-control/README.md) and [`ComputerControl`](../computer-control/README.md). One process-wide client, request ledger, callback-driven send queue, and lease descriptor cache serve both providers over the exact IPC channel created for the Electron-owned Harness child. With no owned Node IPC channel, this plugin registers neither service and ordinary Harness startup continues unchanged.
+
+## Table of Contents
+
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+-----
 
 ## Transport and lifecycle
 
@@ -15,15 +30,23 @@ The Desktop-only Host provider for [`BrowserControl`](../browser-control/README.
 
 This is privileged first-party transport infrastructure, not a model tool. Future tool Consumers fill the protocol's official session and transport fields internally; their model schemas must never expose lease acquisition, lease/session metadata, approval facts, quotas, clocks, or action digests.
 
+<a id="dev-note"></a>
+## Dev Note
+
+None.
+
+<a id="model-experience"></a>
 ## Model Experience
 
-None, as this Host provider only transports requests for later model-tool Consumers and contributes no prompt, schema, or result itself.
+Indirectly, through later Browser and Computer Control tool Consumers that own their model schemas and result rendering; this Host provider only transports their requests.
 
 #### KV Cache effect
 
 None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - **No authority or native execution yet** — the injected Electron backend returns `NOT_SUPPORTED` until the later control coordinator owns user approval, lease minting, browser dispatch, and helper execution.
 - **One owned child only** — the transport deliberately has no renderer relay, loopback server, bearer token, generic channel, or compatibility negotiation.

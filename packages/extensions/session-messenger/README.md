@@ -1,8 +1,23 @@
+---
+description: "Durable, bounded cross-session Agent messaging for DeepSeek Harness"
+kind: "package-bundle"
+---
+
 # @deepseek-ai/dsh-session-messenger
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Desktop-only Host and Client plugin for bounded Codex-style messaging between ordinary DeepSeek Harness sessions in one active profile. Copy Session A's exact ID, paste it into Session B's ordinary composer, and ask B's Agent to send a message: the plugin wakes A's existing Agent, and A can reply to B through the trusted source and delivery metadata. Either session can initiate, continue, or stop an exchange chain. The plugin registers five model tools, persists write-ahead delivery receipts, addresses live or cold sessions through the Host-owned Typert lookup, and renders the exchange in ordinary conversation history without changing the ordinary Web composition.
+
+## Table of Contents
+
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+-----
 
 ## Tool contracts
 
@@ -38,6 +53,12 @@ DeepSeek Harness Desktop applies the same canonical row once after the base and 
 
 The Client half maintains the bounded receipt state used by ordinary conversation rows; it registers no separate header trigger, drawer, Side Chat, or overlay. The user copies an exact Session ID, pastes it into the ordinary composer, and asks the current Agent to send or reply. An accepted outgoing delivery appends an ignorable source-side conversation row, while the destination relay remains an ordinary visible user-message row, so both sessions show the exchange without duplicating source text into model history. Notifications remain in-app only: there is no native macOS notification, replacement session row, separate message archive, or automatic Agent loop.
 
+<a id="dev-note"></a>
+## Dev Note
+
+None.
+
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Five cross-session tools
@@ -55,6 +76,8 @@ Every enabled request pays for five tool definitions in native mode or their gen
 The five definitions and SDK declarations are byte-stable while the plugin and presentation mode stay unchanged, so they preserve the corresponding tool-prefix cache segment. Enabling or disabling the plugin changes that segment; delivered and claimed relays append at the session tail rather than rewriting prior messages.
 
 ## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - Messaging is local to one active profile and accepts only ordinary sessions; cross-profile, cross-device, subagent, broadcast, group, and public-network delivery are not implemented.
 - Collaboration content remains in the ordinary source and destination conversation histories; there is no second message archive or manual relay panel.

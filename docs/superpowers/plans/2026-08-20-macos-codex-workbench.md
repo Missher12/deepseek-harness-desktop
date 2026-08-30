@@ -15,8 +15,8 @@ English | [中文](2026-08-20-macos-codex-workbench.zh.md)
 ### Task 1: Lock the product name to DeepSeek Harness
 
 **Files:**
-- Modify: `packages/client/ui-renderer/src/client/DocumentTitle.tsx`
-- Modify: `packages/client/ui-renderer/tests/document-title.client.spec.tsx`
+- Modify: `packages/client/ui-layout/src/client/DocumentTitle.tsx`
+- Modify: `packages/client/ui-layout/tests/document-title.client.spec.tsx`
 - Modify: `packages/client/ui-sidebar/src/client/SidebarRoot.tsx`
 - Modify: `packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx`
 - Modify: `apps/web/vite.config.ts`
@@ -32,7 +32,7 @@ expect(document.title).toBe('Session title — DeepSeek Harness')
 - [ ] **Step 2: Run tests and verify RED**
 
 ```bash
-pnpm exec vitest run packages/client/ui-renderer/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx --config vitest.config.ts
+pnpm exec vitest run packages/client/ui-layout/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx --config vitest.config.ts
 ```
 
 Expected: the fallback assertions receive `DSH Local Build`.
@@ -179,8 +179,8 @@ git commit -m "feat(desktop): add Codex-style workbench shell"
 - Delete: `packages/extensions/session-messenger/src/client/MessengerUiController.ts`
 - Create: a Desktop workbench Side Chat component (subsequently removed)
 - Create: its scoped style module (subsequently removed)
-- Modify: `packages/client/ui-conversation/src/client/chat/RelayNodeView.tsx`
-- Modify: `packages/client/ui-conversation/src/client/chat/RelayNodeView.module.css`
+- Modify: `packages/client/ui-chat/src/client/chat/RelayNodeView.tsx`
+- Modify: `packages/client/ui-chat/src/client/chat/RelayNodeView.module.css`
 - Modify: `packages/extensions/session-messenger/tests/coordinator.client.spec.ts`
 - Modify: `packages/extensions/session-messenger/tests/client.client.spec.tsx`
 - Modify: `packages/extensions/desktop-workbench/tests/client.client.spec.tsx`
@@ -397,9 +397,9 @@ git commit -m "feat(desktop): add isolated workbench browser"
 ### Task 8: Replace reasoning shimmer with typewriter motion
 
 **Files:**
-- Modify: `packages/client/ui-conversation/src/client/chat/ReasoningRow.tsx`
-- Modify: `packages/client/ui-conversation/src/client/chat/ReasoningRow.module.css`
-- Modify: `packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx`
+- Modify: `packages/client/ui-chat/src/client/chat/ReasoningRow.tsx`
+- Modify: `packages/client/ui-chat/src/client/chat/ReasoningRow.module.css`
+- Modify: `packages/client/ui-chat/tests/reasoning-row.client.spec.tsx`
 
 - [ ] **Step 1: Write failing cadence and cleanup tests**
 
@@ -417,7 +417,7 @@ Cover expanded text, document hidden, unmount, and reduced motion.
 - [ ] **Step 2: Run the focused suite and verify RED**
 
 ```bash
-pnpm exec vitest run packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx --config vitest.config.ts
+pnpm exec vitest run packages/client/ui-chat/tests/reasoning-row.client.spec.tsx --config vitest.config.ts
 ```
 
 - [ ] **Step 3: Implement bounded grapheme reveal**
@@ -433,7 +433,7 @@ const summary = running && !expanded ? displayed : running ? latestLine(text) : 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/client/ui-conversation/src/client/chat packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx
+git add packages/client/ui-conversation/src/client/chat packages/client/ui-chat/tests/reasoning-row.client.spec.tsx
 git commit -m "feat(conversation): smooth reasoning typewriter"
 ```
 
@@ -470,7 +470,7 @@ Add width persistence, narrow layout, Side Chat visible flow, Files/Review non-m
 - [ ] **Step 2: Run focused regression**
 
 ```bash
-pnpm exec vitest run packages/client/ui-renderer/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx packages/client/ui-layout/tests packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx packages/extensions/session-messenger/tests packages/extensions/desktop-workbench/tests apps/desktop/tests/preload-api.spec.ts apps/desktop/tests/navigation.spec.ts apps/desktop/tests/browser-contracts.spec.ts --config vitest.config.ts
+pnpm exec vitest run packages/client/ui-layout/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx packages/client/ui-layout/tests packages/client/ui-chat/tests/reasoning-row.client.spec.tsx packages/extensions/session-messenger/tests packages/extensions/desktop-workbench/tests apps/desktop/tests/preload-api.spec.ts apps/desktop/tests/navigation.spec.ts apps/desktop/tests/browser-contracts.spec.ts --config vitest.config.ts
 ```
 
 - [ ] **Step 3: Run production gates**

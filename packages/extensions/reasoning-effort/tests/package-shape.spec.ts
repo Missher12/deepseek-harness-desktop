@@ -6,19 +6,23 @@ const PACKAGE_ROOT = new URL('../', import.meta.url)
 const REPOSITORY_ROOT = new URL('../../../', PACKAGE_ROOT)
 const PINNED_LICENSE_SHA256 = 'c3cf95d2fa3e68f8a40cc4bd941097b85e740623df940fd4ded471065d74fa06'
 const PINNED_SPRITE_SHA256 = '1222c5a2a70087cacb6da338f5d6e3e3fa7585259c67a80a943b2cab6901f51e'
-const WORKSPACE_PEERS = [
+const WORKSPACE_DEV_DEPENDENCIES = [
   '@deepseek-ai/cordis',
-  '@deepseek-ai/dsh-api-remotes',
+  '@deepseek-ai/dsh-api-session-controller',
   '@deepseek-ai/dsh-client-connection',
   '@deepseek-ai/dsh-client-locale',
-  '@deepseek-ai/dsh-client-runtime',
+  '@deepseek-ai/dsh-client-store',
+  '@deepseek-ai/dsh-client-test-runtime',
   '@deepseek-ai/dsh-client-ui-conversation',
   '@deepseek-ai/dsh-client-ui-model-selection',
   '@deepseek-ai/dsh-client-ui-primitives',
+  '@deepseek-ai/dsh-client-ui-renderer',
   '@deepseek-ai/dsh-client-ui-settings',
   '@deepseek-ai/dsh-client-ui-slots',
   '@deepseek-ai/dsh-host-webserver',
   '@deepseek-ai/dsh-invariants',
+  '@deepseek-ai/dsh-session',
+  '@deepseek-ai/dsh-settings',
 ] as const
 
 interface PackageManifest {
@@ -101,18 +105,18 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
     expect(manifest.dsh.client.platform).toBe('web')
     expect(manifest.dsh.client.inject).toEqual([
       '@deepseek-ai/dsh-client-locale',
-      '@deepseek-ai/dsh-client-runtime',
+      '@deepseek-ai/dsh-api-session-controller',
       '@deepseek-ai/dsh-client-ui-conversation',
       '@deepseek-ai/dsh-client-ui-model-selection',
       '@deepseek-ai/dsh-client-ui-primitives',
+      '@deepseek-ai/dsh-client-ui-renderer',
       '@deepseek-ai/dsh-client-ui-slots',
-      '@deepseek-ai/dsh-api-remotes',
     ])
     expect(manifest.dsh.bundle.patch).toBe('./cordis.patch.yml')
     expect(manifest.exports['./cordis.patch.yml']).toBe('./cordis.patch.yml')
   })
 
-  test('publishes the complete rc.5 compatibility contract and owned Host dependencies', async () => {
+  test('publishes the complete client compatibility contract and owned Host dependencies', async () => {
     const manifest = await readManifest()
     const tsconfig = JSON.parse(await readFile(new URL('tsconfig.json', PACKAGE_ROOT), 'utf8')) as {
       references: readonly { readonly path: string }[]
@@ -120,17 +124,13 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
     }
 
     expect(manifest.dependencies).toEqual({
-      '@deepseek-ai/dsh-settings': 'workspace:^',
       '@deepseek-ai/schemastery': 'workspace:^',
     })
     expect(manifest.peerDependencies).toEqual({
-      ...Object.fromEntries(WORKSPACE_PEERS.map(dependency => [dependency, 'workspace:^'])),
-      react: '^18.2.0',
-      'react-dom': '^18.2.0',
+      '@deepseek-ai/cordis': 'workspace:^',
     })
     expect(manifest.devDependencies).toEqual({
-      ...Object.fromEntries(WORKSPACE_PEERS.map(dependency => [dependency, 'workspace:^'])),
-      '@deepseek-ai/dsh-client-test-runtime': 'workspace:^',
+      ...Object.fromEntries(WORKSPACE_DEV_DEPENDENCIES.map(dependency => [dependency, 'workspace:^'])),
       '@testing-library/react': '^16.1.0',
       '@types/react': '~18.3.1',
       '@types/react-dom': '~18.3.0',
@@ -139,16 +139,16 @@ describe('@deepseek-ai/dsh-reasoning-effort package shape', () => {
     })
     expect(tsconfig.exclude).toEqual(['src/client/index.ts'])
     expect(tsconfig.references).toEqual([
-      { path: '../../api/remotes/tsconfig.client.json' },
       { path: '../../../vendor/cordis' },
       { path: '../../../vendor/schemastery' },
       { path: '../../host/webserver' },
       { path: '../../settings/settings' },
       { path: '../../client/locale' },
-      { path: '../../client/runtime' },
+      { path: '../../api/session-controller/tsconfig.client.json' },
       { path: '../../client/ui-conversation' },
       { path: '../../client/ui-model-selection' },
       { path: '../../client/ui-primitives' },
+      { path: '../../client/ui-renderer' },
       { path: '../../client/ui-slots' },
       { path: '../../runtime-diagnostics/invariants' },
     ])

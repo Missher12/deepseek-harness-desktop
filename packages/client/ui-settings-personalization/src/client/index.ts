@@ -1,6 +1,8 @@
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+// Type-only: pulls the generated ctx.remote.settings namespace into this client face.
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   PersonalizationSection, type PersonalizationSectionInjected, type PersonalizationWrite,
@@ -22,21 +24,20 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Locale namespace owned by the global personalization Settings section. */
 export const NS = 'settings.personalization'
 /** Browser services required to register and operate the Settings section. */
-export const inject = ['slots', 'locale', 'connection']
+export const inject = ['slots', 'locale', 'remote', 'remote.settings']
 
 /** Registers the localized personalization section against the typed Settings API. */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-personalization: dictionaries')
-  const api = (ctx.get('connection') as ConnectionHandle).api.settings
   const load: PersonalizationSectionInjected['load'] = async () => {
-    const response = await api.personalizationRead({})
-    if (!response.result.ok) throw new Error(response.result.error.message)
-    return response.result.value
+    const response = await ctx.remote.settings.personalizationRead()
+    if (!response.ok) throw new Error(response.error.message)
+    return response.value
   }
   const save: PersonalizationSectionInjected['save'] = async (input: PersonalizationWrite) => {
-    const response = await api.personalizationWrite(input)
-    if (!response.result.ok) throw new Error(response.result.error.message)
-    return response.result.value
+    const response = await ctx.remote.settings.personalizationWrite(input)
+    if (!response.ok) throw new Error(response.error.message)
+    return response.value
   }
   const injected = (): PersonalizationSectionInjected => ({ load, save })
   const t = ctx.locale.bind(NS)

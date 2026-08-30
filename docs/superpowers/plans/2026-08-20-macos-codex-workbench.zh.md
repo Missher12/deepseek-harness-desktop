@@ -15,8 +15,8 @@
 ### 任务一：把产品名锁定为 DeepSeek Harness
 
 **文件：**
-- 修改：`packages/client/ui-renderer/src/client/DocumentTitle.tsx`
-- 修改：`packages/client/ui-renderer/tests/document-title.client.spec.tsx`
+- 修改：`packages/client/ui-layout/src/client/DocumentTitle.tsx`
+- 修改：`packages/client/ui-layout/tests/document-title.client.spec.tsx`
 - 修改：`packages/client/ui-sidebar/src/client/SidebarRoot.tsx`
 - 修改：`packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx`
 - 修改：`apps/web/vite.config.ts`
@@ -32,7 +32,7 @@ expect(document.title).toBe('Session title — DeepSeek Harness')
 - [ ] **步骤二：运行测试并确认 RED**
 
 ```bash
-pnpm exec vitest run packages/client/ui-renderer/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx --config vitest.config.ts
+pnpm exec vitest run packages/client/ui-layout/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx --config vitest.config.ts
 ```
 
 预期：回退值断言实际收到 `DSH Local Build`。
@@ -179,8 +179,8 @@ git commit -m "feat(desktop): add Codex-style workbench shell"
 - 删除：`packages/extensions/session-messenger/src/client/MessengerUiController.ts`
 - 创建：Desktop 工作台侧边聊天组件（后续已移除）
 - 创建：对应的局部样式模块（后续已移除）
-- 修改：`packages/client/ui-conversation/src/client/chat/RelayNodeView.tsx`
-- 修改：`packages/client/ui-conversation/src/client/chat/RelayNodeView.module.css`
+- 修改：`packages/client/ui-chat/src/client/chat/RelayNodeView.tsx`
+- 修改：`packages/client/ui-chat/src/client/chat/RelayNodeView.module.css`
 - 修改：`packages/extensions/session-messenger/tests/coordinator.client.spec.ts`
 - 修改：`packages/extensions/session-messenger/tests/client.client.spec.tsx`
 - 修改：`packages/extensions/desktop-workbench/tests/client.client.spec.tsx`
@@ -397,9 +397,9 @@ git commit -m "feat(desktop): add isolated workbench browser"
 ### 任务八：用打字机动效替换推理扫光
 
 **文件：**
-- 修改：`packages/client/ui-conversation/src/client/chat/ReasoningRow.tsx`
-- 修改：`packages/client/ui-conversation/src/client/chat/ReasoningRow.module.css`
-- 修改：`packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx`
+- 修改：`packages/client/ui-chat/src/client/chat/ReasoningRow.tsx`
+- 修改：`packages/client/ui-chat/src/client/chat/ReasoningRow.module.css`
+- 修改：`packages/client/ui-chat/tests/reasoning-row.client.spec.tsx`
 
 - [ ] **步骤一：编写失败的节奏和清理测试**
 
@@ -417,7 +417,7 @@ expect(animationFrames.size).toBe(0)
 - [ ] **步骤二：运行聚焦测试并确认 RED**
 
 ```bash
-pnpm exec vitest run packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx --config vitest.config.ts
+pnpm exec vitest run packages/client/ui-chat/tests/reasoning-row.client.spec.tsx --config vitest.config.ts
 ```
 
 - [ ] **步骤三：实现有界字素展示**
@@ -433,7 +433,7 @@ const summary = running && !expanded ? displayed : running ? latestLine(text) : 
 - [ ] **步骤五：提交**
 
 ```bash
-git add packages/client/ui-conversation/src/client/chat packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx
+git add packages/client/ui-conversation/src/client/chat packages/client/ui-chat/tests/reasoning-row.client.spec.tsx
 git commit -m "feat(conversation): smooth reasoning typewriter"
 ```
 
@@ -470,7 +470,7 @@ expect(await processTreeGone(harnessPid)).toBe(true)
 - [ ] **步骤二：运行聚焦回归**
 
 ```bash
-pnpm exec vitest run packages/client/ui-renderer/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx packages/client/ui-layout/tests packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx packages/extensions/session-messenger/tests packages/extensions/desktop-workbench/tests apps/desktop/tests/preload-api.spec.ts apps/desktop/tests/navigation.spec.ts apps/desktop/tests/browser-contracts.spec.ts --config vitest.config.ts
+pnpm exec vitest run packages/client/ui-layout/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx packages/client/ui-layout/tests packages/client/ui-chat/tests/reasoning-row.client.spec.tsx packages/extensions/session-messenger/tests packages/extensions/desktop-workbench/tests apps/desktop/tests/preload-api.spec.ts apps/desktop/tests/navigation.spec.ts apps/desktop/tests/browser-contracts.spec.ts --config vitest.config.ts
 ```
 
 - [ ] **步骤三：运行生产门禁**

@@ -1,12 +1,27 @@
+---
+description: "@deepseek-ai/dsh-usage-insights 的中文包参考，涵盖其运行时职责、组合边界与已知限制。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-usage-insights
 
 [English](README.md) | 中文
+
+## 概述
 
 DeepSeek Harness 的 Host 侧只读全历史使用索引。插件把持久化的根 Session、归档 Session 与子 Agent Session 日志折叠成最小化隐私的每日记录，将这些派生记录保存在 `usage_insights` 存储域中，并为设置页提供一个 `usageInsights.snapshot()` Remote 方法。
 
 索引统计提供方报告的非缓存输入、输出、缓存读取和缓存写入 Token。推理 Token 已包含 在输出中，不会再次相加。分叉 Session 从持久化的 `seedLength` 之后开始统计，避免重复 计算复制来的父会话历史。最长会话时长取已关闭轮次的时长之和，不把轮次间的空闲时间 算进去；聊天连续天数按本机当前时区中的真人消息计算。
 
 功能排行明确描述的是**功能**，不是已安装插件。原生工具调用、Code Mode 调度、显式 skill 调用、模型路由和推理强度选择可以从持久化事件恢复；历史日志却不为每次工具调用 保存可靠的 Loader 插件归属。派生缓存只保存标识符和计数，不保存提示词、回复、工具 参数、工具结果、标题、路径、附件或凭据。
+
+## 目录
+
+- [开发备注](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+
+-----
 
 ## 组合方式
 
@@ -17,6 +32,12 @@ DeepSeek Harness 的 Host 侧只读全历史使用索引。插件把持久化的
 
 插件注入 Session 持久化与存储域注册表。当 Session 修订号一致时复用已索引记录，只以 有界并发重建变化的记录；单个 Session 无法检查时仍返回带缺失提示的部分结果。活动 Session 的最新折叠行只会保存在进程内，并在下一条 Session 事件到达时按 generation 失效；它不会以旧持久化修订写入磁盘。每次刷新有 12 秒 Host 截止时间：所有待完成的持久化读取共用取消信号，超时 Session 计入省略数，共享的进行中 Promise 始终会结束，因此重试能启动全新刷新。
 
+<a id="dev-note"></a>
+## 开发备注
+
+无。
+
+<a id="model-experience"></a>
 ## 模型体验
 
 无，因为本插件只从持久化 Session 记录计算面向客户端的只读模型，绝不改变模型请求。
@@ -26,6 +47,8 @@ DeepSeek Harness 的 Host 侧只读全历史使用索引。插件把持久化的
 无；界面显示的缓存读取与写入数字只是 Session 日志中已有的提供方计量，不会改变请求缓存行为。
 
 ## 已知限制与暂缓事项
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - **提供方计数必须可信，否则留空** —— 无效、负数、超出安全整数范围或缺失的 Token 字段不会被估算；部分刷新时，快照会报告被省略的 Session 数量。
 - **功能归属有意保守** —— 旧工具记录可以识别工具或 skill，却不能可靠地把每次调用 映射回注册它的 Loader 插件，因此 API 不会声称提供插件排行。

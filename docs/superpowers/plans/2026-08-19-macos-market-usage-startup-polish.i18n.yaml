@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-08-19-macos-market-usage-startup-polish.md
-2026-08-19-macos-market-usage-startup-polish.md: f13ee463a758ad253333b1c711ab0d96f4c96ecd
-2026-08-19-macos-market-usage-startup-polish.zh.md: 25d0b45ef8d80e5a4473ef3f28202b8360e370f9
+2026-08-19-macos-market-usage-startup-polish.md: 4c8d6ad56849ac17b541414b54315b9c11a0816d
+2026-08-19-macos-market-usage-startup-polish.zh.md: a21c737bc1bb026ce1e5fac0deac02b77c86b869

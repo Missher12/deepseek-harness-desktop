@@ -2,7 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import {
   PREFERENCE_PATH,
   createPreferenceCapability,
@@ -26,7 +26,7 @@ export const inject = ['settings', 'webServer']
 /** Register the namespace, exact route, and generation-scoped index bootstrap. */
 export function apply(ctx: Context): void {
   const scope = ctx.settings.register(
-    settingsNamespace(REASONING_EFFORT_SETTINGS_NAMESPACE),
+    REASONING_EFFORT_SETTINGS_NAMESPACE,
     ReasoningEffortPreferenceSchema,
   )
   const capability = createPreferenceCapability()

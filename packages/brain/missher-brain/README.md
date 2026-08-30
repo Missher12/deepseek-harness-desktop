@@ -1,9 +1,24 @@
+---
+description: "Bounded external-brain provider registration, arbitration, settings projection, and top-level turn context injection."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-missher-brain
 
 English | [中文](README.zh.md)
 
+## Summary
+
 The local External Brain hub for DeepSeek Harness. It validates and registers independently owned factual-memory and procedural-learning providers, then selects one bounded context batch for each eligible top-level turn. Providers retain their own databases and side effects; the hub owns no user memory.
 
+## Table of Contents
+
+- [Provider contract](#provider-contract)
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+<a id="provider-contract"></a>
 ## Provider contract
 
 - Every live provider has a non-empty unique `id`, protocol version `1`, and an integer byte budget from 1 through 6,000.
@@ -11,6 +26,12 @@ The local External Brain hub for DeepSeek Harness. It validates and registers in
 - Registration is insertion ordered and returns an exact-registration disposer. A stale disposer cannot remove a successor with the same ID.
 - The local Settings Remote exposes only provider ID, state, bounded item count, byte budget, and the fixed arbitration limits. Provider errors and timeouts become an `unavailable` row; paths and error details never cross into the browser.
 
+<a id="dev-note"></a>
+## Dev Note
+
+None.
+
+<a id="model-experience"></a>
 ## Model Experience
 
 ### External-brain candidates
@@ -28,6 +49,8 @@ Zero tokens on ineligible steps. An eligible recall adds at most six selected co
 The registry does not touch request prefixes. Eligible recall changes only that turn's external-brain context and can reduce cache reuse for the affected prefix. Providers share a 150 ms deadline; timeout, cancellation, malformed output, acceptance failure, and cleanup failure all return the original downstream decision.
 
 ## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - Protocol version `1` supports local, text-only contributions. Binary knowledge, remote provider discovery, and cross-device synchronization are outside this package.
 - Project identity is a pathless SHA-256 of the absolute session working directory. This isolates providers from the raw path but does not merge projects reached through distinct symlink spellings.

@@ -1,8 +1,23 @@
+---
+description: "@deepseek-ai/dsh-browser-control 的中文包参考，涵盖其运行时职责、组合边界与已知限制。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-browser-control
 
 [English](README.md) | 中文
 
+## 概述
+
 Browser Control Service Definition 为 Desktop 所有的可见浏览器 surface 注册唯一一个 `ctx.browserControl` 提供方。它使用 [`dsh-desktop-control-protocol`](../desktop-control-protocol/README.zh.md) 的封闭 request／result DTO，不定义第二套 wire 词汇。
+
+## 目录
+
+- [开发备注](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+
+-----
 
 ## 约定
 
@@ -19,6 +34,12 @@ Browser Control Service Definition 为 Desktop 所有的可见浏览器 surface 
 
 此特权服务仍会写入文档，供受信的静态第一方提供方与 Consumer 阅读；但运行时模型 Cordis 目录会排除它，模型编写的动态包也无法通过属性访问或 `ctx.get()` 取得该服务。
 
+<a id="dev-note"></a>
+## 开发备注
+
+无。
+
+<a id="model-experience"></a>
 ## 模型体验
 
 通过后续 Browser Control 工具 Consumer 间接影响；这些 Consumer 渲染有界 snapshot 与封闭操作结果，此 Service Definition 本身不注册 prompt 或工具。
@@ -28,6 +49,8 @@ Browser Control Service Definition 为 Desktop 所有的可见浏览器 surface 
 不会直接影响；任何模型可见 schema 或结果变化由 Consumer 负责。
 
 ## 已知限制与暂缓事项
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - 本包是约定与验证层，不是浏览器后端、Electron bridge、UI 或模型工具。
 - 提供方仍须在权威边界拒绝陈旧导航竞态、外来 debugger、私网目标、文件输入、下载、popup 和不支持的权限。

@@ -15,7 +15,7 @@ English | [中文](2026-08-20-desktop-session-usage-boot-plugin-fixes.zh.md)
 ### Task 1: Delete a resumed archived session
 
 **Files:**
-- Modify: `packages/api/remotes/src/agent-lookup.ts`
+- Modify: `packages/api/session-controller/src/agent.ts`
 - Modify: `packages/api/remotes/tests/agent-lookup.spec.ts`
 - Modify: `packages/host/apiproxy/src/api-proxy.ts`
 - Modify: `packages/host/apiproxy/tests/api-proxy-workspace.spec.ts`
@@ -29,8 +29,8 @@ English | [中文](2026-08-20-desktop-session-usage-boot-plugin-fixes.zh.md)
 ### Task 2: Create and select a no-project session
 
 **Files:**
-- Modify: `packages/client/runtime/src/client/contract/workspaces.ts`
-- Modify: `packages/client/runtime/src/client/workspaces/service.ts`
+- Modify: `packages/api/workspace-controller/src/client/index.ts`
+- Modify: `packages/api/workspace-controller/src/client/service.ts`
 - Modify: `packages/client/runtime/tests/workspaces-service.client.spec.ts`
 - Modify: `packages/client/ui-conversation/src/client/contract/slots.ts`
 - Modify: `packages/client/ui-conversation/src/client/apply.ts`

@@ -1,8 +1,23 @@
+---
+description: "@deepseek-ai/dsh-tool-browser-control 的中文包参考，涵盖其运行时职责、组合边界与已知限制。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-browser-control
 
 [English](README.md) | 中文
 
+## 概述
+
 `dsh-tool-browser-control` 将 Desktop 所有的语义浏览器 surface 暴露为十二个封闭的第一方工具。本包是 [`dsh-browser-control`](../browser-control/README.zh.md) 的 Consumer，不是浏览器后端：只有存在 `ctx.browserControl` 时才会注册工具，因此普通 CLI 与 Web composition 保持不变。
+
+## 目录
+
+- [开发备注](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+
+-----
 
 ## 工具与约定
 
@@ -20,6 +35,12 @@
 
 提供方存在期间，本包会贡献一段只允许使用官方浏览器工具的 prompt。任何 BrowserControl 失败还会为该 session 当前 turn 启用单调执行防护，拒绝 `bash`、`pwsh`、`run_code`、`terminal_open` 与 `terminal_send`。官方 browser snapshot 或 action 成功时，可以清除可恢复的 transport、lease、ownership 或 internal failure；authorization、policy、permission、unsupported、quota 或 binary failure 则保持封闭直到 turn 结束。成功并等待清理完成的 `browser_stop` 会显式清除该 session 的防护，而失败的 Stop 会继续保持封闭。在恢复有效时，Stop 与一次官方重试仍然可用，因此模型无法通过普通工具流水线把失败的 BrowserControl 调用改成直连 DevTools、remote-debugging port、脚本或 shell 的 fallback。
 
+<a id="dev-note"></a>
+## 开发备注
+
+无。
+
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 工具 schema
@@ -37,6 +58,8 @@
 只要 `BrowserControl` 可用性与封闭 schema 不变，工具清单就是前缀稳定的。缺少提供方的 deployment 不增加任何 schema 或 prompt 文本；挂载或移除提供方会改变工具可见性，并可能使该位置之后的复用失效。
 
 ## 已知限制与暂缓事项
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - Accessibility 语义无法分类每个敏感目标，也无法证明普通页面 JavaScript 的结果。普通 click、key、selection、scroll 或 navigation 仍可能产生外部效果；提供方 policy 与可见用户控制始终是权威。
 - `browser_key` 与条件 wait 是页面级协议操作，因此没有 element ref。本包不会在冻结的共享 DTO 之外虚构 ref。

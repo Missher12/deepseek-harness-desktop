@@ -10,10 +10,12 @@
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../client/locale" },
-    { "path": "../../client/runtime" },
+    { "path": "../../client/store" },
+    { "path": "../../core/session" },
     { "path": "../../client/ui-conversation" },
     { "path": "../../client/ui-layout" },
     { "path": "../../client/ui-primitives" },
+    { "path": "../../client/ui-renderer" },
     { "path": "../../client/ui-slots" },
     { "path": "../session-messenger" }
   ]

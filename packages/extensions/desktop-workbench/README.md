@@ -1,8 +1,23 @@
+---
+description: "Desktop-only Codex-style workbench for DeepSeek Harness"
+kind: "package-bundle"
+---
+
 # @deepseek-ai/dsh-desktop-workbench
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Desktop-only Codex-style utility workbench for DeepSeek Harness. One compact control beside `Session log` opens a resizable right panel with Terminal, Browser, Files, and Review modes. The package is mounted only by `apps/desktop/desktop.cordis.patch.yml`; ordinary Web profiles do not load it.
+
+## Table of Contents
+
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+-----
 
 ## Boundaries
 
@@ -13,6 +28,12 @@ Desktop-only Codex-style utility workbench for DeepSeek Harness. One compact con
 
 The Host HTTP bridge is bound to the active random loopback origin and a generation-scoped capability injected into the trusted Desktop document. It does not expose filesystem, Git, or terminal operations to other origins.
 
+<a id="dev-note"></a>
+## Dev Note
+
+None.
+
+<a id="model-experience"></a>
 ## Model Experience
 
 None, as this browser-side Desktop utility surface registers nothing model-facing; Files, Review, Browser, and the human-owned Terminal never enter model context automatically.
@@ -22,6 +43,8 @@ None, as this browser-side Desktop utility surface registers nothing model-facin
 Opening, resizing, or switching workbench modes does not change the provider request prefix; content enters context only when the user explicitly copies it into the ordinary composer.
 
 ## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - The embedded Browser is intentionally isolated from Harness login state and does not provide extensions, downloads, popups, permission prompts, or non-HTTP(S) protocols.
 - Files and Review are bounded previews rather than an editor or full Git client; binary files, oversized text, repository mutation, staging, and commit operations are out of scope.

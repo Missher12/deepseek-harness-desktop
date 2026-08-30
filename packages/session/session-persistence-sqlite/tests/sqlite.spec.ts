@@ -300,6 +300,7 @@ describe('SessionPersistenceSqlite physical packing', () => {
 
     const db = new DatabaseSync(path)
     expect(db.prepare(testSql('select-user-version')).get()).toEqual({ user_version: SCHEMA_VERSION })
+    expect(db.prepare(testSql('select-page-size')).get()).toEqual({ page_size: 65_536 })
     expect(db.prepare(testSql('count-events')).get()).toEqual({ count: 7 })
     expect(db.prepare(testSql('count-packed-events')).get())
       .toEqual({ count: 1 })
@@ -379,6 +380,22 @@ describe('SessionPersistenceSqlite physical packing', () => {
       .rejects.toThrow(/schema version 16.*incompatible/)
   })
 
+  it('keeps the page size of an established schema 20 database', async () => {
+    const path = await freshDbPath('dsh-sqlite-page-size-')
+    const seed = await openDatabase(DatabaseSync, path, 'delete', DEFAULT_BUSY_TIMEOUT_MS)
+    seed.close()
+
+    const resize = new DatabaseSync(path)
+    resize.exec(testSql('set-page-size-4096'))
+    resize.exec(testSql('vacuum'))
+    expect(resize.prepare(testSql('select-page-size')).get()).toEqual({ page_size: 4_096 })
+    resize.close()
+
+    const reopened = await openDatabase(DatabaseSync, path, 'wal', DEFAULT_BUSY_TIMEOUT_MS)
+    expect(reopened.prepare(testSql('select-page-size')).get()).toEqual({ page_size: 4_096 })
+    reopened.close()
+  })
+
   it('rejects a stale physical append without replacing the winning tail', async () => {
     const path = await freshDbPath('dsh-sqlite-stale-')
     const first = new SqliteStore({ path, journalMode: 'wal', busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS })
@@ -390,6 +407,21 @@ describe('SessionPersistenceSqlite physical packing', () => {
     expect((await first.loadStored(header.id))?.events).toEqual([chunk(0), chunk(1)])
     await first.close()
     await second.close()
+  })
+
+  it('rolls back lazy integer-key materialization after a rejected append', async () => {
+    const store = new SqliteStore({
+      path: await freshDbPath('dsh-sqlite-key-rollback-'),
+      journalMode: 'wal',
+      busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS,
+    })
+    const header = meta(SessionId('key-rollback'))
+
+    await expect(store.appendBatch(header, [chunk(1)], false)).rejects.toThrow(/stored next seq is 0/)
+    await expect(store.appendBatch(header, [chunk(0)], true)).rejects.toThrow(/metadata row is missing/)
+    await expect(store.appendBatch(header, [chunk(0)], false)).resolves.toBeUndefined()
+    expect((await store.loadStored(header.id))?.events).toEqual([chunk(0)])
+    await store.close()
   })
 
   it('rejects a stale repair without deleting a newer winning tail', async () => {
@@ -503,23 +535,28 @@ describe('SessionPersistenceSqlite schema ownership', () => {
   })
 
   it('paces repeated busy journal-mode attempts', async () => {
-    const path = await freshDbPath('dsh-sqlite-journal-paced-')
-    const busyTimeoutMs = 50
-    let attempts = 0
-    const BusyDatabase = databaseWithJournalFailure(() => {
-      attempts += 1
-      return attempts <= 3
+    const attemptedAt: number[] = []
+    const BusyTwiceDatabase = databaseWithJournalFailure(() => {
+      attemptedAt.push(performance.now())
+      return attemptedAt.length <= 2
         ? Object.assign(new Error('database is locked'), { errcode: 5 })
-        : Object.assign(new Error('journal transition failed'), { errcode: 1 })
+        : undefined
     })
-    const clock = vi.spyOn(performance, 'now').mockReturnValue(0)
-    try {
-      await expect(openDatabase(BusyDatabase, path, 'wal', busyTimeoutMs))
-        .rejects.toThrow('journal transition failed')
-    } finally {
-      clock.mockRestore()
+    const db = await openDatabase(
+      BusyTwiceDatabase,
+      await freshDbPath('dsh-sqlite-journal-paced-'),
+      'wal',
+      DEFAULT_BUSY_TIMEOUT_MS,
+    )
+    db.close()
+
+    expect(attemptedAt).toHaveLength(3)
+    for (let index = 1; index < attemptedAt.length; index += 1) {
+      const previous = attemptedAt[index - 1]
+      const current = attemptedAt[index]
+      if (previous === undefined || current === undefined) throw new Error('missing journal attempt timestamp')
+      expect(current - previous).toBeGreaterThanOrEqual(5)
     }
-    expect(attempts).toBe(4)
   })
 
   it('rejects unversioned, incompatible, and foreign-application databases', async () => {
@@ -537,7 +574,7 @@ describe('SessionPersistenceSqlite schema ownership', () => {
 
     const foreignPath = await freshDbPath('dsh-sqlite-foreign-')
     const foreign = new DatabaseSync(foreignPath)
-    foreign.exec(testSql('set-user-version-17'))
+    foreign.exec(testSql('set-user-version-20'))
     foreign.exec(testSql('set-application-id-12345'))
     foreign.close()
     await expect(openDatabase(DatabaseSync, foreignPath, 'wal', DEFAULT_BUSY_TIMEOUT_MS)).rejects.toThrow(/has application id 12345/)
@@ -684,6 +721,20 @@ describe('SessionPersistenceSqlite schema ownership', () => {
 })
 
 describe('SessionPersistenceSqlite edge behavior', () => {
+  it('materializes an explicitly durable empty live session', async () => {
+    const path = await freshDbPath('dsh-sqlite-empty-')
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionPersistenceSqlite, { path })
+    const session = ctx.sessions.create(SessionId('empty'), { meta: { cwd: '/workspace' } })
+
+    await ctx.sessionPersistence.ensureMaterialized(session)
+
+    await expect(ctx.sessionPersistence.list()).resolves.toEqual([session.header])
+    await expect(ctx.sessionPersistence.load(session.id)).resolves.toEqual({ meta: session.header, events: [] })
+    await ctx.fiber.dispose()
+  })
+
   it('keeps a fresh database unopened until the first persistence operation', async () => {
     const path = await freshDbPath('dsh-sqlite-lazy-')
     const ctx = new Context()

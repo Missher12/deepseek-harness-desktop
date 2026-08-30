@@ -1,8 +1,9 @@
 /** Ordinary-session resolution through the Host-owned Typert policy seam. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-api-session-controller/types'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
+import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-typert-registry'
 import type {} from '@deepseek-ai/dsh-workspace'
 import { messengerError } from './types.ts'
@@ -68,7 +69,7 @@ export function assertTargetStillOrdinaryAndUnarchived(ctx: Context, target: Age
 }
 
 /**
- * Resolve a copied identity only through the ApiProxy-configured Typert Agent
+ * Resolve a copied identity only through the API Session Controller-configured Typert Agent
  * lookup. This preserves cold-resume deduplication, recorded presets, and Host
  * ownership policy; the plugin never calls `ctx.agents.resume()`.
  * @param ctx - Cordis context providing the Host-owned Typert lookup.
@@ -128,18 +129,15 @@ function isSubagentOwned(ctx: Context, target: Agent): boolean {
 }
 
 function normalizeLookupError(error: unknown): Error {
-  if (!(error instanceof TypertLookupFailure)) {
+  const failure = remoteErrorOf(error)
+  if (failure === undefined) {
     return messengerError('target-lookup-failed', 'target lookup failed', { cause: error })
   }
-  const failure: unknown = error.failure
-  if (typeof failure === 'object' && failure !== null && 'code' in failure) {
-    const code = (failure as { code?: unknown }).code
-    if (code === 'session-not-found') {
-      return messengerError('target-not-found', 'target session was not found', { cause: error })
-    }
-    if (code === 'agent-busy') {
-      return messengerError('target-subagent', 'subagent sessions require subagent delivery', { cause: error })
-    }
+  if (failure.code === 'session/not-found') {
+    return messengerError('target-not-found', 'target session was not found', { cause: error })
+  }
+  if (failure.code === 'session/agent-busy') {
+    return messengerError('target-subagent', 'subagent sessions require subagent delivery', { cause: error })
   }
   return messengerError('target-lookup-failed', 'target lookup policy rejected the session', { cause: error })
 }

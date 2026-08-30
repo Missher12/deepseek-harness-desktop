@@ -6,7 +6,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useSyncExternalStore } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MessageId } from '@deepseek-ai/dsh-llm'
-import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   MessengerStatus,
@@ -142,7 +143,7 @@ describe('session messenger Client registration', () => {
     const slotDispose = vi.fn()
     const ctx = {
       reflect: { provide: vi.fn(() => vi.fn()) },
-      conversationEvents: { register: vi.fn(() => vi.fn()) },
+      uiConversation: { events: { register: vi.fn(() => vi.fn()) } },
       effect(setup: () => (() => void) | undefined) {
         const dispose = setup()
         if (typeof dispose === 'function') disposers.push(dispose)
@@ -161,11 +162,11 @@ describe('session messenger Client registration', () => {
     }
 
     apply(ctx as never)
-    expect(inject).toEqual(['conversationEvents', 'locale', 'slots'])
+    expect(inject).toEqual(['uiConversation', 'locale', 'slots'])
     expect(registrations.map(entry => entry.name)).toEqual(['conversation.chat.node'])
     expect(registrations[0]?.options).toMatchObject({ key: 'session-relay-outgoing' })
     expect(ctx.reflect.provide).toHaveBeenCalledWith('sessionMessengerClient', expect.any(Object))
-    expect(ctx.conversationEvents.register).toHaveBeenCalledOnce()
+    expect(ctx.uiConversation.events.register).toHaveBeenCalledOnce()
     for (const dispose of disposers.reverse()) dispose()
     expect(localeDispose).toHaveBeenCalledOnce()
     expect(slotDispose).toHaveBeenCalledOnce()

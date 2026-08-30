@@ -1,4 +1,4 @@
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   FileListing, FilePreview, ReviewDiff, ReviewStatus, WorkbenchBootstrap, WorkbenchTerminalSnapshot,
 } from '../protocol.ts'
@@ -21,7 +21,7 @@ async function request<T>(path: RequestPath, sessionId: SessionId, extra: Record
   })
   const value = await response.json() as unknown
   if (!response.ok) {
-    const message = typeof value === 'object' && value !== null && 'error' in value ? String(value.error) : 'workbench request failed'
+    const message = typeof value === 'object' && value !== null && 'error' in value ? String(value.error) : response.statusText || String(response.status)
     throw new Error(message)
   }
   return value as T

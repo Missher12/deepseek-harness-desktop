@@ -1,4 +1,4 @@
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { DesktopUpdateSnapshot } from './contracts.ts'
 
 /** Reactive state owned by the System Update settings contribution. */

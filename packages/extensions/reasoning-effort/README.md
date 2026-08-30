@@ -1,8 +1,23 @@
+---
+description: "Harness-native model and reasoning selector with attributed Canvas effects"
+kind: "package-bundle"
+---
+
 # @deepseek-ai/dsh-reasoning-effort
 
 English | [中文](README.zh.md)
 
+## Summary
+
 A removable Harness-native replacement for the single model-selection seat. It keeps HanaAyane's pinned Canvas reasoning-effort effect and prefers a popup below the composer. Models, real submitted values, and current selections come from the active Host `ModelDirectory`; the stable six-stop presentation scale maps safely onto each exact model capability.
+
+## Table of Contents
+
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+-----
 
 ## Behavior
 
@@ -32,6 +47,12 @@ The retained Canvas implementation and `chibi-runner-strip.png` come from [`Hana
 
 The Host half owns one profile-scoped `chibiThumb` boolean plus at most 64 visual positions keyed by the exact session/provider/model route, and one exact loopback preference endpoint authenticated by a generation-scoped capability. The bounded map contains no prompt or response text. It exposes no generic settings access, enables no CORS, and accepts only the two narrow patch shapes it owns. This makes an Ultra visual choice survive control remounts, session switching, random Desktop ports, and application restarts while the real Host effort remains the mapped supported value. Disabling the plugin does not modify sessions or provider settings and does not promise to erase these inert local preferences; re-enabling may reuse them.
 
+<a id="dev-note"></a>
+## Dev Note
+
+None.
+
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Selected reasoning effort
@@ -49,6 +70,8 @@ None of its own: the control adds no prompt tokens. A provider may produce diffe
 The plugin does not rewrite conversation history, so it creates no cache-prefix change by itself. Whether changing request-level reasoning configuration reuses a provider cache is provider-specific and is not promised here.
 
 ## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - Compatibility is verified only against the repository's `0.1.0-rc.8` contract; a Harness upgrade requires a fresh peer, service, staged-profile, and visual review.
 - The bounded profile-scoped preferences are not an uninstall scrubber; removing the plugin may leave the inert character opt-in and visual route positions for a later reinstall.

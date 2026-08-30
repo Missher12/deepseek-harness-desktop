@@ -78,7 +78,10 @@ function liveServices(ctx: Context, api: readonly ServiceApiEntry[]): LiveServic
 /** Catalogued services with no live provider: loadable in principle, absent here. */
 function absentServices(ctx: Context, api: readonly ServiceApiEntry[]): string[] {
   const live = new Set(liveImpls(ctx).map(impl => impl.name))
-  return api.filter(entry => !live.has(entry.key)).map(entry => entry.key).sort()
+  return api
+    .filter(entry => !isPrivilegedControlService(entry.key) && !live.has(entry.key))
+    .map(entry => entry.key)
+    .sort()
 }
 
 /**
@@ -270,8 +273,9 @@ export function describeApi(
   inherited: readonly InheritedApiEntry[] = INHERITED_CTX_API,
   types: readonly TypeApiEntry[] = TYPE_API,
 ): string[] {
-  const live = liveServices(ctx, api)
-  const byKey = new Map(api.map(entry => [entry.key, entry]))
+  const visibleApi = api.filter(entry => !isPrivilegedControlService(entry.key))
+  const live = liveServices(ctx, visibleApi)
+  const byKey = new Map(visibleApi.map(entry => [entry.key, entry]))
   const lines: string[] = []
   let selected = live.filter(service => service.catalogued)
   let documented: readonly ServiceApiMethod[] = []
@@ -289,7 +293,7 @@ export function describeApi(
       lines.push(`- ${service.name} (provided by ${service.owner}) — running, but this catalog has no signature for it;`
         + ` inject: ['${service.name}'] still reaches it`)
     }
-    const notRunning = absentServices(ctx, api)
+    const notRunning = absentServices(ctx, visibleApi)
     if (notRunning.length > 0) lines.push(`not running (loadable services with no live provider): ${notRunning.join(', ')}`)
   }
   const shapes = typeClosure(selected.flatMap(service => [...service.methods]), types)

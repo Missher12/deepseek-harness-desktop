@@ -218,11 +218,11 @@ expect(source).toContain('IconEllipsisOutline16')
 ### 任务 4：增加官方会话费用估算和精确账户余额
 
 **文件：**
-- 新建：`packages/client/ui-conversation/src/client/chat/usage-money.ts`
-- 修改：`packages/client/ui-conversation/src/client/chat/StatsLine.tsx`
+- 新建：`packages/client/ui-chat/src/client/chat/usage-money.ts`
+- 修改：`packages/client/ui-chat/src/client/chat/StatsLine.tsx`
 - 修改：`packages/client/ui-conversation/src/client/locales.ts`
-- 测试：`packages/client/ui-conversation/tests/usage-money.client.spec.ts`
-- 测试：`packages/client/ui-conversation/tests/chat-stats.client.spec.tsx`
+- 测试：`packages/client/ui-chat/tests/usage-money.client.spec.ts`
+- 测试：`packages/client/ui-chat/tests/chat-stats.client.spec.tsx`
 - 新建：`packages/llm/llm-deepseek/src/balance.ts`
 - 修改：`packages/llm/llm-deepseek/src/index.ts`
 - 测试：`packages/llm/llm-deepseek/tests/balance.spec.ts`
@@ -240,7 +240,7 @@ expect(sessionCostCny(usage, undefined)).toBeNull()
 
 - [ ] **步骤 2：运行 Client 金额测试并确认 RED**
 
-运行：`pnpm exec vitest run packages/client/ui-conversation/tests/usage-money.client.spec.ts packages/client/ui-conversation/tests/chat-stats.client.spec.tsx`
+运行：`pnpm exec vitest run packages/client/ui-chat/tests/usage-money.client.spec.ts packages/client/ui-chat/tests/chat-stats.client.spec.tsx`
 
 预期：FAIL，因为当前草稿仍使用过时的峰谷价格，并以最后一个模型给整个会话计价。
 
@@ -269,7 +269,7 @@ expect(providerFetch).toHaveBeenCalledTimes(1)
 
 仅在 `webServer` 存在时挂载一个精确同源路由。复用 `resolveApiKey`，随机能力令牌仅绑定当前页面代际并只放请求头；验证供应商字符串可转换为有限非负数，使用恒定时间比较，成功快照缓存 60 秒，合并并发读取，10 秒后中止，并通过 Cordis effect 注销路由和 HTML tap。
 
-运行：`pnpm exec vitest run packages/llm/llm-deepseek/tests/balance.spec.ts packages/client/ui-conversation/tests/usage-money.client.spec.ts packages/client/ui-conversation/tests/chat-stats.client.spec.tsx`
+运行：`pnpm exec vitest run packages/llm/llm-deepseek/tests/balance.spec.ts packages/client/ui-chat/tests/usage-money.client.spec.ts packages/client/ui-chat/tests/chat-stats.client.spec.tsx`
 
 预期：PASS；快照、错误和测试输出均不包含凭据。
 

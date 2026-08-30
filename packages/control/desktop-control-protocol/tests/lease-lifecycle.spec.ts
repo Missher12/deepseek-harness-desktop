@@ -112,7 +112,7 @@ describe('closed lease lifecycle roster and types', () => {
     expect(PROTOCOL_MANIFEST.controlLeaseTargetFields).toEqual(CONTROL_LEASE_TARGET_FIELDS)
     expect(PROTOCOL_MANIFEST.controlLeaseQuotaFields).toEqual(CONTROL_LEASE_QUOTA_FIELDS)
     expect(PROTOCOL_MANIFEST.controlKeyValues).toEqual([
-      ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+      ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split(''),
       'Enter', 'Tab', 'Space', 'Backspace', 'Escape', 'Delete', 'Home', 'End',
       'PageUp', 'PageDown', 'ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp',
       'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',

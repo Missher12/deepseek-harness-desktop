@@ -1,8 +1,23 @@
+---
+description: "@deepseek-ai/dsh-tool-computer-control 的中文包参考，涵盖其运行时职责、组合边界与已知限制。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-computer-control
 
 [English](README.md) | 中文
 
+## 概述
+
 这个可选 Consumer 通过准确十二个封闭工具公开 Desktop 所有的原生电脑控制：status、list、snapshot、focus、click、double-click、drag、type、key、scroll、wait 与 Stop。只有存在 `ctx.computerControl` 时才注册模型工具，因此普通 CLI 与 Web 行为保持不变。
+
+## 目录
+
+- [开发备注](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+
+-----
 
 ## 约定
 
@@ -12,6 +27,12 @@
 
 安全工具错误会区分五种判断：电脑控制关闭、应用白名单缺失、操作系统权限被拒、本次原生任务询问被拒，以及目标受保护，并分别返回长度受限的纠正文字。Harness 普通 `ask` 或 `never` 工具策略不能替代 Electron 的逐任务原生批准，也不能预先授权应用。
 
+<a id="dev-note"></a>
+## 开发备注
+
+无。
+
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 工具 schema
@@ -29,6 +50,8 @@
 只要 `ComputerControl` 可用性与封闭 schema 不变，工具清单就是前缀稳定的。挂载或移除提供方会改变工具可见性，并可能使该位置之后的复用失效。
 
 ## 已知限制与暂缓事项
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - Accessibility 语义无法证明每个外部效果；原生 policy 与可见用户控制始终是权威。
 - 坐标 click、double-click、drag 与 scroll 需要视觉 route，且始终是窗口相对坐标。

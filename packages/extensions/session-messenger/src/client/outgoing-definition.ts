@@ -1,11 +1,11 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { OutgoingRelayEvent } from '../types.ts'
 
 /** Visible, model-hidden source-side relay row data. */
 export interface OutgoingRelayChatData extends OutgoingRelayEvent { readonly time: number }
 
-declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+declare module '@deepseek-ai/dsh-client-ui-chat/client' {
   interface ChatNodeDataMap {
     /** Model-hidden source-side transcript for an accepted cross-session relay. */
     'session-relay-outgoing': OutgoingRelayChatData

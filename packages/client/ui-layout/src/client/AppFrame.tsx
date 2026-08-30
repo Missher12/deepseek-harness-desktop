@@ -12,11 +12,14 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type {
+  PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
+} from '@deepseek-ai/dsh-client-ui-slots'
 import {
   computeColumns, DETAILS_MAX, DETAILS_MIN, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED,
   SIDEBAR_MAX, SIDEBAR_MIN, UTILITY_MAX, UTILITY_MIN,
 } from './columns.ts'
+import { DocumentTitle } from './DocumentTitle.tsx'
 import type { createLayoutStore } from './stores.ts'
 import type { UtilityLayoutSnapshot } from './service.ts'
 import css from './AppFrame.module.css'
@@ -26,6 +29,7 @@ export type AppFrameProps =
   & PropsRuntime<'root'>
   & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'layout.utility' | 'layout.status' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
+  & PropsLocale<'common'>
   & { publishUtilityLayout: (snapshot: UtilityLayoutSnapshot) => void }
 
 /** Center column grid item (session-body building block). */
@@ -49,6 +53,7 @@ function UtilityColumn(props: { children?: ReactNode }) {
  */
 function DragHandle(props: {
   side: 'sidebar' | 'details' | 'utility'
+  label: string
   left: number
   value: number
   min: number
@@ -57,7 +62,6 @@ function DragHandle(props: {
   onDrag: (dx: number) => void
   onEnd: () => void
 }) {
-  const label = props.side === 'utility' ? 'Resize utility workbench' : `Resize ${props.side}`
   const [dragging, setDragging] = useState(false)
   const origin = useRef(0)
   const latest = useRef(0)
@@ -100,7 +104,7 @@ function DragHandle(props: {
   return (
     <div
       role="separator"
-      aria-label={label}
+      aria-label={props.label}
       tabIndex={0}
       aria-orientation="vertical"
       aria-valuemin={props.min}
@@ -118,25 +122,24 @@ function DragHandle(props: {
   )
 }
 
-/** The four-column frame (see module doc). */
+/** The three-column frame (see module doc). */
 export function AppFrame({
   useStore,
   useSessions,
   actions,
   renderSlot,
+  SessionProvider,
+  t,
   publishUtilityLayout,
 }: AppFrameProps) {
   const panels = useStore(s => s)
-  useLayoutEffect(() => {
-    publishUtilityLayout({
-      open: panels.utilityOpen,
-      mode: panels.utilityMode,
-      width: panels.utilityWidth,
-    })
-  }, [panels.utilityMode, panels.utilityOpen, panels.utilityWidth, publishUtilityLayout])
   const detailsSession = useSessions((s) => {
     const current = s.current
     return current !== undefined && s.byId[current]?.blank === false ? current : undefined
+  })
+  const documentTitle = useSessions((s) => {
+    const current = s.current
+    return current === undefined ? undefined : s.byId[current]?.title
   })
   const frameRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState(() => window.innerWidth)
@@ -183,13 +186,19 @@ export function AppFrame({
     ? 0
     : panels.sidebar === 0 ? panels.sidebarLastExpanded : panels.sidebar
   const utilityOpen = detailsSession !== undefined && panels.utilityOpen
-  const dockedCols = computeColumns(
+  useLayoutEffect(() => {
+    publishUtilityLayout({
+      open: utilityOpen,
+      mode: panels.utilityMode,
+      width: panels.utilityWidth,
+    })
+  }, [panels.utilityMode, panels.utilityWidth, publishUtilityLayout, utilityOpen])
+  const cols = computeColumns(
     viewport,
     sidebarPreference,
     detailsSession === undefined ? 0 : panels.details,
     utilityOpen ? panels.utilityWidth : 0,
   )
-  const cols = dockedCols
   const renderedSidebarCollapsed = cols.sidebar === SIDEBAR_COLLAPSED
   const colsRef = useRef(cols)
   colsRef.current = cols
@@ -216,6 +225,7 @@ export function AppFrame({
   const onUtilityDrag = useCallback((dx: number) => {
     actions.setUtilityWidth(utilityBase.current - dx)
   }, [actions])
+  const productTitle = process.env.DSH_CLIENT_TITLE ?? t('brand.localBuild')
 
   return (
     <div
@@ -227,6 +237,10 @@ export function AppFrame({
       data-utility-focused={utilityOpen && cols.center === 0 || undefined}
       data-dragging={dragging || undefined}
     >
+      <DocumentTitle
+        productTitle={productTitle}
+        {...documentTitle === undefined ? {} : { title: documentTitle }}
+      />
       <div className={css.sidebarCol}>
         {/* Render-site slot call with live concession output: a closed
             sidebar keeps the mounted slot at the compact-rail width, and the
@@ -242,12 +256,18 @@ export function AppFrame({
         {/* Both column occupants stay at fixed tree positions from first
             paint — no loading gate: a bare status line reads worse than
             the shell's own pending rendering. The conversation
-            is session-maybe; the strict details entry naturally renders
-            empty while no session is current. */}
+            is session-maybe; SessionProvider withholds the strict details
+            entry while no session is current. */}
         <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
-        <DetailsColumn>{renderSlot('details', {})}</DetailsColumn>
+        <DetailsColumn>
+          <SessionProvider>{renderSlot('details', {})}</SessionProvider>
+        </DetailsColumn>
         {utilityOpen
-          ? <UtilityColumn>{renderSlot('layout.utility', { mode: panels.utilityMode })}</UtilityColumn>
+          ? (
+            <UtilityColumn>
+              <SessionProvider>{renderSlot('layout.utility', { mode: panels.utilityMode })}</SessionProvider>
+            </UtilityColumn>
+          )
           : <div className={css.utilityCol} />}
       </>
       <div className={css.statusLayer} data-layout-status>
@@ -257,11 +277,11 @@ export function AppFrame({
         {renderSlot('shell.overlay', {})}
       </div>
       {/* The collapsed rail is fixed-width: no resize handle while closed. */}
-      {!renderedSidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} value={cols.sidebar} min={SIDEBAR_MIN} max={SIDEBAR_MAX}
+      {!renderedSidebarCollapsed && <DragHandle side="sidebar" label={t('layout.resize.sidebar')} left={cols.sidebar} value={cols.sidebar} min={SIDEBAR_MIN} max={SIDEBAR_MAX}
         onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
-      {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} value={cols.details} min={DETAILS_MIN} max={DETAILS_MAX}
+      {cols.details > 0 && <DragHandle side="details" label={t('layout.resize.details')} left={viewport - cols.utility - cols.details} value={cols.details} min={DETAILS_MIN} max={DETAILS_MAX}
         onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
-      {cols.utility > 0 && cols.center > 0 && <DragHandle side="utility" left={viewport - cols.utility} value={cols.utility} min={UTILITY_MIN} max={UTILITY_MAX}
+      {cols.utility > 0 && cols.center > 0 && <DragHandle side="utility" label={t('layout.resize.utility')} left={viewport - cols.utility} value={cols.utility} min={UTILITY_MIN} max={UTILITY_MAX}
         onStart={onUtilityStart} onDrag={onUtilityDrag} onEnd={onDragEnd} />}
     </div>
   )

@@ -8,13 +8,13 @@ Turn the official DeepSeek Harness browser surface into standalone Intel macOS a
 
 - Target machine: Intel (`x86_64`) Mac running macOS 15.7.4.
 - Previously installed runtime: `@deepseek-ai/dsh@0.1.0-rc.6`.
-- Desktop source baseline: official repository version `0.1.1-rc.2` at upstream commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`.
+- Desktop source baseline: official repository version `0.1.2-alpha.2` at upstream commit `0a53fb55bea101816fa226bb964ae2bed71c343b`.
 - Previous launch path: Hermes gateway → `npm exec @deepseek-ai/dsh web --port 65000` → Node web host.
 - Current launch path: `/Applications/DeepSeek Harness.app` → owned bundled CLI → random loopback listener.
 - Current UI: React/Vite application with workspaces, sessions, model and permission selection, tools, plans, jobs, settings, a details pane, a Codex-style archived-session manager, and exact session-ID copy actions for active and archived sessions.
 - User data root: `~/.dsh`.
 - Official source: <https://github.com/deepseek-ai/deepseek-harness>.
-- Inspected upstream release: `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e` (`dsh-v0.1.1-rc.2`) on 2026-08-22.
+- Inspected upstream release: `0a53fb55bea101816fa226bb964ae2bed71c343b` (`0.1.2-alpha.2`) on 2026-08-31.
 - Upstream currently contains `apps/cli` and `apps/web`; there is no implemented desktop application.
 
 ## Confirmed Product Decisions
@@ -69,6 +69,16 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- Version 0.4.9 rebases the Desktop product patch onto the complete official
+  Harness `0.1.2-alpha.2` source delta while preserving the native macOS and
+  Windows shell, Browser/Computer control authority boundaries, bundled
+  memory services, usage and billing surfaces, and the single resizable
+  utility dock. The official Client architecture now owns Session, Settings,
+  and Workspace state through their dedicated API controllers, client-store,
+  and ui-renderer packages; the removed legacy client-runtime and Host
+  API-proxy are not carried forward. The release remains one shared source
+  commit: native Intel macOS acceptance lands first, and Windows x64 consumes
+  that exact commit in its isolated native workflow before publication.
 - Version 0.4.8 hardens the Desktop utility workbench as a single resizable
   dock. Its Browser remains fitted to the live dock bounds, is hidden behind
   settings, dialogs, tooltips, minimized windows, and non-Browser utility

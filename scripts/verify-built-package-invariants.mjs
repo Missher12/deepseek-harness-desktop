@@ -46,12 +46,14 @@ for (const manifestPath of manifests) {
 
   // Keep the staged view below its owning package so Node reaches the real
   // pnpm dependency links. Junctioning node_modules elsewhere breaks pnpm's
-  // relative workspace links on Windows. Copy the manifest-declared lib view
-  // so a companion that imports an undeclared runtime chunk fails here.
+  // relative workspace links on Windows. Copy the manifest-declared package
+  // view so a companion that imports an undeclared runtime chunk or data file
+  // fails here. Published runtime data (for example, a protocol manifest) is
+  // a valid compiled-companion dependency.
   const stagedPackageDir = mkdtempSync(resolve(packageDir, '.dsh-built-invariant-'))
   try {
     copyFileSync(resolve(packageDir, 'package.json'), resolve(stagedPackageDir, 'package.json'))
-    copyDeclaredLibFiles(packageDir, stagedPackageDir, manifest.files)
+    copyDeclaredPackageFiles(packageDir, stagedPackageDir, manifest.files)
     const probePath = resolve(stagedPackageDir, 'probe.mjs')
     writeFileSync(
       probePath,
@@ -81,9 +83,8 @@ if (failures.length > 0) {
 
 console.log(`verify-built-package-invariants: ${manifests.length} compiled companion(s) passed plain-Node Loader checks.`)
 
-function copyDeclaredLibFiles(packageDir, stagedPackageDir, files) {
+function copyDeclaredPackageFiles(packageDir, stagedPackageDir, files) {
   for (const pattern of files) {
-    if (!pattern.startsWith('lib/')) continue
     for (const relativePath of globSync(pattern, { cwd: packageDir })) {
       const source = resolve(packageDir, relativePath)
       if (!existsSync(source)) continue

@@ -1,209 +1,181 @@
-import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
-import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
-import SessionStore from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
-import { createApiRemoteAgentResolver } from '@deepseek-ai/dsh-api-remotes'
-import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import {
+  ApiSessionAgentController,
+} from '@deepseek-ai/dsh-api-session-controller/src/agent.ts'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
+import { describe, expect, it, vi } from 'vitest'
 
-const sid = (value: string): SessionId => value as SessionId
-
-function header(id: SessionId): SessionHeader {
-  return { version: 0, id, createdAt: 1, cwd: '/proj' }
+function header(id: string, cwd: string | null = '/proj'): SessionHeader {
+  return {
+    version: 0,
+    id: SessionId(id),
+    createdAt: 1,
+    ...(cwd === null ? {} : { cwd }),
+  }
 }
 
-async function createContext(): Promise<Context> {
+function observation(meta: SessionHeader, events: readonly SessionEvent[] = []): object {
+  return {
+    source: 'prepared',
+    header: meta,
+    events: [...events],
+    cursor: events.at(-1)?.seq ?? -1,
+    projections: { asOfSeq: events.at(-1)?.seq ?? -1, values: {} },
+    retain: vi.fn(),
+    [Symbol.dispose]: vi.fn(),
+  }
+}
+
+async function harness(
+  observeSession: (sessionId: SessionId, ctx: Context) => Promise<object>,
+): Promise<{ ctx: Context; agents: ApiSessionAgentController }> {
   const ctx = new Context()
   await ctx.plugin(TypertRegistry)
   await ctx.plugin(SessionStore)
   await ctx.plugin(AgentRegistry)
-  return ctx
-}
-
-function provideSession(
-  ctx: Context,
-  meta: SessionHeader,
-  inspect: () => Promise<{ meta: SessionHeader; events: SessionEvent[] }>,
-): void {
-  ctx.provide('sessionPersistence', {
-    list: () => Promise.resolve([meta]),
-    inspect,
-    locate: () => undefined,
+  ctx.provide('sessionQuery', {
+    observeSession: (sessionId: SessionId) => observeSession(sessionId, ctx),
   } as never)
+  ctx.provide('agentDefaultModel', {
+    currentSelection: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    saveSelection: () => Promise.resolve(),
+  } as never)
+  return { ctx, agents: new ApiSessionAgentController(ctx) }
 }
 
 function stubAgent(ctx: Context, session: Session): Agent {
   return { id: session.id, session, status: 'idle', ctx } as Agent
 }
 
-describe('API Remote Agent resolver races', () => {
-  it('maps an inspected session without a cwd to session-not-found', async () => {
-    const ctx = await createContext()
-    const sessionId = sid('missing-after-inspect')
-    const meta = header(sessionId)
-    provideSession(ctx, meta, () => Promise.resolve({
-      meta: { ...meta, cwd: undefined } as unknown as SessionHeader,
-      events: [],
-    }))
+describe('official API Session Agent lookup', () => {
+  it('maps a persisted identity without a cwd to session/not-found', async () => {
+    const meta = header('missing-after-inspect', null)
+    const { ctx, agents } = await harness(() => Promise.resolve(observation(meta)))
+    const resume = vi.spyOn(ctx.agents, 'resume')
 
-    const result = await createApiRemoteAgentResolver(ctx, {})(sessionId)
-
-    expect(result).toMatchObject({ error: { code: 'session-not-found', details: { sessionId } } })
+    await expect(agents.resolveAgent(meta.id)).resolves.toMatchObject({
+      error: { code: 'session/not-found', details: { sessionId: meta.id } },
+    })
+    expect(resume).not.toHaveBeenCalled()
     await ctx.fiber.dispose()
   })
 
-  it('resumes through a concurrently attached ordinary Session without optional defaults', async () => {
-    const ctx = await createContext()
-    const sessionId = sid('ordinary-attach-race')
-    const meta = header(sessionId)
-    let published: Session | undefined
-    provideSession(ctx, meta, () => {
-      published = ctx.sessions.create(sessionId, { meta: { cwd: '/proj' } })
-      return Promise.resolve({ meta, events: [] })
-    })
+  it('shares one cold resume across concurrent lookup callers', async () => {
+    const meta = header('shared-cold-resume')
+    const observeSession = vi.fn(() => Promise.resolve(observation(meta)))
+    const { ctx, agents } = await harness(observeSession)
+    const session = ctx.sessions.create(meta.id, { meta })
+    const live = stubAgent(ctx, session)
+    const gate = Promise.withResolvers<undefined>()
     const resume = vi.spyOn(ctx.agents, 'resume').mockImplementation(async () => {
-      if (published === undefined) throw new Error('Session was not published')
-      return { agent: stubAgent(ctx, published), dispose: () => Promise.resolve() }
+      await gate.promise
+      return { agent: live, dispose: () => Promise.resolve() }
     })
 
-    const result = await createApiRemoteAgentResolver(ctx, {})(sessionId)
+    const first = agents.resolveAgent(meta.id)
+    const second = agents.resolveAgent(meta.id)
+    gate.resolve()
 
-    expect(result).toMatchObject({ agent: { id: sessionId } })
-    expect(resume).toHaveBeenCalledWith({ resumeSessionId: sessionId })
+    await expect(Promise.all([first, second])).resolves.toEqual([{ agent: live }, { agent: live }])
+    expect(observeSession).toHaveBeenCalledOnce()
+    expect(resume).toHaveBeenCalledOnce()
+    expect(resume).toHaveBeenCalledWith(expect.objectContaining({
+      resumeSessionId: meta.id,
+      agentOptions: { provider: 'fixture', model: 'fixture-model' },
+    }))
     await ctx.fiber.dispose()
   })
 
-  it('hands the exact cold-resume handle to the owning Host before returning its Agent', async () => {
-    const ctx = await createContext()
-    const sessionId = sid('ordinary-owned-cold-resume')
-    const meta = header(sessionId)
-    let published: Session | undefined
-    provideSession(ctx, meta, () => {
-      published = ctx.sessions.create(sessionId, { meta: { cwd: '/proj' } })
-      return Promise.resolve({ meta, events: [] })
-    })
-    const dispose = vi.fn(() => Promise.resolve())
-    const handle = {
-      get agent() {
-        if (published === undefined) throw new Error('Session was not published')
-        return stubAgent(ctx, published)
-      },
-      dispose,
-    }
-    vi.spyOn(ctx.agents, 'resume').mockResolvedValue(handle)
-    const retainHandle = vi.fn((_candidate: AgentHandle): void => {})
-
-    const result = await createApiRemoteAgentResolver(ctx, { retainHandle })(sessionId)
-
-    expect(result).toMatchObject({ agent: { id: sessionId } })
-    expect(retainHandle).toHaveBeenCalledOnce()
-    expect(retainHandle).toHaveBeenCalledWith(handle)
-    expect(dispose).not.toHaveBeenCalled()
-    await ctx.fiber.dispose()
-  })
-
-  it('disposes a cold-resume handle when its owner rejects retention', async () => {
-    const ctx = await createContext()
-    const sessionId = sid('rejected-cold-resume-handle')
-    const meta = header(sessionId)
-    let published: Session | undefined
-    provideSession(ctx, meta, () => {
-      published = ctx.sessions.create(sessionId, { meta: { cwd: '/proj' } })
-      return Promise.resolve({ meta, events: [] })
-    })
-    const dispose = vi.fn(() => Promise.resolve())
+  it('retains the exact resumed handle as the controller-owned disposal capability', async () => {
+    const meta = header('owned-cold-resume')
+    const { ctx, agents } = await harness(() => Promise.resolve(observation(meta)))
+    const session = ctx.sessions.create(meta.id, { meta })
+    const live = stubAgent(ctx, session)
+    let detach = (): void => {}
+    const dispose = vi.fn(async () => { detach() })
     vi.spyOn(ctx.agents, 'resume').mockImplementation(async () => {
-      if (published === undefined) throw new Error('Session was not published')
-      return { agent: stubAgent(ctx, published), dispose }
+      detach = ctx.agents.register(live)
+      return { agent: live, dispose }
     })
-    const retainHandle = vi.fn(() => { throw new Error('owner stopped') })
 
-    const result = await createApiRemoteAgentResolver(ctx, { retainHandle })(sessionId)
-
-    expect(result).toMatchObject({ error: { code: 'internal' } })
-    const message: unknown = (result as { error?: { message?: unknown } }).error?.message
-    expect(typeof message).toBe('string')
-    if (typeof message === 'string') expect(message).toContain('owner stopped')
+    await expect(agents.resolveAgent(meta.id)).resolves.toEqual({ agent: live })
+    await expect(agents.releaseForDelete(meta.id)).resolves.toEqual({ cold: false })
     expect(dispose).toHaveBeenCalledOnce()
     await ctx.fiber.dispose()
   })
 
   it('rejects a subagent Session published after durable inspection', async () => {
-    const ctx = await createContext()
-    const sessionId = sid('owned-attach-race')
-    const meta = header(sessionId)
-    provideSession(ctx, meta, () => {
-      ctx.sessions.create(sessionId, { meta: { cwd: '/proj', origin: 'subagent' } })
-      return Promise.resolve({ meta, events: [] })
+    const meta = header('owned-attach-race')
+    const bench = await harness((_sessionId, ctx) => {
+      ctx.sessions.create(meta.id, { meta: { ...meta, origin: 'subagent' } })
+      return Promise.resolve(observation(meta))
     })
-    const resume = vi.spyOn(ctx.agents, 'resume')
+    const resume = vi.spyOn(bench.ctx.agents, 'resume')
 
-    const result = await createApiRemoteAgentResolver(ctx, {})(sessionId)
-
-    expect(result).toMatchObject({ error: { code: 'agent-busy' } })
+    await expect(bench.agents.resolveAgent(meta.id)).resolves.toMatchObject({
+      error: { code: 'session/agent-busy' },
+    })
     expect(resume).not.toHaveBeenCalled()
-    await ctx.fiber.dispose()
+    await bench.ctx.fiber.dispose()
   })
 
   it('reclassifies failed resumes after a live or attached subagent wins publication', async () => {
     for (const winner of ['agent', 'session'] as const) {
-      const ctx = await createContext()
-      const sessionId = sid(`owned-${winner}-resume-race`)
-      const meta = header(sessionId)
-      provideSession(ctx, meta, () => Promise.resolve({ meta, events: [] }))
+      const meta = header(`owned-${winner}-resume-race`)
+      const { ctx, agents } = await harness(() => Promise.resolve(observation(meta)))
       vi.spyOn(ctx.agents, 'resume').mockImplementationOnce(async () => {
-        const session = ctx.sessions.create(sessionId, { meta: { cwd: '/proj', origin: 'subagent' } })
-        if (winner === 'agent') ctx.agents.register(stubAgent(ctx, session))
+        const child = ctx.sessions.create(meta.id, { meta: { ...meta, origin: 'subagent' } })
+        if (winner === 'agent') ctx.agents.register(stubAgent(ctx, child))
         throw new Error('session id already published')
       })
 
-      const result = await createApiRemoteAgentResolver(ctx, {})(sessionId)
-
-      expect(result).toMatchObject({ error: { code: 'agent-busy' } })
+      await expect(agents.resolveAgent(meta.id)).resolves.toMatchObject({
+        error: { code: 'session/agent-busy' },
+      })
       await ctx.fiber.dispose()
     }
   })
 
-  it('uses the shared cold-resume policy for the Agent Host Context', async () => {
-    const ctx = await createContext()
-    const sessionId = sid('context-cold-resume')
-    const meta = header(sessionId)
-    let published: Session | undefined
-    provideSession(ctx, meta, () => {
-      published = ctx.sessions.create(sessionId, { meta: { cwd: '/proj' } })
-      return Promise.resolve({ meta, events: [] })
-    })
+  it('uses the configured lookup for Agent and Agent Host Context resolution', async () => {
+    const meta = header('configured-live-lookup')
+    const { ctx } = await harness(() => Promise.resolve(observation(meta)))
+    const session = ctx.sessions.create(meta.id, { meta })
     const agentCtx = ctx.extend()
-    vi.spyOn(ctx.agents, 'resume').mockImplementation(async () => {
-      if (published === undefined) throw new Error('Session was not published')
-      return { agent: stubAgent(agentCtx, published), dispose: () => Promise.resolve() }
-    })
-    const defaultProvider = ctx.typert.contexts.getHost('agent')
-    createApiRemoteAgentResolver(ctx, {})
-    await vi.waitFor(() => { expect(ctx.typert.contexts.getHost('agent')).not.toBe(defaultProvider) })
-    const provider = ctx.typert.contexts.getHost('agent')
-    if (provider === undefined) throw new Error('Agent Host Context provider was not mounted')
+    const live = stubAgent(agentCtx, session)
+    ctx.agents.register(live)
+    const lookup = ctx.typert.lookups.get('agent')
+    const hostContext = ctx.typert.contexts.getHost('agent')
+    if (lookup === undefined || hostContext === undefined) {
+      throw new Error('Agent lookup and Host Context adapters were not mounted')
+    }
 
-    await expect(provider.resolve(sessionId)).resolves.toBe(agentCtx)
+    await expect(lookup.resolve(meta.id)).resolves.toBe(live)
+    await expect(hostContext.resolve(meta.id)).resolves.toBe(agentCtx)
     await ctx.fiber.dispose()
   })
 
-  it('applies the subagent ownership fence to the Agent Host Context', async () => {
-    const ctx = await createContext()
-    const sessionId = sid('context-owned-subagent')
-    const session = ctx.sessions.create(sessionId, { meta: { cwd: '/proj', origin: 'subagent' } })
+  it('propagates subagent lookup failures as RemoteError without a legacy wrapper', async () => {
+    const meta = { ...header('configured-subagent-lookup'), origin: 'subagent' as const }
+    const { ctx } = await harness(() => Promise.resolve(observation(meta)))
+    const session = ctx.sessions.create(meta.id, { meta })
     ctx.agents.register(stubAgent(ctx.extend(), session))
-    const defaultProvider = ctx.typert.contexts.getHost('agent')
-    createApiRemoteAgentResolver(ctx, {})
-    await vi.waitFor(() => { expect(ctx.typert.contexts.getHost('agent')).not.toBe(defaultProvider) })
-    const provider = ctx.typert.contexts.getHost('agent')
-    if (provider === undefined) throw new Error('Agent Host Context provider was not mounted')
+    const lookup = ctx.typert.lookups.get('agent')
+    const hostContext = ctx.typert.contexts.getHost('agent')
+    if (lookup === undefined || hostContext === undefined) {
+      throw new Error('Agent lookup and Host Context adapters were not mounted')
+    }
 
-    const resolution = provider.resolve(sessionId)
-    await expect(resolution).rejects.toBeInstanceOf(TypertLookupFailure)
-    await expect(resolution).rejects.toMatchObject({ failure: { code: 'agent-busy' } })
+    const lookupFailure = Promise.resolve().then(() => lookup.resolve(meta.id))
+    await expect(lookupFailure).rejects.toBeInstanceOf(RemoteError)
+    await expect(lookupFailure).rejects.toMatchObject({ code: 'session/agent-busy' })
+    const contextFailure = Promise.resolve().then(() => hostContext.resolve(meta.id))
+    await expect(contextFailure).rejects.toBeInstanceOf(RemoteError)
+    await expect(contextFailure).rejects.toMatchObject({ code: 'session/agent-busy' })
     await ctx.fiber.dispose()
   })
 })

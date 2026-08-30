@@ -1,6 +1,13 @@
+---
+description: "@deepseek-ai/dsh-client-ui-desktop-control 的中文包参考，涵盖其运行时职责、组合边界与已知限制。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-desktop-control
 
 [English](README.md) | 中文
+
+## 概述
 
 这是 Desktop 专属的可见电脑控制 UI。它向独立的 `layout.status` additive seat 提供紧凑的活动控制胶囊，并提供紧凑列表式“浏览器与电脑控制”设置区。胶囊显示 Agent、当前应用、操作和无需 approval 的停止按钮。0.4.3 没有暂停控制。
 
@@ -10,6 +17,20 @@
 
 电脑控制已开启、应用也可见，但没有任何应用获得允许时，应用区会显示纠正状态，不会暗示枚举已等同于授权。它还会说明每个新任务都有独立的 Electron 原生批准，Harness 普通 `ask` 或 `never` 策略不能替代它。
 
+## 目录
+
+- [开发备注](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+
+-----
+
+<a id="dev-note"></a>
+## 开发备注
+
+无。
+
+<a id="model-experience"></a>
 ## 模型体验
 
 无。这个包只展示 main 所有的 Desktop 控制状态和固定设置意图；它不注册工具、不组装 Prompt、不选择模型，也不发送供应商请求。
@@ -19,6 +40,8 @@
 无；这个包从不参与模型请求，也不改变其缓存行为。
 
 ## 已知限制与延期工作
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - 原生 status/list 观察是可选 main-process provider seam，会随原生 adapter 提供。
 - 操作系统权限必须由用户在系统设置中手动授予。

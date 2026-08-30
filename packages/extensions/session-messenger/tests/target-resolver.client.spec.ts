@@ -1,6 +1,7 @@
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-api-session-controller/types'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { describe, expect, it, vi } from 'vitest'
 import {
   assertTargetStillOrdinaryAndUnarchived,
@@ -41,7 +42,7 @@ function harness(
   resolver: (id: ReturnType<typeof SessionId>) => Agent | undefined | Promise<Agent | undefined>,
   archivedSessionIds: ReturnType<typeof SessionId>[] = [],
 ) {
-  const resolve = vi.fn(resolver)
+  const resolve = vi.fn((id: ReturnType<typeof SessionId>) => resolver(id))
   const resume = vi.fn()
   const isOwnedBy = vi.fn((_id: ReturnType<typeof SessionId>, _owner: Agent) => false)
   const ctx = {
@@ -89,11 +90,7 @@ describe('resolveOrdinaryTarget', () => {
       .rejects.toMatchObject({ code: 'target-not-found' })
 
     const deleted = harness(() => {
-      throw new TypertLookupFailure({
-        code: 'session-not-found',
-        message: 'gone',
-        details: { sessionId: 'deleted' },
-      })
+      throw new RemoteError('session/not-found', 'gone', { sessionId: SessionId('deleted') })
     })
     await expect(resolveOrdinaryTarget(deleted.ctx as never, caller, 'deleted'))
       .rejects.toMatchObject({ code: 'target-not-found' })
@@ -109,10 +106,8 @@ describe('resolveOrdinaryTarget', () => {
       .rejects.toMatchObject({ code: 'target-subagent' })
 
     const cold = harness(() => {
-      throw new TypertLookupFailure({
-        code: 'agent-busy',
-        message: 'subagent owner',
-        details: { reason: 'use subagent delivery for this child session' },
+      throw new RemoteError('session/agent-busy', 'subagent owner', {
+        reason: 'use subagent delivery for this child session',
       })
     })
     await expect(resolveOrdinaryTarget(cold.ctx as never, caller, 'cold-child'))
@@ -177,7 +172,7 @@ describe('resolveOrdinaryTarget', () => {
     await expect(resolveOrdinaryTarget(unavailable as never, caller, 'target'))
       .rejects.toMatchObject({ code: 'target-lookup-unavailable' })
 
-    const broken = harness(() => { throw new TypertLookupFailure({ code: 'internal' }) })
+    const broken = harness(() => { throw new RemoteError('gateway/internal', 'internal', {}) })
     await expect(resolveOrdinaryTarget(broken.ctx as never, caller, 'target'))
       .rejects.toMatchObject({ code: 'target-lookup-failed' })
   })

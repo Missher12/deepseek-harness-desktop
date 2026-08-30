@@ -47,7 +47,7 @@ export interface HarnessControlLifecycle {
 export interface HarnessProcessOptions {
   cli: string
   patch?: string
-  prepare?: () => void
+  prepare?: () => void | Promise<void>
   executable?: string
   spawn?: SpawnHarness
   waitForHarness?: (url: string) => Promise<void>
@@ -102,6 +102,7 @@ export class HarnessProcess {
     & Pick<HarnessProcessOptions,
       'cli' | 'patch' | 'prepare' | 'onOutput' | 'onExit' | 'markStartup' | 'controlLifecycle'>
   private active: HarnessProcessGeneration | undefined
+  private starting = false
   private lastStop: { readonly record: HarnessProcessGeneration; readonly promise: Promise<void> } | undefined
   private controlGeneration = 0
 
@@ -135,9 +136,16 @@ export class HarnessProcess {
    * @param workspace - Initial working directory exposed to Harness.
    * @returns The validated, ready loopback URL.
    */
-  async start(workspace: string): Promise<string> {
-    if (this.active !== undefined) throw new Error('Harness process is already running.')
-    this.options.prepare?.()
+  start(workspace: string): Promise<string> {
+    if (this.active !== undefined || this.starting) {
+      return Promise.reject(new Error('Harness process is already running.'))
+    }
+    this.starting = true
+    return this.startOwned(workspace).finally(() => { this.starting = false })
+  }
+
+  private async startOwned(workspace: string): Promise<string> {
+    await this.options.prepare?.()
     this.options.markStartup?.('fallback-ready')
     const childEnv = { ...process.env }
     delete childEnv.NODE_CHANNEL_FD

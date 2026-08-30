@@ -18,11 +18,11 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Inbox } from '@deepseek-ai/dsh-agent'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import ClientModuleRegistry from '@deepseek-ai/dsh-client-modules'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import CodeRuntime from '@deepseek-ai/dsh-code-runtime'
 import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 import HttpServer from '@deepseek-ai/dsh-host-webserver'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -218,7 +218,7 @@ describe('real Host Loader composition', () => {
     let codeScope!: ReturnType<typeof createScope>
     const codeOwner = ctx.plugin(Object.assign((host: Context) => {
       codeScope = createScope(host, agents.source)
-      codeScope.ctx.tools.presentAs('code')
+      codeScope.ctx.tools.presentAs('ptc')
     }, { inject: ['tools', 'systemPrompt'] }))
     await codeOwner.await()
     const code = await ctx.systemPrompt.assemble({ agent: agents.source, scope: agents.source })
@@ -237,7 +237,7 @@ describe('real Host Loader composition', () => {
     expect(ctx.clientModules.graph().entries.filter(entry => entry.id === PACKAGE_NAME)).toHaveLength(1)
 
     const sent = await ctx.tools.execute({
-      callId: CallId('loader-send'),
+      callId: ToolCallId('loader-send'),
       signal: new AbortController().signal,
       agent: agents.source,
       name: TOOL_NAMES[0]!,
@@ -248,7 +248,7 @@ describe('real Host Loader composition', () => {
     const committed = structuredClone(agents.target.session.events)
     expect(committed.some(event => event.type === 'agent/inbox/spliced')).toBe(true)
     const waiting = ctx.tools.execute({
-      callId: CallId('loader-wait'),
+      callId: ToolCallId('loader-wait'),
       signal: new AbortController().signal,
       agent: agents.source,
       name: TOOL_NAMES[3]!,
@@ -291,12 +291,12 @@ describe('real Client Loader composition', () => {
       },
     }
     const { ctx } = await bootLoader([
-      "- name: '@deepseek-ai/dsh-client-runtime/client'",
+      "- name: '@deepseek-ai/dsh-client-ui-renderer/client'",
       "- name: '@fixture/locale'",
       "- name: '@fixture/surface-owner'",
       `- name: '${CLIENT_SPECIFIER}'`,
     ], new Map<string, unknown>([
-      ['@deepseek-ai/dsh-client-runtime/client', SlotRegistry],
+      ['@deepseek-ai/dsh-client-ui-renderer/client', SlotRegistry],
       ['@fixture/locale', LocaleProvider],
       ['@fixture/surface-owner', SurfaceOwner],
       [CLIENT_SPECIFIER, SessionMessengerClient],

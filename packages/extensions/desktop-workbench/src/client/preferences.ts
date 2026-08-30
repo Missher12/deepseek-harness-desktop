@@ -1,4 +1,5 @@
-import type { ObservableSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ILayout, UtilityLayoutSnapshot, UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/client'
 
 /** Observable workbench UI state projected directly from the layout store. */

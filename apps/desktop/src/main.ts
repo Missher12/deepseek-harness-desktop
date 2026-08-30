@@ -19,7 +19,7 @@ import {
 } from 'electron'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { RequestId, SessionId } from '@deepseek-ai/dsh-desktop-control-protocol'
-import { healProfilesModuleFallbackCached } from '@deepseek-ai/dsh-app-boot'
+import { healProfilesModuleFallback } from '@deepseek-ai/dsh-app-boot'
 import {
   DesktopApplication,
   type AppFacade,
@@ -509,9 +509,9 @@ void controlSettingsReady
 const runtime = new HarnessProcess({
   cli: resolveCliPath(),
   patch: desktopPatchPath,
-  prepare: () => {
-    const result = healProfilesModuleFallbackCached(desktopInstallAnchorPath, dshHome, app.getVersion())
-    record(`module fallback: ${result}`)
+  prepare: async () => {
+    await healProfilesModuleFallback({ installAnchor: desktopInstallAnchorPath, home: dshHome })
+    record(`module fallback: ready (${app.getVersion()})`)
   },
   onOutput: (source, output) => {
     record(`Harness ${source}: ${output}`)

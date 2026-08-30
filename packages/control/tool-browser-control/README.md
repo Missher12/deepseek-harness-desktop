@@ -1,8 +1,23 @@
+---
+description: "Closed semantic browser tools over the optional DeepSeek Harness BrowserControl provider"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-browser-control
 
 English | [中文](README.zh.md)
 
+## Summary
+
 `dsh-tool-browser-control` exposes the Desktop-owned semantic browser surface as twelve closed first-party tools. The package is a Consumer of [`dsh-browser-control`](../browser-control/README.md), not a browser backend: it registers nothing unless `ctx.browserControl` exists, so ordinary CLI and Web compositions remain unchanged.
+
+## Table of Contents
+
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+-----
 
 ## Tools and contract
 
@@ -20,6 +35,12 @@ Known password, OTP, payment, file, upload, and other protected-target refusals 
 
 While the provider exists, the package contributes an official-browser-only prompt section. Any BrowserControl failure also activates a monotonic per-session, per-turn execution guard: `bash`, `pwsh`, `run_code`, `terminal_open`, and `terminal_send` are denied. A successful official browser snapshot or action clears a recoverable transport, lease, ownership, or internal failure; an authorization, policy, permission, unsupported, quota, or binary failure remains closed until the turn ends. A successful awaited `browser_stop` explicitly clears that session's guard after cleanup, while a failed Stop leaves it closed. Stop and one official retry remain available where recovery is valid, so the model cannot turn a failed BrowserControl call into a direct DevTools, remote-debugging-port, script, or shell fallback through the normal tool pipeline.
 
+<a id="dev-note"></a>
+## Dev Note
+
+None.
+
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Tool schemas
@@ -37,6 +58,8 @@ The fixed schemas and short recovery section add a bounded input cost whenever t
 The roster is prefix-stable while `BrowserControl` availability and the closed schemas remain unchanged. Provider-absent deployments add no schemas or prompt text; mounting or removing the provider changes tool visibility and may invalidate reuse from that point.
 
 ## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - Accessibility semantics cannot classify every sensitive target or prove the outcome of ordinary page JavaScript. A normal click, key, selection, scroll, or navigation may still cause an external effect; provider policy and visible user control remain the authority.
 - `browser_key` and condition waits are page-level protocol operations and therefore have no element ref. The package does not invent one outside the frozen shared DTO.

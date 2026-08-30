@@ -15,7 +15,7 @@
 ### 任务 1：删除恢复后的归档会话
 
 **文件：**
-- 修改：`packages/api/remotes/src/agent-lookup.ts`
+- 修改：`packages/api/session-controller/src/agent.ts`
 - 修改：`packages/api/remotes/tests/agent-lookup.spec.ts`
 - 修改：`packages/host/apiproxy/src/api-proxy.ts`
 - 修改：`packages/host/apiproxy/tests/api-proxy-workspace.spec.ts`
@@ -29,8 +29,8 @@
 ### 任务 2：创建并选择无项目会话
 
 **文件：**
-- 修改：`packages/client/runtime/src/client/contract/workspaces.ts`
-- 修改：`packages/client/runtime/src/client/workspaces/service.ts`
+- 修改：`packages/api/workspace-controller/src/client/index.ts`
+- 修改：`packages/api/workspace-controller/src/client/service.ts`
 - 修改：`packages/client/runtime/tests/workspaces-service.client.spec.ts`
 - 修改：`packages/client/ui-conversation/src/client/contract/slots.ts`
 - 修改：`packages/client/ui-conversation/src/client/apply.ts`

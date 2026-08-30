@@ -8,11 +8,11 @@
   "include": ["src"],
   "exclude": ["src/client/index.ts"],
   "references": [
-    { "path": "../../api/remotes/tsconfig.client.json" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../host/webserver" },
     { "path": "../../client/locale" },
-    { "path": "../../client/runtime" },
+    { "path": "../../api/session-controller/tsconfig.client.json" },
+    { "path": "../../client/ui-chat" },
     { "path": "../../client/ui-conversation" },
     { "path": "../../client/ui-layout" },
     { "path": "../../client/ui-primitives" },

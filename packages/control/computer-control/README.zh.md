@@ -1,8 +1,23 @@
+---
+description: "@deepseek-ai/dsh-computer-control 的中文包参考，涵盖其运行时职责、组合边界与已知限制。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-computer-control
 
 [English](README.md) | 中文
 
+## 概述
+
 Computer Control Service Definition 为跨用户已授权原生应用的有界观察与输入注册唯一一个 `ctx.computerControl` 提供方。它从 [`dsh-desktop-control-protocol`](../desktop-control-protocol/README.zh.md) 导入并重新导出封闭的 request／result DTO 与 brand；原生策略不能扩展该清单。
+
+## 目录
+
+- [开发备注](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+
+-----
 
 ## 约定
 
@@ -23,6 +38,12 @@ Computer Control Service Definition 为跨用户已授权原生应用的有界�
 
 此特权服务仍会写入文档，供受信的静态第一方提供方与 Consumer 阅读；但运行时模型 Cordis 目录会排除它，模型编写的动态包也无法通过属性访问或 `ctx.get()` 取得该服务。
 
+<a id="dev-note"></a>
+## 开发备注
+
+无。
+
+<a id="model-experience"></a>
 ## 模型体验
 
 通过后续 Computer Control 工具 Consumer 间接影响；这些 Consumer 渲染有界观察与封闭操作结果，此 Service Definition 本身不注册 prompt 或工具。
@@ -32,6 +53,8 @@ Computer Control Service Definition 为跨用户已授权原生应用的有界�
 不会直接影响；任何模型可见 schema 或结果变化由 Consumer 负责。
 
 ## 已知限制与暂缓事项
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - 本包是约定、引用验证与策略层，不是原生 helper、Electron bridge、UI 或模型工具。
 - 操作系统权限检查、应用授权、lease、quota、捕获节流、按住输入恢复和紧急 Stop 的权威实现仍在 Electron 与原生 helper 中。

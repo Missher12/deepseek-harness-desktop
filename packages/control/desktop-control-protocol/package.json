@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-desktop-control-protocol",
   "description": "Closed, strictly decoded Desktop-control wire protocol shared by Harness, Electron, and the native helper",
-  "version": "0.1.1-rc.2",
+  "version": "0.1.2-alpha.2",
   "publishConfig": {
     "access": "public"
   },

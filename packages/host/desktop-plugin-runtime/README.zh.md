@@ -1,6 +1,13 @@
+---
+description: "@deepseek-ai/dsh-host-desktop-plugin-runtime 的中文包参考，涵盖其运行时职责、组合边界与已知限制。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-host-desktop-plugin-runtime`
 
 [English](README.md) | 中文
+
+## 概述
 
 这个私有 Host 包为 DeepSeek Harness Desktop 中受信任的插件管理器发布两个结构化服务：不可变的 `desktopProfiles.current` 身份，以及串行化的 `desktopPnpm.runPlugin()` 包操作。
 
@@ -8,6 +15,20 @@
 
 服务不通过 PATH 查找，而是解析内置 pnpm JavaScript 入口；它会拒绝不安全参数与调用目录，通过受管 subprocess 服务运行，并在清理时取消完整操作进程树。subprocess 边界提供去除凭据的环境；这里只显式增加当前 `DSH_HOME`、内置 pnpm 入口、Electron Node 模式与非交互标记。
 
+## 目录
+
+- [开发备注](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+
+-----
+
+<a id="dev-note"></a>
+## 开发备注
+
+无。
+
+<a id="model-experience"></a>
 ## 模型体验
 
 无。该包只管理 Host 侧插件包，不会组装或发送模型请求。
@@ -17,6 +38,8 @@
 无；包管理操作不会改变提供方请求载荷或缓存。
 
 ## 已知限制与延期工作
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - **单一固定 profile**：当前 Desktop shell 在一个 generation 内只公开当前 `web` profile，尚不实现 profile 切换。
 - **受信任管理器策略边界**：包目标策略仍由受信任管理器负责；内置 Desktop 组合使用精选的 `dshmarket` 路由，不提供通用 renderer bridge。

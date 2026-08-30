@@ -71,7 +71,7 @@ export function TerminalMode({ sessionId, t }: Props) {
       }}>{t('clearView')}</button>
       <button type="button" disabled={active === undefined} onClick={() => {
         if (active !== undefined) void workbenchTransport.terminalAction(sessionId, active.id, 'signal', 'SIGINT')
-      }}>⌃C</button>
+      }}>{t('terminalInterrupt')}</button>
       <button type="button" disabled={active === undefined} onClick={() => { if (active !== undefined) void close(active.id) }}>{t('close')}</button>
     </span></div>
     <pre className={css.output}>{output || error || t('terminalReady')}</pre>

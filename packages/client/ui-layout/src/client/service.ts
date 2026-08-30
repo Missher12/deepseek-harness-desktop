@@ -30,9 +30,16 @@ export interface UtilityLayoutSnapshot {
  * only).
  */
 export interface ILayout {
-  /** Read the utility projection published by the mounted layout store. */
+  /**
+   * Read the utility projection published by the mounted layout store.
+   * @returns Current open state, surface mode, and preferred width.
+   */
   getSnapshot(): UtilityLayoutSnapshot
-  /** Subscribe to utility projection changes. */
+  /**
+   * Subscribe to utility projection changes.
+   * @param listener Callback invoked after the projection changes.
+   * @returns Disposer for this exact listener.
+   */
   subscribe(listener: () => void): () => void
   /** Toggle the sidebar panel (closed ⟷ last expanded width). */
   toggleSidebar(): void
@@ -40,13 +47,22 @@ export interface ILayout {
   openDetails(): void
   /** Close the details panel. */
   closeDetails(): void
-  /** Open the utility workbench, optionally selecting a surface. */
+  /**
+   * Open the utility workbench, optionally selecting a surface.
+   * @param mode Surface to select before opening; the current mode is retained when omitted.
+   */
   openUtility(mode?: UtilityMode): void
   /** Close the utility workbench. */
   closeUtility(): void
-  /** Toggle the current surface, or switch/open another surface. */
+  /**
+   * Toggle the current surface, or switch/open another surface.
+   * @param mode Surface to toggle; the current mode is used when omitted.
+   */
   toggleUtility(mode?: UtilityMode): void
-  /** Set the preferred utility width. */
+  /**
+   * Set the preferred utility width.
+   * @param px Requested utility width in CSS pixels; the layout store applies its bounds.
+   */
   setUtilityWidth(px: number): void
 }
 

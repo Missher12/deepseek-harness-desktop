@@ -5,7 +5,6 @@ import { Context } from '@deepseek-ai/cordis'
 import type { WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import {
   SettingsProvider,
-  settingsNamespace,
   type SettingsNamespace,
 } from '@deepseek-ai/dsh-settings'
 import { describe, expect, it, vi } from 'vitest'
@@ -25,6 +24,7 @@ const PORT = 50_288
 const AUTHORITY = `127.0.0.1:${String(PORT)}`
 const ORIGIN = `http://${AUTHORITY}`
 const CAPABILITY = 'test-only-capability'
+const SETTINGS_NAMESPACE = REASONING_EFFORT_SETTINGS_NAMESPACE as SettingsNamespace
 
 class MemorySettings extends SettingsProvider {
   readonly writable = true
@@ -361,7 +361,7 @@ describe('reasoning-effort Host registration', () => {
 
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const resolved = ctx.settings.get(settingsNamespace(REASONING_EFFORT_SETTINGS_NAMESPACE))
+    const resolved = ctx.settings.get(SETTINGS_NAMESPACE)
     expect(resolved).toEqual({ chibiThumb: false, visualEfforts: {} })
     expect(Object.isFrozen(resolved)).toBe(true)
     expect(routes).toHaveLength(2)
@@ -379,14 +379,14 @@ describe('reasoning-effort Host registration', () => {
       [PREFERENCE_CAPABILITY_HEADER]: capability!,
     }, '{"chibiThumb":true}')
     expect(put.status).toBe(200)
-    expect(ctx.settings.get(settingsNamespace(REASONING_EFFORT_SETTINGS_NAMESPACE)))
+    expect(ctx.settings.get(SETTINGS_NAMESPACE))
       .toEqual({ chibiThumb: true, visualEfforts: {} })
     expect((ctx.settings as MemorySettings).writes).toHaveLength(1)
 
     await fiber.dispose()
     expect(routes).toEqual([unrelated])
     expect(taps).toHaveLength(0)
-    expect(ctx.settings.get(settingsNamespace(REASONING_EFFORT_SETTINGS_NAMESPACE))).toBeUndefined()
+    expect(ctx.settings.get(SETTINGS_NAMESPACE)).toBeUndefined()
   })
 
   it('does not mount any Host surface until both required services exist', async () => {
@@ -432,7 +432,7 @@ describe('reasoning-effort Host registration', () => {
 
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(ctx.settings.get(settingsNamespace(REASONING_EFFORT_SETTINGS_NAMESPACE)))
+    expect(ctx.settings.get(SETTINGS_NAMESPACE))
       .toEqual({ chibiThumb: false, visualEfforts: {} })
     expect(routes).toHaveLength(1)
     expect(taps).toHaveLength(1)

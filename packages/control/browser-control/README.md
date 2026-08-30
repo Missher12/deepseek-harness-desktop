@@ -1,8 +1,23 @@
+---
+description: "Browser Control Service Definition with revision-bound semantic refs and bounded immutable results"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-browser-control
 
 English | [中文](README.zh.md)
 
+## Summary
+
 The Browser Control Service Definition registers one `ctx.browserControl` provider for the Desktop-owned visible browser surface. It consumes the closed request/result DTOs from [`dsh-desktop-control-protocol`](../desktop-control-protocol/README.md) and does not define a second wire vocabulary.
+
+## Table of Contents
+
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+-----
 
 ## Contract
 
@@ -19,6 +34,12 @@ Later tool Consumers derive the official session and populate every request id, 
 
 This privileged service remains documented for trusted static first-party providers and Consumers, but it is excluded from the runtime model Cordis catalog and withheld from model-authored dynamic packages through both property access and `ctx.get()`.
 
+<a id="dev-note"></a>
+## Dev Note
+
+None.
+
+<a id="model-experience"></a>
 ## Model Experience
 
 Indirectly, through later Browser Control tool Consumers that render bounded snapshots and closed action results; this Service Definition itself registers no prompt or tool.
@@ -28,6 +49,8 @@ Indirectly, through later Browser Control tool Consumers that render bounded sna
 None directly; a Consumer owns any model-visible schema or result changes.
 
 ## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - This package is a contract and validation layer, not a browser backend, Electron bridge, UI, or model tool.
 - A provider must still reject stale navigation races, foreign debuggers, private-network destinations, file inputs, downloads, popups, and unsupported permissions at its authoritative boundary.

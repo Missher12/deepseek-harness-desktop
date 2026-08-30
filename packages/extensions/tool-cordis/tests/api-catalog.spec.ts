@@ -31,4 +31,21 @@ describe('model-visible Cordis authority catalog', () => {
     expect(describeServices(ctx).join('\n')).not.toMatch(/browserControl|computerControl/)
     expect(describeApi(ctx).join('\n')).not.toMatch(/browserControl|computerControl|acquireLease/)
   })
+
+  it('keeps inspect closed when a stale or injected catalog contains a Desktop authority', () => {
+    const ctx = new Context()
+    const staleCatalog = [{
+      key: 'browserControl',
+      summary: 'Privileged browser control.',
+      description: 'Must never be model visible.',
+      methods: [{
+        signature: 'acquireLease(): void',
+        description: 'Acquire privileged control.',
+        parameters: [],
+      }],
+    }]
+
+    expect(describeApi(ctx, staleCatalog).join('\n')).not.toMatch(/browserControl|acquireLease/)
+    expect(() => describeApi(ctx, staleCatalog, 'browserControl')).toThrow(/no catalogued service/i)
+  })
 })

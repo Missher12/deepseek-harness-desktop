@@ -1,6 +1,13 @@
+---
+description: "All-history usage insights section for Web Settings"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-settings-usage
 
 English | [中文](README.zh.md)
+
+## Summary
 
 Read-only **Usage** section for Web and Desktop Settings. The browser plugin registers the localized `usage` section at order 12 and lazily calls `ctx.remote.usageInsights.snapshot()` when the section mounts.
 
@@ -8,6 +15,20 @@ The section shows cumulative and peak tokens, longest active Session time, curre
 
 Loading, retry, empty, and partial-data states stay inside the section. A first load that has not settled after 15 seconds leaves the skeleton for a retryable error; a retained aggregate remains visible with a stale-refresh notice. A later success can still replace either state. Missing metrics render as an em dash rather than a fabricated zero. The layout uses the existing Settings width and semantic theme tokens, supports keyboard tab navigation, collapses the KPI strip at narrow widths, and introduces no horizontal page scroll.
 
+## Table of Contents
+
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+-----
+
+<a id="dev-note"></a>
+## Dev Note
+
+None.
+
+<a id="model-experience"></a>
 ## Model Experience
 
 None, as this package only renders a Host-owned usage snapshot in browser Settings and registers nothing model-facing.
@@ -17,6 +38,8 @@ None, as this package only renders a Host-owned usage snapshot in browser Settin
 None; the cache-hit figure is a read-only visualization of provider accounting and this package never assembles or sends a provider request.
 
 ## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - **Snapshot refresh is explicit** — the section reads on mount and retry; it does not subscribe to every live usage event while the dialog stays open.
 - **Chart density follows the compact Settings pane** — all three scopes keep 371 particles with accessible summaries and hover totals, but the compact surface intentionally omits per-provider and per-workspace drill-down.

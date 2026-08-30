@@ -1,4 +1,4 @@
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { DesktopControlUiSnapshot } from './contracts.ts'
 
 /** Reactive client state for the latest validated Desktop control snapshot. */
@@ -12,7 +12,7 @@ export const EMPTY_DESKTOP_CONTROL_SNAPSHOT: DesktopControlUiSnapshot = {
   permissions: { screenViewing: 'unknown', assistiveControl: 'unknown' },
   refresh: { status: { state: 'checking' }, apps: { state: 'checking' } },
   ordinaryApps: [],
-  emergencyAccelerator: 'CommandOrControl+Shift+F12',
+  emergencyAccelerator: ['CommandOrControl', 'Shift', 'F12'].join('+'),
   active: null,
   stopping: false,
 }

@@ -218,11 +218,11 @@ Commit: `git add patches/dshmarket@1.10.1.patch pnpm-lock.yaml scripts && git co
 ### Task 4: Add official session-cost estimation and exact account balance
 
 **Files:**
-- Create: `packages/client/ui-conversation/src/client/chat/usage-money.ts`
-- Modify: `packages/client/ui-conversation/src/client/chat/StatsLine.tsx`
+- Create: `packages/client/ui-chat/src/client/chat/usage-money.ts`
+- Modify: `packages/client/ui-chat/src/client/chat/StatsLine.tsx`
 - Modify: `packages/client/ui-conversation/src/client/locales.ts`
-- Test: `packages/client/ui-conversation/tests/usage-money.client.spec.ts`
-- Test: `packages/client/ui-conversation/tests/chat-stats.client.spec.tsx`
+- Test: `packages/client/ui-chat/tests/usage-money.client.spec.ts`
+- Test: `packages/client/ui-chat/tests/chat-stats.client.spec.tsx`
 - Create: `packages/llm/llm-deepseek/src/balance.ts`
 - Modify: `packages/llm/llm-deepseek/src/index.ts`
 - Test: `packages/llm/llm-deepseek/tests/balance.spec.ts`
@@ -240,7 +240,7 @@ expect(sessionCostCny(usage, undefined)).toBeNull()
 
 - [ ] **Step 2: Run the Client money tests and confirm RED**
 
-Run: `pnpm exec vitest run packages/client/ui-conversation/tests/usage-money.client.spec.ts packages/client/ui-conversation/tests/chat-stats.client.spec.tsx`
+Run: `pnpm exec vitest run packages/client/ui-chat/tests/usage-money.client.spec.ts packages/client/ui-chat/tests/chat-stats.client.spec.tsx`
 
 Expected: FAIL because the current draft still uses obsolete peak/off-peak prices and prices the whole session with the last model.
 
@@ -269,7 +269,7 @@ expect(providerFetch).toHaveBeenCalledTimes(1)
 
 Mount one exact same-origin route only when `webServer` exists. Reuse `resolveApiKey`, keep the random capability generation-bound and header-only, validate finite non-negative provider strings, use constant-time capability comparison, cache successful snapshots for 60 seconds, coalesce in-flight reads, abort after 10 seconds, and unregister the route and HTML tap through the Cordis effect.
 
-Run: `pnpm exec vitest run packages/llm/llm-deepseek/tests/balance.spec.ts packages/client/ui-conversation/tests/usage-money.client.spec.ts packages/client/ui-conversation/tests/chat-stats.client.spec.tsx`
+Run: `pnpm exec vitest run packages/llm/llm-deepseek/tests/balance.spec.ts packages/client/ui-chat/tests/usage-money.client.spec.ts packages/client/ui-chat/tests/chat-stats.client.spec.tsx`
 
 Expected: PASS with no secret value in snapshots, errors, or test output.
 

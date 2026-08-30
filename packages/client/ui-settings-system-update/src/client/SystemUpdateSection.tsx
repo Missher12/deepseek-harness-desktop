@@ -56,8 +56,8 @@ export function SystemUpdateSection(props: SystemUpdateSectionProps) {
       </header>
       <div className={css.rows} aria-busy={snapshot.phase === 'checking'}>
         <div className={css.row}>
-          <span><strong>{t('desktop')}</strong><small>macOS · Intel</small></span>
-          <span className={css.version}>v{snapshot.runningDesktop}</span>
+          <span><strong>{t('desktop')}</strong><small>{t('desktopPlatform')}</small></span>
+          <span className={css.version}>{t('version').replace('{0}', snapshot.runningDesktop)}</span>
         </div>
         <div className={css.row}>
           <span><strong>{t('core')}</strong><small>{t('included').replace('{0}', snapshot.includedHarness)}</small></span>

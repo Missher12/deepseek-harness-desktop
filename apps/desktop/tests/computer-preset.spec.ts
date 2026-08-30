@@ -3,18 +3,21 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const PRESETS = [
-  'standard', 'code', 'frontend', 'backend', 'devops', 'qa',
-  'reviewer', 'research', 'planner', 'debugger', 'cordis',
+  ['standard', 'packages/preset/agent-presets/presets/standard/agent.cordis.yml'],
+  ['ptc', 'packages/preset/agent-presets/presets/ptc/agent.cordis.yml'],
+  ['cordis', 'packages/preset/agent-presets/presets/cordis/agent.cordis.yml'],
+  ...['frontend', 'backend', 'devops', 'qa', 'reviewer', 'research', 'planner', 'debugger']
+    .map(preset => [preset, `apps/cli/config/agent-presets/${preset}/agent.cordis.yml`] as const),
 ] as const
 
 describe('computer tool and Desktop UI composition', () => {
-  it.each(PRESETS)('conditionally composes computer tools in %s', async (preset) => {
-    const source = await readFile(resolve('apps/cli/config/agent-presets', preset, 'agent.cordis.yml'), 'utf8')
+  it.each(PRESETS)('conditionally composes computer tools in %s', async (_preset, path) => {
+    const source = await readFile(resolve(path), 'utf8')
     expect(source.match(/name: '@deepseek-ai\/dsh-tool-computer-control'/gu)).toHaveLength(1)
   })
 
   it('keeps the minimal preset free of computer control tools', async () => {
-    const source = await readFile(resolve('apps/cli/config/agent-presets/minimal/agent.cordis.yml'), 'utf8')
+    const source = await readFile(resolve('packages/preset/agent-presets/presets/minimal/agent.cordis.yml'), 'utf8')
     expect(source).not.toContain('@deepseek-ai/dsh-tool-computer-control')
   })
 

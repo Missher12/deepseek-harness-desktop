@@ -186,9 +186,9 @@ const TAKEOVER_CHANNELS = Object.freeze({
 
 /** Register strict zero-argument takeover methods for one trusted renderer main frame. */
 export function installBrowserTakeoverIpc(options: BrowserTakeoverIpcOptions): () => void {
-  const install = (
+  const install = <Result>(
     channel: string,
-    operation: () => unknown | Promise<unknown>,
+    operation: () => Result | PromiseLike<Result>,
   ): void => {
     options.registry.handle(channel, async (event, ...args) => {
       if (!options.isTrustedMainFrame(event)) throw new Error('Untrusted browser takeover sender.')

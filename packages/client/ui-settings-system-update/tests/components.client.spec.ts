@@ -30,6 +30,7 @@ function props(
     close: vi.fn(),
     t,
     useSessions: unusedHook,
+    useSessionPendingInteraction: unusedHook,
     useWorkspaces: unusedHook,
     useStore: selector => selector({ snapshot }),
     actions: unusedHook,

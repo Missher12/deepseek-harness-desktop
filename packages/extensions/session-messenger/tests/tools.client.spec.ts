@@ -1,5 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
-import { CallId, MessageId } from '@deepseek-ai/dsh-llm'
+import { MessageId, ToolCallId } from '@deepseek-ai/dsh-llm'
 import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { describe, expect, it, vi } from 'vitest'
@@ -79,7 +79,7 @@ describe('session messenger tools', () => {
     )
 
     const result = await ctx.tools.execute({
-      callId: CallId('stop'), signal, agent: caller,
+      callId: ToolCallId('stop'), signal, agent: caller,
       name: 'stop_session_collaboration', arguments: { delivery_id: 'delivery-2' },
     })
 
@@ -105,11 +105,11 @@ describe('session messenger tools', () => {
     registerSessionMessengerTools(ctx, () => coordinator, () => ({ wait }))
 
     const sent = await ctx.tools.execute({
-      callId: CallId('send'), signal, agent: caller,
+      callId: ToolCallId('send'), signal, agent: caller,
       name: 'send_message_to_session', arguments: { target_session_id: 'target', message: 'wake' },
     })
     const collaborated = await ctx.tools.execute({
-      callId: CallId('collaborate'), signal, agent: caller,
+      callId: ToolCallId('collaborate'), signal, agent: caller,
       name: 'send_message_to_session_and_wait',
       arguments: { target_session_id: 'target', message: 'solve this', timeout_ms: 4_000 },
     })
@@ -151,7 +151,7 @@ describe('session messenger tools', () => {
     registerSessionMessengerTools(ctx, () => coordinator, () => ({ wait: vi.fn() }))
 
     const rejected = await ctx.tools.execute({
-      callId: CallId('missing'), signal,
+      callId: ToolCallId('missing'), signal,
       name: 'send_message_to_session', arguments: { target_session_id: 'target', message: 'hello' },
     })
 
@@ -176,7 +176,7 @@ describe('session messenger tools', () => {
     )
 
     const replied = await ctx.tools.execute({
-      callId: CallId('reply'), signal, agent: caller,
+      callId: ToolCallId('reply'), signal, agent: caller,
       name: 'reply_to_session',
       arguments: { delivery_id: 'delivery-1', message: 'answer' },
     })
@@ -202,7 +202,7 @@ describe('session messenger tools', () => {
     const ctx = await toolContext()
     for (const definition of definitions) ctx.tools.register(definition)
     await ctx.tools.execute({
-      callId: CallId('wait'), signal, agent: caller,
+      callId: ToolCallId('wait'), signal, agent: caller,
       name: 'wait_for_session_reply', arguments: { delivery_id: 'delivery-1', timeout_ms: 4_000 },
     })
     expect(forwarded).toHaveBeenCalledWith(caller, DeliveryId('delivery-1'), 4_000, signal)
@@ -232,7 +232,7 @@ describe('session messenger tools', () => {
     const activation = activateSessionMessenger(ctx, (() => opening) as never)
 
     const waiting = await ctx.tools.execute({
-      callId: CallId('activation-window'), signal, agent: fakeAgent('caller'),
+      callId: ToolCallId('activation-window'), signal, agent: fakeAgent('caller'),
       name: 'wait_for_session_reply', arguments: { delivery_id: 'delivery-1' },
     })
     expect(waiting.isError).toBe(false)

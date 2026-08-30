@@ -1,8 +1,23 @@
+---
+description: "Computer Control Service Definition with owner-bound native refs and fail-closed action policy"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-computer-control
 
 English | [中文](README.zh.md)
 
+## Summary
+
 The Computer Control Service Definition registers one `ctx.computerControl` provider for bounded observation and input across user-authorized native applications. It imports and re-exports the closed request/result DTOs and brands from [`dsh-desktop-control-protocol`](../desktop-control-protocol/README.md); native policy cannot widen that roster.
+
+## Table of Contents
+
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+-----
 
 ## Contract
 
@@ -23,6 +38,12 @@ The policy surface type is the protocol-owned `ControlLeaseSurfaceKind`, not a c
 
 This privileged service remains documented for trusted static first-party providers and Consumers, but it is excluded from the runtime model Cordis catalog and withheld from model-authored dynamic packages through both property access and `ctx.get()`.
 
+<a id="dev-note"></a>
+## Dev Note
+
+None.
+
+<a id="model-experience"></a>
 ## Model Experience
 
 Indirectly, through later Computer Control tool Consumers that render bounded observations and closed action results; this Service Definition itself registers no prompt or tool.
@@ -32,6 +53,8 @@ Indirectly, through later Computer Control tool Consumers that render bounded ob
 None directly; a Consumer owns any model-visible schema or result changes.
 
 ## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
 
 - This package is a contract, reference-validation, and policy layer, not a native helper, Electron bridge, UI, or model tool.
 - OS permission checks, app grants, leases, quotas, capture throttling, held-input recovery, and emergency Stop remain authoritative in Electron and the native helper.
