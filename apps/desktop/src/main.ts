@@ -885,6 +885,14 @@ const removeBrowserTakeoverIpc = installBrowserTakeoverIpc({
   registry: ipcMain,
   authority: browserTakeover,
   isTrustedMainFrame: event => isHarnessSender(event as IpcMainInvokeEvent),
+  visibleSessionChanged: async () => {
+    // Renderer supplies no session identity: it can only force old authority closed.
+    await browserTakeover.stop()
+    const official = officialControlSession
+    if (official !== undefined) {
+      await controlCoordinator.revokeSession(official, new AbortController().signal)
+    }
+  },
 })
 const removeControlStatus = controlCoordinator.subscribeStatus(() => {
   syncApplicationMenu()

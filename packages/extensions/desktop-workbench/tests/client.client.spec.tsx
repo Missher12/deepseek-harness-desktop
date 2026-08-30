@@ -101,6 +101,7 @@ describe('desktop workbench shell', () => {
 
   it('opens the Browser Dock for the current session when Electron requests an Agent host', () => {
     let requestDock: (() => void) | undefined
+    const visibleSessionChanged = vi.fn(async () => {})
     Object.defineProperty(window, 'dshDesktop', {
       configurable: true,
       value: {
@@ -108,6 +109,7 @@ describe('desktop workbench shell', () => {
           requestDock = listener
           return () => { requestDock = undefined }
         },
+        notifyVisibleSessionChanged: visibleSessionChanged,
       },
     })
     const { controller, layout, common } = setup()
@@ -117,6 +119,7 @@ describe('desktop workbench shell', () => {
 
     expect(controller.getSnapshot()).toMatchObject({ open: true, mode: 'browser', sessionId })
     expect(layout.openUtility).toHaveBeenLastCalledWith('browser')
+    expect(visibleSessionChanged).toHaveBeenCalledOnce()
   })
 
   it('switches modes without closing and closes on Escape', () => {

@@ -16,6 +16,9 @@ not. An expired native approval request left its modal sheet visible. In
 addition, a browser transferred to the Agent
 stopped following utility-panel resize, narrow panels clipped desktop-oriented
 pages, and the prompt ruler could overlap a tall composer.
+Switching to another Harness session also left the previous session bound as
+Electron's official control owner, so the new session failed immediately with
+`UNAUTHORIZED` even after the old browser had stopped.
 
 ## Decision
 
@@ -31,6 +34,10 @@ Add a layout-only trusted IPC that can resize and zoom the exact existing
 browser during human or Agent ownership. It cannot create, reveal, navigate, or
 transfer a view. The page zoom follows the live dock width. The prompt ruler
 uses measured conversation and composer geometry rather than the full window.
+The strict-session header now sends a zero-argument, revoke-only signal when it
+mounts. Electron accepts it only from the trusted main frame, clears any Give
+intent, awaits old-session cleanup, and releases the old official binding. The
+renderer cannot name or claim the new session; only the owned child request can.
 
 ## Alternatives considered
 
@@ -52,3 +59,5 @@ eight semantic refs after the native approval was accepted.
 The same controlled browser follows the user's splitter continuously without a
 second window or authority change. Narrow pages trade visual scale for complete
 layout; widening the panel returns zoom to 100 percent.
+Changing conversations no longer inherits the former conversation's control
+identity, and malformed renderer calls carrying a session value are rejected.

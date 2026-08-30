@@ -92,6 +92,10 @@ const api: DesktopApi = {
     ipcRenderer.on('desktop:workbench-browser-dock-request', handler)
     return () => { ipcRenderer.off('desktop:workbench-browser-dock-request', handler) }
   },
+  async notifyVisibleSessionChanged(...args: unknown[]) {
+    if (args.length !== 0) throw new TypeError('Visible Session change accepts no arguments.')
+    await ipcRenderer.invoke('desktop:visible-session-changed')
+  },
   async giveWorkbenchBrowserToAgent(...args: unknown[]) {
     if (args.length !== 0) throw new TypeError('Give to Agent accepts no arguments.')
     const value: unknown = await ipcRenderer.invoke('desktop:browser-takeover-give')

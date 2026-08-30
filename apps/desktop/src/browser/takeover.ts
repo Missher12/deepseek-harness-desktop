@@ -173,19 +173,22 @@ export interface BrowserTakeoverIpcOptions {
   readonly registry: BrowserTakeoverIpcRegistry
   readonly authority: Pick<BrowserTakeoverAuthority, 'give' | 'stop' | 'status'>
   readonly isTrustedMainFrame: (event: unknown) => boolean
+  /** Revoke-only notification; renderer never supplies a session or authority identity. */
+  readonly visibleSessionChanged: () => void | Promise<void>
 }
 
 const TAKEOVER_CHANNELS = Object.freeze({
   give: 'desktop:browser-takeover-give',
   stop: 'desktop:browser-takeover-stop',
   status: 'desktop:browser-takeover-status',
+  visibleSessionChanged: 'desktop:visible-session-changed',
 })
 
 /** Register strict zero-argument takeover methods for one trusted renderer main frame. */
 export function installBrowserTakeoverIpc(options: BrowserTakeoverIpcOptions): () => void {
   const install = (
     channel: string,
-    operation: () => BrowserTakeoverStatus | Promise<BrowserTakeoverStatus>,
+    operation: () => unknown | Promise<unknown>,
   ): void => {
     options.registry.handle(channel, async (event, ...args) => {
       if (!options.isTrustedMainFrame(event)) throw new Error('Untrusted browser takeover sender.')
@@ -196,9 +199,13 @@ export function installBrowserTakeoverIpc(options: BrowserTakeoverIpcOptions): (
   install(TAKEOVER_CHANNELS.give, async () => await options.authority.give())
   install(TAKEOVER_CHANNELS.stop, async () => await options.authority.stop())
   install(TAKEOVER_CHANNELS.status, () => options.authority.status())
+  install(TAKEOVER_CHANNELS.visibleSessionChanged, async () => {
+    await options.visibleSessionChanged()
+  })
   return () => {
     options.registry.removeHandler(TAKEOVER_CHANNELS.give)
     options.registry.removeHandler(TAKEOVER_CHANNELS.stop)
     options.registry.removeHandler(TAKEOVER_CHANNELS.status)
+    options.registry.removeHandler(TAKEOVER_CHANNELS.visibleSessionChanged)
   }
 }

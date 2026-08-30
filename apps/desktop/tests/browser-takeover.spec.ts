@@ -111,15 +111,21 @@ describe('browser takeover IPC', () => {
       removeHandler: (channel) => { handlers.delete(channel) },
     }
     const trusted = Object.freeze({ trusted: true })
+    const visibleSessionChanged = vi.fn(async () => {})
     const dispose = installBrowserTakeoverIpc({
       registry,
       authority,
       isTrustedMainFrame: event => event === trusted,
+      visibleSessionChanged,
     })
 
     await expect(handlers.get('desktop:browser-takeover-give')?.(trusted)).resolves.toMatchObject({ phase: 'given' })
     await expect(handlers.get('desktop:browser-takeover-status')?.(trusted, {})).rejects.toThrow(/argument/u)
     await expect(handlers.get('desktop:browser-takeover-stop')?.({}, undefined)).rejects.toThrow(/sender/u)
+    await expect(handlers.get('desktop:visible-session-changed')?.(trusted)).resolves.toBeUndefined()
+    await expect(handlers.get('desktop:visible-session-changed')?.(trusted, 'renderer-session'))
+      .rejects.toThrow(/argument/u)
+    expect(visibleSessionChanged).toHaveBeenCalledOnce()
     dispose()
     expect(handlers.size).toBe(0)
   })
