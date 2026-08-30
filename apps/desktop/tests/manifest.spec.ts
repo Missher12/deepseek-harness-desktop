@@ -242,6 +242,13 @@ describe('desktop package manifest', () => {
     expect(mainSource.match(/controlCoordinator\.resumeAdmission\(\)/g)).toHaveLength(2)
   })
 
+  it('bundles every runtime validator into the sandboxed preload artifact', () => {
+    const bundleConfig = readFileSync(new URL('../tsdown.config.ts', import.meta.url), 'utf8')
+    const preloadConfig = bundleConfig.slice(bundleConfig.indexOf("entry: { preload: 'lib/types/preload.js' }"))
+
+    expect(preloadConfig).toContain("alwaysBundle: ['@deepseek-ai/dsh-desktop-control-protocol']")
+  })
+
   it('ships one ordered default-on external-brain stack from immutable release archives', () => {
     const manifest = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),

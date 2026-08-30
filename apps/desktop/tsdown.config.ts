@@ -31,7 +31,10 @@ export default defineConfig([
     fixedExtension: false,
     dts: false,
     clean: false,
-    deps: { neverBundle: ['electron'] },
+    deps: {
+      neverBundle: ['electron'],
+      alwaysBundle: ['@deepseek-ai/dsh-desktop-control-protocol'],
+    },
   },
   {
     // Detached, shell-free updater copied beside the verified DMG before quit.
