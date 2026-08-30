@@ -167,6 +167,37 @@ describe('BrowserAuth', () => {
     }
   })
 
+  it('preserves only the closed Desktop presentation parameters after token exchange', async () => {
+    const auth = await createAuth(new RecordCredentials())
+    const launch = new URL(auth.authenticatedUrl('http://127.0.0.1:3080'))
+    launch.searchParams.set('surface', 'desktop')
+    launch.searchParams.set('titlebar', 'hidden-inset')
+    launch.searchParams.set('unknown', 'discard-me')
+    launch.hash = 'discard-me'
+
+    const exchanged = response()
+    expect(auth.authorizeIndex(request(`${launch.pathname}${launch.search}${launch.hash}`), exchanged.value))
+      .toBe(false)
+    expect(exchanged.state.headers?.location)
+      .toBe('/?surface=desktop&titlebar=hidden-inset')
+    expect(exchanged.state.headers?.location).not.toContain('token')
+    expect(exchanged.state.headers?.location).not.toContain('unknown')
+
+    for (const search of [
+      'surface=web&titlebar=hidden-inset',
+      'surface=desktop&surface=desktop&titlebar=hidden-inset',
+      'surface=desktop&titlebar=hidden',
+      'surface=desktop&titlebar=hidden-inset&titlebar=hidden-inset',
+    ]) {
+      const candidate = new URL(auth.authenticatedUrl('http://127.0.0.1:3080'))
+      candidate.search += `&${search}`
+      const redirected = response()
+      expect(auth.authorizeIndex(request(`${candidate.pathname}${candidate.search}`), redirected.value))
+        .toBe(false)
+      expect(redirected.state.headers?.location).toBe('/')
+    }
+  })
+
   it('rejects tampering, expiry, future issuance, and a longer lifetime than configured', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-24T00:00:00.000Z'))

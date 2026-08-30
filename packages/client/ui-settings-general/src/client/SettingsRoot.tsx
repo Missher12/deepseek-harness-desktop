@@ -184,6 +184,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           ref={triggerButton}
           type="button"
           className={clsx(css.trigger, !wide && css.rail)}
+          data-dsh-desktop-command="open-settings"
           aria-haspopup="dialog"
           aria-expanded={open}
           onClick={() => { setOpen(true) }}

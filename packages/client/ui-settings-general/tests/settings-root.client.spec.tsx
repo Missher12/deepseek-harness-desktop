@@ -127,6 +127,7 @@ describe('SettingsRoot trigger', () => {
     expect(trigger.hasAttribute('aria-label')).toBe(false)
     expect(renderSlot).toHaveBeenCalledWith('settings.trigger', { wide: true })
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(trigger.getAttribute('data-dsh-desktop-command')).toBe('open-settings')
     fireEvent.click(trigger)
     expect(screen.getByRole('dialog')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Settings', expanded: true })).toBeTruthy()

@@ -13,6 +13,10 @@ const AUTH_RECORD_KEY = credentialKey('client-connection', 'browser-session')
 const DAY_MILLISECONDS = 24 * 60 * 60 * 1000
 const SECRET_BYTES = 32
 const TOKEN_QUERY = 'token'
+const DESKTOP_SURFACE_QUERY = 'surface'
+const DESKTOP_SURFACE_VALUE = 'desktop'
+const TITLEBAR_QUERY = 'titlebar'
+const TITLEBAR_VALUE = 'hidden-inset'
 const COOKIE_PREFIX = 'dsh-auth-'
 const COOKIE_PAYLOAD_VERSION = 1
 const STORED_SECRET_VERSION = 1
@@ -101,6 +105,26 @@ function tokenMatches(actual: string, expected: string): boolean {
   const actualBytes = Buffer.from(actual, 'utf8')
   const expectedBytes = Buffer.from(expected, 'utf8')
   return actualBytes.byteLength === expectedBytes.byteLength && timingSafeEqual(actualBytes, expectedBytes)
+}
+
+/**
+ * Keep the two closed Desktop presentation hints while removing credentials
+ * and every caller-controlled query parameter from the post-login URL.
+ */
+function authenticatedRedirect(url: URL): string {
+  const surfaces = url.searchParams.getAll(DESKTOP_SURFACE_QUERY)
+  const titlebars = url.searchParams.getAll(TITLEBAR_QUERY)
+  if (surfaces.length > 1 || titlebars.length > 1
+    || (surfaces.length === 1 && surfaces[0] !== DESKTOP_SURFACE_VALUE)
+    || (titlebars.length === 1 && titlebars[0] !== TITLEBAR_VALUE)) {
+    return '/'
+  }
+
+  const presentation = new URLSearchParams()
+  if (surfaces.length === 1) presentation.set(DESKTOP_SURFACE_QUERY, DESKTOP_SURFACE_VALUE)
+  if (titlebars.length === 1) presentation.set(TITLEBAR_QUERY, TITLEBAR_VALUE)
+  const search = presentation.toString()
+  return search === '' ? '/' : `/?${search}`
 }
 
 function cookieName(authority: string): string {
@@ -242,6 +266,7 @@ export class BrowserAuth {
     const url = new URL(req.url ?? '/', 'http://dsh.invalid')
     const tokens = url.searchParams.getAll(TOKEN_QUERY)
     if (tokens.length > 0) {
+      const redirect = authenticatedRedirect(url)
       const authority = requestAuthority(req.headers)
       if (req.method === 'GET' && url.pathname === '/' && tokens.length === 1
         && authority !== undefined && tokenMatches(tokens.join(''), this.launchToken)) {
@@ -255,7 +280,7 @@ export class BrowserAuth {
         }, this.secret)
         res.writeHead(303, {
           'cache-control': 'no-store',
-          'location': '/',
+          'location': redirect,
           'referrer-policy': 'no-referrer',
           'set-cookie': sessionCookie(
             cookieName(authority), value, expiresAt, Math.floor(this.maxAgeMilliseconds / 1000),
@@ -267,7 +292,7 @@ export class BrowserAuth {
       if (req.method === 'GET' && url.pathname === '/' && this.isAuthenticated(req)) {
         res.writeHead(303, {
           'cache-control': 'no-store',
-          'location': '/',
+          'location': redirect,
           'referrer-policy': 'no-referrer',
         })
         res.end()
