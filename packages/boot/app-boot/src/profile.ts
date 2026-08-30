@@ -299,20 +299,26 @@ function ensureProfileSymlink(link: string, target: string): void {
   ensureSymlink(link, target)
 }
 
-/** Package names represented by owned symlinks below one fallback node_modules. */
+/** Whether one owned fallback entry is a symlink or a dsh-managed module proxy. */
+function isOwnedModuleEntry(path: string, entry: { isDirectory(): boolean; isSymbolicLink(): boolean }): boolean {
+  return entry.isSymbolicLink()
+    || (entry.isDirectory() && readModuleProxyRecord(path)?.dsh?.moduleFallback?.targets !== undefined)
+}
+
+/** Package names represented by owned links or proxies below one fallback node_modules. */
 function ownedPackageNames(modulesDir: string): string[] {
   return readdirSync(modulesDir, { withFileTypes: true }).flatMap((entry) => {
     if (entry.name.startsWith('@') && entry.isDirectory()) {
       return readdirSync(join(modulesDir, entry.name), { withFileTypes: true })
-        .filter(child => child.isSymbolicLink())
+        .filter(child => isOwnedModuleEntry(join(modulesDir, entry.name, child.name), child))
         .map(child => `${entry.name}/${child.name}`)
     }
-    return entry.isSymbolicLink() ? [entry.name] : []
+    return isOwnedModuleEntry(join(modulesDir, entry.name), entry) ? [entry.name] : []
   })
 }
 
 /** Remove an obsolete owned target and its profile projection when still connected. */
-function removeProfileSymlink(profileModulesDir: string, ownedModulesDir: string, packageName: string): void {
+function removeProfileModule(profileModulesDir: string, ownedModulesDir: string, packageName: string): void {
   const ownedLink = join(ownedModulesDir, packageName)
   const profileLink = join(profileModulesDir, packageName)
   try {
@@ -322,7 +328,9 @@ function removeProfileSymlink(profileModulesDir: string, ownedModulesDir: string
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
   try {
-    unlinkSync(ownedLink)
+    const stat = lstatSync(ownedLink)
+    if (stat.isSymbolicLink()) unlinkSync(ownedLink)
+    else rmSync(ownedLink, { recursive: true })
   } catch (error) {
     /* v8 ignore next -- concurrent identical cleanup may remove the link first */
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
@@ -347,6 +355,21 @@ interface ModuleProxyRecord {
 function isPackagedInstallation(installAnchor: string): boolean {
   return (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
     || /(?:^|[\\/])app\.asar(?:[\\/]|$)/u.test(installAnchor)
+}
+
+/** Follow only package-root links so an archive-backed target remains visible before proxying. */
+function resolveModuleLinkTarget(packageDir: string): string {
+  let current = resolve(packageDir)
+  const seen = new Set<string>()
+  for (let depth = 0; depth < 16; depth += 1) {
+    if (seen.has(current)) throw new Error(`dsh: module fallback symlink cycle at ${packageDir}`)
+    seen.add(current)
+    if (/(?:^|[\\/])(?:app\.asar|snapshot)(?:[\\/]|$)/u.test(current)) return current
+    const stat = lstatSync(current)
+    if (!stat.isSymbolicLink()) return current
+    current = resolve(dirname(current), readlinkSync(current))
+  }
+  throw new Error(`dsh: module fallback symlink chain is too deep at ${packageDir}`)
 }
 
 /** Resolve one available explicit package export under Node ESM import conditions. */
@@ -424,6 +447,17 @@ function packageProxySource(
     if (target !== undefined) targets[subpath] = target
   }
   return { version: manifest.version, targets }
+}
+
+/** Use a real proxy whenever a profile-local dependency lives inside a packaged archive. */
+function ensureOwnedModule(link: string, packageName: string, target: string): void {
+  const resolvedTarget = resolveModuleLinkTarget(target)
+  if (/(?:^|[\\/])(?:app\.asar|snapshot)(?:[\\/]|$)/u.test(resolvedTarget)) {
+    const source = packageProxySource(packageName, resolvedTarget)
+    ensureModuleProxy(link, packageName, source.version, source.targets)
+    return
+  }
+  ensureSymlink(link, target)
 }
 
 /**
@@ -665,12 +699,12 @@ function healProfileModuleFallback(profile: Profile, installationPackageNames: R
   })
   for (const layer of profile.layers) bundleLinks.delete(layer.packageName)
   for (const packageName of ownedPackageNames(ownedModulesDir)) {
-    if (!bundleLinks.has(packageName)) removeProfileSymlink(profileModulesDir, ownedModulesDir, packageName)
+    if (!bundleLinks.has(packageName)) removeProfileModule(profileModulesDir, ownedModulesDir, packageName)
   }
   for (const [packageName, target] of bundleLinks) {
     const ownedLink = join(ownedModulesDir, packageName)
     mkdirSync(dirname(ownedLink), { recursive: true })
-    ensureSymlink(ownedLink, target)
+    ensureOwnedModule(ownedLink, packageName, target)
     const profileLink = join(profileModulesDir, packageName)
     mkdirSync(dirname(profileLink), { recursive: true })
     ensureProfileSymlink(profileLink, ownedLink)

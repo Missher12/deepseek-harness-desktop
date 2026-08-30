@@ -9,7 +9,7 @@ import {
   unlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { describe, expect, it } from 'vitest'
 import {
@@ -392,6 +392,62 @@ describe('healProfilesModuleFallback', () => {
     } finally {
       delete (process as NodeJS.Process & { pkg?: unknown }).pkg
     }
+  })
+
+  it('proxies profile-local dependencies that resolve into Electron app.asar', async () => {
+    const installationAnchor = stageInstallation(
+      {},
+      '@deepseek-ai/dsh-cli',
+      'app.asar/node_modules/@deepseek-ai/dsh-cli',
+    )
+    const appAsar = dirname(dirname(dirname(dirname(installationAnchor))))
+    const packagedDependency = join(appAsar, 'node_modules', '@scope', 'packaged-only')
+    mkdirSync(packagedDependency, { recursive: true })
+    writeFileSync(join(packagedDependency, 'package.json'), JSON.stringify({
+      name: '@scope/packaged-only',
+      version: '0.0.0',
+      type: 'module',
+      main: './index.js',
+    }))
+    writeFileSync(join(packagedDependency, 'index.js'), 'export const packaged = true\n')
+
+    const bundleAnchor = stageInstallation({}, 'selected-bundle')
+    const bundleManifest = JSON.parse(readFileSync(bundleAnchor, 'utf8')) as {
+      dependencies: Record<string, string>
+    }
+    bundleManifest.dependencies['@scope/packaged-only'] = '0.0.0'
+    writeFileSync(bundleAnchor, JSON.stringify(bundleManifest))
+    const bundleDependency = join(dirname(bundleAnchor), 'node_modules', '@scope', 'packaged-only')
+    mkdirSync(dirname(bundleDependency), { recursive: true })
+    symlinkSync(packagedDependency, bundleDependency, 'junction')
+
+    const home = tmp()
+    const profile = stageProfile(home, 'packaged-profile', bundleAnchor)
+    await healProfilesModuleFallback({ installAnchor: installationAnchor, profile, home })
+
+    const owned = join(
+      profile.dir,
+      '.dsh-module-fallback',
+      'node_modules',
+      '@scope',
+      'packaged-only',
+    )
+    const projection = join(profile.dir, 'node_modules', '@scope', 'packaged-only')
+    expect(lstatSync(owned).isDirectory()).toBe(true)
+    expect(lstatSync(projection).isSymbolicLink()).toBe(true)
+    const manifest = JSON.parse(readFileSync(join(owned, 'package.json'), 'utf8')) as {
+      dsh: { moduleFallback: { targets: Record<string, string> } }
+    }
+    expect(manifest.dsh.moduleFallback.targets['.']).toContain('/app.asar/')
+    await expect(import(join(owned, 'entry-0.js'))).resolves.toMatchObject({ packaged: true })
+
+    await healProfilesModuleFallback({
+      installAnchor: installationAnchor,
+      profile: { ...profile, layers: [] },
+      home,
+    })
+    expect(existsSync(owned)).toBe(false)
+    expect(existsSync(projection)).toBe(false)
   })
 
   it('discovers dependencies beside a symlinked bundle real path', async () => {
