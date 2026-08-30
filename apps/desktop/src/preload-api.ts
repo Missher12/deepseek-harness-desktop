@@ -247,6 +247,8 @@ export interface DesktopApi {
   /** Subscribe to validated update-state transitions. */
   onUpdateStatus?(listener: (snapshot: DesktopUpdateSnapshot) => void): () => void
   showWorkbenchBrowser(bounds: DesktopBrowserBounds): Promise<DesktopBrowserSnapshot>
+  /** Reflow only the exact existing Browser view; never creates or changes ownership. */
+  layoutWorkbenchBrowser(bounds: DesktopBrowserBounds): Promise<void>
   hideWorkbenchBrowser(): Promise<void>
   controlWorkbenchBrowser(request: DesktopBrowserRequest): Promise<DesktopBrowserSnapshot>
   onWorkbenchBrowserState(listener: (snapshot: DesktopBrowserSnapshot) => void): () => void

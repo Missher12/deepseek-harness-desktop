@@ -67,6 +67,10 @@ const api: DesktopApi = {
     if (!isDesktopBrowserSnapshot(value)) throw new Error('Invalid workbench Browser state.')
     return value
   },
+  async layoutWorkbenchBrowser(bounds) {
+    if (!isDesktopBrowserBounds(bounds)) throw new Error('Invalid workbench Browser bounds.')
+    await ipcRenderer.invoke('desktop:workbench-browser-layout', bounds)
+  },
   async hideWorkbenchBrowser() {
     await ipcRenderer.invoke('desktop:workbench-browser-hide')
   },

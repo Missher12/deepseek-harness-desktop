@@ -34,6 +34,7 @@ const electron = vi.hoisted(() => {
     readonly stop = vi.fn()
     readonly loadURL = vi.fn(async (url: string) => { this.url = url })
     readonly close = vi.fn(() => { this.destroyed = true })
+    readonly setZoomFactor = vi.fn()
     readonly navigationHistory = {
       canGoBack: () => false,
       canGoForward: () => false,
@@ -87,6 +88,55 @@ import { BrowserSurfaceManager } from '../src/browser/surface-manager.ts'
 beforeEach(() => { electron.views.length = 0 })
 
 describe('persistent Workbench browser transfer', () => {
+  it('reflows the human browser zoom whenever the utility panel width changes', async () => {
+    const window = {
+      contentView: { addChildView: vi.fn(), removeChildView: vi.fn() },
+      getContentBounds: () => ({ x: 0, y: 0, width: 1800, height: 1000 }),
+      getBounds: () => ({ x: 0, y: 0, width: 1800, height: 1000 }),
+    }
+    const controller = new WorkbenchBrowserController(
+      window as never,
+      () => {},
+      new ElectronBrowserSurfaceRegistry(),
+    )
+
+    await controller.show({ x: 1000, y: 0, width: 800, height: 1000 })
+    const view = electron.views.at(-1)
+    if (view === undefined) throw new Error('expected Workbench view')
+    expect(view.webContents.setZoomFactor).toHaveBeenLastCalledWith(expect.closeTo(2 / 3, 5))
+
+    await controller.show({ x: 400, y: 0, width: 1400, height: 1000 })
+    expect(view.webContents.setZoomFactor).toHaveBeenLastCalledWith(1)
+  })
+
+  it('reflows the exact transferred browser without creating or revealing another view', async () => {
+    const window = {
+      contentView: { addChildView: vi.fn(), removeChildView: vi.fn() },
+      getContentBounds: () => ({ x: 0, y: 0, width: 1800, height: 1000 }),
+      getBounds: () => ({ x: 0, y: 0, width: 1800, height: 1000 }),
+    }
+    const controller = new WorkbenchBrowserController(
+      window as never,
+      () => {},
+      new ElectronBrowserSurfaceRegistry(),
+    )
+
+    await controller.show({ x: 1000, y: 0, width: 800, height: 1000 })
+    const intent = controller.captureVisiblePersistentIntent()
+    if (intent === undefined) throw new Error('expected persistent Give intent')
+    await controller.consumeVisiblePersistentIntent(intent)
+    const view = electron.views.at(-1)
+    if (view === undefined) throw new Error('expected Workbench view')
+
+    await controller.layout({ x: 600, y: 0, width: 1200, height: 1000 })
+
+    expect(electron.views).toHaveLength(1)
+    expect(view.bounds).toEqual({ x: 600, y: 0, width: 1200, height: 1000 })
+    expect(view.webContents.setZoomFactor).toHaveBeenLastCalledWith(1)
+    await expect(controller.show({ x: 0, y: 0, width: 600, height: 1000 }))
+      .rejects.toMatchObject({ code: 'BUSY' })
+  })
+
   it('starts and awaits an about:blank renderer before an ephemeral mount becomes usable', async () => {
     const added: unknown[] = []
     const window = {
@@ -127,6 +177,39 @@ describe('persistent Workbench browser transfer', () => {
     await mounting
     expect(view.visible).toBe(true)
     guards.dispose()
+  })
+
+  it('reflows the mounted Agent browser to the live utility-panel bounds', async () => {
+    const registry = new ElectronBrowserSurfaceRegistry()
+    const window = {
+      contentView: { addChildView: vi.fn(), removeChildView: vi.fn() },
+      getBounds: () => ({ x: 0, y: 0, width: 1800, height: 1000 }),
+    }
+    const resource = createElectronEphemeralSurface({
+      window: window as never,
+      request: {
+        sessionId: 'live-layout-session',
+        generation: 1,
+        partition: 'dsh-agent-browser-1-live-layout',
+      },
+      registry,
+      bounds: () => ({ x: 1000, y: 0, width: 800, height: 1000 }),
+    })
+    const view = electron.views.at(-1)
+    if (view === undefined) throw new Error('expected ephemeral view')
+
+    await resource.mount('live-layout-token')
+    registry.layoutMounted({ x: 600, y: 20, width: 1200, height: 900 })
+
+    expect(electron.views).toHaveLength(1)
+    expect(view.bounds).toEqual({ x: 600, y: 20, width: 1200, height: 900 })
+    expect(view.webContents.setZoomFactor).toHaveBeenLastCalledWith(1)
+
+    await resource.hide('live-layout-token')
+    registry.layoutMounted({ x: 1100, y: 0, width: 700, height: 1000 })
+    expect(view.visible).toBe(false)
+    expect(view.bounds).toEqual({ x: 1100, y: 0, width: 700, height: 1000 })
+    expect(view.webContents.setZoomFactor).toHaveBeenLastCalledWith(expect.closeTo(2 / 3, 5))
   })
 
   it('cancels a stuck renderer mount, releases the pending generation, and permits a fresh acquire', async () => {

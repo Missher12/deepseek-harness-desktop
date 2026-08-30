@@ -10,12 +10,15 @@ import {
   type ElectronBrowserSurfaceRegistry,
 } from './electron-surface.ts'
 import type { BrowserSecurityHandlerOwner } from './policy.ts'
+import { browserZoomFactor } from './layout.ts'
 
 interface PersistentBrowserTransfer {
   readonly intent: BrowserPersistentGiveIntent
   readonly wasVisible: boolean
   phase: 'reserved' | 'committed'
 }
+
+export { browserZoomFactor } from './layout.ts'
 
 export class WorkbenchBrowserController implements BrowserPersistentTakeoverSource {
   private view: WebContentsView | undefined
@@ -37,10 +40,18 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
   show(bounds: DesktopBrowserBounds): Promise<DesktopBrowserSnapshot> {
     if (this.transfer !== undefined) return Promise.reject(this.transferBusy())
     const view = this.ensureView()
-    view.setBounds(this.clip(bounds))
+    this.applyLayout(view, bounds)
     view.setVisible(true)
     this.visible = true
     return Promise.resolve(this.snapshot())
+  }
+
+  /** Reflow the exact existing view without creating, revealing, or transferring authority. */
+  layout(bounds: DesktopBrowserBounds): Promise<void> {
+    const view = this.view
+    if (view === undefined || view.webContents.isDestroyed()) return Promise.resolve()
+    this.applyLayout(view, bounds)
+    return Promise.resolve()
   }
 
   async control(request: DesktopBrowserRequest): Promise<DesktopBrowserSnapshot> {
@@ -154,6 +165,11 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
       kind: 'human-persistent',
       webContents: view.webContents,
       session: partition,
+      layout: (bounds) => {
+        if (!closed && this.transfer === transfer && mountToken !== undefined) {
+          this.applyLayout(view, bounds)
+        }
+      },
       viewport: () => {
         const bounds = view.getBounds()
         const scale = screen.getDisplayMatching(window.getBounds()).scaleFactor
@@ -265,5 +281,11 @@ export class WorkbenchBrowserController implements BrowserPersistentTakeoverSour
       width: Math.max(1, Math.min(Math.round(bounds.width), area.width - x)),
       height: Math.max(1, Math.min(Math.round(bounds.height), area.height - y)),
     }
+  }
+
+  private applyLayout(view: WebContentsView, bounds: DesktopBrowserBounds): void {
+    const clipped = this.clip(bounds)
+    view.setBounds(clipped)
+    view.webContents.setZoomFactor(browserZoomFactor(clipped.width))
   }
 }

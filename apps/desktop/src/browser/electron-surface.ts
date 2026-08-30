@@ -1,6 +1,7 @@
 import { screen, WebContentsView, type BrowserWindow, type Session } from 'electron'
 import type { BrowserAdapterWebContents, BrowserViewport } from './cdp-adapter.ts'
 import { AgentBrowserError, BROWSER_AGENT_LIMITS } from './contracts.ts'
+import { browserZoomFactor } from './layout.ts'
 import {
   createBrowserSecurityHandlerOwner,
   type BrowserSecurityHandlerOwner,
@@ -14,6 +15,7 @@ import type {
 export interface ElectronBrowserSurfaceResource extends BrowserSurfaceResource {
   readonly webContents: BrowserAdapterWebContents
   readonly session: Session
+  layout(bounds: Electron.Rectangle): void
   viewport(): BrowserViewport
 }
 
@@ -35,6 +37,11 @@ export class ElectronBrowserSurfaceRegistry {
     const resource = this.resources.get(surfaceId)
     if (resource === undefined) throw new AgentBrowserError('STALE_REF', 'browser surface resource is stale')
     return resource
+  }
+
+  /** Reflow only resources already mounted by main-process authority. */
+  layoutMounted(bounds: Electron.Rectangle): void {
+    for (const resource of this.resources.values()) resource.layout(bounds)
   }
 }
 
@@ -117,12 +124,20 @@ export function createElectronEphemeralSurface(
   let rendererReady: Promise<void> | undefined
   let unregister = (): void => undefined
   const isClosed = (): boolean => closed
+  const applyLayout = (bounds: Electron.Rectangle): void => {
+    view.setBounds(bounds)
+    view.webContents.setZoomFactor(browserZoomFactor(bounds.width))
+  }
   const resource: ElectronBrowserSurfaceResource = {
     surfaceId: `agent-browser-${String(view.webContents.id)}-${String(request.generation)}`,
     partition: request.partition,
     kind: 'ephemeral',
     webContents: view.webContents,
     session,
+    layout(bounds) {
+      if (closed || !attached || mountToken === undefined) return
+      applyLayout(bounds)
+    },
     viewport: () => viewport(view, window),
     installSecurityHandlers: generation => owner.install({
       generation,
@@ -137,7 +152,7 @@ export function createElectronEphemeralSurface(
         window.contentView.addChildView(view)
         attached = true
       }
-      view.setBounds(options.bounds())
+      applyLayout(options.bounds())
       view.setVisible(true)
       rendererReady ??= awaitRendererStartup(
         view.webContents.loadURL('about:blank').then(() => undefined),

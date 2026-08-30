@@ -4,7 +4,7 @@
 
 这是官方 DeepSeek Harness 运行时的原生桌面外壳。应用只在本机回环地址启动一个由自身管理的 Harness 子进程，端口由操作系统随机分配，现有 Harness Web 客户端运行在加固后的 Electron 窗口内。
 
-Desktop 0.4.7 保留 Codex 风格的发言刻度，并提供两种可见控制能力。
+Desktop 0.4.8 保留 Codex 风格的发言刻度，并提供两种可见控制能力。
 **Agent 浏览器**会把一个准确的内置浏览器界面交给当前任务，提供有界的语义导航与
 截图；**电脑控制**只通过有界的辅助功能、截图、指针和键盘操作观察及控制获准的应用
 窗口。每次任务的原生授权、进程级唯一租约、目标身份、配额、紧急快捷键和停止清理都
@@ -15,7 +15,7 @@ macOS 需要“屏幕录制”和“辅助功能”权限；受保护、安全�
 Agent 浏览器的已认证本机回环隧道会分别限制 DNS 校验／建连阶段与已建立的页面流量，
 因此较慢的 Windows 解析器不会再把每次导航都拖成控制超时。原生输入清理失败时仍由
 原会话独占，但 Computer Stop、状态或列表请求可以安全重试，无需重启应用。
-0.4.7 的浏览器流程为新挂载的渲染进程提供有界的二十秒启动窗口，在有界语义遍历前
+0.4.8 的浏览器流程为新挂载的渲染进程提供有界的二十秒启动窗口，在有界语义遍历前
 启用 Accessibility，并在复杂页面达到原始树限制时返回优先级部分快照，而不是整次失败。
 已经空闲与达到边界的条件等待会返回当前状态；初始 `about:blank` 历史项不会再误判为
 受保护目标。由 main 持有的可视标记会显示点击和滚动目标。Browser Stop 或成功的官方
@@ -27,6 +27,10 @@ Agent 浏览器的已认证本机回环隧道会分别限制 DNS 校验／建连
 1,600px，并始终是真正的网格列；空间受压时渲染中的侧栏会让位为紧凑栏，而不是让
 工作台覆盖会话或输入框。浏览器模式会同步原生视图的完整矩形（包括仅位置变化），
 因此受控页面始终留在可见右侧面板内，不会漂移到工作区空白位置上方。
+Agent 持有浏览器时，同一个受控视图现在也会继续同步侧栏尺寸，并按照实时栏宽重排
+桌面型页面。Retina 渲染器的可选 PNG 截图差异会降级为已经验证的语义 ref，而不会
+把整个 snapshot 变成 `INTERNAL`；原生日志只记录封闭阶段码与错误码。Prompt rail
+会使用实测会话视口和输入框高度，提示不再覆盖输入区域。
 
 侧栏提供类似 Codex 的已归档会话管理器。归档会保留会话日志及其原有
 Workspace 位置，可在管理器中原位恢复；永久删除只能从归档管理器进入，
@@ -123,7 +127,7 @@ pnpm run desktop:dmg
 pnpm run desktop:setup
 ```
 
-这个命令必须在原生 Windows x64 上运行。Setup 名称由 `apps/desktop/package.json` 派生；0.4.7 会输出 `apps/desktop/release/DeepSeek-Harness-Setup-0.4.7-win-x64.exe`。Windows CI 使用独立的短暂存目录，避免原生 MSVC 重编译触发旧式路径长度限制；所有发布产物都写入 `apps/desktop/release`。
+这个命令必须在原生 Windows x64 上运行。Setup 名称由 `apps/desktop/package.json` 派生；0.4.8 会输出 `apps/desktop/release/DeepSeek-Harness-Setup-0.4.8-win-x64.exe`。Windows CI 使用独立的短暂存目录，避免原生 MSVC 重编译触发旧式路径长度限制；所有发布产物都写入 `apps/desktop/release`。
 
 Windows Setup 是当前用户范围的可见向导式 NSIS 安装器。正常双击后会依次显示欢迎、安装目录、展开的安装进度／明细与完成页面；它不需要管理员权限，也不需要 Node.js、pnpm、终端、浏览器或固定端口。安装会创建桌面和开始菜单快捷方式，并在完成页提供启动 DeepSeek Harness 的选项。卸载会删除应用和快捷方式，但保留 Harness 与 Electron 用户数据。
 
@@ -145,9 +149,9 @@ Windows 在原生系统生成 Setup 后运行：
 
 ```powershell
 ./scripts/windows-desktop-installer-ui-smoke.ps1 `
-  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.4.7-win-x64.exe
+  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.4.8-win-x64.exe
 ./scripts/windows-desktop-setup-smoke.ps1 `
-  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.4.7-win-x64.exe
+  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.4.8-win-x64.exe
 ```
 
 成品测试使用仓库外的临时工作目录、临时 Electron 用户数据和临时 `DSH_HOME`。macOS 与 Windows 原生验收都会验证 preload、关闭偏好往返、后台保留时关闭隐藏且 Harness 继续运行、恢复窗口、普通与归档 Session ID 写入真实系统剪贴板且不打开／恢复／删除／发送／启动 Agent、对等会话发送／回复元数据、原生无卡片渲染与拒绝分支无副作用、Add 菜单、四模式工作台、默认向下且可自适应翻转的思考滑块与 effort 持久化、Canvas 确实输出且小人物关闭、使用统计的全部 371 个颗粒与每日／每周／累积悬停语义、插件市场分类顺序稳定及分离后的搜索／筛选／分类几何、随机监听端口，以及原生退出后的完整进程回收。受保护自更新继续仅限 macOS，并在 Windows 上明确验证为不存在。工具级验收会另行证明双向 Agent 启动／回复行为、准确 receipt 绑定等待、协作停止与匹配回复拒绝；它不发起外部模型请求。Desktop staging 还要求 staged 树中有且只有一个 `dshmarket@1.10.1`，其源码、Client bundle 与 source map 的紧凑布局和分类轨道标记一致，Host 自保护标记存在，并强制检查不可变 Desktop patch、插件运行时 provider、内置 pnpm 入口及向导式安装器 include 确实进入成品。Windows UI 测试会依次操作可见的欢迎、目录、展开的进度／明细和完成页面；生命周期测试则验证相同功能行为，以及静默安装、快捷方式创建、真实剪贴板复制、卸载清理和数据保留。原生 Windows CI 会从包版本派生产物名、构建 Setup、运行两项测试、记录 SHA-256，并上传两个精确文件。

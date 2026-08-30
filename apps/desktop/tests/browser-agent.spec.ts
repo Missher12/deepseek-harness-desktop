@@ -290,6 +290,20 @@ describe('semantic Agent browser adapter', () => {
       .toBeLessThan(contents.debugger.calls.findIndex(call => call.method === 'Accessibility.getRootAXNode'))
   })
 
+  it('enables DOM before Overlay during the real debugger handshake', async () => {
+    const contents = new FakeWebContents()
+    contents.debugger.handlers.set('Overlay.enable', () => {
+      const domEnabled = contents.debugger.calls.some(call => call.method === 'DOM.enable')
+      if (!domEnabled) throw new Error('DOM should be enabled first')
+      return {}
+    })
+
+    await adapterFor(contents).start()
+
+    expect(contents.debugger.calls.findIndex(call => call.method === 'DOM.enable'))
+      .toBeLessThan(contents.debugger.calls.findIndex(call => call.method === 'Overlay.enable'))
+  })
+
   it('retries the renderer-sensitive debugger handshake exactly once without reattaching', async () => {
     vi.useFakeTimers()
     try {
@@ -357,6 +371,11 @@ describe('semantic Agent browser adapter', () => {
       .toEqual([
         { method: 'Accessibility.enable', params: {} },
         { method: 'Accessibility.disable', params: {} },
+      ])
+    expect(contents.debugger.calls.filter(call => call.method === 'DOM.enable' || call.method === 'DOM.disable'))
+      .toEqual([
+        { method: 'DOM.enable', params: {} },
+        { method: 'DOM.disable', params: {} },
       ])
     expect(contents.debugger.calls.filter(call => call.method.startsWith('Overlay.')))
       .toEqual([
@@ -479,7 +498,8 @@ describe('semantic Agent browser adapter', () => {
     const callBounded = await adapterFor(callContents).snapshot({ includeImage: false })
     expect(callBounded.result.semanticText).toContain('[Partial snapshot:')
     expect(callContents.debugger.calls.filter(call => call.method !== 'Page.setInterceptFileChooserDialog'
-      && call.method !== 'Accessibility.enable' && call.method !== 'Overlay.enable').length)
+      && call.method !== 'Accessibility.enable' && call.method !== 'DOM.enable'
+      && call.method !== 'Overlay.enable').length)
       .toBeLessThanOrEqual(BROWSER_AGENT_LIMITS.cdpCalls)
 
     const wallContents = new FakeWebContents()
@@ -611,6 +631,7 @@ describe('semantic Agent browser adapter', () => {
       'Accessibility.enable',
       'Accessibility.getRootAXNode',
       'Accessibility.getChildAXNodes',
+      'DOM.enable',
       'DOM.describeNode',
       'DOM.getBoxModel',
       'Input.dispatchMouseEvent',
@@ -1085,7 +1106,53 @@ describe('semantic Agent browser adapter', () => {
     expect(snapshot.png).not.toBe(image)
   })
 
-  it('geometrically retries an oversized PNG at most three times and otherwise fails closed', async () => {
+  it('accepts a CDP screenshot reported in CSS-pixel clip dimensions on a Retina surface', async () => {
+    const contents = new FakeWebContents()
+    installTree(contents, [])
+    const image = png(1_024, 768)
+    contents.debugger.handlers.set('Page.captureScreenshot', () => ({
+      data: Buffer.from(image).toString('base64'),
+    }))
+    const adapter = adapterFor(contents, {
+      viewport: () => ({ width: 4_000, height: 3_000, deviceScaleFactor: 2 }),
+    })
+
+    await expect(adapter.snapshot({ includeImage: true })).resolves.toMatchObject({
+      result: { image: { width: 1_024, height: 768 } },
+    })
+  })
+
+  it('keeps a semantic snapshot usable when its optional PNG capture fails', async () => {
+    const contents = new FakeWebContents()
+    installTree(contents, [{
+      nodeId: 'button-1', backendDOMNodeId: 7, role: { value: 'button' }, name: { value: 'Continue' },
+    }])
+    contents.debugger.handlers.set('Page.captureScreenshot', () => ({
+      data: Buffer.from('not png').toString('base64'),
+    }))
+    const diagnostic = vi.fn()
+    const adapter = adapterFor(contents, { diagnostic })
+
+    const captured = await adapter.snapshot({ includeImage: true })
+    expect(captured.result.semanticText).toContain('Continue')
+    expect(captured.result.refs).toEqual([
+      expect.objectContaining({ role: 'button', name: 'Continue' }),
+    ])
+    expect(diagnostic).toHaveBeenCalledWith({ phase: 'screenshot', code: 'INTERNAL' })
+  })
+
+  it('reports a content-free stage code when the accessibility root is unavailable', async () => {
+    const contents = new FakeWebContents()
+    installTree(contents, [])
+    contents.debugger.handlers.set('Accessibility.getRootAXNode', () => ({}))
+    const diagnostic = vi.fn()
+
+    await expect(adapterFor(contents, { diagnostic }).snapshot({ includeImage: false }))
+      .rejects.toMatchObject({ code: 'INTERNAL' })
+    expect(diagnostic).toHaveBeenLastCalledWith({ phase: 'accessibility', code: 'INTERNAL' })
+  })
+
+  it('geometrically retries an oversized PNG and otherwise retains a semantic-only snapshot', async () => {
     const contents = new FakeWebContents()
     installTree(contents, [])
     const oversized = png(100, 100, BROWSER_AGENT_LIMITS.pngBytes + 1)
@@ -1106,14 +1173,14 @@ describe('semantic Agent browser adapter', () => {
       data: Buffer.from(oversized).toString('base64'),
     }))
     await expect(adapterFor(failingContents).snapshot({ includeImage: true }))
-      .rejects.toMatchObject({ code: 'QUOTA_EXCEEDED' })
+      .resolves.toMatchObject({ result: { semanticText: '', refs: [] } })
     expect(failingContents.debugger.calls.filter(call => call.method === 'Page.captureScreenshot')).toHaveLength(3)
 
     const invalidContents = new FakeWebContents()
     installTree(invalidContents, [])
     invalidContents.debugger.handlers.set('Page.captureScreenshot', () => ({ data: Buffer.from('not png').toString('base64') }))
     await expect(adapterFor(invalidContents).snapshot({ includeImage: true }))
-      .rejects.toMatchObject({ code: 'INTERNAL' })
+      .resolves.toMatchObject({ result: { semanticText: '', refs: [] } })
 
     const mismatchedContents = new FakeWebContents()
     installTree(mismatchedContents, [])
@@ -1122,7 +1189,7 @@ describe('semantic Agent browser adapter', () => {
     }))
     await expect(adapterFor(mismatchedContents, {
       viewport: () => ({ width: 100, height: 100, deviceScaleFactor: 1 }),
-    }).snapshot({ includeImage: true })).rejects.toMatchObject({ code: 'INTERNAL' })
+    }).snapshot({ includeImage: true })).resolves.toMatchObject({ result: { semanticText: '', refs: [] } })
 
     const overflowContents = new FakeWebContents()
     installTree(overflowContents, [])
@@ -1131,7 +1198,7 @@ describe('semantic Agent browser adapter', () => {
     }))
     await expect(adapterFor(overflowContents, {
       viewport: () => ({ width: Number.MAX_VALUE, height: 100, deviceScaleFactor: 2 }),
-    }).snapshot({ includeImage: true })).rejects.toMatchObject({ code: 'INTERNAL' })
+    }).snapshot({ includeImage: true })).resolves.toMatchObject({ result: { semanticText: '', refs: [] } })
     expect(overflowContents.debugger.calls.some(call => call.method === 'Page.captureScreenshot')).toBe(false)
   })
 })

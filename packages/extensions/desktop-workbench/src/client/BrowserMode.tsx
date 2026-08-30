@@ -20,6 +20,7 @@ interface BrowserTakeoverStatus {
 }
 interface DesktopBrowserApi {
   showWorkbenchBrowser(bounds: DesktopBrowserBounds): Promise<DesktopBrowserSnapshot>
+  layoutWorkbenchBrowser?(bounds: DesktopBrowserBounds): Promise<void>
   hideWorkbenchBrowser(): Promise<void>
   controlWorkbenchBrowser(request: DesktopBrowserRequest): Promise<DesktopBrowserSnapshot>
   onWorkbenchBrowserState(listener: (snapshot: DesktopBrowserSnapshot) => void): () => void
@@ -62,18 +63,23 @@ export function BrowserMode({ t }: Props) {
     let syncing = false
     let pending: DesktopBrowserBounds | undefined
     let previous: DesktopBrowserBounds | undefined
+    let previousPhase = takeoverPhase.current
     const equal = (left: DesktopBrowserBounds | undefined, right: DesktopBrowserBounds): boolean =>
       left !== undefined && left.x === right.x && left.y === right.y
       && left.width === right.width && left.height === right.height
     const drain = async (): Promise<void> => {
       if (syncing) return
       syncing = true
-      while (isMounted() && pending !== undefined && takeoverPhase.current === 'human') {
+      while (isMounted() && pending !== undefined) {
         const bounds = pending
         pending = undefined
         try {
-          const next = await api.showWorkbenchBrowser(bounds)
-          if (isMounted()) setSnapshot(next)
+          if (takeoverPhase.current === 'human') {
+            const next = await api.showWorkbenchBrowser(bounds)
+            if (isMounted()) setSnapshot(next)
+          } else {
+            await api.layoutWorkbenchBrowser?.(bounds)
+          }
         } catch (reason: unknown) {
           if (isMounted()) setError(reason instanceof Error ? reason.message : String(reason))
         }
@@ -83,8 +89,11 @@ export function BrowserMode({ t }: Props) {
     const poll = () => {
       const rect = element.getBoundingClientRect()
       const bounds: DesktopBrowserBounds = { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-      if (takeoverPhase.current !== 'human') previous = undefined
-      else if (bounds.width > 0 && bounds.height > 0 && !equal(previous, bounds)) {
+      if (takeoverPhase.current !== previousPhase) {
+        previousPhase = takeoverPhase.current
+        previous = undefined
+      }
+      if (bounds.width > 0 && bounds.height > 0 && !equal(previous, bounds)) {
         previous = bounds
         pending = bounds
         void drain()

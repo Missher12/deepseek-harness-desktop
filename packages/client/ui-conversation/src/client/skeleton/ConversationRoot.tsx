@@ -45,8 +45,10 @@ export function ConversationRoot({
     if (seat === null || scroller === null) return
     seatObserver.current = new ResizeObserver(() => {
       scroller.style.setProperty('--dsh-composer-height', `${seat.offsetHeight}px`)
+      scroller.style.setProperty('--dsh-conversation-viewport-height', `${scroller.clientHeight}px`)
     })
     seatObserver.current.observe(seat)
+    seatObserver.current.observe(scroller)
   }, [])
 
   const sessionWorkspace = sessionId === undefined

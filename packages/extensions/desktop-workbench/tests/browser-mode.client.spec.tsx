@@ -33,6 +33,7 @@ function setup() {
   let takeoverListener: ((value: { phase: 'human' | 'given' | 'agent' | 'stopping'; signedInWarning: true }) => void) | undefined
   const api = {
     showWorkbenchBrowser: vi.fn(async () => snapshot),
+    layoutWorkbenchBrowser: vi.fn(async () => {}),
     hideWorkbenchBrowser: vi.fn(async () => {}),
     controlWorkbenchBrowser: vi.fn(async () => snapshot),
     onWorkbenchBrowserState: vi.fn(() => () => {}),
@@ -91,6 +92,33 @@ describe('Workbench Browser takeover controls', () => {
       expect(api.showWorkbenchBrowser).toHaveBeenLastCalledWith({ x: 640, y: 120, width: 640, height: 720 })
     })
     expect(api.showWorkbenchBrowser).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the exact Agent browser fitted while the utility panel is resized', async () => {
+    const { api, emit } = setup()
+    render(<BrowserMode t={translate} />)
+    const host = document.querySelector<HTMLElement>('[data-native-browser-host]')
+    if (host === null) throw new Error('native browser host missing')
+    let width = 720
+    vi.spyOn(host, 'getBoundingClientRect').mockImplementation(() => ({
+      x: 800, y: 100, width, height: 700,
+      top: 100, right: 800 + width, bottom: 800, left: 800,
+      toJSON: () => ({}),
+    }))
+    await waitFor(() => { expect(api.onBrowserTakeoverStatus).toHaveBeenCalledOnce() })
+    emit({ phase: 'agent', signedInWarning: true })
+    await screen.findByRole('button', { name: en.browserStopAgent })
+
+    flushAnimationFrame()
+    await waitFor(() => {
+      expect(api.layoutWorkbenchBrowser).toHaveBeenLastCalledWith({ x: 800, y: 100, width: 720, height: 700 })
+    })
+    width = 1080
+    flushAnimationFrame()
+    await waitFor(() => {
+      expect(api.layoutWorkbenchBrowser).toHaveBeenLastCalledWith({ x: 800, y: 100, width: 1080, height: 700 })
+    })
+    expect(api.showWorkbenchBrowser).not.toHaveBeenCalled()
   })
 
   it('warns about the signed-in persistent browser before recording Give intent', async () => {

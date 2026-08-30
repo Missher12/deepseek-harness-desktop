@@ -88,6 +88,13 @@ export interface CdpBrowserAdapterOptions {
   readonly now?: () => number
   readonly delay?: (durationMs: number, signal?: AbortSignal) => Promise<void>
   readonly createTransferId?: () => string
+  /** Content-free native diagnostics; never receives URLs, labels, refs, or page text. */
+  readonly diagnostic?: (event: CdpBrowserDiagnostic) => void
+}
+
+export interface CdpBrowserDiagnostic {
+  readonly phase: 'start' | 'accessibility' | 'projection' | 'screenshot' | 'fit'
+  readonly code: AgentBrowserError['code']
 }
 
 type AllowedCdpMethod =
@@ -95,6 +102,8 @@ type AllowedCdpMethod =
   | 'Accessibility.disable'
   | 'Accessibility.getRootAXNode'
   | 'Accessibility.getChildAXNodes'
+  | 'DOM.enable'
+  | 'DOM.disable'
   | 'DOM.describeNode'
   | 'DOM.getBoxModel'
   | 'Input.dispatchMouseEvent'
@@ -318,6 +327,7 @@ export class CdpBrowserAdapter {
   private readonly now: () => number
   private readonly delay: (durationMs: number, signal?: AbortSignal) => Promise<void>
   private readonly createTransferId: () => string
+  private readonly diagnostic: ((event: CdpBrowserDiagnostic) => void) | undefined
   private attachedByUs = false
   private listenersInstalled = false
   private stopped = false
@@ -339,6 +349,7 @@ export class CdpBrowserAdapter {
     this.now = options.now ?? (() => performance.now())
     this.delay = options.delay ?? defaultDelay
     this.createTransferId = options.createTransferId ?? randomUUID
+    this.diagnostic = options.diagnostic
   }
 
   private readonly invalidateOnNavigation: Listener = () => { this.invalidate() }
@@ -388,6 +399,10 @@ export class CdpBrowserAdapter {
         try {
           const budget = this.createBudget(attemptMs)
           await this.command('Accessibility.enable', {}, budget, signal)
+          // Chromium's Overlay domain requires DOM to be enabled first. The
+          // fake debugger accepts either order, but the packaged Electron
+          // renderer rejects Overlay.enable without this explicit handshake.
+          await this.command('DOM.enable', {}, budget, signal)
           await this.command('Overlay.enable', {}, budget, signal)
           await this.command(
             'Page.setInterceptFileChooserDialog',
@@ -424,18 +439,42 @@ export class CdpBrowserAdapter {
     request: { readonly includeImage: boolean },
     signal?: AbortSignal,
   ): Promise<AgentBrowserSnapshotEnvelope> {
-    await this.start(signal)
+    await this.runDiagnosticStage('start', async () => { await this.start(signal) })
     this.assertSignal(signal)
     const budget = this.createBudget()
-    const walk = await this.walkAccessibilityTree(budget, signal)
-    const projection = await this.projectCandidates(walk.nodes, budget, signal)
-    const image = request.includeImage ? await this.captureScreenshot(budget, signal) : undefined
-    this.assertEpoch(budget.epoch)
-    const fitted = this.fitResult(
-      projection.candidates,
-      image?.metadata,
-      walk.truncated || projection.truncated,
+    const walk = await this.runDiagnosticStage(
+      'accessibility',
+      async () => await this.walkAccessibilityTree(budget, signal),
     )
+    const projection = await this.runDiagnosticStage(
+      'projection',
+      async () => await this.projectCandidates(walk.nodes, budget, signal),
+    )
+    let image: Awaited<ReturnType<CdpBrowserAdapter['captureScreenshot']>> | undefined
+    if (request.includeImage) {
+      try {
+        image = await this.captureScreenshot(budget, signal)
+      } catch (error) {
+        // PNG is an optional presentation aid. A renderer-specific capture,
+        // encoding, or bounded-time failure must not discard an already
+        // verified semantic tree and its revision-bound refs.
+        if (!(error instanceof AgentBrowserError)
+          || !['INTERNAL', 'TIMEOUT', 'QUOTA_EXCEEDED'].includes(error.code)) throw error
+        this.reportDiagnostic('screenshot', error)
+      }
+    }
+    this.assertEpoch(budget.epoch)
+    let fitted: ReturnType<CdpBrowserAdapter['fitResult']>
+    try {
+      fitted = this.fitResult(
+        projection.candidates,
+        image?.metadata,
+        walk.truncated || projection.truncated,
+      )
+    } catch (error) {
+      this.reportDiagnostic('fit', error)
+      throw error
+    }
     this.references = new Map(fitted.bindings.map(binding => [binding.ref, binding]))
     if (image === undefined) {
       return Object.freeze({
@@ -543,6 +582,23 @@ export class CdpBrowserAdapter {
   /** Return the current revision without exposing any debugger or page primitive. */
   currentSnapshotRevision(): number { return this.revision }
 
+  private async runDiagnosticStage<T>(
+    phase: CdpBrowserDiagnostic['phase'],
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await operation()
+    } catch (error) {
+      this.reportDiagnostic(phase, error)
+      throw error
+    }
+  }
+
+  private reportDiagnostic(phase: CdpBrowserDiagnostic['phase'], error: unknown): void {
+    const code = error instanceof AgentBrowserError ? error.code : 'INTERNAL'
+    try { this.diagnostic?.(Object.freeze({ phase, code })) } catch { /* diagnostics are never authoritative */ }
+  }
+
   /** Invalidate refs and detach only a debugger this adapter attached itself. */
   stop(): Promise<void> {
     if (this.stopOperation !== undefined) return this.stopOperation
@@ -571,6 +627,14 @@ export class CdpBrowserAdapter {
       )
     } catch {
       // Detach below also disables Accessibility for the owned debugger session.
+    }
+    try {
+      await this.awaitCdpResponse(
+        this.webContents.debugger.sendCommand('DOM.disable', {}),
+        BROWSER_AGENT_LIMITS.cleanupMs,
+      )
+    } catch {
+      // Detach below also disables DOM for the owned debugger session.
     }
     try {
       await this.awaitCdpResponse(
@@ -1053,13 +1117,22 @@ export class CdpBrowserAdapter {
         continue
       }
       const dimensions = pngDimensions(bytes)
-      const expectedWidth = Math.ceil(physicalWidth * scale)
-      const expectedHeight = Math.ceil(physicalHeight * scale)
+      const expectedPhysicalWidth = Math.ceil(physicalWidth * scale)
+      const expectedPhysicalHeight = Math.ceil(physicalHeight * scale)
+      // Chromium versions differ on whether Page.captureScreenshot's clip
+      // scale is applied before or after the backing-store device scale.
+      // Both results describe the exact visible viewport; accept only these
+      // two deterministic pairs, never an arbitrary image size.
+      const expectedCssWidth = Math.ceil(viewport.width * scale)
+      const expectedCssHeight = Math.ceil(viewport.height * scale)
       const oversized = bytes.byteLength > BROWSER_AGENT_LIMITS.pngBytes
         || dimensions.width > BROWSER_AGENT_LIMITS.screenshotEdge
         || dimensions.height > BROWSER_AGENT_LIMITS.screenshotEdge
         || dimensions.width * dimensions.height > BROWSER_AGENT_LIMITS.screenshotPixels
-      if (!oversized && (dimensions.width !== expectedWidth || dimensions.height !== expectedHeight)) {
+      const dimensionsMatch = dimensions.width === expectedPhysicalWidth
+        && dimensions.height === expectedPhysicalHeight
+        || dimensions.width === expectedCssWidth && dimensions.height === expectedCssHeight
+      if (!oversized && !dimensionsMatch) {
         throw new AgentBrowserError('INTERNAL', 'browser screenshot dimensions do not match the declared scale')
       }
       if (oversized) {

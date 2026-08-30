@@ -40,7 +40,10 @@ function fakeWiring() {
 
 /** jsdom has no ResizeObserver; the composer seat publishes its height through one. */
 class ResizeObserverStub {
-  observe(): void {}
+  static instances: ResizeObserverStub[] = []
+  readonly observed: Element[] = []
+  constructor(readonly callback: ResizeObserverCallback) { ResizeObserverStub.instances.push(this) }
+  observe(element: Element): void { this.observed.push(element) }
   unobserve(): void {}
   disconnect(): void {}
 }
@@ -51,6 +54,7 @@ afterEach(() => {
 })
 beforeEach(() => {
   localStorage.clear()
+  ResizeObserverStub.instances.length = 0
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
 })
 
@@ -384,6 +388,21 @@ describe('ConversationRoot resident composer', () => {
     expect(b.slotCalls).toContain('conversation.session.header.lineage')
     expect(b.slotCalls).toContain('conversation.session.header.actions')
     expect(b.slotCalls).toContain('conversation.session.header.utilities')
+  })
+
+  it('publishes both live composer and conversation viewport geometry for floating chrome', () => {
+    const b = mount(conversationSnapshot())
+    const host = b.view.container.querySelector<HTMLElement>('[data-conversation-scroll]')
+    const seat = b.view.container.querySelector<HTMLElement>('[data-composer-seat]')
+    if (host === null || seat === null) throw new Error('expected conversation geometry')
+    Object.defineProperty(host, 'clientHeight', { value: 640, configurable: true })
+    Object.defineProperty(seat, 'offsetHeight', { value: 180, configurable: true })
+    const observer = ResizeObserverStub.instances.at(-1)
+    expect(observer?.observed).toEqual(expect.arrayContaining([host, seat]))
+
+    observer?.callback([], observer)
+    expect(host.style.getPropertyValue('--dsh-composer-height')).toBe('180px')
+    expect(host.style.getPropertyValue('--dsh-conversation-viewport-height')).toBe('640px')
   })
 
   it('sticky composer seat wraps the whole overlay chain, not only the fallback stack', () => {

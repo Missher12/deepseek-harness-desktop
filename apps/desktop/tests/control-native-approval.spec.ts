@@ -200,6 +200,7 @@ describe('native control approval', () => {
       else controller.abort('cancelled')
 
       await expect(pending).resolves.toBe('UNAVAILABLE')
+      expect(dialog.calls[0]?.options.signal?.aborted).toBe(true)
       dialog.answers[0]?.resolve({ response: 1 })
       await Promise.resolve()
       await Promise.resolve()

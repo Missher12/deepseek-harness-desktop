@@ -310,6 +310,9 @@ const browserControlAdapter = new BrowserDesktopControlAdapter({
       viewport: () => resource.viewport(),
       urlPolicy: policy,
       pinnedNavigationTransport: transport,
+      diagnostic: ({ phase, code }) => {
+        record(`browser control phase=${phase} code=${code}`)
+      },
     })
     return Promise.resolve(Object.freeze({
       semantic,
@@ -851,6 +854,17 @@ ipcMain.handle('desktop:workbench-browser-show', async (event, value: unknown) =
   const snapshot = await workbenchBrowser.show(value)
   workbenchBrowserBounds = value
   return snapshot
+})
+
+ipcMain.handle('desktop:workbench-browser-layout', async (event, value: unknown) => {
+  if (!isHarnessSender(event) || !isDesktopBrowserBounds(value) || workbenchBrowser === undefined) {
+    throw new Error('Untrusted workbench Browser request.')
+  }
+  workbenchBrowserBounds = value
+  await workbenchBrowser.layout(value)
+  if (nativeWindow !== undefined && !nativeWindow.isDestroyed()) {
+    browserResources.layoutMounted(agentBrowserBounds(nativeWindow))
+  }
 })
 
 ipcMain.handle('desktop:workbench-browser-hide', async (event) => {

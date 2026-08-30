@@ -25,6 +25,8 @@ export interface NativeApprovalDialogOptions {
   readonly cancelId: 0
   readonly defaultId: 0
   readonly noLink: true
+  /** Electron closes the native sheet when the owning request becomes terminal. */
+  readonly signal: AbortSignal
 }
 
 export interface NativeApprovalDialog {
@@ -251,7 +253,7 @@ function scopeKey(scope: NativeApprovalScope): string {
   return parts.join('')
 }
 
-function challengeOptions(scope: NativeApprovalScope): NativeApprovalDialogOptions {
+function challengeOptions(scope: NativeApprovalScope, signal: AbortSignal): NativeApprovalDialogOptions {
   const noun = scope.purpose === 'lease' ? 'control session' : 'browser action'
   let fingerprint = ''
   if (scope.purpose === 'browser-action') {
@@ -267,6 +269,7 @@ function challengeOptions(scope: NativeApprovalScope): NativeApprovalDialogOptio
     cancelId: 0,
     defaultId: 0,
     noLink: true,
+    signal,
   })
 }
 
@@ -351,6 +354,7 @@ export class NativeApprovalCoordinator {
       resolveResult(result)
     }
     let cleanup = (): void => undefined
+    const dialogController = new AbortController()
     const pending: PendingApproval = {
       scope,
       promise,
@@ -358,6 +362,7 @@ export class NativeApprovalCoordinator {
       settle,
       invalidate: () => {
         pending.invalidated = true
+        dialogController.abort()
         cleanup()
         pending.settle('UNAVAILABLE')
       },
@@ -395,7 +400,10 @@ export class NativeApprovalCoordinator {
         })
         if (signal.aborted) invalidate()
       }
-      const dialogResult = this.dependencies.dialog.showMessageBox(ownerWindow, challengeOptions(scope))
+      const dialogResult = this.dependencies.dialog.showMessageBox(
+        ownerWindow,
+        challengeOptions(scope, dialogController.signal),
+      )
       void Promise.resolve(dialogResult).then(async (result) => {
         if (result.response !== 1) {
           finish('DENIED')
