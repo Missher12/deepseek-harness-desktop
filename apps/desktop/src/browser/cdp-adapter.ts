@@ -177,7 +177,6 @@ const ACTIONABLE_ROLES = new Set([
 ])
 const EDITABLE_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton'])
 const SELECTABLE_ROLES = new Set(['combobox', 'listbox'])
-const MATERIAL_TREE_EVENTS = new Set(['Accessibility.nodesUpdated', 'DOM.documentUpdated'])
 const PNG_SIGNATURE = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
 const TRANSFER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 const utf8 = new TextEncoder()
@@ -362,8 +361,10 @@ export class CdpBrowserAdapter {
     this.attachedByUs = false
     this.invalidate()
   }
-  private readonly debuggerMessage: Listener = (_event, method) => {
-    if (typeof method === 'string' && MATERIAL_TREE_EVENTS.has(method)) this.invalidate('material')
+  private readonly debuggerMessage: Listener = (_event, method, params) => {
+    const materialReferenceChanged = method === 'DOM.documentUpdated'
+      || (method === 'Accessibility.nodesUpdated' && this.accessibilityUpdateTouchesReference(params))
+    if (materialReferenceChanged) this.invalidate('material')
   }
   private readonly guardNavigation: Listener = (event, url) => {
     if (typeof url !== 'string') {
@@ -441,6 +442,7 @@ export class CdpBrowserAdapter {
     signal?: AbortSignal,
   ): Promise<AgentBrowserSnapshotEnvelope> {
     await this.runDiagnosticStage('start', async () => { await this.start(signal) })
+    this.references.clear()
     const startedAt = this.now()
     const hardEpoch = this.hardEpoch
     let failure: unknown
@@ -1344,6 +1346,20 @@ export class CdpBrowserAdapter {
 
   private prevent(event: unknown): void {
     if (hasPreventDefault(event)) event.preventDefault()
+  }
+
+  private accessibilityUpdateTouchesReference(value: unknown): boolean {
+    const source = record(value)
+    if (!Array.isArray(source?.nodes)) return true
+    if (this.references.size === 0) return false
+    const bindings = [...this.references.values()]
+    for (const raw of source.nodes) {
+      const changed = axNode(raw)
+      if (changed === undefined) return true
+      if (bindings.some(binding => binding.axNodeId === changed.nodeId
+        || binding.backendDOMNodeId === changed.backendDOMNodeId)) return true
+    }
+    return false
   }
 
   private invalidate(kind: 'hard' | 'material' = 'hard'): void {

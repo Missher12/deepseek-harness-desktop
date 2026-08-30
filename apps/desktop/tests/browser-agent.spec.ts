@@ -350,6 +350,35 @@ describe('semantic Agent browser adapter', () => {
     expect(navigatingRoots).toBe(1)
   })
 
+  it('ignores identified AX updates that do not touch a published semantic ref', async () => {
+    const contents = new FakeWebContents()
+    installTree(contents, [buttonNode()])
+    let roots = 0
+    contents.debugger.handlers.set('Accessibility.getRootAXNode', () => {
+      roots += 1
+      contents.debugger.emitMessage('Accessibility.nodesUpdated', {
+        nodes: [{
+          nodeId: `unrelated-${roots}`,
+          backendDOMNodeId: 9_000 + roots,
+          role: { value: 'generic' },
+          name: { value: 'rotating decoration' },
+        }],
+      })
+      return { node: { nodeId: 'root', role: { value: 'RootWebArea' }, childIds: ['children'] } }
+    })
+
+    const adapter = adapterFor(contents)
+    const snapshot = await adapter.snapshot({ includeImage: false })
+    const ref = snapshot.result.refs[0]?.ref
+    if (ref === undefined) throw new Error('expected a semantic ref')
+    contents.debugger.emitMessage('Accessibility.nodesUpdated', {
+      nodes: [buttonNode(99, 'Unrelated')],
+    })
+
+    await expect(adapter.act({ kind: 'click', ref })).resolves.toMatchObject({ acted: true })
+    expect(roots).toBeGreaterThan(1)
+  })
+
   it('retries the renderer-sensitive debugger handshake exactly once without reattaching', async () => {
     vi.useFakeTimers()
     try {
