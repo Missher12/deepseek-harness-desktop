@@ -783,10 +783,11 @@ export class CdpBrowserAdapter {
     const queue: { readonly node: AxNode; readonly depth: number }[] = [{ node: root, depth: 0 }]
     let cursor = 0
     let truncated = false
+    const traversalCallLimit = BROWSER_AGENT_LIMITS.cdpCalls - BROWSER_AGENT_LIMITS.actionableNodes
     while (cursor < queue.length) {
       const entry = queue[cursor++]
       if (entry === undefined || entry.depth >= BROWSER_AGENT_LIMITS.depth || entry.node.childIds.length === 0) continue
-      if (budget.calls >= BROWSER_AGENT_LIMITS.cdpCalls) {
+      if (budget.calls >= traversalCallLimit) {
         truncated = true
         break
       }

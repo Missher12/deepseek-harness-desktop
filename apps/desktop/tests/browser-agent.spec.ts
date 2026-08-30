@@ -543,6 +543,7 @@ describe('semantic Agent browser adapter', () => {
     installTree(callContents, branchNodes)
     const callBounded = await adapterFor(callContents).snapshot({ includeImage: false })
     expect(callBounded.result.semanticText).toContain('[Partial snapshot:')
+    expect(callBounded.result.refs.length).toBeGreaterThan(0)
     expect(callContents.debugger.calls.filter(call => call.method !== 'Page.setInterceptFileChooserDialog'
       && call.method !== 'Accessibility.enable' && call.method !== 'DOM.enable'
       && call.method !== 'Overlay.enable').length)
