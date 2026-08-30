@@ -55,6 +55,7 @@ describe('PromptRail presentation', () => {
 
   it('subtracts the measured composer stack from the actual conversation viewport', () => {
     const track = ruleBlock('.promptRailTrack')
+    expect(track).toContain('right: calc(100% - 4px);')
     expect(track).toContain('var(--dsh-composer-height')
     expect(track).toContain('var(--dsh-conversation-viewport-height')
     expect(track).not.toContain('100dvh')

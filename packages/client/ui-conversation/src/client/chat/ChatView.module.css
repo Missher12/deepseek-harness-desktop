@@ -64,7 +64,9 @@
 
 .promptRailTrack {
   position: absolute;
-  right: calc(100% + 12px);
+  /* Keep the ruler slightly inside the transcript gutter so narrow split
+     views do not pin it flush against the window or sidebar seam. */
+  right: calc(100% - 4px);
   width: 30px;
   /* The rail lives above the sticky composer. Subtract the live measured
      composer stack so its end tooltip cannot paint across the input card. */
