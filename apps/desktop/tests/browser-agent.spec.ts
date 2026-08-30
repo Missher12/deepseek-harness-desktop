@@ -2,6 +2,10 @@ import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  encodeJsonFrame,
+  RequestId,
+} from '@deepseek-ai/dsh-desktop-control-protocol'
+import {
   AgentBrowserError,
   BROWSER_AGENT_LIMITS,
   type AgentBrowserRef,
@@ -641,6 +645,14 @@ describe('semantic Agent browser adapter', () => {
     expect(snapshot.result.refs.map(ref => ref.name)).toEqual(expect.arrayContaining(['发布动态', '发布']))
     expect(new TextEncoder().encode(JSON.stringify(snapshot.result)).byteLength)
       .toBeLessThanOrEqual(BROWSER_AGENT_LIMITS.encodedJsonBytes)
+    expect(() => encodeJsonFrame({
+      protocolVersion: 1,
+      messageKind: 'response',
+      responseKind: 'ok',
+      requestKind: 'browser.snapshot',
+      requestId: RequestId('00000000-0000-4000-8000-000000000001'),
+      result: snapshot.result,
+    })).not.toThrow()
   })
 
   it('returns a successful bounded loading wait when no completion event arrives', async () => {

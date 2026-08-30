@@ -1,3 +1,5 @@
+import { PROTOCOL_LIMITS } from '@deepseek-ai/dsh-desktop-control-protocol'
+
 export interface DesktopBrowserBounds { x: number; y: number; width: number; height: number }
 
 /** Persistent signed-in partition retained exclusively by the human Workbench browser. */
@@ -18,7 +20,7 @@ export const BROWSER_AGENT_LIMITS = Object.freeze({
   accessibilityRetryMs: 500,
   cleanupMs: 2_000,
   wallMs: 10_000,
-  actionableNodes: 800,
+  actionableNodes: PROTOCOL_LIMITS.maxSemanticRefs,
   semanticUtf8Bytes: 49_152,
   encodedJsonBytes: 65_536,
   pngBytes: 4_194_304,
