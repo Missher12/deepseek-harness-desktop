@@ -32,9 +32,10 @@ const tmp = (): string => mkdtempSync(join(tmpdir(), 'dsh-profile-'))
 function stageInstallation(
   bundles: Record<string, { patch?: string; deps?: Record<string, string> }>,
   appName = 'dsh-app',
+  appDirName = 'app',
 ): string {
   const root = tmp()
-  const appDir = join(root, 'app')
+  const appDir = join(root, appDirName)
   mkdirSync(join(appDir, 'node_modules'), { recursive: true })
   const appDeps: Record<string, string> = {}
   for (const [name, spec] of Object.entries(bundles)) {
@@ -691,6 +692,21 @@ describe('healProfilesModuleFallback', () => {
     } finally {
       delete (process as NodeJS.Process & { pkg?: unknown }).pkg
     }
+  })
+
+  it('writes real ESM proxies for an Electron app.asar installation', async () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } }, 'dsh-app', 'app.asar')
+    const home = tmp()
+
+    await healProfilesModuleFallback({ installAnchor: anchor, home })
+
+    const proxy = join(home, 'profiles', 'node_modules', 'bundle-a')
+    expect(lstatSync(proxy).isDirectory()).toBe(true)
+    const proxyManifest = JSON.parse(readFileSync(join(proxy, 'package.json'), 'utf8')) as {
+      dsh: { moduleFallback: { targets: Record<string, string> } }
+    }
+    expect(proxyManifest.dsh.moduleFallback.targets['.']).toContain('/app.asar/node_modules/bundle-a/index.js')
+    await expect(import(join(proxy, 'entry-0.js'))).resolves.toMatchObject({ packageName: 'bundle-a' })
   })
 
   it('resolves import-only exports from each package installation', async () => {

@@ -343,9 +343,10 @@ interface ModuleProxyRecord {
   dsh?: { moduleFallback?: { targets?: unknown } }
 }
 
-/** Return whether the process reads application modules from pkg's virtual filesystem. */
-function isPackagedExecutable(): boolean {
+/** Return whether the installation reads application modules from a packaged virtual filesystem. */
+function isPackagedInstallation(installAnchor: string): boolean {
   return (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
+    || /(?:^|[\\/])app\.asar(?:[\\/]|$)/u.test(installAnchor)
 }
 
 /** Resolve one available explicit package export under Node ESM import conditions. */
@@ -520,7 +521,7 @@ function resolveModuleFallbackEntries(
       queue.push({ anchor: manifestPath, manifest: readModuleFallbackManifest(manifestPath) })
     }
   }
-  const entries = !isPackagedExecutable()
+  const entries = !isPackagedInstallation(installAnchor)
     ? [...links].map(([packageName, packageDir]) => ({ kind: 'symlink' as const, packageName, packageDir }))
     : [...links].flatMap(([packageName, packageDir]) => {
       const source = packageProxySource(packageName, packageDir)
