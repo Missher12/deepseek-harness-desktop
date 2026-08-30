@@ -79,7 +79,7 @@ describe('official API Session Agent lookup', () => {
 
     const first = agents.resolveAgent(meta.id)
     const second = agents.resolveAgent(meta.id)
-    gate.resolve()
+    gate.resolve(undefined)
 
     await expect(Promise.all([first, second])).resolves.toEqual([{ agent: live }, { agent: live }])
     expect(observeSession).toHaveBeenCalledOnce()

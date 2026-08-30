@@ -186,10 +186,11 @@ describe('SessionProjectionCache write policy', () => {
       session = inner.sessions.create(SessionId('detach'))
     }, { inject: ['sessions'] }))
     if (session === undefined) throw new Error('session was not created')
-    mark(session, ['live'])
+    const liveSession = session
+    mark(liveSession, ['live'])
     await owner.dispose()
     await vi.waitFor(async () => {
-      expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['live'] })
+      expect((await storedRows(root, liveSession.id))?.['cache-test/marks']?.val).toEqual({ marks: ['live'] })
     })
   })
 
