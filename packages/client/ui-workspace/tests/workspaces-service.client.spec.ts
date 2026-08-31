@@ -257,6 +257,75 @@ describe('UiWorkspaceService', () => {
       .rejects.toThrow('uiWorkspace.connectWorkspace: unknown workspace ghost')
   })
 
+  it('reuses an unaccounted blank session or creates one without a Workspace', async () => {
+    const accounted = sid('accounted')
+    const loose = sid('loose')
+    const b = bench({
+      workspaces: workspaceState([workspace('alpha', [accounted])]),
+      sessions: sessionState([
+        summary('accounted', { blank: true, cwd: '/w/alpha' }),
+        summary('subagent', {
+          blank: true,
+          cwd: '/w/alpha',
+          parentId: accounted,
+          origin: 'subagent',
+        }),
+        summary('loose', { blank: true, cwd: '/Users/example' }),
+      ]),
+    })
+
+    await expect(b.uiWorkspace.connectNoProject()).resolves.toBe(loose)
+    expect(b.sessions.create).not.toHaveBeenCalled()
+
+    b.workspaces.list.update(state => ({ ...state, archivedSessionIds: [loose] }))
+    const created = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockImplementation(() => created.promise)
+    const first = b.uiWorkspace.connectNoProject()
+    const second = b.uiWorkspace.connectNoProject()
+    expect(b.sessions.create).toHaveBeenCalledOnce()
+    expect(b.sessions.create).toHaveBeenCalledWith({})
+    created.resolve(sid('fresh-loose'))
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      sid('fresh-loose'), sid('fresh-loose'),
+    ])
+  })
+
+  it('does not reuse a loose blank before both ownership baselines are ready', async () => {
+    const fresh = sid('fresh-no-project')
+    const b = bench({
+      workspaces: workspaceState([], [], 'pending'),
+      sessions: sessionState([summary('loose-pending', { blank: true })], undefined, 'pending'),
+    })
+    b.sessions.create.mockResolvedValueOnce(fresh)
+
+    await expect(b.uiWorkspace.connectNoProject()).resolves.toBe(fresh)
+    expect(b.sessions.create).toHaveBeenCalledOnce()
+    expect(b.sessions.create).toHaveBeenCalledWith({})
+  })
+
+  it('does not reuse a Workspace blank while its membership projection is delayed', async () => {
+    const current = summary('current', { blank: false })
+    const workspaceTarget = sid('workspace-provisional')
+    const noProjectTarget = sid('fresh-no-project')
+    const b = bench({
+      workspaces: workspaceState([workspace('alpha')]),
+      sessions: sessionState([current], current.id),
+    })
+    b.sessions.create
+      .mockResolvedValueOnce(workspaceTarget)
+      .mockResolvedValueOnce(noProjectTarget)
+
+    await expect(b.uiWorkspace.connectWorkspace(wid('alpha'))).resolves.toBe(workspaceTarget)
+    b.sessions.list.set(sessionState([
+      current,
+      summary('workspace-provisional', { blank: true, cwd: '/w/alpha' }),
+    ], current.id))
+
+    await expect(b.uiWorkspace.connectNoProject()).resolves.toBe(noProjectTarget)
+    expect(b.sessions.create).toHaveBeenNthCalledWith(1, { workspaceId: wid('alpha') })
+    expect(b.sessions.create).toHaveBeenNthCalledWith(2, {})
+  })
+
   it('targets an explicit, current-session, then recent Workspace and reports failed starts', async () => {
     const current = summary('current', { cwd: '/w/current-home', updatedAt: 1 })
     const recent = summary('recent', { cwd: '/w/recent-home', updatedAt: 2 })

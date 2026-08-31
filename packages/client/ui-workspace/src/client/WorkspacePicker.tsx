@@ -247,7 +247,9 @@ export function WorkspacePicker({
   anchorRef,
   useWorkspaces,
   selectedId,
+  noProjectSelected,
   onPick,
+  onPickNoProject,
   onClose,
   createWorkspace,
   useDirectoryFlow,
@@ -264,7 +266,9 @@ export function WorkspacePicker({
       useDirectoryFlow={useDirectoryFlow}
       renderDirectoryFlow={owner => renderSlot('conversation.hero.workspace.directoryFlow', owner)}
       selectedId={selectedId}
+      noProjectSelected={noProjectSelected}
       onPick={onPick}
+      onPickNoProject={onPickNoProject}
       onClose={onClose}
     />
   )

@@ -216,6 +216,8 @@ export type ConvViewProps = PropsRuntime<'conversation.view'>
 export interface ConversationInjected {
   /** Connect and open a blank Session in the selected Workspace. */
   selectWorkspace: (workspaceId: WorkspaceId) => Promise<void>
+  /** Connect and open a top-level blank Session outside every Workspace. */
+  selectNoProject: () => Promise<void>
   /** Session-addressed composer block source, or the stable absent source. */
   hooks: { composerBlock: ObservableSnapshot<ComposerBlock | undefined> }
 }
@@ -363,6 +365,10 @@ export interface EmptyWorkspaceOwnerProps {
   anchorRef?: RefObject<HTMLElement>
   /** Currently selected Workspace, when available. */
   selectedId?: WorkspaceId | undefined
+  /** The current blank Session is outside every Workspace. */
+  noProjectSelected?: boolean | undefined
   onPick: (workspaceId: WorkspaceId) => void
+  /** Explicitly choose a Session outside every Workspace. */
+  onPickNoProject: () => void
   onClose: () => void
 }

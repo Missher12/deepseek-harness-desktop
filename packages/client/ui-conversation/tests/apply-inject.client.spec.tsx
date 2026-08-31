@@ -15,6 +15,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { createConversationStore } from '../src/client/stores.ts'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
+import type { DraftAttachmentId } from '../src/client/contract/input.ts'
 
 usePinnedBrowserLanguages('zh-CN')
 
@@ -35,7 +36,8 @@ async function bench() {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const connectWorkspace = vi.fn(async () => ROOT)
-  runtime.ctx.provide('uiWorkspace', { connectWorkspace } as never)
+  const connectNoProject = vi.fn(async () => ROOT)
+  runtime.ctx.provide('uiWorkspace', { connectWorkspace, connectNoProject } as never)
   const sessionFake = sessionFakeFor()
   await runtime.sessions.add({
     id: ROOT,
@@ -78,7 +80,7 @@ async function bench() {
     conversationApi(id).injected.hooks.conversationViews
   return {
     runtime, feature, slots: runtime.slots, entryOf, conversationApi, residentApi, composerApi,
-    inputApi, viewSource, sessionFake, connectWorkspace,
+    inputApi, viewSource, sessionFake, connectWorkspace, connectNoProject,
   }
 }
 
@@ -176,6 +178,58 @@ describe('Conversation inject API', () => {
     expect(b.runtime.sessions.calls).toContainEqual({ method: 'open', args: [other] })
     expect(state.getSnapshot().draft).toBe('')
     expect(b.inputApi(other).state.getSnapshot().draft).toBe('carry me')
+    await b.runtime.dispose()
+  })
+
+  it('opens an unaccounted blank Session and carries the draft', async () => {
+    const b = await bench()
+    const other = 'loose-1' as SessionId
+    await b.runtime.sessions.add({ id: other }, { current: false })
+    b.connectNoProject.mockResolvedValueOnce(other)
+    const { state, actions } = b.inputApi(ROOT)
+    actions.setDraft('carry outside workspaces')
+
+    await b.residentApi(ROOT).selectNoProject()
+
+    expect(b.connectNoProject).toHaveBeenCalledOnce()
+    expect(b.runtime.sessions.calls).toContainEqual({ method: 'open', args: [other] })
+    expect(state.getSnapshot().draft).toBe('')
+    expect(b.inputApi(other).state.getSnapshot().draft).toBe('carry outside workspaces')
+    await b.runtime.dispose()
+  })
+
+  it('honors only the latest target choice and moves the draft payload once', async () => {
+    const b = await bench()
+    const workspaceTarget = 'workspace-late' as SessionId
+    const noProjectTarget = 'no-project-latest' as SessionId
+    await b.runtime.sessions.add({ id: workspaceTarget }, { current: false })
+    await b.runtime.sessions.add({ id: noProjectTarget }, { current: false })
+
+    const workspace = Promise.withResolvers<SessionId>()
+    const noProject = Promise.withResolvers<SessionId>()
+    b.connectWorkspace.mockImplementationOnce(() => workspace.promise)
+    b.connectNoProject.mockImplementationOnce(() => noProject.promise)
+
+    const attachment = 'attachment-1' as DraftAttachmentId
+    const rootInput = b.inputApi(ROOT)
+    rootInput.actions.setDraft('follow the latest choice')
+    expect(rootInput.actions.addImages([attachment])).toBe(true)
+
+    const first = b.residentApi(ROOT).selectWorkspace('workspace-1' as WorkspaceId)
+    const latest = b.residentApi(ROOT).selectNoProject()
+    noProject.resolve(noProjectTarget)
+    await latest
+    workspace.resolve(workspaceTarget)
+    await first
+
+    expect(b.runtime.sessions.calls.filter(call => call.method === 'open')).toEqual([
+      { method: 'open', args: [noProjectTarget] },
+    ])
+    expect(rootInput.state.getSnapshot()).toMatchObject({ draft: '', imageIds: [] })
+    expect(b.inputApi(noProjectTarget).state.getSnapshot()).toMatchObject({
+      draft: 'follow the latest choice', imageIds: [attachment],
+    })
+    expect(b.inputApi(workspaceTarget).state.getSnapshot()).toMatchObject({ draft: '', imageIds: [] })
     await b.runtime.dispose()
   })
 

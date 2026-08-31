@@ -73,6 +73,7 @@ interface WorkspaceNavigation {
   connectWorkspace(
     workspaceId: Parameters<ConversationInjected['selectWorkspace']>[0],
   ): Promise<SessionId>
+  connectNoProject(): Promise<SessionId>
 }
 
 /** Optional trigger registry, addressed structurally to avoid a package-reference cycle. */
@@ -199,6 +200,7 @@ export function apply(ctx: Context): void {
     },
   })
 
+  let navigationGeneration = 0
   const registerConversationRoot = () => slots.register({
     name: 'conversation',
     locale: NS,
@@ -216,12 +218,8 @@ export function apply(ctx: Context): void {
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
     },
-    inject: (sessionId: SessionId | undefined): ConversationInjected => ({
-      hooks: {
-        composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId),
-      },
-      selectWorkspace: async (workspaceId) => {
-        const nextId = await workspaceNavigation.connectWorkspace(workspaceId)
+    inject: (sessionId: SessionId | undefined): ConversationInjected => {
+      const openTarget = (nextId: SessionId): void => {
         if (sessionId !== undefined && nextId !== sessionId) {
           const from = inputHub.shell(sessionId)
           const draft = from.snapshot.draft
@@ -238,8 +236,23 @@ export function apply(ctx: Context): void {
           }
         }
         sessions.open(nextId)
-      },
-    }),
+      }
+      return {
+        hooks: {
+          composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId),
+        },
+        selectWorkspace: async (workspaceId) => {
+          const generation = ++navigationGeneration
+          const nextId = await workspaceNavigation.connectWorkspace(workspaceId)
+          if (generation === navigationGeneration) openTarget(nextId)
+        },
+        selectNoProject: async () => {
+          const generation = ++navigationGeneration
+          const nextId = await workspaceNavigation.connectNoProject()
+          if (generation === navigationGeneration) openTarget(nextId)
+        },
+      }
+    },
   }, ConversationRoot)
 
   const registerConversationSession = () => slots.register({

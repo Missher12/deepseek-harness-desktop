@@ -20,6 +20,11 @@ export interface UiWorkspace {
    */
   connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>
   /**
+   * Resolve a reusable or newly created blank Session outside every Workspace.
+   * @returns an unarchived top-level blank Session with no Workspace accounting.
+   */
+  connectNoProject(): Promise<SessionId>
+  /**
    * Start a New Session flow and navigate to its Session.
    * @param workspaceId - explicit target; absent inherits the current or most recent Workspace.
    */
@@ -70,6 +75,8 @@ export class DirectoryBrowseError extends Error {
 /** Implements Workspace archive and directory UI operations. */
 class UiWorkspaceService extends Service implements UiWorkspace {
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
+  private readonly provisionalAccounted = new Set<SessionId>()
+  private connectingNoProject: Promise<SessionId> | undefined
 
   /**
    * @param ctx - Client root Context.
@@ -106,8 +113,40 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     }
 
     const attempt = this.sessions.create({ workspaceId })
+      .then((sessionId) => {
+        this.provisionalAccounted.add(sessionId)
+        return sessionId
+      })
       .finally(() => { this.connecting.delete(workspaceId) })
     this.connecting.set(workspaceId, attempt)
+    return attempt
+  }
+
+  async connectNoProject(): Promise<SessionId> {
+    const workspaces = this.workspaces.list.getSnapshot()
+    const accounted = new Set(workspaces.items.flatMap(item => item.sessionIds))
+    const sessions = this.sessions.list.getSnapshot()
+    for (const id of this.provisionalAccounted) {
+      if (accounted.has(id)) this.provisionalAccounted.delete(id)
+    }
+    if (workspaces.phase === 'ready' && sessions.phase === 'ready') {
+      const archived = new Set(workspaces.archivedSessionIds)
+      for (const id of sessions.ids) {
+        const summary = sessions.byId[id]
+        if (summary?.blank === true
+          && summary.parentId === undefined
+          && summary.origin !== 'subagent'
+          && !accounted.has(id)
+          && !this.provisionalAccounted.has(id)
+          && !archived.has(id)) return id
+      }
+    }
+    if (this.connectingNoProject !== undefined) return this.connectingNoProject
+    const attempt = this.sessions.create({})
+      .finally(() => {
+        if (this.connectingNoProject === attempt) this.connectingNoProject = undefined
+      })
+    this.connectingNoProject = attempt
     return attempt
   }
 
