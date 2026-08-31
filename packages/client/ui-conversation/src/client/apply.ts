@@ -244,12 +244,14 @@ export function apply(ctx: Context): void {
         selectWorkspace: async (workspaceId) => {
           const generation = ++navigationGeneration
           const nextId = await workspaceNavigation.connectWorkspace(workspaceId)
-          if (generation === navigationGeneration) openTarget(nextId)
+          if (generation === navigationGeneration
+            && sessions.list.getSnapshot().current === sessionId) openTarget(nextId)
         },
         selectNoProject: async () => {
           const generation = ++navigationGeneration
           const nextId = await workspaceNavigation.connectNoProject()
-          if (generation === navigationGeneration) openTarget(nextId)
+          if (generation === navigationGeneration
+            && sessions.list.getSnapshot().current === sessionId) openTarget(nextId)
         },
       }
     },

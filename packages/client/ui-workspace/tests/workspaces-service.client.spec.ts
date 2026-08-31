@@ -326,6 +326,61 @@ describe('UiWorkspaceService', () => {
     expect(b.sessions.create).toHaveBeenNthCalledWith(2, {})
   })
 
+  it('reuses a formerly accounted blank after its Workspace is deleted', async () => {
+    const current = summary('current', { blank: false })
+    const formerlyAccounted = sid('formerly-accounted')
+    const b = bench({
+      workspaces: workspaceState([workspace('alpha')]),
+      sessions: sessionState([current], current.id),
+    })
+    b.sessions.create.mockResolvedValueOnce(formerlyAccounted)
+
+    await expect(b.uiWorkspace.connectWorkspace(wid('alpha'))).resolves.toBe(formerlyAccounted)
+    b.sessions.list.set(sessionState([
+      current,
+      summary('formerly-accounted', { blank: true, cwd: '/w/alpha' }),
+    ], current.id))
+    b.workspaces.list.set(workspaceState([workspace('alpha', [formerlyAccounted])]))
+    b.workspaces.list.set(workspaceState([]))
+
+    await expect(b.uiWorkspace.connectNoProject()).resolves.toBe(formerlyAccounted)
+    expect(b.sessions.create).toHaveBeenCalledOnce()
+  })
+
+  it('reuses its explicit no-project creation across sequential pending selections', async () => {
+    const created = sid('created-while-pending')
+    const b = bench()
+    b.sessions.create.mockResolvedValue(created)
+
+    await expect(b.uiWorkspace.connectNoProject()).resolves.toBe(created)
+    await expect(b.uiWorkspace.connectNoProject()).resolves.toBe(created)
+    expect(b.sessions.create).toHaveBeenCalledOnce()
+    expect(b.sessions.create).toHaveBeenCalledWith({})
+  })
+
+  it('forgets an explicit no-project Session after its observed deletion', async () => {
+    const current = summary('current', { blank: false })
+    const deleted = sid('deleted-no-project')
+    const replacement = sid('replacement-no-project')
+    const b = bench({
+      workspaces: workspaceState([]),
+      sessions: sessionState([current], current.id),
+    })
+    b.sessions.create
+      .mockResolvedValueOnce(deleted)
+      .mockResolvedValueOnce(replacement)
+
+    await expect(b.uiWorkspace.connectNoProject()).resolves.toBe(deleted)
+    b.sessions.list.set(sessionState([
+      current,
+      summary('deleted-no-project', { blank: true }),
+    ], current.id))
+    b.sessions.list.set(sessionState([current], current.id))
+
+    await expect(b.uiWorkspace.connectNoProject()).resolves.toBe(replacement)
+    expect(b.sessions.create).toHaveBeenCalledTimes(2)
+  })
+
   it('targets an explicit, current-session, then recent Workspace and reports failed starts', async () => {
     const current = summary('current', { cwd: '/w/current-home', updatedAt: 1 })
     const recent = summary('recent', { cwd: '/w/recent-home', updatedAt: 2 })

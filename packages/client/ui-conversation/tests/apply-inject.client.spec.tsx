@@ -43,7 +43,7 @@ async function bench() {
     id: ROOT,
     summary: { title: 'R', displayTitle: 'R', cwd: '/proj' },
     session: sessionFake,
-  }, { current: false })
+  })
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
@@ -233,9 +233,39 @@ describe('Conversation inject API', () => {
     await b.runtime.dispose()
   })
 
+  it('does not reclaim focus or draft payload after an external Session open', async () => {
+    const b = await bench()
+    const pickerTarget = 'picker-late' as SessionId
+    const sidebarTarget = 'sidebar-latest' as SessionId
+    await b.runtime.sessions.add({ id: pickerTarget }, { current: false })
+    await b.runtime.sessions.add({ id: sidebarTarget }, { current: false })
+
+    const pending = Promise.withResolvers<SessionId>()
+    b.connectWorkspace.mockImplementationOnce(() => pending.promise)
+    const attachment = 'attachment-external-open' as DraftAttachmentId
+    const rootInput = b.inputApi(ROOT)
+    rootInput.actions.setDraft('keep this with the original session')
+    expect(rootInput.actions.addImages([attachment])).toBe(true)
+
+    const selection = b.residentApi(ROOT).selectWorkspace('workspace-late' as WorkspaceId)
+    b.runtime.sessions.open(sidebarTarget)
+    pending.resolve(pickerTarget)
+    await selection
+
+    expect(b.runtime.sessions.calls.filter(call => call.method === 'open')).toEqual([
+      { method: 'open', args: [sidebarTarget] },
+    ])
+    expect(rootInput.state.getSnapshot()).toMatchObject({
+      draft: 'keep this with the original session', imageIds: [attachment],
+    })
+    expect(b.inputApi(pickerTarget).state.getSnapshot()).toMatchObject({ draft: '', imageIds: [] })
+    await b.runtime.dispose()
+  })
+
   it('supports no-Session navigation and propagates Workspace connection failure', async () => {
     const b = await bench()
     b.connectWorkspace.mockResolvedValueOnce(ROOT)
+    b.runtime.sessions.clear()
     await b.residentApi(undefined).selectWorkspace('workspace-0' as WorkspaceId)
     expect(b.runtime.sessions.calls).toContainEqual({ method: 'open', args: [ROOT] })
 

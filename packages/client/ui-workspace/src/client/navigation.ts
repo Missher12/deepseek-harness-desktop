@@ -76,6 +76,8 @@ export class DirectoryBrowseError extends Error {
 class UiWorkspaceService extends Service implements UiWorkspace {
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
   private readonly provisionalAccounted = new Set<SessionId>()
+  private provisionalNoProject: SessionId | undefined
+  private provisionalNoProjectObserved = false
   private connectingNoProject: Promise<SessionId> | undefined
 
   /**
@@ -115,6 +117,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const attempt = this.sessions.create({ workspaceId })
       .then((sessionId) => {
         this.provisionalAccounted.add(sessionId)
+        this.reconcileProvisionalOwnership()
         return sessionId
       })
       .finally(() => { this.connecting.delete(workspaceId) })
@@ -126,9 +129,8 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const workspaces = this.workspaces.list.getSnapshot()
     const accounted = new Set(workspaces.items.flatMap(item => item.sessionIds))
     const sessions = this.sessions.list.getSnapshot()
-    for (const id of this.provisionalAccounted) {
-      if (accounted.has(id)) this.provisionalAccounted.delete(id)
-    }
+    this.reconcileProvisionalOwnership(workspaces, sessions)
+    if (this.provisionalNoProject !== undefined) return this.provisionalNoProject
     if (workspaces.phase === 'ready' && sessions.phase === 'ready') {
       const archived = new Set(workspaces.archivedSessionIds)
       for (const id of sessions.ids) {
@@ -143,6 +145,12 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     }
     if (this.connectingNoProject !== undefined) return this.connectingNoProject
     const attempt = this.sessions.create({})
+      .then((sessionId) => {
+        this.provisionalNoProject = sessionId
+        this.provisionalNoProjectObserved = false
+        this.reconcileProvisionalOwnership()
+        return sessionId
+      })
       .finally(() => {
         if (this.connectingNoProject === attempt) this.connectingNoProject = undefined
       })
@@ -198,6 +206,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     let disposed = false
     const reconcile = (): void => {
       if (disposed) return
+      this.reconcileProvisionalOwnership()
       if (this.clearArchivedCurrent()) return
       if (initial !== 'waiting') return
       const workspace = this.workspaces.list.getSnapshot()
@@ -245,6 +254,37 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       || !this.workspaces.list.getSnapshot().archivedSessionIds.includes(current)) return false
     this.sessions.clear()
     return true
+  }
+
+  private reconcileProvisionalOwnership(
+    workspaces = this.workspaces.list.getSnapshot(),
+    sessions = this.sessions.list.getSnapshot(),
+  ): void {
+    const accounted = new Set(workspaces.items.flatMap(item => item.sessionIds))
+    for (const id of this.provisionalAccounted) {
+      if (accounted.has(id)) this.provisionalAccounted.delete(id)
+    }
+
+    const noProject = this.provisionalNoProject
+    if (noProject === undefined) return
+    const summary = sessions.byId[noProject]
+    if (accounted.has(noProject) || workspaces.archivedSessionIds.includes(noProject)) {
+      this.provisionalNoProject = undefined
+      this.provisionalNoProjectObserved = false
+      return
+    }
+    if (summary === undefined) {
+      if (this.provisionalNoProjectObserved && sessions.phase === 'ready') {
+        this.provisionalNoProject = undefined
+        this.provisionalNoProjectObserved = false
+      }
+      return
+    }
+    this.provisionalNoProjectObserved = true
+    if (!summary.blank || summary.parentId !== undefined || summary.origin === 'subagent') {
+      this.provisionalNoProject = undefined
+      this.provisionalNoProjectObserved = false
+    }
   }
 
 }
