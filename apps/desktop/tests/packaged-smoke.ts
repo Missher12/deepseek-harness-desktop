@@ -521,6 +521,20 @@ async function seedDesktopSmokeAgentPreset(harnessHome: string): Promise<void> {
   ])
 }
 
+async function seedDesktopSmokeSkill(workspace: string): Promise<void> {
+  const skillRoot = join(workspace, '.agents', 'skills', 'desktop-smoke-plugin')
+  await mkdir(skillRoot, { recursive: true })
+  await writeFile(join(skillRoot, 'SKILL.md'), [
+    '---',
+    'name: desktop-smoke-plugin',
+    'description: Packaged @ plugin picker acceptance fixture.',
+    '---',
+    '',
+    '# Desktop smoke plugin',
+    '',
+  ].join('\n'), 'utf8')
+}
+
 /** Whether a native inspection command reported that it found no matching row. */
 export function isCommandNoMatch(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 1
@@ -1325,6 +1339,22 @@ async function exerciseAgentPresets(page: Page): Promise<void> {
   await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
 }
 
+async function exercisePluginPicker(page: Page): Promise<void> {
+  const input = page.locator('[data-composer-input]').first()
+  await input.fill('@desktop-smoke')
+  const menu = page.getByRole('listbox')
+  const option = menu.getByRole('option', { name: /desktop-smoke-plugin/u })
+  await option.waitFor({ state: 'visible', timeout: 15_000 })
+  expect(await menu.locator('[role="presentation"][data-source="plugin"]').innerText())
+    .toMatch(/^(?:Plugins|插件)$/u)
+  expect(await option.locator('svg').count()).toBe(1)
+  await option.click()
+  const chip = page.locator('[data-composer-chip="plugin"]')
+  await chip.waitFor({ state: 'visible', timeout: 15_000 })
+  expect(await chip.innerText()).toContain('desktop-smoke-plugin')
+  await input.fill('')
+}
+
 async function exerciseUsageInsights(
   page: Page,
   platform: NodeJS.Platform,
@@ -1696,6 +1726,7 @@ export async function runPackagedDesktopSmoke(
   await seedDesktopSmokeAgentPreset(harnessHome)
   await seedLegacyExternalBrainProfile(harnessHome)
   const clipboardSeed = await seedWindowsClipboardSmokeState(harnessHome)
+  await seedDesktopSmokeSkill(join(harnessHome, clipboardSeed.activeSessionTitle))
   const providerTripwire = await startProviderTripwire()
   await writeDesktopSmokeModelSettings(harnessHome, providerTripwire.url)
 
@@ -1719,6 +1750,7 @@ export async function runPackagedDesktopSmoke(
     })
     const page = await nativeApp.firstWindow({ timeout: 120_000 })
     const consoleErrors: string[] = []
+    const terminalActionDiagnostics: Promise<string>[] = []
     page.on('console', (message) => {
       if (message.type() === 'error') {
         const source = message.location().url
@@ -1726,6 +1758,12 @@ export async function runPackagedDesktopSmoke(
       }
     })
     page.on('pageerror', error => consoleErrors.push(error.message))
+    page.on('response', (response) => {
+      if (response.status() < 400) return
+      const url = new URL(response.url())
+      if (url.pathname !== '/plugins/dsh-desktop-workbench/terminal/action') return
+      terminalActionDiagnostics.push(response.text().then(body => `${String(response.status())}: ${body}`))
+    })
     await waitForDesktopSurface(page, userData)
     expect(await page.title()).toMatch(/DeepSeek Harness$/u)
     const surfaceText = await page.locator('body').innerText()
@@ -1783,13 +1821,15 @@ export async function runPackagedDesktopSmoke(
         await exerciseWindowsDirectoryPicker(page, harnessHome, userData)
       }
       await exerciseSessionMessenger(page, clipboardSeed, platform)
+      await exercisePluginPicker(page)
       await exerciseComposerAddMenu(page)
       await exerciseDesktopWorkbench(page, platform)
       expect(consoleErrors).toEqual([])
       await exerciseReasoningEffort(page, harnessHome, platform)
     } catch (error) {
+      const terminalDiagnostics = await Promise.all(terminalActionDiagnostics)
       throw new Error(
-        `Packaged smoke: native shared-feature acceptance failed: ${String(error)}\n${await desktopStartupDiagnostic(page, userData)}`,
+        `Packaged smoke: native shared-feature acceptance failed: ${String(error)}\nTerminal action diagnostics: ${JSON.stringify(terminalDiagnostics)}\n${await desktopStartupDiagnostic(page, userData)}`,
         { cause: error },
       )
     }
