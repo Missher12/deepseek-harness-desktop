@@ -72,6 +72,12 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- Version 0.4.11 adds a Codex-style `@` **Plugins** group backed by the
+  current session's real callable skill catalog. Selecting a plugin inserts a
+  structured icon chip while submission converges on the existing `/name`
+  Host execution boundary, preserving approvals, sandboxing, and deterministic
+  skill loading. The existing `/` Skills source, file/session references, and
+  dynamic Cordis plugins remain available.
 - Version 0.4.10 repairs the post-official-sync Desktop regressions found in
   the installed 0.4.9 package. Desktop staging now refuses stale or non-official
   Client artifacts, the setup script always uses the official build profile,

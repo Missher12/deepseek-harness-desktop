@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "desktopVersion": "0.4.10",
+  "desktopVersion": "0.4.11",
   "harnessVersion": "0.1.2-alpha.2",
   "platform": "darwin",
   "arch": "x64",
