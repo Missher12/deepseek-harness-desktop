@@ -77,8 +77,8 @@ These behaviors are Agent contracts, not a security boundary. The current file-s
 Each new built-in preset lives at:
 
 ```text
-apps/cli/config/agent-presets/<id>/preset.yml
-apps/cli/config/agent-presets/<id>/agent.cordis.yml
+packages/preset/agent-presets/presets/<id>/preset.yml
+packages/preset/agent-presets/presets/<id>/agent.cordis.yml
 ```
 
 `preset.yml` contains only the localized shipped display metadata and numeric order. `agent.cordis.yml` is a self-contained composition, consistent with the current no-inheritance design. No persistence schema, gateway method, preload bridge, or React component is added. The existing roster discovers the directories, the current Settings cards display them, and the current new-session chip applies the user's manual selection.

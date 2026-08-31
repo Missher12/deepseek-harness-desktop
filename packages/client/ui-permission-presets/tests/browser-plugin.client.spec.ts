@@ -118,7 +118,7 @@ describe('ui-permission browser plugin', () => {
     expect(again.find(option => option.id === 'workspace-write')?.active).toBe(true)
     expect(again.find(option => option.id === 'read-only')?.detail).toBe('Reads only.')
     // English built-ins use product labels; other kebab-case names title-case.
-    expect(again.map(option => option.label)).toEqual(['Read Only', 'Workspace Write', 'Full access'])
+    expect(again.map(option => option.label)).toEqual(['Read Only', 'Workspace Write', 'Full access (outside workspace)'])
     expect(again.find(option => option.id === 'danger-full-access')?.confirmation).toEqual({
       title: 'Enable Full access?',
       description: accessEn['confirm.description'],
@@ -128,7 +128,7 @@ describe('ui-permission browser plugin', () => {
     })
     b.locale.setLocale('zh')
     const localized = await c.ui.options(proj, new AbortController().signal)
-    expect(localized.map(option => option.label)).toEqual(['仅可查看', '可写入工作区', '完全权限'])
+    expect(localized.map(option => option.label)).toEqual(['仅可查看', '可写入工作区', '完全权限（可写工作区外）'])
     expect(localized.find(option => option.id === 'danger-full-access')?.confirmation).toEqual({
       title: '确认启用完全权限？',
       description: accessZh['confirm.description'],

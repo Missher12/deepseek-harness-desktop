@@ -72,6 +72,22 @@ describe('CI workflow', () => {
     expect(JSON.stringify(workflow)).not.toContain('0.2.1')
   })
 
+  it('defaults the Desktop release tag to the Desktop package version', () => {
+    const workflow = loadWorkflow('.github/workflows/desktop-release.yml')
+    const dispatch = workflowEvent(workflow, 'workflow_dispatch')
+    const desktopPackage: unknown = JSON.parse(
+      readFileSync(resolve(root, 'apps/desktop/package.json'), 'utf8'),
+    )
+    if (!isRecord(dispatch.inputs)
+      || !isRecord(dispatch.inputs.tag)
+      || !isRecord(desktopPackage)
+      || typeof desktopPackage.version !== 'string') {
+      throw new TypeError('Desktop release tag input and Desktop package version must be defined')
+    }
+
+    expect(dispatch.inputs.tag.default).toBe(`desktop-v${desktopPackage.version}`)
+  })
+
   it('derives every Windows Setup path from the Desktop package version', () => {
     const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
     const windows = workflowJob(workflow, 'build-install-smoke')

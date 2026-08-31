@@ -1,3 +1,4 @@
+# Shipped by @deepseek-ai/dsh-agent-presets.
 name: 后端与 API
 description: 处理 API、数据模型、持久化、兼容性、安全边界和集成测试。
 order: 7

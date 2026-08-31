@@ -1,3 +1,4 @@
+# Shipped by @deepseek-ai/dsh-agent-presets.
 name: 故障排查
 description: 先复现并隔离根因，再执行最小且获得授权的修复。
 order: 8

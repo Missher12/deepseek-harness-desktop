@@ -1,3 +1,4 @@
+# Shipped by @deepseek-ai/dsh-agent-presets.
 name: 代码审查
 description: 从正确性、回归、安全和测试完整性审查代码，按严重性报告问题。
 order: 9

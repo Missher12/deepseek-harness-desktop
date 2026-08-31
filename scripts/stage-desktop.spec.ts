@@ -43,6 +43,7 @@ function fakeDependencies(
   marketPackageDirectories: readonly string[] = DEFAULT_MARKET_PACKAGE_DIRECTORIES,
   desktopPatch = VALID_DESKTOP_PATCH,
 ): StageDesktopDependencies & {
+  verifyOfficialClientBuild(root: string): void
   commands: Array<[string, readonly string[]]>
   copies: Array<[string, string]>
   events: string[]
@@ -75,6 +76,7 @@ function fakeDependencies(
     removed,
     validated,
     read,
+    verifyOfficialClientBuild: (root) => { events.push(`verify-official:${root}`) },
     remove: async (path) => { removed.push(path); events.push(`remove:${path}`) },
     pnpmInvocation: args => ({ command: 'pnpm', args }),
     run: (command, args) => { commands.push([command, args]); events.push(`run:${command}`) },
@@ -145,6 +147,13 @@ describe('stageDesktop', () => {
     ])
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh/lib/bin.js')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html')
+    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-client-ui-brand-official/lib/client.js')
+    expect(result.validatedFiles).toEqual(expect.arrayContaining([
+      'node_modules/@deepseek-ai/dsh-agent-presets/presets/backend/preset.yml',
+      'node_modules/@deepseek-ai/dsh-agent-presets/presets/backend/agent.cordis.yml',
+      'node_modules/@deepseek-ai/dsh-agent-presets/presets/standard/preset.yml',
+      'node_modules/@deepseek-ai/dsh-agent-presets/presets/standard/agent.cordis.yml',
+    ]))
     expect(result.validatedFiles).toContain('desktop.cordis.patch.yml')
     expect(result.validatedFiles).toContain('build/installer.nsh')
     expect(result.validatedFiles).toContain('THIRD_PARTY_NOTICES.md')
@@ -205,6 +214,17 @@ describe('stageDesktop', () => {
     expect(result.validatedFiles).toContain('native-bin/darwin-x64/computer-use-helper')
   })
 
+  it('rejects stale or non-official client artifacts before deleting or deploying', async () => {
+    const dependencies = fakeDependencies()
+    dependencies.verifyOfficialClientBuild = () => {
+      throw new Error('client artifacts differ from the official build record')
+    }
+
+    await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(/client artifacts differ/i)
+    expect(dependencies.removed).toEqual([])
+    expect(dependencies.commands).toEqual([])
+  })
+
   it('rejects a wrong, duplicate, or non-executable staged native helper', async () => {
     const wrong = fakeDependencies()
     wrong.readBinary = async () => Uint8Array.of(0x4d, 0x5a)
@@ -252,9 +272,9 @@ describe('stageDesktop', () => {
     await stageDesktop(REPO_ROOT, dependencies)
 
     expect(dependencies.events.slice(0, 3)).toEqual([
+      `verify-official:${REPO_ROOT}`,
       `read:${join(REPO_ROOT, 'apps/desktop/desktop.cordis.patch.yml')}`,
       `remove:${DEFAULT_STAGE}`,
-      'run:pnpm',
     ])
   })
 

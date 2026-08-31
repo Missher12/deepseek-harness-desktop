@@ -1358,7 +1358,7 @@ describe('Add launcher chrome and control seats', () => {
       .every(icon => icon.closest('[aria-hidden="true"]') !== null)).toBe(true)
     fireEvent.click(trigger)
     const items = view.getAllByRole('menuitem')
-    expect(items.map(o => o.textContent)).toEqual(['仅可查看', '可写入工作区', '完全权限'])
+    expect(items.map(o => o.textContent)).toEqual(['仅可查看', '可写入工作区', '完全权限（可写工作区外）'])
     fireEvent.click(items[1]!)
     // Optimistic pick + disable until admission resolves (command stub resolves true).
     const busy = view.getByLabelText(/^访问模式/) as HTMLButtonElement
@@ -1399,7 +1399,7 @@ describe('Add launcher chrome and control seats', () => {
     }
     const { view } = bench({ permissions, command })
     fireEvent.click(view.getByLabelText(/^访问模式/))
-    fireEvent.click(view.getByRole('menuitem', { name: '完全权限' }))
+    fireEvent.click(view.getByRole('menuitem', { name: '完全权限（可写工作区外）' }))
 
     expect(command).not.toHaveBeenCalled()
     expect(view.getByRole('dialog', { name: '确认启用完全权限？' })).toBeTruthy()
@@ -1413,7 +1413,7 @@ describe('Add launcher chrome and control seats', () => {
     expect(command).toHaveBeenCalledOnce()
     expect(command).toHaveBeenCalledWith('/permission danger-full-access')
     expect(view.queryByRole('dialog')).toBeNull()
-    expect((view.getByLabelText(/^访问模式/) as HTMLButtonElement).textContent).toBe('完全权限')
+    expect((view.getByLabelText(/^访问模式/) as HTMLButtonElement).textContent).toBe('完全权限（可写工作区外）')
     await act(async () => {})
   })
 
@@ -1429,7 +1429,7 @@ describe('Add launcher chrome and control seats', () => {
     const { view } = bench({ permissions, command })
     const openConfirmation = () => {
       fireEvent.click(view.getByLabelText(/^访问模式/))
-      fireEvent.click(view.getByRole('menuitem', { name: '完全权限' }))
+      fireEvent.click(view.getByRole('menuitem', { name: '完全权限（可写工作区外）' }))
     }
 
     openConfirmation()
@@ -1454,7 +1454,7 @@ describe('Add launcher chrome and control seats', () => {
     }
     const { view, session } = bench({ permissions, command })
     fireEvent.click(view.getByLabelText(/^访问模式/))
-    fireEvent.click(view.getByRole('menuitem', { name: '完全权限' }))
+    fireEvent.click(view.getByRole('menuitem', { name: '完全权限（可写工作区外）' }))
     fireEvent.click(view.getByRole('checkbox'))
     act(() => { session.set(snapshotOf({ removed: true })) })
     expect(view.queryByRole('dialog')).toBeNull()
@@ -1472,7 +1472,7 @@ describe('Add launcher chrome and control seats', () => {
     }
     const { view, props } = bench({ permissions, command })
     fireEvent.click(view.getByLabelText(/^访问模式/))
-    fireEvent.click(view.getByRole('menuitem', { name: '完全权限' }))
+    fireEvent.click(view.getByRole('menuitem', { name: '完全权限（可写工作区外）' }))
     fireEvent.click(view.getByRole('checkbox'))
     view.rerender(<InputBar {...props} sessionId={'s2' as SessionId} />)
     expect(view.queryByRole('dialog')).toBeNull()

@@ -38,7 +38,10 @@ Turn the official DeepSeek Harness browser surface into standalone Intel macOS a
 - The existing React/Vite client and WebSocket transport remain intact.
 - The renderer has no Node integration and receives no credentials.
 - Desktop-only presentation changes live in explicit source modules, not injected selectors against minified bundles.
-- The packaged app keeps its JS entrypoint in `app.asar` and unpacks runtime `node_modules`, allowing the profile fallback to create valid filesystem symlinks to in-box plugins.
+- The packaged app keeps its JS entrypoint and package graph in `app.asar` and
+  projects archive-backed exports into each profile through managed ESM proxy
+  packages; native binaries remain unpacked where the operating system requires
+  real filesystem paths.
 - The preload bridge is one bundled CommonJS file because Electron's sandboxed preload runtime does not execute the main process's ESM format.
 - Platform decisions keep macOS close-to-Dock and process-group cleanup while Windows uses a standard frame, close-to-quit, fail-closed PowerShell conflict discovery, and exact-PID process-tree termination.
 
@@ -69,6 +72,21 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- Version 0.4.10 repairs the post-official-sync Desktop regressions found in
+  the installed 0.4.9 package. Desktop staging now refuses stale or non-official
+  Client artifacts, the setup script always uses the official build profile,
+  and packaged acceptance checks the real product brand. The prompt ruler is
+  anchored to the chat pane instead of crowding generated text; Full access is
+  explicitly labeled as allowing writes outside the workspace without changing
+  the safe default. Eight role presets now ship from the new agent-presets
+  package owner alongside the four official presets while user presets remain
+  separate. Desktop also stops duplicating the CLI's authoritative module-
+  fallback scan during startup. A packaged CLI now promotes its installation
+  anchor to the enclosing `app.asar/package.json`, so that one scan includes
+  Desktop-only plugins instead of trading startup speed for missing modules.
+  Real Intel macOS `app.asar` acceptance passed with 12 built-in presets plus
+  an isolated user preset; measured `desktop-running` was 6.4 seconds cold and
+  5.1 seconds with the existing fallback generation.
 - Version 0.4.9 rebases the Desktop product patch onto the complete official
   Harness `0.1.2-alpha.2` source delta while preserving the native macOS and
   Windows shell, Browser/Computer control authority boundaries, bundled

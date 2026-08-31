@@ -54,11 +54,20 @@ describe('PromptRail presentation in ui-chat', () => {
   })
 
   it('subtracts the measured composer stack from the actual conversation viewport', () => {
+    const rail = ruleBlock('.promptRail')
     const track = ruleBlock('.promptRailTrack')
-    expect(track).toContain('right: calc(100% - 4px);')
+    expect(rail).toContain('max-width: none;')
+    expect(track).toContain('left: calc(-1 * var(--dsh-composer-side-clearance));')
+    expect(track).not.toContain('right:')
     expect(track).toContain('var(--dsh-composer-height')
     expect(track).toContain('var(--dsh-conversation-viewport-height')
     expect(track).not.toContain('100dvh')
+  })
+
+  it('keeps the split-view ruler and compact trigger outside message text', () => {
+    expect(stylesheet).toContain('@container (max-width: 720px) {\n  .promptRailTrack {\n    left: calc(-1 * var(--dsh-composer-side-clearance) - 7px);')
+    expect(stylesheet).toContain('.promptRailMark[data-active] .promptRailTick {\n    width: 15px;')
+    expect(stylesheet).toContain('@media (max-width: 860px) {\n  .column {\n    box-sizing: border-box;\n    padding-inline-end: 64px;')
   })
 
   it('pins forced-colors marks to system colors and disables tick motion when requested', () => {

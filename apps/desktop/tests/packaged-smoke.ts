@@ -507,6 +507,20 @@ function parsePidLines(raw: string): number[] {
   return raw.split(/\s+/u).filter(Boolean).map(Number).filter(Number.isSafeInteger)
 }
 
+async function seedDesktopSmokeAgentPreset(harnessHome: string): Promise<void> {
+  const presetRoot = join(harnessHome, '.agent-presets', 'desktop-smoke-custom')
+  await mkdir(presetRoot, { recursive: true })
+  await Promise.all([
+    writeFile(join(presetRoot, 'preset.yml'), [
+      'name: Desktop smoke custom',
+      'description: Isolated packaged-smoke user preset.',
+      'order: 100',
+      '',
+    ].join('\n'), 'utf8'),
+    writeFile(join(presetRoot, 'agent.cordis.yml'), '[]\n', 'utf8'),
+  ])
+}
+
 /** Whether a native inspection command reported that it found no matching row. */
 export function isCommandNoMatch(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 1
@@ -1287,6 +1301,30 @@ async function exerciseDesktopControlSettings(page: Page, platform: NodeJS.Platf
   await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
 }
 
+async function exerciseAgentPresets(page: Page): Promise<void> {
+  const settingsTrigger = page.locator('[data-dsh-desktop-command="open-settings"]')
+  if (await settingsTrigger.getAttribute('aria-expanded') !== 'true') await settingsTrigger.click()
+  const settingsDialog = page.getByRole('dialog').last()
+  await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
+  await settingsDialog.getByRole('button', { name: /^(?:Agent presets|Agent 预设)$/u }).click()
+
+  const builtInHeading = settingsDialog.getByRole('heading', { name: /^(?:Built-in|内置)$/u })
+  await builtInHeading.waitFor({ state: 'visible', timeout: 30_000 })
+  const builtInIds = await builtInHeading.locator('xpath=..').locator('code').allTextContents()
+  expect([...builtInIds].sort()).toEqual([
+    'backend', 'cordis', 'debugger', 'devops', 'frontend', 'minimal',
+    'planner', 'ptc', 'qa', 'research', 'reviewer', 'standard',
+  ])
+  const customHeading = settingsDialog.getByRole('heading', { name: /^(?:Custom|自定义)$/u })
+  await customHeading.waitFor({ state: 'visible', timeout: 15_000 })
+  expect(await customHeading.locator('xpath=..').locator('code').allTextContents())
+    .toContain('desktop-smoke-custom')
+  expect(await settingsDialog.getByText(/^(?:Failed to load|加载失败)$/u).count()).toBe(0)
+
+  await page.keyboard.press('Escape')
+  await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
+}
+
 async function exerciseUsageInsights(
   page: Page,
   platform: NodeJS.Platform,
@@ -1655,6 +1693,7 @@ export async function runPackagedDesktopSmoke(
   const harnessHome = process.env.DSH_DESKTOP_SMOKE_DSH_HOME ?? join(temporaryRoot, 'dsh-home')
   const userData = process.env.DSH_DESKTOP_SMOKE_USER_DATA ?? join(temporaryRoot, 'electron-data')
   await Promise.all([mkdir(harnessHome, { recursive: true }), mkdir(userData, { recursive: true })])
+  await seedDesktopSmokeAgentPreset(harnessHome)
   await seedLegacyExternalBrainProfile(harnessHome)
   const clipboardSeed = await seedWindowsClipboardSmokeState(harnessHome)
   const providerTripwire = await startProviderTripwire()
@@ -1688,6 +1727,10 @@ export async function runPackagedDesktopSmoke(
     })
     page.on('pageerror', error => consoleErrors.push(error.message))
     await waitForDesktopSurface(page, userData)
+    expect(await page.title()).toMatch(/DeepSeek Harness$/u)
+    const surfaceText = await page.locator('body').innerText()
+    expect(surfaceText).not.toContain('DSH 本地构建')
+    expect(surfaceText).not.toContain('DSH Local Build')
     await exerciseDesktopTitlebarGeometry(page, platform)
     await exerciseBrowserRendererHandshake(nativeApp)
 
@@ -1732,6 +1775,7 @@ export async function runPackagedDesktopSmoke(
     expect(await page.locator('#root').evaluate((element: HTMLElement) => !element.inert)).toBe(true)
 
     await exerciseDesktopControlSettings(page, platform)
+    await exerciseAgentPresets(page)
 
     try {
       await exerciseWindowsClipboard(page, nativeApp, clipboardSeed)

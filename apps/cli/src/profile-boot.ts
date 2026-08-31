@@ -70,8 +70,26 @@ export function homePatchPath(): string {
   return join(resolveDshHome(), PROFILE_PATCH_FILENAME)
 }
 
-/** Absolute path of this dsh installation's package.json (both anchors: src/ and lib/ sit one level under apps/cli). */
-export const INSTALL_ANCHOR = fileURLToPath(new URL('../package.json', import.meta.url))
+/**
+ * Select the manifest that owns the complete installed dependency closure.
+ * A standalone CLI owns itself. Inside Electron, the CLI is nested below
+ * `app.asar/node_modules`, while Desktop-only patch rows are declared by the
+ * application manifest at the archive root. Using that root lets the one CLI
+ * fallback pass project every packaged plugin without restoring a duplicate
+ * Desktop-parent scan.
+ * @param cliPackageAnchor - absolute manifest path for `@deepseek-ai/dsh`.
+ * @returns the complete installation manifest for this launch.
+ */
+export function resolveInstallationAnchor(cliPackageAnchor: string): string {
+  const archiveSegment = /(?:^|[\\/])app\.asar(?:[\\/])/u.exec(cliPackageAnchor)
+  if (archiveSegment === null) return cliPackageAnchor
+  const separatorIndex = archiveSegment.index + archiveSegment[0].length - 1
+  const separator = cliPackageAnchor[separatorIndex]
+  return `${cliPackageAnchor.slice(0, separatorIndex)}${separator}package.json`
+}
+
+/** Absolute manifest path owning the dependency closure for this launch. */
+export const INSTALL_ANCHOR = resolveInstallationAnchor(fileURLToPath(new URL('../package.json', import.meta.url)))
 
 /** The session-telemetry row id the DSH_TELEMETRY_DISABLED switch targets. */
 const TELEMETRY_ROW_ID = 'session-telemetry-otel'

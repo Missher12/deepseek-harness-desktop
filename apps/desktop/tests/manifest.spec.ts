@@ -98,7 +98,7 @@ describe('desktop package manifest', () => {
 
     expect(manifest).toMatchObject({
       name: '@deepseek-ai/dsh-desktop',
-      version: '0.4.9',
+      version: '0.4.10',
       packageManager: 'pnpm@11.7.0',
       private: true,
       main: 'lib/main.js',
@@ -338,6 +338,8 @@ describe('desktop package manifest', () => {
     expect(manifest.scripts['pack:setup']).toContain('--win nsis --x64')
     expect(rootManifest.scripts['desktop:setup:built']).toContain('pack:setup')
     expect(rootManifest.scripts['desktop:setup']).toContain('desktop:setup:built')
+    expect(rootManifest.scripts['desktop:setup']).toContain('build:official')
+    expect(rootManifest.scripts['desktop:setup']).not.toMatch(/pnpm run build(?:\s|$)/u)
     expect(builder.mac?.icon).toBe('assets/icon.icns')
     expect(builder.mac?.extraResources).toEqual([{
       from: 'native-bin/darwin-x64/computer-use-helper',
@@ -385,6 +387,13 @@ describe('desktop package manifest', () => {
     expect(builder.files).toContain(
       '!node_modules/@deepseek-ai/dsh-session-telemetry-otel/node_modules/@opentelemetry/resources/**',
     )
+  })
+
+  it('delegates the authoritative module-fallback heal to the CLI exactly once', () => {
+    const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
+
+    expect(mainSource).not.toContain('healProfilesModuleFallback')
+    expect(mainSource).not.toContain('module fallback: ready')
   })
 
   it('exercises uninstall from a realistic short per-user install path', () => {

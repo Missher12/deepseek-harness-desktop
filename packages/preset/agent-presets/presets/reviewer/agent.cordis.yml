@@ -1,4 +1,4 @@
-# The `frontend` agent preset: frontend and interface development.
+# The shipped `reviewer` agent preset: evidence-led code review.
 #
 # This is a shipped, self-contained agent-plane snapshot based on `standard`.
 # Host-owned registries, sandbox policy, approvals, persistence, and model
@@ -16,7 +16,7 @@
 
       Codex-style operating contract: understand the target, repository instructions, current behavior, and affected data flow before changing files. For non-trivial work, form a short plan and keep changes bounded. Prefer evidence over assumptions, preserve unrelated worktree changes, avoid destructive actions, verify in proportion to risk, and report outcomes, changed surfaces, tests, and limitations accurately.
 
-      Role: frontend and UI. Build polished user interfaces. Treat responsive geometry, accessibility, keyboard behavior, loading and error states, theme compatibility, and visual verification as acceptance requirements.
+      Role: code review. Review code and behavior for correctness, regressions, security, maintainability, and missing tests. Lead with actionable findings ordered by severity. Default to review only and do not modify files unless explicitly asked.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -52,18 +52,6 @@
   config:
     sampleOverCapGlobResults: false
 
-# ── background jobs ────────────────────────────────────────────────────────
-
-# Only the model-facing controls. The task REGISTRY stays on the host plane:
-# its producers sit outside any realm this file could put it in — `tool-bash`
-# above resolves it with `ctx.get`, and an entry-local realm here is invisible
-# to every sibling row, so `run_in_background` would answer "background jobs
-# unavailable" while these controls sat in the catalog. The registry is keyed by
-# owning agent anyway, so one host instance serves every session. What a preset
-# chooses is whether its agent can collect and stop background work at all.
-- id: tool-jobs
-  name: '@deepseek-ai/dsh-tool-jobs'
-
 # ── skills ──────────────────────────────────────────────────────────────────
 
 # The skill REGISTRY lives in the host composition and is layered per scope:
@@ -76,17 +64,6 @@
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
-
-# ── goals ───────────────────────────────────────────────────────────────────
-
-# Only the model-facing tool. The goal SERVICE, its session driver, and the
-# `/goal` command stay on the host plane: the Gateway serves the goal domain as
-# Remote endpoints whose receiver comes from a generated descriptor, so it
-# resolves `goals` on the host and an entry-local realm here would hide it. The
-# registry is keyed by session anyway, so one host instance serves every
-# session. What a preset chooses is whether its agent can call the goal tool.
-- id: tool-goal
-  name: '@deepseek-ai/dsh-tool-goal'
 
 # ── plan mode ───────────────────────────────────────────────────────────────
 
@@ -144,84 +121,6 @@
         thresholdChars: 8192
         headChars: 4096
         tailChars: 1024
-
-# ── delegation and workflows ────────────────────────────────────────────────
-
-# The `subagents` registry and its spawn/fork backends live in the HOST
-# composition: the registry is a process singleton whose cross-session queries
-# the api-proxy serves to the browser, and a provider name may only be
-# registered once. This preset contributes the delegation TOOLS, which resolve
-# that host registry.
-#
-# `workflows` is different — nothing outside an agent reads it — so every row
-# that reaches it shares one entry-local realm here, and a consumer left
-# outside would resolve a host registry this preset does not populate.
-#
-# `tool-subagent-report` is host-plane for the same reason as the registry,
-# not because a preset may not want it: it registers a CONTINUABLE SETUP on
-# that singleton rather than a tool this agent calls, and the setup list is
-# not scope-aware — one copy per mounted preset means every child gets
-# `report` registered once per live session, which throws on the second.
-- id: delegation
-  name: cordis:group
-  group: true
-  isolate:
-    workflowEngine: true
-  config:
-    - id: tool-subagent-control
-      name: '@deepseek-ai/dsh-tool-subagent-control'
-
-    - id: tool-subagent-list-agents
-      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
-
-    - id: tool-subagent
-      name: '@deepseek-ai/dsh-tool-subagent'
-      config:
-        provider: spawn
-        toolName: subagent
-        backgroundMode: continuable
-
-    - id: tool-subagent-fork
-      name: '@deepseek-ai/dsh-tool-subagent'
-      config:
-        provider: fork
-        toolName: subagent_fork
-        backgroundMode: continuable
-
-    # Product providers are host-plane singletons. Copy this preset, then
-    # remove `disabled` from either ordinary tool row to expose that product
-    # only to agents composed from the copy.
-    - id: tool-subagent-codex
-      name: '@deepseek-ai/dsh-tool-subagent'
-      disabled: true
-      config:
-        provider: codex
-        toolName: subagent_codex
-        enableRunInBackground: false
-        maxDepth: provider-managed
-
-    - id: tool-subagent-claude-code
-      name: '@deepseek-ai/dsh-tool-subagent'
-      disabled: true
-      config:
-        provider: claude-code
-        toolName: subagent_claude_code
-        enableRunInBackground: false
-        maxDepth: provider-managed
-
-    - id: workflow-worker-thread
-      name: '@deepseek-ai/dsh-workflow-worker-thread'
-      config:
-        provider: spawn
-
-    - id: tool-workflow
-      name: '@deepseek-ai/dsh-tool-workflow'
-
-    - id: tool-ralph
-      name: '@deepseek-ai/dsh-tool-ralph'
-      config:
-        subagentProvider: spawn
-        maxRounds: 64
 
 # ── remaining model-facing rows ─────────────────────────────────────────────
 

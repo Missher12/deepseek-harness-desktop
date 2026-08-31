@@ -372,11 +372,12 @@ export const PromptRail = memo(function PromptRail({ anchors, activeSeq, onActiv
             ref={compactTriggerRef}
             type="button"
             className={css.promptRailCompactTrigger}
+            aria-label={t('promptRail.compact', { current, total: anchors.length })}
             aria-expanded={compactOpen}
             aria-haspopup="dialog"
             onClick={() => { setCompactOpen(open => !open) }}
           >
-            {t('promptRail.compact', { current, total: anchors.length })}
+            <span aria-hidden>{current} / {anchors.length}</span>
           </button>
           {compactOpen && (
             <div

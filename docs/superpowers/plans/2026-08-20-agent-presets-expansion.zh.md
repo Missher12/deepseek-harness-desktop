@@ -14,8 +14,8 @@
 
 ## 文件映射
 
-- `apps/cli/config/agent-presets/{planner,frontend,backend,debugger,reviewer,qa,devops,research}/preset.yml`：随附展示元数据与 5–12 顺序。
-- `apps/cli/config/agent-presets/{planner,frontend,backend,debugger,reviewer,qa,devops,research}/agent.cordis.yml`：完整角色组装快照。
+- `packages/preset/agent-presets/presets/{planner,frontend,backend,debugger,reviewer,qa,devops,research}/preset.yml`：随附展示元数据与 5–12 顺序。
+- `packages/preset/agent-presets/presets/{planner,frontend,backend,debugger,reviewer,qa,devops,research}/agent.cordis.yml`：完整角色组装快照。
 - `apps/cli/tests/web-agent-presets.e2e.ts`：随附名单、挂载、提示词和工具目录覆盖。
 - `packages/client/ui-agent-preset/src/client/locales.ts`：全部十二个随附 id 的中英文展示文案。
 - `packages/client/ui-agent-preset/tests/locales.client.spec.ts`：内置预设本地化覆盖。
@@ -76,14 +76,14 @@ pnpm exec vitest run packages/client/ui-agent-preset/tests/locales.client.spec.t
 ### 任务 2：增加八个随附组装
 
 **文件：**
-- 创建：`apps/cli/config/agent-presets/planner/{preset.yml,agent.cordis.yml}`
-- 创建：`apps/cli/config/agent-presets/frontend/{preset.yml,agent.cordis.yml}`
-- 创建：`apps/cli/config/agent-presets/backend/{preset.yml,agent.cordis.yml}`
-- 创建：`apps/cli/config/agent-presets/debugger/{preset.yml,agent.cordis.yml}`
-- 创建：`apps/cli/config/agent-presets/reviewer/{preset.yml,agent.cordis.yml}`
-- 创建：`apps/cli/config/agent-presets/qa/{preset.yml,agent.cordis.yml}`
-- 创建：`apps/cli/config/agent-presets/devops/{preset.yml,agent.cordis.yml}`
-- 创建：`apps/cli/config/agent-presets/research/{preset.yml,agent.cordis.yml}`
+- 迁移：`packages/preset/agent-presets/presets/planner/{preset.yml,agent.cordis.yml}`
+- 迁移：`packages/preset/agent-presets/presets/frontend/{preset.yml,agent.cordis.yml}`
+- 迁移：`packages/preset/agent-presets/presets/backend/{preset.yml,agent.cordis.yml}`
+- 迁移：`packages/preset/agent-presets/presets/debugger/{preset.yml,agent.cordis.yml}`
+- 迁移：`packages/preset/agent-presets/presets/reviewer/{preset.yml,agent.cordis.yml}`
+- 迁移：`packages/preset/agent-presets/presets/qa/{preset.yml,agent.cordis.yml}`
+- 迁移：`packages/preset/agent-presets/presets/devops/{preset.yml,agent.cordis.yml}`
+- 迁移：`packages/preset/agent-presets/presets/research/{preset.yml,agent.cordis.yml}`
 
 - [ ] **步骤 1：创建元数据文件**
 

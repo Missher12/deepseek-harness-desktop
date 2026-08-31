@@ -9,6 +9,10 @@ import {
   assertComputerUseHelperArchitecture,
   computerUseHelperBuildSpec,
 } from './build-computer-use-helper.ts'
+import {
+  officialClientBuildEnvironment,
+  readClientBuildRecord,
+} from './client-build-environment.ts'
 
 const DESKTOP_PACKAGE = '@deepseek-ai/dsh-desktop'
 const SESSION_MESSENGER_PACKAGE = '@deepseek-ai/dsh-session-messenger'
@@ -20,6 +24,7 @@ const DESKTOP_CONTROL_HOST_ROW_ID = 'desktop-control-host'
 export interface StageDesktopDependencies {
   readonly platform: NodeJS.Platform
   readonly arch: string
+  verifyOfficialClientBuild(root: string): void
   readText(path: string): Promise<string>
   readBinary(path: string): Promise<Uint8Array>
   remove(path: string): Promise<void>
@@ -129,6 +134,9 @@ export function desktopStagePnpmInvocation(
 const realDependencies: StageDesktopDependencies = {
   platform: process.platform,
   arch: process.arch,
+  verifyOfficialClientBuild: (root) => {
+    readClientBuildRecord(root, officialClientBuildEnvironment(root))
+  },
   remove: async (path) => { await rm(path, { recursive: true, force: true }) },
   readText: async path => await readFile(path, 'utf8'),
   readBinary: async path => new Uint8Array(await readFile(path)),
@@ -304,6 +312,7 @@ export async function stageDesktop(
   if (!isDefaultStage && !isDedicatedExternalStage) {
     throw new Error(`Desktop staging refused an unexpected deletion target: ${stageDir}`)
   }
+  dependencies.verifyOfficialClientBuild(root)
   const helperSpec = computerUseHelperBuildSpec(dependencies.platform, dependencies.arch)
 
   const desktopPatch = await dependencies.readText(join(desktopDir, 'desktop.cordis.patch.yml'))
@@ -355,6 +364,14 @@ export async function stageDesktop(
     'assets/icon.ico',
     'node_modules/@deepseek-ai/dsh/lib/bin.js',
     'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
+    'node_modules/@deepseek-ai/dsh-client-ui-brand-official/lib/client.js',
+    ...[
+      'backend', 'cordis', 'debugger', 'devops', 'frontend', 'minimal',
+      'planner', 'ptc', 'qa', 'research', 'reviewer', 'standard',
+    ].flatMap(preset => [
+      `node_modules/@deepseek-ai/dsh-agent-presets/presets/${preset}/preset.yml`,
+      `node_modules/@deepseek-ai/dsh-agent-presets/presets/${preset}/agent.cordis.yml`,
+    ]),
     'node_modules/@deepseek-ai/dsh-host-desktop-plugin-runtime/lib/index.js',
     'node_modules/@deepseek-ai/dsh-desktop-managed-memory/package.json',
     'node_modules/@deepseek-ai/dsh-desktop-managed-memory/lib/index.js',

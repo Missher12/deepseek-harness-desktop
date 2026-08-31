@@ -1,3 +1,4 @@
+# Shipped by @deepseek-ai/dsh-agent-presets.
 name: 方案规划
 description: 澄清目标、检查证据、比较方案，并在实现前交付可执行计划。
 order: 5

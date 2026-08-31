@@ -14,8 +14,8 @@ English | [中文](2026-08-20-agent-presets-expansion.zh.md)
 
 ## File map
 
-- `apps/cli/config/agent-presets/{planner,frontend,backend,debugger,reviewer,qa,devops,research}/preset.yml`: shipped display metadata and order 5–12.
-- `apps/cli/config/agent-presets/{planner,frontend,backend,debugger,reviewer,qa,devops,research}/agent.cordis.yml`: complete role composition snapshots.
+- `packages/preset/agent-presets/presets/{planner,frontend,backend,debugger,reviewer,qa,devops,research}/preset.yml`: shipped display metadata and order 5–12.
+- `packages/preset/agent-presets/presets/{planner,frontend,backend,debugger,reviewer,qa,devops,research}/agent.cordis.yml`: complete role composition snapshots.
 - `apps/cli/tests/web-agent-presets.e2e.ts`: shipped-roster, mount, prompt, and tool-catalog coverage.
 - `packages/client/ui-agent-preset/src/client/locales.ts`: English and Chinese display copy for all twelve shipped ids.
 - `packages/client/ui-agent-preset/tests/locales.client.spec.ts`: built-in localization coverage.
@@ -76,14 +76,14 @@ Expected: failure because the eight directories and locale keys do not yet exist
 ### Task 2: Add the eight shipped compositions
 
 **Files:**
-- Create: `apps/cli/config/agent-presets/planner/{preset.yml,agent.cordis.yml}`
-- Create: `apps/cli/config/agent-presets/frontend/{preset.yml,agent.cordis.yml}`
-- Create: `apps/cli/config/agent-presets/backend/{preset.yml,agent.cordis.yml}`
-- Create: `apps/cli/config/agent-presets/debugger/{preset.yml,agent.cordis.yml}`
-- Create: `apps/cli/config/agent-presets/reviewer/{preset.yml,agent.cordis.yml}`
-- Create: `apps/cli/config/agent-presets/qa/{preset.yml,agent.cordis.yml}`
-- Create: `apps/cli/config/agent-presets/devops/{preset.yml,agent.cordis.yml}`
-- Create: `apps/cli/config/agent-presets/research/{preset.yml,agent.cordis.yml}`
+- Move: `packages/preset/agent-presets/presets/planner/{preset.yml,agent.cordis.yml}`
+- Move: `packages/preset/agent-presets/presets/frontend/{preset.yml,agent.cordis.yml}`
+- Move: `packages/preset/agent-presets/presets/backend/{preset.yml,agent.cordis.yml}`
+- Move: `packages/preset/agent-presets/presets/debugger/{preset.yml,agent.cordis.yml}`
+- Move: `packages/preset/agent-presets/presets/reviewer/{preset.yml,agent.cordis.yml}`
+- Move: `packages/preset/agent-presets/presets/qa/{preset.yml,agent.cordis.yml}`
+- Move: `packages/preset/agent-presets/presets/devops/{preset.yml,agent.cordis.yml}`
+- Move: `packages/preset/agent-presets/presets/research/{preset.yml,agent.cordis.yml}`
 
 - [ ] **Step 1: Create the metadata files**
 

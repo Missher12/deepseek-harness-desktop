@@ -49,7 +49,7 @@
   top: 72px;
   z-index: 6;
   width: 100%;
-  max-width: var(--dsh-chat-content-width);
+  max-width: none;
   height: 0;
   margin: 0 auto;
   pointer-events: none;
@@ -57,9 +57,10 @@
 
 .promptRailTrack {
   position: absolute;
-  /* Keep the ruler slightly inside the transcript gutter so narrow split
-     views do not pin it flush against the window or sidebar seam. */
-  right: calc(100% - 4px);
+  /* Anchor to the chat pane rather than the centered message column. This
+     keeps the ruler Codex-like: close to the sidebar with a quiet 16px inset,
+     while generated text retains the full content gutter. */
+  left: calc(-1 * var(--dsh-composer-side-clearance));
   width: 30px;
   /* The rail lives above the sticky composer. Subtract the live measured
      composer stack so its end tooltip cannot paint across the input card. */
@@ -121,6 +122,19 @@
   height: 2px;
   background: var(--dsw-static-deepseek-500);
   opacity: 1;
+}
+
+/* A wide window can still leave a narrow conversation when the utility
+   workbench is open. Keep the desktop ruler in that pane, but tighten its
+   active mark into the outer gutter instead of painting across message rows. */
+@container (max-width: 720px) {
+  .promptRailTrack {
+    left: calc(-1 * var(--dsh-composer-side-clearance) - 7px);
+  }
+
+  .promptRailMark[data-active] .promptRailTick {
+    width: 15px;
+  }
 }
 
 .promptRailActiveDot {
@@ -282,6 +296,11 @@
 }
 
 @media (max-width: 860px) {
+  .column {
+    box-sizing: border-box;
+    padding-inline-end: 64px;
+  }
+
   .promptRail {
     position: sticky;
     top: 8px;

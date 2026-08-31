@@ -7,7 +7,7 @@ const PRESETS = [
   ['ptc', 'packages/preset/agent-presets/presets/ptc/agent.cordis.yml'],
   ['cordis', 'packages/preset/agent-presets/presets/cordis/agent.cordis.yml'],
   ...['frontend', 'backend', 'devops', 'qa', 'reviewer', 'research', 'planner', 'debugger']
-    .map(preset => [preset, `apps/cli/config/agent-presets/${preset}/agent.cordis.yml`] as const),
+    .map(preset => [preset, `packages/preset/agent-presets/presets/${preset}/agent.cordis.yml`] as const),
 ] as const
 
 describe('computer tool and Desktop UI composition', () => {

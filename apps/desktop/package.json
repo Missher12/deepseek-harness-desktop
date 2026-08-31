@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
   "description": "Native desktop shell for DeepSeek Harness",
-  "version": "0.4.9",
+  "version": "0.4.10",
   "license": "MIT",
   "author": "DeepSeek Harness Contributors",
   "private": true,

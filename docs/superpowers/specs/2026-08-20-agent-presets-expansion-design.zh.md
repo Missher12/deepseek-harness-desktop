@@ -77,8 +77,8 @@ DeepSeek Harness 保留现有四个随附预设及其稳定 id：`standard`、`c
 每个新内置预设位于：
 
 ```text
-apps/cli/config/agent-presets/<id>/preset.yml
-apps/cli/config/agent-presets/<id>/agent.cordis.yml
+packages/preset/agent-presets/presets/<id>/preset.yml
+packages/preset/agent-presets/presets/<id>/agent.cordis.yml
 ```
 
 `preset.yml` 只包含随附展示元数据和数字顺序。`agent.cordis.yml` 是自包含组装，与当前“不继承”的设计保持一致。不新增持久化 schema、网关方法、preload bridge 或 React 组件。现有名单自动发现这些目录，当前设置卡片展示它们，当前新会话 chip 应用用户的手动选择。

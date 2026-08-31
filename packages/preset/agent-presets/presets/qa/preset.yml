@@ -1,3 +1,4 @@
+# Shipped by @deepseek-ai/dsh-agent-presets.
 name: 测试与 QA
 description: 设计基于风险的测试、复现用户流程，并区分环境失败与产品缺陷。
 order: 10

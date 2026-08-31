@@ -19,7 +19,6 @@ import {
 } from 'electron'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { RequestId, SessionId } from '@deepseek-ai/dsh-desktop-control-protocol'
-import { healProfilesModuleFallback } from '@deepseek-ai/dsh-app-boot'
 import {
   DesktopApplication,
   type AppFacade,
@@ -104,7 +103,6 @@ const loadingPath = fileURLToPath(new URL('../renderer/loading.html', import.met
 const failurePath = fileURLToPath(new URL('../renderer/failure.html', import.meta.url))
 const iconPath = fileURLToPath(new URL('../assets/icon-source.png', import.meta.url))
 const desktopPatchPath = fileURLToPath(new URL('../desktop.cordis.patch.yml', import.meta.url))
-const desktopInstallAnchorPath = fileURLToPath(new URL('../package.json', import.meta.url))
 const updateHelperPath = fileURLToPath(new URL('./update-helper.js', import.meta.url))
 const platformBehavior = desktopPlatformBehavior(process.platform)
 const desktopUpdatesEnabled = supportsDesktopUpdates(process.platform)
@@ -509,10 +507,6 @@ void controlSettingsReady
 const runtime = new HarnessProcess({
   cli: resolveCliPath(),
   patch: desktopPatchPath,
-  prepare: async () => {
-    await healProfilesModuleFallback({ installAnchor: desktopInstallAnchorPath, home: dshHome })
-    record(`module fallback: ready (${app.getVersion()})`)
-  },
   onOutput: (source, output) => {
     record(`Harness ${source}: ${output}`)
   },
