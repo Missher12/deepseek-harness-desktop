@@ -8,6 +8,8 @@
 export const zh = {
   'command': '指令',
   'skill': '技能',
+  'plugin': '插件',
+  'cordis': '动态插件',
   'subagent': '子智能体',
   'loading': '正在加载…',
   'drill.aria': '进入目录',
@@ -24,6 +26,8 @@ export type MenuKey = keyof typeof zh
 export const en = {
   'command': 'Commands',
   'skill': 'Skills',
+  'plugin': 'Plugins',
+  'cordis': 'Dynamic plugins',
   'subagent': 'Subagents',
   'loading': 'Loading…',
   'drill.aria': 'Browse folder',

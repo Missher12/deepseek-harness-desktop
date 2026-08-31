@@ -1,6 +1,7 @@
 // Web e2e scenario: the real host serves every user-invocable skill to the
-// browser slash source — user-only (disable-model-invocation) entries appear
-// with their marker while user-disabled quadrants stay hidden. A real
+// browser slash source and Codex-style @ Plugins alias — user-only
+// (disable-model-invocation) entries appear with their marker while
+// user-disabled quadrants stay hidden. A real
 // chromium connects a fresh workspace seeded with all four policy quadrants;
 // no model call is issued, so a stray stream fails loud on the open LLM seam.
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -18,7 +19,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/skill-invocation-policy', import.meta.url))
 const MENU_EXPECTED = join(SNAPSHOT_DIR, 'menu.expected.md')
@@ -55,7 +56,7 @@ const SKILLS: readonly SeedSkill[] = [
 
 async function seedSkills(workspaceCwd: string): Promise<void> {
   for (const skill of SKILLS) {
-    const directory = join(workspaceCwd, 'workspace', '.agents', 'skills', skill.name)
+    const directory = join(workspaceCwd, '.agents', 'skills', skill.name)
     await mkdir(directory, { recursive: true })
     const policyLines = skill.frontmatter === '' ? [] : skill.frontmatter.trimEnd().split('\n')
     await writeFile(join(directory, 'SKILL.md'), [
@@ -85,7 +86,10 @@ describe('web e2e: skill invocation policy through the real host', () => {
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    await connectFreshWorkspace(page, scaffold.workspaceCwd)
+    await page.getByRole('textbox', { name: 'Choose workspace' }).click()
+    await page.getByRole('menuitem', { name: 'No project', exact: true }).click()
+    await page.locator('[data-composer-input][contenteditable="true"]')
+      .waitFor({ timeout: 15_000 })
   }, 120_000)
 
   afterAll(async () => {
@@ -93,7 +97,7 @@ describe('web e2e: skill invocation policy through the real host', () => {
     await scaffold?.close()
   })
 
-  it('renders every user-invocable skill and marks the user-only entry', async () => {
+  it('renders every user-invocable skill under / and @ Plugins, then inserts a plugin chip', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-skill-invocation-policy'))
     const input = page.locator('[data-composer-input]').first()
     await input.fill('/policy')
@@ -111,6 +115,22 @@ describe('web e2e: skill invocation policy through the real host', () => {
 
     const snapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MENU_EXPECTED, snapshot, MODE)
+
+    await input.fill('@policy')
+    await expect.poll(
+      () => menu.getByRole('option', { name: /policy-shared/ }).count(),
+      { timeout: 10_000 },
+    ).toBe(1)
+    expect(await page.locator('[role="presentation"][data-source="plugin"]').textContent()).toBe('Plugins')
+    const plugin = menu.getByRole('option', { name: /policy-shared/ })
+    expect(await plugin.locator('svg').count()).toBe(1)
+    expect(await menu.getByRole('option', { name: /policy-model-only/ }).count()).toBe(0)
+    expect(await menu.getByRole('option', { name: /policy-trusted-only/ }).count()).toBe(0)
+    await plugin.click()
+    const chip = page.locator('[data-composer-chip="plugin"]')
+    expect(await chip.count()).toBe(1)
+    expect(await chip.textContent()).toContain('policy-shared')
+
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, ['menu.expected.md'])

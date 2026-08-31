@@ -1,6 +1,7 @@
 /**
- * Skill reference plugin, browser half: registers the '/' skill source —
- * candidates from the `skills/list` Remote addressed by the per-call session
+ * Skill reference plugin, browser half: registers the '/' skill source and
+ * its '@' plugin-picker alias — candidates from the `skills/list` Remote
+ * addressed by the per-call session
  * projection's sessionId (sessions are always agent-backed; the host
  * resolves cwd from the session header). A pick lands the literal `/name `
  * text and the prompt ships the same literal (plain-text-reference decision;
@@ -9,10 +10,13 @@
  * lives host-side — the pre-step boundary (`dsh-tool-skill`) recognizes a
  * leading `/name` naming a user-invocable skill and injects the rendered
  * body for every entry point, including `disable-model-invocation` skills the
- * model-side catalog never lists (issue #1470). The RPC rides the plugin's
+ * model-side catalog never lists (issue #1470). The '@' alias inserts a
+ * structured plugin chip whose model serialization is that same `/name`
+ * gesture, so the Codex-like picker remains on the existing deterministic
+ * execution path. The RPC rides the plugin's
  * root-context Remote captured at registration — the source never reads
- * services off a per-call argument. Draft chip visuals derive from
- * the lexicon scan; this source implements no reference codec.
+ * services off a per-call argument. Slash draft visuals derive from the
+ * lexicon scan; only the '@' alias owns a structured reference codec.
  *
  * Catalog fetches are cached per session (the small twin of the ui-commands
  * directory): the per-keystroke candidates re-poll filters a settled
@@ -32,9 +36,10 @@
 // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SkillEntry } from '@deepseek-ai/dsh-api-remotes/client'
-import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { InputTriggerServiceContract, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type {
+  InputTriggerCandidate, InputTriggerServiceContract, InputTriggerSource,
+} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the SlotRegistry service merge (ctx.slots).
@@ -72,7 +77,7 @@ export function apply(ctx: ClientContext): void {
   ))
 
   const skills = ctx.remote.skills
-  const sessions = ctx.sessions as ISessions
+  const sessions = ctx.sessions
   // Session-keyed catalog cache; single-flight per key. Plugin-closure state:
   // the fiber effect below is its teardown boundary.
   const fetches = new Map<SessionId, CatalogFetch>()
@@ -134,23 +139,31 @@ export function apply(ctx: ClientContext): void {
   // locale service's own fallback ladder; candidate-time reads stay plain text.
   const t = ctx.locale.bind(NS)
 
+  const candidates = async (
+    session: { readonly sessionId: SessionId },
+    query: string,
+    signal: AbortSignal,
+    icon?: 'plugin',
+  ): Promise<readonly InputTriggerCandidate[]> => {
+    const catalog = await fetchCatalog(session.sessionId)
+    // Superseded keystroke: the shared fetch stays warm, this caller yields.
+    if (signal.aborted) return []
+    return catalog
+      .filter(skill => skill.name.startsWith(query))
+      .map(skill => ({
+        name: skill.name,
+        // The user-only marker rides the description (the menu's only
+        // secondary text); `hint` is the claim-state ghost text, not a badge.
+        description: skill.modelInvocable ? skill.description : `${t('menu.userOnly')} · ${skill.description}`,
+        ...(icon === undefined ? {} : { icon }),
+      }))
+  }
+
   const source: InputTriggerSource = {
     trigger: '/',
     name: 'skill',
     order: 2,
-    async candidates(session, { query, signal }) {
-      const skills = await fetchCatalog(session.sessionId)
-      // Superseded keystroke: the shared fetch stays warm, this caller yields.
-      if (signal.aborted) return []
-      return skills
-        .filter(skill => skill.name.startsWith(query))
-        .map(skill => ({
-          name: skill.name,
-          // The user-only marker rides the description (the menu's only
-          // secondary text); `hint` is the claim-state ghost text, not a badge.
-          description: skill.modelInvocable ? skill.description : `${t('menu.userOnly')} · ${skill.description}`,
-        }))
-    },
+    candidates(session, { query, signal }) { return candidates(session, query, signal) },
     warm(session) {
       // Fire-and-forget scope-birth prewarm; the shared fetch reports
       // through candidates.
@@ -180,16 +193,51 @@ export function apply(ctx: ClientContext): void {
       return { text: `/${candidate.name} ` }
     },
   }
+
+  const pluginSource: InputTriggerSource = {
+    trigger: '@',
+    name: 'plugin',
+    order: 2,
+    candidates(session, { query, signal }) { return candidates(session, query, signal, 'plugin') },
+    warm(session) {
+      fetchCatalog(session.sessionId).catch(() => {})
+    },
+    onPick({ candidate }) {
+      return {
+        insert: {
+          source: 'plugin',
+          ref: candidate.name,
+          label: candidate.name,
+          appearance: 'plugin',
+          clipboardText: `@${candidate.name}`,
+        },
+      }
+    },
+    codec: {
+      clipboardText: ref => `@${ref}`,
+      serialize(ref, signal) {
+        signal.throwIfAborted()
+        return Promise.resolve(`/${ref}`)
+      },
+    },
+  }
   const inputTriggers = ctx.get('inputTriggers') as InputTriggerServiceContract
   // A preset decides which skill providers an agent reads, so a switched
   // session's cached catalog belongs to the composition it no longer runs.
   ctx.remote.$on('agent-preset/selected', invalidate)
   ctx.on('connection/reset', clearAll)
   ctx.effect(() => {
-    const unregister = inputTriggers.registerSource(source)
-    return () => {
-      unregister()
-      clearAll()
+    const unregisterSkill = inputTriggers.registerSource(source)
+    try {
+      const unregisterPlugin = inputTriggers.registerSource(pluginSource)
+      return () => {
+        unregisterPlugin()
+        unregisterSkill()
+        clearAll()
+      }
+    } catch (error) {
+      unregisterSkill()
+      throw error
     }
-  }, 'ui-skill: source')
+  }, 'ui-skill: sources')
 }

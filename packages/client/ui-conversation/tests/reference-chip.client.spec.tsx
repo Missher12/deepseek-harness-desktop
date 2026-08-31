@@ -25,6 +25,15 @@ describe('ReferenceChip', () => {
     expect(container.textContent).toBe('@commit-helper')
   })
 
+  it('renders a selected plugin as an icon-backed chip', () => {
+    const { container } = render(
+      <ReferenceChip label="commit-helper" appearance="plugin" invalid={false} />,
+    )
+    expect(container.querySelector('svg')).not.toBeNull()
+    expect(container.textContent).toBe('commit-helper')
+    expect(container.textContent).not.toContain('@')
+  })
+
   it('applies the invalid styling bit', () => {
     const { container } = render(<ReferenceChip label="gone" appearance="folder" invalid />)
     const chip = container.firstElementChild

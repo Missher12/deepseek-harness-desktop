@@ -53,7 +53,7 @@ export interface ReferenceInsert {
   readonly source: string
   readonly ref: string
   readonly label: string
-  readonly appearance?: 'session' | 'file' | 'folder'
+  readonly appearance?: 'session' | 'file' | 'folder' | 'plugin'
   readonly clipboardText: string
 }
 
@@ -110,7 +110,7 @@ export interface InputTriggerHit {
 export interface InputLauncherCandidate {
   readonly name: string
   readonly description?: string
-  readonly icon?: 'file' | 'folder' | 'session'
+  readonly icon?: 'file' | 'folder' | 'session' | 'plugin'
   readonly hint?: string
   readonly section?: string
   readonly value?: string

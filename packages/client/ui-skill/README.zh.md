@@ -1,5 +1,5 @@
 ---
-description: "dsh Web 客户端的 skill 引用与专属 skill 工具行：/ 触发的 skill source 与 skill 调用卡片。"
+description: "dsh Web 客户端的 skill 与插件引用：/ skill source、@ 插件选择器与专属 skill 调用卡片。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-client-ui-skill` 让用户通过在编辑器中键入 `/name` 来调用 skill：建议菜单从 `skills/list` Remote 提供用户可调用的 skill 候选，选择一项会落下字面文本 `/name `，宿主随后将其加载为 skill 的指令。加载是确定性的：宿主的 pre-step 边界（`dsh-tool-skill`）识别发出消息中以空白为界的 `/name` token，并为每个入口注入渲染后的 `<skill_content>`，因此菜单 pick、手动键入的 token 与 TUI/ACP 提示词都以同一种方式加载 skill。已结算的 skill 调用在对话中渲染为可展开的 `Instructions` 卡片，只从冻结的调用/结果切片派生。
+`dsh-client-ui-skill` 让用户通过 `/name` 调用 skill，也可在编辑器的 Codex 式 `@` **插件**分组中查找同一份当前会话目录。`/` pick 落下字面文本 `/name `；`@` pick 落下带插件图标的 chip，发送时序列化为 `/name`。宿主的 pre-step 边界（`dsh-tool-skill`）识别该 token，并为每个入口注入渲染后的 `<skill_content>`。已结算的 skill 调用在对话中渲染为可展开的 `Instructions` 卡片，只从冻结的调用/结果切片派生。
 
 ## 目录
 
@@ -25,11 +25,11 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在编辑器中输入 `/` 并从建议中选择 skill，或直接键入 `/name`；发出的消息携带字面文本，宿主对菜单 pick 与手动键入的 token 以同样方式加载 skill。与宿主命令同名的名称仍解析为命令——裁决在客户端把该行认领走，它根本不会成为提示词。
+在编辑器中输入 `/` 并选择 skill、直接键入 `/name`，或输入 `@` 并从 **插件**中选择。`@` 路径在草稿与剪贴板中保留结构化插件 chip（`@name`），提交时序列化为同一个 `/name` 执行手势。与宿主命令同名的名称仍解析为命令——裁决在客户端把该行认领走，它根本不会成为提示词。
 
 ### source 提供什么
 
-普通会话的候选来自 `skills/list` Remote；宿主提供每一个用户可调用的 skill，`modelInvocable: false` 的条目（即 `disable-model-invocation` skill，此路径是其唯一入口）会以当前语言把仅限用户标记作为描述前缀带上。结果按 `startsWith(query)` 过滤。`skills/list` 调用失败时会被记录并静默丢弃该菜单组——菜单只显示 pending/ready 状态。
+`/` **技能**与 `@` **插件**分组共用普通会话从 `skills/list` Remote 取得的一份目录，不会重复发起 RPC。宿主提供每一个用户可调用的 skill，`modelInvocable: false` 条目会以当前语言带上仅限用户标记。结果按 `startsWith(query)` 过滤。`skills/list` 调用失败时会被记录并静默丢弃该菜单组——菜单只显示 pending/ready 状态。
 
 ### skill 工具行
 
@@ -43,7 +43,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-source 不实现任何裁决钩子，也没有引用 codec：pick 落下字面文本，发出的提示词中也是同一段字面文本，因此确定性在宿主侧（[slash 流水线笔记](../../../.agents/notes/implemented/architecture/2026-07-25-web-input-machine-and-slash-pipeline.zh.md)）。
+`/` source 不实现裁决钩子或引用 codec，pick 直接落下字面文本。`@` 别名拥有引用 codec，因此展示/剪贴板形式可保持 `@name`；该 codec 在提交前序列化为 `/name`。两条路径最终汇入同一个宿主侧确定性手势边界（[slash 流水线笔记](../../../.agents/notes/implemented/architecture/2026-07-25-web-input-machine-and-slash-pipeline.zh.md)）。
 
 ### 候选流程
 
@@ -93,7 +93,7 @@ source 不实现任何裁决钩子，也没有引用 codec：pick 落下字面�
 这些限制定义引用与工具行何时回退到通用行为；它们是当前包约束。
 
 - **仅含工具结果的 history 页使用通用行**：键控分派要求配对的工具调用位于运行时窗口内；分页将工具调用留在窗口外时，工具结果没有工具身份。这项客户端呈现功能不会为了恢复该身份而扩展 history 协议约定。
-- **文本是唯一依据**：引用是普通的草稿文本；手动键入的相同 token 就是同一个引用，宿主手势边界评判的是发出的文本，而不是菜单交互。chip 视觉由 lexicon 扫描派生；提示词协议上没有 occurrence 身份、位置跟踪或结构化引用载荷。
+- **提示词协议仍是文本**：`/name` 是普通草稿文本，而选中的 `@` 插件是浏览器拥有的草稿 chip。两者在到达宿主手势边界前都变成相同的 `/name` 文本；不会把结构化插件权限传入提示词协议。
 - **预热落定之前打开的菜单**：在那次击键下不显示 skill 候选；下一次击键会重新轮询已落定的缓存。
 
 <a id="dev-note"></a>

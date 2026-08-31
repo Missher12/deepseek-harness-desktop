@@ -16,11 +16,14 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { createScope, scopeOf } from '@deepseek-ai/dsh-api-session-controller/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { InputTriggerService } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
-import type { ClientSessionContext, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type {
+  ClientSessionContext, InputTriggerSource, InsertReferenceRequest,
+} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { apply, inject } from '../src/client/index.ts'
 import { SkillRow as SkillToolRow } from '../src/client/SkillRow.tsx'
 
@@ -62,8 +65,8 @@ function providePresentation(ctx: Context): PresentationCapture {
 /** Boot the plugin over fake slash/connection faces; returns the captured source and its ctx. */
 async function bench(list: ListFn, addressed?: SessionId) {
   const ctx = new Context()
-  let captured: InputTriggerSource | undefined
-  ctx.provide('inputTriggers', { registerSource: (src: InputTriggerSource) => { captured = src; return () => {} } })
+  const captured: InputTriggerSource[] = []
+  ctx.provide('inputTriggers', { registerSource: (src: InputTriggerSource) => { captured.push(src); return () => {} } })
   ctx.provide('sessions', {
     subagentAddress: (id: SessionId) => id === addressed
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
@@ -72,7 +75,11 @@ async function bench(list: ListFn, addressed?: SessionId) {
   const remote = new TestRemote(ctx, { skills: { list } })
   providePresentation(ctx)
   await ctx.plugin({ inject: [...inject], apply }).await()
-  return { ctx, source: captured!, remote }
+  const source = captured.find(candidate => candidate.trigger === '/' && candidate.name === 'skill')
+  const pluginSource = captured.find(candidate => candidate.trigger === '@' && candidate.name === 'plugin')
+  if (source === undefined) throw new Error('missing / skill source')
+  if (pluginSource === undefined) throw new Error('missing @ plugin source')
+  return { ctx, source, pluginSource, remote }
 }
 
 const CATALOG: SkillRow[] = [
@@ -140,7 +147,7 @@ describe('apply', () => {
     }])
   })
 
-  it('registers the "/" skill source; disposal frees the name (HMR safety)', async () => {
+  it('registers the "/" skill and "@" plugin sources; disposal frees both names (HMR safety)', async () => {
     const ctx = new Context()
     // InputTriggerService itself injects 'sessions'; the stub unblocks its fiber.
     ctx.provide('sessions', {})
@@ -150,19 +157,74 @@ describe('apply', () => {
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const inputTriggers = ctx.get('inputTriggers') as InputTriggerService
-    const rival = {
+    const skillRival = {
       trigger: '/' as const,
       name: 'skill',
       candidates: () => Promise.resolve([]),
       onPick: () => undefined,
     }
-    // Live registration holds the (trigger, name) seat…
-    expect(() => inputTriggers.registerSource(rival)).toThrow(/already registered/)
+    const pluginRival = {
+      trigger: '@' as const,
+      name: 'plugin',
+      candidates: () => Promise.resolve([]),
+      onPick: () => undefined,
+    }
+    // Live registration holds both (trigger, name) seats…
+    expect(() => inputTriggers.registerSource(skillRival)).toThrow(/already registered/)
+    expect(() => inputTriggers.registerSource(pluginRival)).toThrow(/already registered/)
     // …and fiber teardown releases it.
     await fiber.dispose()
-    expect(() => inputTriggers.registerSource(rival)).not.toThrow()
+    expect(() => inputTriggers.registerSource(skillRival)).not.toThrow()
+    expect(() => inputTriggers.registerSource(pluginRival)).not.toThrow()
     expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(0)
     expect(presentation.localeDisposed).toBe(true)
+  })
+
+  it('opens the real @ menu, picks a plugin chip, and serializes it onto the skill execution path', async () => {
+    const ctx = new Context()
+    ctx.provide('sessions', {
+      scopeOf: (candidate: Context) => scopeOf(candidate),
+      subagentAddress: () => undefined,
+    })
+    await ctx.plugin(InputTriggerService).await()
+    new TestRemote(ctx, { skills: { list: listOk(CATALOG) } })
+    providePresentation(ctx)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    const inputTriggers = ctx.get('inputTriggers') as InputTriggerService
+    const scope = createScope(ctx, sid('s1'))
+    const controller = inputTriggers.sessionOf(scope.ctx)
+    const inserts: InsertReferenceRequest[] = []
+    scope.ctx.on('slash/input-insert-reference', (request) => {
+      inserts.push(request)
+      return true
+    })
+
+    controller.track('@co', 3, { tier: 'plain' }, 9)
+    await vi.waitFor(() => {
+      expect(controller.menu.getSnapshot().groups).toEqual([{
+        source: 'plugin',
+        status: 'ready',
+        items: [
+          { name: 'commit-helper', description: 'commit flow', icon: 'plugin' },
+          { name: 'code-review', description: 'review flow', icon: 'plugin' },
+        ],
+      }])
+    })
+    controller.pick('plugin', 0)
+    expect(inserts).toEqual([{
+      reference: {
+        source: 'plugin',
+        ref: 'commit-helper',
+        label: 'commit-helper',
+        appearance: 'plugin',
+        clipboardText: '@commit-helper',
+      },
+      span: { start: 0, end: 3, draftRev: 9 },
+    }])
+    await expect(controller.serializeReference(
+      'plugin', 'commit-helper', new AbortController().signal,
+    )).resolves.toBe('/commit-helper')
   })
 })
 
@@ -352,6 +414,37 @@ describe('pick lands plain text', () => {
       span: { start: 0, end: 4, draftRev: 7 },
     })
     expect(outcome).toEqual({ text: '/commit-helper ' })
+  })
+
+  it('offers the same callable catalog through @ and inserts a serializable plugin chip', async () => {
+    const { source, pluginSource } = await bench(listOk(CATALOG))
+    const items = await pluginSource.candidates(proj('s1'), req('co'))
+    expect(items).toEqual([
+      { name: 'commit-helper', description: 'commit flow', icon: 'plugin' },
+      { name: 'code-review', description: 'review flow', icon: 'plugin' },
+    ])
+
+    expect(pluginSource.onPick({
+      candidate: items[0]!,
+      session: proj('s1'),
+      position: 'inline',
+      via: 'menu',
+      action: 'pick',
+      span: { start: 7, end: 10, draftRev: 8 },
+    })).toEqual({
+      insert: {
+        source: 'plugin',
+        ref: 'commit-helper',
+        label: 'commit-helper',
+        appearance: 'plugin',
+        clipboardText: '@commit-helper',
+      },
+    })
+    expect(pluginSource.codec?.clipboardText('commit-helper')).toBe('@commit-helper')
+    await expect(pluginSource.codec?.serialize('commit-helper', new AbortController().signal))
+      .resolves.toBe('/commit-helper')
+    // The alias shares the same settled catalog rather than paying a second RPC.
+    await expect(source.candidates(proj('s1'), req('co'))).resolves.toHaveLength(2)
   })
 
   it('keeps the legacy reference codec removed and stays out of adjudication', async () => {

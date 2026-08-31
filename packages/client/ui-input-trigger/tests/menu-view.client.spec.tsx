@@ -114,6 +114,21 @@ describe('MenuView', () => {
     expect(status.children).toHaveLength(2)
   })
 
+  it('renders callable @ candidates as a localized plugin group with plugin glyphs', () => {
+    const { view } = mount(openState({
+      groups: [{
+        source: 'plugin',
+        status: 'ready',
+        items: [{ name: 'commit-helper', description: 'commit flow', icon: 'plugin' }],
+      }],
+      highlight: { source: 'plugin', index: 0 },
+    }))
+    expect(titles(view.container)).toEqual(['插件'])
+    const option = screen.getByRole('option', { name: /commit-helper/ })
+    expect(option.textContent).toBe('commit-helpercommit flow')
+    expect(option.querySelector('svg')).not.toBeNull()
+  })
+
   it('keeps an opted-out source title hidden while its candidates are pending', () => {
     mount(openState({
       groups: [{ source: 'reference', showGroupTitle: false, status: 'pending', items: [] }],
