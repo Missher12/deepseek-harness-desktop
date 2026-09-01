@@ -4,6 +4,72 @@ import type { AttachmentId, ImageVariantId } from './brand.ts'
 
 export type { AttachmentId } from './brand.ts'
 
+/** Closed document formats accepted by the provider-neutral attachment path. */
+export const DOCUMENT_MEDIA_TYPES = Object.freeze([
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain',
+  'text/markdown',
+  'application/json',
+  'text/csv',
+  'application/yaml',
+  'application/xml',
+] as const)
+
+/** Media types with deterministic, non-executing local text extraction. */
+export type DocumentMediaType = typeof DOCUMENT_MEDIA_TYPES[number]
+
+/** Durable reference to immutable source bytes and their immutable extracted text. */
+export interface DocumentAttachmentRef {
+  /** Content address for the original source bytes. */
+  attachmentId: AttachmentId
+  /** Content address for the exact UTF-8 extracted text. */
+  extractedTextId: AttachmentId
+  /** Media type verified against the source container or UTF-8 content. */
+  mediaType: DocumentMediaType
+  /** Sanitized leaf display name; never an absolute or relative path. */
+  name: string
+  /** Exact original source byte length. */
+  bytes: number
+  /** Exact UTF-8 byte length of the stored extracted text. */
+  extractedBytes: number
+  /** Whether extraction was deterministically cut at the configured text budget. */
+  truncated: boolean
+}
+
+/** Deployment-owned document admission and extraction limits. */
+export interface DocumentAttachmentLimits {
+  maxDocumentBytes: number
+  maxDocumentsPerMessage: number
+  maxMessageDocumentBytes: number
+  maxExtractedTextBytes: number
+  maxMessageExtractedTextBytes: number
+  maxDocumentNameBytes: number
+  mediaTypes: readonly DocumentMediaType[]
+}
+
+/** Base64-encoded document supplied by one authenticated prompt request. */
+export interface EncodedDocumentAttachment {
+  mediaType: DocumentMediaType
+  data: string
+  name: string
+}
+
+/** Request to validate, extract, and durably commit one document. */
+export interface SaveDocumentAttachment {
+  data: Uint8Array
+  mediaType: DocumentMediaType
+  name: string
+}
+
+/** Verified original and extracted bytes loaded for one durable document reference. */
+export interface StoredDocumentAttachment {
+  ref: DocumentAttachmentRef
+  data: Uint8Array
+  text: string
+}
+
 /** Raster image formats accepted by the version-one attachment path. */
 export type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
 

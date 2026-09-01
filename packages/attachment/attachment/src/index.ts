@@ -3,29 +3,40 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import { AttachmentError } from './error.ts'
 import type {
+  DocumentAttachmentLimits,
+  DocumentAttachmentRef,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
   RequestImageAttachment,
+  SaveDocumentAttachment,
   SaveImageAttachment,
+  StoredDocumentAttachment,
   StoredImageAttachment,
 } from './types.ts'
 
 export { AttachmentId, ImageVariantId } from './brand.ts'
-export { AttachmentError, isImageAdmissionError } from './error.ts'
-export type { AttachmentErrorCode, ImageAdmissionErrorCode } from './error.ts'
-export { admitEncodedImages } from './admission.ts'
+export { AttachmentError, isDocumentAdmissionError, isImageAdmissionError } from './error.ts'
+export type { AttachmentErrorCode, DocumentAdmissionErrorCode, ImageAdmissionErrorCode } from './error.ts'
+export { admitEncodedDocuments, admitEncodedImages } from './admission.ts'
 export type {
   AttachmentId as AttachmentIdType,
+  DocumentAttachmentLimits,
+  DocumentAttachmentRef,
+  DocumentMediaType,
+  EncodedDocumentAttachment,
   EncodedImageAttachment,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
   ImageMediaType,
   RequestImageAttachment,
+  SaveDocumentAttachment,
   SaveImageAttachment,
+  StoredDocumentAttachment,
   StoredImageAttachment,
 } from './types.ts'
+export { DOCUMENT_MEDIA_TYPES } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -41,6 +52,17 @@ export abstract class AttachmentStore extends Service {
 
   /** Deployment-resolved image policy used by authoritative and fast-path validation. */
   abstract readonly imageLimits: ImageAttachmentLimits
+
+  /** Deployment-resolved document policy; an empty media roster means unsupported. */
+  readonly documentLimits: DocumentAttachmentLimits = Object.freeze({
+    maxDocumentBytes: 0,
+    maxDocumentsPerMessage: 0,
+    maxMessageDocumentBytes: 0,
+    maxExtractedTextBytes: 0,
+    maxMessageExtractedTextBytes: 0,
+    maxDocumentNameBytes: 0,
+    mediaTypes: Object.freeze([]),
+  })
 
   /**
    * Validate one image without persisting it.
@@ -86,6 +108,61 @@ export abstract class AttachmentStore extends Service {
     const refs: ImageAttachmentRef[] = []
     for (const input of inputs) refs.push(await this.saveImage(input))
     return refs
+  }
+
+  /** Validate count, source-byte, and media-type bounds without starting extraction or writes. */
+  protected validateDocumentBatch(inputs: readonly SaveDocumentAttachment[]): void {
+    const { maxDocumentsPerMessage, maxMessageDocumentBytes, mediaTypes } = this.documentLimits
+    if (inputs.length > maxDocumentsPerMessage) {
+      throw new AttachmentError('Document batch exceeds the configured document-count limit.', 'TOO_MANY_DOCUMENTS')
+    }
+    const totalBytes = inputs.reduce((sum, input) => sum + input.data.byteLength, 0)
+    if (totalBytes > maxMessageDocumentBytes) {
+      throw new AttachmentError('Document batch exceeds the configured aggregate byte limit.', 'DOCUMENTS_TOO_LARGE')
+    }
+    for (const input of inputs) {
+      if (!mediaTypes.includes(input.mediaType)) {
+        throw new AttachmentError(
+          `Document type ${input.mediaType} is not accepted by this deployment.`,
+          'UNSUPPORTED_DOCUMENT_TYPE',
+        )
+      }
+    }
+  }
+
+  /** Validate every document before durably committing any member in caller order. */
+  async saveDocuments(inputs: readonly SaveDocumentAttachment[]): Promise<readonly DocumentAttachmentRef[]> {
+    this.validateDocumentBatch(inputs)
+    for (const input of inputs) await this.validateDocument(input)
+    const refs: DocumentAttachmentRef[] = []
+    for (const input of inputs) refs.push(await this.saveDocument(input))
+    return refs
+  }
+
+  /** Validate one document without persistence. Unsupported providers fail closed. */
+  validateDocument(_input: SaveDocumentAttachment): Promise<void> {
+    return this.unsupportedDocuments<void>()
+  }
+
+  /** Validate, extract, and durably commit one document. Unsupported providers fail closed. */
+  saveDocument(_input: SaveDocumentAttachment): Promise<DocumentAttachmentRef> {
+    return this.unsupportedDocuments<DocumentAttachmentRef>()
+  }
+
+  private unsupportedDocuments<T>(): Promise<T> {
+    return Promise.reject(new AttachmentError(
+      'The mounted attachment provider does not accept documents.',
+      'UNSUPPORTED_DOCUMENT_TYPE',
+    ))
+  }
+
+  /** Read and verify one immutable document source and extraction. */
+  readDocument(_ref: DocumentAttachmentRef, signal?: AbortSignal): Promise<StoredDocumentAttachment> {
+    signal?.throwIfAborted()
+    return Promise.reject(new AttachmentError(
+      'The mounted attachment provider does not accept documents.',
+      'ATTACHMENT_PROJECTION_UNSUPPORTED',
+    ))
   }
 
   /**

@@ -12,12 +12,29 @@ const IMAGE_ADMISSION_ERROR_CODES = [
   'IMAGE_DIMENSION_TOO_LARGE',
 ] as const
 
+const DOCUMENT_ADMISSION_ERROR_CODES = [
+  'TOO_MANY_DOCUMENTS',
+  'DOCUMENTS_TOO_LARGE',
+  'UNSUPPORTED_DOCUMENT_TYPE',
+  'INVALID_DOCUMENT_BASE64',
+  'INVALID_DOCUMENT',
+  'DOCUMENT_TYPE_MISMATCH',
+  'DOCUMENT_TOO_LARGE',
+  'DOCUMENT_NAME_INVALID',
+  'DOCUMENT_EXTRACTED_TEXT_TOO_LARGE',
+  'DOCUMENT_ENCRYPTED',
+  'DOCUMENT_MACROS_UNSUPPORTED',
+] as const
+
 /** Caller-correctable attachment failure codes raised while admitting image input. */
 export type ImageAdmissionErrorCode = typeof IMAGE_ADMISSION_ERROR_CODES[number]
+/** Caller-correctable attachment failure codes raised while admitting document input. */
+export type DocumentAdmissionErrorCode = typeof DOCUMENT_ADMISSION_ERROR_CODES[number]
 
 /** Stable attachment failure codes used for protocol error routing. */
 export type AttachmentErrorCode =
   | ImageAdmissionErrorCode
+  | DocumentAdmissionErrorCode
   | 'INVALID_ATTACHMENT_REF'
   | 'ATTACHMENT_CORRUPT'
   | 'ATTACHMENT_WRITE_FAILED'
@@ -27,6 +44,7 @@ export type AttachmentErrorCode =
 
 /** Runtime membership for structurally compatible errors crossing package boundaries. */
 const IMAGE_ADMISSION_ERROR_CODE_SET: ReadonlySet<string> = new Set(IMAGE_ADMISSION_ERROR_CODES)
+const DOCUMENT_ADMISSION_ERROR_CODE_SET: ReadonlySet<string> = new Set(DOCUMENT_ADMISSION_ERROR_CODES)
 
 /**
  * Stable failures suitable for host RPC error mapping.
@@ -65,4 +83,14 @@ export function isImageAdmissionError(
     && 'code' in error
     && typeof error.code === 'string'
     && IMAGE_ADMISSION_ERROR_CODE_SET.has(error.code)
+}
+
+/** Distinguish caller-correctable document admission failures from storage faults. */
+export function isDocumentAdmissionError(
+  error: unknown,
+): error is AttachmentError & { readonly code: DocumentAdmissionErrorCode } {
+  return error instanceof Error
+    && 'code' in error
+    && typeof error.code === 'string'
+    && DOCUMENT_ADMISSION_ERROR_CODE_SET.has(error.code)
 }

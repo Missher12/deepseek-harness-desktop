@@ -25,6 +25,29 @@ function image(bytes: number): ContentBlock {
   }
 }
 
+function document(): ContentBlock {
+  return {
+    type: 'document',
+    attachment: {
+      attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`),
+      extractedTextId: AttachmentId(`sha256:${'c'.repeat(64)}`),
+      mediaType: 'text/plain',
+      name: 'notes.txt',
+      bytes: 12,
+      extractedBytes: 10,
+      truncated: false,
+    },
+  }
+}
+
+describe('document content blocks', () => {
+  it('remain durable provider-neutral content beside text and images', () => {
+    const block = document()
+    const message = createUserMessage({ content: [{ type: 'text', text: 'read this' }, block], source })
+    expect(message.content).toEqual([{ type: 'text', text: 'read this' }, block])
+  })
+})
+
 describe('offloadRequestImages', () => {
   it('preserves every image when no payload bound is configured', () => {
     const messages = [createUserMessage({ content: [image(300)], source })]
