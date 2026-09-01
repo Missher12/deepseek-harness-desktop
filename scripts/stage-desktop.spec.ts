@@ -1,6 +1,7 @@
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  assertNoDesktopControlArtifacts,
   desktopStagePnpmInvocation,
   stageDesktop,
   validateReasoningEffortPatch,
@@ -83,8 +84,35 @@ function fakeDependencies(
     },
     findPackageDirectories: async () => marketPackageDirectories,
     findNativeBinaries: async () => nativeBinaries,
+    findForbiddenControlArtifacts: async () => [],
   }
 }
+
+describe('desktop control release boundary', () => {
+  it('rejects exact packaged control artifacts without fuzzy false positives', () => {
+    expect(() => {
+      assertNoDesktopControlArtifacts(['node_modules/@deepseek-ai/dsh-tool-agent-control/package.json'])
+    }).toThrow(/dsh-tool-agent-control/u)
+    expect(() => {
+      assertNoDesktopControlArtifacts(['extensions/chromium/edge/manifest.json'])
+    }).toThrow(/extensions\/chromium/u)
+    expect(() => {
+      assertNoDesktopControlArtifacts(['native/computer-use-helper/bin/helper'])
+    }).toThrow(/computer-use-helper/u)
+    expect(() => {
+      assertNoDesktopControlArtifacts(['node_modules/example-browser-control-guide/package.json'])
+    }).not.toThrow()
+  })
+
+  it('fails staging when deploy contains a forbidden control artifact', async () => {
+    const dependencies = fakeDependencies()
+    dependencies.findForbiddenControlArtifacts = async () => [
+      join(DEFAULT_STAGE, 'node_modules/@deepseek-ai/dsh-control-runtime/package.json'),
+    ]
+
+    await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(/dsh-control-runtime/u)
+  })
+})
 
 describe('stageDesktop', () => {
   it('spawns pnpm through its JavaScript entrypoint without a platform shell', () => {

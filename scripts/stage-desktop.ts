@@ -20,6 +20,7 @@ export interface StageDesktopDependencies {
   isFile(path: string): Promise<boolean>
   findPackageDirectories(root: string, packageDirectoryName: string): Promise<readonly string[]>
   findNativeBinaries(root: string): Promise<readonly string[]>
+  findForbiddenControlArtifacts(root: string): Promise<readonly string[]>
 }
 
 /** Auditable result returned by one staging operation. */
@@ -85,6 +86,41 @@ async function findPackageDirectories(root: string, packageDirectoryName: string
   })
 }
 
+const FORBIDDEN_DESKTOP_CONTROL_SEGMENTS = new Set([
+  'dsh-tool-agent-control',
+  'dsh-tool-browser-control',
+  'dsh-tool-computer-control',
+  'dsh-client-ui-desktop-control',
+  'ui-desktop-control',
+  'dsh-control-runtime',
+  'control-runtime',
+  'computer-use-helper',
+])
+
+function isDesktopControlArtifact(path: string): boolean {
+  const normalized = path.replaceAll('\\', '/')
+  const segments = normalized.split('/').filter(Boolean)
+  return segments.some(segment => FORBIDDEN_DESKTOP_CONTROL_SEGMENTS.has(segment))
+    || normalized.startsWith('extensions/chromium/')
+    || normalized.includes('/extensions/chromium/')
+    || normalized.endsWith('/extensions/chromium')
+}
+
+/** Reject product artifacts from the retired Browser/Computer Control module. */
+export function assertNoDesktopControlArtifacts(paths: readonly string[]): void {
+  const forbidden = paths.find(isDesktopControlArtifact)
+  if (forbidden !== undefined) {
+    throw new Error(`Desktop staging found forbidden Browser/Computer Control artifact: ${forbidden}`)
+  }
+}
+
+async function findForbiddenControlArtifacts(root: string): Promise<string[]> {
+  return findTreePaths(root, (path, _name, isDirectory) => {
+    if (isDesktopControlArtifact(path)) return 'collect'
+    return isDirectory ? 'descend' : 'skip'
+  })
+}
+
 function run(command: string, args: readonly string[], cwd: string): void {
   const result = spawnSync(command, [...args], { cwd, stdio: 'inherit', shell: false })
   if (result.error !== undefined) throw result.error
@@ -115,6 +151,7 @@ const realDependencies: StageDesktopDependencies = {
   isFile: pathIsFile,
   findPackageDirectories,
   findNativeBinaries,
+  findForbiddenControlArtifacts,
 }
 
 const REASONING_EFFORT_PACKAGE = '@deepseek-ai/dsh-reasoning-effort'
@@ -259,6 +296,8 @@ export async function stageDesktop(
     await dependencies.copy(join(desktopDir, entry), join(stageDir, entry))
   }
   await dependencies.copy(join(root, 'THIRD_PARTY_NOTICES.md'), join(stageDir, 'THIRD_PARTY_NOTICES.md'))
+
+  assertNoDesktopControlArtifacts(await dependencies.findForbiddenControlArtifacts(stageDir))
 
   const required = [
     'package.json',

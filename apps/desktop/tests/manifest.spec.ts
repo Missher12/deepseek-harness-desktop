@@ -40,6 +40,33 @@ interface DesktopPatch {
 }
 
 describe('desktop package manifest', () => {
+  it('keeps Browser and Computer Control modules out of the Desktop product', () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as DesktopManifest
+    const patch = readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8')
+    const builder = readFileSync(new URL('../electron-builder.yml', import.meta.url), 'utf8')
+    const serializedDependencies = Object.keys({
+      ...manifest.dependencies,
+      ...manifest.devDependencies,
+    }).join('\n')
+    const forbidden = [
+      'tool-agent-control',
+      'tool-browser-control',
+      'tool-computer-control',
+      'ui-desktop-control',
+      'control-runtime',
+      'computer-use-helper',
+      'extensions/chromium',
+    ]
+
+    for (const artifact of forbidden) {
+      expect(serializedDependencies, artifact).not.toContain(artifact)
+      expect(patch, artifact).not.toContain(artifact)
+      expect(builder, artifact).not.toContain(artifact)
+    }
+  })
+
   it('uses one rounded icon source with native macOS and Windows containers', () => {
     const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
 
