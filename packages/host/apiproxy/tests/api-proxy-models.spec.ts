@@ -199,6 +199,60 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('admits mixed images and documents into one ordered durable prompt', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const saveImages = vi.fn(() => Promise.resolve([{
+      attachmentId: 'image-ref', mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1,
+    }]))
+    const saveDocuments = vi.fn(() => Promise.resolve([{
+      attachmentId: 'document-ref',
+      extractedTextId: 'document-text-ref',
+      mediaType: 'text/plain' as const,
+      name: 'notes.txt',
+      bytes: 5,
+      extractedBytes: 5,
+      truncated: false,
+    }]))
+    ctx.provide('attachments', {
+      imageLimits: { mediaTypes: ['image/png'] },
+      saveImages,
+      saveDocuments,
+    } as never)
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const result = await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [
+        { type: 'text' as const, text: 'Review ' },
+        { type: 'document' as const, mediaType: 'text/plain' as const, data: 'aGVsbG8=', name: 'notes.txt' },
+        { type: 'image' as const, mediaType: 'image/png' as const, data: 'AQ==' },
+      ],
+    }))
+
+    expect(result.result.ok).toBe(true)
+    expect(saveDocuments).toHaveBeenCalledWith([{
+      data: Uint8Array.from([104, 101, 108, 108, 111]), mediaType: 'text/plain', name: 'notes.txt',
+    }])
+    expect((followup.mock.calls[0]?.[0] as UserMessage).content).toEqual([
+      { type: 'text', text: 'Review ' },
+      {
+        type: 'document',
+        attachment: {
+          attachmentId: 'document-ref', extractedTextId: 'document-text-ref', mediaType: 'text/plain',
+          name: 'notes.txt', bytes: 5, extractedBytes: 5, truncated: false,
+        },
+      },
+      { type: 'image', attachment: { attachmentId: 'image-ref', mediaType: 'image/png', bytes: 1, width: 1, height: 1 } },
+    ])
+    await ctx.fiber.dispose()
+  })
+
   it('allows a text-only selection while durable or pending images remain available for later models', async () => {
     const { ctx, agent, sessionId } = await harness()
     registerTextOnly(ctx)

@@ -34,7 +34,7 @@ export interface ISession {
   readonly projections: ProjectionsFace
   /**
    * Send a prompt into the session.
-   * @param content - text plus browser-owned temporary image uploads.
+   * @param content - text plus browser-owned temporary image or document uploads.
    * @param mode - 'queue' appends a turn; 'steer' interrupts the running one.
    * @returns acceptance, or the business error (also mirrored into snapshot.promptError).
    */

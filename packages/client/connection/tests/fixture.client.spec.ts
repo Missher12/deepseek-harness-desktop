@@ -176,6 +176,25 @@ describe('createFixtureApi', () => {
           maxImageDimension: 2000,
           mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
         },
+        documentLimits: {
+          maxDocumentBytes: 20 * 1024 * 1024,
+          maxDocumentsPerMessage: 5,
+          maxMessageDocumentBytes: 50 * 1024 * 1024,
+          maxExtractedTextBytes: 96 * 1024,
+          maxMessageExtractedTextBytes: 256 * 1024,
+          maxDocumentNameBytes: 255,
+          mediaTypes: [
+            'application/pdf',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'text/plain',
+            'text/markdown',
+            'application/json',
+            'text/csv',
+            'application/yaml',
+            'application/xml',
+          ],
+        },
       } },
     })
   })
@@ -365,7 +384,7 @@ describe('createFixtureApi', () => {
       const envelopes: RpcRequest<MuxFrame>[] = []
       for await (const envelope of api.events.mux(req({}), abort.signal)) {
         envelopes.push(envelope)
-        if (envelopes.length >= 13) abort.abort()
+        if (envelopes.length >= 14) abort.abort()
       }
       return envelopes
     }
@@ -392,10 +411,14 @@ describe('createFixtureApi', () => {
       type: 'session/projection', sessionId: 'fx-alpha', key: 'imageLimits',
       value: { maxImagesPerMessage: 20, maxImageBytes: 5 * 1024 * 1024 },
     })
-    expect(first[11]?.payload).toMatchObject({ type: 'approval/requested', toolName: 'dangerous_tool' })
-    expect(second[11]?.rpcId).toBe(first[11]?.rpcId) // stable rpcId across replays (host replay semantics)
-    expect(first[12]?.payload).toMatchObject({ type: 'question/requested', sessionId: 'fx-alpha' })
-    expect(second[12]?.rpcId).toBe(first[12]?.rpcId)
+    expect(first[11]?.payload).toMatchObject({
+      type: 'session/projection', sessionId: 'fx-alpha', key: 'documentLimits',
+      value: { maxDocumentsPerMessage: 5, maxDocumentBytes: 20 * 1024 * 1024 },
+    })
+    expect(first[12]?.payload).toMatchObject({ type: 'approval/requested', toolName: 'dangerous_tool' })
+    expect(second[12]?.rpcId).toBe(first[12]?.rpcId) // stable rpcId across replays (host replay semantics)
+    expect(first[13]?.payload).toMatchObject({ type: 'question/requested', sessionId: 'fx-alpha' })
+    expect(second[13]?.rpcId).toBe(first[13]?.rpcId)
   })
 
   it('steer with no replay in flight falls through to a fresh queued turn; non-text blocks stringify empty', async () => {

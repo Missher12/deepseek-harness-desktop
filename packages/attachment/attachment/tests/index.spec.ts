@@ -106,13 +106,13 @@ const DOCUMENT_LIMITS: DocumentAttachmentLimits = {
 class RecordingDocumentStore extends RecordingStore {
   override readonly documentLimits = DOCUMENT_LIMITS
 
-  validateDocument(input: SaveDocumentAttachment): Promise<void> {
+  override validateDocument(input: SaveDocumentAttachment): Promise<void> {
     const value = input.data[0] ?? 0
     this.calls.push(`validate-document:${value}`)
     return Promise.resolve()
   }
 
-  saveDocument(input: SaveDocumentAttachment): Promise<DocumentAttachmentRef> {
+  override saveDocument(input: SaveDocumentAttachment): Promise<DocumentAttachmentRef> {
     const value = input.data[0] ?? 0
     this.calls.push(`save-document:${value}`)
     return Promise.resolve({
@@ -126,7 +126,7 @@ class RecordingDocumentStore extends RecordingStore {
     })
   }
 
-  readDocument(_ref: DocumentAttachmentRef): Promise<StoredDocumentAttachment> {
+  override readDocument(_ref: DocumentAttachmentRef): Promise<StoredDocumentAttachment> {
     throw new Error('not used')
   }
 }

@@ -12,8 +12,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
-import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError, admitEncodedDocuments, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
+import type { DocumentAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
@@ -93,7 +93,9 @@ import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-a
 // `ctx.get('approval')` without a value dependency on the seam (optional composition).
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { approvalResponsePayloadSchema } from './api/approvals.schema.ts'
-import { imageLimitsProjectionSchema, sessionListMetadataProjectionSchema } from './api/sessions.schema.ts'
+import {
+  documentLimitsProjectionSchema, imageLimitsProjectionSchema, sessionListMetadataProjectionSchema,
+} from './api/sessions.schema.ts'
 import { questionResponsePayloadSchema } from './api/questions.schema.ts'
 import type { ClientResponse, RpcError, RpcReceipt, RpcRequest, RpcResponse } from './api/rpc.ts'
 import { RpcId } from './api/rpc.ts'
@@ -131,17 +133,26 @@ export const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 1024
 /** Conversation message event types (the pagination counting unit). */
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
 
-/** Validate one prompt as a batch before publishing any durable image object. */
+/** Validate one prompt as category batches before publishing durable attachment references. */
 async function durablePromptContent(ctx: Context, content: readonly PromptContentPart[]): Promise<ContentBlock[]> {
   if (content.every(part => part.type === 'text')) {
     return content.map(part => ({ type: 'text', text: part.text }))
   }
-  const refs = await admitEncodedImages(ctx.attachments, content.filter(part => part.type === 'image'))
-  let next = 0
-  return content.map(part => part.type === 'text'
-    ? { type: 'text', text: part.text }
-    // admitEncodedImages returns one reference per image part in order.
-    : { type: 'image', attachment: refs[next++] as ImageAttachmentRef })
+  const images = content.filter(part => part.type === 'image')
+  const documents = content.filter(part => part.type === 'document')
+  const [imageRefs, documentRefs] = await Promise.all([
+    images.length === 0 ? Promise.resolve([]) : admitEncodedImages(ctx.attachments, images),
+    documents.length === 0 ? Promise.resolve([]) : admitEncodedDocuments(ctx.attachments, documents),
+  ])
+  let nextImage = 0
+  let nextDocument = 0
+  return content.map((part): ContentBlock => {
+    if (part.type === 'text') return { type: 'text', text: part.text }
+    if (part.type === 'image') {
+      return { type: 'image', attachment: imageRefs[nextImage++] as ImageAttachmentRef }
+    }
+    return { type: 'document', attachment: documentRefs[nextDocument++] as DocumentAttachmentRef }
+  })
 }
 
 /** Search durable content for an image reference, including nested tool results. */
@@ -1082,12 +1093,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   const pendingQuestions = new Map<RpcId, PendingQuestion>()
   const pendingApprovals = new Map<RpcId, PendingApproval>()
   const muxQueues = new Set<FrameQueue<RpcRequest<MuxFrame>>>()
-  const imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
+  const attachmentAdmissionChains = new WeakMap<Agent, Promise<void>>()
 
-  /** Serialize image admission with model selection for one agent. */
-  function serializeImageAdmission<T>(agent: Agent, operation: () => Promise<T>): Promise<T> {
-    const result = (imageAdmissionChains.get(agent) ?? Promise.resolve()).then(operation)
-    imageAdmissionChains.set(agent, result.then(() => undefined, () => undefined))
+  /** Serialize attachment admission with model selection for one agent. */
+  function serializeAttachmentAdmission<T>(agent: Agent, operation: () => Promise<T>): Promise<T> {
+    const result = (attachmentAdmissionChains.get(agent) ?? Promise.resolve()).then(operation)
+    attachmentAdmissionChains.set(agent, result.then(() => undefined, () => undefined))
     return result
   }
 
@@ -1276,6 +1287,17 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       init: () => null,
       apply: state => state,
       wire: { viewSchema: imageLimitsProjectionSchema, view: () => projectionCtx.attachments.imageLimits },
+      stateVersion: 1,
+    })
+  })
+
+  ctx.inject(['sessionProjections', 'attachments'], (projectionCtx) => {
+    projectionCtx.sessionProjections.register<'documentLimits', null>({
+      key: 'documentLimits',
+      stateSchema: zod.null(),
+      init: () => null,
+      apply: state => state,
+      wire: { viewSchema: documentLimitsProjectionSchema, view: () => projectionCtx.attachments.documentLimits },
       stateVersion: 1,
     })
   })
@@ -2305,7 +2327,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const { sessionId, provider, model, reasoningEffort } = request.payload
         const found = await agentFor(sessionId)
         if ('error' in found) return err(request, found.error)
-        return serializeImageAdmission(found.agent, async () => {
+        return serializeAttachmentAdmission(found.agent, async () => {
           try {
             const resolved = await ctx.llm.resolveCallConfig({
               provider,
@@ -2491,6 +2513,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
         }
         const hasImage = content.some(part => part.type === 'image')
+        const hasAttachment = content.some(part => part.type !== 'text')
         const admit = async (): Promise<RpcResponse<{ accepted: true }>> => {
           try {
             if (hasImage) {
@@ -2524,7 +2547,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           }
           return ok(request, { accepted: true as const })
         }
-        return hasImage ? serializeImageAdmission(agent, admit) : admit()
+        return hasAttachment ? serializeAttachmentAdmission(agent, admit) : admit()
       },
 
       async attachment(request) {

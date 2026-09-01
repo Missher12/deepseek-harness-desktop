@@ -1091,6 +1091,25 @@ function projectionValuesOf(log: readonly SessionEvent[]): Record<string, unknow
     maxImageDimension: 2000,
     mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
   }
+  values['documentLimits'] = {
+    maxDocumentBytes: 20 * 1024 * 1024,
+    maxDocumentsPerMessage: 5,
+    maxMessageDocumentBytes: 50 * 1024 * 1024,
+    maxExtractedTextBytes: 96 * 1024,
+    maxMessageExtractedTextBytes: 256 * 1024,
+    maxDocumentNameBytes: 255,
+    mediaTypes: [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain',
+      'text/markdown',
+      'application/json',
+      'text/csv',
+      'application/yaml',
+      'application/xml',
+    ],
+  }
   return values
 }
 
@@ -2551,6 +2570,20 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         const userText = content.map(b => (b.type === 'text' ? b.text : '')).join('')
         const durable: ContentBlock[] = content.map((block) => {
           if (block.type === 'text') return block
+          if (block.type === 'document') {
+            return {
+              type: 'document',
+              attachment: {
+                attachmentId: `fixture:${randomUuid()}` as AttachmentIdType,
+                extractedTextId: `fixture:${randomUuid()}` as AttachmentIdType,
+                mediaType: block.mediaType,
+                name: block.name,
+                bytes: Math.max(1, Math.floor(block.data.length * 3 / 4)),
+                extractedBytes: 0,
+                truncated: false,
+              },
+            }
+          }
           const attachment: ImageAttachmentRef = {
             attachmentId: `fixture:${randomUuid()}` as AttachmentIdType,
             mediaType: block.mediaType,

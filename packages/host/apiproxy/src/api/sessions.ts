@@ -5,7 +5,14 @@
  */
 
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
-import type { AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import type {
+  AttachmentIdType,
+  DocumentAttachmentLimits,
+  DocumentMediaType,
+  ImageAttachmentLimits,
+  ImageAttachmentRef,
+  ImageMediaType,
+} from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 // The pure-type outlet: api/ is browser-importable, and the package root's
@@ -19,6 +26,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
     sessionListMetadata: SessionListMetadata
     imageLimits: null
+    documentLimits: null
   }
   interface SessionProjectionMap {
     /**
@@ -36,6 +44,8 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
      * composed — clients skip the pre-check and let the host answer.
      */
     imageLimits: ImageAttachmentLimits
+    /** Deployment-owned document admission and extraction limits. */
+    documentLimits: DocumentAttachmentLimits
   }
 }
 
@@ -104,10 +114,11 @@ export interface SessionProjectionsBlock {
   values: Partial<SessionProjectionMap>
 }
 
-/** Browser-submitted prompt content; the host promotes image bytes to durable references. */
+/** Browser-submitted prompt content; the host promotes attachment bytes to durable references. */
 export type PromptContentPart =
   | { type: 'text'; text: string }
   | { type: 'image'; mediaType: ImageMediaType; data: string; name?: string }
+  | { type: 'document'; mediaType: DocumentMediaType; data: string; name: string }
 
 /** Complete model selection for one session. */
 export interface ModelSelection {

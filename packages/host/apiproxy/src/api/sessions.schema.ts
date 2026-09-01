@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod'
+import { DOCUMENT_MEDIA_TYPES } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
@@ -16,7 +17,9 @@ import type {
 } from './sessions.ts'
 import { PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS } from './sessions.ts'
 import type { ToolEventView } from './events.ts'
-import type { AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type {
+  AttachmentIdType, DocumentAttachmentLimits, ImageAttachmentLimits, ImageAttachmentRef,
+} from '@deepseek-ai/dsh-attachment'
 import type { WorkspaceId } from './workspace.ts'
 import {
   SESSION_SEARCH_RESULT_LIMIT,
@@ -258,6 +261,17 @@ export const imageLimitsProjectionSchema = z.object({
   mediaTypes: z.array(z.string()),
 }) as unknown as z.ZodType<ImageAttachmentLimits>
 
+/** documentLimits projection unit schema (host-side view validation). */
+export const documentLimitsProjectionSchema = z.object({
+  maxDocumentBytes: z.number().int().nonnegative(),
+  maxDocumentsPerMessage: z.number().int().nonnegative(),
+  maxMessageDocumentBytes: z.number().int().nonnegative(),
+  maxExtractedTextBytes: z.number().int().nonnegative(),
+  maxMessageExtractedTextBytes: z.number().int().nonnegative(),
+  maxDocumentNameBytes: z.number().int().nonnegative(),
+  mediaTypes: z.array(z.enum(DOCUMENT_MEDIA_TYPES)),
+}) as unknown as z.ZodType<DocumentAttachmentLimits>
+
 /** session.history response value (projections rides the tail page only). */
 export const sessionHistoryValueSchema: z.ZodType<Wire<ResponseValue<'session.history'>>> = z.object({
   events: z.array(historyEntrySchema),
@@ -303,10 +317,24 @@ export const imageMediaTypeSchema = z.union([
   z.literal('image/gif'),
 ])
 
+/** Closed document formats accepted by the authenticated browser wire. */
+export const documentMediaTypeSchema = z.enum(DOCUMENT_MEDIA_TYPES)
+
+/** Hard wire ceiling for a canonical base64 encoding of a 20 MiB document. */
+const MAX_DOCUMENT_BASE64_CODE_UNITS = 27_962_028
+
 /** Prompt wire content is intentionally narrower than merge-extensible durable core content. */
 export const promptContentPartSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('text'), text: z.string() }),
-  z.object({ type: z.literal('image'), mediaType: imageMediaTypeSchema, data: z.string(), name: z.string().optional() }),
+  z.object({ type: z.literal('text'), text: z.string() }).strict(),
+  z.object({
+    type: z.literal('image'), mediaType: imageMediaTypeSchema, data: z.string(), name: z.string().optional(),
+  }).strict(),
+  z.object({
+    type: z.literal('document'),
+    mediaType: documentMediaTypeSchema,
+    data: z.string().min(1).max(MAX_DOCUMENT_BASE64_CODE_UNITS),
+    name: z.string().min(1).max(1024),
+  }).strict(),
 ])
 
 /** session.prompt request payload, including optional browser-local request provenance. */
