@@ -29,7 +29,9 @@ import type { LlmCallConfig, LlmCallConfigAdapterDefaults } from './call-config.
 import { HarnessError, INVALID_CREDENTIAL_CODE } from './error.ts'
 import { normalizeLlmFailure } from './adapter-failure.ts'
 import { normalizeApiKey } from './api-key.ts'
-import { contentHasImage, projectImagesForTextModel } from './content.ts'
+import {
+  contentHasDocument, contentHasImage, projectDocumentsForRequest, projectImagesForTextModel,
+} from './content.ts'
 
 export * from './attribution.ts'
 export * from './brand.ts'
@@ -929,13 +931,27 @@ export class LlmRuntime extends Service {
         : Object.isFrozen(options)
           ? deepFreeze({ ...options, ...resolvedConfig })
           : { ...options, ...resolvedConfig }
-      const projectedOptions = modelInfo.inputModalities !== undefined
+      let projectedOptions = resolvedOptions
+      if (resolvedOptions.messages.some(message => contentHasDocument(message.content))) {
+        const attachments = this.ctx.get('attachments')
+        if (attachments === undefined) {
+          throw new LlmError(
+            'Document conversion requires the durable attachment service.',
+            'UNSUPPORTED_CONTENT',
+          )
+        }
+        const messages = await projectDocumentsForRequest(resolvedOptions.messages, attachments, options.signal)
+        projectedOptions = Object.isFrozen(resolvedOptions)
+          ? deepFreeze({ ...resolvedOptions, messages: [...messages] })
+          : { ...resolvedOptions, messages: [...messages] }
+      }
+      projectedOptions = modelInfo.inputModalities !== undefined
         && !modelInfo.inputModalities.includes('image')
-        && resolvedOptions.messages.some(message => contentHasImage(message.content))
-        ? Object.isFrozen(resolvedOptions)
-          ? deepFreeze({ ...resolvedOptions, messages: projectImagesForTextModel(resolvedOptions.messages) as Message[] })
-          : { ...resolvedOptions, messages: projectImagesForTextModel(resolvedOptions.messages) as Message[] }
-        : resolvedOptions
+        && projectedOptions.messages.some(message => contentHasImage(message.content))
+        ? Object.isFrozen(projectedOptions)
+          ? deepFreeze({ ...projectedOptions, messages: projectImagesForTextModel(projectedOptions.messages) as Message[] })
+          : { ...projectedOptions, messages: projectImagesForTextModel(projectedOptions.messages) as Message[] }
+        : projectedOptions
       const stream = dispatch(this.forAdapter(projectedOptions, adapter))
       iterator = stream[Symbol.asyncIterator]()
     } catch (error: unknown) {

@@ -1,11 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import {
   CallId,
   createUserMessage,
   OFFLOADED_IMAGE_TEXT,
   offloadRequestImages,
   offloadRequestImagesWithPolicy,
+  projectDocumentsForRequest,
   projectImagesForTextModel,
 } from '../src/index.ts'
 import type { ContentBlock } from '../src/index.ts'
@@ -45,6 +47,41 @@ describe('document content blocks', () => {
     const block = document()
     const message = createUserMessage({ content: [{ type: 'text', text: 'read this' }, block], source })
     expect(message.content).toEqual([{ type: 'text', text: 'read this' }, block])
+  })
+
+  it('verifies each unique reference once and projects direct and nested documents to escaped text', async () => {
+    const block = document()
+    const readDocument = vi.fn(async (ref: Extract<ContentBlock, { type: 'document' }>['attachment']) => ({
+      ref,
+      data: Uint8Array.of(1),
+      text: 'one < two & three',
+    }))
+    const store = { readDocument } as unknown as AttachmentStore
+    const nested = {
+      type: 'tool-result' as const,
+      toolCallId: CallId('doc'),
+      content: [block],
+    }
+    const original = createUserMessage({ content: [block, nested], source })
+
+    const projected = await projectDocumentsForRequest([original], store)
+
+    const text = '<dsh-document name="notes.txt" media-type="text/plain" truncated="false">\n'
+      + 'one &lt; two &amp; three\n</dsh-document>'
+    expect(projected[0]?.content).toEqual([
+      { type: 'text', text },
+      { ...nested, content: [{ type: 'text', text }] },
+    ])
+    expect(readDocument).toHaveBeenCalledTimes(1)
+    expect(original.content).toEqual([block, nested])
+  })
+
+  it('returns the original message list when no documents are present', async () => {
+    const messages = [createUserMessage({ content: [{ type: 'text', text: 'plain' }], source })]
+    const readDocument = vi.fn()
+    const store = { readDocument } as unknown as AttachmentStore
+    await expect(projectDocumentsForRequest(messages, store)).resolves.toBe(messages)
+    expect(readDocument).not.toHaveBeenCalled()
   })
 })
 

@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import LlmRuntime, {
   errorChain,
   GenerateOptions,
@@ -998,6 +999,59 @@ describe('LlmRuntime', () => {
     await collect(ctx.llm.stream(frozen))
     expect(Object.isFrozen(seen[1])).toBe(true)
     expect(Object.isFrozen(seen[1]?.messages)).toBe(true)
+  })
+
+  it('projects verified documents only at the final adapter boundary', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const seen: GenerateOptions[] = []
+    const adapter = new class extends ScriptedAdapter {
+      override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        return Promise.resolve({ provider, id: model, name: model, inputModalities: ['text'] })
+      }
+
+      override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+        seen.push(options)
+        yield * super.stream(options)
+      }
+    }(SCRIPT)
+    ctx.llm.registerAdapter(['route'], adapter)
+    const attachment = {
+      attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`),
+      extractedTextId: AttachmentId(`sha256:${'c'.repeat(64)}`),
+      mediaType: 'text/plain' as const,
+      name: 'brief.txt',
+      bytes: 5,
+      extractedBytes: 5,
+      truncated: false,
+    }
+    const readDocument = vi.fn(() => Promise.resolve({
+      ref: attachment,
+      data: new TextEncoder().encode('hello'),
+      text: 'hello',
+    }))
+    ctx.provide('attachments', { readDocument } as unknown as AttachmentStore)
+    const waterfall: GenerateOptions[] = []
+    ctx.on('llm/stream', async function* (options, next) {
+      waterfall.push(options)
+      yield * next()
+    })
+
+    await collect(ctx.llm.stream({
+      provider: 'route',
+      model: 'text-only',
+      messages: [createUserMessage({
+        content: [{ type: 'document', attachment }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }))
+
+    expect(waterfall[0]?.messages[0]?.content).toEqual([{ type: 'document', attachment }])
+    expect(seen[0]?.messages[0]?.content).toEqual([{
+      type: 'text',
+      text: '<dsh-document name="brief.txt" media-type="text/plain" truncated="false">\nhello\n</dsh-document>',
+    }])
+    expect(readDocument).toHaveBeenCalledOnce()
   })
 
   it('passes cancellation through exact-model resolution', async () => {

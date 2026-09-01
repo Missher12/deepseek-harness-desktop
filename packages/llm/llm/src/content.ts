@@ -2,7 +2,9 @@
 
 import type { ContentBlock } from './types.ts'
 import type { Message } from './message.ts'
-import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type {
+  AttachmentStore, DocumentAttachmentRef, ImageAttachmentRef, RequestImageAttachment,
+} from '@deepseek-ai/dsh-attachment'
 
 /** Model-facing stand-in for an image removed to fit a provider request bound. */
 export const OFFLOADED_IMAGE_TEXT
@@ -38,6 +40,95 @@ export function requestImageHandleText(version: RequestImageAttachment): string 
 export function contentHasImage(content: readonly ContentBlock[]): boolean {
   return content.some(block => block.type === 'image'
     || (block.type === 'tool-result' && contentHasImage(block.content)))
+}
+
+/** True when typed model content contains a document, including nested tool results. */
+export function contentHasDocument(content: readonly ContentBlock[]): boolean {
+  return content.some(block => block.type === 'document'
+    || (block.type === 'tool-result' && contentHasDocument(block.content)))
+}
+
+/** Exact integrity and display identity used to deduplicate repeated document references. */
+function documentRefKey(ref: DocumentAttachmentRef): string {
+  return JSON.stringify([
+    String(ref.attachmentId), String(ref.extractedTextId), ref.mediaType, ref.name,
+    ref.bytes, ref.extractedBytes, ref.truncated,
+  ])
+}
+
+/** Collect unique documents in stable first-occurrence order. */
+function collectDocumentRefs(
+  blocks: readonly ContentBlock[],
+  refs: Map<string, DocumentAttachmentRef>,
+): void {
+  for (const block of blocks) {
+    if (block.type === 'document') refs.set(documentRefKey(block.attachment), block.attachment)
+    else if (block.type === 'tool-result') collectDocumentRefs(block.content, refs)
+  }
+}
+
+/** Escape untrusted document metadata and text inside the deterministic model envelope. */
+function escapeDocumentXml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;')
+}
+
+/** Build one provider-neutral bounded document projection. */
+function documentText(ref: DocumentAttachmentRef, text: string): string {
+  return `<dsh-document name="${escapeDocumentXml(ref.name)}" media-type="${escapeDocumentXml(ref.mediaType)}" truncated="${String(ref.truncated)}">\n${escapeDocumentXml(text)}\n</dsh-document>`
+}
+
+/** Replace document blocks recursively without mutating durable messages. */
+function replaceDocuments(
+  blocks: readonly ContentBlock[],
+  texts: ReadonlyMap<string, string>,
+): ContentBlock[] {
+  let next: ContentBlock[] | undefined
+  for (const [index, block] of blocks.entries()) {
+    if (block.type === 'document') {
+      next ??= blocks.slice(0, index)
+      next.push({ type: 'text', text: texts.get(documentRefKey(block.attachment)) as string })
+      continue
+    }
+    if (block.type === 'tool-result') {
+      const content = replaceDocuments(block.content, texts)
+      if (content !== block.content) {
+        next ??= blocks.slice(0, index)
+        next.push({ ...block, content })
+        continue
+      }
+    }
+    next?.push(block)
+  }
+  return next ?? blocks as ContentBlock[]
+}
+
+/**
+ * Verify durable documents and project their extracted text at the final model
+ * boundary. Identical references are read once per request; session history
+ * keeps the original document blocks.
+ */
+export async function projectDocumentsForRequest(
+  messages: readonly Message[],
+  attachments: AttachmentStore,
+  signal?: AbortSignal,
+): Promise<readonly Message[]> {
+  const refs = new Map<string, DocumentAttachmentRef>()
+  for (const message of messages) collectDocumentRefs(message.content, refs)
+  if (refs.size === 0) return messages
+  const ordered = [...refs.entries()]
+  const stored = await Promise.all(ordered.map(([, ref]) => attachments.readDocument(ref, signal)))
+  const texts = new Map(ordered.map(([key, ref], index) => (
+    [key, documentText(ref, stored[index]?.text as string)]
+  )))
+  return messages.map((message) => {
+    const content = replaceDocuments(message.content, texts)
+    return content === message.content ? message : { ...message, content }
+  })
 }
 
 /** Base64 length of raw image bytes, including padding. */
