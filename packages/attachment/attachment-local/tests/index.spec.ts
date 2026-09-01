@@ -14,6 +14,11 @@ import LocalAttachmentStore, {
   DEFAULT_MAX_IMAGE_PIXELS,
   DEFAULT_MAX_IMAGES_PER_MESSAGE,
   DEFAULT_MAX_MESSAGE_IMAGE_BYTES,
+  DEFAULT_MAX_DOCUMENT_BYTES,
+  DEFAULT_MAX_DOCUMENTS_PER_MESSAGE,
+  DEFAULT_MAX_MESSAGE_DOCUMENT_BYTES,
+  DEFAULT_MAX_EXTRACTED_TEXT_BYTES,
+  DEFAULT_MAX_MESSAGE_EXTRACTED_TEXT_BYTES,
 } from '../src/index.ts'
 
 describe('local attachment service', () => {
@@ -31,6 +36,25 @@ describe('local attachment service', () => {
       maxImagePixels: DEFAULT_MAX_IMAGE_PIXELS,
       maxImageDimension: DEFAULT_MAX_IMAGE_DIMENSION,
       mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+    })
+    expect(service.documentLimits).toEqual({
+      maxDocumentBytes: DEFAULT_MAX_DOCUMENT_BYTES,
+      maxDocumentsPerMessage: DEFAULT_MAX_DOCUMENTS_PER_MESSAGE,
+      maxMessageDocumentBytes: DEFAULT_MAX_MESSAGE_DOCUMENT_BYTES,
+      maxExtractedTextBytes: DEFAULT_MAX_EXTRACTED_TEXT_BYTES,
+      maxMessageExtractedTextBytes: DEFAULT_MAX_MESSAGE_EXTRACTED_TEXT_BYTES,
+      maxDocumentNameBytes: 255,
+      mediaTypes: [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'text/plain',
+        'text/markdown',
+        'application/json',
+        'text/csv',
+        'application/yaml',
+        'application/xml',
+      ],
     })
     expect(service.normalizationPolicy).toEqual({
       maxDimension: DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
@@ -57,6 +81,39 @@ describe('local attachment service', () => {
       ))
       const ref = await service.saveImage({ data, mediaType: 'image/png' })
       await expect(service.readImage(ref)).resolves.toEqual({ ref, data })
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
+  it('saves and verifies documents through the service boundary', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-document-service-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), { dshHome })
+      const ref = await service.saveDocument({
+        data: new TextEncoder().encode('document body'),
+        mediaType: 'text/plain',
+        name: 'notes.txt',
+      })
+      await expect(service.readDocument(ref)).resolves.toMatchObject({ ref, text: 'document body' })
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
+  it('prepares the full document batch before enforcing aggregate extracted text', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-document-batch-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), {
+        dshHome,
+        maxExtractedTextBytes: 20,
+        maxMessageExtractedTextBytes: 10,
+      })
+      await expect(service.saveDocuments([
+        { data: new TextEncoder().encode('12345678'), mediaType: 'text/plain', name: 'one.txt' },
+        { data: new TextEncoder().encode('abcdefgh'), mediaType: 'text/plain', name: 'two.txt' },
+      ])).rejects.toMatchObject({ code: 'DOCUMENT_EXTRACTED_TEXT_TOO_LARGE' })
+      expect(existsSync(service.root)).toBe(false)
     } finally {
       await rm(dshHome, { recursive: true, force: true })
     }
