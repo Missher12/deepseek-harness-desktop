@@ -105,6 +105,18 @@ describe('CI workflow', () => {
     })
   })
 
+  it('forwards staged Windows inventory arguments without a pnpm sentinel', () => {
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+    const windows = workflowJob(workflow, 'build-install-smoke')
+    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
+    const build = windows.steps
+      .filter(isRecord)
+      .find(step => step.name === 'Build the assisted Windows Setup')
+
+    expect(build?.run).toContain('run inventory:package --output')
+    expect(build?.run).not.toContain('run inventory:package -- --output')
+  })
+
   it('builds Windows Desktop from the exact pull-request head revision', () => {
     const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
     const windows = workflowJob(workflow, 'build-install-smoke')

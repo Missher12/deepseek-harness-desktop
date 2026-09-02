@@ -367,9 +367,9 @@ function Write-DesktopRuntimeEvidence {
 
   $coldSummary = Join-Path $benchmarkRoot 'cold-summary.json'
   $warmSummary = Join-Path $benchmarkRoot 'warm-summary.json'
-  & pnpm --filter '@deepseek-ai/dsh-desktop' run benchmark:startup -- --output $coldSummary @($logs.cold)
+  & pnpm --filter '@deepseek-ai/dsh-desktop' run benchmark:startup --output $coldSummary @($logs.cold)
   if ($LASTEXITCODE -ne 0) { throw "Cold startup benchmark failed with exit code $LASTEXITCODE." }
-  & pnpm --filter '@deepseek-ai/dsh-desktop' run benchmark:startup -- --output $warmSummary @($logs.warm)
+  & pnpm --filter '@deepseek-ai/dsh-desktop' run benchmark:startup --output $warmSummary @($logs.warm)
   if ($LASTEXITCODE -ne 0) { throw "Warm startup benchmark failed with exit code $LASTEXITCODE." }
   $combined = [ordered]@{
     schemaVersion = 1
@@ -391,7 +391,7 @@ function Write-DesktopRuntimeEvidence {
     $inventoryArguments += @('--policy', $PackagePolicy, '--manifest', $resolvedManifest)
   }
   $inventoryArguments += (Split-Path -Parent $ExecutablePath)
-  & pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package -- @inventoryArguments
+  & pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package @inventoryArguments
   if ($LASTEXITCODE -ne 0) { throw "Installed package inventory failed with exit code $LASTEXITCODE." }
 }
 

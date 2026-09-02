@@ -94,7 +94,7 @@ jobs:
           $unpacked = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) 'release\win-unpacked'
           $inventoryPath = [System.IO.Path]::GetFullPath('apps/desktop/release/desktop-package-staged.json')
           $manifestPath = [System.IO.Path]::GetFullPath('apps/desktop/package.json')
-          pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package -- --output $inventoryPath --policy windows-x64 --manifest $manifestPath $unpacked
+          pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package --output $inventoryPath --policy windows-x64 --manifest $manifestPath $unpacked
           if ($LASTEXITCODE -ne 0) { throw "Staged package inventory failed with exit code $LASTEXITCODE." }
           $setupFile = Get-Item -LiteralPath $workspaceArtifact
           $setupEvidence = [ordered]@{
