@@ -499,6 +499,10 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     const row = rows.first()
     await row.click()
     await expect.poll(() => row.getAttribute('aria-selected'), { timeout: 10_000 }).toBe('true')
+    // `click()` leaves the synthetic pointer inside the row. A following
+    // `hover()` at the same coordinates is allowed to emit no pointerenter,
+    // so move to neutral ground before callers exercise hover-only UI.
+    await page.mouse.move(0, 0)
     return row
   }
 
