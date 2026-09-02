@@ -69,6 +69,7 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- Version 0.5.1 is the active hotfix candidate for existing 0.4.10 and 0.4.11 Desktop homes. `healProfilesModuleFallback` recognizes only byte-exact packaged module proxies emitted by those releases, atomically retains them under `$DSH_HOME/recovery/legacy-module-fallback`, and creates the current installation links before the Harness child starts. Unknown or modified real directories remain byte-for-byte and fail loud. Unit and packaged smokes cover the upgrade state; final Intel macOS and Windows Setup evidence must originate from one exact final commit.
 - The next Desktop branch adds real local document attachments to the composer:
   users can drag or choose PDF, DOCX, XLSX, UTF-8 text, Markdown, JSON, CSV,
   YAML, XML, and a closed shared roster of source-code filenames. Original
@@ -88,7 +89,7 @@ The repository is based on the pinned official source and adds the desktop appli
   staging and packaged-artifact guards; the ordinary Workbench browser remains
   an unrelated workspace feature. Intel macOS and Windows x64 release evidence
   must still originate from one exact public commit.
-- Version 0.5.0 is the active release candidate, containing the document
+- Version 0.5.0 is the public baseline, containing the document
   attachment and Memory & Learning work described above while keeping the
   unfinished Browser/Computer Control product excluded. Version 0.4.2
   previously added a navigation-only prompt ruler that indexes every

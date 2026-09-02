@@ -12,7 +12,7 @@ DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的�
 
 请从本仓库的 [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases) 下载 DMG 或 Setup 安装程序。当前成品未签名；首次启动时，macOS 可能要求在 Finder 右键菜单中选择“打开”，Windows 可能显示 SmartScreen 提示。
 
-Desktop 0.5.0 从同一份经过测试的 Harness `0.1.1-rc.2` 源码提交构建 Intel macOS DMG 与 Windows x64 Setup。它新增有界的本地文档附件，并将本地智能能力整理为更清晰的“记忆与学习”体验，同时不把尚未完成的浏览器／电脑操控产品打进成品。Windows 目前仍通过安装程序更新；应用内更新暂只支持 Intel macOS。
+Desktop 0.5.1 从同一份经过测试的 Harness `0.1.1-rc.2` 源码提交构建 Intel macOS DMG 与 Windows x64 Setup。它会在启动前可恢复地迁移完全匹配的旧版 0.4.x 模块回退代理，同时保留 0.5.0 的有界本地文档附件与“记忆与学习”体验。Windows 目前仍通过安装程序更新；应用内更新暂只支持 Intel macOS。
 
 ## 开发者预览
 

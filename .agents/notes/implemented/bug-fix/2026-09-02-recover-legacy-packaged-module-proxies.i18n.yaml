@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-02-recover-legacy-packaged-module-proxies.md
+2026-09-02-recover-legacy-packaged-module-proxies.md: 6783dcfb6859c9d7b1fbbdb36beb88de4d8b96e8
+2026-09-02-recover-legacy-packaged-module-proxies.zh.md: b17be9ca3f6168fddd0852dad54f2654d4a14f2e
