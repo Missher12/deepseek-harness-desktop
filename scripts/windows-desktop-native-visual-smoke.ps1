@@ -29,6 +29,8 @@ using System.Runtime.InteropServices;
 
 public static class NativeVisualInput
 {
+    private const uint MouseLeftDown = 0x0002;
+    private const uint MouseLeftUp = 0x0004;
     private const uint MouseRightDown = 0x0008;
     private const uint MouseRightUp = 0x0010;
     private const byte VirtualKeyEscape = 0x1B;
@@ -56,6 +58,13 @@ public static class NativeVisualInput
         SetCursorPos(x, y);
         mouse_event(MouseRightDown, 0, 0, 0, UIntPtr.Zero);
         mouse_event(MouseRightUp, 0, 0, 0, UIntPtr.Zero);
+    }
+
+    public static void LeftClick(int x, int y)
+    {
+        SetCursorPos(x, y);
+        mouse_event(MouseLeftDown, 0, 0, 0, UIntPtr.Zero);
+        mouse_event(MouseLeftUp, 0, 0, 0, UIntPtr.Zero);
     }
 
     public static void PressWindowsD()
@@ -197,32 +206,104 @@ function Wait-ProcessIdsStopped {
   }
 }
 
+function Wait-NativeVisualTrayEvidence {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Path,
+    [Parameter(Mandatory = $true)]
+    [DateTimeOffset]$OverflowOpenedAt,
+    [Parameter(Mandatory = $true)]
+    [int]$ExpectedIconSize,
+    [int]$TimeoutSeconds = 15
+  )
+
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  $virtualScreen = [System.Windows.Forms.SystemInformation]::VirtualScreen
+  $expectedProperties = @('bounds', 'clickPoint', 'iconSize', 'observedAt', 'schemaVersion')
+  while ([DateTime]::UtcNow -lt $deadline) {
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
+      try {
+        $evidence = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+        $properties = @($evidence.PSObject.Properties.Name | Sort-Object)
+        if (@(Compare-Object $expectedProperties $properties).Count -ne 0) {
+          throw 'Native tray evidence contains unexpected fields.'
+        }
+        $evidenceObservedAt = [DateTimeOffset]($evidence.observedAt)
+        if ($evidenceObservedAt -le $OverflowOpenedAt) {
+          Start-Sleep -Milliseconds 100
+          continue
+        }
+        if ([int]($evidence.schemaVersion) -ne 1 -or [int]($evidence.iconSize) -ne $ExpectedIconSize) {
+          throw 'Native tray evidence has the wrong schema or icon size.'
+        }
+        $boundsWidth = [double]($evidence.bounds.width)
+        $boundsHeight = [double]($evidence.bounds.height)
+        if ($boundsWidth -le 0 -or $boundsHeight -le 0) {
+          throw 'Native tray evidence has no positive shell bounds.'
+        }
+        $clickX = [int][Math]::Round([double]($evidence.clickPoint.x))
+        $clickY = [int][Math]::Round([double]($evidence.clickPoint.y))
+        if (
+          $clickX -lt $virtualScreen.Left
+          -or $clickX -ge $virtualScreen.Right
+          -or $clickY -lt $virtualScreen.Top
+          -or $clickY -ge $virtualScreen.Bottom
+        ) {
+          throw 'Native tray evidence click point is outside the virtual screen.'
+        }
+        return [pscustomobject]@{
+          clickX = $clickX
+          clickY = $clickY
+        }
+      }
+      catch {
+        # Atomic evidence can be replaced between discovery and parsing; wait for the next sample.
+      }
+    }
+    Start-Sleep -Milliseconds 100
+  }
+  throw 'Timed out waiting for fresh bounded native tray evidence.'
+}
+
 function Open-DeepSeekHarnessTrayMenu {
-  $hiddenIcons = Get-AutomationElement `
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$TrayEvidencePath,
+    [Parameter(Mandatory = $true)]
+    [int]$ExpectedIconSize,
+    [Parameter(Mandatory = $true)]
+    [string]$EvidenceRoot,
+    [Parameter(Mandatory = $true)]
+    [int]$DpiPercent
+  )
+
+  $hiddenIcons = Wait-AutomationElement `
     -NamePattern '^(?:Show hidden icons|显示隐藏的图标)$' `
     -ControlType ([System.Windows.Automation.ControlType]::Button)
-  if ($null -ne $hiddenIcons) {
-    Invoke-AutomationElement -Element $hiddenIcons
-    Start-Sleep -Milliseconds 500
+  $hiddenBounds = $hiddenIcons.Current.BoundingRectangle
+  if ($hiddenBounds.Width -le 0 -or $hiddenBounds.Height -le 0) {
+    throw 'Show hidden icons has no visible Windows bounds.'
   }
-
-  $trayIcon = Wait-AutomationElement `
-    -NamePattern '^DeepSeek Harness' `
-    -ControlType ([System.Windows.Automation.ControlType]::Button)
-  $bounds = $trayIcon.Current.BoundingRectangle
-  if ($bounds.Width -le 0 -or $bounds.Height -le 0) {
-    throw 'DeepSeek Harness tray icon has no visible Windows bounds.'
-  }
+  [NativeVisualInput]::LeftClick(
+    [int][Math]::Round($hiddenBounds.Left + ($hiddenBounds.Width / 2)),
+    [int][Math]::Round($hiddenBounds.Top + ($hiddenBounds.Height / 2))
+  )
+  $overflowOpenedAt = [DateTimeOffset]::UtcNow
+  $trayEvidence = Wait-NativeVisualTrayEvidence `
+    -Path $TrayEvidencePath `
+    -OverflowOpenedAt $overflowOpenedAt `
+    -ExpectedIconSize $ExpectedIconSize
+  Save-NativeScreenCapture -Path (Join-Path $EvidenceRoot "tray-overflow-$DpiPercent.png")
   [NativeVisualInput]::RightClick(
-    [int][Math]::Round($bounds.Left + ($bounds.Width / 2)),
-    [int][Math]::Round($bounds.Top + ($bounds.Height / 2))
+    [int]($trayEvidence.clickX),
+    [int]($trayEvidence.clickY)
   )
 
   [void](Wait-AutomationElement `
     -NamePattern '^Show DeepSeek Harness$' `
     -ControlType ([System.Windows.Automation.ControlType]::MenuItem))
   return Wait-AutomationElement `
-    -NamePattern '^Quit DeepSeek Harness$' `
+    -NamePattern '^Quit$' `
     -ControlType ([System.Windows.Automation.ControlType]::MenuItem)
 }
 
@@ -243,6 +324,7 @@ $resolvedEvidenceRoot = [System.IO.Path]::GetFullPath($EvidenceRoot)
 $scaleFactor = $DpiPercent / 100.0
 $preferencesPath = Join-Path $UserData 'desktop-preferences.json'
 $lifecyclePath = Join-Path $UserData 'logs\lifecycle.log'
+$trayEvidencePath = Join-Path $UserData 'native-visual-tray.json'
 $process = $null
 $trackedProcessIds = @()
 $nativeDpi = 0
@@ -257,6 +339,9 @@ try {
   if (Test-Path -LiteralPath $lifecyclePath) {
     Remove-Item -LiteralPath $lifecyclePath -Force
   }
+  if (Test-Path -LiteralPath $trayEvidencePath) {
+    Remove-Item -LiteralPath $trayEvidencePath -Force
+  }
 
   $startInfo = [System.Diagnostics.ProcessStartInfo]::new($resolvedExecutable)
   $startInfo.UseShellExecute = $false
@@ -265,6 +350,7 @@ try {
   $startInfo.ArgumentList.Add("--force-device-scale-factor=$scaleFactor")
   $startInfo.Environment['DSH_HOME'] = $HarnessHome
   $startInfo.Environment['DSH_TELEMETRY_DISABLED'] = '1'
+  $startInfo.Environment['DSH_DESKTOP_NATIVE_VISUAL_EVIDENCE'] = '1'
   $startInfo.Environment['DEEPSEEK_API_KEY'] = ''
   $process = [System.Diagnostics.Process]::Start($startInfo)
   if ($null -eq $process) {
@@ -319,7 +405,12 @@ try {
   if ($process.HasExited) {
     throw 'CloseMainWindow exited instead of preserving the keep-running tray process.'
   }
-  $quitMenuItem = Open-DeepSeekHarnessTrayMenu
+  $expectedIconSize = if ($DpiPercent -eq 100) { 16 } else { 24 }
+  $quitMenuItem = Open-DeepSeekHarnessTrayMenu `
+    -TrayEvidencePath $trayEvidencePath `
+    -ExpectedIconSize $expectedIconSize `
+    -EvidenceRoot $resolvedEvidenceRoot `
+    -DpiPercent $DpiPercent
   Save-NativeScreenCapture -Path (Join-Path $resolvedEvidenceRoot "tray-menu-$DpiPercent.png")
   Invoke-AutomationElement -Element $quitMenuItem
   if (-not $process.WaitForExit(60000)) {
@@ -341,6 +432,7 @@ try {
       "taskbar-running-$DpiPercent.png",
       "desktop-shortcut-$DpiPercent.png",
       "start-menu-shortcut-$DpiPercent.png",
+      "tray-overflow-$DpiPercent.png",
       "tray-menu-$DpiPercent.png"
     )
   }
@@ -349,6 +441,15 @@ try {
     (($evidence | ConvertTo-Json -Depth 5) + "`n"),
     [System.Text.UTF8Encoding]::new($false)
   )
+}
+catch {
+  try {
+    Save-NativeScreenCapture -Path (Join-Path $resolvedEvidenceRoot "native-visual-failure-$DpiPercent.png")
+  }
+  catch {
+    # Failure evidence is best effort and must not replace the original exception.
+  }
+  throw
 }
 finally {
   [NativeVisualInput]::PressEscape()

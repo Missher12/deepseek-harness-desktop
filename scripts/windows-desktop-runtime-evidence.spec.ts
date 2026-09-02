@@ -85,6 +85,14 @@ describe('Windows Desktop runtime evidence wiring', () => {
       new URL('../apps/desktop/tests/windows-packaged-smoke.spec.ts', import.meta.url),
       'utf8',
     )
+    const main = readFileSync(
+      new URL('../apps/desktop/src/main.ts', import.meta.url),
+      'utf8',
+    )
+    const trayEvidence = readFileSync(
+      new URL('../apps/desktop/src/native-visual-tray-evidence.ts', import.meta.url),
+      'utf8',
+    )
 
     expect(smoke).toContain('foreach ($dpiPercent in @(100, 150))')
     expect(smoke).toContain('./scripts/windows-desktop-native-visual-smoke.ps1')
@@ -92,7 +100,41 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(visual).toContain('function Save-NativeScreenCapture')
     expect(visual).toContain('function Open-DeepSeekHarnessTrayMenu')
     expect(visual).toContain('Show DeepSeek Harness')
-    expect(visual).toContain('Quit DeepSeek Harness')
+    expect(visual).toContain("-NamePattern '^Quit$'")
+    expect(visual).not.toContain("-NamePattern '^Quit DeepSeek Harness$'")
+    expect(visual).toContain('public static void LeftClick(int x, int y)')
+    expect(visual).toContain('$hiddenBounds = $hiddenIcons.Current.BoundingRectangle')
+    expect(visual).toContain('[NativeVisualInput]::LeftClick(')
+    expect(visual).not.toContain("-NamePattern '^DeepSeek Harness' `\n    -ControlType")
+    expect(visual).toContain("$trayEvidencePath = Join-Path $UserData 'native-visual-tray.json'")
+    expect(visual).toContain('Remove-Item -LiteralPath $trayEvidencePath -Force')
+    expect(visual).toContain("$startInfo.Environment['DSH_DESKTOP_NATIVE_VISUAL_EVIDENCE'] = '1'")
+    expect(visual).toContain('function Wait-NativeVisualTrayEvidence')
+    expect(visual).toContain('$evidenceObservedAt -le $OverflowOpenedAt')
+    expect(visual).toContain('[System.Windows.Forms.SystemInformation]::VirtualScreen')
+    expect(visual).toContain('$expectedIconSize = if ($DpiPercent -eq 100) { 16 } else { 24 }')
+    expect(visual).toContain('tray-overflow-$DpiPercent.png')
+    expect(visual).toContain('native-visual-failure-$DpiPercent.png')
+    expect(main).toContain("process.env.DSH_DESKTOP_NATIVE_VISUAL_EVIDENCE === '1'")
+    expect(main).toContain("join(userData, 'native-visual-tray.json')")
+    expect(main).toContain('activeTray.getBounds()')
+    expect(main).toContain('screen.dipToScreenPoint')
+    expect(main).not.toContain("ipcMain.handle('desktop:native-visual")
+    const traySync = main.indexOf('function syncWindowsTray(): void')
+    const traySyncStop = main.indexOf('nativeVisualTrayEvidence.stop()', traySync)
+    const traySyncDestroy = main.indexOf('tray?.destroy()', traySync)
+    const beforeQuit = main.indexOf("app.on('before-quit'")
+    const beforeQuitStop = main.indexOf('nativeVisualTrayEvidence.stop()', beforeQuit)
+    const beforeQuitDestroy = main.indexOf('tray?.destroy()', beforeQuit)
+    expect(traySyncStop).toBeGreaterThan(traySync)
+    expect(traySyncDestroy).toBeGreaterThan(traySyncStop)
+    expect(beforeQuitStop).toBeGreaterThan(beforeQuit)
+    expect(beforeQuitDestroy).toBeGreaterThan(beforeQuitStop)
+    expect(trayEvidence).toContain('const SAMPLE_INTERVAL_MS = 250')
+    expect(trayEvidence).toContain('timer.unref()')
+    expect(trayEvidence).toContain('if (!options.enabled) return')
+    expect(trayEvidence).toContain('void options.write({')
+    expect(trayEvidence).toContain('}).catch(() => {})')
     expect(visual).toContain('Get-DescendantProcessIds')
     expect(visual).toContain('Wait-ProcessIdsStopped')
     expect(visual).toContain('desktop-shortcut')

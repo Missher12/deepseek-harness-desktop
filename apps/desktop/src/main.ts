@@ -14,6 +14,7 @@ import {
   type IpcMainEvent,
   type IpcMainInvokeEvent,
 } from 'electron'
+import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { healProfilesModuleFallbackCached } from '@deepseek-ai/dsh-app-boot'
 import {
@@ -54,6 +55,7 @@ import { desktopPlatformBehavior } from './window/platform.ts'
 import { readWindowBounds, writeWindowBounds } from './window/state.ts'
 import { readDesktopWindowPrerequisites } from './window/prerequisites.ts'
 import { DesktopStartupTimeline } from './startup-timeline.ts'
+import { createNativeVisualTrayEvidenceController } from './native-visual-tray-evidence.ts'
 
 const PRODUCT_NAME = 'DeepSeek Harness'
 const require = createRequire(import.meta.url)
@@ -94,6 +96,19 @@ const userData = app.getPath('userData')
 const logPath = join(userData, 'logs', 'lifecycle.log')
 const windowStatePath = join(userData, 'window-state.json')
 const preferencesPath = join(userData, 'desktop-preferences.json')
+const nativeVisualTrayEvidencePath = join(userData, 'native-visual-tray.json')
+const nativeVisualTrayEvidenceEnabled = process.platform === 'win32'
+  && process.env.DSH_DESKTOP_NATIVE_VISUAL_EVIDENCE === '1'
+const nativeVisualTrayEvidence = createNativeVisualTrayEvidenceController({
+  enabled: nativeVisualTrayEvidenceEnabled,
+  write: async (evidence) => {
+    await writeFileAtomic(
+      nativeVisualTrayEvidencePath,
+      `${JSON.stringify(evidence)}\n`,
+      { mode: 0o600, dirMode: 0o700 },
+    )
+  },
+})
 const logger = createLifecycleLogger(logPath)
 const dshHome = resolveDshHome()
 
@@ -182,20 +197,27 @@ function loadNativeIcon(path: string, label: string): Electron.NativeImage {
 
 function syncWindowsTray(): void {
   if (process.platform !== 'win32' || desktopPreferences.closeBehavior !== 'keep-running') {
+    nativeVisualTrayEvidence.stop()
     tray?.destroy()
     tray = undefined
     return
   }
   if (tray !== undefined) return
   const size = selectWindowsTrayIconSize(screen.getPrimaryDisplay().scaleFactor)
-  tray = new Tray(loadNativeIcon(windowsTrayIconPaths[size], `Windows ${String(size)}px tray`))
-  tray.setToolTip(PRODUCT_NAME)
-  tray.setContextMenu(Menu.buildFromTemplate([
+  const activeTray = new Tray(loadNativeIcon(windowsTrayIconPaths[size], `Windows ${String(size)}px tray`))
+  tray = activeTray
+  activeTray.setToolTip(PRODUCT_NAME)
+  activeTray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show DeepSeek Harness', click: showDesktopWindow },
     { type: 'separator' },
     { label: 'Quit', click: () => { app.quit() } },
   ]))
-  tray.on('double-click', showDesktopWindow)
+  activeTray.on('double-click', showDesktopWindow)
+  nativeVisualTrayEvidence.start({
+    iconSize: size,
+    getBounds: () => activeTray.getBounds(),
+    dipToScreenPoint: point => screen.dipToScreenPoint(point),
+  })
 }
 
 async function setDesktopPreference(
@@ -454,6 +476,7 @@ ipcMain.handle('desktop:workbench-browser-control', async (event, value: unknown
 
 
 app.on('before-quit', () => {
+  nativeVisualTrayEvidence.stop()
   updateService.dispose()
   tray?.destroy()
   tray = undefined
