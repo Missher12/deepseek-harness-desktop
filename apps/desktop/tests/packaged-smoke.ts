@@ -759,7 +759,7 @@ async function exerciseComposerAddMenu(page: Page): Promise<void> {
     mimeType: 'image/png',
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
   })
-  const remove = page.getByRole('button', { name: /^(?:Remove image|移除图片).*desktop-add-menu\.png/iu })
+  const remove = page.getByRole('button', { name: /^(?:Remove attachment|移除附件).*desktop-add-menu\.png/iu })
   await remove.waitFor({ state: 'visible', timeout: 15_000 })
   await remove.click()
   await expect.poll(() => remove.count()).toBe(0)
@@ -1377,7 +1377,7 @@ async function exerciseMemorySettings(
   await expect.poll(() => section.innerText(), { timeout: 15_000 }).toSatisfy((text: string) => (
     /(?:Project memory|项目记忆)/u.test(text)
     && /(?:Learned workflows|学到的工作流程)/u.test(text)
-    && /(?:Enabled|已启用)/u.test(text)
+    && /(?:Memory stores stay on this device|记忆库保存在本机)/u.test(text)
   ))
   expect(await stateExists()).toBe(false)
   await page.screenshot({
