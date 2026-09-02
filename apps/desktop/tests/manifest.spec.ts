@@ -70,14 +70,25 @@ describe('desktop package manifest', () => {
     }
   })
 
-  it('uses one rounded icon source with native macOS and Windows containers', () => {
+  it('keeps the Mac icon unchanged and uses dedicated small-scale Windows assets', () => {
     const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
 
     expect(existsSync(new URL('../assets/icon-source.png', import.meta.url))).toBe(true)
     expect(existsSync(new URL('../assets/icon.icns', import.meta.url))).toBe(true)
     expect(existsSync(new URL('../assets/icon.ico', import.meta.url))).toBe(true)
+    expect(existsSync(new URL('../assets/icon-windows-source.png', import.meta.url))).toBe(true)
+    expect(existsSync(new URL('../assets/icon-windows.ico', import.meta.url))).toBe(true)
+    for (const size of [16, 20, 24, 32]) {
+      expect(existsSync(new URL(`../assets/tray-windows-${String(size)}.png`, import.meta.url))).toBe(true)
+    }
     expect(mainSource).toContain('../assets/icon-source.png')
-    expect(mainSource).not.toContain('../assets/icon-source-rounded.png')
+    expect(mainSource).toContain('../assets/icon-windows.ico')
+    expect(mainSource).toContain('../assets/tray-windows-16.png')
+    expect(mainSource).toContain('../assets/tray-windows-20.png')
+    expect(mainSource).toContain('../assets/tray-windows-24.png')
+    expect(mainSource).toContain('../assets/tray-windows-32.png')
+    expect(mainSource).toContain('nativeImage.createFromPath')
+    expect(mainSource).toContain('isEmpty()')
   })
 
   it('ships Harness and pins the Electron toolchain', () => {
@@ -293,7 +304,7 @@ describe('desktop package manifest', () => {
     expect(builder.mac?.icon).toBe('assets/icon.icns')
     expect(builder.win).toMatchObject({
       target: [{ target: 'nsis', arch: ['x64'] }],
-      icon: 'assets/icon.ico',
+      icon: 'assets/icon-windows.ico',
       electronLanguages: ['en-US', 'zh-CN'],
     })
     expect(builder.asarUnpack).toEqual(['node_modules/**'])
@@ -309,6 +320,8 @@ describe('desktop package manifest', () => {
       deleteAppDataOnUninstall: false,
       shortcutName: 'DeepSeek Harness',
       artifactName: 'DeepSeek-Harness-Setup-${version}-win-x64.${ext}',
+      installerIcon: 'assets/icon-windows.ico',
+      uninstallerIcon: 'assets/icon-windows.ico',
     })
     const installer = readFileSync(
       new URL('../build/installer.nsh', import.meta.url),

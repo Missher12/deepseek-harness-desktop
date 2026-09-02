@@ -1,6 +1,9 @@
 import type { BrowserWindowConstructorOptions } from 'electron'
 import type { WindowBounds } from './state.ts'
 
+const WINDOWS_TRAY_ICON_SIZES = [16, 20, 24, 32] as const
+export type WindowsTrayIconSize = typeof WINDOWS_TRAY_ICON_SIZES[number]
+
 function usesHiddenInsetTitlebar(platform: NodeJS.Platform): boolean {
   return platform === 'darwin'
 }
@@ -21,6 +24,15 @@ export function desktopRendererUrl(
   return target.href
 }
 
+/** Select the smallest dedicated tray bitmap that covers the current DPI. */
+export function selectWindowsTrayIconSize(scaleFactor: number): WindowsTrayIconSize {
+  if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
+    throw new Error('Windows tray icon scale factor must be a positive finite number.')
+  }
+  const physicalPixels = 16 * scaleFactor
+  return WINDOWS_TRAY_ICON_SIZES.find(size => size >= physicalPixels) ?? 32
+}
+
 /**
  * Create the hardened BrowserWindow configuration shared by dev and package builds.
  * @param bounds - Validated window geometry.
@@ -31,13 +43,22 @@ export function createWindowOptions(
   bounds: WindowBounds,
   preload: string,
   platform: NodeJS.Platform = process.platform,
+  windowsIcon?: string,
 ): BrowserWindowConstructorOptions {
+  let iconOptions: Pick<BrowserWindowConstructorOptions, 'icon'> = {}
+  if (platform === 'win32') {
+    if (windowsIcon === undefined || windowsIcon.length === 0) {
+      throw new Error('Windows BrowserWindow requires its dedicated icon.')
+    }
+    iconOptions = { icon: windowsIcon }
+  }
   return {
     ...bounds,
     minWidth: 900,
     minHeight: 620,
     show: false,
     title: 'DeepSeek Harness',
+    ...iconOptions,
     ...(usesHiddenInsetTitlebar(platform)
       ? {
         titleBarStyle: 'hiddenInset' as const,

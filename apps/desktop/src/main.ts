@@ -7,6 +7,7 @@ import {
   BrowserWindow,
   ipcMain,
   Menu,
+  nativeImage,
   Tray,
   screen,
   shell,
@@ -43,7 +44,12 @@ import { isDesktopBrowserBounds, isDesktopBrowserRequest } from './browser/contr
 import { launchDesktopInstaller } from './update/installer.ts'
 import { allowRendererPermission, classifyNavigation } from './window/navigation.ts'
 import { createMenuTemplate } from './window/menu.ts'
-import { createWindowOptions, desktopRendererUrl } from './window/options.ts'
+import {
+  createWindowOptions,
+  desktopRendererUrl,
+  selectWindowsTrayIconSize,
+  type WindowsTrayIconSize,
+} from './window/options.ts'
 import { desktopPlatformBehavior } from './window/platform.ts'
 import { readWindowBounds, writeWindowBounds } from './window/state.ts'
 import { readDesktopWindowPrerequisites } from './window/prerequisites.ts'
@@ -54,7 +60,14 @@ const require = createRequire(import.meta.url)
 const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 const loadingPath = fileURLToPath(new URL('../renderer/loading.html', import.meta.url))
 const failurePath = fileURLToPath(new URL('../renderer/failure.html', import.meta.url))
-const iconPath = fileURLToPath(new URL('../assets/icon-source.png', import.meta.url))
+const macIconPath = fileURLToPath(new URL('../assets/icon-source.png', import.meta.url))
+const windowsIconPath = fileURLToPath(new URL('../assets/icon-windows.ico', import.meta.url))
+const windowsTrayIconPaths: Record<WindowsTrayIconSize, string> = {
+  16: fileURLToPath(new URL('../assets/tray-windows-16.png', import.meta.url)),
+  20: fileURLToPath(new URL('../assets/tray-windows-20.png', import.meta.url)),
+  24: fileURLToPath(new URL('../assets/tray-windows-24.png', import.meta.url)),
+  32: fileURLToPath(new URL('../assets/tray-windows-32.png', import.meta.url)),
+}
 const desktopPatchPath = fileURLToPath(new URL('../desktop.cordis.patch.yml', import.meta.url))
 const desktopInstallAnchorPath = fileURLToPath(new URL('../package.json', import.meta.url))
 const updateHelperPath = fileURLToPath(new URL('./update-helper.js', import.meta.url))
@@ -161,6 +174,12 @@ function showDesktopWindow(): void {
   nativeWindow.focus()
 }
 
+function loadNativeIcon(path: string, label: string): Electron.NativeImage {
+  const image = nativeImage.createFromPath(path)
+  if (image.isEmpty()) throw new Error(`${label} icon is missing or invalid.`)
+  return image
+}
+
 function syncWindowsTray(): void {
   if (process.platform !== 'win32' || desktopPreferences.closeBehavior !== 'keep-running') {
     tray?.destroy()
@@ -168,7 +187,8 @@ function syncWindowsTray(): void {
     return
   }
   if (tray !== undefined) return
-  tray = new Tray(iconPath)
+  const size = selectWindowsTrayIconSize(screen.getPrimaryDisplay().scaleFactor)
+  tray = new Tray(loadNativeIcon(windowsTrayIconPaths[size], `Windows ${String(size)}px tray`))
   tray.setToolTip(PRODUCT_NAME)
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show DeepSeek Harness', click: showDesktopWindow },
@@ -261,7 +281,13 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
     async () => await readWindowBounds(windowStatePath, displays),
   )
   startupTimeline.mark('window-prerequisites')
-  const window = new BrowserWindow(createWindowOptions(bounds, preloadPath, process.platform))
+  if (process.platform === 'win32') loadNativeIcon(windowsIconPath, 'Windows application')
+  const window = new BrowserWindow(createWindowOptions(
+    bounds,
+    preloadPath,
+    process.platform,
+    process.platform === 'win32' ? windowsIconPath : undefined,
+  ))
   nativeWindow = window
   workbenchBrowser = new WorkbenchBrowserController(window, (snapshot) => {
     if (!window.isDestroyed()) window.webContents.send('desktop:workbench-browser-state', snapshot)
@@ -439,7 +465,7 @@ Menu.setApplicationMenu(Menu.buildFromTemplate(
 ))
 
 void controller.run().then(() => {
-  if (platformBehavior.setDockIcon) app.dock?.setIcon(iconPath)
+  if (platformBehavior.setDockIcon) app.dock?.setIcon(macIconPath)
   syncWindowsTray()
   record('desktop application ready')
   if (!desktopUpdatesEnabled) return

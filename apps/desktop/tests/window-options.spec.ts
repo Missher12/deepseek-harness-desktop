@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as windowOptions from '../src/window/options.ts'
 
-const { createWindowOptions } = windowOptions
+const { createWindowOptions, selectWindowsTrayIconSize } = windowOptions
 
 describe('createWindowOptions', () => {
   it('enables the hardened persistent desktop renderer', () => {
@@ -36,8 +36,10 @@ describe('createWindowOptions', () => {
       { x: 80, y: 50, width: 1200, height: 760 },
       'C:\\app\\lib\\preload.cjs',
       'win32',
+      'C:\\app\\assets\\icon-windows.ico',
     )
 
+    expect(options.icon).toBe('C:\\app\\assets\\icon-windows.ico')
     expect(options.titleBarStyle).toBeUndefined()
     expect(options.trafficLightPosition).toBeUndefined()
     expect(options.webPreferences).toMatchObject({
@@ -47,6 +49,25 @@ describe('createWindowOptions', () => {
       sandbox: true,
       webSecurity: true,
     })
+  })
+
+  it('fails loud if a Windows BrowserWindow icon is missing', () => {
+    expect(() => createWindowOptions(
+      { x: 80, y: 50, width: 1200, height: 760 },
+      'C:\\app\\lib\\preload.cjs',
+      'win32',
+    )).toThrow(/Windows.*icon/u)
+  })
+
+  it.each([
+    [1, 16],
+    [1.25, 20],
+    [1.5, 24],
+    [1.75, 32],
+    [2, 32],
+    [3, 32],
+  ])('selects a %sx Windows tray asset at %s pixels', (scaleFactor, expected) => {
+    expect(selectWindowsTrayIconSize(scaleFactor)).toBe(expected)
   })
 
   it('marks only the macOS hidden-inset renderer URL', () => {

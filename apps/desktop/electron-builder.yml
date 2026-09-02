@@ -60,7 +60,7 @@ win:
     - target: nsis
       arch:
         - x64
-  icon: assets/icon.ico
+  icon: assets/icon-windows.ico
   requestedExecutionLevel: asInvoker
   electronLanguages:
     - en-US
@@ -102,7 +102,7 @@ nsis:
   deleteAppDataOnUninstall: false
   shortcutName: DeepSeek Harness
   artifactName: "DeepSeek-Harness-Setup-${version}-win-x64.${ext}"
-  installerIcon: assets/icon.ico
-  uninstallerIcon: assets/icon.ico
+  installerIcon: assets/icon-windows.ico
+  uninstallerIcon: assets/icon-windows.ico
 directories:
   output: ../release
