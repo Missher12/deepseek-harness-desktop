@@ -244,10 +244,10 @@ function Wait-NativeVisualTrayEvidence {
         $clickX = [int][Math]::Round([double]($evidence.clickPoint.x))
         $clickY = [int][Math]::Round([double]($evidence.clickPoint.y))
         if (
-          $clickX -lt $virtualScreen.Left
-          -or $clickX -ge $virtualScreen.Right
-          -or $clickY -lt $virtualScreen.Top
-          -or $clickY -ge $virtualScreen.Bottom
+          ($clickX -lt $virtualScreen.Left) -or
+          ($clickX -ge $virtualScreen.Right) -or
+          ($clickY -lt $virtualScreen.Top) -or
+          ($clickY -ge $virtualScreen.Bottom)
         ) {
           throw 'Native tray evidence click point is outside the virtual screen.'
         }

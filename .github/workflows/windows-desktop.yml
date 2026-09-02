@@ -40,6 +40,34 @@ jobs:
           }
           "sha=$actual" >> $env:GITHUB_OUTPUT
 
+      - name: Parse Windows Desktop PowerShell smokes
+        shell: pwsh
+        run: |
+          $scriptNames = @(
+            'scripts/windows-desktop-setup-smoke.ps1'
+            'scripts/windows-desktop-native-visual-smoke.ps1'
+            'scripts/windows-desktop-installer-ui-smoke.ps1'
+          )
+          foreach ($scriptName in $scriptNames) {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              [System.IO.Path]::GetFullPath($scriptName),
+              [ref]$tokens,
+              [ref]$parseErrors
+            )
+            if (@($parseErrors).Count -eq 0) {
+              continue
+            }
+            $fileName = [System.IO.Path]::GetFileName($scriptName)
+            foreach ($parseError in @($parseErrors)) {
+              $lineNumber = $parseError.Extent.StartLineNumber
+              $columnNumber = $parseError.Extent.StartColumnNumber
+              Write-Output ('{0}:{1}:{2}: {3}' -f $fileName, $lineNumber, $columnNumber, $parseError.Message)
+            }
+            throw "PowerShell parse failed for $fileName."
+          }
+
       - name: Enable Developer Mode for workspace symlinks
         shell: pwsh
         run: >-

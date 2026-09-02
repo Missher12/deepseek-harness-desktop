@@ -117,6 +117,29 @@ describe('CI workflow', () => {
     expect(build?.run).not.toContain('run inventory:package -- --output')
   })
 
+  it('parses every Windows Desktop PowerShell smoke before the Setup build', () => {
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+    const windows = workflowJob(workflow, 'build-install-smoke')
+    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
+    const steps = windows.steps.filter(isRecord)
+    const parserIndex = steps.findIndex(step => step.name === 'Parse Windows Desktop PowerShell smokes')
+    const buildIndex = steps.findIndex(step => step.name === 'Build the assisted Windows Setup')
+    const parser = steps[parserIndex]
+
+    expect(parserIndex).toBeGreaterThan(-1)
+    expect(buildIndex).toBeGreaterThan(parserIndex)
+    expect(parser).toMatchObject({ shell: 'pwsh' })
+    expect(parser?.run).toContain('[System.Management.Automation.Language.Parser]::ParseFile')
+    expect(parser?.run).toContain('scripts/windows-desktop-setup-smoke.ps1')
+    expect(parser?.run).toContain('scripts/windows-desktop-native-visual-smoke.ps1')
+    expect(parser?.run).toContain('scripts/windows-desktop-installer-ui-smoke.ps1')
+    expect(parser?.run).toContain('[System.IO.Path]::GetFileName($scriptName)')
+    expect(parser?.run).toContain('$parseError.Extent.StartLineNumber')
+    expect(parser?.run).toContain('$parseError.Extent.StartColumnNumber')
+    expect(parser?.run).toContain('$parseError.Message')
+    expect(parser?.run).not.toContain('Write-Output $scriptPath')
+  })
+
   it('builds Windows Desktop from the exact pull-request head revision', () => {
     const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
     const windows = workflowJob(workflow, 'build-install-smoke')
