@@ -43,6 +43,7 @@ const WHEEL_LINE_PX = 16
 function pageBehavior(): ScrollBehavior {
   // jsdom (the unit lane) implements no matchMedia despite lib.dom's
   // non-optional typing; the optional call keeps that lane on the default.
+  // oxlint-disable-next-line typescript/no-unnecessary-condition
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
 }
 

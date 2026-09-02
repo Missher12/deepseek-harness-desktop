@@ -1,7 +1,7 @@
 - listbox "Trigger suggestions":
   - text: Add
   - option "Files and folders Reference workspace files, folders, or sessions" [selected]
-  - option "Add image PNG, JPG, WebP, or GIF"
+  - option "Attach file Images, PDF, Word, Excel, text, or code"
   - option "goal set or view the goal for a long-running task"
   - option "plan Enter or leave plan mode"
   - text: Commands
