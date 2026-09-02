@@ -88,8 +88,11 @@ The repository is based on the pinned official source and adds the desktop appli
   staging and packaged-artifact guards; the ordinary Workbench browser remains
   an unrelated workspace feature. Intel macOS and Windows x64 release evidence
   must still originate from one exact public commit.
-- Version 0.4.2 is the active release candidate. A navigation-only prompt
-  ruler indexes every user-message boundary from the immutable history tail,
+- Version 0.5.0 is the active release candidate, containing the document
+  attachment and Memory & Learning work described above while keeping the
+  unfinished Browser/Computer Control product excluded. Version 0.4.2
+  previously added a navigation-only prompt ruler that indexes every
+  user-message boundary from the immutable history tail,
   renders a bounded left-side rail, reveals localized prompt summaries on
   pointer hover or keyboard focus, and fetches older pages only when an exact
   sequence is selected. It does not delete, edit, rewind, resend, or fork

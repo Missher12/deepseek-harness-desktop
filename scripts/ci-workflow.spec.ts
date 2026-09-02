@@ -55,6 +55,13 @@ describe('CI workflow', () => {
     ))
     const publishRelease = publishSteps.find(step => step.name === 'Upload assets and publish the draft')
 
+    expect(workflow.on).toMatchObject({
+      workflow_dispatch: {
+        inputs: {
+          tag: { default: 'desktop-v0.5.0' },
+        },
+      },
+    })
     expect(generate?.run).toContain('pnpm exec tsx scripts/create-desktop-update-manifest.ts')
     expect(generate?.run).toContain('deepseek-harness-desktop-update.json')
     expect(macMetadata?.run).toContain('apps/desktop/package.json')
