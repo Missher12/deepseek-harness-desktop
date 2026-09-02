@@ -1131,8 +1131,8 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): 
   const tabs = panel.getByRole('tablist').getByRole('tab')
   await expect.poll(() => tabs.count(), { timeout: 15_000 }).toBe(4)
   expect([
-    ['终端', '浏览器', '文件', '审阅'],
-    ['Terminal', 'Browser', 'Files', 'Review'],
+    ['审阅', '终端', '浏览器', '文件'],
+    ['Review', 'Terminal', 'Browser', 'Files'],
   ]).toContainEqual(await tabs.allTextContents())
   const originalPanelBounds = await panel.boundingBox()
   const utilityHandle = page.locator('[data-side="utility"]')
