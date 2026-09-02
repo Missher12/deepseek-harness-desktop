@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { lstat, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -93,6 +93,41 @@ describe('packaged desktop process inspection', () => {
 
     expect(result).toEqual(restored)
     expect(waits).toEqual([200, 200])
+  })
+
+  it('seeds an exact legacy flat fallback alongside ordinary profile bytes', async () => {
+    type SeedLegacyFallback = (
+      home: string,
+      platform: NodeJS.Platform,
+    ) => Promise<{
+      linkPath: string
+      manifest: string
+      entries: readonly string[]
+      protectedPaths: readonly string[]
+    }>
+    const seed = (packagedSmoke as unknown as {
+      seedLegacyModuleFallbackUpgradeState?: SeedLegacyFallback
+    }).seedLegacyModuleFallbackUpgradeState
+    expect(seed).toBeTypeOf('function')
+    if (seed === undefined) return
+
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-fallback-upgrade-seed-'))
+    try {
+      const seeded = await seed(root, 'darwin')
+      expect((await lstat(seeded.linkPath)).isDirectory()).toBe(true)
+      expect(JSON.parse(seeded.manifest)).toMatchObject({
+        name: '@deepseek-ai/dsh-desktop',
+        private: true,
+        type: 'module',
+        exports: { '.': './entry-0.js' },
+      })
+      expect(seeded.entries).toHaveLength(1)
+      expect(seeded.entries[0]).toContain('/app.asar/lib/main.js')
+      await expect(Promise.all(seeded.protectedPaths.map(path => readFile(path))))
+        .resolves.toHaveLength(2)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it('seeds isolated ordinary, archived, and subagent sessions for native desktop smoke', async () => {

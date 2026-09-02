@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
@@ -86,6 +86,86 @@ async function writeDesktopSmokeModelSettings(harnessHome: string, baseURL: stri
     '            high: high',
     '',
   ].join('\n'), 'utf8')
+}
+
+/** Isolated pre-0.5.0 packaged fallback plus unrelated bytes protected by the upgrade smoke. */
+export interface LegacyModuleFallbackUpgradeState {
+  readonly linkPath: string
+  readonly recoveryRoot: string
+  readonly manifest: string
+  readonly entries: readonly string[]
+  readonly protectedPaths: readonly string[]
+}
+
+/**
+ * Seed the byte-exact proxy format emitted by the packaged 0.4.x fallback
+ * generator. The unrelated profile files prove migration stays inside the
+ * one installation-owned fallback entry.
+ * @param harnessHome - Exact temporary DSH_HOME used by the packaged smoke.
+ * @param platform - Native target whose historical file URL form to seed.
+ * @returns Paths and bytes verified after the packaged application starts.
+ */
+export async function seedLegacyModuleFallbackUpgradeState(
+  harnessHome: string,
+  platform: NodeJS.Platform,
+): Promise<LegacyModuleFallbackUpgradeState> {
+  const packageName = '@deepseek-ai/dsh-desktop'
+  const target = platform === 'win32'
+    ? 'file:///C:/Program%20Files/DeepSeek%20Harness/resources/app.asar/lib/main.js'
+    : 'file:///Applications/DeepSeek%20Harness.app/Contents/Resources/app.asar/lib/main.js'
+  const targets = { '.': target }
+  const manifest = JSON.stringify({
+    name: packageName,
+    version: '0.4.11',
+    private: true,
+    type: 'module',
+    exports: { '.': './entry-0.js' },
+    dsh: { moduleFallback: { targets } },
+  }, undefined, 2) + '\n'
+  const specifier = JSON.stringify(target)
+  const entries = [
+    `export * from ${specifier}\nimport * as target from ${specifier}\nexport default target.default\n`,
+  ]
+  const linkPath = join(harnessHome, 'profiles', 'node_modules', packageName)
+  await mkdir(linkPath, { recursive: true })
+  await writeFile(join(linkPath, 'package.json'), manifest, 'utf8')
+  await writeFile(join(linkPath, 'entry-0.js'), entries[0]!, 'utf8')
+
+  const ordinaryProfile = join(harnessHome, 'profiles', 'ordinary-upgrade-sentinel')
+  const protectedPaths = [
+    join(ordinaryProfile, 'package.json'),
+    join(ordinaryProfile, 'cordis.patch.yml'),
+  ]
+  await mkdir(ordinaryProfile, { recursive: true })
+  await writeFile(protectedPaths[0]!, JSON.stringify({
+    name: 'ordinary-upgrade-sentinel',
+    private: true,
+    dsh: { profile: { bundles: ['user-owned-bundle'] } },
+  }, undefined, 2) + '\n', 'utf8')
+  await writeFile(protectedPaths[1]!, '# user-owned upgrade sentinel\n[]\n', 'utf8')
+
+  return {
+    linkPath,
+    recoveryRoot: join(harnessHome, 'recovery', 'legacy-module-fallback'),
+    manifest,
+    entries,
+    protectedPaths,
+  }
+}
+
+async function verifyLegacyModuleFallbackUpgrade(
+  state: LegacyModuleFallbackUpgradeState,
+): Promise<void> {
+  expect((await lstat(state.linkPath)).isSymbolicLink()).toBe(true)
+  expect(await readlink(state.linkPath)).not.toBe('')
+  const backups = (await readdir(state.recoveryRoot, { withFileTypes: true }))
+    .filter(entry => entry.isDirectory())
+  expect(backups).toHaveLength(1)
+  const backup = join(state.recoveryRoot, backups[0]!.name)
+  expect(await readFile(join(backup, 'package.json'), 'utf8')).toBe(state.manifest)
+  for (const [index, entry] of state.entries.entries()) {
+    expect(await readFile(join(backup, `entry-${index}.js`), 'utf8')).toBe(entry)
+  }
 }
 
 /**
@@ -1551,8 +1631,13 @@ export async function runPackagedDesktopSmoke(
   const harnessHome = process.env.DSH_DESKTOP_SMOKE_DSH_HOME ?? join(temporaryRoot, 'dsh-home')
   const userData = process.env.DSH_DESKTOP_SMOKE_USER_DATA ?? join(temporaryRoot, 'electron-data')
   await Promise.all([mkdir(harnessHome, { recursive: true }), mkdir(userData, { recursive: true })])
+  const legacyFallbackSeed = await seedLegacyModuleFallbackUpgradeState(harnessHome, platform)
   await seedLegacyExternalBrainProfile(harnessHome)
   const clipboardSeed = await seedWindowsClipboardSmokeState(harnessHome)
+  const archivedSessionPath = clipboardSeed.protectedPaths[1]
+  if (archivedSessionPath === undefined) throw new Error('Packaged smoke: archived Session fixture is missing.')
+  const upgradeProtectedPaths = [...legacyFallbackSeed.protectedPaths, archivedSessionPath]
+  const upgradeProtectedBefore = await protectedFileSnapshot(upgradeProtectedPaths)
   const providerTripwire = await startProviderTripwire()
   await writeDesktopSmokeModelSettings(harnessHome, providerTripwire.url)
 
@@ -1584,6 +1669,8 @@ export async function runPackagedDesktopSmoke(
     })
     page.on('pageerror', error => consoleErrors.push(error.message))
     await waitForDesktopSurface(page, userData)
+    await verifyLegacyModuleFallbackUpgrade(legacyFallbackSeed)
+    expect(await protectedFileSnapshot(upgradeProtectedPaths)).toEqual(upgradeProtectedBefore)
     await exerciseDesktopTitlebarGeometry(page, platform)
 
     expect(await page.evaluate(() => (
@@ -1679,6 +1766,7 @@ export async function runPackagedDesktopSmoke(
 
     await expect.poll(() => trackedPids.filter(processExists), { timeout: 15_000 }).toEqual([])
     await expect.poll(() => listenerPids(port, platform), { timeout: 15_000 }).toEqual([])
+    expect(await protectedFileSnapshot(upgradeProtectedPaths)).toEqual(upgradeProtectedBefore)
   } finally {
     if (!quitCompleted && nativeApp !== undefined) await quitAfterSmokeFailure(nativeApp)
     await providerTripwire.close()
