@@ -27,6 +27,18 @@ jobs:
         with:
           path: s
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact source revision
+        id: source
+        shell: pwsh
+        run: |
+          $expected = '${{ github.event.pull_request.head.sha || github.sha }}'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) {
+            throw "source revision mismatch: expected $expected, got $actual"
+          }
+          "sha=$actual" >> $env:GITHUB_OUTPUT
 
       - name: Enable Developer Mode for workspace symlinks
         shell: pwsh
@@ -87,7 +99,7 @@ jobs:
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: Windows-titlebar-diagnostics-${{ github.sha }}
+          name: Windows-titlebar-diagnostics-${{ steps.source.outputs.sha }}
           path: |
             s/apps/desktop/release/desktop-smoke-titlebar-win32.json
             s/apps/desktop/release/desktop-smoke-titlebar-win32.png
@@ -104,7 +116,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ github.sha }}
+          name: DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ steps.source.outputs.sha }}
           path: |
             s/apps/desktop/release/${{ steps.desktop.outputs.artifact }}
             s/apps/desktop/release/${{ steps.desktop.outputs.artifact }}.sha256

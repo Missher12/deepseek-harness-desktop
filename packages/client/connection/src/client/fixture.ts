@@ -20,7 +20,9 @@ import type {
   ToolResultMessage,
   UserMessage,
 } from '@deepseek-ai/dsh-llm'
-import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type {
+  AttachmentIdType, DocumentAttachmentDisplayId, ImageAttachmentRef, RendererDocumentAttachment,
+} from '@deepseek-ai/dsh-attachment'
 import type {
   SessionEvent,
   SessionId,
@@ -37,17 +39,75 @@ import type {
   ToolCallView, ToolEventView, ToolResultView, WorkspaceId, WorkspaceView,
 } from './api.ts'
 import type { RequestPayload, ResponseValue, RpcMethodMap } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type { RendererSessionEvent } from '@deepseek-ai/dsh-host-apiproxy/api/events'
 import { AbstractApiClient, RpcId, SESSION_SEARCH_RESULT_LIMIT } from './api.ts'
 import { randomUuid } from './random-uuid.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
+
+/** One fake-Host generation identity; renderer document ids never derive from content. */
+const FIXTURE_DOCUMENT_DISPLAY_SCOPE = randomUuid()
 
 /** The fake carrier mints like a real one (business code never mints). */
 function rpcRequest<P>(payload: P): RpcRequest<P> {
   return { rpcId: RpcId(randomUuid()), payload }
 }
 
-function text(t: string): ContentBlock[] {
+function text(t: string): { type: 'text'; text: string }[] {
   return [{ type: 'text', text: t }]
+}
+
+function fixtureRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+/** Fake-Host equivalent of the production document wire projection. */
+function fixtureRendererValue(
+  value: unknown,
+  sessionId: SessionId,
+  owner: string,
+  path: readonly (string | number)[],
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item, index) => fixtureRendererValue(item, sessionId, owner, [...path, index]))
+  }
+  const record = fixtureRecord(value)
+  if (record === null) return value
+  const attachment = record['type'] === 'document' ? fixtureRecord(record['attachment']) : null
+  if (attachment !== null
+    && typeof attachment['attachmentId'] === 'string'
+    && typeof attachment['extractedTextId'] === 'string'
+    && typeof attachment['mediaType'] === 'string'
+    && typeof attachment['name'] === 'string'
+    && typeof attachment['bytes'] === 'number'
+    && typeof attachment['extractedBytes'] === 'number'
+    && typeof attachment['truncated'] === 'boolean') {
+    const displayId = [
+      'document-view', FIXTURE_DOCUMENT_DISPLAY_SCOPE, String(sessionId), owner, JSON.stringify(path),
+    ].join(':') as DocumentAttachmentDisplayId
+    const projected: RendererDocumentAttachment = {
+      displayId,
+      name: attachment['name'],
+      mediaType: attachment['mediaType'] as RendererDocumentAttachment['mediaType'],
+      bytes: attachment['bytes'],
+      extractedBytes: attachment['extractedBytes'],
+      truncated: attachment['truncated'],
+    }
+    return { type: 'document', attachment: projected }
+  }
+  return Object.fromEntries(Object.entries(record).map(([key, item]) => [
+    key,
+    fixtureRendererValue(item, sessionId, owner, [...path, key]),
+  ]))
+}
+
+function fixtureRendererEvent(sessionId: SessionId, event: SessionEvent): RendererSessionEvent {
+  return fixtureRendererValue(event, sessionId, `event:${String(event.seq)}`, []) as RendererSessionEvent
+}
+
+function fixtureRendererView(sessionId: SessionId, event: SessionEvent, view: ToolEventView): ToolEventView {
+  return fixtureRendererValue(view, sessionId, `event:${String(event.seq)}`, ['view']) as ToolEventView
 }
 
 function userMessage(content: ContentBlock[], source: MessageSource = { kind: 'user' }): UserMessage {
@@ -1091,6 +1151,25 @@ function projectionValuesOf(log: readonly SessionEvent[]): Record<string, unknow
     maxImageDimension: 2000,
     mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
   }
+  values['documentLimits'] = {
+    maxDocumentBytes: 20 * 1024 * 1024,
+    maxDocumentsPerMessage: 5,
+    maxMessageDocumentBytes: 50 * 1024 * 1024,
+    maxExtractedTextBytes: 96 * 1024,
+    maxMessageExtractedTextBytes: 256 * 1024,
+    maxDocumentNameBytes: 255,
+    mediaTypes: [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain',
+      'text/markdown',
+      'application/json',
+      'text/csv',
+      'application/yaml',
+      'application/xml',
+    ],
+  }
   return values
 }
 
@@ -1191,6 +1270,7 @@ function projectionFramesOf(id: SessionId, log: readonly SessionEvent[], event: 
  Entries carry pagination-time views
  *  (the host analogue computes viewFor per entry at page time). */
 function pageOf(
+  sessionId: SessionId,
   log: readonly SessionEvent[],
   beforeSeq: number | undefined,
   maxMessages: number,
@@ -1210,7 +1290,10 @@ function pageOf(
   }
   const events = log.slice(start, end).map((event): HistoryEntry => {
     const view = viewFor(event, log)
-    return view === undefined ? { event } : { event, view }
+    const projectedEvent = fixtureRendererEvent(sessionId, event)
+    return view === undefined
+      ? { event: projectedEvent }
+      : { event: projectedEvent, view: fixtureRendererView(sessionId, event, view) }
   })
   return { events, hasMore: start > 0 }
 }
@@ -1719,9 +1802,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     /* v8 ignore next 3 -- the view-present arm needs a live tool/call emission,
     but the fixture replay produces text-only turns; view vocabulary is
     exercised through the history samples (turns 60-62). */
+    const projectedEvent = fixtureRendererEvent(id, event)
     emitMux(view === undefined
-      ? { type: 'session/event', sessionId: id, event }
-      : { type: 'session/event', sessionId: id, event, view })
+      ? { type: 'session/event', sessionId: id, event: projectedEvent }
+      : { type: 'session/event', sessionId: id, event: projectedEvent, view: fixtureRendererView(id, event, view) })
     // Host eager-drive parallel: a unit-advancing event pushes its finished value.
     for (const frame of projectionFramesOf(id, log, event)) emitMux(frame)
   }
@@ -2491,7 +2575,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       history: async (request) => {
         const log = logs.get(request.payload.sessionId) ?? []
         // Snapshot at request time, deliver after the transit delay (mirrors a real host under latency).
-        const page = pageOf(log, request.payload.beforeSeq, request.payload.maxMessages ?? 50)
+        const page = pageOf(request.payload.sessionId, log, request.payload.beforeSeq, request.payload.maxMessages ?? 50)
         // Tail page carries the projections block (host parallel: one consistent
         // cut over the registered units; asOfSeq = window tail seq, -1 on an
         // empty log — the host's session.seq-1 convention).
@@ -2551,6 +2635,20 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         const userText = content.map(b => (b.type === 'text' ? b.text : '')).join('')
         const durable: ContentBlock[] = content.map((block) => {
           if (block.type === 'text') return block
+          if (block.type === 'document') {
+            return {
+              type: 'document',
+              attachment: {
+                attachmentId: `fixture:${randomUuid()}` as AttachmentIdType,
+                extractedTextId: `fixture:${randomUuid()}` as AttachmentIdType,
+                mediaType: block.mediaType,
+                name: block.name,
+                bytes: Math.max(1, Math.floor(block.data.length * 3 / 4)),
+                extractedBytes: 0,
+                truncated: false,
+              },
+            }
+          }
           const attachment: ImageAttachmentRef = {
             attachmentId: `fixture:${randomUuid()}` as AttachmentIdType,
             mediaType: block.mediaType,
@@ -2650,7 +2748,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         const log = logs.get(request.payload.childSessionId) ?? []
         return Promise.resolve(ok(
           request,
-          pageOf(log, request.payload.beforeSeq, request.payload.maxMessages ?? 50),
+          pageOf(request.payload.childSessionId, log, request.payload.beforeSeq, request.payload.maxMessages ?? 50),
         ))
       },
       prompt: request => Promise.resolve(ok(request, {

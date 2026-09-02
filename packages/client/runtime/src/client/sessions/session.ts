@@ -3,6 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import type { RendererSessionEvent } from '@deepseek-ai/dsh-host-apiproxy/api/events'
 import type {
   HistoryEntry, IApiClient, MessageId, MuxFrame, PromptAnchor, PromptContentPart, QueueAction, RpcError,
   RpcId, RpcResponse, RpcResult, SessionId, SubagentAddress, ToolEventView,
@@ -64,7 +65,7 @@ export interface SessionOptions {
  */
 export class Session implements SessionFace {
   // ---- Window and derived state (all private; the snapshot is the only read API) ----
-  private events: SessionEvent[] = []
+  private events: RendererSessionEvent[] = []
   /** Wire views aligned with `events` by index (envelope-level annotations; undefined = no view).
    *  Kept parallel rather than merged so `events` stays the raw log slice (model-visible ⟺ logged). */
   private views: (ToolEventView | undefined)[] = []
@@ -106,7 +107,7 @@ export class Session implements SessionFace {
   /** Tail-page all-history prompt index, incrementally extended by live events. */
   private promptAnchors: PromptAnchor[] = []
   /** Live events buffered during open/resync and stitched by sequence once history lands. */
-  private liveBuffer: { event: SessionEvent; view: ToolEventView | undefined }[] = []
+  private liveBuffer: { event: RendererSessionEvent; view: ToolEventView | undefined }[] = []
   /** Gap repair in flight; live events detour to the buffer until the tail page lands. */
   private stitching = false
   /** subscribed.lastSeq baseline (gap detection; null when no subscribed frame arrived — degrade to the liveBuffer dedup path). */
@@ -695,15 +696,15 @@ export class Session implements SessionFace {
   }
 
   /** Seq-guarded append shared by stitching and the open-state live path. */
-  private appendLive(event: SessionEvent, view?: ToolEventView): ConversationPublication {
+  private appendLive(event: RendererSessionEvent, view?: ToolEventView): ConversationPublication {
     const tailSeq = this.windowTailSeq()
     if (tailSeq !== null && event.seq <= tailSeq) return 'none' // replay overlap, drop
     this.events.push(event)
     this.views.push(view)
     this.acceptPromptAnchorEvent(event)
     if (event.type === 'turn/start') this.firstPromptPendingTurn = false
-    const queueChanged = this.queueMirror.acceptDurable(event)
-    const publication = this.conversation.append({ event, view })
+    const queueChanged = this.queueMirror.acceptDurable(durableShape(event))
+    const publication = this.conversation.append({ event: durableShape(event), view })
     return queueChanged ? 'immediate' : publication
   }
 
@@ -712,7 +713,7 @@ export class Session implements SessionFace {
    *  expected reconnect-window artifact, repaired by refetch). The window stays one contiguous
    *  raw range, which lets Conversation Definitions correlate every recorded event between its
    *  ends and lets a compaction checkpoint resolve its cited summary event. */
-  private acceptLiveEvent(event: SessionEvent, view?: ToolEventView): void {
+  private acceptLiveEvent(event: RendererSessionEvent, view?: ToolEventView): void {
     if (this.openState === 'loading' || this.stitching) {
       this.liveBuffer.push({ event, view })
       return
@@ -728,7 +729,7 @@ export class Session implements SessionFace {
   }
 
   /** Extend the prompt index for accepted live human messages without refetching history. */
-  private acceptPromptAnchorEvent(event: SessionEvent): void {
+  private acceptPromptAnchorEvent(event: RendererSessionEvent): void {
     if (event.type !== 'user/message' || event.data.source.kind !== 'user') return
     if (this.promptAnchors.some(anchor => anchor.seq === event.seq)) return
 
@@ -844,7 +845,12 @@ export class Session implements SessionFace {
 
 /** Convert one wire history row into the assembler's transport-neutral input. */
 function conversationInput(entry: HistoryEntry): ConversationEventInput {
-  return { event: entry.event, view: entry.view }
+  return { event: durableShape(entry.event), view: entry.view }
+}
+
+/** Adapt a Host-projected envelope to the existing conversation state-machine vocabulary. */
+function durableShape(event: RendererSessionEvent): SessionEvent {
+  return event as unknown as SessionEvent
 }
 
 /** A generic command row alone remains control-plane content; every other visible Chat Node activates the conversation. */

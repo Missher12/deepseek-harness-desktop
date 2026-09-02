@@ -151,6 +151,29 @@ describe('TokenMeter pricing', () => {
     expect(service.estimateMessage(textMessage('abcd'))).toBe(9)
   })
 
+  it('prices durable documents from their eventual extracted-text projection instead of their small reference', () => {
+    const service = meter()
+    const extractedBytes = 32 * 1024
+    const block: Extract<ContentBlock, { type: 'document' }> = {
+      type: 'document',
+      attachment: {
+        attachmentId: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as Extract<ContentBlock, { type: 'document' }>['attachment']['attachmentId'],
+        extractedTextId: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' as Extract<ContentBlock, { type: 'document' }>['attachment']['extractedTextId'],
+        mediaType: 'text/markdown',
+        name: 'notes.md',
+        bytes: extractedBytes,
+        extractedBytes,
+        truncated: false,
+      },
+    }
+
+    const estimated = service.estimateMessage(createMessage({
+      role: 'user', content: [block], source: { kind: 'user' },
+    }))
+
+    expect(estimated).toBeGreaterThanOrEqual(extractedBytes * 6)
+  })
+
   it('returns a detached deeply immutable empty measurement', () => {
     const service = meter()
     const session = Session.create(SessionId('empty'))

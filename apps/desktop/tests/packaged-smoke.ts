@@ -748,21 +748,40 @@ async function exerciseComposerAddMenu(page: Page): Promise<void> {
   await expect.poll(() => input.inputValue()).toBe('@')
   await input.fill('')
 
-  // Image delegates into the existing attachment intake and preview rail.
+  // The attachment picker accepts the same closed image/document roster as drag-and-drop.
   await trigger.click()
   await menu.waitFor({ state: 'visible', timeout: 15_000 })
   const chooser = page.waitForEvent('filechooser')
-  await menu.getByRole('option', { name: /^(?:Add image|添加图片)/u }).click()
+  await menu.getByRole('option', { name: /^(?:Attach file|添加附件)/u }).click()
   const fileChooser = await chooser
   await fileChooser.setFiles({
     name: 'desktop-add-menu.png',
     mimeType: 'image/png',
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
   })
-  const remove = page.getByRole('button', { name: /^(?:Remove image|移除图片).*desktop-add-menu\.png/iu })
+  const remove = page.getByRole('button', { name: /^(?:Remove attachment|移除附件).*desktop-add-menu\.png/iu })
   await remove.waitFor({ state: 'visible', timeout: 15_000 })
   await remove.click()
   await expect.poll(() => remove.count()).toBe(0)
+
+  // A native document drop enters the same closed attachment rail without
+  // becoming an @ workspace reference or allocating an image object URL.
+  await page.evaluate(() => {
+    const transfer = new DataTransfer()
+    transfer.items.add(new File(['packaged document drop'], 'desktop-dropped-notes.md', {
+      type: 'text/markdown',
+    }))
+    const init = { bubbles: true, cancelable: true, dataTransfer: transfer }
+    document.dispatchEvent(new DragEvent('dragenter', init))
+    document.dispatchEvent(new DragEvent('dragover', init))
+    document.dispatchEvent(new DragEvent('drop', init))
+  })
+  const removeDocument = page.getByRole('button', {
+    name: /^(?:Remove attachment|移除附件).*desktop-dropped-notes\.md/iu,
+  })
+  await removeDocument.waitFor({ state: 'visible', timeout: 15_000 })
+  await removeDocument.click()
+  await expect.poll(() => removeDocument.count()).toBe(0)
 }
 
 async function exerciseWindowsClipboard(
@@ -858,8 +877,11 @@ async function exerciseWindowsDirectoryPicker(
   await addWorkspace.click()
   await automation
 
-  await page.getByText(basename(selectedDirectory), { exact: true })
-    .waitFor({ state: 'visible', timeout: 30_000 })
+  const selectedWorkspace = page.locator('[role="treeitem"][aria-expanded]').filter({
+    has: page.getByText(basename(selectedDirectory), { exact: true }),
+  })
+  await expect.poll(() => selectedWorkspace.count(), { timeout: 30_000 }).toBe(1)
+  await selectedWorkspace.waitFor({ state: 'visible', timeout: 30_000 })
   const nativeBlankSession = page.getByRole('treeitem').filter({
     has: page.getByText(/^(?:New Session|新会话)$/u, { exact: true }),
   }).first()
@@ -1305,7 +1327,7 @@ async function exercisePersonalization(
 
   let section = settingsDialog.locator('[data-personalization-section]')
   await section.waitFor({ state: 'visible', timeout: 15_000 })
-  const instructions = `desktop-0.4.2-personalization-${platform}`
+  const instructions = `desktop-0.5.0-personalization-${platform}`
   const editor = section.locator('#dsh-personalization-instructions')
   await expect.poll(() => editor.isEnabled(), { timeout: 15_000 }).toBe(true)
   await editor.fill(instructions)
@@ -1351,14 +1373,14 @@ async function exerciseMemorySettings(
   if (await settingsTrigger.getAttribute('aria-expanded') !== 'true') await settingsTrigger.click()
   const settingsDialog = page.getByRole('dialog').last()
   await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
-  await settingsDialog.getByRole('button', { name: /^(?:Project Memory|项目记忆)$/u }).click()
-  const heading = settingsDialog.getByRole('heading', { name: /^(?:Project Memory|项目记忆)$/u })
+  await settingsDialog.getByRole('button', { name: /^(?:Memory & Learning|记忆与学习)$/u }).click()
+  const heading = settingsDialog.getByRole('heading', { name: /^(?:Memory & Learning|记忆与学习)$/u })
   await heading.waitFor({ state: 'visible', timeout: 30_000 })
   const section = heading.locator('xpath=ancestor::section[1]')
   await expect.poll(() => section.innerText(), { timeout: 15_000 }).toSatisfy((text: string) => (
-    /(?:Built-in project memory|内置项目记忆)/u.test(text)
-    && /(?:Ready|已就绪)/u.test(text)
-    && /(?:Not connected \(optional\)|未连接（可选）)/u.test(text)
+    /(?:Project memory|项目记忆)/u.test(text)
+    && /(?:Learned workflows|学到的工作流程)/u.test(text)
+    && /(?:Memory stores stay on this device|记忆库保存在本机)/u.test(text)
   ))
   expect(await stateExists()).toBe(false)
   await page.screenshot({

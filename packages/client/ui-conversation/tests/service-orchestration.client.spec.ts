@@ -5,12 +5,16 @@
 // tag probe).
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import {
+  AttachmentId,
+  promptAttachmentBase64CodeUnits,
+} from '@deepseek-ai/dsh-attachment'
 import { makeTranslate, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import type { QueuedMessage, SessionFace } from '@deepseek-ai/dsh-client-runtime/client'
 import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
 import { InputHub } from '../src/client/input/hub.ts'
-import { ConversationController, UnsupportedImageMediaTypeError } from '../src/client/service.ts'
+import { UnsupportedDocumentMediaTypeError, UnsupportedImageMediaTypeError } from '../src/client/attachment-files.ts'
+import { ConversationController } from '../src/client/service.ts'
 import { zh } from '../src/client/locales.ts'
 
 async function bench(readAttachment?: SessionFace['readAttachment']) {
@@ -106,12 +110,146 @@ describe('ConversationController', () => {
   it('validates every MIME type before allocating previews', async () => {
     const b = await bench()
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview')
+    created.mockClear()
     expect(() => b.root.createDraftImages([
       new File([Uint8Array.of(1)], 'valid.png', { type: 'image/png' }),
       new File([Uint8Array.of(2)], 'invalid.svg', { type: 'image/svg+xml' }),
     ])).toThrow(UnsupportedImageMediaTypeError)
     expect(created).not.toHaveBeenCalled()
     created.mockRestore()
+    await b.runtime.dispose()
+  })
+
+  it('keeps mixed image and document order and sends document bytes without a browser path', async () => {
+    const b = await bench()
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:image')
+    const image = new File([Uint8Array.of(1)], 'pixel.png', { type: 'image/png' })
+    const document = new File([new TextEncoder().encode('hello')], 'notes.md', { type: 'text/markdown' })
+    Object.defineProperty(image, 'arrayBuffer', { value: () => Promise.resolve(Uint8Array.of(1).buffer) })
+    Object.defineProperty(document, 'arrayBuffer', {
+      value: () => Promise.resolve(new TextEncoder().encode('hello').buffer),
+    })
+
+    const attachments = b.root.createDraftImages([image, document])
+    expect(attachments.map(attachment => attachment.kind)).toEqual(['image', 'document'])
+    expect(created).toHaveBeenCalledTimes(1)
+    const outcome = await b.root.sendSession(
+      b.runtime.sessions.behavior('s1'),
+      'review',
+      attachments.map(attachment => attachment.id),
+      'queue',
+    )
+
+    expect(outcome).toEqual({ kind: 'success' })
+    expect(b.prompt).toHaveBeenCalledWith([
+      { type: 'image', mediaType: 'image/png', data: 'AQ==', name: 'pixel.png' },
+      { type: 'document', mediaType: 'text/markdown', data: 'aGVsbG8=', name: 'notes.md' },
+      { type: 'text', text: 'review' },
+    ], 'queue', undefined)
+    expect(JSON.stringify(b.prompt.mock.calls)).not.toContain('path')
+    created.mockRestore()
+    await b.runtime.dispose()
+  })
+
+  it('rejects a category-valid mixed batch above the shared request carrier before reading any file', async () => {
+    const b = await bench()
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:image')
+    const files = [
+      new File([Uint8Array.of(1)], 'large.png', { type: 'image/png' }),
+      new File([Uint8Array.of(2)], 'large.md', { type: 'text/markdown' }),
+      new File([Uint8Array.of(3)], 'extra.md', { type: 'text/markdown' }),
+    ]
+    const sizes = [200 * 1024 * 1024, 20 * 1024 * 1024, 3 * 1024 * 1024]
+    const reads = files.map((file, index) => {
+      Object.defineProperty(file, 'size', { value: sizes[index] })
+      return vi.spyOn(file, 'arrayBuffer')
+    })
+    expect(sizes.reduce((total, bytes) => total + promptAttachmentBase64CodeUnits(bytes), 0))
+      .toBeGreaterThan(296 * 1024 * 1024)
+
+    const attachments = b.root.createDraftImages(files)
+    await expect(b.root.sendSession(
+      b.runtime.sessions.behavior('s1'),
+      'review',
+      attachments.map(attachment => attachment.id),
+      'queue',
+    )).rejects.toMatchObject({ code: 'ATTACHMENTS_TOO_LARGE' })
+    expect(reads.every(read => read.mock.calls.length === 0)).toBe(true)
+    expect(b.prompt).not.toHaveBeenCalled()
+    created.mockRestore()
+    await b.runtime.dispose()
+  })
+
+  it('reads mixed attachments sequentially instead of retaining every raw file buffer at once', async () => {
+    const b = await bench()
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:image')
+    const image = new File([Uint8Array.of(1)], 'pixel.png', { type: 'image/png' })
+    const document = new File([Uint8Array.of(2)], 'notes.md', { type: 'text/markdown' })
+    let releaseImage!: (value: ArrayBuffer) => void
+    const imageRead = vi.spyOn(image, 'arrayBuffer').mockReturnValue(new Promise((resolve) => {
+      releaseImage = resolve
+    }))
+    const documentRead = vi.spyOn(document, 'arrayBuffer').mockResolvedValue(Uint8Array.of(2).buffer)
+    const attachments = b.root.createDraftImages([image, document])
+
+    const sending = b.root.sendSession(
+      b.runtime.sessions.behavior('s1'),
+      '',
+      attachments.map(attachment => attachment.id),
+      'queue',
+    )
+    await Promise.resolve()
+    expect(imageRead).toHaveBeenCalledOnce()
+    expect(documentRead).not.toHaveBeenCalled()
+    releaseImage(Uint8Array.of(1).buffer)
+    await expect(sending).resolves.toEqual({ kind: 'success' })
+    expect(documentRead).toHaveBeenCalledOnce()
+    created.mockRestore()
+    await b.runtime.dispose()
+  })
+
+  it('rejects executable, archive, and unknown document types before allocating previews', async () => {
+    const b = await bench()
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview')
+    for (const name of ['payload.exe', 'archive.zip', 'legacy.doc']) {
+      expect(() => b.root.createDraftImages([
+        new File([Uint8Array.of(1)], name, { type: 'application/octet-stream' }),
+      ])).toThrow(UnsupportedDocumentMediaTypeError)
+    }
+    expect(created).not.toHaveBeenCalled()
+    created.mockRestore()
+    await b.runtime.dispose()
+  })
+
+  it('accepts the shared extension and extensionless text-document roster', async () => {
+    const b = await bench()
+    const attachments = b.root.createDraftImages([
+      new File(['header'], 'value.hpp', { type: '' }),
+      new File(['guide'], 'README', { type: 'text/plain' }),
+      new File(['title'], 'page.html', { type: 'text/html' }),
+      new File(['KEY=value'], '.env', { type: 'text/plain' }),
+    ])
+    expect(attachments).toMatchObject([
+      { kind: 'document', mediaType: 'text/plain' },
+      { kind: 'document', mediaType: 'text/plain' },
+      { kind: 'document', mediaType: 'text/plain' },
+      { kind: 'document', mediaType: 'text/plain' },
+    ])
+    await b.runtime.dispose()
+  })
+
+  it('rejects arbitrary extensionless text MIME names and keeps empty-type failures bounded', async () => {
+    const b = await bench()
+    expect(() => b.root.createDraftImages([
+      new File(['plain'], 'NOTICE-CUSTOM', { type: 'text/plain' }),
+    ])).toThrow(UnsupportedDocumentMediaTypeError)
+    expect(() => b.root.createDraftImages([
+      new File(['plain'], '.txt', { type: 'text/plain' }),
+    ])).toThrow(UnsupportedDocumentMediaTypeError)
+    expect(() => b.root.createDraftImages([
+      new File([Uint8Array.of(1)], '', { type: '' }),
+    ])).toThrow('unsupported document type: (unnamed) (empty MIME)')
+    expect(new UnsupportedImageMediaTypeError('').message).toBe('unsupported image media type: (empty)')
     await b.runtime.dispose()
   })
 

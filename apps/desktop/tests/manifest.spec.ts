@@ -40,6 +40,33 @@ interface DesktopPatch {
 }
 
 describe('desktop package manifest', () => {
+  it('keeps Browser and Computer Control modules out of the Desktop product', () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as DesktopManifest
+    const patch = readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8')
+    const builder = readFileSync(new URL('../electron-builder.yml', import.meta.url), 'utf8')
+    const serializedDependencies = Object.keys({
+      ...manifest.dependencies,
+      ...manifest.devDependencies,
+    }).join('\n')
+    const forbidden = [
+      'tool-agent-control',
+      'tool-browser-control',
+      'tool-computer-control',
+      'ui-desktop-control',
+      'control-runtime',
+      'computer-use-helper',
+      'extensions/chromium',
+    ]
+
+    for (const artifact of forbidden) {
+      expect(serializedDependencies, artifact).not.toContain(artifact)
+      expect(patch, artifact).not.toContain(artifact)
+      expect(builder, artifact).not.toContain(artifact)
+    }
+  })
+
   it('uses one rounded icon source with native macOS and Windows containers', () => {
     const mainSource = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
 
@@ -57,7 +84,7 @@ describe('desktop package manifest', () => {
 
     expect(manifest).toMatchObject({
       name: '@deepseek-ai/dsh-desktop',
-      version: '0.4.2',
+      version: '0.5.0',
       packageManager: 'pnpm@11.7.0',
       private: true,
       main: 'lib/main.js',
@@ -232,6 +259,14 @@ describe('desktop package manifest', () => {
     expect(marketPatch).toContain('data-dshmarket-protected-package')
   })
 
+  it('describes the memory coordinator without the obsolete External Brain product name', () => {
+    const desktopPatch = readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8')
+    expect(desktopPatch).not.toContain('外置大脑')
+    expect(desktopPatch).not.toContain('External-brain')
+    expect(desktopPatch).toContain('记忆与学习协调器')
+    expect(desktopPatch).toContain('Memory & Learning coordinator')
+  })
+
   it('builds one visible per-user Windows x64 Setup with progress, shortcuts, and launch-after-install', () => {
     const manifest = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -345,6 +380,13 @@ describe('desktop package manifest', () => {
     expect(smoke).toContain('desktop-smoke-workbench-${platform}.png')
     expect(smoke).toContain("getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })")
     expect(smoke).not.toContain("platform === 'win32'\n    ? await seedWindowsClipboardSmokeState")
+    expect(smoke).toContain("new File(['packaged document drop'], 'desktop-dropped-notes.md'")
+    expect(smoke).toContain("new DragEvent('drop'")
+    expect(smoke).toContain('desktop-dropped-notes\\.md')
+    expect(smoke).toContain('Attach file|添加附件')
+    expect(smoke).not.toContain('Add image|添加图片')
+    expect(smoke).toContain('Memory & Learning|记忆与学习')
+    expect(smoke).not.toContain('Project Memory|项目记忆')
   })
 
   it('includes the repository standalone runtime dependency closure', () => {

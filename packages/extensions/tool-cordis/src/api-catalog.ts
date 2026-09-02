@@ -431,6 +431,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'readonly documentLimits: DocumentAttachmentLimits = Object.freeze({ maxDocumentBytes: 0, maxDocumentsPerMessage: 0, maxMessageDocumentBytes: 0, maxExtractedTextBytes: 0, maxMessageExtractedTextBytes: 0, maxDocumentNameBytes: 0, mediaTypes: Object.freeze([]), })',
+        description: 'Deployment-resolved document policy; an empty media roster means unsupported.',
+        parameters: [],
+      },
+      {
         signature: 'abstract validateImage(input: SaveImageAttachment): Promise<void>',
         description: 'Validate one image without persisting it. Batch callers validate every member before saving any member.',
         parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
@@ -441,6 +446,29 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Validate and durably commit one ordered image batch.',
         parameters: [{ name: 'inputs', description: 'encoded images in owning-message order.' }],
         returns: 'durable normalized attachment references in the same order after every member succeeds.',
+      },
+      {
+        signature: 'async saveDocuments(inputs: readonly SaveDocumentAttachment[]): Promise<readonly DocumentAttachmentRef[]>',
+        description: 'Validate every document before durably committing any member in caller order.',
+        parameters: [{ name: 'inputs', description: 'document bytes and metadata in owning-message order.' }],
+        returns: 'durable references in the exact input order.',
+      },
+      {
+        signature: 'validateDocument(_input: SaveDocumentAttachment): Promise<void>',
+        description: 'Validate one document without persistence. Unsupported providers fail closed.',
+        parameters: [{ name: '_input', description: 'proposed document bytes and metadata.' }],
+      },
+      {
+        signature: 'saveDocument(_input: SaveDocumentAttachment): Promise<DocumentAttachmentRef>',
+        description: 'Validate, extract, and durably commit one document. Unsupported providers fail closed.',
+        parameters: [{ name: '_input', description: 'proposed document bytes and metadata.' }],
+        returns: 'the durable immutable document reference.',
+      },
+      {
+        signature: 'readDocument(_ref: DocumentAttachmentRef, signal?: AbortSignal): Promise<StoredDocumentAttachment>',
+        description: 'Read and verify one immutable document source and extraction.',
+        parameters: [{ name: '_ref', description: 'durable document reference from session history.' }, { name: 'signal', description: 'optional cancellation for storage and integrity work.' }],
+        returns: 'verified source bytes, extracted text, and immutable metadata.',
       },
       {
         signature: 'abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>',
@@ -3152,7 +3180,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ContentBlockMap',
-    declaration: 'export interface ContentBlockMap {\n    \'text\': TextBlock;\n    \'reasoning\': ReasoningBlock;\n    \'image\': ImageBlock;\n    \'tool-call\': ToolCallBlock;\n    \'tool-result\': ToolResultBlock;\n}',
+    declaration: 'export interface ContentBlockMap {\n    \'text\': TextBlock;\n    \'reasoning\': ReasoningBlock;\n    \'image\': ImageBlock;\n    \'document\': DocumentBlock;\n    \'tool-call\': ToolCallBlock;\n    \'tool-result\': ToolResultBlock;\n}',
   },
   {
     name: 'ContentBlockType',
@@ -3263,14 +3291,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
   },
   {
-    name: 'DiffCallView',
-    declaration: 'export interface DiffCallView {\n    card: \'diff\';\n    title: string;\n    diffs: FileDiff[];\n    locations?: FileLocation[];\n}',
-  },
-  {
-    name: 'DiffResultView',
-    declaration: 'export interface DiffResultView {\n    card: \'diff\';\n    title?: string;\n    diffs: FileDiff[];\n}',
-  },
-  {
     name: 'DirectoryPickerBrowseCapability',
     declaration: 'export interface DirectoryPickerBrowseCapability {\n    kind: \'browse\';\n    list(path?: string, signal?: AbortSignal): Promise<DirectoryListing>;\n    createDirectory(path: string, name: string): Promise<string>;\n}',
   },
@@ -3289,6 +3309,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DirectoryRegistrationHandle',
     declaration: 'export interface DirectoryRegistrationHandle {\n    (): void;\n    replace(entries: readonly LlmConfigurableProvider[]): void;\n}',
+  },
+  {
+    name: 'DocumentAttachmentLimits',
+    declaration: 'export interface DocumentAttachmentLimits {\n    maxDocumentBytes: number;\n    maxDocumentsPerMessage: number;\n    maxMessageDocumentBytes: number;\n    maxExtractedTextBytes: number;\n    maxMessageExtractedTextBytes: number;\n    maxDocumentNameBytes: number;\n    mediaTypes: readonly DocumentMediaType[];\n}',
+  },
+  {
+    name: 'DocumentAttachmentRef',
+    declaration: 'export interface DocumentAttachmentRef {\n    attachmentId: AttachmentId;\n    extractedTextId: AttachmentId;\n    mediaType: DocumentMediaType;\n    name: string;\n    bytes: number;\n    extractedBytes: number;\n    truncated: boolean;\n}',
+  },
+  {
+    name: 'DocumentBlock',
+    declaration: 'export interface DocumentBlock {\n    type: \'document\';\n    attachment: DocumentAttachmentRef;\n}',
+  },
+  {
+    name: 'DocumentMediaType',
+    declaration: 'export type DocumentMediaType = typeof DOCUMENT_MEDIA_TYPES[number];',
   },
   {
     name: 'Domain',
@@ -3375,14 +3411,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    tools?: ToolSchema[];\n}',
   },
   {
-    name: 'FileDiff',
-    declaration: 'export interface FileDiff {\n    path: string;\n    oldText: string | null;\n    newText: string;\n}',
-  },
-  {
-    name: 'FileLocation',
-    declaration: 'export interface FileLocation {\n    path: string;\n    line?: number;\n}',
-  },
-  {
     name: 'FileReferenceCandidate',
     declaration: 'export interface FileReferenceCandidate {\n    path: string;\n    kind: \'file\' | \'directory\';\n}',
   },
@@ -3441,14 +3469,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'GenerateOptions',
     declaration: 'export interface GenerateOptions {\n    provider: string;\n    model: string;\n    reasoningEffort?: ReasoningEffortId;\n    messages: Message[];\n    system?: string;\n    tools?: ToolSchema[];\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n    signal?: AbortSignal;\n    sessionId?: Branded<\'SessionId\'>;\n    purpose?: \'compaction\' | \'session-title\';\n}',
-  },
-  {
-    name: 'GenericCallView',
-    declaration: 'export interface GenericCallView {\n    card: \'generic\';\n    title: string;\n    kind?: ToolCallKind;\n    rawInput?: unknown;\n    content?: ContentBlock[];\n    locations?: FileLocation[];\n}',
-  },
-  {
-    name: 'GenericResultView',
-    declaration: 'export interface GenericResultView {\n    card: \'generic\';\n    title?: string;\n    content?: ContentBlock[];\n}',
   },
   {
     name: 'GoalActivation',
@@ -3931,14 +3951,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PruneResult {\n    readonly pruned: readonly PrunedEntry[];\n    readonly charsRemoved: number;\n}',
   },
   {
-    name: 'ReadFileLine',
-    declaration: 'export interface ReadFileLine {\n    number: number;\n    text: string;\n}',
-  },
-  {
-    name: 'ReadResultView',
-    declaration: 'export interface ReadResultView {\n    card: \'read\';\n    title?: string;\n    path: string;\n    offset: number;\n    lines: ReadFileLine[];\n    totalLines: number;\n    lang?: string;\n    content?: ContentBlock[];\n}',
-  },
-  {
     name: 'ReasoningBlock',
     declaration: 'export interface ReasoningBlock {\n    type: \'reasoning\';\n    text: string;\n}',
   },
@@ -4055,6 +4067,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SandboxPolicyRequest {\n    session?: Session;\n    mode?: SandboxMode;\n}',
   },
   {
+    name: 'SaveDocumentAttachment',
+    declaration: 'export interface SaveDocumentAttachment {\n    data: Uint8Array;\n    mediaType: DocumentMediaType;\n    name: string;\n}',
+  },
+  {
     name: 'SaveImageAttachment',
     declaration: 'export interface SaveImageAttachment {\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    name?: string;\n}',
   },
@@ -4077,26 +4093,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScopeKey',
     declaration: 'export type ScopeKey = object;',
-  },
-  {
-    name: 'SearchFileMatches',
-    declaration: 'export interface SearchFileMatches {\n    path: string;\n    matches: SearchLineMatch[];\n}',
-  },
-  {
-    name: 'SearchLineMatch',
-    declaration: 'export interface SearchLineMatch {\n    lineNumber: number;\n    line: string;\n}',
-  },
-  {
-    name: 'SearchMatchesResultView',
-    declaration: 'export interface SearchMatchesResultView {\n    card: \'search\';\n    shape: \'matches\';\n    title?: string;\n    files: SearchFileMatches[];\n    truncated: boolean;\n    total: number;\n}',
-  },
-  {
-    name: 'SearchPathsResultView',
-    declaration: 'export interface SearchPathsResultView {\n    card: \'search\';\n    shape: \'paths\';\n    title?: string;\n    paths: string[];\n    truncated: boolean;\n    total: number;\n}',
-  },
-  {
-    name: 'SearchResultView',
-    declaration: 'export type SearchResultView = SearchMatchesResultView | SearchPathsResultView;',
   },
   {
     name: 'SendTeamMessageRequest',
@@ -4491,6 +4487,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface StorageForms {\n}',
   },
   {
+    name: 'StoredDocumentAttachment',
+    declaration: 'export interface StoredDocumentAttachment {\n    ref: DocumentAttachmentRef;\n    data: Uint8Array;\n    text: string;\n}',
+  },
+  {
     name: 'StoredImageAttachment',
     declaration: 'export interface StoredImageAttachment {\n    ref: ImageAttachmentRef;\n    data: Uint8Array;\n}',
   },
@@ -4695,20 +4695,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface TerminalBackendSpawnSpec extends TerminalSpawnRequest {\n    sessionId: TerminalSessionIdValue;\n    owner: Agent;\n    signal?: AbortSignal;\n}',
   },
   {
-    name: 'TerminalCallView',
-    declaration: 'export interface TerminalCallView {\n    card: \'terminal\';\n    title: string;\n    description?: string;\n    cwd?: string;\n}',
-  },
-  {
     name: 'TerminalReadRequest',
     declaration: 'export interface TerminalReadRequest {\n    offset?: number;\n    count?: number;\n}',
   },
   {
     name: 'TerminalReadResult',
     declaration: 'export interface TerminalReadResult {\n    text: string;\n    totalLines: number;\n    lineBegin: number;\n    lineEnd: number;\n    truncated: boolean;\n}',
-  },
-  {
-    name: 'TerminalResultView',
-    declaration: 'export interface TerminalResultView {\n    card: \'terminal\';\n    title?: string;\n    output?: string;\n    exitCode?: number;\n    signal?: string;\n}',
   },
   {
     name: 'TerminalSendOperation',
@@ -4781,14 +4773,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TokenUsage',
     declaration: 'export interface TokenUsage {\n    inputTokens: number;\n    outputTokens: number;\n    cacheReadTokens?: number;\n    cacheWriteTokens?: number;\n    reasoningTokens?: number;\n}',
-  },
-  {
-    name: 'ToolCallKind',
-    declaration: 'export type ToolCallKind = \'read\' | \'edit\' | \'delete\' | \'move\' | \'search\' | \'execute\' | \'fetch\' | \'other\';',
-  },
-  {
-    name: 'ToolCallView',
-    declaration: 'export type ToolCallView = GenericCallView | TerminalCallView | DiffCallView;',
   },
   {
     name: 'ToolDefinition',
@@ -4869,10 +4853,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ToolResultMessage',
     declaration: 'export interface ToolResultMessage extends Message {\n    readonly role: \'user\';\n    readonly content: [\n        ToolResultBlock\n    ];\n    readonly source: ToolMessageSource;\n}',
-  },
-  {
-    name: 'ToolResultView',
-    declaration: 'export type ToolResultView = GenericResultView | TerminalResultView | DiffResultView | SearchResultView | ReadResultView | WebResultView;',
   },
   {
     name: 'ToolRunContext',
@@ -5019,14 +4999,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WebFetchResult {\n    readonly url: string;\n    readonly statusCode: number;\n    readonly body: WebFetchBody;\n    readonly truncated: boolean;\n}',
   },
   {
-    name: 'WebFetchResultView',
-    declaration: 'export interface WebFetchResultView {\n    card: \'web\';\n    kind: \'fetch\';\n    title?: string;\n    url: string;\n    statusCode: number;\n    truncated: boolean;\n}',
-  },
-  {
-    name: 'WebResultView',
-    declaration: 'export type WebResultView = WebSearchResultView | WebFetchResultView;',
-  },
-  {
     name: 'WebRoute',
     declaration: 'export interface WebRoute {\n    kind: WebRouteKind;\n    path: string;\n    handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;\n}',
   },
@@ -5047,16 +5019,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WebSearchResult {\n    readonly content?: string;\n    readonly sources: readonly WebSearchSource[];\n    readonly truncated: boolean;\n}',
   },
   {
-    name: 'WebSearchResultView',
-    declaration: 'export interface WebSearchResultView {\n    card: \'web\';\n    kind: \'search\';\n    title?: string;\n    sources: WebSource[];\n    answer?: string;\n    truncated: boolean;\n}',
-  },
-  {
     name: 'WebSearchSource',
     declaration: 'export interface WebSearchSource {\n    readonly url: string;\n    readonly title?: string;\n    readonly snippet?: string;\n    readonly publishedAt?: string;\n}',
-  },
-  {
-    name: 'WebSource',
-    declaration: 'export interface WebSource {\n    url: string;\n    title?: string;\n    snippet?: string;\n    publishedAt?: string;\n}',
   },
   {
     name: 'WebUpgradeRoute',

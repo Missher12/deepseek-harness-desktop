@@ -21,6 +21,10 @@ describe('Windows installed directory-picker acceptance', () => {
     expect(automation).toContain("AutomationId -eq '1'")
     expect(packagedSmoke).toContain('windows-directory-picker-ui-smoke.ps1')
     expect(packagedSmoke).toContain('native-picker-selected')
+    expect(packagedSmoke).toContain('page.locator(\'[role="treeitem"][aria-expanded]\')')
+    expect(packagedSmoke).not.toContain(
+      'await page.getByText(basename(selectedDirectory), { exact: true })',
+    )
     expect(packagedSmoke).toContain('nativeBlankSession')
     expect(packagedSmoke).toContain('await dismissCredentialOnboarding(page, false)')
     expect(packagedSmoke).toContain("expect(lifecycle).not.toContain('FATAL ERROR')")

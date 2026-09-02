@@ -69,6 +69,13 @@ describe('AttachmentRail', () => {
     expect(onRemove).toHaveBeenCalledWith(items[1])
   })
 
+  it('renders a document without a supplied type label using an empty visual label', () => {
+    const document = { id: 'document', alt: 'README', removeLabel: 'Remove README' }
+    const view = render(<AttachmentRail items={[document]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} />)
+    expect(view.getByText('README')).toBeTruthy()
+    expect(view.queryByTitle('查看原图')).toBeNull()
+  })
+
   it('shows edge arrows from scroll geometry and pages a viewport at a time', () => {
     const view = render(
       <AttachmentRail items={[item('a'), item('b'), item('c')]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} />,

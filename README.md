@@ -12,7 +12,7 @@ This community repository preserves the official source and adds an unofficial I
 
 Download the DMG or Setup executable from this repository's [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases). The current builds are unsigned; macOS may require **Open** from Finder's context menu on first launch, and Windows may show a SmartScreen prompt.
 
-Desktop 0.4.2 builds the Intel macOS DMG and Windows x64 Setup from the same tested Harness `0.1.1-rc.2` source revision. A Codex-style left prompt ruler now navigates exact user messages without editing or forking history, while custom pi-ai models can explicitly inherit, deny, or declare image input instead of being mislabeled text-only. Windows remains installer-updated; the in-app updater is currently available only for Intel macOS.
+Desktop 0.5.0 builds the Intel macOS DMG and Windows x64 Setup from the same tested Harness `0.1.1-rc.2` source revision. It adds bounded local document attachments and a clearer Memory & Learning experience while keeping the unfinished Browser/Computer Control product out of the packaged application. Windows remains installer-updated; the in-app updater is currently available only for Intel macOS.
 
 ## Developer preview
 

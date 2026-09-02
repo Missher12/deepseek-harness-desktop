@@ -10,5 +10,5 @@
 .badge{white-space:nowrap;border-radius:999px;background:var(--dsw-alias-bg-layer-2,#f5f6f8);padding:4px 9px;color:var(--dsw-alias-label-secondary,#6b7280);font-size:12px;line-height:18px}
 .details>div{padding:13px 14px}.details p{margin:3px 0 0;color:var(--dsw-alias-label-secondary,#6b7280);font-size:12px;line-height:19px}.details span{display:block;margin-top:7px;color:var(--dsw-alias-brand-primary,#4d6bfe);font:12px/18px ui-monospace,SFMono-Regular,Menlo,monospace}
 .error{border-radius:9px;background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#dc2626) 7%,transparent);padding:9px 11px;color:var(--dsw-alias-state-error-primary,#dc2626);font-size:12px;line-height:18px}
-.root footer{color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:12px;line-height:18px;text-align:center}
+.root footer{display:flex;flex-direction:column;gap:2px;color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:12px;line-height:18px;text-align:center}
 @container (max-width:560px){.source{grid-template-columns:9px minmax(0,1fr);padding:12px 13px}.badge{grid-column:2;justify-self:start}}

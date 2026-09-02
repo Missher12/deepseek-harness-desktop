@@ -112,23 +112,52 @@ describe('web e2e: queue row actions', () => {
     ).toBe(2)
 
     await page.setViewportSize({ width: 640, height: 1000 })
-    const queueBox = await page.locator('[data-queue-dock]').boundingBox()
-    const composerBox = await page.locator('[data-composer-card]').boundingBox()
-    expect(queueBox).not.toBeNull()
-    expect(composerBox).not.toBeNull()
-    expect(queueBox!.x).toBeGreaterThanOrEqual(composerBox!.x)
-    expect(queueBox!.x + queueBox!.width)
-      .toBeLessThanOrEqual(composerBox!.x + composerBox!.width)
-    const queueLeftInset = queueBox!.x - composerBox!.x
-    const queueRightInset = composerBox!.x + composerBox!.width - queueBox!.x - queueBox!.width
-    const composerMetrics = await page.locator('[data-composer-card]').evaluate((element) => {
-      const style = getComputedStyle(element)
-      return {
-        dockInset: Number.parseFloat(style.getPropertyValue('--dsh-composer-dock-inset')),
-      }
-    })
-    expect(queueLeftInset).toBeCloseTo(composerMetrics.dockInset, 1)
-    expect(queueRightInset).toBeCloseTo(composerMetrics.dockInset, 1)
+    type QueueGeometry = {
+      readonly composerLeft: number
+      readonly composerRight: number
+      readonly dockInset: number
+      readonly queueLeft: number
+      readonly queueRight: number
+    }
+    let previousGeometry: QueueGeometry | undefined
+    let queueGeometry: QueueGeometry | undefined
+    await expect.poll(async () => {
+      const current = await page.locator('[data-composer-card]').evaluate((composer) => {
+        const queue = document.querySelector('[data-queue-dock]')
+        if (!(queue instanceof HTMLElement)) return undefined
+        const composerBox = composer.getBoundingClientRect()
+        const queueBox = queue.getBoundingClientRect()
+        return {
+          composerLeft: composerBox.left,
+          composerRight: composerBox.right,
+          dockInset: Number.parseFloat(
+            getComputedStyle(composer).getPropertyValue('--dsh-composer-dock-inset'),
+          ),
+          queueLeft: queueBox.left,
+          queueRight: queueBox.right,
+        }
+      })
+      if (current === undefined || !Number.isFinite(current.dockInset)) return false
+      const queueLeftInset = current.queueLeft - current.composerLeft
+      const queueRightInset = current.composerRight - current.queueRight
+      const matchesInset = Math.abs(queueLeftInset - current.dockInset) < 0.05
+        && Math.abs(queueRightInset - current.dockInset) < 0.05
+      const stable = previousGeometry !== undefined
+        && Object.keys(current).every((key) => {
+          const field = key as keyof QueueGeometry
+          return Math.abs(current[field] - previousGeometry![field]) < 0.05
+        })
+      previousGeometry = current
+      queueGeometry = current
+      return matchesInset && stable
+    }, { timeout: 10_000 }).toBe(true)
+    expect(queueGeometry).toBeDefined()
+    expect(queueGeometry!.queueLeft).toBeGreaterThanOrEqual(queueGeometry!.composerLeft)
+    expect(queueGeometry!.queueRight).toBeLessThanOrEqual(queueGeometry!.composerRight)
+    expect(queueGeometry!.queueLeft - queueGeometry!.composerLeft)
+      .toBeCloseTo(queueGeometry!.dockInset, 1)
+    expect(queueGeometry!.composerRight - queueGeometry!.queueRight)
+      .toBeCloseTo(queueGeometry!.dockInset, 1)
     await page.setViewportSize({ width: 1680, height: 1000 })
 
     const editRow = page.getByText(EDIT, { exact: true }).locator('..')

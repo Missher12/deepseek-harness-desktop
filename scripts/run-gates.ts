@@ -612,7 +612,10 @@ function coverageGates(): Gate[] {
 // Callers wait either on `build` or on a validation gate that transitively owns that build.
 function snapshotGate(needs: string[] = ['build']): Gate {
   return pnpmScript('snapshot', 'test:snapshot', {
-    env: { DSH_EXAMPLE_MODE: 'lib' },
+    // Loader snapshots spawn product processes with their own 30-second
+    // lifecycle bounds. Running files concurrently can starve otherwise
+    // healthy children and turn deterministic replay into false timeouts.
+    env: { DSH_EXAMPLE_MODE: 'lib', DSH_SNAPSHOT_MAX_CONCURRENCY: '1' },
     needs,
   })
 }
@@ -728,6 +731,7 @@ function builtBinSmokeGate(needs: string[] = ['build']): Gate {
     // unbuilt, so these files self-skip there.
     'packages/workflow/workflow-worker-thread/tests/built-worker.e2e.ts',
     'packages/code-runtime/code-runtime-worker-thread/tests/built-lib.e2e.ts',
+    'packages/attachment/attachment-local/tests/pdf-isolate.built.e2e.ts',
     'packages/lsp/lsp-stdio/tests/built-lib.e2e.ts',
   ], {
     label: 'built-bin smoke',

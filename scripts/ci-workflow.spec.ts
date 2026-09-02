@@ -55,6 +55,13 @@ describe('CI workflow', () => {
     ))
     const publishRelease = publishSteps.find(step => step.name === 'Upload assets and publish the draft')
 
+    expect(workflow.on).toMatchObject({
+      workflow_dispatch: {
+        inputs: {
+          tag: { default: 'desktop-v0.5.0' },
+        },
+      },
+    })
     expect(generate?.run).toContain('pnpm exec tsx scripts/create-desktop-update-manifest.ts')
     expect(generate?.run).toContain('deepseek-harness-desktop-update.json')
     expect(macMetadata?.run).toContain('apps/desktop/package.json')
@@ -89,9 +96,35 @@ describe('CI workflow', () => {
     expect(serialized).toContain('${{ steps.desktop.outputs.artifact }}')
     expect(upload).toMatchObject({
       with: {
-        name: 'DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ github.sha }}',
+        name: 'DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ steps.source.outputs.sha }}',
       },
     })
+  })
+
+  it('builds Windows Desktop from the exact pull-request head revision', () => {
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+    const windows = workflowJob(workflow, 'build-install-smoke')
+    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
+    const steps = windows.steps.filter(isRecord)
+    const checkout = steps.find(step => (
+      typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@')
+    ))
+    const source = steps.find(step => step.name === 'Verify exact source revision')
+
+    expect(checkout).toMatchObject({
+      with: {
+        path: 's',
+        'persist-credentials': false,
+        ref: '${{ github.event.pull_request.head.sha || github.sha }}',
+      },
+    })
+    expect(source).toMatchObject({ id: 'source', shell: 'pwsh' })
+    expect(source?.run).toContain('$expected = \'${{ github.event.pull_request.head.sha || github.sha }}\'')
+    expect(source?.run).toContain('git rev-parse HEAD')
+    expect(source?.run).toContain('source revision mismatch')
+    expect(source?.run).toContain('"sha=$actual" >> $env:GITHUB_OUTPUT')
+    expect(JSON.stringify(windows)).not.toContain('Windows-titlebar-diagnostics-${{ github.sha }}')
+    expect(JSON.stringify(windows)).not.toContain('DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ github.sha }}')
   })
 
   it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {

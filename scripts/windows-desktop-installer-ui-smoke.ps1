@@ -170,6 +170,93 @@ function Invoke-InstallerButton {
   $pattern.Invoke()
 }
 
+function Wait-InstallerToggleOff {
+  param([int]$TimeoutSeconds = 10)
+
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  $toggleRequested = $false
+  while ([DateTime]::UtcNow -lt $deadline) {
+    $window = Get-InstallerWindow
+    if ($null -eq $window) {
+      throw 'Installer window disappeared before the Run option was disabled.'
+    }
+    $text = Get-AutomationText -Element $window
+    if ($text -notmatch 'Completing DeepSeek Harness Setup') {
+      throw 'Installer left the Finish page before the Run option was disabled.'
+    }
+    $checkbox = Find-Control -Element $window `
+      -ControlType ([System.Windows.Automation.ControlType]::CheckBox) `
+      -NamePattern 'Run DeepSeek Harness'
+    if ($null -eq $checkbox) {
+      throw 'The finish page did not expose the Run DeepSeek Harness option.'
+    }
+    $toggle = $checkbox.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
+    if ($toggle.Current.ToggleState -eq [System.Windows.Automation.ToggleState]::Off) {
+      return
+    }
+    if (-not $toggleRequested) {
+      $toggle.Toggle()
+      $toggleRequested = $true
+    }
+    Start-Sleep -Milliseconds 100
+  }
+  throw 'The Run DeepSeek Harness option did not settle to Off.'
+}
+
+function Complete-InstallerFinish {
+  param(
+    [Parameter(Mandatory = $true)]
+    [System.Diagnostics.Process]$Setup,
+    [int]$TimeoutSeconds = 90
+  )
+
+  # UI Automation Invoke is asynchronous. Resolve the page and button again
+  # after the checkbox transition, invoke once, then wait on observable state
+  # instead of assuming the process must exit inside one fixed 30-second call.
+  $window = Wait-InstallerPage -Pattern 'Completing DeepSeek Harness Setup' -TimeoutSeconds 10
+  $button = Find-Control -Element $window `
+    -ControlType ([System.Windows.Automation.ControlType]::Button) `
+    -NamePattern '^Finish$'
+  if ($null -eq $button -or -not $button.Current.IsEnabled) {
+    throw 'The Finish button was not enabled after the Run option settled.'
+  }
+  $pattern = $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+  $pattern.Invoke()
+
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  $lastState = 'finish-page-visible'
+  while ([DateTime]::UtcNow -lt $deadline) {
+    if ($Setup.HasExited) {
+      if ($Setup.ExitCode -ne 0) {
+        throw "Setup exited with code $($Setup.ExitCode) after the Finish button was invoked."
+      }
+      return
+    }
+    $currentWindow = Get-InstallerWindow
+    if ($null -eq $currentWindow) {
+      $lastState = 'window-dismissed'
+    }
+    else {
+      $currentText = Get-AutomationText -Element $currentWindow
+      $lastState = if ($currentText -match 'Completing DeepSeek Harness Setup') {
+        'finish-page-visible'
+      }
+      else {
+        'unexpected-window'
+      }
+    }
+    Start-Sleep -Milliseconds 100
+  }
+
+  if ($lastState -eq 'finish-page-visible') {
+    throw 'Finish page remained visible after the Finish button was invoked.'
+  }
+  if ($lastState -eq 'window-dismissed') {
+    throw 'Finish page closed but Setup did not exit.'
+  }
+  throw 'Setup did not exit and an unexpected installer window remained visible.'
+}
+
 function Invoke-IsolatedUninstall {
   param(
     [Parameter(Mandatory = $true)][string]$InstalledUninstaller,
@@ -283,20 +370,12 @@ try {
     throw 'Timed out waiting for the visible Setup finish page.'
   }
 
-  $runCheckbox = Find-Control -Element $finish `
-    -ControlType ([System.Windows.Automation.ControlType]::CheckBox) `
-    -NamePattern 'Run DeepSeek Harness'
-  if ($null -eq $runCheckbox) {
-    throw 'The finish page did not expose the Run DeepSeek Harness option.'
-  }
-  $toggle = $runCheckbox.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
-  if ($toggle.Current.ToggleState -eq [System.Windows.Automation.ToggleState]::On) {
-    $toggle.Toggle()
-  }
-  Invoke-InstallerButton -Window $finish -NamePattern '^Finish$'
-  if (-not $setup.WaitForExit(30000)) {
-    throw 'Setup did not exit after the Finish button was invoked.'
-  }
+  # Reaching Finish proves the install transaction wrote its uninstaller and
+  # shortcuts. From here every failure must use the exact isolated uninstaller
+  # in `finally`; recursive temp deletion alone would leave those registrations.
+  $installed = $true
+  Wait-InstallerToggleOff
+  Complete-InstallerFinish -Setup $setup
 
   $executable = Join-Path $installRoot 'DeepSeek Harness.exe'
   if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {

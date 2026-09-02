@@ -3,7 +3,7 @@ import type {
   ContextMessageNode, ConversationNodeDefinition, SteeringMessageNode, UserMessageNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  contextForm, contextProvenance, isAppendSurfaceEvent, isReplacementSurfaceEvent,
+  contextForm, contextProvenance, isAppendSurfaceEvent, isReplacementSurfaceEvent, rendererContent,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InboxState } from './inbox.ts'
 import { chatNode } from './common.ts'
@@ -54,7 +54,7 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
         kind: 'context',
         seq: event.seq,
         time: event.time,
-        content: event.data.content,
+        content: rendererContent(event.data.content),
         source: event.data.source,
         provenance: contextProvenance(event.data.source),
         form: contextForm(event.data.source),
@@ -67,14 +67,14 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
         messageId: event.data.id,
         seq: event.seq,
         time: event.time,
-        content: event.data.content,
+        content: rendererContent(event.data.content),
         source: event.data.source,
       }
       : {
         kind: 'user',
         seq: event.seq,
         time: event.time,
-        content: event.data.content,
+        content: rendererContent(event.data.content),
         source: event.data.source,
       }
   },

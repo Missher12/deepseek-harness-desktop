@@ -9,7 +9,7 @@ const PACKAGE_NAME = '@deepseek-ai/dsh-attachment-local'
 export const name = 'attachment-local-invariant'
 /** Services required before package ownership can be reserved. */
 export const inject = ['invariants', 'attachments']
-/** No runtime invariant: immutable writes and verified reads are enforced directly at the backend boundary. */
+/** No runtime invariant: immutable image/document writes and verified reads are enforced at the backend boundary. */
 const install: InvariantInstaller = () => {}
 /**
  * Register the package invariant companion.

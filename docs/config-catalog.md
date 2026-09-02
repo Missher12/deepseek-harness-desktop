@@ -343,10 +343,20 @@ export interface Config {
   normalizedImageMaxBytes?: number
   /** Maximum simultaneous normalization or request-image transformations in this service instance. */
   imageCompressionConcurrency?: number
+  /** Maximum source bytes accepted for one document. Default: 20 MiB. */
+  maxDocumentBytes?: number
+  /** Maximum document count accepted in one message. Default: 5. */
+  maxDocumentsPerMessage?: number
+  /** Maximum aggregate document source bytes accepted in one message. Default: 50 MiB. */
+  maxMessageDocumentBytes?: number
+  /** Maximum extracted UTF-8 text retained for one document. Default: 96 KiB. */
+  maxExtractedTextBytes?: number
+  /** Maximum aggregate extracted UTF-8 text accepted in one message. Default: 256 KiB. */
+  maxMessageExtractedTextBytes?: number
 }
 ```
 
-Source: [`packages/attachment/attachment-local/src/index.ts:51`](../packages/attachment/attachment-local/src/index.ts)
+Source: [`packages/attachment/attachment-local/src/index.ts:73`](../packages/attachment/attachment-local/src/index.ts)
 
 <a id="deepseek-aidsh-bash-local"></a>
 
@@ -418,7 +428,7 @@ export interface ConnectionConfig {
 }
 ```
 
-Source: [`packages/client/connection/src/index.ts:50`](../packages/client/connection/src/index.ts)
+Source: [`packages/client/connection/src/index.ts:60`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 

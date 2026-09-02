@@ -160,6 +160,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-reasoning-effort': ['THIRD_PARTY_NOTICES.md', 'lib/assets'],
   // The CPython side ships as source .py files, published as-is rather than built.
   '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],
+  // PDF parsing runs in a separately bundled, resource-limited worker that is loaded by file but
+  // intentionally is not exposed as a public package subpath.
+  '@deepseek-ai/dsh-attachment-local': ['lib/pdf-worker.cjs'],
   // The Python runtime uses a distinct closed-resolution bin; the public CLI
   // keeps config-owned bare-package resolution through lib/bin.js.
   '@deepseek-ai/dsh-sdk-jsonrpc-demo': ['lib/packaged-bin.js'],

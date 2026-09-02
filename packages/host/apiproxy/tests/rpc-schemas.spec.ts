@@ -333,6 +333,37 @@ describe('sessions domain schemas', () => {
     expect(sessionPromptRequestSchema.parse({
       sessionId: 's1', mode: 'queue', content: [],
     }).clientTimeZone).toBeUndefined()
+    expect(sessionPromptRequestSchema.parse({
+      sessionId: 's1',
+      mode: 'queue',
+      content: [{
+        type: 'document',
+        mediaType: 'application/pdf',
+        data: 'JVBERi0=',
+        name: 'brief.pdf',
+      }],
+    }).content[0]).toEqual({
+      type: 'document', mediaType: 'application/pdf', data: 'JVBERi0=', name: 'brief.pdf',
+    })
+    for (const data of ['', 'AAA', 'AA=A', 'AB==', 'AAB=', 'YQ==\n']) {
+      expect(() => sessionPromptRequestSchema.parse({
+        sessionId: 's1',
+        mode: 'queue',
+        content: [{ type: 'document', mediaType: 'text/plain', data, name: 'notes.txt' }],
+      })).toThrow()
+    }
+    expect(() => sessionPromptRequestSchema.parse({
+      sessionId: 's1',
+      mode: 'queue',
+      content: [{ type: 'document', mediaType: 'application/zip', data: 'UEs=', name: 'archive.zip' }],
+    })).toThrow()
+    expect(() => sessionPromptRequestSchema.parse({
+      sessionId: 's1',
+      mode: 'queue',
+      content: [{
+        type: 'document', mediaType: 'text/plain', data: 'YQ==', name: 'notes.txt', path: '/secret/notes.txt',
+      }],
+    })).toThrow()
     expect(() => sessionPromptRequestSchema.parse({ sessionId: 's1', mode: 'inject', content: [] })).toThrow()
     expect(sessionPromptValueSchema.parse({ accepted: true }).accepted).toBe(true)
     // The command slot appears only when the prompt dispatched a slash command.

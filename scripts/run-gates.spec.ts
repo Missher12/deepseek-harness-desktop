@@ -412,7 +412,10 @@ describe('Node 24 lane ownership', () => {
         'built-bin-smoke',
       ],
     })
-    expect(subject.find(item => item.id === 'snapshot')?.env).toEqual({ DSH_EXAMPLE_MODE: 'lib' })
+    expect(subject.find(item => item.id === 'snapshot')?.env).toEqual({
+      DSH_EXAMPLE_MODE: 'lib',
+      DSH_SNAPSHOT_MAX_CONCURRENCY: '1',
+    })
     expect(subject.find(item => item.id === 'doc-typecheck')?.env).toEqual({
       DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1',
     })
@@ -420,6 +423,7 @@ describe('Node 24 lane ownership', () => {
       expect.arrayContaining([
         'packages/subagent/subagent-codex/tests/loader-composition.e2e.ts',
         'packages/subagent/subagent-claude-code/tests/loader-composition.e2e.ts',
+        'packages/attachment/attachment-local/tests/pdf-isolate.built.e2e.ts',
       ]),
     )
     expect(subject.find(item => item.id === 'web-snapshot')).toMatchObject({

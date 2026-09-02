@@ -2,13 +2,13 @@
 
 English | [中文](README.zh.md)
 
-Unified **External Brain** overview for Web and Desktop Settings. The browser plugin registers a localized section at order 9 and reads one bounded, pathless Host snapshot. It does not read memory databases, project paths, or provider errors.
+Unified **Memory & Learning** overview for Web and Desktop Settings. The browser plugin registers a localized section at order 9 and reads one bounded, pathless Host snapshot. It does not read memory databases, project paths, or provider errors.
 
-The page paints three stable source rows before the first response: project memory, validated experience rules, and built-in read-only compatibility with a previous memory library. It then replaces placeholders with provider state and bounded counts. It also explains the single recall path, the six-item and 4 KB limits, the 150 ms fail-open deadline, and reversible exact-duplicate consolidation.
+The page paints two stable source rows before the first response: reviewed project memory and learned workflows that have passed validation. It then replaces placeholders with provider state and bounded counts. Supporting copy explains read-only legacy-memory compatibility, the single recall path, the six-item and 4 KB limits, the 150 ms fail-open deadline, and reversible exact-duplicate consolidation.
 
 ## Model Experience
 
-### External-brain settings overview
+### Memory & Learning settings overview
 
 #### What the model sees
 
@@ -20,7 +20,7 @@ None from this settings package. A qualifying recall is separately bounded by th
 
 #### KV Cache effect
 
-Opening this page has no prompt or cache effect. A qualifying recall can change that turn's context under the Brain Hub's documented bounds.
+Opening this page has no prompt or cache effect. Memory stores remain on the device; a qualifying model request can include up to six selected excerpts totaling 4 KB and can therefore change that turn's context.
 
 ## Known Limitations and Deferred Work
 

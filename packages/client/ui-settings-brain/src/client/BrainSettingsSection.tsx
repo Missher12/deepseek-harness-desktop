@@ -9,7 +9,7 @@ export type BrainSettingsProps = PropsRuntime<'settings.section'>
   & BrainSettingsInjected
 
 type Row = {
-  id: 'memory' | 'evolution' | 'compatibility'
+  id: 'memory' | 'evolution'
   title: string
   description: string
 }
@@ -35,12 +35,10 @@ export function BrainSettingsSection({ t, load }: BrainSettingsProps) {
   const rows: Row[] = [
     { id: 'memory', title: t('projectMemory'), description: t('projectMemoryDescription') },
     { id: 'evolution', title: t('evolution'), description: t('evolutionDescription') },
-    { id: 'compatibility', title: t('compatibility'), description: t('compatibilityDescription') },
   ]
 
   const badge = (id: Row['id']): string => {
     if (snapshot === null) return '—'
-    if (id === 'compatibility') return memory?.state === 'ready' ? t('bundled') : t(statusKey(memory?.state))
     const provider = id === 'memory' ? memory : evolution
     if (provider?.state !== 'ready') return t(statusKey(provider?.state))
     return id === 'memory' ? t('items', { count: provider.count }) : t('rules', { count: provider.count })
@@ -68,7 +66,7 @@ export function BrainSettingsSection({ t, load }: BrainSettingsProps) {
         <div><strong>{t('consolidationTitle')}</strong><p>{t('consolidationDescription')}</p></div>
       </div>
       {failed && <div className={css.error} role="alert">{t('error')}</div>}
-      <footer>{t('localOnly')}</footer>
+      <footer><span>{t('localOnly')}</span><span>{t('compatibilityNote')}</span></footer>
     </section>
   )
 }

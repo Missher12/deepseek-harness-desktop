@@ -3,8 +3,16 @@ import { describe, expect, it } from 'vitest'
 import AttachmentStore, {
   AttachmentError,
   AttachmentId,
+  DOCUMENT_DOTFILE_TEXT_NAMES,
+  DOCUMENT_EXTENSIONLESS_TEXT_NAMES,
+  DOCUMENT_EXTENSION_MEDIA_TYPES,
   ImageVariantId,
   isImageAdmissionError,
+  isDocumentAdmissionError,
+  type DocumentAttachmentLimits,
+  type DocumentAttachmentRef,
+  type SaveDocumentAttachment,
+  type StoredDocumentAttachment,
   type ImageAttachmentRef,
   type ImageMediaType,
   type ImageRequestPolicy,
@@ -12,6 +20,21 @@ import AttachmentStore, {
   type SaveImageAttachment,
   type StoredImageAttachment,
 } from '../src/index.ts'
+
+describe('document filename contract', () => {
+  it('publishes one closed extension mapping shared by browser intake and local extraction', () => {
+    expect(DOCUMENT_EXTENSION_MEDIA_TYPES).toMatchObject({
+      pdf: 'application/pdf',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      md: 'text/markdown',
+      hpp: 'text/plain',
+      toml: 'text/plain',
+    })
+    expect(DOCUMENT_EXTENSIONLESS_TEXT_NAMES).toEqual(['dockerfile', 'license', 'makefile', 'readme'])
+    expect(DOCUMENT_DOTFILE_TEXT_NAMES).toEqual(['.env'])
+  })
+})
 
 const LIMITS = {
   maxImageBytes: 4,
@@ -88,6 +111,44 @@ class UnsupportedProjectionStore extends AttachmentStore {
   }
 }
 
+const DOCUMENT_LIMITS: DocumentAttachmentLimits = {
+  maxDocumentBytes: 20 * 1024 * 1024,
+  maxDocumentsPerMessage: 2,
+  maxMessageDocumentBytes: 5,
+  maxExtractedTextBytes: 96 * 1024,
+  maxMessageExtractedTextBytes: 256 * 1024,
+  maxDocumentNameBytes: 255,
+  mediaTypes: ['text/plain'],
+}
+
+class RecordingDocumentStore extends RecordingStore {
+  override readonly documentLimits = DOCUMENT_LIMITS
+
+  override validateDocument(input: SaveDocumentAttachment): Promise<void> {
+    const value = input.data[0] ?? 0
+    this.calls.push(`validate-document:${value}`)
+    return Promise.resolve()
+  }
+
+  override saveDocument(input: SaveDocumentAttachment): Promise<DocumentAttachmentRef> {
+    const value = input.data[0] ?? 0
+    this.calls.push(`save-document:${value}`)
+    return Promise.resolve({
+      attachmentId: AttachmentId(`sha256:${String(value).padStart(64, '0')}`),
+      extractedTextId: AttachmentId(`sha256:${String(value + 1).padStart(64, '0')}`),
+      mediaType: input.mediaType,
+      name: input.name,
+      bytes: input.data.byteLength,
+      extractedBytes: 1,
+      truncated: false,
+    })
+  }
+
+  override readDocument(_ref: DocumentAttachmentRef): Promise<StoredDocumentAttachment> {
+    throw new Error('not used')
+  }
+}
+
 function image(value: number, mediaType: ImageMediaType = 'image/png'): SaveImageAttachment {
   return { data: Uint8Array.of(value), mediaType, name: `${value}.png` }
 }
@@ -148,6 +209,65 @@ describe('AttachmentStore.readImageRequest', () => {
   })
 })
 
+describe('AttachmentStore.saveDocuments', () => {
+  const document = (value: number): SaveDocumentAttachment => ({
+    data: Uint8Array.of(value),
+    mediaType: 'text/plain',
+    name: `${value}.txt`,
+  })
+
+  it('validates a complete bounded batch before saving it in order', async () => {
+    const store = new RecordingDocumentStore(new Context())
+    const refs = await store.saveDocuments([document(1), document(2)])
+    expect(store.calls).toEqual([
+      'validate-document:1',
+      'validate-document:2',
+      'save-document:1',
+      'save-document:2',
+    ])
+    expect(refs.map(ref => ref.name)).toEqual(['1.txt', '2.txt'])
+  })
+
+  it('rejects count, aggregate bytes, and media types before extraction', async () => {
+    const store = new RecordingDocumentStore(new Context())
+    await expect(store.saveDocuments([document(1), document(2), document(3)]))
+      .rejects.toMatchObject({ code: 'TOO_MANY_DOCUMENTS' })
+    await expect(store.saveDocuments([
+      { ...document(1), data: Uint8Array.of(1, 2, 3) },
+      { ...document(2), data: Uint8Array.of(4, 5, 6) },
+    ])).rejects.toMatchObject({ code: 'DOCUMENTS_TOO_LARGE' })
+    await expect(store.saveDocuments([{ ...document(1), mediaType: 'application/pdf' }]))
+      .rejects.toMatchObject({ code: 'UNSUPPORTED_DOCUMENT_TYPE' })
+    expect(store.calls).toEqual([])
+  })
+
+  it('fails closed when a mounted provider does not implement document storage', async () => {
+    const store = new UnsupportedProjectionStore(new Context())
+    const input = document(1)
+    const ref: DocumentAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'1'.repeat(64)}`),
+      extractedTextId: AttachmentId(`sha256:${'2'.repeat(64)}`),
+      mediaType: 'text/plain',
+      name: '1.txt',
+      bytes: 1,
+      extractedBytes: 1,
+      truncated: false,
+    }
+
+    await expect(store.validateDocument(input))
+      .rejects.toMatchObject({ code: 'UNSUPPORTED_DOCUMENT_TYPE' })
+    await expect(store.saveDocument(input))
+      .rejects.toMatchObject({ code: 'UNSUPPORTED_DOCUMENT_TYPE' })
+    await expect(store.readDocument(ref))
+      .rejects.toMatchObject({ code: 'ATTACHMENT_PROJECTION_UNSUPPORTED' })
+
+    const controller = new AbortController()
+    const reason = new Error('cancel unsupported document projection')
+    controller.abort(reason)
+    expect(() => store.readDocument(ref, controller.signal)).toThrow(reason)
+  })
+})
+
 describe('isImageAdmissionError', () => {
   it('separates caller-correctable image admission failures from storage faults', () => {
     expect(isImageAdmissionError(new AttachmentError('bad bytes', 'INVALID_IMAGE'))).toBe(true)
@@ -157,5 +277,14 @@ describe('isImageAdmissionError', () => {
     expect(isImageAdmissionError(new AttachmentError('corrupt object', 'ATTACHMENT_CORRUPT'))).toBe(false)
     expect(isImageAdmissionError(new AttachmentError('disk failed', 'ATTACHMENT_WRITE_FAILED'))).toBe(false)
     expect(isImageAdmissionError(new Error('unknown failure'))).toBe(false)
+  })
+})
+
+describe('isDocumentAdmissionError', () => {
+  it('separates correctable document input from durable-storage faults', () => {
+    expect(isDocumentAdmissionError(new AttachmentError('bad document', 'INVALID_DOCUMENT'))).toBe(true)
+    expect(isDocumentAdmissionError(new AttachmentError('bad base64', 'INVALID_DOCUMENT_BASE64'))).toBe(true)
+    expect(isDocumentAdmissionError(new AttachmentError('too many', 'TOO_MANY_DOCUMENTS'))).toBe(true)
+    expect(isDocumentAdmissionError(new AttachmentError('corrupt object', 'ATTACHMENT_CORRUPT'))).toBe(false)
   })
 })

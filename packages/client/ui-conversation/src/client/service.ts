@@ -14,12 +14,20 @@ import type { Context } from '@deepseek-ai/cordis'
 // method) instead of the standalone helper.
 import type { ISessions, SessionFace, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SubmitImageAttachment, SubmitOutcome } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
-import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
-import type { ComposerAttachment } from './contract/slots.ts'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import {
+  MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS,
+  promptAttachmentBase64CodeUnits,
+} from '@deepseek-ai/dsh-attachment/types'
+import type {
+  ComposerAttachment, ComposerDocumentAttachment, ComposerImageAttachment,
+} from './contract/slots.ts'
 import type { QueueAction, QueueItemId } from './contract/queue.ts'
 import type { ComposerBlocks } from './input/blocks.ts'
 import type { DraftAttachmentId, SessionInputResolver } from './input/contract.ts'
 import type { InputSubmitMode } from './contract/composer-submission.ts'
+import { classifyComposerFile, imageMediaType } from './attachment-files.ts'
+import type { ComposerFileClassification } from './attachment-files.ts'
 
 /**
  * The outward conversation face (`ctx.conversation`): the scope-addressed
@@ -59,33 +67,20 @@ export interface IConversation {
   loadOlder(): Promise<void>
 }
 
-/** Create one browser-only draft descriptor; only its id enters input state. */
-function browserDraftAttachment(file: File): ComposerAttachment {
-  return {
-    kind: 'image',
-    id: crypto.randomUUID() as DraftAttachmentId,
-    previewUrl: URL.createObjectURL(file),
-    file,
-  }
-}
-
 interface ImageUrlEntry {
   readonly sessionId: SessionId
   readonly generation: number
   readonly pending: Promise<string>
 }
 
-/** Unsupported browser-declared image type, localized by the UI boundary. */
-export class UnsupportedImageMediaTypeError extends Error {
-  /** Browser-declared MIME value, possibly empty. */
-  readonly mediaType: string
-
-  /** @param mediaType - Browser-declared MIME value, possibly empty. */
-  constructor(mediaType: string) {
-    super(`unsupported image media type: ${mediaType || '(empty)'}`)
-    this.name = 'UnsupportedImageMediaTypeError'
-    this.mediaType = mediaType
-  }
+/** Create one browser-only draft descriptor; only its id enters input state. */
+function browserDraftAttachment(
+  file: File,
+  classification: ComposerFileClassification,
+): ComposerAttachment {
+  const id = crypto.randomUUID() as DraftAttachmentId
+  if (classification.kind === 'document') return { kind: 'document', id, file, mediaType: classification.mediaType }
+  return { kind: 'image', id, previewUrl: URL.createObjectURL(file), file }
 }
 
 /** Scope-addressed conversation service (root singleton, provided as `conversation`). */
@@ -134,10 +129,10 @@ export class ConversationController extends Service implements IConversation {
   }
 
   /**
-   * Submit ordered draft images with text through one host admission.
+   * Submit ordered draft attachments with text through one Host admission.
    * @param session - target session.
    * @param text - serialized prompt text.
-   * @param imageIds - ordered draft-local attachment ids.
+   * @param imageIds - ordered draft-local attachment ids (legacy field name).
    * @param mode - queue or steer delivery selected by composer policy.
    * @param signal - optional cancellation for the complete Host admission.
    * @returns the Host admission outcome; local attachment preparation failures reject.
@@ -151,9 +146,9 @@ export class ConversationController extends Service implements IConversation {
   ): Promise<SubmitOutcome> {
     const attachments = this.draftImages(imageIds)
     if (attachments.length !== imageIds.length) {
-      throw new Error('conversation.sendSession: one or more draft images are no longer available')
+      throw new Error('conversation.sendSession: one or more draft attachments are no longer available')
     }
-    const uploaded = await this.serializeImages(attachments.map(attachment => attachment.file))
+    const uploaded = await this.serializeAttachments(attachments)
     const content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
     const result = await session.prompt(content, mode, signal)
     if (!result.ok) return { kind: 'error' }
@@ -162,22 +157,25 @@ export class ConversationController extends Service implements IConversation {
   }
 
   /**
-   * Create runtime-only draft images and their object URLs.
-   * @param files - browser files to register after MIME validation.
+   * Create runtime-only draft attachments and image object URLs.
+   * @param files - browser files to register after closed type classification.
    * @returns ordered draft descriptors.
    */
   createDraftImages(files: readonly File[]): readonly ComposerAttachment[] {
-    for (const file of files) imageMediaType(file.type)
-    return files.map((file) => {
-      const attachment = browserDraftAttachment(file)
+    const classifications = files.map(classifyComposerFile)
+    return files.map((file, index) => {
+      const classification = classifications[index]
+      /* v8 ignore next -- classifications is produced by the same-length map immediately above. */
+      if (classification === undefined) throw new Error('conversation.createDraftImages: classification missing')
+      const attachment = browserDraftAttachment(file, classification)
       this.draftAttachments.set(attachment.id, attachment)
-      this.createdImageUrls.add(attachment.previewUrl)
+      if (attachment.kind === 'image') this.createdImageUrls.add(attachment.previewUrl)
       return attachment
     })
   }
 
   /**
-   * Resolve ordered input-state ids to runtime-owned draft images.
+   * Resolve ordered input-state ids to runtime-owned draft attachments.
    * @param ids - draft attachment ids.
    * @returns descriptors that remain live, in requested order.
    */
@@ -202,19 +200,25 @@ export class ConversationController extends Service implements IConversation {
     if (attachments.length !== imageIds.length) {
       throw new Error('conversation.serializeDraftImages: one or more draft images are no longer available')
     }
-    return Promise.all(attachments.map(attachment => this.encodeImage(attachment.file)))
+    const images = attachments.filter((attachment): attachment is ComposerImageAttachment => attachment.kind === 'image')
+    if (images.length !== attachments.length) {
+      throw new Error('conversation.serializeDraftImages: slash commands do not accept document attachments')
+    }
+    return Promise.all(images.map(attachment => this.encodeImage(attachment.file)))
   }
 
   /**
-   * Release one browser-owned draft image and preview URL.
+   * Release one browser-owned draft attachment and any preview URL.
    * @param id - draft attachment id.
    */
   releaseDraftImage(id: DraftAttachmentId): void {
     const attachment = this.draftAttachments.get(id)
     if (attachment === undefined) return
     this.draftAttachments.delete(id)
-    this.createdImageUrls.delete(attachment.previewUrl)
-    revokePreview(attachment.previewUrl)
+    if (attachment.kind === 'image') {
+      this.createdImageUrls.delete(attachment.previewUrl)
+      revokePreview(attachment.previewUrl)
+    }
   }
 
   /**
@@ -332,9 +336,31 @@ export class ConversationController extends Service implements IConversation {
     return sessions
   }
 
-  /** Convert browser files to canonical base64 prompt parts. */
-  private serializeImages(images: readonly File[]): Promise<Parameters<SessionFace['prompt']>[0]> {
-    return Promise.all(images.map(async file => ({ type: 'image' as const, ...await this.encodeImage(file) })))
+  /** Convert browser attachments to canonical base64 prompt parts. */
+  private async serializeAttachments(
+    attachments: readonly ComposerAttachment[],
+  ): Promise<Parameters<SessionFace['prompt']>[0]> {
+    let remaining = MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS
+    for (const attachment of attachments) {
+      const encodedLength = promptAttachmentBase64CodeUnits(attachment.file.size)
+      if (encodedLength > remaining) {
+        throw new ComposerAttachmentPayloadError()
+      }
+      remaining -= encodedLength
+    }
+
+    // Keep only one raw File buffer live at a time. The encoded strings must
+    // remain until the request is sent, but concurrent arrayBuffer() calls
+    // would additionally retain every large source buffer at once.
+    const serialized: Parameters<SessionFace['prompt']>[0] = []
+    for (const attachment of attachments) {
+      if (attachment.kind === 'image') {
+        serialized.push({ type: 'image', ...await this.encodeImage(attachment.file) })
+      } else {
+        serialized.push(await this.encodeDocument(attachment))
+      }
+    }
+    return serialized
   }
 
   /** Canonical base64 wire form of one browser image file. */
@@ -345,17 +371,27 @@ export class ConversationController extends Service implements IConversation {
       ...(file.name === '' ? {} : { name: file.name }),
     }
   }
+
+  /** Canonical base64 wire form of one browser document file. */
+  private async encodeDocument(
+    attachment: ComposerDocumentAttachment,
+  ): Promise<Extract<Parameters<SessionFace['prompt']>[0][number], { type: 'document' }>> {
+    return {
+      type: 'document',
+      mediaType: attachment.mediaType,
+      data: bytesToBase64(new Uint8Array(await attachment.file.arrayBuffer())),
+      name: attachment.file.name,
+    }
+  }
 }
 
-function imageMediaType(value: string): ImageMediaType {
-  switch (value) {
-    case 'image/png':
-    case 'image/jpeg':
-    case 'image/webp':
-    case 'image/gif':
-      return value
-    default:
-      throw new UnsupportedImageMediaTypeError(value)
+/** Browser-side backstop matching the Host's combined prompt carrier code. */
+class ComposerAttachmentPayloadError extends Error {
+  readonly code = 'ATTACHMENTS_TOO_LARGE'
+
+  constructor() {
+    super('Combined image and document payload exceeds the request carrier limit.')
+    this.name = 'ComposerAttachmentPayloadError'
   }
 }
 
