@@ -30,7 +30,8 @@ import { HarnessError, INVALID_CREDENTIAL_CODE } from './error.ts'
 import { normalizeLlmFailure } from './adapter-failure.ts'
 import { normalizeApiKey } from './api-key.ts'
 import {
-  contentHasDocument, contentHasImage, projectDocumentsForRequest, projectImagesForTextModel,
+  contentHasDocument, contentHasImage, documentExpansionTokenBudget,
+  projectDocumentsForRequest, projectImagesForTextModel,
 } from './content.ts'
 
 export * from './attribution.ts'
@@ -940,7 +941,15 @@ export class LlmRuntime extends Service {
             'UNSUPPORTED_CONTENT',
           )
         }
-        const messages = await projectDocumentsForRequest(resolvedOptions.messages, attachments, options.signal)
+        const maxExpansionTokens = modelInfo.context === undefined
+          ? undefined
+          : documentExpansionTokenBudget(resolvedOptions, modelInfo.context.contextWindow)
+        const messages = await projectDocumentsForRequest(
+          resolvedOptions.messages,
+          attachments,
+          options.signal,
+          maxExpansionTokens === undefined ? {} : { maxExpansionTokens },
+        )
         projectedOptions = Object.isFrozen(resolvedOptions)
           ? deepFreeze({ ...resolvedOptions, messages: [...messages] })
           : { ...resolvedOptions, messages: [...messages] }

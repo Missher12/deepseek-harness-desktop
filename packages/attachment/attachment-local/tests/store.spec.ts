@@ -8,7 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import sharp from 'sharp'
 import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
 import type { NormalizationPolicy } from '../src/normalization.ts'
-import { commitPreparedImageFile, prepareImageFile, readImageFile, saveImageFile } from '../src/store.ts'
+import {
+  commitPreparedImageFile, prepareImageFile, publishStagedObject, readImageFile, saveImageFile,
+} from '../src/store.ts'
 
 const fsControl = vi.hoisted(() => ({
   readSignals: [] as AbortSignal[],
@@ -259,6 +261,19 @@ describe('local attachment store', () => {
 
     await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY))
       .rejects.toMatchObject({ code: 'ATTACHMENT_WRITE_FAILED' })
+  })
+
+  it('rethrows a staging-open failure for the domain owner to classify', async () => {
+    const storageRoot = await root()
+    const sha256 = createHash('sha256').update(PNG).digest('hex')
+
+    await expect(publishStagedObject(
+      join(storageRoot, 'missing-parent', 'temporary'),
+      join(storageRoot, 'unused-target'),
+      PNG,
+      sha256,
+      'Stored attachment failed integrity verification.',
+    )).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('rejects prepared bytes that no longer match their content-addressed reference', async () => {

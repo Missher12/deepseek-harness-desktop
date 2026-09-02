@@ -22,21 +22,21 @@ The attachment Service Definition adds a document reference beside the existing 
 
 The local provider stores immutable source bytes and deterministic extracted UTF-8 text below `DSH_HOME`. Admission verifies the complete input before publishing a reference. Content-addressed writes may leave unreachable bytes after cancellation, matching the existing image-store contract; no late message is appended.
 
-The durable session message contains a `document` content block holding the reference. Request projection reads and verifies the stored extraction, then converts the block to a deterministic tagged text section. All model-visible text is therefore reconstructable from the session log plus immutable attachment storage. Provider adapters do not receive a filesystem path and do not expose a raw file-send command.
+The durable session message contains a `document` content block holding the reference. Request projection reads and verifies the stored extraction, then converts the block to a deterministic tagged text section. Newer messages receive document budget before older history while attachment order inside one message stays stable. The final expansion is fitted against the exact resolved route context and output reserve; a non-fitting document becomes a deterministic metadata-only placeholder before dispatch. All model-visible text is therefore reconstructable from the session log plus immutable attachment storage. Provider adapters do not receive a filesystem path and do not expose a raw file-send command.
 
 ### Extraction and limits
 
 Admission accepts at most five documents and 50 MiB of source bytes per message, with a 20 MiB limit per document. Extracted text is bounded to 96 KiB per document and 256 KiB per message. Truncation is explicit in both the reference and model-facing text.
 
-Plain-text formats require valid UTF-8 and reject NUL-heavy or binary content. PDF input requires the PDF signature and uses PDF.js without executing embedded actions. DOCX and XLSX input requires a valid OOXML ZIP container, a bounded entry roster, and the expected content-type and document parts; macros and external relationships are ignored, formulas are never evaluated, and only stored display text is extracted. ZIP entry count, expanded bytes, path depth, and per-entry bytes are bounded before text construction.
+Plain-text formats require valid UTF-8 and reject NUL-heavy or binary content. PDF input requires the PDF signature and uses PDF.js without executing embedded actions. PDF.js runs in a separately bundled Worker with a 30-second wall deadline and 128MiB V8 old-generation limit; page count, text-item work, per-item characters, and output bytes remain separately bounded. DOCX and XLSX input requires a valid OOXML ZIP container, a bounded entry roster, and the expected content-type and document parts; macros and external relationships are ignored, formulas are never evaluated, and only stored display text is extracted. ZIP entry count, expanded bytes, path depth, and per-entry bytes are bounded before text construction.
 
-The browser sends canonical base64 bytes only after an explicit drop or picker action. Host admission revalidates every declared field and decoded byte count. Filenames are normalized to a basename, control characters are removed, and display-name bytes are bounded. Dragging never grants future filesystem access.
+The browser sends canonical base64 bytes only after an explicit drop or picker action. Images and documents share a 296MiB encoded carrier cap under the 300MiB HTTP request ceiling. The renderer checks the combined cap before reading and serializes reads; Host admission independently revalidates the same aggregate before decoding, plus every declared field and decoded byte count. Filenames are normalized to a basename, control characters are removed, and display-name bytes are bounded. Dragging never grants future filesystem access.
 
 ### Composer and history
 
 The draft attachment model becomes an ordered image-or-document union. Images keep thumbnails and lightbox preview. Documents render a compact file chip with name, format, size, removal action, and keyboard focus. The drop overlay and picker advertise the supported closed set. A mixed batch preserves user order and fails atomically when any member is invalid.
 
-Submitted document blocks render as file chips in conversation history. The source bytes are available only through the authenticated session attachment lookup; the renderer receives bounded metadata unless the user explicitly downloads or previews a supported attachment in a future feature.
+Submitted document blocks render as file chips in conversation history. Host history, live events, queue frames, presenter views, and known extension carriers expose only a bounded renderer DTO with a process-random display id. Content-address ids and source/text digests remain Host-private and do not enter renderer payloads or the DOM. Source bytes are available only through the authenticated session attachment lookup if a future user-initiated download or preview feature is added.
 
 ## Memory & Learning experience
 

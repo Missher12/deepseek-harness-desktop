@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest'
 import AttachmentStore, {
   AttachmentError,
   AttachmentId,
+  DOCUMENT_DOTFILE_TEXT_NAMES,
+  DOCUMENT_EXTENSIONLESS_TEXT_NAMES,
+  DOCUMENT_EXTENSION_MEDIA_TYPES,
   ImageVariantId,
   isImageAdmissionError,
   isDocumentAdmissionError,
@@ -17,6 +20,21 @@ import AttachmentStore, {
   type SaveImageAttachment,
   type StoredImageAttachment,
 } from '../src/index.ts'
+
+describe('document filename contract', () => {
+  it('publishes one closed extension mapping shared by browser intake and local extraction', () => {
+    expect(DOCUMENT_EXTENSION_MEDIA_TYPES).toMatchObject({
+      pdf: 'application/pdf',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      md: 'text/markdown',
+      hpp: 'text/plain',
+      toml: 'text/plain',
+    })
+    expect(DOCUMENT_EXTENSIONLESS_TEXT_NAMES).toEqual(['dockerfile', 'license', 'makefile', 'readme'])
+    expect(DOCUMENT_DOTFILE_TEXT_NAMES).toEqual(['.env'])
+  })
+})
 
 const LIMITS = {
   maxImageBytes: 4,
@@ -221,6 +239,32 @@ describe('AttachmentStore.saveDocuments', () => {
     await expect(store.saveDocuments([{ ...document(1), mediaType: 'application/pdf' }]))
       .rejects.toMatchObject({ code: 'UNSUPPORTED_DOCUMENT_TYPE' })
     expect(store.calls).toEqual([])
+  })
+
+  it('fails closed when a mounted provider does not implement document storage', async () => {
+    const store = new UnsupportedProjectionStore(new Context())
+    const input = document(1)
+    const ref: DocumentAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'1'.repeat(64)}`),
+      extractedTextId: AttachmentId(`sha256:${'2'.repeat(64)}`),
+      mediaType: 'text/plain',
+      name: '1.txt',
+      bytes: 1,
+      extractedBytes: 1,
+      truncated: false,
+    }
+
+    await expect(store.validateDocument(input))
+      .rejects.toMatchObject({ code: 'UNSUPPORTED_DOCUMENT_TYPE' })
+    await expect(store.saveDocument(input))
+      .rejects.toMatchObject({ code: 'UNSUPPORTED_DOCUMENT_TYPE' })
+    await expect(store.readDocument(ref))
+      .rejects.toMatchObject({ code: 'ATTACHMENT_PROJECTION_UNSUPPORTED' })
+
+    const controller = new AbortController()
+    const reason = new Error('cancel unsupported document projection')
+    controller.abort(reason)
+    expect(() => store.readDocument(ref, controller.signal)).toThrow(reason)
   })
 })
 

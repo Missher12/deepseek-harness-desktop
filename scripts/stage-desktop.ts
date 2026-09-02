@@ -317,6 +317,7 @@ export async function stageDesktop(
     'node_modules/@deepseek-ai/dsh/lib/bin.js',
     'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
     'node_modules/@deepseek-ai/dsh-host-desktop-plugin-runtime/lib/index.js',
+    'node_modules/@deepseek-ai/dsh-attachment-local/lib/pdf-worker.cjs',
     'node_modules/@deepseek-ai/dsh-desktop-managed-memory/package.json',
     'node_modules/@deepseek-ai/dsh-desktop-managed-memory/lib/index.js',
     'node_modules/@deepseek-ai/dsh-desktop-managed-memory/lib/client.js',

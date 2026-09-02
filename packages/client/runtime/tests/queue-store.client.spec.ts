@@ -33,10 +33,10 @@ function queueFrame(items: QueueFixture[]): MuxFrame {
     items: items.map(item => ({
       id: iid(item.id),
       placement: item.placement ?? 'queued',
-      message: item.message ?? createUserMessage({
+      message: (item.message ?? createUserMessage({
         content: item.content ?? text(item.body),
         source: { kind: 'user', rpcId: rid(`rpc-${item.id}`) } as never,
-      }),
+      })) as never,
     })),
   }
 }
@@ -155,7 +155,7 @@ describe('queue snapshot intake', () => {
     } as SessionEvent
 
     session.handleMuxEnvelope(rid('env-durable'), {
-      type: 'session/event', sessionId: SID, event: durable,
+      type: 'session/event', sessionId: SID, event: durable as never,
     })
     expect(session.getSnapshot().queue.map(item => item.id)).toEqual(['s-second'])
 
@@ -163,7 +163,7 @@ describe('queue snapshot intake', () => {
       { id: 's-later', body: '', placement: 'steering', message },
     ]))
     session.handleMuxEnvelope(rid('env-replayed-durable'), {
-      type: 'session/event', sessionId: SID, event: durable,
+      type: 'session/event', sessionId: SID, event: durable as never,
     })
     expect(session.getSnapshot().queue.map(item => item.id)).toEqual(['s-later'])
   })
@@ -188,7 +188,7 @@ describe('queue snapshot intake', () => {
         type: 'user/message',
         surfaceOp: 'append',
         data: message,
-      },
+      } as never,
     })
 
     expect(session.getSnapshot().queue).toEqual([])

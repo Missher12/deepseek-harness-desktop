@@ -18,9 +18,14 @@ import type {
 export { AttachmentId, ImageVariantId } from './brand.ts'
 export { AttachmentError, isDocumentAdmissionError, isImageAdmissionError } from './error.ts'
 export type { AttachmentErrorCode, DocumentAdmissionErrorCode, ImageAdmissionErrorCode } from './error.ts'
-export { admitEncodedDocuments, admitEncodedImages } from './admission.ts'
+export {
+  admitEncodedDocuments,
+  admitEncodedImages,
+  assertPromptAttachmentBase64CodeUnits,
+} from './admission.ts'
 export type {
   AttachmentId as AttachmentIdType,
+  DocumentAttachmentDisplayId,
   DocumentAttachmentLimits,
   DocumentAttachmentRef,
   DocumentMediaType,
@@ -31,12 +36,21 @@ export type {
   ImageRequestPolicy,
   ImageMediaType,
   RequestImageAttachment,
+  RendererDocumentAttachment,
   SaveDocumentAttachment,
   SaveImageAttachment,
   StoredDocumentAttachment,
   StoredImageAttachment,
 } from './types.ts'
-export { DOCUMENT_MEDIA_TYPES } from './types.ts'
+export {
+  DOCUMENT_DOTFILE_TEXT_NAMES,
+  DOCUMENT_EXTENSIONLESS_TEXT_NAMES,
+  DOCUMENT_EXTENSION_MEDIA_TYPES,
+  DOCUMENT_MEDIA_TYPES,
+  isCanonicalAttachmentBase64,
+  MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS,
+  promptAttachmentBase64CodeUnits,
+} from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -130,7 +144,11 @@ export abstract class AttachmentStore extends Service {
     }
   }
 
-  /** Validate every document before durably committing any member in caller order. */
+  /**
+   * Validate every document before durably committing any member in caller order.
+   * @param inputs - document bytes and metadata in owning-message order.
+   * @returns durable references in the exact input order.
+   */
   async saveDocuments(inputs: readonly SaveDocumentAttachment[]): Promise<readonly DocumentAttachmentRef[]> {
     this.validateDocumentBatch(inputs)
     for (const input of inputs) await this.validateDocument(input)
@@ -139,12 +157,19 @@ export abstract class AttachmentStore extends Service {
     return refs
   }
 
-  /** Validate one document without persistence. Unsupported providers fail closed. */
+  /**
+   * Validate one document without persistence. Unsupported providers fail closed.
+   * @param _input - proposed document bytes and metadata.
+   */
   validateDocument(_input: SaveDocumentAttachment): Promise<void> {
     return this.unsupportedDocuments<void>()
   }
 
-  /** Validate, extract, and durably commit one document. Unsupported providers fail closed. */
+  /**
+   * Validate, extract, and durably commit one document. Unsupported providers fail closed.
+   * @param _input - proposed document bytes and metadata.
+   * @returns the durable immutable document reference.
+   */
   saveDocument(_input: SaveDocumentAttachment): Promise<DocumentAttachmentRef> {
     return this.unsupportedDocuments<DocumentAttachmentRef>()
   }
@@ -156,7 +181,12 @@ export abstract class AttachmentStore extends Service {
     ))
   }
 
-  /** Read and verify one immutable document source and extraction. */
+  /**
+   * Read and verify one immutable document source and extraction.
+   * @param _ref - durable document reference from session history.
+   * @param signal - optional cancellation for storage and integrity work.
+   * @returns verified source bytes, extracted text, and immutable metadata.
+   */
   readDocument(_ref: DocumentAttachmentRef, signal?: AbortSignal): Promise<StoredDocumentAttachment> {
     signal?.throwIfAborted()
     return Promise.reject(new AttachmentError(

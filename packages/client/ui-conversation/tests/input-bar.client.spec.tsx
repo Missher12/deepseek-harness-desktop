@@ -69,6 +69,15 @@ interface BenchOptions {
     maxImageDimension: number
     mediaTypes: readonly ('image/png' | 'image/jpeg' | 'image/webp' | 'image/gif')[]
   }
+  documentLimits?: {
+    maxDocumentBytes: number
+    maxDocumentsPerMessage: number
+    maxMessageDocumentBytes: number
+    maxExtractedTextBytes: number
+    maxMessageExtractedTextBytes: number
+    maxDocumentNameBytes: number
+    mediaTypes: readonly ['text/markdown']
+  }
   draft?: string
   running?: boolean
   subagent?: Exclude<ConversationSnapshot['subagent'], null>
@@ -167,7 +176,9 @@ function bench(over?: BenchOptions) {
     useProjection: ((key: string, selector?: (v: unknown) => unknown) =>
       (selector ?? (v => v))(key === 'permissions'
         ? over?.permissions
-        : key === 'plan' ? over?.plan : key === 'imageLimits' ? over?.imageLimits : undefined)),
+        : key === 'plan' ? over?.plan
+          : key === 'imageLimits' ? over?.imageLimits
+            : key === 'documentLimits' ? over?.documentLimits : undefined)),
     useInput: bindSnapshotSelector(shell.state),
     inputActions: shell.actions,
     keyboard: shell,
@@ -327,8 +338,81 @@ describe('image draft rail', () => {
         maxImageDimension: 2000,
         mediaTypes: ['image/png'] as const,
       },
+      documentLimits: {
+        maxDocumentBytes: 20 * 1024 * 1024,
+        maxDocumentsPerMessage: 5,
+        maxMessageDocumentBytes: 50 * 1024 * 1024,
+        maxExtractedTextBytes: 96 * 1024,
+        maxMessageExtractedTextBytes: 256 * 1024,
+        maxDocumentNameBytes: 255,
+        mediaTypes: ['text/markdown'] as const,
+      },
     })
-    expect(attachmentOwner(result.slotCalls).dropLimits).toEqual({ count: 20, size: '5MB' })
+    expect(attachmentOwner(result.slotCalls).dropLimits).toEqual({
+      images: { count: 20, size: '5MB' },
+      documents: { count: 5, size: '20MB' },
+    })
+  })
+
+  it('pre-checks document count and bytes independently from images', () => {
+    const addImages = vi.fn(() => null)
+    const result = bench({
+      addImages,
+      documentLimits: {
+        maxDocumentBytes: 10,
+        maxDocumentsPerMessage: 1,
+        maxMessageDocumentBytes: 10,
+        maxExtractedTextBytes: 96,
+        maxMessageExtractedTextBytes: 256,
+        maxDocumentNameBytes: 40,
+        mediaTypes: ['text/markdown'] as const,
+      },
+    })
+    const files = [
+      new File(['a'], 'a.md', { type: 'text/markdown' }),
+      new File(['b'], 'b.md', { type: 'text/markdown' }),
+    ]
+    act(() => { attachmentOwner(result.slotCalls).onAddImages(files) })
+    expect(result.view.getByRole('alert').textContent).toContain('一条消息最多添加 1 个文件')
+    expect(addImages).not.toHaveBeenCalled()
+  })
+
+  it('rejects a category-valid mixed batch that cannot fit the shared encoded request carrier', () => {
+    const addImages = vi.fn(() => null)
+    const result = bench({
+      addImages,
+      imageLimits: {
+        maxImageBytes: 200 * 1024 * 1024,
+        maxImagesPerMessage: 20,
+        maxMessageImageBytes: 200 * 1024 * 1024,
+        maxImagePixels: 64_000_000,
+        maxImageDimension: 8192,
+        mediaTypes: ['image/png'] as const,
+      },
+      documentLimits: {
+        maxDocumentBytes: 20 * 1024 * 1024,
+        maxDocumentsPerMessage: 5,
+        maxMessageDocumentBytes: 50 * 1024 * 1024,
+        maxExtractedTextBytes: 96 * 1024,
+        maxMessageExtractedTextBytes: 256 * 1024,
+        maxDocumentNameBytes: 255,
+        mediaTypes: ['text/markdown'] as const,
+      },
+    })
+    const files = [
+      new File([Uint8Array.of(1)], 'large.png', { type: 'image/png' }),
+      new File([Uint8Array.of(2)], 'large.md', { type: 'text/markdown' }),
+      new File([Uint8Array.of(3)], 'extra.md', { type: 'text/markdown' }),
+    ]
+    for (const [file, size] of files.map((file, index) => [
+      file,
+      [200, 20, 3][index]! * 1024 * 1024,
+    ] as const)) Object.defineProperty(file, 'size', { value: size })
+
+    act(() => { attachmentOwner(result.slotCalls).onAddImages(files) })
+
+    expect(result.view.getByRole('alert').textContent).toContain('图片与文件编码后合计超过 296MB')
+    expect(addImages).not.toHaveBeenCalled()
   })
 
   it('announces server attachment rejections as product copy, other codes as developer text', () => {
@@ -338,6 +422,9 @@ describe('image draft rail', () => {
     })
     const model = bench({ promptError: attachmentError('MODEL_DOES_NOT_SUPPORT_IMAGES') })
     expect(model.view.getByRole('alert').textContent).toContain('当前模型不支持图片，请切换支持图片的模型')
+    cleanup()
+    const mixed = bench({ promptError: attachmentError('ATTACHMENTS_TOO_LARGE') })
+    expect(mixed.view.getByRole('alert').textContent).toContain('图片与文件编码后合计超过 296MB')
     cleanup()
     const unknown = bench({ promptError: attachmentError('ATTACHMENT_NOT_REFERENCED') })
     expect(unknown.view.getByRole('alert').textContent).toContain('图片发送失败（ATTACHMENT_NOT_REFERENCED）')
@@ -1495,7 +1582,7 @@ describe('composer Add launcher chrome and control seats', () => {
     expect(launcher.getAttribute('aria-expanded')).toBe('true')
   })
 
-  it('opens the hidden image chooser through the Add source and sends selected files through the existing intake path', () => {
+  it('opens the hidden attachment chooser through the Add source and accepts document files', () => {
     const addImages = vi.fn(() => null)
     const { view } = bench({ addImages })
     const picker = view.container.querySelector<HTMLInputElement>('[data-composer-image-picker]')!
@@ -1513,7 +1600,9 @@ describe('composer Add launcher chrome and control seats', () => {
     })).toBe('handled')
     expect(click).toHaveBeenCalledTimes(1)
 
-    const file = new File([Uint8Array.of(1, 2, 3)], 'preview.png', { type: 'image/png' })
+    expect(picker.accept).toContain('.pdf')
+    expect(picker.accept).toContain('.md')
+    const file = new File(['hello'], 'notes.md', { type: 'text/markdown' })
     fireEvent.change(picker, { target: { files: [file] } })
     expect(addImages).toHaveBeenCalledExactlyOnceWith([file])
     expect(picker.value).toBe('')

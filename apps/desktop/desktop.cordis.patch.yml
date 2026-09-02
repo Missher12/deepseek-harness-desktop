@@ -57,8 +57,8 @@
             url: 'https://github.com/Missher12/deepseek-harness-desktop'
             category: 'memory'
             description:
-              zh: '外置大脑协调器：统一选择项目记忆与经验规则，超时自动放行，不保存用户记忆。'
-              en: 'External-brain coordinator for project memory and experience rules, with bounded fail-open recall and no user-memory storage.'
+              zh: '记忆与学习协调器：统一选择项目记忆与已验证工作流程，超时自动放行，不保存用户记忆。'
+              en: 'Memory & Learning coordinator for project memory and validated workflows, with bounded fail-open recall and no user-memory storage.'
           - name: 'dsh-missher-memory'
             spec: 'builtin:0.2.0'
             runtimeNames:

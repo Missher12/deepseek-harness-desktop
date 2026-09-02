@@ -35,6 +35,8 @@ export type DocumentAdmissionErrorCode = typeof DOCUMENT_ADMISSION_ERROR_CODES[n
 export type AttachmentErrorCode =
   | ImageAdmissionErrorCode
   | DocumentAdmissionErrorCode
+  | 'ATTACHMENTS_TOO_LARGE'
+  | 'INVALID_ATTACHMENT_PAYLOAD_LENGTH'
   | 'INVALID_ATTACHMENT_REF'
   | 'ATTACHMENT_CORRUPT'
   | 'ATTACHMENT_WRITE_FAILED'
@@ -85,7 +87,11 @@ export function isImageAdmissionError(
     && IMAGE_ADMISSION_ERROR_CODE_SET.has(error.code)
 }
 
-/** Distinguish caller-correctable document admission failures from storage faults. */
+/**
+ * Distinguish caller-correctable document admission failures from storage faults.
+ * @param error - failure raised while validating or persisting a document batch.
+ * @returns whether the caller can correct the proposed document content or batch.
+ */
 export function isDocumentAdmissionError(
   error: unknown,
 ): error is AttachmentError & { readonly code: DocumentAdmissionErrorCode } {

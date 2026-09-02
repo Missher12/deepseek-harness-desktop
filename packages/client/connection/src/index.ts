@@ -1,6 +1,10 @@
 /** Host HTTP bridge for browser-client RPC. */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import {
+  MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS,
+  promptAttachmentBase64CodeUnits,
+} from '@deepseek-ai/dsh-attachment/types'
 import type {} from '@deepseek-ai/dsh-attachment'
 // Activates the webServer Context merge used below.
 import type { WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
@@ -26,19 +30,25 @@ export { API_PATH, HOST_EVENTS_PATH, MUX_EVENTS_PATH } from './api-path.ts'
 /** Stable Cordis plugin name. */
 export const name = 'client-connection'
 
-/** Headroom for RPC JSON fields around aggregate base64 image payloads. */
-const REQUEST_ENVELOPE_HEADROOM_BYTES = 1024 * 1024
+/** Headroom for prompt text, names, RPC JSON fields, and quoting overhead. */
+const REQUEST_ENVELOPE_HEADROOM_BYTES = 4 * 1024 * 1024
 
-function assertImageBodyCapacity(ctx: Context, maxRequestBodyBytes: number): void {
+function assertAttachmentBodyCapacity(ctx: Context, maxRequestBodyBytes: number): void {
   const attachments = ctx.get('attachments')
   if (attachments === undefined) return
-  const requiredImageBodyBytes = Math.ceil(
-    attachments.imageLimits.maxMessageImageBytes * 4 / 3,
+  const configuredBase64Bytes = promptAttachmentBase64CodeUnits(
+    attachments.imageLimits.maxMessageImageBytes,
+  ) + promptAttachmentBase64CodeUnits(
+    attachments.documentLimits.maxMessageDocumentBytes,
+  )
+  const requiredBodyBytes = Math.min(
+    configuredBase64Bytes,
+    MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS,
   ) + REQUEST_ENVELOPE_HEADROOM_BYTES
-  if (maxRequestBodyBytes < requiredImageBodyBytes) {
+  if (maxRequestBodyBytes < requiredBodyBytes) {
     throw new Error(
       `client-connection maxRequestBodyBytes (${String(maxRequestBodyBytes)}) must be at least `
-      + `${String(requiredImageBodyBytes)} for the configured aggregate image limit`,
+      + `${String(requiredBodyBytes)} for the configured combined attachment limit`,
     )
   }
 }
@@ -135,7 +145,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
   // Config boundary: a malformed entry fails the load loudly here rather than
   // silently authorizing its hostname prefix at request time.
   for (const entry of trustedHosts) assertTrustedAuthority(entry)
-  if (ctx.get('apiProxy') !== undefined) assertImageBodyCapacity(ctx, maxRequestBodyBytes)
+  if (ctx.get('apiProxy') !== undefined) assertAttachmentBodyCapacity(ctx, maxRequestBodyBytes)
   const connection = new HostConnectionService(ctx, trustedHosts)
   const fetchHandler = connection.createSharedFetchHandler(API_PATH, {
     async fetch(request) {
@@ -173,7 +183,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
   }
   ctx.effect(() => ctx.webServer.register(route), 'client-connection: /api route')
   ctx.inject(['apiProxy'], (apiCtx) => {
-    assertImageBodyCapacity(apiCtx, maxRequestBodyBytes)
+    assertAttachmentBodyCapacity(apiCtx, maxRequestBodyBytes)
     const downlinks = new WebSocketDownlinks(apiCtx.apiProxy)
     const registerDownlink = (
       path: string,

@@ -1,11 +1,13 @@
-import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { MuxFrame } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import type {
+  RendererContentBlock,
+} from '@deepseek-ai/dsh-host-apiproxy/api/events'
 import type { QueuedMessage } from './conversation.ts'
 
 const QUEUE_PREVIEW_CHARS = 200
 
-function previewOf(content: readonly ContentBlock[]): string {
+function previewOf(content: readonly RendererContentBlock[]): string {
   const flat = content
     .map(block => (block.type === 'text' ? block.text : `[${block.type}]`))
     .join(' ').replace(/\s+/g, ' ').trim()
@@ -13,7 +15,7 @@ function previewOf(content: readonly ContentBlock[]): string {
   return chars.length > QUEUE_PREVIEW_CHARS ? `${chars.slice(0, QUEUE_PREVIEW_CHARS).join('')}…` : flat
 }
 
-function textOf(content: readonly ContentBlock[]): string | null {
+function textOf(content: readonly RendererContentBlock[]): string | null {
   if (!content.every(block => block.type === 'text')) return null
   return content.map(block => block.text).join('')
 }

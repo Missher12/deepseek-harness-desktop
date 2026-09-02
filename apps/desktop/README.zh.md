@@ -52,9 +52,10 @@ Desktop patch 的普通浏览器 profile 不受影响。插件属于第三方代
 默认、简洁、亲和或专业。保存结果从下一次请求起生效，项目内 `AGENTS.md` 仍是
 范围更窄的项目规则。
 
-Desktop 0.3.8 内置一套有明确顺序的本地外置大脑：`@deepseek-ai/dsh-missher-brain@0.1.1-rc.2`
+Desktop 内置一套有明确顺序的本地“记忆与学习”能力：`@deepseek-ai/dsh-missher-brain@0.1.1-rc.2`
 负责协调，`dsh-missher-memory@0.2.0` 管理项目事实，Harness 原生
-`dsh-missher-evolution@0.1.1` 管理经过验证的流程规则。项目记忆与经验规则共用
+`dsh-missher-evolution@0.1.1` 管理经过验证的流程规则。用户可见设置页会用白话展示
+经过审核的项目记忆和学到的工作流程。项目记忆与经验规则共用
 唯一的有界召回路径；Provider 超时或失败不会阻塞正常回复。项目记忆新增本地 FTS5
 检索和可恢复的精确重复项自动压缩。安装包包含旧 TencentDB 的可选只读读取能力，
 但不会打包、写入、迁移或压缩用户数据库，也不会把旧记忆作为 MSE 学习输入。

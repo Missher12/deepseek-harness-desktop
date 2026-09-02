@@ -7,7 +7,10 @@ import { describe, expect, it } from 'vitest'
 import type { AddressInfo } from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ApiProxy } from '@deepseek-ai/dsh-host-apiproxy/api'
-import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import {
+  MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS,
+  type AttachmentStore,
+} from '@deepseek-ai/dsh-attachment'
 import { RpcId, type ClientRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import { API_PATH, apply, HOST_EVENTS_PATH, inject, MUX_EVENTS_PATH, type HostConnectionHandle } from '../src/index.ts'
@@ -91,21 +94,23 @@ async function mounted(config?: { trustedHosts?: string[] }): Promise<{
 }
 
 describe('connection node half', () => {
-  it('reserves enough default carrier capacity for the 200 MiB image batch', () => {
+  it('reserves the exact default envelope headroom above the shared mixed-attachment payload cap', () => {
     expect(DEFAULT_MAX_REQUEST_BODY_BYTES).toBe(300 * 1024 * 1024)
-    expect(DEFAULT_MAX_REQUEST_BODY_BYTES).toBeGreaterThan(Math.ceil(200 * 1024 * 1024 * 4 / 3) + 1024 * 1024)
+    expect(DEFAULT_MAX_REQUEST_BODY_BYTES - MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS)
+      .toBe(4 * 1024 * 1024)
   })
 
-  it('fails loud when the carrier cap cannot hold the configured image batch', () => {
+  it('fails loud when the carrier cap cannot hold the configured mixed attachment batch', () => {
     const ctx = new Context()
     const routes: WebRoute[] = []
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     ctx.provide('attachments', {
       imageLimits: { maxMessageImageBytes: 20 * 1024 * 1024 },
+      documentLimits: { maxMessageDocumentBytes: 10 * 1024 * 1024 },
     } as AttachmentStore)
     ctx.provide('apiProxy', {} as ApiProxy)
     expect(() => { apply(ctx, { maxRequestBodyBytes: 1024 }) })
-      .toThrow(/must be at least .* aggregate image limit/)
+      .toThrow(/must be at least .* combined attachment limit/)
     expect(routes).toHaveLength(0)
   })
 

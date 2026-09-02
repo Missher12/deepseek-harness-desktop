@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-09-02-desktop-file-attachments-and-memory-learning.md
-2026-09-02-desktop-file-attachments-and-memory-learning.md: 0dcab9149ecf22a5ca8bbdddabcb69c6e1d4e726
-2026-09-02-desktop-file-attachments-and-memory-learning.zh.md: 30065f896fd4f368008169a3464b6487c76a4700
+2026-09-02-desktop-file-attachments-and-memory-learning.md: 2aaa690eb1758c24430e7170dfaabd803286c3f7
+2026-09-02-desktop-file-attachments-and-memory-learning.zh.md: e21f3a9dd4f7235572ac19a83edea1971354b08c

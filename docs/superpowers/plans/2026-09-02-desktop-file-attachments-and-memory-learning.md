@@ -79,8 +79,15 @@ Expected: focused tests and package typecheck pass.
 - Create: `packages/attachment/attachment-local/src/document.ts`
 - Create: `packages/attachment/attachment-local/src/document-store.ts`
 - Create: `packages/attachment/attachment-local/src/ooxml.ts`
+- Create: `packages/attachment/attachment-local/src/pdf-extraction.ts`
+- Create: `packages/attachment/attachment-local/src/pdf-isolate.ts`
+- Create: `packages/attachment/attachment-local/src/pdf-protocol.ts`
+- Create: `packages/attachment/attachment-local/src/pdf-worker.ts`
+- Create: `packages/attachment/attachment-local/tsdown.config.ts`
 - Create: `packages/attachment/attachment-local/tests/document.spec.ts`
 - Create: `packages/attachment/attachment-local/tests/ooxml.spec.ts`
+- Create: `packages/attachment/attachment-local/tests/pdf-isolate.spec.ts`
+- Create: `packages/attachment/attachment-local/tests/pdf-isolate.built.e2e.ts`
 - Modify: `packages/attachment/attachment-local/src/index.ts`
 - Modify: `packages/attachment/attachment-local/src/invariant.ts`
 - Modify: `packages/attachment/attachment-local/README.md`
@@ -98,7 +105,7 @@ Expected: module-not-found failures for the new extractor and store.
 
 - [ ] **Step 3: Implement bounded extraction and storage**
 
-Plain text uses fatal UTF-8 decoding. PDF.js extracts ordered page text under page/output limits. OOXML extraction uses bounded fflate entries and fast-xml-parser, reads only the required document/workbook parts, ignores macros and external relationships, and never evaluates formulas. Store source and extracted bytes by SHA-256 in provider-owned directories with owner-only temporary writes and atomic rename.
+Plain text uses fatal UTF-8 decoding. PDF.js extracts ordered page text in a separately bundled Worker under a 30-second wall deadline, a 128MiB V8 old-generation limit, and page/item/output work limits. OOXML extraction uses bounded fflate entries and fast-xml-parser, reads only the required document/workbook parts, ignores macros and external relationships, and never evaluates formulas. Store source and extracted bytes by SHA-256 in provider-owned directories with owner-only temporary writes and atomic rename.
 
 - [ ] **Step 4: Verify GREEN and coverage**
 
@@ -113,7 +120,7 @@ Expected: all local attachment tests pass and changed extraction files have comp
 - Modify: `packages/host/apiproxy/src/api/sessions.schema.ts`
 - Modify: `packages/host/apiproxy/src/api-proxy.ts`
 - Modify: `packages/host/apiproxy/tests/client-handler.spec.ts`
-- Modify: `packages/host/apiproxy/tests/api-proxy.spec.ts`
+- Create: `packages/host/apiproxy/tests/api-proxy-renderer-attachments.spec.ts`
 - Modify: `packages/client/runtime/src/client/contract/session.ts`
 - Modify: `packages/client/connection/src/client/fixture.ts`
 
@@ -123,13 +130,13 @@ Cover canonical base64, exact keys, media/name bounds, mixed ordered batches, at
 
 - [ ] **Step 2: Confirm RED**
 
-Run: `pnpm exec vitest run packages/host/apiproxy/tests/client-handler.spec.ts packages/host/apiproxy/tests/api-proxy.spec.ts`
+Run: `pnpm exec vitest run packages/host/apiproxy/tests/client-handler.spec.ts packages/host/apiproxy/tests/api-proxy-renderer-attachments.spec.ts`
 
 Expected: document prompt parts fail schema validation.
 
 - [ ] **Step 3: Implement document prompt admission**
 
-Add one strict `document` request part and make `durablePromptContent` validate all image/document inputs before publishing ordered durable blocks. Serialize all attachment writes through the existing per-agent admission owner so steering and queued prompts cannot interleave a batch.
+Add one strict `document` request part and make `durablePromptContent` validate all image/document inputs before publishing ordered durable blocks. Images and documents share a 296MiB canonical-base64 carrier cap below the 300MiB HTTP ceiling; renderer and Host both enforce it before decoding, and renderer file reads are sequential. Serialize all attachment writes through the existing per-agent admission owner so steering and queued prompts cannot interleave a batch.
 
 - [ ] **Step 4: Verify GREEN**
 
@@ -159,7 +166,7 @@ Expected: document blocks are currently ignored.
 
 - [ ] **Step 3: Implement one shared transient document projection**
 
-`projectDocumentsForRequest()` reads each unique reference once, verifies it, and replaces every occurrence with a deterministic tagged text block. Both adapters call it before their existing image conversion. Unknown merge-extensible blocks keep existing behavior.
+`projectDocumentsForRequest()` reads each unique reference once, verifies it, and replaces every occurrence with a deterministic tagged text block. Newer messages receive document budget first while attachment order inside one message stays stable. The exact resolved route context and output reserve bound final expansion; non-fitting documents become deterministic metadata-only placeholders. Both adapters call the projection before their existing image conversion. Unknown merge-extensible blocks keep existing behavior.
 
 - [ ] **Step 4: Verify GREEN**
 
@@ -172,14 +179,14 @@ Expected: both adapters expose identical document text and preserve image behavi
 **Files:**
 - Modify: `packages/client/ui-conversation/src/client/input/contract.ts`
 - Modify: `packages/client/ui-conversation/src/client/input/machine.ts`
-- Modify: `packages/client/ui-conversation/src/client/sessions/conversation.ts`
+- Modify: `packages/client/runtime/src/client/sessions/conversation.ts`
 - Modify: `packages/client/ui-conversation/src/client/skeleton/InputBar.tsx`
 - Modify: `packages/client/ui-conversation/src/client/contract/slots.ts`
 - Modify: `packages/client/ui-attachment/src/client/ComposerAttachments.tsx`
 - Create: `packages/client/ui-attachment/src/DocumentChip.tsx`
 - Create: `packages/client/ui-attachment/src/DocumentChip.module.css`
 - Modify: `packages/client/ui-attachment/src/client/MessageImages.tsx`
-- Modify: `packages/client/ui-attachment/src/client/locales.ts`
+- Modify: `packages/client/ui-conversation/src/client/locales.ts`
 - Modify: relevant client tests under both packages
 
 - [ ] **Step 1: Write UI and state RED tests**

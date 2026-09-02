@@ -62,6 +62,46 @@ interface ImageAttachmentLimits {
 
 ## 提交与经校验读取的数据
 
+文档分别对原始字节和有界提取文本使用内容地址。两个标识都不会暴露给渲染器，也不能作为文件系统路径或 bearer capability 使用。
+
+```ts type-equiv
+/** Durable reference to immutable source bytes and their immutable extracted text. */
+interface DocumentAttachmentRef {
+  /** Content address for the original source bytes. */
+  attachmentId: AttachmentId
+  /** Content address for the exact UTF-8 extracted text. */
+  extractedTextId: AttachmentId
+  /** Media type verified against the source container or UTF-8 content. */
+  mediaType: DocumentMediaType
+  /** Sanitized leaf display name; never an absolute or relative path. */
+  name: string
+  /** Exact original source byte length. */
+  bytes: number
+  /** Exact UTF-8 byte length of the stored extracted text. */
+  extractedBytes: number
+  /** Whether extraction was deterministically cut at the configured text budget. */
+  truncated: boolean
+}
+```
+
+```ts type-equiv
+/** Request to validate, extract, and durably commit one document. */
+interface SaveDocumentAttachment {
+  data: Uint8Array
+  mediaType: DocumentMediaType
+  name: string
+}
+```
+
+```ts type-equiv
+/** Verified original and extracted bytes loaded for one durable document reference. */
+interface StoredDocumentAttachment {
+  ref: DocumentAttachmentRef
+  data: Uint8Array
+  text: string
+}
+```
+
 ```ts type-equiv
 /** Base64-encoded image upload accompanying one wire request. */
 interface EncodedImageAttachment {
@@ -156,6 +196,34 @@ abstract validateImage(input: SaveImageAttachment): Promise<void>
  * @returns durable normalized attachment references in the same order after every member succeeds.
  */
 async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>
+
+/**
+ * Validate every document before durably committing any member in caller order.
+ * @param inputs - document bytes and metadata in owning-message order.
+ * @returns durable references in the exact input order.
+ */
+async saveDocuments(inputs: readonly SaveDocumentAttachment[]): Promise<readonly DocumentAttachmentRef[]>
+
+/**
+ * Validate one document without persistence. Unsupported providers fail closed.
+ * @param _input - proposed document bytes and metadata.
+ */
+validateDocument(_input: SaveDocumentAttachment): Promise<void>
+
+/**
+ * Validate, extract, and durably commit one document. Unsupported providers fail closed.
+ * @param _input - proposed document bytes and metadata.
+ * @returns the durable immutable document reference.
+ */
+saveDocument(_input: SaveDocumentAttachment): Promise<DocumentAttachmentRef>
+
+/**
+ * Read and verify one immutable document source and extraction.
+ * @param _ref - durable document reference from session history.
+ * @param signal - optional cancellation for storage and integrity work.
+ * @returns verified source bytes, extracted text, and immutable metadata.
+ */
+readDocument(_ref: DocumentAttachmentRef, signal?: AbortSignal): Promise<StoredDocumentAttachment>
 
 /**
  * Validate and durably commit one image before its owning session event is appended.

@@ -6,7 +6,10 @@
  */
 
 import { z } from 'zod'
-import { DOCUMENT_MEDIA_TYPES } from '@deepseek-ai/dsh-attachment'
+import {
+  DOCUMENT_MEDIA_TYPES,
+  isCanonicalAttachmentBase64,
+} from '@deepseek-ai/dsh-attachment/types'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
@@ -322,7 +325,6 @@ export const documentMediaTypeSchema = z.enum(DOCUMENT_MEDIA_TYPES)
 
 /** Hard wire ceiling for a canonical base64 encoding of a 20 MiB document. */
 const MAX_DOCUMENT_BASE64_CODE_UNITS = 27_962_028
-
 /** Prompt wire content is intentionally narrower than merge-extensible durable core content. */
 export const promptContentPartSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }).strict(),
@@ -332,7 +334,7 @@ export const promptContentPartSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('document'),
     mediaType: documentMediaTypeSchema,
-    data: z.string().min(1).max(MAX_DOCUMENT_BASE64_CODE_UNITS),
+    data: z.string().min(1).max(MAX_DOCUMENT_BASE64_CODE_UNITS).refine(isCanonicalAttachmentBase64),
     name: z.string().min(1).max(1024),
   }).strict(),
 ])

@@ -3,6 +3,7 @@ import type {} from '@deepseek-ai/dsh-tools/types'
 import type {
   ConversationNode, RunningToolCall, ToolCallBlock, ToolResultNode,
 } from './conversation.ts'
+import { rendererContent } from './conversation.ts'
 
 interface ProjectedBlock {
   source: ToolCallBlock
@@ -86,7 +87,7 @@ export class ToolCallTree {
       callId: data.subCallId,
       call: { name: data.name, argsRaw: JSON.stringify(data.arguments) },
       callTime: started?.time ?? null,
-      content: data.content,
+      content: rendererContent(data.content),
       isError: data.isError,
       callView: null,
       resultView: null,

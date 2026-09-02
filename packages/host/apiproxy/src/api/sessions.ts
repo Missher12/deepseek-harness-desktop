@@ -14,12 +14,12 @@ import type {
   ImageMediaType,
 } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // The pure-type outlet: api/ is browser-importable, and the package root's
 // cordis Context merge (via dsh-agent) must not enter client aggregates.
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { RpcId, RpcRequest, RpcResponse } from './rpc.ts'
-import type { ToolEventView } from './events.ts'
+import type { RendererSessionEvent, ToolEventView } from './events.ts'
 import type { WorkspaceId } from './workspace.ts'
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
@@ -76,7 +76,7 @@ declare module '@deepseek-ai/dsh-llm' {
  * derivation, never persisted).
  */
 export interface HistoryEntry {
-  event: SessionEvent
+  event: RendererSessionEvent
   view?: ToolEventView
 }
 

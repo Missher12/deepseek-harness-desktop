@@ -10,6 +10,7 @@ import LlmRuntime, {
   isQuotaExceededError,
   LlmAdapter,
   LlmError,
+  OFFLOADED_DOCUMENT_TEXT,
   ProviderRequestId,
   ReasoningEffortId,
   resolveRetryPolicy,
@@ -526,7 +527,10 @@ describe('LlmRuntime', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     const provider = { id: 'catalog', name: 'Catalog Provider' }
-    const model = { provider: 'catalog', id: 'fast', name: 'Fast', description: 'Low latency' }
+    const model = {
+      provider: 'catalog', id: 'fast', name: 'Fast', description: 'Low latency',
+      inputModalities: ['text', 'image'] as const,
+    }
     ctx.llm.registerAdapter(['catalog'], new CatalogAdapter(provider, [model]))
 
     const providers = ctx.llm.listProviders()
@@ -541,6 +545,7 @@ describe('LlmRuntime', () => {
     expect(ctx.llm.listProviders()).toEqual([{ id: 'catalog', name: 'Catalog Provider' }])
     await expect(ctx.llm.listModels('catalog')).resolves.toEqual([{
       provider: 'catalog', id: 'fast', name: 'source mutated', description: 'Low latency',
+      inputModalities: ['text', 'image'],
     }])
   })
 
@@ -1030,7 +1035,18 @@ describe('LlmRuntime', () => {
       data: new TextEncoder().encode('hello'),
       text: 'hello',
     }))
-    ctx.provide('attachments', { readDocument } as unknown as AttachmentStore)
+    ctx.provide('attachments', {
+      documentLimits: {
+        maxDocumentBytes: 20,
+        maxDocumentsPerMessage: 5,
+        maxMessageDocumentBytes: 50,
+        maxExtractedTextBytes: 20,
+        maxMessageExtractedTextBytes: 50,
+        maxDocumentNameBytes: 255,
+        mediaTypes: ['text/plain'],
+      },
+      readDocument,
+    } as unknown as AttachmentStore)
     const waterfall: GenerateOptions[] = []
     ctx.on('llm/stream', async function* (options, next) {
       waterfall.push(options)
@@ -1051,6 +1067,113 @@ describe('LlmRuntime', () => {
       type: 'text',
       text: '<dsh-document name="brief.txt" media-type="text/plain" truncated="false">\nhello\n</dsh-document>',
     }])
+    expect(readDocument).toHaveBeenCalledOnce()
+
+    const frozen = Object.freeze({
+      provider: 'route',
+      model: 'text-only',
+      messages: [createUserMessage({
+        content: [{ type: 'document', attachment }],
+        source: { kind: 'plugin' as const, plugin: 'test' },
+      })],
+    })
+    await collect(ctx.llm.stream(frozen))
+    expect(Object.isFrozen(seen[1])).toBe(true)
+    expect(Object.isFrozen(seen[1]?.messages)).toBe(true)
+    expect(readDocument).toHaveBeenCalledTimes(2)
+  })
+
+  it('fails closed before adapter dispatch when durable document storage is absent', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const adapter = new RecordingAdapter(SCRIPT)
+    ctx.llm.registerAdapter(['route'], adapter)
+    const attachment = {
+      attachmentId: AttachmentId(`sha256:${'f'.repeat(64)}`),
+      extractedTextId: AttachmentId(`sha256:${'e'.repeat(64)}`),
+      mediaType: 'text/plain' as const,
+      name: 'missing.txt',
+      bytes: 1,
+      extractedBytes: 1,
+      truncated: false,
+    }
+
+    const chunks = await collect(ctx.llm.stream({
+      provider: 'route',
+      model: 'model',
+      messages: [createUserMessage({
+        content: [{ type: 'document', attachment }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }))
+
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'finish',
+      reason: { kind: 'error', failure: { code: 'UNSUPPORTED_CONTENT' } },
+    })
+    expect(adapter.lastOptions).toBeUndefined()
+  })
+
+  it('offloads document text that cannot fit the exact route context after output and request reserves', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const seen: GenerateOptions[] = []
+    const adapter = new class extends ScriptedAdapter {
+      override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        return Promise.resolve({
+          provider,
+          id: model,
+          name: model,
+          context: { contextWindow: 4096 },
+          defaultMaxTokens: 512,
+          inputModalities: ['text'],
+        })
+      }
+
+      override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+        seen.push(options)
+        yield * super.stream(options)
+      }
+    }(SCRIPT)
+    ctx.llm.registerAdapter(['route'], adapter)
+    const attachment = {
+      attachmentId: AttachmentId(`sha256:${'d'.repeat(64)}`),
+      extractedTextId: AttachmentId(`sha256:${'e'.repeat(64)}`),
+      mediaType: 'text/plain' as const,
+      name: 'large.txt',
+      bytes: 1024,
+      extractedBytes: 1024,
+      truncated: false,
+    }
+    const readDocument = vi.fn(() => Promise.resolve({
+      ref: attachment,
+      data: new TextEncoder().encode("'".repeat(1024)),
+      text: "'".repeat(1024),
+    }))
+    ctx.provide('attachments', {
+      documentLimits: {
+        maxDocumentBytes: 2048,
+        maxDocumentsPerMessage: 5,
+        maxMessageDocumentBytes: 2048,
+        maxExtractedTextBytes: 2048,
+        maxMessageExtractedTextBytes: 2048,
+        maxDocumentNameBytes: 255,
+        mediaTypes: ['text/plain'],
+      },
+      readDocument,
+    } as unknown as AttachmentStore)
+
+    await collect(ctx.llm.stream({
+      provider: 'route',
+      model: 'small',
+      messages: [createUserMessage({
+        content: [{ type: 'document', attachment }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }))
+
+    expect(seen[0]?.maxTokens).toBe(512)
+    expect(seen[0]?.messages[0]?.content).toEqual([{ type: 'text', text: OFFLOADED_DOCUMENT_TEXT }])
     expect(readDocument).toHaveBeenCalledOnce()
   })
 

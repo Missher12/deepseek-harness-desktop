@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import AttachmentStore from '@deepseek-ai/dsh-attachment'
+import AttachmentStore, { MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS } from '@deepseek-ai/dsh-attachment'
 import LlmRuntime, { LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions, LlmCallConfig, LlmModelInfo, LlmModelReasoningInfo, LlmProviderInfo,
@@ -215,6 +215,15 @@ describe('Web session model selection', () => {
     }]))
     ctx.provide('attachments', {
       imageLimits: { mediaTypes: ['image/png'] },
+      documentLimits: {
+        maxDocumentBytes: 20,
+        maxDocumentsPerMessage: 5,
+        maxMessageDocumentBytes: 50,
+        maxExtractedTextBytes: 96,
+        maxMessageExtractedTextBytes: 256,
+        maxDocumentNameBytes: 255,
+        mediaTypes: ['text/plain'],
+      },
       saveImages,
       saveDocuments,
     } as never)
@@ -250,6 +259,52 @@ describe('Web session model selection', () => {
       },
       { type: 'image', attachment: { attachmentId: 'image-ref', mediaType: 'image/png', bytes: 1, width: 1, height: 1 } },
     ])
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects a mixed attachment payload above the shared carrier before decoding either category', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const saveImages = vi.fn()
+    const saveDocuments = vi.fn()
+    ctx.provide('attachments', {
+      imageLimits: { mediaTypes: ['image/png'] },
+      documentLimits: {
+        maxDocumentBytes: 20,
+        maxDocumentsPerMessage: 5,
+        maxMessageDocumentBytes: 50,
+        maxExtractedTextBytes: 96,
+        maxMessageExtractedTextBytes: 256,
+        maxDocumentNameBytes: 255,
+        mediaTypes: ['text/plain'],
+      },
+      saveImages,
+      saveDocuments,
+    } as never)
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+    const carrierSizedData = { length: MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS } as unknown as string
+    const fourMoreCodeUnits = { length: 4 } as unknown as string
+
+    const result = await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [
+        { type: 'image' as const, mediaType: 'image/png' as const, data: carrierSizedData },
+        { type: 'document' as const, mediaType: 'text/plain' as const, data: fourMoreCodeUnits, name: 'notes.txt' },
+      ],
+    }))
+
+    expect(result.result).toMatchObject({
+      ok: false,
+      error: { code: 'attachment-error', details: { reason: 'ATTACHMENTS_TOO_LARGE' } },
+    })
+    expect(saveImages).not.toHaveBeenCalled()
+    expect(saveDocuments).not.toHaveBeenCalled()
+    expect(followup).not.toHaveBeenCalled()
     await ctx.fiber.dispose()
   })
 

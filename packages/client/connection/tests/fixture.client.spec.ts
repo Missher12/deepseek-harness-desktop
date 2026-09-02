@@ -332,7 +332,7 @@ describe('createFixtureApi', () => {
     await new Promise(resolve => setTimeout(resolve, 120)) // a couple of typewriter ticks
     await api.sessions.cancel(req({ sessionId: id }))
     await consuming
-    const types = frames.filter((f): f is Extract<MuxFrame, { type: 'session/event' }> => f.type === 'session/event').map(f => f.event.type)
+    const types = frames.flatMap(frame => frame.type === 'session/event' ? [frame.event.type] : [])
     expect(types).toContain('turn/start')
     expect(types).toContain('user/message')
     expect(types).toContain('assistant/chunk')
@@ -353,8 +353,8 @@ describe('createFixtureApi', () => {
       frame.type === 'session/projection'
       && frame.key === 'contextBreakdown'
       && (frame.value as { messageTokens?: number }).messageTokens! > 0)).toBe(true)
-    const finalize = frames.find((f): f is Extract<MuxFrame, { type: 'session/event' }> => f.type === 'session/event' && f.event.type === 'assistant/message')
-    expect(JSON.stringify(finalize?.event.data)).toContain('（已中断）')
+    const finalize = frames.find(frame => frame.type === 'session/event' && frame.event.type === 'assistant/message')
+    expect(JSON.stringify(finalize as unknown)).toContain('（已中断）')
     // Idle cancel: no replay in flight, must not explode; running flips false.
     const idleCancel = await api.sessions.cancel(req({ sessionId: id }))
     expect(idleCancel.result).toMatchObject({ ok: true })
@@ -372,7 +372,7 @@ describe('createFixtureApi', () => {
     await api.sessions.prompt(req({ sessionId: id, mode: 'queue' as const, content: [{ type: 'text' as const, text: '短' }] }))
     await api.sessions.prompt(req({ sessionId: id, mode: 'steer' as const, content: [{ type: 'text' as const, text: '插话' }] }))
     const frames = await framesPromise
-    const types = frames.filter((f): f is Extract<MuxFrame, { type: 'session/event' }> => f.type === 'session/event').map(f => f.event.type)
+    const types = frames.flatMap(frame => frame.type === 'session/event' ? [frame.event.type] : [])
     expect(JSON.stringify(frames)).toContain('插话')
     expect(types.at(-1)).toBe('turn/end') // steer did not restart the turn
   })
@@ -435,7 +435,7 @@ describe('createFixtureApi', () => {
       content: [{ type: 'text' as const, text: '短' }, { type: 'image', data: 'x' } as never],
     }))
     const frames = await framesPromise
-    const types = frames.filter((f): f is Extract<MuxFrame, { type: 'session/event' }> => f.type === 'session/event').map(f => f.event.type)
+    const types = frames.flatMap(frame => frame.type === 'session/event' ? [frame.event.type] : [])
     expect(types[0]).toBe('turn/start') // idle steer degraded to a queued turn, not an in-turn insert
   })
 
@@ -907,6 +907,52 @@ describe('createFixtureApi', () => {
       ok: false,
       error: { code: 'attachment-error', details: { reason: 'IMAGE_DIMENSION_TOO_LARGE' } },
     })
+  })
+
+  it('projects fixture document history to stable renderer-only metadata', async () => {
+    const api = createFixtureApi({ empty: true })
+    const sessionId = sid('fx-renderer-document')
+    const created = await api.sessions.create(req({ sessionId }))
+    expect(created.result.ok).toBe(true)
+    const prompted = await api.sessions.prompt(req({
+      sessionId,
+      mode: 'queue' as const,
+      content: [{
+        type: 'document' as const,
+        mediaType: 'text/markdown' as const,
+        data: 'IyBmaXh0dXJl',
+        name: 'fixture.md',
+      }],
+    }))
+    expect(prompted.result.ok).toBe(true)
+
+    const first = await api.sessions.history(req({ sessionId }))
+    const second = await api.sessions.history(req({ sessionId }))
+    if (!first.result.ok || !second.result.ok) throw new Error('history failed')
+    const documentFrom = (entries: typeof first.result.value.events): Record<string, unknown> => {
+      const event = entries.find(entry => entry.event.type === 'user/message')?.event
+      if (event?.type !== 'user/message') throw new Error('document message missing')
+      const block = event.data.content.find(candidate => candidate.type === 'document')
+      if (block?.type !== 'document') throw new Error('document block missing')
+      return block.attachment as unknown as Record<string, unknown>
+    }
+    const firstAttachment = documentFrom(first.result.value.events)
+    const secondAttachment = documentFrom(second.result.value.events)
+    expect(firstAttachment['displayId']).toMatch(/^document-view:/u)
+    expect(firstAttachment).toEqual({
+      displayId: firstAttachment['displayId'],
+      name: 'fixture.md',
+      mediaType: 'text/markdown',
+      bytes: 9,
+      extractedBytes: 0,
+      truncated: false,
+    })
+    expect(secondAttachment['displayId']).toBe(firstAttachment['displayId'])
+    expect(JSON.stringify(firstAttachment)).not.toContain('fixture:')
+    expect(firstAttachment).not.toHaveProperty('attachmentId')
+    expect(firstAttachment).not.toHaveProperty('extractedTextId')
+
+    await api.sessions.cancel(req({ sessionId }))
   })
 
   it('timing hooks: history delay + one-shot failure, silent append, and breakStreams end open generators', async () => {

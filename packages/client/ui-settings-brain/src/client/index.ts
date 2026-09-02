@@ -12,7 +12,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'settings.brain': BrainSettingsLocaleKey }
 }
 
-/** Locale namespace owned by the External Brain settings package. */
+/** Locale namespace owned by the Memory & Learning settings package. */
 export const NS = 'settings.brain'
 export const inject = ['slots', 'locale', 'remote', 'remote.missherBrain']
 

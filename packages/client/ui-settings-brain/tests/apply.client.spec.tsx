@@ -42,7 +42,7 @@ describe('ui-settings-brain browser plugin', () => {
     expect(applyHostEntry).toBeTypeOf('function')
   })
 
-  it('registers one lazy localized external-brain section', async () => {
+  it('registers one lazy localized Memory & Learning section', async () => {
     expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.missherBrain'])
     const b = await bench()
     b.slots.register({
@@ -54,7 +54,7 @@ describe('ui-settings-brain browser plugin', () => {
     expect(entry.component).toBe(BrainSettingsSection)
     expect(entry.options).toMatchObject({ id: 'brain', order: 9 })
     expect(entry.locale).toBe(NS)
-    expect(resolveSlotLabel(entry.options.label)).toBe('外置大脑')
+    expect(resolveSlotLabel(entry.options.label)).toBe('记忆与学习')
     expect(b.snapshot).not.toHaveBeenCalled()
 
     const injected = (entry.inject as unknown as () => BrainSettingsInjected)()
@@ -63,7 +63,7 @@ describe('ui-settings-brain browser plugin', () => {
     await expect(injected.load()).rejects.toThrow('missherBrain.snapshot failed: REMOTE_ERROR: private detail')
 
     b.locale.setLocale('en')
-    expect(resolveSlotLabel(b.slots.entries('settings.section')[0]!.options.label)).toBe('External Brain')
+    expect(resolveSlotLabel(b.slots.entries('settings.section')[0]!.options.label)).toBe('Memory & Learning')
     await b.ctx.fiber.dispose()
   })
 })

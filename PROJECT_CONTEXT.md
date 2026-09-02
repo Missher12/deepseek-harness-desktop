@@ -69,6 +69,25 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- The next Desktop branch adds real local document attachments to the composer:
+  users can drag or choose PDF, DOCX, XLSX, UTF-8 text, Markdown, JSON, CSV,
+  YAML, XML, and a closed shared roster of source-code filenames. Original
+  bytes and extracted UTF-8 text are stored as separate immutable SHA-256
+  objects. Images and documents share a 296MiB canonical-base64 carrier cap
+  beneath the 300MiB HTTP ceiling. PDF parsing runs in a separately bundled
+  Worker with a 30-second deadline, a 128MiB V8 old-generation limit, and
+  page/item/output work bounds. Prompt projection favors the current and newest
+  messages, fits verified text to the exact resolved model context and output
+  reserve, and sends neither local paths nor content-address ids to the model.
+  Host history/live/queue projections replace durable document ids and digests
+  with bounded renderer metadata and process-random display ids before crossing
+  into the browser process.
+  The user-facing External Brain label is replaced by **Memory & Learning** /
+  **记忆与学习** without changing the single local Brain Hub authority. The
+  unfinished Browser/Computer Control product remains excluded by exact
+  staging and packaged-artifact guards; the ordinary Workbench browser remains
+  an unrelated workspace feature. Intel macOS and Windows x64 release evidence
+  must still originate from one exact public commit.
 - Version 0.4.2 is the active release candidate. A navigation-only prompt
   ruler indexes every user-message boundary from the immutable history tail,
   renders a bounded left-side rail, reveals localized prompt summaries on
@@ -84,7 +103,7 @@ The repository is based on the pinned official source and adds the desktop appli
   validating its complete install shape. Version 0.4.0 gave each Desktop-managed
   built-in an explicit mapping from its market-facing package name to the exact
   Loader entry that implements it. Plugin Market now reports Memory, MSE, and
-  the External Brain coordinator as live only when their real fibers are up;
+  the Memory & Learning coordinator as live only when their real fibers are up;
   an absent or merely similar Loader name remains restart-required. Packaged
   smoke verifies all three statuses against the same-origin installed endpoint
   on both platforms. Version 0.3.9 previously let manually declared
@@ -95,7 +114,7 @@ The repository is based on the pinned official source and adds the desktop appli
   visual positions persist in the plugin-owned local profile section across
   remounts, random listener ports, and application restarts. Mac Intel and
   Windows x64 artifacts must originate from the same public merge commit.
-- The Desktop 0.3.8 local external brain implements the bounded local scope recorded in
+- The Desktop 0.3.8 local memory-and-learning stack (internally introduced as the external brain) implements the bounded local scope recorded in
   `.agents/notes/implemented/architecture/2026-08-24-local-external-brain.md`. It keeps project facts in
   `dsh-missher-memory`, procedural learning in the Harness-native
   `dsh-missher-evolution`, and coordination in a new `@deepseek-ai/dsh-missher-brain`

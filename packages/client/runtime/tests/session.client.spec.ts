@@ -23,6 +23,10 @@ import { entries, ev, plainTurn } from './event-script.client.ts'
 const SID = 'fk-s1' as SessionId
 const PARENT = 'fk-parent' as SessionId
 
+function wireEvent(event: SessionEvent): never {
+  return event as never
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
@@ -222,13 +226,13 @@ describe('open', () => {
     })
 
     session.handleMuxEnvelope('r6' as never, {
-      type: 'session/event', sessionId: SID, event: ev.turnStart(6, 2),
+      type: 'session/event', sessionId: SID, event: wireEvent(ev.turnStart(6, 2)),
     })
     session.handleMuxEnvelope('r7' as never, {
-      type: 'session/event', sessionId: SID, event: ev.user(7, '新问题'),
+      type: 'session/event', sessionId: SID, event: wireEvent(ev.user(7, '新问题')),
     })
     session.handleMuxEnvelope('r8' as never, {
-      type: 'session/event', sessionId: SID, event: ev.user(8, '补充说明'),
+      type: 'session/event', sessionId: SID, event: wireEvent(ev.user(8, '补充说明')),
     })
     expect(session.getSnapshot()).toMatchObject({
       promptAnchors: [
@@ -270,8 +274,8 @@ describe('open', () => {
     const opening = session.open()
     // Three live frames land mid-open; seq 15 overlaps the page tail (page covers 10..15).
     const page = plainTurn(10, 0, '早', '安')
-    session.handleMuxEnvelope('r1' as never, { type: 'session/event', sessionId: SID, event: ev.turnStart(15, 1) })
-    session.handleMuxEnvelope('r2' as never, { type: 'session/event', sessionId: SID, event: ev.user(16, '插进来的') })
+    session.handleMuxEnvelope('r1' as never, { type: 'session/event', sessionId: SID, event: wireEvent(ev.turnStart(15, 1)) })
+    session.handleMuxEnvelope('r2' as never, { type: 'session/event', sessionId: SID, event: wireEvent(ev.user(16, '插进来的')) })
     gate.resolve(ok({
       events: entries(page) as never[],
       hasMore: false,
@@ -296,7 +300,7 @@ describe('live event path', () => {
   it('drops replayed frames at or below the window tail', async () => {
     const { session } = await opened()
     const before = session.getSnapshot()
-    session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: ev.user(3, '重放') })
+    session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: wireEvent(ev.user(3, '重放')) })
     await Promise.resolve()
     expect(session.getSnapshot().nodes).toEqual(before.nodes)
   })
@@ -305,7 +309,7 @@ describe('live event path', () => {
     const { session } = await opened([])
     session.handleBlank(true)
     expect(session.getSnapshot().composerPhase).toBe('blank')
-    const feed = (event: SessionEvent) => { session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event }) }
+    const feed = (event: SessionEvent) => { session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: wireEvent(event) }) }
     feed(ev.commandRun(0, 'cmd-perm', 'permission', ' danger-full-access'))
     feed(ev.commandDone(1, 'cmd-perm', 'success', 'preset danger-full-access'))
     const snapshot = session.getSnapshot()
@@ -317,7 +321,7 @@ describe('live event path', () => {
     const { session } = await opened([])
     session.handleBlank(true)
     const feed = (event: SessionEvent) => {
-      session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event })
+      session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: wireEvent(event) })
     }
     feed(ev.commandRun(0, 'cmd-goal', 'goal', ' '))
     feed(ev.commandDone(1, 'cmd-goal', 'success', 'No goal is currently set.'))
@@ -343,7 +347,7 @@ describe('live event path', () => {
       published.push(chatSeqs(session.getSnapshot()))
     })
     const feed = (event: SessionEvent) => {
-      session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event })
+      session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: wireEvent(event) })
     }
 
     feed(ev.chunkStart(6, 1))
@@ -387,7 +391,7 @@ describe('live event path', () => {
     session.handleMuxEnvelope('timeline' as never, {
       type: 'session/event',
       sessionId: SID,
-      event: ev.turnStart(0, 1),
+      event: wireEvent(ev.turnStart(0, 1)),
     })
     await Promise.resolve()
 
@@ -400,7 +404,7 @@ describe('live event path', () => {
     const repaired = [...plainTurn(0, 0, 'a', 'b'), ...plainTurn(6, 1, 'c', 'd')]
     api.onHistory = () => histResponse(repaired)
     // seq 9 with tail 5 → gap; the event detours to the buffer and one history refetch fires.
-    session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: ev.assistant(9, 1, 'd') })
+    session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: wireEvent(ev.assistant(9, 1, 'd')) })
     await vi.waitFor(() => {
       expect(api.callsOf('session.history').length).toBe(2)
     })
@@ -845,11 +849,11 @@ describe('remaining branches', () => {
 
   it('drops live events while cold/error (no window upkeep)', async () => {
     const { api, session } = makeSession()
-    session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: ev.user(0, '冷态帧') })
+    session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: wireEvent(ev.user(0, '冷态帧')) })
     expect(session.getSnapshot().nodes).toEqual([])
     api.onHistory = () => Promise.resolve(err({ code: 'internal', message: 'x', details: {} }))
     await session.open()
-    session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: ev.user(0, '错态帧') })
+    session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: wireEvent(ev.user(0, '错态帧')) })
     expect(session.getSnapshot().nodes).toEqual([])
   })
 
@@ -865,8 +869,8 @@ describe('remaining branches', () => {
     }
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
-      session.handleMuxEnvelope('r1' as never, { type: 'session/event', sessionId: SID, event: ev.user(9, '洞一') })
-      session.handleMuxEnvelope('r2' as never, { type: 'session/event', sessionId: SID, event: ev.user(10, '洞二') }) // stitching: detours, no second repair
+      session.handleMuxEnvelope('r1' as never, { type: 'session/event', sessionId: SID, event: wireEvent(ev.user(9, '洞一')) })
+      session.handleMuxEnvelope('r2' as never, { type: 'session/event', sessionId: SID, event: wireEvent(ev.user(10, '洞二')) }) // stitching: detours, no second repair
       expect(repairs).toBe(1)
       gate.reject(new Error('repair wire down'))
       await vi.waitFor(() => { expect(errorSpy).toHaveBeenCalled() })
@@ -934,7 +938,7 @@ describe('remaining branches', () => {
     await session.open()
     const repairPull = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
     api.onHistory = () => repairPull.promise
-    session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: ev.user(9, '洞') }) // starts repairGap
+    session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: wireEvent(ev.user(9, '洞')) }) // starts repairGap
     api.onHistory = () => histResponse(plainTurn(6, 1, 'c', 'd'))
     const resynced = session.resync() // bumps the generation
     repairPull.resolve(ok({
@@ -1055,7 +1059,7 @@ describe('reference stability (the memo contract)', () => {
     const secondKey = before.chat.order[1]!
     const first = before.chat.nodes.get(firstKey)
     const second = before.chat.nodes.get(secondKey)
-    session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: ev.user(6, '追加') })
+    session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: wireEvent(ev.user(6, '追加')) })
     const after = session.getSnapshot()
     expect(after).not.toBe(before) // top-level swap on change
     expect(after.chat.nodes.get(firstKey)).toBe(first)
@@ -1069,7 +1073,7 @@ describe('reference stability (the memo contract)', () => {
     const { api, session } = makeSession()
     api.onHistory = () => histResponse(plainTurn(0, 0, '底', '座'))
     await session.open()
-    const feed = (event: SessionEvent) => { session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event }) }
+    const feed = (event: SessionEvent) => { session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: wireEvent(event) }) }
     feed(ev.turnStart(6, 1))
     feed(ev.stepStart(7, 1))
     feed(ev.toolCall(8, 1, 'c1', 'echo', '{}'))

@@ -21,11 +21,16 @@ import type {} from '@deepseek-ai/dsh-goal/client'
 // wire types: apiproxy's sessions contract declares it, and client-runtime's
 // api-remotes import already places it in every client program.
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
+import {
+  MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS,
+  promptAttachmentBase64CodeUnits,
+} from '@deepseek-ai/dsh-attachment/types'
 import type { ComposerBarProps } from '../contract/slots.ts'
 import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
 import type { EditRange } from '../input/contract.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
+import { classifyComposerFile, COMPOSER_ATTACHMENT_ACCEPT } from '../attachment-files.ts'
 import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
 import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
@@ -120,6 +125,7 @@ export function InputBar({
   // The deployment's image-intake limits (absent while no attachment service
   // is composed — the pre-check below then defers entirely to the host).
   const imageLimits = useProjection('imageLimits')
+  const documentLimits = useProjection('documentLimits')
   // Prompt failures are ordinary failures (no create/attach transaction exists
   // anymore): the toast announces promptError, the draft stays in the machine,
   // and the user resubmits. A remount over a session whose machine still holds
@@ -130,9 +136,9 @@ export function InputBar({
   useEffect(() => {
     if (promptError === null) return
     showToast(promptError.error.code === 'attachment-error'
-      ? attachmentErrorText(t, promptError.error.details.reason, imageLimits)
+      ? attachmentErrorText(t, promptError.error.details.reason, imageLimits, documentLimits)
       : `${promptError.error.message} (${promptError.error.code})`)
-  }, [promptError, showToast, t, imageLimits])
+  }, [promptError, showToast, t, imageLimits, documentLimits])
   useEffect(() => {
     if (notice?.level === 'error') showToast(notice.text)
   }, [notice, showToast])
@@ -488,7 +494,7 @@ export function InputBar({
       .filter(item => item.kind === 'file')
       .map(item => item.getAsFile())
       .filter((file): file is File => file !== null)
-    if (files.length > 0) intakeImages(files)
+    if (files.length > 0) intakeAttachments(files)
     const text = e.clipboardData.getData('text/plain')
     if (text === '') {
       if (files.length > 0) e.preventDefault()
@@ -512,32 +518,75 @@ export function InputBar({
   // never enters the rail — no more submit-time failure rolling the rail
   // back. The host enforces the same limits at submit for callers that bypass
   // this composer.
-  const intakeImages = useCallback((files: readonly File[]): void => {
+  const intakeAttachments = useCallback((files: readonly File[]): void => {
     if (addImages === undefined || files.length === 0) return
     const rejected = ((): string | null => {
+      let classified: ReturnType<typeof classifyComposerFile>[]
+      try {
+        classified = files.map(classifyComposerFile)
+      } catch {
+        return addImages(files)
+      }
+      const newImages = files.filter((_file, index) => classified[index]?.kind === 'image')
+      const newDocuments = files.filter((_file, index) => classified[index]?.kind === 'document')
+      const heldImages = attachments.filter(attachment => attachment.kind === 'image')
+      const heldDocuments = attachments.filter(attachment => attachment.kind === 'document')
       if (imageLimits !== undefined) {
-        // Format precedes limits (DeepSeek Chat's filter order): a batch with
-        // a non-image must announce the format problem, not a count or size
-        // it could never pass anyway — addImages rejects it authoritatively.
-        if (files.some(file => !(imageLimits.mediaTypes as readonly string[]).includes(file.type))) {
+        if (classified.some(item => item.kind === 'image'
+          && !(imageLimits.mediaTypes as readonly string[]).includes(item.mediaType))) {
           return addImages(files)
         }
-        if (attachments.length + files.length > imageLimits.maxImagesPerMessage) {
+        if (heldImages.length + newImages.length > imageLimits.maxImagesPerMessage) {
           return t('image.tooMany', { count: imageLimits.maxImagesPerMessage })
         }
-        if (files.some(file => file.size > imageLimits.maxImageBytes)) {
+        if (newImages.some(file => file.size > imageLimits.maxImageBytes)) {
           return t('image.fileTooLarge', { size: imageSizeText(imageLimits.maxImageBytes) })
         }
-        const total = attachments.reduce((sum, attachment) => sum + attachment.file.size, 0)
-          + files.reduce((sum, file) => sum + file.size, 0)
+        const total = heldImages.reduce((sum, attachment) => sum + attachment.file.size, 0)
+          + newImages.reduce((sum, file) => sum + file.size, 0)
         if (total > imageLimits.maxMessageImageBytes) {
           return t('image.totalTooLarge', { size: imageSizeText(imageLimits.maxMessageImageBytes) })
         }
       }
+      if (documentLimits !== undefined) {
+        if (classified.some(item => item.kind === 'document'
+          && !(documentLimits.mediaTypes as readonly string[]).includes(item.mediaType))) {
+          return addImages(files)
+        }
+        if (heldDocuments.length + newDocuments.length > documentLimits.maxDocumentsPerMessage) {
+          return t('document.tooMany', { count: documentLimits.maxDocumentsPerMessage })
+        }
+        if (newDocuments.some(file => file.size > documentLimits.maxDocumentBytes)) {
+          return t('document.fileTooLarge', { size: imageSizeText(documentLimits.maxDocumentBytes) })
+        }
+        if (newDocuments.some(file => new TextEncoder().encode(file.name).byteLength > documentLimits.maxDocumentNameBytes)) {
+          return t('document.nameTooLong')
+        }
+        const total = heldDocuments.reduce((sum, attachment) => sum + attachment.file.size, 0)
+          + newDocuments.reduce((sum, file) => sum + file.size, 0)
+        if (total > documentLimits.maxMessageDocumentBytes) {
+          return t('document.totalTooLarge', { size: imageSizeText(documentLimits.maxMessageDocumentBytes) })
+        }
+      }
+      const combined = [
+        ...heldImages.map(attachment => attachment.file),
+        ...heldDocuments.map(attachment => attachment.file),
+        ...files,
+      ]
+      let remaining = MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS
+      for (const file of combined) {
+        const encodedLength = promptAttachmentBase64CodeUnits(file.size)
+        if (encodedLength > remaining) {
+          return t('attachment.totalTooLarge', {
+            size: imageSizeText(MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS),
+          })
+        }
+        remaining -= encodedLength
+      }
       return addImages(files)
     })()
     if (rejected !== null) showToast(rejected)
-  }, [addImages, attachments, imageLimits, showToast, t])
+  }, [addImages, attachments, documentLimits, imageLimits, showToast, t])
 
   const canAcceptDrop = !locked && !machineBusy && addImages !== undefined
 
@@ -687,14 +736,14 @@ export function InputBar({
       <input
         ref={imagePickerRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif"
+        accept={COMPOSER_ATTACHMENT_ACCEPT}
         multiple
         hidden
         data-composer-image-picker
         onChange={(event) => {
           const files = Array.from(event.currentTarget.files ?? [])
           event.currentTarget.value = ''
-          if (files.length > 0) intakeImages(files)
+          if (files.length > 0) intakeAttachments(files)
         }}
       />
       {toast !== null && (
@@ -728,12 +777,24 @@ export function InputBar({
         {renderSlot('conversation.input.attachments', {
           attachments,
           canAcceptDrop,
-          onAddImages: intakeImages,
+          onAddImages: intakeAttachments,
           onRemoveImage: (id) => { removeImage?.(id) },
-          dropLimits: imageLimits === undefined ? undefined : {
-            count: imageLimits.maxImagesPerMessage,
-            size: imageSizeText(imageLimits.maxImageBytes),
-          },
+          dropLimits: imageLimits === undefined && documentLimits === undefined
+            ? undefined
+            : {
+              ...(imageLimits === undefined
+                ? {}
+                : { images: {
+                  count: imageLimits.maxImagesPerMessage,
+                  size: imageSizeText(imageLimits.maxImageBytes),
+                } }),
+              ...(documentLimits === undefined
+                ? {}
+                : { documents: {
+                  count: documentLimits.maxDocumentsPerMessage,
+                  size: imageSizeText(documentLimits.maxDocumentBytes),
+                } }),
+            },
         })}
         {/* One scrollport, two text layers. The hidden mirror renders draft+'\n' and stretches the
             stack to the draft's FULL height (counting rows by '\n' cannot see soft wraps); the

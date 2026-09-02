@@ -154,6 +154,7 @@ describe('stageDesktop', () => {
     expect(result.validatedFiles).toContain('build/installer.nsh')
     expect(result.validatedFiles).toContain('THIRD_PARTY_NOTICES.md')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-host-desktop-plugin-runtime/lib/index.js')
+    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-attachment-local/lib/pdf-worker.cjs')
     expect(result.validatedFiles).toContain('node_modules/dshmarket/lib/index.js')
     expect(result.validatedFiles).toContain('node_modules/dshmarket/lib/routes.js')
     expect(result.validatedFiles).toContain('node_modules/dshmarket/package.json')
@@ -238,6 +239,16 @@ describe('stageDesktop', () => {
   it('fails closed when a required file or native module is absent', async () => {
     await expect(stageDesktop(REPO_ROOT, fakeDependencies(false))).rejects.toThrow(/missing required file/i)
     await expect(stageDesktop(REPO_ROOT, fakeDependencies(true, []))).rejects.toThrow(/native.*\.node/i)
+  })
+
+  it('fails closed when the separately bundled PDF worker is absent', async () => {
+    const dependencies = fakeDependencies()
+    dependencies.isFile = async path => !path.replaceAll('\\', '/').endsWith(
+      'node_modules/@deepseek-ai/dsh-attachment-local/lib/pdf-worker.cjs',
+    )
+    await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(
+      'missing required file: node_modules/@deepseek-ai/dsh-attachment-local/lib/pdf-worker.cjs',
+    )
   })
 
   it('fails closed when either reasoning-effort runtime half or attributed asset is absent', async () => {

@@ -2,8 +2,8 @@
 // history fold derive AssistantTiming from the same step/start -> first token
 // delta -> assistant/message sequence.
 
-import { isTokenDelta } from '@deepseek-ai/dsh-llm/message'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import { isTokenDelta } from '@deepseek-ai/dsh-llm/message'
 import type { AssistantTiming } from './conversation.ts'
 
 // The first-token predicate lives beside the StreamChunk type in dsh-llm;

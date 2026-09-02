@@ -8,18 +8,23 @@
 
 import type { AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
 import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-approval/types'
-import type { Message } from '@deepseek-ai/dsh-llm/types'
+import type {
+  ContentBlock, Message,
+} from '@deepseek-ai/dsh-llm/types'
+import type {
+  DocumentAttachmentRef, RendererDocumentAttachment,
+} from '@deepseek-ai/dsh-attachment'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { CallId } from '@deepseek-ai/dsh-llm/brand'
-import type { JsonValue, SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
-import type { ToolCallView, ToolResultView } from '@deepseek-ai/dsh-tools/presentation'
+import type {
+  JsonValue, SessionEvent, SessionEventType, SessionId,
+} from '@deepseek-ai/dsh-session/types'
+import type {
+  ToolCallView as HostToolCallView, ToolResultView as HostToolResultView,
+} from '@deepseek-ai/dsh-tools/presentation'
 import type { RpcError, RpcId, RpcRequest } from './rpc.ts'
 import type { JobView } from './jobs.ts'
 import type { WorkspaceView } from './workspace.ts'
-
-// Client-side consumers take the render-intent vocabulary from the contract;
-// dsh-tools remains its owner.
-export type { ToolCallView, ToolResultView } from '@deepseek-ai/dsh-tools/presentation'
 
 /**
  * Host-computed render intent accompanying a `tool/call` or `tool/result`
@@ -29,9 +34,35 @@ export type { ToolCallView, ToolResultView } from '@deepseek-ai/dsh-tools/presen
  * `for` names which vocabulary applies without re-inspecting the event type.
  * An absent view means the client's documented default (generic JSON card).
  */
+/** Replace every durable document reference in a nested wire value with its renderer-safe metadata. */
+type RendererProjection<Value> =
+  Value extends DocumentAttachmentRef
+    ? RendererDocumentAttachment
+    : Value extends string | number | boolean | null | undefined
+      ? Value
+      : Value extends object
+        ? { [Key in keyof Value]: RendererProjection<Value[Key]> }
+        : Value
+
+/** Presenter call view after Host-side document-authority stripping. */
+export type ToolCallView = RendererProjection<HostToolCallView>
+/** Presenter result view after Host-side document-authority stripping. */
+export type ToolResultView = RendererProjection<HostToolResultView>
+
+/** Closed presenter-view union carried to the renderer with one tool event. */
 export type ToolEventView =
   | { for: 'call'; view: ToolCallView }
   | { for: 'result'; view: ToolResultView }
+
+/** Provider-neutral content after the Host strips document read authority and content fingerprints. */
+export type RendererContentBlock = RendererProjection<ContentBlock>
+
+/** Message carried to the renderer; document blocks contain presentation metadata only. */
+export type RendererMessage = RendererProjection<Message>
+
+/** Session event carried to the renderer; the durable Host event remains unchanged. */
+export type RendererSessionEvent<Type extends SessionEventType = SessionEventType> =
+  RendererProjection<SessionEvent<Type>>
 
 /** One pending inbox occurrence in the authoritative `session/queue` snapshot. */
 export interface QueuedInboxItem {
@@ -40,7 +71,7 @@ export interface QueuedInboxItem {
   /** Agent-resolved FIFO placement; queued and steering items render on different surfaces, context items stay invisible until claimed. */
   placement: 'queued' | 'steering' | 'context'
   /** Complete pending message; it is not durable until the Agent claims it. */
-  message: Message
+  message: RendererMessage
 }
 
 /** Streaming face of the contract: the two logical stream openers (mux + host). */
@@ -67,7 +98,7 @@ export interface EventsApi {
  * approval/question frames (requested = answerable server-request, the rest are pure pushes).
  */
 export type MuxFrame =
-  | { type: 'session/event'; sessionId: SessionId; event: SessionEvent; view?: ToolEventView }
+  | { type: 'session/event'; sessionId: SessionId; event: RendererSessionEvent; view?: ToolEventView }
   | { type: 'session/subscribed'; sessionId: SessionId; lastSeq: number }
   | { type: 'approval/requested'; sessionId: SessionId; approvalId: ApprovalRequestId; toolName: string; callId?: CallId; reason?: string }
   | { type: 'approval/resolved'; sessionId: SessionId; approvalId: ApprovalRequestId; outcome: ApprovalOutcome }

@@ -137,15 +137,20 @@ describe('mux live view computation', () => {
     }, { surfaceOp: 'append' })
 
     const frames = await collected
-    const events = frames.filter(f => f.type === 'session/event')
+    const events = frames.filter(f => f.type === 'session/event'
+      && (f.event.type === 'tool/call' || f.event.type === 'tool/result')) as unknown as Array<{
+      event:
+        | { type: 'tool/call'; data: { callId: string } }
+        | { type: 'tool/result'; data: { message: { source: { callId: string } } } }
+      view?: { for: string; view: { card: string; [key: string]: unknown } }
+    }>
     const byCall = new Map(events
-      .filter(f => f.event.type === 'tool/call' || f.event.type === 'tool/result')
       .map(f => [
         `${f.event.type}:${f.event.type === 'tool/call'
           ? f.event.data.callId
-          : (f.event.data as SessionEvent<'tool/result'>['data']).message.source.callId}`,
+          : f.event.data.message.source.callId}`,
         f,
-      ]))
+      ] as const))
 
     expect(byCall.get('tool/call:c-gen')?.view).toEqual({ for: 'call', view: { card: 'generic', title: 'gen call' } })
     expect(byCall.get('tool/call:c-term')?.view).toEqual({ for: 'call', view: { card: 'terminal', title: 'echo hi' } })

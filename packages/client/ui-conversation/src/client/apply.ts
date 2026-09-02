@@ -18,7 +18,8 @@ import type {
 } from './contract/slots.ts'
 import type { InputNotice } from './input/contract.ts'
 import { createChatStore } from './stores.ts'
-import { ConversationController, UnsupportedImageMediaTypeError } from './service.ts'
+import { UnsupportedDocumentMediaTypeError, UnsupportedImageMediaTypeError } from './attachment-files.ts'
+import { ConversationController } from './service.ts'
 import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
 import type { ComposerBlock } from './input/blocks.ts'
@@ -351,6 +352,7 @@ export function apply(ctx: Context): void {
               // and naming it beats echoing the rejected MIME type back.
               return t('image.unsupportedType')
             }
+            if (error instanceof UnsupportedDocumentMediaTypeError) return t('document.unsupportedType')
             return error instanceof Error ? error.message : String(error)
           }
         },

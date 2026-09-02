@@ -259,6 +259,14 @@ describe('desktop package manifest', () => {
     expect(marketPatch).toContain('data-dshmarket-protected-package')
   })
 
+  it('describes the memory coordinator without the obsolete External Brain product name', () => {
+    const desktopPatch = readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8')
+    expect(desktopPatch).not.toContain('外置大脑')
+    expect(desktopPatch).not.toContain('External-brain')
+    expect(desktopPatch).toContain('记忆与学习协调器')
+    expect(desktopPatch).toContain('Memory & Learning coordinator')
+  })
+
   it('builds one visible per-user Windows x64 Setup with progress, shortcuts, and launch-after-install', () => {
     const manifest = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -372,6 +380,13 @@ describe('desktop package manifest', () => {
     expect(smoke).toContain('desktop-smoke-workbench-${platform}.png')
     expect(smoke).toContain("getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })")
     expect(smoke).not.toContain("platform === 'win32'\n    ? await seedWindowsClipboardSmokeState")
+    expect(smoke).toContain("new File(['packaged document drop'], 'desktop-dropped-notes.md'")
+    expect(smoke).toContain("new DragEvent('drop'")
+    expect(smoke).toContain('desktop-dropped-notes\\.md')
+    expect(smoke).toContain('Attach file|添加附件')
+    expect(smoke).not.toContain('Add image|添加图片')
+    expect(smoke).toContain('Memory & Learning|记忆与学习')
+    expect(smoke).not.toContain('Project Memory|项目记忆')
   })
 
   it('includes the repository standalone runtime dependency closure', () => {

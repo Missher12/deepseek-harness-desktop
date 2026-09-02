@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { BrainSettingsSection, type BrainSettingsProps } from '../src/client/BrainSettingsSection.tsx'
-import { en, type BrainSettingsLocaleKey } from '../src/client/locales.ts'
+import { en, zh, type BrainSettingsLocaleKey } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 const t = ((key: BrainSettingsLocaleKey, params?: Record<string, string | number>): string => {
@@ -20,7 +20,10 @@ describe('BrainSettingsSection', () => {
     const pending = Promise.withResolvers<Awaited<ReturnType<BrainSettingsProps['load']>>>()
     const view = render(<BrainSettingsSection {...props(() => pending.promise)} />)
     expect(screen.getByRole('heading', { name: en.title, level: 2 })).toBeTruthy()
-    expect(view.container.querySelectorAll('[data-brain-source]')).toHaveLength(3)
+    expect(view.container.querySelectorAll('[data-brain-source]')).toHaveLength(2)
+    expect(view.container.textContent).not.toContain('External Brain')
+    expect(screen.getByText(en.projectMemoryDescription)).toBeTruthy()
+    expect(screen.getByText(en.evolutionDescription)).toBeTruthy()
     expect(screen.queryByText(en.loading)).toBeNull()
 
     pending.resolve({
@@ -36,6 +39,10 @@ describe('BrainSettingsSection', () => {
     expect(screen.getByText(en.disabled)).toBeTruthy()
     expect(screen.getByText('Up to 6 items · 4 KB · 150 ms fail-open')).toBeTruthy()
     expect(screen.getByText(en.localOnly)).toBeTruthy()
+    expect(en.localOnly).toContain('up to 6 selected excerpts / 4 KB may be sent with each model request')
+    expect(en.localOnly).not.toContain('never uploaded')
+    expect(zh.localOnly).toContain('每次模型请求最多发送 6 条 / 4 KB 经选择的片段')
+    expect(zh.localOnly).not.toContain('不上传记忆')
   })
 
   it('keeps the safe feature explanation visible when status loading fails', async () => {
@@ -54,7 +61,7 @@ describe('BrainSettingsSection', () => {
       ],
     }))} />)
 
-    expect(await screen.findAllByText(en.unavailable)).toHaveLength(2)
+    expect(await screen.findAllByText(en.unavailable)).toHaveLength(1)
     expect(screen.getByText('4 rules')).toBeTruthy()
   })
 

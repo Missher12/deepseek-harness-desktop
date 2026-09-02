@@ -263,13 +263,7 @@ export class LocalAttachmentStore extends AttachmentStore {
     const prepared = await Promise.all(inputs.map(input => this.compression.run(
       () => prepareDocument(input, this.documentLimits),
     )))
-    const extractedBytes = prepared.reduce((sum, document) => sum + document.ref.extractedBytes, 0)
-    if (extractedBytes > this.documentLimits.maxMessageExtractedTextBytes) {
-      throw new AttachmentError(
-        'Document batch exceeds the configured aggregate extracted-text limit.',
-        'DOCUMENT_EXTRACTED_TEXT_TOO_LARGE',
-      )
-    }
+    this.validatePreparedDocumentBatch(prepared)
     const refs: DocumentAttachmentRef[] = []
     for (const document of prepared) refs.push(await commitPreparedDocument(this.root, document))
     return refs
@@ -277,6 +271,7 @@ export class LocalAttachmentStore extends AttachmentStore {
 
   override async saveDocument(input: SaveDocumentAttachment): Promise<DocumentAttachmentRef> {
     const prepared = await this.compression.run(() => prepareDocument(input, this.documentLimits))
+    this.validatePreparedDocumentBatch([prepared])
     return commitPreparedDocument(this.root, prepared)
   }
 
@@ -323,6 +318,16 @@ export class LocalAttachmentStore extends AttachmentStore {
       }).catch(() => {})
     }
     return operation.wait(signal)
+  }
+
+  private validatePreparedDocumentBatch(prepared: readonly { ref: DocumentAttachmentRef }[]): void {
+    const extractedBytes = prepared.reduce((sum, document) => sum + document.ref.extractedBytes, 0)
+    if (extractedBytes > this.documentLimits.maxMessageExtractedTextBytes) {
+      throw new AttachmentError(
+        'Document selection exceeds the configured aggregate extracted-text limit.',
+        'DOCUMENT_EXTRACTED_TEXT_TOO_LARGE',
+      )
+    }
   }
 
 }

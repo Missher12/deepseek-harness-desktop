@@ -3,7 +3,7 @@
  * narrow RpcRequest<P> and echoes request.rpcId on the RpcResponse<T>.
  */
 
-import { randomUUID } from 'node:crypto'
+import { createHmac, randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
@@ -12,8 +12,16 @@ import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
-import { AttachmentError, admitEncodedDocuments, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
-import type { DocumentAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import {
+  AttachmentError,
+  DOCUMENT_MEDIA_TYPES,
+  admitEncodedDocuments,
+  admitEncodedImages,
+  assertPromptAttachmentBase64CodeUnits,
+} from '@deepseek-ai/dsh-attachment'
+import type {
+  DocumentAttachmentDisplayId, DocumentAttachmentRef, ImageAttachmentRef, RendererDocumentAttachment,
+} from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
@@ -37,6 +45,9 @@ import {
 import type { PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {
+  ToolCallView as HostToolCallView, ToolResultView as HostToolResultView,
+} from '@deepseek-ai/dsh-tools/presentation'
+import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
   ModelCatalogFailure, ModelProviderGroup,
   ModelReasoning, MuxFrame, PromptAnchor, PromptContentPart, QuestionResponsePayload,
@@ -45,6 +56,7 @@ import type {
   WorkspaceId, WorkspaceView,
 } from './api/index.ts'
 import { PROMPT_ANCHOR_PREVIEW_MAX_CODE_POINTS } from './api/sessions.ts'
+import type { RendererMessage, RendererSessionEvent } from './api/events.ts'
 import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   flushLiveSessionLog,
@@ -133,6 +145,14 @@ export const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 1024
 /** Conversation message event types (the pagination counting unit). */
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
 
+/** Process-lifetime secret: display ids stay stable in this Host and unlinkable across Host processes. */
+const RENDERER_DOCUMENT_DISPLAY_KEY = randomBytes(32)
+
+/** Canonical local document references are content addresses, not renderer identities. */
+const DOCUMENT_CONTENT_ADDRESS = /^sha256:[0-9a-f]{64}$/iu
+const DOCUMENT_MEDIA_TYPE_SET = new Set<string>(DOCUMENT_MEDIA_TYPES)
+const MAX_RENDERER_DOCUMENT_NAME_BYTES = 255
+
 /** Validate one prompt as category batches before publishing durable attachment references. */
 async function durablePromptContent(ctx: Context, content: readonly PromptContentPart[]): Promise<ContentBlock[]> {
   if (content.every(part => part.type === 'text')) {
@@ -140,6 +160,10 @@ async function durablePromptContent(ctx: Context, content: readonly PromptConten
   }
   const images = content.filter(part => part.type === 'image')
   const documents = content.filter(part => part.type === 'document')
+  assertPromptAttachmentBase64CodeUnits([
+    ...images.map(image => image.data.length),
+    ...documents.map(document => document.data.length),
+  ])
   const [imageRefs, documentRefs] = await Promise.all([
     images.length === 0 ? Promise.resolve([]) : admitEncodedImages(ctx.attachments, images),
     documents.length === 0 ? Promise.resolve([]) : admitEncodedDocuments(ctx.attachments, documents),
@@ -153,6 +177,127 @@ async function durablePromptContent(ctx: Context, content: readonly PromptConten
     }
     return { type: 'document', attachment: documentRefs[nextDocument++] as DocumentAttachmentRef }
   })
+}
+
+function rendererRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+/** Mint a position-bound display identity that no read API accepts as authority. */
+function rendererDocumentDisplayId(
+  sessionId: SessionId,
+  owner: string,
+  path: readonly (string | number)[],
+): DocumentAttachmentDisplayId {
+  const opaque = createHmac('sha256', RENDERER_DOCUMENT_DISPLAY_KEY)
+    .update(JSON.stringify([String(sessionId), owner, path]))
+    .digest('base64url')
+  return `document-view:${opaque}` as DocumentAttachmentDisplayId
+}
+
+/** Identify a real durable document wrapper without matching ordinary plugin display data. */
+function durableDocumentAttachment(record: Record<string, unknown>): Record<string, unknown> | null {
+  if (record['type'] !== 'document') return null
+  const attachment = rendererRecord(record['attachment'])
+  if (attachment === null) return null
+  return typeof attachment['attachmentId'] === 'string'
+    && DOCUMENT_CONTENT_ADDRESS.test(attachment['attachmentId'])
+    && typeof attachment['extractedTextId'] === 'string'
+    && DOCUMENT_CONTENT_ADDRESS.test(attachment['extractedTextId'])
+    ? attachment
+    : null
+}
+
+function rendererByteCount(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0
+}
+
+/** Normalize and UTF-8 bound an extension-supplied display name before it enters the renderer. */
+function rendererDocumentName(value: unknown): string {
+  if (typeof value !== 'string') return 'document'
+  const cleaned = value.normalize('NFC').replace(/[\u0000-\u001f\u007f]/gu, '').trim()
+  if (cleaned.length === 0) return 'document'
+  const bytes = new TextEncoder().encode(cleaned)
+  if (bytes.byteLength <= MAX_RENDERER_DOCUMENT_NAME_BYTES) return cleaned
+  let end = MAX_RENDERER_DOCUMENT_NAME_BYTES
+  while (end > 0 && ((bytes[end] as number) & 0xc0) === 0x80) end -= 1
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, end))
+}
+
+/** Whitelist bounded display metadata and discard every durable/read-authority field. */
+function rendererDocument(
+  attachment: Record<string, unknown>,
+  sessionId: SessionId,
+  owner: string,
+  path: readonly (string | number)[],
+): { type: 'document'; attachment: RendererDocumentAttachment } {
+  const mediaType = typeof attachment['mediaType'] === 'string'
+    && DOCUMENT_MEDIA_TYPE_SET.has(attachment['mediaType'])
+    ? attachment['mediaType'] as DocumentAttachmentRef['mediaType']
+    : 'text/plain'
+  const view: RendererDocumentAttachment = {
+    displayId: rendererDocumentDisplayId(sessionId, owner, path),
+    name: rendererDocumentName(attachment['name']),
+    mediaType,
+    bytes: rendererByteCount(attachment['bytes']),
+    extractedBytes: rendererByteCount(attachment['extractedBytes']),
+    truncated: attachment['truncated'] === true,
+  }
+  return { type: 'document', attachment: view }
+}
+
+/**
+ * Deep fail-closed wire projection for true content-addressed document refs.
+ *
+ * Session events are merge-extensible, so limiting this to today's event-type
+ * union could let a future plugin content carrier expose durable ids. The
+ * content-address predicate keeps that forward-safe traversal from rewriting
+ * ordinary plugin JSON that merely uses `type: "document"` for display data.
+ */
+function rendererValue(
+  value: unknown,
+  sessionId: SessionId,
+  owner: string,
+  path: readonly (string | number)[],
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item, index) => rendererValue(item, sessionId, owner, [...path, index]))
+  }
+  const record = rendererRecord(value)
+  if (record === null) return value
+  const attachmentRecord = durableDocumentAttachment(record)
+  if (attachmentRecord !== null) {
+    return rendererDocument(attachmentRecord, sessionId, owner, path)
+  }
+  return Object.fromEntries(Object.entries(record).map(([key, item]) => [
+    key,
+    rendererValue(item, sessionId, owner, [...path, key]),
+  ]))
+}
+
+/** Project one durable event without mutating the Host log. */
+function rendererSessionEvent(sessionId: SessionId, event: SessionEvent): RendererSessionEvent {
+  return rendererValue(event, sessionId, `event:${String(event.seq)}`, []) as RendererSessionEvent
+}
+
+/** Project one pending message under its stable per-session message position. */
+function rendererMessage(sessionId: SessionId, message: UserMessage): RendererMessage {
+  return rendererValue(message, sessionId, `message:${String(message.id)}`, []) as RendererMessage
+}
+
+type HostToolEventView =
+  | { for: 'call'; view: HostToolCallView }
+  | { for: 'result'; view: HostToolResultView }
+
+/** Strip document authority from presenter-supplied content and raw fallback data. */
+function rendererToolEventView(
+  sessionId: SessionId,
+  event: SessionEvent,
+  view: HostToolEventView,
+): ToolEventView {
+  return rendererValue(view, sessionId, `event:${String(event.seq)}`, ['view']) as ToolEventView
 }
 
 /** Search durable content for an image reference, including nested tool results. */
@@ -711,7 +856,7 @@ function viewFor(
   // preset's standing key directly — no agent, no resume. An undefined scope
   // sees only the global layer, which is the pre-preset deployment shape.
   scope?: ScopeKey,
-): ToolEventView | undefined {
+): HostToolEventView | undefined {
   try {
     if (event.type === 'tool/call') {
       const { name, arguments: raw } = event.data as ToolCallData
@@ -764,6 +909,7 @@ function backscanArgs(events: readonly SessionEvent[], callId: string): { name: 
 /** Render one detached history page through the same presenter path as ordinary history. */
 function historyPage(
   ctx: Context,
+  sessionId: SessionId,
   events: readonly SessionEvent[],
   beforeSeq: number | undefined,
   maxMessages: number | undefined,
@@ -773,7 +919,10 @@ function historyPage(
   return {
     events: page.events.map((event) => {
       const view = viewFor(ctx, event, callId => backscanArgs(page.events, callId), scope)
-      return { event, ...view === undefined ? {} : { view } }
+      return {
+        event: rendererSessionEvent(sessionId, event),
+        ...view === undefined ? {} : { view: rendererToolEventView(sessionId, event, view) },
+      }
     }),
     hasMore: page.hasMore,
   }
@@ -1314,14 +1463,18 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         : messages
     }
     return [
-      ...project('next-turn').map(message => ({ id: message.id, placement: 'queued' as const, message })),
+      ...project('next-turn').map(message => ({
+        id: message.id,
+        placement: 'queued' as const,
+        message: rendererMessage(agent.id, message),
+      })),
       ...project('next-step').map(message => ({
         id: message.id,
         // Only user-origin messages are steering; injected context (approval
         // notices, task completion, attached snapshots) is not a user action
         // and must not render as a pending steering bubble.
         placement: message.source.kind === 'user' ? 'steering' as const : 'context' as const,
-        message,
+        message: rendererMessage(agent.id, message),
       })),
     ]
   }
@@ -2294,7 +2447,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           // at N with a baseline folded to N+1.
           const scope = await presenterScopeFor(sessionId, sourceSession(source))
           const cut = historyCutOf(source, beforeSeq === undefined)
-          const page = historyPage(ctx, cut.events, beforeSeq, maxMessages, scope)
+          const page = historyPage(ctx, sessionId, cut.events, beforeSeq, maxMessages, scope)
           return ok(request, {
             events: page.events,
             hasMore: page.hasMore,
@@ -2764,7 +2917,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: { childSessionId },
           })
         }
-        const page = historyPage(ctx, events, beforeSeq, maxMessages)
+        const page = historyPage(ctx, childSessionId, events, beforeSeq, maxMessages)
         return ok(request, { ...page, ...projections === undefined ? {} : { projections } })
       },
 
@@ -3550,7 +3703,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               callId => openCalls.get(session.id)?.get(callId) ?? backscanArgs(session.events, callId),
               ctx.agents.get(session.id),
             )
-            queue.push(frame({ type: 'session/event', sessionId: session.id, event, ...view === undefined ? {} : { view } }))
+            queue.push(frame({
+              type: 'session/event',
+              sessionId: session.id,
+              event: rendererSessionEvent(session.id, event),
+              ...view === undefined ? {} : { view: rendererToolEventView(session.id, event, view) },
+            }))
           }),
           ctx.on('session/created', (session: Session) => {
             subscribeSession(queue, session)

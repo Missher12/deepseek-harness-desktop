@@ -123,17 +123,17 @@ describe('list lifecycle', () => {
     const activity = { ...ev.user(10, 'new'), time: 500 }
     manager.handleMuxEnvelope({
       rpcId: 'activity' as never,
-      payload: { type: 'session/event', sessionId: S1, event: activity },
+      payload: { type: 'session/event', sessionId: S1, event: activity as never },
     })
     expect(manager.getListSnapshot().items[0]?.updatedAt).toBe(500)
 
     manager.handleMuxEnvelope({
       rpcId: 'older' as never,
-      payload: { type: 'session/event', sessionId: S1, event: { ...activity, time: 400 } },
+      payload: { type: 'session/event', sessionId: S1, event: { ...activity, time: 400 } as never },
     })
     manager.handleMuxEnvelope({
       rpcId: 'assistant' as never,
-      payload: { type: 'session/event', sessionId: S1, event: { ...ev.assistant(11, 0, 'reply'), time: 600 } },
+      payload: { type: 'session/event', sessionId: S1, event: { ...ev.assistant(11, 0, 'reply'), time: 600 } as never },
     })
 
     const injected = ev.user(12, 'context')
@@ -147,7 +147,7 @@ describe('list lifecycle', () => {
           ...injected,
           time: 700,
           data: { ...injected.data, source: { kind: 'plugin', plugin: 'test' } },
-        },
+        } as never,
       },
     })
     expect(manager.getListSnapshot().items[0]?.updatedAt).toBe(500)

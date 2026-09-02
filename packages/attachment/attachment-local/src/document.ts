@@ -4,35 +4,22 @@ import { createHash } from 'node:crypto'
 import {
   AttachmentError,
   AttachmentId,
+  DOCUMENT_DOTFILE_TEXT_NAMES,
+  DOCUMENT_EXTENSIONLESS_TEXT_NAMES,
+  DOCUMENT_EXTENSION_MEDIA_TYPES,
   type DocumentAttachmentLimits,
   type DocumentAttachmentRef,
   type DocumentMediaType,
   type SaveDocumentAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { XMLValidator } from 'fast-xml-parser'
 import { extractOoxmlText } from './ooxml.ts'
+import { extractPdfIsolated } from './pdf-isolate.ts'
 import { fitUtf8 } from './text-budget.ts'
 
 const PDF = 'application/pdf'
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-const MAX_PDF_PAGES = 500
-
-const EXTENSIONS: Readonly<Record<DocumentMediaType, readonly string[]>> = {
-  'application/pdf': ['.pdf'],
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-  'text/plain': [
-    '.txt', '.log', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rs', '.go', '.java', '.kt', '.swift',
-    '.c', '.h', '.cc', '.cpp', '.cs', '.rb', '.php', '.sh', '.zsh', '.fish', '.sql', '.css', '.scss', '.html',
-  ],
-  'text/markdown': ['.md', '.markdown'],
-  'application/json': ['.json'],
-  'text/csv': ['.csv'],
-  'application/yaml': ['.yaml', '.yml'],
-  'application/xml': ['.xml'],
-}
 
 /** Fully extracted and content-addressed document before any storage write. */
 export interface PreparedDocument {
@@ -51,15 +38,21 @@ function sanitizedName(value: string, mediaType: DocumentMediaType, maxBytes: nu
     .replace(/[\u0000-\u001f\u007f]/gu, '')
     .trim()
   const lower = leaf.toLowerCase()
-  const extension = EXTENSIONS[mediaType].find(candidate => lower.endsWith(candidate))
-  if (extension === undefined) {
+  const dot = lower.lastIndexOf('.')
+  const extension = dot < 0 ? '' : lower.slice(dot + 1)
+  const extensionType = DOCUMENT_EXTENSION_MEDIA_TYPES[extension as keyof typeof DOCUMENT_EXTENSION_MEDIA_TYPES]
+  const extensionless = dot < 0 && mediaType === 'text/plain'
+    && DOCUMENT_EXTENSIONLESS_TEXT_NAMES.some(name => name === lower)
+  if (extensionType !== mediaType && !extensionless) {
     throw new AttachmentError('Document name does not match its declared type.', 'DOCUMENT_TYPE_MISMATCH')
   }
-  const suffix = leaf.slice(leaf.length - extension.length)
+  const suffix = dot < 0 ? '' : leaf.slice(dot)
   const suffixBytes = new TextEncoder().encode(suffix).byteLength
-  const stem = fitUtf8(leaf.slice(0, -extension.length), Math.max(0, maxBytes - suffixBytes)).text
+  const stem = fitUtf8(dot < 0 ? leaf : leaf.slice(0, dot), Math.max(0, maxBytes - suffixBytes)).text
   const fitted = `${stem}${suffix}`
-  if (stem === '' || fitted === '.' || fitted === '..') {
+  const exactDotfile = dot === 0 && extensionType === mediaType
+    && DOCUMENT_DOTFILE_TEXT_NAMES.some(name => name === lower)
+  if ((!exactDotfile && stem === '') || fitted === '.' || fitted === '..') {
     throw new AttachmentError('Document display name is invalid.', 'DOCUMENT_NAME_INVALID')
   }
   return fitted
@@ -97,52 +90,22 @@ function decodeText(data: Uint8Array, mediaType: DocumentMediaType): string {
   return text.replaceAll('\r\n', '\n').replaceAll('\r', '\n')
 }
 
-async function extractPdf(data: Uint8Array, maxBytes: number): Promise<{ text: string; truncated: boolean }> {
-  if (!hasPrefix(data, '%PDF-')) throw new AttachmentError('Declared PDF type does not match its bytes.', 'DOCUMENT_TYPE_MISMATCH')
-  const loading = getDocument({
-    data: data.slice(),
-    disableFontFace: true,
-    stopAtErrors: true,
-    useSystemFonts: false,
-  })
-  let pdf
-  try {
-    pdf = await loading.promise
-    if (pdf.numPages > MAX_PDF_PAGES) throw new AttachmentError('PDF exceeds the page-count limit.', 'INVALID_DOCUMENT')
-    let output = ''
-    let truncated = false
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-      const page = await pdf.getPage(pageNumber)
-      const content = await page.getTextContent()
-      const line = content.items.flatMap(item => 'str' in item && typeof item.str === 'string' ? [item.str] : []).join(' ')
-      const fitted = fitUtf8(output === '' ? line : `${output}\n${line}`, maxBytes)
-      output = fitted.text
-      if (fitted.truncated) {
-        truncated = true
-        break
-      }
-    }
-    return { text: output, truncated }
-  } catch (error) {
-    if (error instanceof AttachmentError) throw error
-    throw new AttachmentError('PDF text extraction failed.', 'INVALID_DOCUMENT', { cause: error })
-  } finally {
-    void pdf
-    await loading.destroy().catch(() => {})
-  }
-}
-
 async function extractedText(
   data: Uint8Array,
   mediaType: DocumentMediaType,
   maxBytes: number,
 ): Promise<{ text: string; truncated: boolean }> {
-  if (mediaType === PDF) return extractPdf(data, maxBytes)
+  if (mediaType === PDF) return extractPdfIsolated(data, maxBytes)
   if (mediaType === DOCX || mediaType === XLSX) return extractOoxmlText(data, mediaType, maxBytes)
   return fitUtf8(decodeText(data, mediaType), maxBytes)
 }
 
-/** Validate, extract, sanitize, and content-address one document without writing it. */
+/**
+ * Validate, extract, sanitize, and content-address one document without writing it.
+ * @param input - proposed document bytes and metadata.
+ * @param limits - deployment document admission and extraction limits.
+ * @returns the validated source, bounded extraction, and immutable reference.
+ */
 export async function prepareDocument(
   input: SaveDocumentAttachment,
   limits: DocumentAttachmentLimits,

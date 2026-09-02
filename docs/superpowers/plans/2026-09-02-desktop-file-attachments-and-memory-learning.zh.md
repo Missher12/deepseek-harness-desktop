@@ -79,8 +79,15 @@
 - 新建：`packages/attachment/attachment-local/src/document.ts`
 - 新建：`packages/attachment/attachment-local/src/document-store.ts`
 - 新建：`packages/attachment/attachment-local/src/ooxml.ts`
+- 新建：`packages/attachment/attachment-local/src/pdf-extraction.ts`
+- 新建：`packages/attachment/attachment-local/src/pdf-isolate.ts`
+- 新建：`packages/attachment/attachment-local/src/pdf-protocol.ts`
+- 新建：`packages/attachment/attachment-local/src/pdf-worker.ts`
+- 新建：`packages/attachment/attachment-local/tsdown.config.ts`
 - 新建：`packages/attachment/attachment-local/tests/document.spec.ts`
 - 新建：`packages/attachment/attachment-local/tests/ooxml.spec.ts`
+- 新建：`packages/attachment/attachment-local/tests/pdf-isolate.spec.ts`
+- 新建：`packages/attachment/attachment-local/tests/pdf-isolate.built.e2e.ts`
 - 修改：`packages/attachment/attachment-local/src/index.ts`
 - 修改：`packages/attachment/attachment-local/src/invariant.ts`
 - 修改：`packages/attachment/attachment-local/README.md`
@@ -98,7 +105,7 @@ Fixture 覆盖 UTF-8 文本／代码、小型 PDF、DOCX 文本、XLSX shared st
 
 - [ ] **步骤 3：实现有界提取与存储**
 
-纯文本使用 fatal UTF-8 解码。PDF.js 在页数／输出限制内按顺序提取页面文本。OOXML 提取使用有界 fflate entry 与 fast-xml-parser，只读取必要的文档／workbook 部件，忽略宏与外部关系，绝不计算公式。Provider 在自有目录用 SHA-256、owner-only 临时写和原子 rename 保存源字节与提取字节。
+纯文本使用 fatal UTF-8 解码。PDF.js 在单独打包的 Worker 中按顺序提取页面文本，并受 30 秒墙钟期限、128MiB V8 old-generation 上限及页数／item／输出工作量约束。OOXML 提取使用有界 fflate entry 与 fast-xml-parser，只读取必要的文档／workbook 部件，忽略宏与外部关系，绝不计算公式。Provider 在自有目录用 SHA-256、owner-only 临时写和原子 rename 保存源字节与提取字节。
 
 - [ ] **步骤 4：验证 GREEN 与覆盖率**
 
@@ -113,7 +120,7 @@ Fixture 覆盖 UTF-8 文本／代码、小型 PDF、DOCX 文本、XLSX shared st
 - 修改：`packages/host/apiproxy/src/api/sessions.schema.ts`
 - 修改：`packages/host/apiproxy/src/api-proxy.ts`
 - 修改：`packages/host/apiproxy/tests/client-handler.spec.ts`
-- 修改：`packages/host/apiproxy/tests/api-proxy.spec.ts`
+- 新建：`packages/host/apiproxy/tests/api-proxy-renderer-attachments.spec.ts`
 - 修改：`packages/client/runtime/src/client/contract/session.ts`
 - 修改：`packages/client/connection/src/client/fixture.ts`
 
@@ -123,13 +130,13 @@ Fixture 覆盖 UTF-8 文本／代码、小型 PDF、DOCX 文本、XLSX shared st
 
 - [ ] **步骤 2：确认 RED**
 
-运行：`pnpm exec vitest run packages/host/apiproxy/tests/client-handler.spec.ts packages/host/apiproxy/tests/api-proxy.spec.ts`
+运行：`pnpm exec vitest run packages/host/apiproxy/tests/client-handler.spec.ts packages/host/apiproxy/tests/api-proxy-renderer-attachments.spec.ts`
 
 预期：文档 prompt part 无法通过当前 schema。
 
 - [ ] **步骤 3：实现文档 prompt 接纳**
 
-新增严格 `document` 请求 part，并让 `durablePromptContent` 在发布有序持久内容块前验证全部图片／文档输入。所有附件写入继续由现有 per-agent admission owner 串行化，避免 steering 与 queue prompt 交错一个批次。
+新增严格 `document` 请求 part，并让 `durablePromptContent` 在发布有序持久内容块前验证全部图片／文档输入。图片与文档在 300MiB HTTP 上限之下共享 296MiB canonical base64 载体上限；renderer 与 Host 都会在解码前执行检查，renderer 文件读取保持串行。所有附件写入继续由现有 per-agent admission owner 串行化，避免 steering 与 queue prompt 交错一个批次。
 
 - [ ] **步骤 4：验证 GREEN**
 
@@ -159,7 +166,7 @@ Fixture 覆盖 UTF-8 文本／代码、小型 PDF、DOCX 文本、XLSX shared st
 
 - [ ] **步骤 3：实现唯一共享的瞬时文档投影**
 
-`projectDocumentsForRequest()` 只读取一次每个唯一引用、校验后把每个出现位置替换成确定性带标签文本块。两个 adapter 都在现有图片转换前调用它。未知 merge-extensible 内容块保持现有行为。
+`projectDocumentsForRequest()` 只读取一次每个唯一引用、校验后把每个出现位置替换成确定性带标签文本块。最新消息优先获得文档预算，同一消息内的附件顺序保持稳定。精确解析出的 route context 与输出预留限制最终展开；无法容纳的文档变为确定性的仅元数据占位文本。两个 adapter 都在现有图片转换前调用该投影。未知 merge-extensible 内容块保持现有行为。
 
 - [ ] **步骤 4：验证 GREEN**
 
@@ -172,14 +179,14 @@ Fixture 覆盖 UTF-8 文本／代码、小型 PDF、DOCX 文本、XLSX shared st
 **文件：**
 - 修改：`packages/client/ui-conversation/src/client/input/contract.ts`
 - 修改：`packages/client/ui-conversation/src/client/input/machine.ts`
-- 修改：`packages/client/ui-conversation/src/client/sessions/conversation.ts`
+- 修改：`packages/client/runtime/src/client/sessions/conversation.ts`
 - 修改：`packages/client/ui-conversation/src/client/skeleton/InputBar.tsx`
 - 修改：`packages/client/ui-conversation/src/client/contract/slots.ts`
 - 修改：`packages/client/ui-attachment/src/client/ComposerAttachments.tsx`
 - 新建：`packages/client/ui-attachment/src/DocumentChip.tsx`
 - 新建：`packages/client/ui-attachment/src/DocumentChip.module.css`
 - 修改：`packages/client/ui-attachment/src/client/MessageImages.tsx`
-- 修改：`packages/client/ui-attachment/src/client/locales.ts`
+- 修改：`packages/client/ui-conversation/src/client/locales.ts`
 - 修改：两个包下相关 client 测试
 
 - [ ] **步骤 1：编写 UI 与状态 RED 测试**

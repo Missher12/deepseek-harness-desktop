@@ -101,6 +101,23 @@ describe('local attachment service', () => {
     }
   })
 
+  it('validates documents without persisting and commits successful batches in order', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-document-validation-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), { dshHome })
+      const first = { data: new TextEncoder().encode('first'), mediaType: 'text/plain' as const, name: 'first.txt' }
+      const second = { data: new TextEncoder().encode('second'), mediaType: 'text/plain' as const, name: 'second.txt' }
+      await expect(service.validateDocument(first)).resolves.toBeUndefined()
+      expect(existsSync(service.root)).toBe(false)
+      const refs = await service.saveDocuments([first, second])
+      expect(refs.map(ref => ref.name)).toEqual(['first.txt', 'second.txt'])
+      await expect(Promise.all(refs.map(ref => service.readDocument(ref))))
+        .resolves.toMatchObject([{ text: 'first' }, { text: 'second' }])
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
   it('prepares the full document batch before enforcing aggregate extracted text', async () => {
     const dshHome = await mkdtemp(join(tmpdir(), 'dsh-document-batch-'))
     try {
@@ -113,6 +130,23 @@ describe('local attachment service', () => {
         { data: new TextEncoder().encode('12345678'), mediaType: 'text/plain', name: 'one.txt' },
         { data: new TextEncoder().encode('abcdefgh'), mediaType: 'text/plain', name: 'two.txt' },
       ])).rejects.toMatchObject({ code: 'DOCUMENT_EXTRACTED_TEXT_TOO_LARGE' })
+      expect(existsSync(service.root)).toBe(false)
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
+  it('enforces the aggregate extracted-text cap for direct single-document saves', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-document-single-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), {
+        dshHome,
+        maxExtractedTextBytes: 20,
+        maxMessageExtractedTextBytes: 5,
+      })
+      await expect(service.saveDocument({
+        data: new TextEncoder().encode('12345678'), mediaType: 'text/plain', name: 'one.txt',
+      })).rejects.toMatchObject({ code: 'DOCUMENT_EXTRACTED_TEXT_TOO_LARGE' })
       expect(existsSync(service.root)).toBe(false)
     } finally {
       await rm(dshHome, { recursive: true, force: true })

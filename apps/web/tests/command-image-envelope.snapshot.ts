@@ -32,7 +32,7 @@ async function pasteImage(textarea: HTMLTextAreaElement, name: string): Promise<
     },
   })
   await waitFor(() => {
-    const rail = document.querySelector('[role="group"][aria-label="Pending images"]')
+    const rail = document.querySelector('[role="group"][aria-label="Pending attachments"]')
     if (rail === null) throw new Error('attachment rail missing')
     expect([...rail.querySelectorAll('img')].map(img => img.getAttribute('alt'))).toContain(name)
   }, { timeout: 5_000 })
@@ -60,7 +60,7 @@ it('refuses an image-carrying submit to a non-declaring command and keeps draft 
     .some(candidate => candidate.textContent?.includes('image attachments') ?? false)).toBe(false)
   // The whole envelope is retained: draft text and the rail thumbnail.
   expect(textarea.value).toBe('/echo hello')
-  const rail = document.querySelector('[role="group"][aria-label="Pending images"]')
+  const rail = document.querySelector('[role="group"][aria-label="Pending attachments"]')
   expect([...(rail?.querySelectorAll('img') ?? [])].map(img => img.getAttribute('alt'))).toEqual(['ref.png'])
 })
 
@@ -76,7 +76,7 @@ it('consumes images through a declaring command and clears the composer on succe
 
   await waitFor(() => {
     expect(textarea.value).toBe('')
-    expect(document.querySelector('[role="group"][aria-label="Pending images"]')).toBeNull()
+    expect(document.querySelector('[role="group"][aria-label="Pending attachments"]')).toBeNull()
   }, { timeout: 5_000 })
 })
 
@@ -90,7 +90,7 @@ it('submits a bare /plan with an image as an image-only plan request', async () 
 
   await waitFor(() => {
     expect(textarea.value).toBe('')
-    expect(document.querySelector('[role="group"][aria-label="Pending images"]')).toBeNull()
+    expect(document.querySelector('[role="group"][aria-label="Pending attachments"]')).toBeNull()
   }, { timeout: 5_000 })
   expect([...document.querySelectorAll('[role="alert"]')]
     .some(candidate => candidate.textContent?.includes('/plan') ?? false)).toBe(false)

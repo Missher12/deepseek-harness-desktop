@@ -748,11 +748,11 @@ async function exerciseComposerAddMenu(page: Page): Promise<void> {
   await expect.poll(() => input.inputValue()).toBe('@')
   await input.fill('')
 
-  // Image delegates into the existing attachment intake and preview rail.
+  // The attachment picker accepts the same closed image/document roster as drag-and-drop.
   await trigger.click()
   await menu.waitFor({ state: 'visible', timeout: 15_000 })
   const chooser = page.waitForEvent('filechooser')
-  await menu.getByRole('option', { name: /^(?:Add image|添加图片)/u }).click()
+  await menu.getByRole('option', { name: /^(?:Attach file|添加附件)/u }).click()
   const fileChooser = await chooser
   await fileChooser.setFiles({
     name: 'desktop-add-menu.png',
@@ -763,6 +763,25 @@ async function exerciseComposerAddMenu(page: Page): Promise<void> {
   await remove.waitFor({ state: 'visible', timeout: 15_000 })
   await remove.click()
   await expect.poll(() => remove.count()).toBe(0)
+
+  // A native document drop enters the same closed attachment rail without
+  // becoming an @ workspace reference or allocating an image object URL.
+  await page.evaluate(() => {
+    const transfer = new DataTransfer()
+    transfer.items.add(new File(['packaged document drop'], 'desktop-dropped-notes.md', {
+      type: 'text/markdown',
+    }))
+    const init = { bubbles: true, cancelable: true, dataTransfer: transfer }
+    document.dispatchEvent(new DragEvent('dragenter', init))
+    document.dispatchEvent(new DragEvent('dragover', init))
+    document.dispatchEvent(new DragEvent('drop', init))
+  })
+  const removeDocument = page.getByRole('button', {
+    name: /^(?:Remove attachment|移除附件).*desktop-dropped-notes\.md/iu,
+  })
+  await removeDocument.waitFor({ state: 'visible', timeout: 15_000 })
+  await removeDocument.click()
+  await expect.poll(() => removeDocument.count()).toBe(0)
 }
 
 async function exerciseWindowsClipboard(
@@ -1351,14 +1370,14 @@ async function exerciseMemorySettings(
   if (await settingsTrigger.getAttribute('aria-expanded') !== 'true') await settingsTrigger.click()
   const settingsDialog = page.getByRole('dialog').last()
   await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
-  await settingsDialog.getByRole('button', { name: /^(?:Project Memory|项目记忆)$/u }).click()
-  const heading = settingsDialog.getByRole('heading', { name: /^(?:Project Memory|项目记忆)$/u })
+  await settingsDialog.getByRole('button', { name: /^(?:Memory & Learning|记忆与学习)$/u }).click()
+  const heading = settingsDialog.getByRole('heading', { name: /^(?:Memory & Learning|记忆与学习)$/u })
   await heading.waitFor({ state: 'visible', timeout: 30_000 })
   const section = heading.locator('xpath=ancestor::section[1]')
   await expect.poll(() => section.innerText(), { timeout: 15_000 }).toSatisfy((text: string) => (
-    /(?:Built-in project memory|内置项目记忆)/u.test(text)
-    && /(?:Ready|已就绪)/u.test(text)
-    && /(?:Not connected \(optional\)|未连接（可选）)/u.test(text)
+    /(?:Project memory|项目记忆)/u.test(text)
+    && /(?:Learned workflows|学到的工作流程)/u.test(text)
+    && /(?:Enabled|已启用)/u.test(text)
   ))
   expect(await stateExists()).toBe(false)
   await page.screenshot({

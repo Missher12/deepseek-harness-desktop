@@ -210,4 +210,67 @@ describe('ImageGallery', () => {
     expect(view.getByRole('button', { name: 'history.png，点击查看原图' })).toBeTruthy()
     expect(view.container.querySelector('[data-align="end"]')).not.toBeNull()
   })
+
+  it('renders durable documents as read-only cards without loading source bytes', () => {
+    const loadImage = vi.fn()
+    const props = {
+      images: [],
+      attachments: [{
+        displayId: 'message-attachment:document-fixture',
+        kind: 'document',
+        attachment: {
+          mediaType: 'text/markdown',
+          name: 'launch-plan.md',
+          bytes: 12,
+          extractedBytes: 12,
+          truncated: false,
+        },
+      }],
+      loadImage,
+      align: 'end',
+      t: ((key: string) => key) as MessageImagesProps['t'],
+    } as unknown as MessageImagesProps
+    const view = render(<MessageImages {...props} />)
+    expect(view.getByText('launch-plan.md')).toBeTruthy()
+    expect(view.getByText('MD')).toBeTruthy()
+    expect(loadImage).not.toHaveBeenCalled()
+  })
+
+  it('renders an ordered mixed attachment group and nothing for an explicit empty group', () => {
+    const loadImage = vi.fn(() => new Promise<string>(() => {}))
+    const base = {
+      images: [{ attachment }],
+      loadImage,
+      align: 'start',
+      t: ((key: string) => key) as MessageImagesProps['t'],
+    }
+    const empty = render(<MessageImages {...base as MessageImagesProps} attachments={[]} />)
+    expect(empty.container.firstChild).toBeNull()
+    empty.unmount()
+
+    const view = render(
+      <MessageImages
+        {...base as MessageImagesProps}
+        attachments={[
+          { displayId: 'message-attachment:image-fixture' as never, kind: 'image', attachment },
+          {
+            displayId: 'message-attachment:document-fixture' as never,
+            kind: 'document',
+            attachment: {
+              mediaType: 'application/pdf',
+              name: 'reference.pdf',
+              bytes: 12,
+              extractedBytes: 12,
+              truncated: false,
+            },
+          },
+        ]}
+      />,
+    )
+    expect(view.container.querySelectorAll('[data-variant="tile"]')).toHaveLength(1)
+    expect(view.getByText('reference.pdf')).toBeTruthy()
+    const children = view.container.querySelector('[data-align="start"]')?.children
+    expect(children?.[0]?.getAttribute('data-variant')).toBe('tile')
+    expect(children?.[1]?.textContent).toContain('reference.pdf')
+  })
 })

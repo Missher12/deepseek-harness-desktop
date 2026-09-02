@@ -1,9 +1,10 @@
 import type { Context } from '@deepseek-ai/cordis'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type {
   ConversationMatch, ConversationNodeContext, ConversationNodeDefinition,
   RunningToolCall, ToolCallBlock, ToolResultNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-client-runtime/client'
+import { isAppendSurfaceEvent, rendererContent } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-tools/types'
 import type { ToolChatData } from '../contract/chat-nodes.ts'
 import { CHAT_SYNTHETIC_SEQ_OFFSETS, chatNode } from './common.ts'
@@ -53,6 +54,7 @@ function rootCall(match: ConversationMatch): RunningToolCall {
 function rootResult(match: ConversationMatch, previous?: RunningToolCall): ToolResultNode | undefined {
   if (match.event.type !== 'tool/result') return undefined
   const result = match.event.data.message.content[0]
+  const meta = (match.event.data as unknown as { meta?: unknown }).meta
   return {
     kind: 'tool-result',
     seq: match.event.seq,
@@ -60,10 +62,10 @@ function rootResult(match: ConversationMatch, previous?: RunningToolCall): ToolR
     callId: String(match.event.data.message.source.callId),
     call: previous === undefined ? null : { name: previous.name, argsRaw: previous.argsRaw },
     callTime: previous?.time ?? null,
-    content: result.content,
+    content: rendererContent(result.content),
     isError: result.isError === true,
     ...match.event.data.error === undefined ? {} : { error: match.event.data.error },
-    meta: match.event.data.meta,
+    meta,
     callView: previous?.callView ?? null,
     resultView: match.view?.for === 'result' ? match.view.view : null,
     subCalls: [],
@@ -76,7 +78,7 @@ interface DispatchData {
   readonly name: string
   readonly arguments: unknown
   readonly isError?: boolean
-  readonly content?: ToolResultNode['content']
+  readonly content?: readonly ContentBlock[]
 }
 
 function childCall(match: ConversationMatch, data: DispatchData): RunningToolCall {
@@ -100,7 +102,7 @@ function childResult(match: ConversationMatch, data: DispatchData, previous?: To
     callId: data.subCallId,
     call: { name: data.name, argsRaw: jsonArguments(data.arguments) },
     callTime: previous?.time ?? null,
-    content: data.content ?? [],
+    content: data.content === undefined ? [] : rendererContent(data.content),
     isError: data.isError === true,
     callView: null,
     resultView: null,

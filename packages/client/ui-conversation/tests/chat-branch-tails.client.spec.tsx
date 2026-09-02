@@ -10,8 +10,9 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type {
-  ChatConversationViewNode, ConversationNode,
+import {
+  createSnapshotStore,
+  type ChatConversationViewNode, type ConversationNode, type SessionListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ChatNodeViewProps } from '../src/client/contract/slots.ts'
 import {
@@ -44,15 +45,25 @@ afterEach(() => {
 const t: ChatNodeViewProps['t'] = makeTranslate(zh, commonZh)
 const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
 const RETRY_ID = 'retry-fixture' as Extract<ConversationNode, { kind: 'model-retry' }>['retryId']
+const useSessions = bindSnapshotSelector(createSnapshotStore<SessionListState>({
+  ids: [],
+  byId: {},
+  current: undefined,
+  phase: 'ready',
+  subagentsByParent: {},
+  jobsBySession: {},
+  currentAddress: undefined,
+}))
 
 interface MessageItemProps {
   readonly node: ConversationNode
   readonly t: ChatNodeViewProps['t']
   readonly referenceLabels?: readonly string[]
+  readonly attachmentRenderer?: AssistantMarkdownProps['renderMessageImages']
 }
 
 /** Legacy-node fixture adapter for the independently registered renderers. */
-function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) {
+function MessageItem({ node, t: translate, referenceLabels, attachmentRenderer = renderMessageImages }: MessageItemProps) {
   const kind = node.kind === 'assistant' ? 'assistant-step' : node.kind
   const viewNode: ChatConversationViewNode = {
     key: `fixture:${node.kind}:${node.seq}`,
@@ -68,7 +79,12 @@ function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) 
         ? { ...node, referenceLabels }
         : node,
   }
-  const props = { node: viewNode, t: translate, renderMessageImages } as ChatNodeViewProps
+  const props = {
+    node: viewNode,
+    t: translate,
+    renderMessageImages: attachmentRenderer,
+    useSessions,
+  } as ChatNodeViewProps
   switch (node.kind) {
     case 'user':
     case 'steering':
@@ -87,6 +103,85 @@ function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) 
 }
 
 describe('MessageItem arms', () => {
+  it('projects durable documents to bounded opaque UI metadata without content fingerprints', () => {
+    const calls: unknown[] = []
+    const attachmentRenderer: AssistantMarkdownProps['renderMessageImages'] = (owner) => {
+      calls.push(owner)
+      const documents = ((owner as unknown as {
+        attachments?: readonly { kind: string; attachment: { name?: string } }[]
+      }).attachments ?? []).filter(item => item.kind === 'document')
+      return <div data-testid="documents">{documents.map(document => document.attachment.name).join(',')}</div>
+    }
+    const sourceDigest = `sha256:${'f'.repeat(64)}`
+    const textDigest = `sha256:${'e'.repeat(64)}`
+    const imageDigest = `sha256:${'a'.repeat(64)}`
+    const documentDisplayId = 'document-view:host-minted-fixture'
+    const view = render(
+      <MessageItem
+        t={t}
+        attachmentRenderer={attachmentRenderer}
+        node={{
+          kind: 'user', seq: 1, time: 1_000, source: null,
+          content: [
+            {
+              type: 'image',
+              attachment: {
+                attachmentId: imageDigest,
+                mediaType: 'image/png',
+                bytes: 68,
+                width: 1,
+                height: 1,
+                name: 'preview.png',
+              },
+            },
+            {
+              type: 'document',
+              attachment: {
+                displayId: documentDisplayId,
+                attachmentId: sourceDigest,
+                extractedTextId: textDigest,
+                sourceSha256: sourceDigest,
+                textSha256: textDigest,
+                mediaType: 'text/markdown',
+                name: 'launch-plan.md',
+                bytes: 12,
+                extractedBytes: 12,
+                truncated: false,
+              },
+            },
+          ] as never,
+        }}
+      />,
+    )
+    expect(view.getByTestId('documents').textContent).toBe('launch-plan.md')
+    const owner = calls[0] as {
+      attachments: readonly {
+        displayId: string
+        kind: string
+        attachment: Readonly<Record<string, unknown>>
+      }[]
+    }
+    expect(owner.attachments).toHaveLength(2)
+    expect(owner.attachments[0]?.displayId).toMatch(/^message-attachment:/u)
+    expect(owner.attachments[0]?.kind).toBe('image')
+    expect(owner.attachments[0]?.attachment['attachmentId']).toBe(imageDigest)
+    expect(owner.attachments[1]).toEqual({
+      displayId: documentDisplayId,
+      kind: 'document',
+      attachment: {
+        mediaType: 'text/markdown',
+        name: 'launch-plan.md',
+        bytes: 12,
+        extractedBytes: 12,
+        truncated: false,
+      },
+    })
+    expect(owner.attachments[0]?.displayId).not.toBe(imageDigest)
+    expect(JSON.stringify(calls)).not.toContain(sourceDigest)
+    expect(JSON.stringify(calls)).not.toContain(textDigest)
+    expect(view.container.innerHTML).not.toContain('sha256:')
+  })
+
   it('renders an adjacent session mention as a chip even without trailing whitespace', () => {
     const view = render(
       <MessageItem
@@ -124,6 +219,53 @@ describe('MessageItem arms', () => {
     expect(view.container.querySelector('[data-ref-chip="session"]')?.textContent).toBe('Research notes')
     expect(view.getByText('what changed?')).toBeTruthy()
     expect(view.getByText('引用会话 · Research notes')).toBeTruthy()
+  })
+
+  it('prefers the longest confirmed session label and skips its overlapping shorter label', () => {
+    const view = render(
+      <MessageItem
+        t={t}
+        referenceLabels={['Research', 'Research notes']}
+        node={{
+          kind: 'user',
+          seq: 1,
+          time: 1_000,
+          content: [{ type: 'text', text: '@Research notes changed' }] as never,
+          source: null,
+        }}
+      />,
+    )
+    const sessions = view.container.querySelectorAll('[data-ref-chip="session"]')
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]?.textContent).toBe('Research notes')
+  })
+
+  it('keeps a punctuation-only at token as plain text', () => {
+    const view = render(
+      <MessageItem t={t} node={{
+        kind: 'user',
+        seq: 1,
+        time: 1_000,
+        content: [{ type: 'text', text: '@, keep this literal' }] as never,
+        source: null,
+      }} />,
+    )
+    expect(view.container.querySelector('[data-ref-chip]')).toBeNull()
+    expect(view.getByText('@, keep this literal')).toBeTruthy()
+  })
+
+  it('localizes the truncation footer for an oversized extra user block', () => {
+    const view = render(
+      <MessageItem t={t} node={{
+        kind: 'user',
+        seq: 1,
+        time: 1_000,
+        content: [{ type: 'future-block', payload: 'x'.repeat(21_000) }] as never,
+        source: null,
+      }} />,
+    )
+    fireEvent.click(view.getByRole('button', { name: /附加内容块/u }))
+    expect(view.getByText(/… 已截断，共 \d+ 字符$/u)).toBeTruthy()
   })
 
   it('renders no-extension paths as files and leaves sentence punctuation outside the reference', () => {
@@ -758,6 +900,27 @@ describe('MessageItem arms', () => {
     expect(view.container.querySelector('[data-context-text]')?.textContent).toBe('child report body')
   })
 
+  it('renders a session-messenger relay as an inline chat card', () => {
+    const view = render(
+      <MessageItem t={t} node={{
+        kind: 'context',
+        seq: 3,
+        content: [],
+        source: {
+          kind: 'plugin',
+          plugin: 'dsh-session-messenger',
+          form: 'relay',
+          senderSessionId: 'child-7',
+        },
+        provenance: { role: 'inject', label: 'dsh-session-messenger' },
+        form: 'relay',
+      } as never} />,
+    )
+    expect(view.container.querySelector('[data-session-relay-incoming]')).not.toBeNull()
+    expect(view.getByText('由 child-7 从另一个聊天发来')).toBeTruthy()
+    expect(view.queryByRole('button', { name: /上下文注入/u })).toBeNull()
+  })
+
   it('a recall reports how much of each source session survived the read', () => {
     // Recalled context is bounded on the way in, so hiding the omitted count
     // would overstate what the model received.
@@ -792,6 +955,17 @@ describe('MessageItem arms', () => {
       <MessageItem t={t} node={{ kind: 'unknown', seq: 4, type: 'surface/next', data: { x: 1 } } as never} />,
     )
     expect(unknownView.getByText(/未知 surface 事件：surface\/next/)).toBeTruthy()
+  })
+
+  it('localizes the truncation footer for an oversized unknown node', () => {
+    const view = render(
+      <MessageItem
+        t={t}
+        node={{ kind: 'unknown', seq: 4, type: 'surface/next', data: { text: 'x'.repeat(21_000) } } as never}
+      />,
+    )
+    fireEvent.click(view.getByRole('button', { name: /未知 surface 事件：surface\/next/u }))
+    expect(view.getByText(/… 已截断，共 \d+ 字符$/u)).toBeTruthy()
   })
 
   it('a compaction marker discloses its summary and never shows the framed checkpoint', () => {
