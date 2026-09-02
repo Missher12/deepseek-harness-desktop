@@ -9,6 +9,7 @@ import {
   descendantProcessTree,
   parseWindowsProcessRows,
   runPackagedDesktopSmoke,
+  type WindowsClipboardSmokeState,
 } from './packaged-smoke.ts'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
@@ -47,7 +48,10 @@ async function waitForWindowsProcessesStopped(processIds: readonly number[]): Pr
   }, { timeout: 30_000 }).toEqual([])
 }
 
-async function exerciseWindows150PercentSurface(executablePath: string): Promise<void> {
+async function exerciseWindows150PercentSurface(
+  executablePath: string,
+  seeded: WindowsClipboardSmokeState,
+): Promise<void> {
   const smokeRoot = process.env.DSH_DESKTOP_SMOKE_ROOT
   const harnessHome = process.env.DSH_DESKTOP_SMOKE_DSH_HOME
   const userData = process.env.DSH_DESKTOP_SMOKE_USER_DATA
@@ -85,6 +89,22 @@ async function exerciseWindows150PercentSurface(executablePath: string): Promise
     expect(await page.locator('[class*="sidebarCol"]').count()).toBe(1)
     expect(await page.locator('[class*="centerCol"]').count()).toBe(1)
     expect(await page.locator('[class*="detailsCol"]').count()).toBe(1)
+    const collapsedFrame = page.locator('[data-sidebar-collapsed="true"]')
+    if (await collapsedFrame.count() === 1) {
+      await page.getByRole('button', { name: /^(?:Open sidebar|打开侧边栏)$/u }).click()
+      await collapsedFrame.waitFor({ state: 'detached', timeout: 15_000 })
+    }
+    const ungrouped = page.getByText(/^(?:Ungrouped|未分组)$/u, { exact: true }).first()
+    await ungrouped.waitFor({ state: 'visible', timeout: 30_000 })
+    const ungroupedRow = ungrouped.locator('..').locator('..')
+    if (await ungroupedRow.getAttribute('aria-expanded') !== 'true') {
+      await ungrouped.click()
+      await expect.poll(() => ungroupedRow.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('true')
+    }
+    const activeRow = page.getByRole('treeitem').filter({ hasText: seeded.activeSessionTitle }).first()
+    await activeRow.waitFor({ state: 'visible', timeout: 15_000 })
+    await activeRow.click()
+    await expect.poll(() => activeRow.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
     await page.getByRole('navigation', { name: /^(?:Previous prompts|过往发言)$/u })
       .waitFor({ state: 'visible', timeout: 30_000 })
     await page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })
@@ -124,8 +144,8 @@ describe('packaged DeepSeek Harness desktop on Windows', () => {
   it.skipIf(process.platform !== 'win32' || !existsSync(executable))(
     'boots isolated data, renders the desktop shell, and closes its complete process tree',
     async () => {
-      await runPackagedDesktopSmoke(executable, 'win32')
-      await exerciseWindows150PercentSurface(executable)
+      const seeded = await runPackagedDesktopSmoke(executable, 'win32')
+      await exerciseWindows150PercentSurface(executable, seeded)
       const link = join(
         isolatedHarnessHome(),
         'profiles',

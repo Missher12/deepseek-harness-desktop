@@ -158,6 +158,25 @@ describe('packaged desktop process inspection', () => {
           delegationDepth: 1,
         })
         const active = await reader.sessionPersistence.load(SessionId(seeded.activeSessionId))
+        let currentTurn: number | undefined
+        const projectedHumanPrompts: Array<{ seq: number; turn: number }> = []
+        for (const event of active.events) {
+          if (event.type === 'turn/start') {
+            currentTurn = event.data.turn
+          } else if (event.type === 'turn/end') {
+            if (currentTurn === event.data.turn) currentTurn = undefined
+          } else if (
+            event.type === 'user/message'
+            && event.data.source.kind === 'user'
+            && currentTurn !== undefined
+          ) {
+            projectedHumanPrompts.push({ seq: event.seq, turn: currentTurn })
+          }
+        }
+        expect(projectedHumanPrompts).toEqual([
+          { seq: 1, turn: 1 },
+          { seq: 2, turn: 1 },
+        ])
         expect(active.events.slice(-5, -1).map(event => ({ type: event.type, data: event.data }))).toEqual([
           { type: 'permission/preset', data: { preset: 'workspace-write' } },
           { type: 'sandbox/mode', data: { mode: 'workspace-write' } },

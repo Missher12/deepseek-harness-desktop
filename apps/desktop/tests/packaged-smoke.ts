@@ -280,10 +280,11 @@ export function isUsageTokenTooltip(text: string): boolean {
 
 function completeTurn(createdAt: number): SessionEvent[] {
   return [
+    { type: 'turn/start', seq: 0, time: createdAt, data: { turn: 1 } },
     {
       type: 'user/message',
-      seq: 0,
-      time: createdAt,
+      seq: 1,
+      time: createdAt + 1,
       data: {
         id: `desktop-smoke-user-${createdAt}` as never,
         role: 'user',
@@ -293,9 +294,21 @@ function completeTurn(createdAt: number): SessionEvent[] {
       surfaceOp: 'append',
     },
     {
+      type: 'user/message',
+      seq: 2,
+      time: createdAt + 2,
+      data: {
+        id: `desktop-smoke-user-steering-${createdAt}` as never,
+        role: 'user',
+        source: { kind: 'user' },
+        content: [],
+      },
+      surfaceOp: 'append',
+    },
+    {
       type: 'request/header',
-      seq: 1,
-      time: createdAt + 1,
+      seq: 3,
+      time: createdAt + 3,
       data: {
         reason: 'initial',
         header: {
@@ -307,11 +320,10 @@ function completeTurn(createdAt: number): SessionEvent[] {
         },
       },
     },
-    { type: 'turn/start', seq: 2, time: createdAt + 2, data: { turn: 1 } },
     {
       type: 'assistant/message',
-      seq: 3,
-      time: createdAt + 3,
+      seq: 4,
+      time: createdAt + 4,
       data: {
         turn: 1,
         step: 0,
@@ -327,29 +339,29 @@ function completeTurn(createdAt: number): SessionEvent[] {
     },
     {
       type: 'turn/end',
-      seq: 4,
-      time: createdAt + 4,
+      seq: 5,
+      time: createdAt + 5,
       data: { turn: 1, reason: { kind: 'completed' } },
     },
     {
       type: 'permission/preset',
-      seq: 5,
-      time: createdAt + 5,
+      seq: 6,
+      time: createdAt + 6,
       data: { preset: 'workspace-write' },
     },
     {
       type: 'sandbox/mode',
-      seq: 6,
-      time: createdAt + 6,
+      seq: 7,
+      time: createdAt + 7,
       data: { mode: 'workspace-write' },
     },
     {
       type: 'approval/policy',
-      seq: 7,
-      time: createdAt + 7,
+      seq: 8,
+      time: createdAt + 8,
       data: { policy: 'ask' },
     },
-    { type: 'session/end-seed', seq: 8, time: createdAt + 8, data: {} },
+    { type: 'session/end-seed', seq: 9, time: createdAt + 9, data: {} },
   ]
 }
 
@@ -422,8 +434,8 @@ export async function seedWindowsClipboardSmokeState(
       if (header.id === ACTIVE_CLIPBOARD_SESSION_ID) {
         const relayEvent: SessionEvent<'user/message'> = {
           type: 'user/message',
-          seq: 9,
-          time: header.createdAt + 9,
+          seq: 10,
+          time: header.createdAt + 10,
           data: {
             id: 'desktop-smoke-relay-message-id' as SessionEvent<'user/message'>['data']['id'],
             role: 'user',
@@ -1620,12 +1632,12 @@ async function exerciseDesktopPreferences(
  * Launch and exercise one packaged desktop executable on its native platform.
  * @param executable - Packaged Electron executable.
  * @param platform - Platform whose process inspection and quit path to exercise.
- * @returns A promise that resolves after the app and its Harness tree are gone.
+ * @returns The isolated seeded Session ids after the app and its Harness tree are gone.
  */
 export async function runPackagedDesktopSmoke(
   executable: string,
   platform: NodeJS.Platform,
-): Promise<void> {
+): Promise<WindowsClipboardSmokeState> {
   const temporaryRoot = process.env.DSH_DESKTOP_SMOKE_ROOT
     ?? await mkdtemp(join(tmpdir(), 'dsh-desktop-smoke-'))
   const harnessHome = process.env.DSH_DESKTOP_SMOKE_DSH_HOME ?? join(temporaryRoot, 'dsh-home')
@@ -1771,4 +1783,5 @@ export async function runPackagedDesktopSmoke(
     if (!quitCompleted && nativeApp !== undefined) await quitAfterSmokeFailure(nativeApp)
     await providerTripwire.close()
   }
+  return clipboardSeed
 }
