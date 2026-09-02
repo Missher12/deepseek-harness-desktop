@@ -47,6 +47,46 @@ beforeEach(() => {
 const SID = 's1' as SessionId
 type RoutedChatNodeOwner = ChatNodeOwnerProps & { readonly node: ChatNode }
 
+const CONVERSATION_VIEWPORTS = {
+  wide: 1440,
+  narrowedByWorkbench: 720,
+} as const
+
+/** MatchMedia fixture shared by wide and utility-narrow conversation cases. */
+function installConversationViewport(initialWidth: number) {
+  let width = initialWidth
+  const subscriptions = new Set<{ query: string; listener: EventListenerOrEventListenerObject }>()
+  const matches = (query: string): boolean => {
+    const maximum = /\(max-width:\s*(\d+)px\)/u.exec(query)?.[1]
+    return maximum !== undefined && width <= Number(maximum)
+  }
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    get matches() { return matches(query) },
+    media: query,
+    onchange: null,
+    addEventListener: (type: string, listener: EventListenerOrEventListenerObject | null) => {
+      if (type === 'change' && listener !== null) subscriptions.add({ query, listener })
+    },
+    removeEventListener: (type: string, listener: EventListenerOrEventListenerObject | null) => {
+      if (type !== 'change') return
+      for (const subscription of subscriptions) {
+        if (subscription.query === query && subscription.listener === listener) subscriptions.delete(subscription)
+      }
+    },
+    dispatchEvent: () => true,
+  }) as unknown as MediaQueryList)
+  return {
+    setWidth(nextWidth: number): void {
+      width = nextWidth
+      for (const { query, listener } of subscriptions) {
+        const event = { matches: matches(query), media: query } as MediaQueryListEvent
+        if (typeof listener === 'function') listener(event)
+        else listener.handleEvent(event)
+      }
+    },
+  }
+}
+
 function snapshotBase(): ConversationSnapshot {
   return {
     sessionId: SID, promptAnchors: [], views: EMPTY_CONVERSATION_VIEWS, chat: chatSnapshotFixture(), nodes: [],
@@ -380,6 +420,7 @@ describe('Chat node rendering', () => {
 
 describe('ChatView', () => {
   it('renders a left prompt rail with styled previews and reveals an exact historical message', async () => {
+    installConversationViewport(CONVERSATION_VIEWPORTS.wide)
     const h = makeHarness({
       nodes: [user(1, '第一条'), user(7, '第二条')],
       promptAnchors: [
@@ -411,6 +452,7 @@ describe('ChatView', () => {
   })
 
   it('keeps the first and last prompts reachable when a long rail is bounded', () => {
+    installConversationViewport(CONVERSATION_VIEWPORTS.narrowedByWorkbench)
     const promptAnchors = Array.from({ length: 130 }, (_, index) => ({
       seq: index + 1,
       turn: index + 1,

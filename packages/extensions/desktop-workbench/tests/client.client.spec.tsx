@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HeaderButton, type HeaderButtonProps } from '../src/client/HeaderButton.tsx'
 import { WorkbenchPanel, type WorkbenchPanelProps } from '../src/client/WorkbenchPanel.tsx'
@@ -9,6 +10,7 @@ import { WorkbenchController, loadWidth } from '../src/client/preferences.ts'
 afterEach(cleanup)
 
 const sessionId = 'session-a' as never
+const WORKBENCH_MODE_FIXTURE: readonly UtilityMode[] = ['review', 'terminal', 'browser', 'files']
 const labels = {
   open: '打开工作台', close: '关闭工作台', terminal: '终端', browser: '浏览器',
   files: '文件', review: '审阅',
@@ -32,6 +34,16 @@ function setup() {
 }
 
 describe('desktop workbench shell', () => {
+  it('keeps one reusable fixture for every existing workbench mode', () => {
+    const { controller, layout } = setup()
+
+    for (const mode of WORKBENCH_MODE_FIXTURE) controller.open(sessionId, mode)
+
+    for (const [index, mode] of WORKBENCH_MODE_FIXTURE.entries()) {
+      expect(layout.openUtility).toHaveBeenNthCalledWith(index + 1, mode)
+    }
+  })
+
   it('defers persisted width until the first open after the layout root mounts', () => {
     const layout = new LayoutController()
     const controller = new WorkbenchController(layout, {

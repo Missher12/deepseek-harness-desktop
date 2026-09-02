@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import type { SessionId, WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -17,6 +17,19 @@ const t = makeTranslate(zh, commonZh) as never
 
 const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
+
+const ADJACENT_PROJECT_GROUPS: readonly GroupNode[] = [
+  {
+    key: 'project-zh', workspaceId: wid('project-zh'), cwd: '/projects/project-zh', createdAt: 1,
+    label: '一个用于验证中文项目名称不会与状态和操作按钮发生碰撞的超长项目名称',
+    sessionCount: 1, expanded: true, containsCurrent: true, sessions: [],
+  },
+  {
+    key: 'project-en', workspaceId: wid('project-en'), cwd: '/projects/project-en', createdAt: 2,
+    label: 'An intentionally long English project title that must keep its own action slot',
+    sessionCount: 1, expanded: true, containsCurrent: false, sessions: [],
+  },
+]
 
 /** Row fixture supplies the newly required action unless a test inspects it. */
 function SessionNodeItem(props: Omit<ComponentProps<typeof RawSessionNodeItem>, 'onCopyId'> & {
@@ -65,6 +78,21 @@ function fireDrag(row: HTMLElement, kind: 'dragOver' | 'drop', clientY: number):
 }
 
 describe('workspace browser rows', () => {
+  it('keeps adjacent bilingual project fixtures as distinct rows with independent action slots', () => {
+    render(<div role="tree">
+      {ADJACENT_PROJECT_GROUPS.map(group => (
+        <ProjectRowItem key={group.key} group={group} onToggle={vi.fn()} onCreate={vi.fn()} t={t} />
+      ))}
+    </div>)
+
+    const rows = screen.getAllByRole('treeitem')
+    expect(rows).toHaveLength(2)
+    for (const [index, group] of ADJACENT_PROJECT_GROUPS.entries()) {
+      expect(within(rows[index]!).getByText(group.label)).toBeTruthy()
+      expect(within(rows[index]!).getByRole('button', { name: `在“${group.label}”中新建会话` })).toBeTruthy()
+    }
+  })
+
   it('omits only an empty leading status slot in the hierarchy-free flat list', () => {
     const idle: SessionNode = {
       id: sid('flat'), title: 'Flat Session', blank: false, running: false,
