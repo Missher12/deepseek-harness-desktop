@@ -69,6 +69,26 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- Desktop 0.5.2 coordination starts from the released `desktop-v0.5.1`
+  commit `b8595d75a9f94fb332689e28aef70cf5b7d72d4f`. The approved scope has two
+  independently testable workstreams under one release: (1) restore the
+  v0.4.11 PromptRail against the current `PromptAnchor` data flow, add
+  ChatGPT-like spacing and selected treatment to the existing Project/Session
+  sidebar without replacing its tree semantics, arrange Review/Terminal/
+  Browser/Files as vertical navigation inside the existing fixed resizable
+  Workbench pane, and let an explicit risk-confirmed action switch only the
+  current Session to the existing `danger-full-access` preset; (2) measure and
+  reduce the real `fallback-ready` to `url-reported` Harness boot work, prune
+  only inventoried target-inaccessible package bytes while retaining physical
+  Profile fallback roots, and ship dedicated small-size Windows taskbar/tray/
+  installer icon assets without changing the Mac icon. The Mac execution task
+  owns shared UI/permission implementation; the Windows execution task owns
+  shared startup/footprint implementation and Windows-native assets. Version
+  changes, integration, the final SHA, tags, and public release remain owned by
+  the commander. The binding design and execution contracts are
+  `docs/superpowers/specs/2026-09-02-desktop-0.5.2-design.zh.md`,
+  `docs/superpowers/plans/2026-09-02-desktop-0.5.2-interface.zh.md`, and
+  `docs/superpowers/plans/2026-09-02-desktop-0.5.2-runtime-packaging.zh.md`.
 - Version 0.5.1 is the active hotfix candidate for existing 0.4.10 and 0.4.11 Desktop homes. `healProfilesModuleFallback` recognizes only byte-exact packaged module proxies emitted by those releases, atomically retains them under `$DSH_HOME/recovery/legacy-module-fallback`, and creates the current installation links before the Harness child starts. Unknown or modified real directories remain byte-for-byte and fail loud. Unit and packaged smokes cover the upgrade state; final Intel macOS and Windows Setup evidence must originate from one exact final commit.
 - The next Desktop branch adds real local document attachments to the composer:
   users can drag or choose PDF, DOCX, XLSX, UTF-8 text, Markdown, JSON, CSV,
