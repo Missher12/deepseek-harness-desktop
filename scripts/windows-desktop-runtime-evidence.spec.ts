@@ -34,7 +34,6 @@ describe('Windows Desktop runtime evidence wiring', () => {
       new URL('../.github/workflows/windows-desktop.yml', import.meta.url),
       'utf8',
     )
-
     expect(workflow).toContain('desktop-startup-summary.json')
     expect(workflow).toContain('desktop-package-installed.json')
     expect(workflow).toContain('desktop-package-staged.json')
@@ -43,6 +42,69 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(workflow).toContain('runtime-evidence-${{ steps.source.outputs.sha }}')
     expect(workflow).not.toContain('lifecycle.log\n')
     expect(workflow).not.toContain('cpuprofile')
+  })
+
+  it('records installed bytes, the inventory digest, and exact shortcut icon ownership', () => {
+    const smoke = readFileSync(
+      new URL('./windows-desktop-setup-smoke.ps1', import.meta.url),
+      'utf8',
+    )
+    const workflow = readFileSync(
+      new URL('../.github/workflows/windows-desktop.yml', import.meta.url),
+      'utf8',
+    )
+
+    expect(smoke).toContain('[string]$InstallationEvidencePath')
+    expect(smoke).toContain('function Get-InstalledShortcutEvidence')
+    expect(smoke).toContain('WScript.Shell')
+    expect(smoke).toContain('$shortcut.TargetPath')
+    expect(smoke).toContain('$shortcut.IconLocation')
+    expect(smoke).toContain('Shortcut icon must resolve to the installed executable')
+    expect(smoke).toContain('inventorySha256')
+    expect(smoke).toContain('installedBytes')
+    expect(smoke).toContain('categories = $inventoryDocument.categories')
+    expect(workflow).toContain('desktop-windows-install-evidence.json')
+  })
+
+  it('runs installed visual evidence at 100 and 150 percent without leaking raw logs', () => {
+    const smoke = readFileSync(
+      new URL('./windows-desktop-setup-smoke.ps1', import.meta.url),
+      'utf8',
+    )
+    const visual = readFileSync(
+      new URL('./windows-desktop-native-visual-smoke.ps1', import.meta.url),
+      'utf8',
+    )
+    const workflow = readFileSync(
+      new URL('../.github/workflows/windows-desktop.yml', import.meta.url),
+      'utf8',
+    )
+    const packaged = readFileSync(
+      new URL('../apps/desktop/tests/windows-packaged-smoke.spec.ts', import.meta.url),
+      'utf8',
+    )
+
+    expect(smoke).toContain('foreach ($dpiPercent in @(100, 150))')
+    expect(smoke).toContain('./scripts/windows-desktop-native-visual-smoke.ps1')
+    expect(visual).toContain('--force-device-scale-factor=')
+    expect(visual).toContain('function Save-NativeScreenCapture')
+    expect(visual).toContain('function Open-DeepSeekHarnessTrayMenu')
+    expect(visual).toContain('Show DeepSeek Harness')
+    expect(visual).toContain('Quit DeepSeek Harness')
+    expect(visual).toContain('Get-DescendantProcessIds')
+    expect(visual).toContain('Wait-ProcessIdsStopped')
+    expect(visual).toContain('desktop-shortcut')
+    expect(visual).toContain('start-menu-shortcut')
+    expect(visual).toContain('taskbar-running')
+    expect(visual).toContain('tray-menu')
+    expect(packaged).toContain("'--force-device-scale-factor=1.5'")
+    expect(packaged).toContain('window.devicePixelRatio')
+    expect(packaged).toContain('Previous prompts|过往发言')
+    expect(packaged).toContain('Open workbench|打开工作台')
+    expect(packaged).toContain('waitForWindowsProcessesStopped')
+    expect(workflow).toContain('Windows-native-visual-evidence-${{ steps.source.outputs.sha }}')
+    expect(workflow).not.toContain('fixed-milestones/')
+    expect(workflow).not.toContain('lifecycle.log')
   })
 
   it('benchmarks the pinned 0.5.1 parent Setup on the same runner before the candidate', () => {

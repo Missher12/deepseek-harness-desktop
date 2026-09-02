@@ -140,6 +140,7 @@ jobs:
             -SetupPath $baselinePath `
             -StartupSummaryPath apps/desktop/release/desktop-startup-baseline-0.5.1.json `
             -PackageInventoryPath apps/desktop/release/desktop-package-installed-baseline-0.5.1.json `
+            -InstallationEvidencePath apps/desktop/release/desktop-windows-install-evidence-baseline-0.5.1.json `
             -RuntimeEvidenceOnly
           Remove-Item -LiteralPath $baselinePath -Force
 
@@ -148,6 +149,7 @@ jobs:
         run: >-
           ./scripts/windows-desktop-installer-ui-smoke.ps1
           -SetupPath apps/desktop/release/${{ steps.desktop.outputs.artifact }}
+          -EvidenceRoot apps/desktop/release/windows-installer-ui-evidence
 
       - name: Install and exercise the packaged application lifecycle
         shell: pwsh
@@ -156,6 +158,8 @@ jobs:
           -SetupPath apps/desktop/release/${{ steps.desktop.outputs.artifact }}
           -StartupSummaryPath apps/desktop/release/desktop-startup-summary.json
           -PackageInventoryPath apps/desktop/release/desktop-package-installed.json
+          -InstallationEvidencePath apps/desktop/release/desktop-windows-install-evidence.json
+          -VisualEvidenceRoot apps/desktop/release/windows-native-visual-evidence
           -PackagePolicy windows-x64
           -PackageManifestPath apps/desktop/package.json
 
@@ -166,10 +170,12 @@ jobs:
           path: |
             s/apps/desktop/release/desktop-startup-summary.json
             s/apps/desktop/release/desktop-package-installed.json
+            s/apps/desktop/release/desktop-windows-install-evidence.json
             s/apps/desktop/release/desktop-package-staged.json
             s/apps/desktop/release/desktop-package-setup.json
             s/apps/desktop/release/desktop-startup-baseline-0.5.1.json
             s/apps/desktop/release/desktop-package-installed-baseline-0.5.1.json
+            s/apps/desktop/release/desktop-windows-install-evidence-baseline-0.5.1.json
             s/apps/desktop/release/desktop-package-setup-baseline-0.5.1.json
           if-no-files-found: error
           retention-days: 14
@@ -182,6 +188,29 @@ jobs:
           path: |
             s/apps/desktop/release/desktop-smoke-titlebar-win32.json
             s/apps/desktop/release/desktop-smoke-titlebar-win32.png
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Preserve bounded native visual evidence
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Windows-native-visual-evidence-${{ steps.source.outputs.sha }}
+          path: |
+            s/apps/desktop/release/windows-installer-ui-evidence/*.png
+            s/apps/desktop/release/windows-native-visual-evidence/*.png
+            s/apps/desktop/release/windows-native-visual-evidence/*.json
+            s/apps/desktop/release/desktop-smoke-win32.png
+            s/apps/desktop/release/desktop-smoke-messenger-win32.png
+            s/apps/desktop/release/desktop-smoke-workbench-win32.png
+            s/apps/desktop/release/desktop-smoke-reasoning-win32.png
+            s/apps/desktop/release/desktop-smoke-usage-win32.png
+            s/apps/desktop/release/desktop-smoke-personalization-win32.png
+            s/apps/desktop/release/desktop-smoke-memory-win32.png
+            s/apps/desktop/release/desktop-smoke-market-win32.png
+            s/apps/desktop/release/desktop-smoke-system-update-win32.png
+            s/apps/desktop/release/desktop-smoke-dpi-150-win32.png
+            s/apps/desktop/release/desktop-smoke-dpi-150-win32.json
           if-no-files-found: ignore
           retention-days: 14
 

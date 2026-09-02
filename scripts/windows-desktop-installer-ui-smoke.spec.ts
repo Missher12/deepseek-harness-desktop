@@ -34,6 +34,13 @@ describe('Windows Desktop assisted installer smoke', () => {
     expect(source).toContain('$requestedInstallRoot = $temporaryRoot')
     expect(source).toContain('Add("/D=$requestedInstallRoot")')
     expect(source).toContain("Join-Path $temporaryRoot 'DeepSeek Harness'")
+    expect(source).toContain('[string]$EvidenceRoot')
+    expect(source).toContain('function Save-RedactedInstallerScreenshot')
+    expect(source).toContain('[System.Windows.Automation.ControlType]::Edit')
+    expect(source).toContain('installer-welcome.png')
+    expect(source).toContain('installer-destination.png')
+    expect(source).toContain('installer-progress.png')
+    expect(source).toContain('installer-finish.png')
   })
 
   it('is wired into native Windows CI before the packaged lifecycle smoke', () => {
@@ -42,9 +49,10 @@ describe('Windows Desktop assisted installer smoke', () => {
       'utf8',
     )
     const visible = workflow.indexOf('./scripts/windows-desktop-installer-ui-smoke.ps1')
-    const lifecycle = workflow.indexOf('./scripts/windows-desktop-setup-smoke.ps1')
+    const lifecycle = workflow.lastIndexOf('./scripts/windows-desktop-setup-smoke.ps1')
 
     expect(visible).toBeGreaterThan(-1)
     expect(lifecycle).toBeGreaterThan(visible)
+    expect(workflow).toContain('-EvidenceRoot apps/desktop/release/windows-installer-ui-evidence')
   })
 })

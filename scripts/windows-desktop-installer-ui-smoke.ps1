@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory = $true)]
-  [string]$SetupPath
+  [string]$SetupPath,
+  [string]$EvidenceRoot = 'apps/desktop/release/windows-installer-ui-evidence'
 )
 
 Set-StrictMode -Version Latest
@@ -8,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -AssemblyName System.Drawing
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -154,6 +156,65 @@ function Find-Control {
   return $null
 }
 
+function Save-RedactedInstallerScreenshot {
+  param(
+    [Parameter(Mandatory = $true)]$Window,
+    [Parameter(Mandatory = $true)][string]$Path
+  )
+
+  $bounds = $Window.Current.BoundingRectangle
+  $width = [int][Math]::Ceiling($bounds.Width)
+  $height = [int][Math]::Ceiling($bounds.Height)
+  if ($width -le 0 -or $height -le 0) {
+    throw 'Installer window has no visible bounds for its screenshot.'
+  }
+  $resolved = [System.IO.Path]::GetFullPath($Path)
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $resolved) | Out-Null
+  $bitmap = [System.Drawing.Bitmap]::new($width, $height)
+  $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+  $brush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(255, 224, 228, 235))
+  try {
+    $graphics.CopyFromScreen(
+      [int][Math]::Floor($bounds.Left),
+      [int][Math]::Floor($bounds.Top),
+      0,
+      0,
+      [System.Drawing.Size]::new($width, $height)
+    )
+    $sensitiveTypes = @(
+      [System.Windows.Automation.ControlType]::Edit,
+      [System.Windows.Automation.ControlType]::List
+    )
+    foreach ($control in $Window.FindAll(
+      [System.Windows.Automation.TreeScope]::Descendants,
+      [System.Windows.Automation.Condition]::TrueCondition
+    )) {
+      try {
+        if ($sensitiveTypes -notcontains $control.Current.ControlType) {
+          continue
+        }
+        $redact = $control.Current.BoundingRectangle
+        $left = [int][Math]::Max(0, [Math]::Floor($redact.Left - $bounds.Left))
+        $top = [int][Math]::Max(0, [Math]::Floor($redact.Top - $bounds.Top))
+        $right = [int][Math]::Min($width, [Math]::Ceiling($redact.Right - $bounds.Left))
+        $bottom = [int][Math]::Min($height, [Math]::Ceiling($redact.Bottom - $bounds.Top))
+        if ($right -gt $left -and $bottom -gt $top) {
+          $graphics.FillRectangle($brush, $left, $top, $right - $left, $bottom - $top)
+        }
+      }
+      catch {
+        # A transient installer control can disappear after the screen pixels were captured.
+      }
+    }
+    $bitmap.Save($resolved, [System.Drawing.Imaging.ImageFormat]::Png)
+  }
+  finally {
+    $brush.Dispose()
+    $graphics.Dispose()
+    $bitmap.Dispose()
+  }
+}
+
 function Invoke-InstallerButton {
   param(
     [Parameter(Mandatory = $true)]$Window,
@@ -284,6 +345,7 @@ function Wait-PathRemoved {
 }
 
 $resolvedSetup = (Resolve-Path -LiteralPath $SetupPath).Path
+$resolvedEvidenceRoot = [System.IO.Path]::GetFullPath($EvidenceRoot)
 $smokeId = [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $temporaryRoot = Join-Path $env:RUNNER_TEMP "dsh-installer-ui-$smokeId"
 $requestedInstallRoot = $temporaryRoot
@@ -299,7 +361,7 @@ if ((Test-Path -LiteralPath $desktopShortcut) -or (Test-Path -LiteralPath $start
 }
 
 try {
-  New-Item -ItemType Directory -Force -Path $temporaryRoot | Out-Null
+  New-Item -ItemType Directory -Force -Path $temporaryRoot, $resolvedEvidenceRoot | Out-Null
 
   $startInfo = [System.Diagnostics.ProcessStartInfo]::new($resolvedSetup)
   $startInfo.UseShellExecute = $false
@@ -315,6 +377,8 @@ try {
   $script:InstallerProcessId = $setup.Id
 
   $welcome = Wait-InstallerPage -Pattern 'Welcome to DeepSeek Harness Setup'
+  Save-RedactedInstallerScreenshot -Window $welcome `
+    -Path (Join-Path $resolvedEvidenceRoot 'installer-welcome.png')
   Invoke-InstallerButton -Window $welcome -NamePattern '^Next\s*>$'
 
   $destination = Wait-InstallerPage -Pattern 'Choose Install Location'
@@ -329,10 +393,13 @@ try {
   if ([IO.Path]::GetFullPath($directoryValue).TrimEnd('\') -ne [IO.Path]::GetFullPath($requestedInstallRoot).TrimEnd('\')) {
     throw "Destination page did not show the requested path. Expected '$requestedInstallRoot', found '$directoryValue'."
   }
+  Save-RedactedInstallerScreenshot -Window $destination `
+    -Path (Join-Path $resolvedEvidenceRoot 'installer-destination.png')
   Invoke-InstallerButton -Window $destination -NamePattern '^Install$'
 
   $deadline = [DateTime]::UtcNow.AddMinutes(3)
   $progressObserved = $false
+  $progressScreenshotCaptured = $false
   $detailsObserved = $false
   $finish = $null
   while ([DateTime]::UtcNow -lt $deadline) {
@@ -343,6 +410,11 @@ try {
         -ControlType ([System.Windows.Automation.ControlType]::ProgressBar)
       if ($null -ne $progress -or $text -match 'Installing, please wait') {
         $progressObserved = $true
+        if (-not $progressScreenshotCaptured) {
+          Save-RedactedInstallerScreenshot -Window $window `
+            -Path (Join-Path $resolvedEvidenceRoot 'installer-progress.png')
+          $progressScreenshotCaptured = $true
+        }
       }
       $details = Find-Control -Element $window `
         -ControlType ([System.Windows.Automation.ControlType]::List)
@@ -369,6 +441,11 @@ try {
   if ($null -eq $finish) {
     throw 'Timed out waiting for the visible Setup finish page.'
   }
+  if (-not $progressScreenshotCaptured) {
+    throw 'The assisted installer did not preserve a progress screenshot.'
+  }
+  Save-RedactedInstallerScreenshot -Window $finish `
+    -Path (Join-Path $resolvedEvidenceRoot 'installer-finish.png')
 
   # Reaching Finish proves the install transaction wrote its uninstaller and
   # shortcuts. From here every failure must use the exact isolated uninstaller

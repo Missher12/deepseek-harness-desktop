@@ -131,6 +131,21 @@ describe('CI workflow', () => {
     expect(JSON.stringify(windows)).not.toContain('DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ github.sha }}')
   })
 
+  it('uploads only bounded Windows native visual evidence from the exact source revision', () => {
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+    const windows = workflowJob(workflow, 'build-install-smoke')
+    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
+    const serialized = JSON.stringify(windows)
+
+    expect(serialized).toContain('Windows-native-visual-evidence-${{ steps.source.outputs.sha }}')
+    expect(serialized).toContain('windows-installer-ui-evidence')
+    expect(serialized).toContain('windows-native-visual-evidence')
+    expect(serialized).toContain('desktop-windows-install-evidence.json')
+    expect(serialized).not.toContain('lifecycle.log')
+    expect(serialized).not.toContain('fixed-milestones')
+    expect(serialized).not.toContain('cpuprofile')
+  })
+
   it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')
     const masterWorkflow = loadWorkflow('.github/workflows/ci-master.yml')

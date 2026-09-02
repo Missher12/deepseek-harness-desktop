@@ -3,6 +3,8 @@ param(
   [string]$SetupPath,
   [string]$StartupSummaryPath = 'apps/desktop/release/desktop-startup-summary.json',
   [string]$PackageInventoryPath = 'apps/desktop/release/desktop-package-installed.json',
+  [string]$InstallationEvidencePath = 'apps/desktop/release/desktop-windows-install-evidence.json',
+  [string]$VisualEvidenceRoot = 'apps/desktop/release/windows-native-visual-evidence',
   [ValidateSet('windows-x64')]
   [string]$PackagePolicy,
   [string]$PackageManifestPath,
@@ -155,6 +157,96 @@ function Assert-ManagedPackageRootsPhysical {
       throw "Managed package root must not be a reparse point in app.asar.unpacked: $name"
     }
   }
+}
+
+function Get-InstalledShortcutEvidence {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$ShortcutPath,
+    [Parameter(Mandatory = $true)]
+    [string]$ExecutablePath,
+    [Parameter(Mandatory = $true)]
+    [string]$Location
+  )
+
+  $shell = New-Object -ComObject WScript.Shell
+  $shortcut = $null
+  try {
+    $shortcut = $shell.CreateShortcut($ShortcutPath)
+    $resolvedExecutable = [System.IO.Path]::GetFullPath($ExecutablePath)
+    $resolvedTarget = [System.IO.Path]::GetFullPath([string]$shortcut.TargetPath)
+    if ($resolvedTarget -ne $resolvedExecutable) {
+      throw "Shortcut target mismatch at ${Location}: expected the installed executable."
+    }
+
+    $iconLocation = [string]$shortcut.IconLocation
+    $iconMatch = [regex]::Match($iconLocation, '^(?<path>.*),(?<index>-?\d+)$')
+    if (-not $iconMatch.Success) {
+      throw "Shortcut icon location is malformed at ${Location}."
+    }
+    $iconPath = $iconMatch.Groups['path'].Value.Trim().Trim('"')
+    $resolvedIcon = [System.IO.Path]::GetFullPath($iconPath)
+    if ($resolvedIcon -ne $resolvedExecutable) {
+      throw "Shortcut icon must resolve to the installed executable at ${Location}."
+    }
+
+    return [ordered]@{
+      location = $Location
+      target = [System.IO.Path]::GetFileName($resolvedTarget)
+      icon = [System.IO.Path]::GetFileName($resolvedIcon)
+      iconIndex = [int]$iconMatch.Groups['index'].Value
+    }
+  }
+  finally {
+    if ($null -ne $shortcut) {
+      [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut)
+    }
+    [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+  }
+}
+
+function Write-InstalledPackageEvidence {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$InstallRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$InventoryPath,
+    [Parameter(Mandatory = $true)]
+    [string]$OutputPath,
+    [Parameter(Mandatory = $true)]
+    [object[]]$Shortcuts
+  )
+
+  $resolvedInventory = [System.IO.Path]::GetFullPath($InventoryPath)
+  $inventoryDocument = Get-Content -LiteralPath $resolvedInventory -Raw | ConvertFrom-Json
+  $physicalBytes = [long]0
+  $physicalFiles = 0
+  foreach ($file in @(Get-ChildItem -LiteralPath $InstallRoot -Recurse -Force -File)) {
+    $physicalBytes += [long]$file.Length
+    $physicalFiles += 1
+  }
+  if ($physicalBytes -ne [long]$inventoryDocument.totalBytes) {
+    throw "Installed tree byte mismatch: filesystem=$physicalBytes inventory=$($inventoryDocument.totalBytes)."
+  }
+  if ($physicalFiles -ne @($inventoryDocument.files).Count) {
+    throw "Installed tree file-count mismatch: filesystem=$physicalFiles inventory=$(@($inventoryDocument.files).Count)."
+  }
+
+  $evidence = [ordered]@{
+    schemaVersion = 1
+    installedBytes = $physicalBytes
+    installedFiles = $physicalFiles
+    inventorySha256 = (Get-FileHash -LiteralPath $resolvedInventory -Algorithm SHA256).Hash.ToLowerInvariant()
+    categories = $inventoryDocument.categories
+    shortcuts = $Shortcuts
+  }
+  $resolvedOutput = [System.IO.Path]::GetFullPath($OutputPath)
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $resolvedOutput) | Out-Null
+  [System.IO.File]::WriteAllText(
+    $resolvedOutput,
+    (($evidence | ConvertTo-Json -Depth 10) + "`n"),
+    [System.Text.UTF8Encoding]::new($false)
+  )
 }
 
 function Invoke-DesktopStartupSample {
@@ -384,6 +476,16 @@ try {
     -PackagePolicy $PackagePolicy `
     -PackageManifestPath $PackageManifestPath
 
+  $shortcutEvidence = @(
+    Get-InstalledShortcutEvidence -ShortcutPath $desktopShortcut -ExecutablePath $executable -Location 'desktop'
+    Get-InstalledShortcutEvidence -ShortcutPath $startMenuShortcut -ExecutablePath $executable -Location 'start-menu'
+  )
+  Write-InstalledPackageEvidence `
+    -InstallRoot $installRoot `
+    -InventoryPath $PackageInventoryPath `
+    -OutputPath $InstallationEvidencePath `
+    -Shortcuts $shortcutEvidence
+
   if (-not $RuntimeEvidenceOnly) {
     $env:DSH_WINDOWS_DESKTOP_EXECUTABLE = $executable
     $env:DSH_DESKTOP_SMOKE_ROOT = $temporaryRoot
@@ -401,6 +503,22 @@ try {
     $legacyRecoverySnapshot = @(Get-FileTreeSnapshot -Directory $legacyRecoveryRoot)
     if ($legacyRecoverySnapshot.Count -eq 0) {
       throw 'Packaged smoke did not preserve the recovered legacy module fallback files.'
+    }
+
+    $powerShell = (Get-Process -Id $PID).Path
+    $visualSmoke = './scripts/windows-desktop-native-visual-smoke.ps1'
+    foreach ($dpiPercent in @(100, 150)) {
+      & $powerShell -NoLogo -NoProfile -File $visualSmoke `
+        -ExecutablePath $executable `
+        -HarnessHome (Join-Path $temporaryRoot "visual-dsh-home-$dpiPercent") `
+        -UserData (Join-Path $temporaryRoot "visual-electron-data-$dpiPercent") `
+        -DesktopShortcut $desktopShortcut `
+        -StartMenuShortcut $startMenuShortcut `
+        -EvidenceRoot $VisualEvidenceRoot `
+        -DpiPercent $dpiPercent
+      if ($LASTEXITCODE -ne 0) {
+        throw "Native Windows $dpiPercent percent visual smoke failed with exit code $LASTEXITCODE."
+      }
     }
   }
 
