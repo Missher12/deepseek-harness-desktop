@@ -10,6 +10,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   composeEntries,
@@ -26,6 +27,16 @@ import {
 } from '../src/index.ts'
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'dsh-profile-'))
+
+const legacyPackagedTarget = (app = 'DeepSeek Harness.app'): string => pathToFileURL(join(
+  tmpdir(),
+  app,
+  'Contents',
+  'Resources',
+  'app.asar',
+  'lib',
+  'main.js',
+)).href
 
 /** Stage a fake installed app: package.json with deps and a node_modules holding bundles. */
 function stageInstallation(bundles: Record<string, { patch?: string; deps?: Record<string, string> }>): string {
@@ -350,7 +361,7 @@ describe('healProfilesModuleFallback', () => {
     const home = tmp()
     const link = join(home, 'profiles', 'node_modules', 'dsh-app')
     const targets = {
-      '.': 'file:///Applications/DeepSeek%20Harness.app/Contents/Resources/app.asar/lib/main.js',
+      '.': legacyPackagedTarget(),
     }
     writeLegacyModuleProxy(link, 'dsh-app', targets)
     const originalManifest = readFileSync(join(link, 'package.json'), 'utf8')
@@ -386,8 +397,7 @@ describe('healProfilesModuleFallback', () => {
     ['a manifest target mismatch', (link: string) => {
       rewriteLegacyManifest(link, (manifest) => {
         const dsh = manifest.dsh as { moduleFallback: { targets: Record<string, string> } }
-        dsh.moduleFallback.targets['.']
-          = 'file:///Applications/Another.app/Contents/Resources/app.asar/lib/main.js'
+        dsh.moduleFallback.targets['.'] = legacyPackagedTarget('Another.app')
       })
     }],
     ['a non-packaged target', (link: string) => {
@@ -398,7 +408,7 @@ describe('healProfilesModuleFallback', () => {
     }],
     ['an encoded path separator', (link: string) => {
       writeLegacyModuleProxy(link, 'dsh-app', {
-        '.': 'file:///Applications/DeepSeek%20Harness.app/Contents/Resources/app.asar%2Flib/main.js',
+        '.': legacyPackagedTarget().replace('/app.asar/', '/app.asar%2F'),
       })
     }],
   ])('rejects a proxy-shaped directory with %s without changing its bytes', (_label, mutate) => {
@@ -406,7 +416,7 @@ describe('healProfilesModuleFallback', () => {
     const home = tmp()
     const link = join(home, 'profiles', 'node_modules', 'dsh-app')
     writeLegacyModuleProxy(link, 'dsh-app', {
-      '.': 'file:///Applications/DeepSeek%20Harness.app/Contents/Resources/app.asar/lib/main.js',
+      '.': legacyPackagedTarget(),
     })
     mutate(link)
     const before = snapshotFlatDirectory(link)
@@ -438,7 +448,7 @@ describe('healProfilesModuleFallback', () => {
     const home = tmp()
     const link = join(home, 'profiles', 'node_modules', 'dsh-app')
     writeLegacyModuleProxy(link, 'dsh-app', {
-      '.': 'file:///Applications/DeepSeek%20Harness.app/Contents/Resources/app.asar/lib/main.js',
+      '.': legacyPackagedTarget(),
     })
     healProfilesModuleFallback(anchor, home)
     const recoveryRoot = join(home, 'recovery', 'legacy-module-fallback')
@@ -457,7 +467,7 @@ describe('healProfilesModuleFallback', () => {
     const home = tmp()
     const link = join(home, 'profiles', 'node_modules', 'dsh-app')
     writeLegacyModuleProxy(link, 'dsh-app', {
-      '.': 'file:///Applications/DeepSeek%20Harness.app/Contents/Resources/app.asar/lib/main.js',
+      '.': legacyPackagedTarget(),
     })
 
     expect(healProfilesModuleFallbackCached(anchor, home, '0.5.1')).toBe('rebuilt')
@@ -471,7 +481,7 @@ describe('healProfilesModuleFallback', () => {
     const home = tmp()
     const link = join(home, 'profiles', 'node_modules', 'dsh-app')
     writeLegacyModuleProxy(link, 'dsh-app', {
-      '.': 'file:///Applications/DeepSeek%20Harness.app/Contents/Resources/app.asar/lib/main.js',
+      '.': legacyPackagedTarget(),
     })
     const before = snapshotFlatDirectory(link)
     const foreign = tmp()
