@@ -14,9 +14,12 @@ interface DesktopManifest {
 }
 
 interface BuilderConfiguration {
+  asarUnpack?: string[]
   files?: string[]
   mac?: { icon?: string }
   win?: {
+    electronLanguages?: string[]
+    files?: string[]
     icon?: string
     target?: Array<{ target?: string; arch?: string[] }>
   }
@@ -291,7 +294,9 @@ describe('desktop package manifest', () => {
     expect(builder.win).toMatchObject({
       target: [{ target: 'nsis', arch: ['x64'] }],
       icon: 'assets/icon.ico',
+      electronLanguages: ['en-US', 'zh-CN'],
     })
+    expect(builder.asarUnpack).toEqual(['node_modules/**'])
     expect(builder.nsis).toMatchObject({
       include: 'build/installer.nsh',
       oneClick: false,
@@ -326,6 +331,27 @@ describe('desktop package manifest', () => {
     expect(builder.files).toContain(
       '!node_modules/@deepseek-ai/dsh-session-telemetry-otel/node_modules/@opentelemetry/resources/**',
     )
+    expect(builder.win?.files).toEqual(expect.arrayContaining([
+      '!node_modules/node-pty/prebuilds/linux-*/**',
+      '!node_modules/@napi-rs/canvas-darwin-*/**',
+      '!node_modules/@napi-rs/canvas-linux-*/**',
+      '!node_modules/@napi-rs/canvas-win32-arm64-msvc/**',
+      '!node_modules/@img/sharp-darwin-*/**',
+      '!node_modules/@img/sharp-libvips-darwin-*/**',
+      '!node_modules/@img/sharp-libvips-linux*/**',
+      '!node_modules/@img/sharp-linux*/**',
+      '!node_modules/@img/sharp-win32-arm64/**',
+      '!node_modules/@img/sharp-win32-ia32/**',
+      '!node_modules/@koromix/koffi-darwin-*/**',
+      '!node_modules/@koromix/koffi-linux-*/**',
+      '!node_modules/@koromix/koffi-win32-arm64/**',
+      '!node_modules/@koromix/koffi-win32-ia32/**',
+      '!node_modules/node-addon-require-builtin-darwin-*/**',
+      '!node_modules/node-addon-require-builtin-linux-*/**',
+      '!node_modules/node-addon-require-builtin-win32-arm64-msvc/**',
+      '!node_modules/node-addon-require-builtin-win32-ia32-msvc/**',
+      '!node_modules/**/*.pdb',
+    ]))
   })
 
   it('exercises uninstall from a realistic short per-user install path', () => {

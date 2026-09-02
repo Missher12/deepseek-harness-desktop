@@ -62,8 +62,33 @@ win:
         - x64
   icon: assets/icon.ico
   requestedExecutionLevel: asInvoker
+  electronLanguages:
+    - en-US
+    - zh-CN
   files:
     - "!node_modules/node-pty/prebuilds/darwin-x64/**"
+    - "!node_modules/node-pty/prebuilds/linux-*/**"
+    - "!node_modules/@napi-rs/canvas-android-*/**"
+    - "!node_modules/@napi-rs/canvas-darwin-*/**"
+    - "!node_modules/@napi-rs/canvas-linux-*/**"
+    - "!node_modules/@napi-rs/canvas-win32-arm64-msvc/**"
+    - "!node_modules/@img/sharp-darwin-*/**"
+    - "!node_modules/@img/sharp-freebsd-*/**"
+    - "!node_modules/@img/sharp-libvips-darwin-*/**"
+    - "!node_modules/@img/sharp-libvips-linux*/**"
+    - "!node_modules/@img/sharp-linux*/**"
+    - "!node_modules/@img/sharp-win32-arm64/**"
+    - "!node_modules/@img/sharp-win32-ia32/**"
+    - "!node_modules/@koromix/koffi-darwin-*/**"
+    - "!node_modules/@koromix/koffi-freebsd-*/**"
+    - "!node_modules/@koromix/koffi-linux-*/**"
+    - "!node_modules/@koromix/koffi-openbsd-*/**"
+    - "!node_modules/@koromix/koffi-win32-arm64/**"
+    - "!node_modules/@koromix/koffi-win32-ia32/**"
+    - "!node_modules/node-addon-require-builtin-darwin-*/**"
+    - "!node_modules/node-addon-require-builtin-linux-*/**"
+    - "!node_modules/node-addon-require-builtin-win32-arm64-msvc/**"
+    - "!node_modules/node-addon-require-builtin-win32-ia32-msvc/**"
     - "!node_modules/**/*.pdb"
 nsis:
   include: build/installer.nsh

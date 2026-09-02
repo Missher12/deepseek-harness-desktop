@@ -3,6 +3,9 @@ param(
   [string]$SetupPath,
   [string]$StartupSummaryPath = 'apps/desktop/release/desktop-startup-summary.json',
   [string]$PackageInventoryPath = 'apps/desktop/release/desktop-package-installed.json',
+  [ValidateSet('windows-x64')]
+  [string]$PackagePolicy,
+  [string]$PackageManifestPath,
   [switch]$RuntimeEvidenceOnly
 )
 
@@ -126,6 +129,34 @@ function Wait-IsolatedInstalledProcessesStopped {
   }
 }
 
+function Assert-ManagedPackageRootsPhysical {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$InstallRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$ManifestPath
+  )
+
+  $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+  $names = @($manifest.dependencies.PSObject.Properties.Name)
+  $optionalDependencies = $manifest.PSObject.Properties['optionalDependencies']
+  if ($null -ne $optionalDependencies -and $null -ne $optionalDependencies.Value) {
+    $names += @($optionalDependencies.Value.PSObject.Properties.Name)
+  }
+  $unpackedModules = Join-Path $InstallRoot 'resources\app.asar.unpacked\node_modules'
+  foreach ($name in @($names | Sort-Object -Unique)) {
+    $packageRoot = Join-Path $unpackedModules ($name.Replace('/', '\'))
+    $packageManifest = Join-Path $packageRoot 'package.json'
+    if (-not (Test-Path -LiteralPath $packageManifest -PathType Leaf)) {
+      throw "Managed package is missing from physical app.asar.unpacked: $name"
+    }
+    $packageDirectory = Get-Item -LiteralPath $packageRoot -Force
+    if (($packageDirectory.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+      throw "Managed package root must not be a reparse point in app.asar.unpacked: $name"
+    }
+  }
+}
+
 function Invoke-DesktopStartupSample {
   param(
     [Parameter(Mandatory = $true)]
@@ -211,7 +242,9 @@ function Write-DesktopRuntimeEvidence {
     [Parameter(Mandatory = $true)]
     [string]$SummaryPath,
     [Parameter(Mandatory = $true)]
-    [string]$InventoryPath
+    [string]$InventoryPath,
+    [string]$PackagePolicy,
+    [string]$PackageManifestPath
   )
 
   $summary = [System.IO.Path]::GetFullPath($SummaryPath)
@@ -257,7 +290,16 @@ function Write-DesktopRuntimeEvidence {
     [System.Text.UTF8Encoding]::new($false)
   )
 
-  & pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package -- --output $inventory (Split-Path -Parent $ExecutablePath)
+  $inventoryArguments = @('--output', $inventory)
+  if (-not [string]::IsNullOrEmpty($PackagePolicy)) {
+    if ([string]::IsNullOrEmpty($PackageManifestPath)) {
+      throw 'PackageManifestPath is required when PackagePolicy is set.'
+    }
+    $resolvedManifest = [System.IO.Path]::GetFullPath($PackageManifestPath)
+    $inventoryArguments += @('--policy', $PackagePolicy, '--manifest', $resolvedManifest)
+  }
+  $inventoryArguments += (Split-Path -Parent $ExecutablePath)
+  & pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package -- @inventoryArguments
   if ($LASTEXITCODE -ne 0) { throw "Installed package inventory failed with exit code $LASTEXITCODE." }
 }
 
@@ -329,11 +371,18 @@ try {
   }
   $uninstaller = $uninstallers[0].FullName
 
+  if (-not [string]::IsNullOrEmpty($PackagePolicy)) {
+    $resolvedPackageManifest = [System.IO.Path]::GetFullPath($PackageManifestPath)
+    Assert-ManagedPackageRootsPhysical -InstallRoot $installRoot -ManifestPath $resolvedPackageManifest
+  }
+
   Write-DesktopRuntimeEvidence `
     -ExecutablePath $executable `
     -TemporaryRoot $temporaryRoot `
     -SummaryPath $StartupSummaryPath `
-    -InventoryPath $PackageInventoryPath
+    -InventoryPath $PackageInventoryPath `
+    -PackagePolicy $PackagePolicy `
+    -PackageManifestPath $PackageManifestPath
 
   if (-not $RuntimeEvidenceOnly) {
     $env:DSH_WINDOWS_DESKTOP_EXECUTABLE = $executable

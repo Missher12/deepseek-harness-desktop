@@ -92,7 +92,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path (Split-Path -Parent $workspaceArtifact) | Out-Null
           Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact
           $unpacked = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) 'release\win-unpacked'
-          pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package -- --output apps/desktop/release/desktop-package-staged.json $unpacked
+          $inventoryPath = [System.IO.Path]::GetFullPath('apps/desktop/release/desktop-package-staged.json')
+          $manifestPath = [System.IO.Path]::GetFullPath('apps/desktop/package.json')
+          pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package -- --output $inventoryPath --policy windows-x64 --manifest $manifestPath $unpacked
           if ($LASTEXITCODE -ne 0) { throw "Staged package inventory failed with exit code $LASTEXITCODE." }
           $setupFile = Get-Item -LiteralPath $workspaceArtifact
           $setupEvidence = [ordered]@{
@@ -154,6 +156,8 @@ jobs:
           -SetupPath apps/desktop/release/${{ steps.desktop.outputs.artifact }}
           -StartupSummaryPath apps/desktop/release/desktop-startup-summary.json
           -PackageInventoryPath apps/desktop/release/desktop-package-installed.json
+          -PackagePolicy windows-x64
+          -PackageManifestPath apps/desktop/package.json
 
       - name: Preserve portable runtime evidence
         uses: actions/upload-artifact@v7

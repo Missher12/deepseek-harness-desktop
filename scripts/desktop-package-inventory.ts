@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { lstat, mkdir, readdir, realpath, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -37,6 +37,108 @@ export interface DesktopPackageInventory {
   files: readonly DesktopPackageInventoryFile[]
   largestFiles: readonly DesktopPackageInventoryFile[]
   categories: Record<DesktopPackageCategory, CategorySummary>
+}
+
+export type DesktopPackagePolicy = 'windows-x64'
+
+export interface DesktopPackagePathInventory {
+  files: readonly { path: string }[]
+}
+
+const WINDOWS_ELECTRON_LOCALES = new Set(['en-US.pak', 'zh-CN.pak'])
+const WINDOWS_X64_NATIVE_PACKAGES = [
+  { pattern: /(?:^|\/)node_modules\/@napi-rs\/canvas-([^/]+)(?:\/|$)/u, target: 'win32-x64-msvc' },
+  { pattern: /(?:^|\/)node_modules\/@koromix\/koffi-([^/]+)(?:\/|$)/u, target: 'win32-x64' },
+  { pattern: /(?:^|\/)node_modules\/node-addon-require-builtin-([^/]+)(?:\/|$)/u, target: 'win32-x64-msvc' },
+] as const
+
+function windowsX64PolicyViolation(path: string): string | undefined {
+  const normalized = path.replaceAll('\\', '/')
+  const lower = normalized.toLowerCase()
+  if (/\.(?:pdb|map|d\.ts|d\.cts|d\.mts|tsbuildinfo)$/u.test(lower)) {
+    return 'debug, source-map, declaration, or incremental-build artifact'
+  }
+  const locale = /^(?:resources\/)?locales\/([^/]+\.pak)$/u.exec(normalized)
+  if (locale !== null && !WINDOWS_ELECTRON_LOCALES.has(locale[1] ?? '')) {
+    return 'unapproved Electron locale'
+  }
+  const prebuild = /(?:^|\/)prebuilds\/([^/]+)(?:\/|$)/u.exec(lower)
+  if (prebuild !== null && !(prebuild[1] ?? '').startsWith('win32-x64')) {
+    return 'non-Windows-x64 native prebuild'
+  }
+  const sharp = /(?:^|\/)node_modules\/@img\/(?:sharp|sharp-libvips)-([^/]+)(?:\/|$)/u.exec(lower)
+  const sharpTarget = sharp?.[1]
+  if (sharpTarget !== undefined
+    && /^(?:darwin|freebsd|linux|linuxmusl|win32)-/u.test(sharpTarget)
+    && sharpTarget !== 'win32-x64') {
+    return 'non-Windows-x64 sharp package'
+  }
+  for (const nativePackage of WINDOWS_X64_NATIVE_PACKAGES) {
+    const match = nativePackage.pattern.exec(lower)
+    if (match !== null && match[1] !== nativePackage.target) {
+      return 'non-Windows-x64 native package'
+    }
+  }
+  return undefined
+}
+
+/** Reject target-incompatible files from one portable package inventory. */
+export function assertDesktopPackageInventoryPolicy(
+  inventory: DesktopPackagePathInventory,
+  policy: DesktopPackagePolicy,
+): void {
+  const policyLabel: Record<DesktopPackagePolicy, string> = { 'windows-x64': 'Windows x64' }
+  const violations = inventory.files.flatMap((file) => {
+    const reason = windowsX64PolicyViolation(file.path)
+    return reason === undefined ? [] : [`${file.path} (${reason})`]
+  })
+  if (violations.length > 0) {
+    throw new Error(`${policyLabel[policy]} package policy rejected ${String(violations.length)} file(s): ${violations.join(', ')}`)
+  }
+  const paths = inventory.files.map(file => file.path.replaceAll('\\', '/'))
+  const preservedRuntimeAssets = [
+    {
+      label: 'offline app.asar renderer',
+      present: paths.includes('resources/app.asar'),
+    },
+    {
+      label: 'PDF worker',
+      present: paths.includes('resources/app.asar.unpacked/node_modules/@deepseek-ai/dsh-attachment-local/lib/pdf-worker.cjs'),
+    },
+    {
+      label: 'runtime license or notice',
+      present: paths.some(path => /(?:^|\/)(?:licen[cs]e|third_party_notices|notices?)(?:\.|$)/iu.test(path)),
+    },
+    {
+      label: 'PDF standard font',
+      present: paths.some(path => path.includes('/pdfjs-dist/standard_fonts/')),
+    },
+    {
+      label: 'runtime WASM',
+      present: paths.some(path => path.endsWith('.wasm')),
+    },
+  ]
+  const missing = preservedRuntimeAssets.filter(asset => !asset.present).map(asset => asset.label)
+  if (missing.length > 0) {
+    throw new Error(`${policyLabel[policy]} package policy is missing preserved runtime assets: ${missing.join(', ')}`)
+  }
+}
+
+/** Ensure managed packages are linkable physical directories outside app.asar. */
+export function assertManagedPackageRootsArePhysical(
+  inventory: DesktopPackagePathInventory,
+  packageNames: readonly string[],
+): void {
+  const paths = new Set(inventory.files.map(file => file.path.replaceAll('\\', '/')))
+  for (const packageName of packageNames) {
+    if (!/^(?:@[^/]+\/)?[^/]+$/u.test(packageName)) {
+      throw new Error('Desktop managed package name must be a package name without path traversal.')
+    }
+    const manifest = `resources/app.asar.unpacked/node_modules/${packageName}/package.json`
+    if (!paths.has(manifest)) {
+      throw new Error(`Desktop managed package ${packageName} is missing from physical app.asar.unpacked node_modules.`)
+    }
+  }
 }
 
 function portable(path: string): string {
@@ -138,17 +240,43 @@ export async function createDesktopPackageInventory(packageRoot: string): Promis
 }
 
 async function main(args: readonly string[]): Promise<void> {
-  const outputIndex = args.indexOf('--output')
-  if (outputIndex < 0 || outputIndex === args.length - 1) {
-    throw new Error('Desktop package inventory usage: --output <inventory.json> <package root>')
+  const usage = 'Desktop package inventory usage: --output <inventory.json> [--policy windows-x64 --manifest <package.json>] <package root>'
+  let output: string | undefined
+  let policy: DesktopPackagePolicy | undefined
+  let manifestPath: string | undefined
+  const roots: string[] = []
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]
+    if (argument === '--output' || argument === '--policy' || argument === '--manifest') {
+      const value = args[index + 1]
+      if (value === undefined) throw new Error(usage)
+      if (argument === '--output') output = value
+      if (argument === '--policy') {
+        if (value !== 'windows-x64') throw new Error(`Unknown Desktop package policy: ${value}`)
+        policy = value
+      }
+      if (argument === '--manifest') manifestPath = value
+      index += 1
+    } else {
+      roots.push(argument ?? '')
+    }
   }
-  const output = args[outputIndex + 1]
-  const roots = args.filter((_value, index) => index !== outputIndex && index !== outputIndex + 1)
   const packageRoot = roots[0]
-  if (output === undefined || packageRoot === undefined || roots.length !== 1) {
-    throw new Error('Desktop package inventory usage: --output <inventory.json> <package root>')
-  }
+  if (output === undefined || packageRoot === undefined || roots.length !== 1) throw new Error(usage)
+  if ((policy === undefined) !== (manifestPath === undefined)) throw new Error(usage)
   const inventory = await createDesktopPackageInventory(packageRoot)
+  if (policy !== undefined && manifestPath !== undefined) {
+    assertDesktopPackageInventoryPolicy(inventory, policy)
+    const manifest = JSON.parse(await readFile(resolve(manifestPath), 'utf8')) as {
+      dependencies?: Record<string, unknown>
+      optionalDependencies?: Record<string, unknown>
+    }
+    const managedPackages = Object.keys({
+      ...manifest.dependencies,
+      ...manifest.optionalDependencies,
+    }).sort((left, right) => left.localeCompare(right, 'en'))
+    assertManagedPackageRootsArePhysical(inventory, managedPackages)
+  }
   await mkdir(dirname(output), { recursive: true })
   await writeFile(output, `${JSON.stringify(inventory, null, 2)}\n`, 'utf8')
   process.stdout.write(`desktop package inventory: recorded ${String(inventory.files.length)} files\n`)
