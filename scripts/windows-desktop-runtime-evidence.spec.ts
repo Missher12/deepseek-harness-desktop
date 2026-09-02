@@ -15,6 +15,7 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(smoke).toContain('for ($sampleIndex = 1; $sampleIndex -le 5; $sampleIndex += 1)')
     expect(smoke).toContain("-SampleKind 'warm-prime'")
     expect(smoke).toContain('startup (app-ready|window-prerequisites|loading-visible|fallback-ready|url-reported|harness-ready|desktop-running)')
+    expect(smoke).toContain('runtime (profile-compose|loader-mount|loader-settle|activation-audit)')
     expect(smoke).toContain('$process.CloseMainWindow()')
     expect(smoke).toContain('Get-IsolatedInstalledProcesses -ExecutablePath $ExecutablePath')
     expect(smoke).toContain('run benchmark:startup -- --output')

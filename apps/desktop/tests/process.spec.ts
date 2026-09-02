@@ -88,6 +88,30 @@ describe('HarnessProcess', () => {
     expect(options.cwd).toBe('/workspace')
     expect(options.detached).toBe(true)
     expect(options.env?.ELECTRON_RUN_AS_NODE).toBe('1')
+    expect(options.env?.DSH_DESKTOP_STARTUP_TIMING).toBe('1')
+  })
+
+  it('decodes only fixed child startup phases across stdout chunks', async () => {
+    const child = new FakeChild()
+    const onStartupTiming = vi.fn()
+    const owned = new HarnessProcess({
+      spawn: () => child as unknown as ChildProcess,
+      executable: '/Electron',
+      cli: '/cli.js',
+      waitForHarness: async () => undefined,
+      terminateTree: vi.fn(),
+      onStartupTiming,
+    })
+
+    const pending = owned.start('/workspace')
+    child.stdout.write('dsh desktop-startup profile-compose: 12ms\ndsh desktop-startup loader-')
+    child.stdout.write('mount: 28ms\ndsh web: http://127.0.0.1:45678\n')
+    await pending
+
+    expect(onStartupTiming.mock.calls).toEqual([
+      ['profile-compose', 12],
+      ['loader-mount', 28],
+    ])
   })
 
   it('accepts the Windows startup URL when the browser status shares its stdout chunk', async () => {

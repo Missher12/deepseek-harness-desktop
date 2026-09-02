@@ -52,4 +52,36 @@ describe('desktop startup benchmark', () => {
     })
     expect(() => summarizeDesktopStartupSamples(samples.slice(0, 4))).toThrow(/exactly five/i)
   })
+
+  it('includes complete fixed child phases but rejects partial or arbitrary diagnostics', () => {
+    const diagnostics = [
+      'runtime profile-compose: 20ms',
+      'runtime loader-mount: 70ms',
+      'runtime loader-settle: 95ms',
+      'runtime activation-audit: 105ms',
+    ].map(line => `2026-09-02T15:00:00.000Z ${line}`).join('\n')
+    const sample = parseDesktopStartupSample(`${startupLog([5, 12, 35, 20, 90, 105, 120])}\n${diagnostics}`)
+
+    expect(sample.runtime).toEqual({
+      'profile-compose': 20,
+      'loader-mount': 70,
+      'loader-settle': 95,
+      'activation-audit': 105,
+    })
+    expect(summarizeDesktopStartupSamples([sample, sample, sample, sample, sample])).toMatchObject({
+      total: { medianMs: 120, p95Ms: 120 },
+      profileBoot: {
+        profileCompose: { medianMs: 20, p95Ms: 20 },
+        profileComposeToLoaderMount: { medianMs: 50, p95Ms: 50 },
+        loaderMountToSettle: { medianMs: 25, p95Ms: 25 },
+        loaderSettleToActivationAudit: { medianMs: 10, p95Ms: 10 },
+      },
+    })
+    expect(() => parseDesktopStartupSample(
+      `${startupLog([5, 12, 35, 20, 90, 105, 120])}\n${diagnostics.replace(/.*loader-settle.*\n/u, '')}`,
+    )).toThrow(/startup benchmark/i)
+    expect(() => parseDesktopStartupSample(
+      `${startupLog([5, 12, 35, 20, 90, 105, 120])}\n2026-09-02T15:00:00.000Z runtime profile-path: 1ms`,
+    )).toThrow(/startup benchmark/i)
+  })
 })

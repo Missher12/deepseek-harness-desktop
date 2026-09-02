@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { DesktopStartupTimeline } from '../src/startup-timeline.ts'
+import {
+  DesktopStartupTimeline,
+  parseHarnessStartupTimingLine,
+} from '../src/startup-timeline.ts'
 
 describe('DesktopStartupTimeline', () => {
   it('logs only fixed milestone names and bounded elapsed durations', () => {
@@ -16,5 +19,16 @@ describe('DesktopStartupTimeline', () => {
       'startup app-ready: 15ms',
       'startup harness-ready: 34ms',
     ])
+  })
+
+  it('accepts only fixed child phases with a non-negative finite duration', () => {
+    expect(parseHarnessStartupTimingLine('dsh desktop-startup loader-mount: 42ms')).toEqual({
+      phase: 'loader-mount',
+      milliseconds: 42,
+    })
+    expect(parseHarnessStartupTimingLine('ordinary harness output')).toBeUndefined()
+    expect(() => parseHarnessStartupTimingLine('dsh desktop-startup profile-path: 42ms')).toThrow(/timing/i)
+    expect(() => parseHarnessStartupTimingLine('dsh desktop-startup loader-mount: C:\\secret')).toThrow(/timing/i)
+    expect(() => parseHarnessStartupTimingLine('dsh desktop-startup loader-mount: -1ms')).toThrow(/timing/i)
   })
 })

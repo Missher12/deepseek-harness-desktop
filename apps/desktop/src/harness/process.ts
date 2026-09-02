@@ -3,7 +3,11 @@ import { isAbsolute } from 'node:path'
 import { readHarnessUrl } from './startup-url.ts'
 import { waitForHarness as probeHarness } from './readiness.ts'
 import { terminateProcessTree, type TerminationMode } from './process-tree.ts'
-import type { DesktopStartupMilestone } from '../startup-timeline.ts'
+import {
+  parseHarnessStartupTimingLine,
+  type DesktopStartupMilestone,
+  type HarnessStartupTimingPhase,
+} from '../startup-timeline.ts'
 
 const MAX_STARTUP_OUTPUT_BYTES = 64 * 1024
 const DEFAULT_STOP_TIMEOUT_MS = 3_000
@@ -31,6 +35,7 @@ export interface HarnessProcessOptions {
   onOutput?: (source: 'stdout' | 'stderr', text: string) => void
   onExit?: (state: ExitState) => void
   markStartup?: (milestone: DesktopStartupMilestone) => void
+  onStartupTiming?: (phase: HarnessStartupTimingPhase, milliseconds: number) => void
 }
 
 function describeExit(state: ExitState): string {
@@ -59,7 +64,8 @@ function settledWithin(promise: Promise<unknown>, timeoutMs: number): Promise<bo
 export class HarnessProcess {
   private readonly options: Required<Pick<HarnessProcessOptions,
     'executable' | 'spawn' | 'waitForHarness' | 'platform' | 'terminateTree' | 'stopTimeoutMs'>>
-    & Pick<HarnessProcessOptions, 'cli' | 'patch' | 'prepare' | 'onOutput' | 'onExit' | 'markStartup'>
+    & Pick<HarnessProcessOptions,
+      'cli' | 'patch' | 'prepare' | 'onOutput' | 'onExit' | 'markStartup' | 'onStartupTiming'>
   private child: ChildProcess | undefined
   private exitPromise: Promise<ExitState> | undefined
   private detachOutput: (() => void) | undefined
@@ -114,7 +120,7 @@ export class HarnessProcess {
     ], {
       cwd: workspace,
       detached: this.options.platform !== 'win32',
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', DSH_DESKTOP_STARTUP_TIMING: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     if (child.pid === undefined || child.pid <= 0 || child.stdout === null || child.stderr === null) {
@@ -139,8 +145,33 @@ export class HarnessProcess {
     })
     this.exitPromise = exitPromise
 
+    let timingOutput = ''
+    const timingPhases = new Set<HarnessStartupTimingPhase>()
     const stdoutOutput = (chunk: Buffer | string): void => {
-      this.options.onOutput?.('stdout', chunk.toString())
+      const text = chunk.toString()
+      this.options.onOutput?.('stdout', text)
+      timingOutput += text
+      if (Buffer.byteLength(timingOutput) > MAX_STARTUP_OUTPUT_BYTES) {
+        timingOutput = ''
+        this.options.onOutput?.('stderr', 'Harness startup timing rejected: safe limit exceeded.\n')
+        return
+      }
+      const lines = timingOutput.split(/\n/u)
+      timingOutput = lines.pop() ?? ''
+      for (const rawLine of lines) {
+        try {
+          const timing = parseHarnessStartupTimingLine(rawLine.replace(/\r$/u, ''))
+          if (timing === undefined) continue
+          if (timingPhases.has(timing.phase)) {
+            this.options.onOutput?.('stderr', 'Harness startup timing rejected: duplicate phase.\n')
+            continue
+          }
+          timingPhases.add(timing.phase)
+          this.options.onStartupTiming?.(timing.phase, timing.milliseconds)
+        } catch {
+          this.options.onOutput?.('stderr', 'Harness startup timing rejected: malformed phase.\n')
+        }
+      }
     }
     const stderrOutput = (chunk: Buffer | string): void => {
       this.options.onOutput?.('stderr', chunk.toString())

@@ -546,6 +546,26 @@ describe('loadOverlayPatches', () => {
 })
 
 describe('boot', () => {
+  it('reports the fixed loader lifecycle checkpoints in causal order', async () => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'noop.mjs'), 'export const name = "noop"\nexport function apply() {}\n')
+    writeFileSync(join(dir, 'cordis.yml'), '- id: noop\n  name: ./noop.mjs\n')
+    const phases: string[] = []
+    const ctx = await boot(
+      NAME,
+      join(dir, 'cordis.yml'),
+      undefined,
+      undefined,
+      undefined,
+      (phase) => { phases.push(phase) },
+    )
+    try {
+      expect(phases).toEqual(['loader-mount', 'loader-settle', 'activation-audit'])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('boots a leaf config through the real Loader and settles the tree', async () => {
     const dir = tmp()
     writeFileSync(join(dir, 'noop.mjs'), 'export const name = "noop"\nexport function apply() {}\n')

@@ -27,6 +27,7 @@ import {
   loadProfile,
   PROFILE_PATCH_FILENAME,
   watchUserPatches,
+  type AppBootTimingPhase,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -180,6 +181,40 @@ export interface RunProfileOptions {
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
+  /** Optional fixed-phase timing enabled only by the Desktop parent process. */
+  startupTiming?: ProfileBootTiming
+}
+
+/** Fixed phases emitted by the Desktop-owned profile launch. */
+export type ProfileBootTimingPhase = 'profile-compose' | AppBootTimingPhase
+
+/** Desktop-only fixed-phase timing recorder. */
+export interface ProfileBootTiming {
+  mark(phase: ProfileBootTimingPhase): void
+}
+
+/**
+ * Create the fixed Desktop profile timing sink only for its exact opt-in.
+ * Normal CLI launches remain byte-for-byte silent.
+ * @param enabled - exact Desktop timing switch; every value except `1` is disabled.
+ * @param write - line sink, normally the child process stdout.
+ * @param now - monotonic clock used to derive bounded elapsed milliseconds.
+ * @returns a fixed-phase timing recorder, or `undefined` for normal CLI launches.
+ */
+export function createDesktopProfileBootTiming(
+  enabled: string | undefined,
+  write: (line: string) => void = line => void process.stdout.write(line),
+  now: () => number = () => performance.now(),
+): ProfileBootTiming | undefined {
+  if (enabled !== '1') return undefined
+  const startedAt = now()
+  return {
+    mark(phase) {
+      const elapsed = now() - startedAt
+      const milliseconds = Number.isFinite(elapsed) ? Math.max(0, Math.round(elapsed)) : 0
+      write(`dsh desktop-startup ${phase}: ${String(milliseconds)}ms\n`)
+    },
+  }
 }
 
 /**
@@ -206,6 +241,7 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
   const composed = composeProfile(options.profile, options.patchFiles)
+  options.startupTiming?.mark('profile-compose')
   const app: { current?: Context } = {}
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })
   const signalShutdown = new AbortController()
@@ -256,7 +292,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       args: options.args,
       exit: code => void shutdown.shutdown(code),
     })
-  })
+  }, undefined, (phase) => { options.startupTiming?.mark(phase) })
   app.current = ctx
   // A surface can dispose the whole tree while boot or this post-boot watcher
   // setup is still in flight — a signal, or a fast one-shot's appExit. Loader

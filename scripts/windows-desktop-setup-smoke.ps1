@@ -186,7 +186,10 @@ function Invoke-DesktopStartupSample {
     Wait-IsolatedInstalledProcessesStopped -ExecutablePath $ExecutablePath
 
     $startupPattern = '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z startup (app-ready|window-prerequisites|loading-visible|fallback-ready|url-reported|harness-ready|desktop-running): [0-9]+ms$'
-    $startupLines = @(Get-Content -LiteralPath $lifecyclePath | Where-Object { $_ -match $startupPattern })
+    $runtimePattern = '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z runtime (profile-compose|loader-mount|loader-settle|activation-audit): [0-9]+ms$'
+    $startupLines = @(Get-Content -LiteralPath $lifecyclePath | Where-Object {
+      $_ -match $startupPattern -or $_ -match $runtimePattern
+    })
     $sampleLog = Join-Path $EvidenceRoot "$SampleKind-$SampleIndex.log"
     [System.IO.File]::WriteAllLines($sampleLog, $startupLines, [System.Text.UTF8Encoding]::new($false))
     return $sampleLog

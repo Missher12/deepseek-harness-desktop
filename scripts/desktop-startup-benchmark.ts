@@ -13,8 +13,21 @@ export const DESKTOP_STARTUP_MILESTONES = [
   'desktop-running',
 ] as const
 
+/** Fixed child phases accepted only when the complete diagnostic set is present. */
+export const PROFILE_BOOT_PHASES = [
+  'profile-compose',
+  'loader-mount',
+  'loader-settle',
+  'activation-audit',
+] as const
+
 /** One successful Desktop launch represented only by fixed elapsed times. */
-export type DesktopStartupSample = Record<typeof DESKTOP_STARTUP_MILESTONES[number], number>
+type DesktopStartupMilestone = typeof DESKTOP_STARTUP_MILESTONES[number]
+type ProfileBootPhase = typeof PROFILE_BOOT_PHASES[number]
+
+export type DesktopStartupSample = Record<DesktopStartupMilestone, number> & {
+  runtime?: Record<ProfileBootPhase, number>
+}
 
 interface DurationSummary {
   medianMs: number
@@ -29,11 +42,18 @@ export interface DesktopStartupSummary {
   fallbackToUrl: DurationSummary
   urlToHarnessReady: DurationSummary
   harnessReadyToDesktop: DurationSummary
-  milestones: Record<typeof DESKTOP_STARTUP_MILESTONES[number], DurationSummary>
+  milestones: Record<DesktopStartupMilestone, DurationSummary>
+  profileBoot?: {
+    profileCompose: DurationSummary
+    profileComposeToLoaderMount: DurationSummary
+    loaderMountToSettle: DurationSummary
+    loaderSettleToActivationAudit: DurationSummary
+  }
 }
 
 const MILESTONE_SET = new Set<string>(DESKTOP_STARTUP_MILESTONES)
-const CAUSAL_CHAINS: readonly (readonly (keyof DesktopStartupSample)[])[] = [
+const PROFILE_BOOT_PHASE_SET = new Set<string>(PROFILE_BOOT_PHASES)
+const CAUSAL_CHAINS: readonly (readonly DesktopStartupMilestone[])[] = [
   ['app-ready', 'window-prerequisites', 'loading-visible', 'desktop-running'],
   ['app-ready', 'fallback-ready', 'url-reported', 'harness-ready', 'desktop-running'],
 ]
@@ -49,7 +69,24 @@ function fail(reason: string): never {
  */
 export function parseDesktopStartupSample(content: string): DesktopStartupSample {
   const values = new Map<string, number>()
+  const runtimeValues = new Map<string, number>()
   for (const line of content.split(/\r?\n/u)) {
+    const runtimeEnvelope = /^(?:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z )?(runtime .*)$/u.exec(line)
+    if (runtimeEnvelope !== null) {
+      const message = runtimeEnvelope[1]
+      if (message === undefined) continue
+      const match = /^runtime ([a-z-]+): ([0-9]+)ms$/u.exec(message)
+      if (match === null) fail('found a malformed runtime phase')
+      const [, phase, rawDuration] = match
+      if (phase === undefined || rawDuration === undefined || !PROFILE_BOOT_PHASE_SET.has(phase)) {
+        fail('found an unknown runtime phase')
+      }
+      if (runtimeValues.has(phase)) fail(`found duplicate runtime phase ${phase}`)
+      const duration = Number(rawDuration)
+      if (!Number.isSafeInteger(duration) || duration < 0) fail(`found invalid duration for ${phase}`)
+      runtimeValues.set(phase, duration)
+      continue
+    }
     const envelope = /^(?:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z )?(startup .*)$/u.exec(line)
     if (envelope === null) continue
     const message = envelope[1]
@@ -69,7 +106,7 @@ export function parseDesktopStartupSample(content: string): DesktopStartupSample
   for (const milestone of DESKTOP_STARTUP_MILESTONES) {
     if (!values.has(milestone)) fail(`missing milestone ${milestone}`)
   }
-  const sample = Object.fromEntries(values) as DesktopStartupSample
+  const sample = Object.fromEntries(values) as unknown as DesktopStartupSample
   for (const chain of CAUSAL_CHAINS) {
     for (let index = 1; index < chain.length; index += 1) {
       const previous = chain[index - 1]
@@ -77,6 +114,19 @@ export function parseDesktopStartupSample(content: string): DesktopStartupSample
       if (previous === undefined || current === undefined) continue
       if (sample[current] < sample[previous]) fail(`milestone ${current} precedes ${previous}`)
     }
+  }
+  if (runtimeValues.size > 0) {
+    for (const phase of PROFILE_BOOT_PHASES) {
+      if (!runtimeValues.has(phase)) fail(`missing runtime phase ${phase}`)
+    }
+    const runtime = Object.fromEntries(runtimeValues) as NonNullable<DesktopStartupSample['runtime']>
+    for (let index = 1; index < PROFILE_BOOT_PHASES.length; index += 1) {
+      const previous = PROFILE_BOOT_PHASES[index - 1]
+      const current = PROFILE_BOOT_PHASES[index]
+      if (previous === undefined || current === undefined) continue
+      if (runtime[current] < runtime[previous]) fail(`runtime phase ${current} precedes ${previous}`)
+    }
+    sample.runtime = runtime
   }
   return sample
 }
@@ -102,6 +152,19 @@ export function summarizeDesktopStartupSamples(
     milestone,
     summarizeDurations(samples.map(sample => sample[milestone])),
   ])) as DesktopStartupSummary['milestones']
+  const runtimeSampleCount = samples.filter(sample => sample.runtime !== undefined).length
+  if (runtimeSampleCount !== 0 && runtimeSampleCount !== samples.length) {
+    fail('runtime phases must be present in every sample or none')
+  }
+  const profileBoot = runtimeSampleCount === 0 ? undefined : {
+    profileCompose: summarizeDurations(samples.map(sample => sample.runtime?.['profile-compose'] ?? 0)),
+    profileComposeToLoaderMount: summarizeDurations(samples.map(sample =>
+      (sample.runtime?.['loader-mount'] ?? 0) - (sample.runtime?.['profile-compose'] ?? 0))),
+    loaderMountToSettle: summarizeDurations(samples.map(sample =>
+      (sample.runtime?.['loader-settle'] ?? 0) - (sample.runtime?.['loader-mount'] ?? 0))),
+    loaderSettleToActivationAudit: summarizeDurations(samples.map(sample =>
+      (sample.runtime?.['activation-audit'] ?? 0) - (sample.runtime?.['loader-settle'] ?? 0))),
+  }
   return {
     schemaVersion: 1,
     sampleCount: 5,
@@ -110,6 +173,7 @@ export function summarizeDesktopStartupSamples(
     urlToHarnessReady: summarizeDurations(samples.map(sample => sample['harness-ready'] - sample['url-reported'])),
     harnessReadyToDesktop: summarizeDurations(samples.map(sample => sample['desktop-running'] - sample['harness-ready'])),
     milestones: milestoneSummaries,
+    ...profileBoot === undefined ? {} : { profileBoot },
   }
 }
 

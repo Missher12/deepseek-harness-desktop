@@ -137,6 +137,9 @@ const runtime = new HarnessProcess({
   onOutput: (source, output) => {
     record(`Harness ${source}: ${output}`)
   },
+  onStartupTiming: (phase, milliseconds) => {
+    record(`runtime ${phase}: ${String(milliseconds)}ms`)
+  },
   onExit: () => { void lifecycle.controller?.runtimeExited() },
   markStartup: (milestone) => { startupTimeline.mark(milestone) },
 })

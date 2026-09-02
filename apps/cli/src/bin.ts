@@ -28,12 +28,15 @@ const invocation = parseDshArgs(process.argv.slice(2), readVersion())
 
 switch (invocation.mode) {
   case 'profile': {
-    const { runProfile } = await import('./profile-boot.ts')
+    const { createDesktopProfileBootTiming, runProfile } = await import('./profile-boot.ts')
+    const environment = loadLayeredEnv('dsh')
+    const startupTiming = createDesktopProfileBootTiming(process.env.DSH_DESKTOP_STARTUP_TIMING)
     await runProfile({
-      environment: loadLayeredEnv('dsh'),
+      environment,
       profile: invocation.profile,
       patchFiles: invocation.patches,
       args: invocation.args,
+      ...startupTiming === undefined ? {} : { startupTiming },
     })
     break
   }
