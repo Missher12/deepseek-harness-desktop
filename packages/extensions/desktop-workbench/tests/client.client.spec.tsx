@@ -5,7 +5,7 @@ import type { UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HeaderButton, type HeaderButtonProps } from '../src/client/HeaderButton.tsx'
 import { WorkbenchPanel, type WorkbenchPanelProps } from '../src/client/WorkbenchPanel.tsx'
-import { WorkbenchController, loadWidth } from '../src/client/preferences.ts'
+import { MODE_KEY, WorkbenchController, loadMode, loadWidth } from '../src/client/preferences.ts'
 
 afterEach(cleanup)
 
@@ -13,7 +13,7 @@ const sessionId = 'session-a' as never
 const WORKBENCH_MODE_FIXTURE: readonly UtilityMode[] = ['review', 'terminal', 'browser', 'files']
 const labels = {
   open: '打开工作台', close: '关闭工作台', terminal: '终端', browser: '浏览器',
-  files: '文件', review: '审阅',
+  files: '文件', review: '审阅', workbench: '工作台', modes: '工作台模式',
 } as const
 const t = (key: keyof typeof labels) => labels[key]
 
@@ -70,7 +70,7 @@ describe('desktop workbench shell', () => {
     expect(loadWidth({ getItem: () => 'nope' })).toBe(420)
   })
 
-  it('opens from the compact header button without a duplicate side-chat surface', () => {
+  it('opens one docked panel with vertically ordered modes and no duplicate side-chat surface', () => {
     const { controller, common } = setup()
     const headerProps = common as unknown as HeaderButtonProps
     const panelProps = common as unknown as WorkbenchPanelProps
@@ -86,12 +86,50 @@ describe('desktop workbench shell', () => {
       <WorkbenchPanel {...panelProps} mode={controller.getSnapshot().mode} />
     </>)
     expect(button.getAttribute('aria-expanded')).toBe('true')
-    expect(view.container.querySelector('[data-desktop-workbench-panel]')).not.toBeNull()
-    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['终端', '浏览器', '文件', '审阅'])
+    const panel = view.container.querySelector('[data-desktop-workbench-panel]')
+    expect(panel).not.toBeNull()
+    const tablist = screen.getByRole('tablist', { name: '工作台模式' })
+    expect(tablist.getAttribute('aria-orientation')).toBe('vertical')
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['审阅', '终端', '浏览器', '文件'])
     expect(screen.queryByRole('tab', { name: '侧边聊天' })).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(panel?.querySelector('kbd')).toBeNull()
+
+    const selected = screen.getByRole('tab', { name: '终端' })
+    const modePanel = screen.getByRole('tabpanel')
+    expect(selected.getAttribute('aria-selected')).toBe('true')
+    expect(selected.getAttribute('aria-controls')).toBe(modePanel.id)
+    expect(modePanel.getAttribute('aria-labelledby')).toBe(selected.id)
   })
 
-  it('switches modes without closing and closes on Escape', () => {
+  it('moves roving focus vertically and selects the focused mode only on Enter', () => {
+    const { controller, layout, common } = setup()
+    controller.open(sessionId, 'terminal')
+    layout.openUtility.mockClear()
+    const panelProps = common as unknown as WorkbenchPanelProps
+    render(<WorkbenchPanel {...panelProps} mode="terminal" />)
+    const review = screen.getByRole('tab', { name: '审阅' })
+    const terminal = screen.getByRole('tab', { name: '终端' })
+    const browser = screen.getByRole('tab', { name: '浏览器' })
+    const files = screen.getByRole('tab', { name: '文件' })
+
+    terminal.focus()
+    fireEvent.keyDown(terminal, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(browser)
+    expect(layout.openUtility).not.toHaveBeenCalled()
+    fireEvent.keyDown(browser, { key: 'Home' })
+    expect(document.activeElement).toBe(review)
+    fireEvent.keyDown(review, { key: 'End' })
+    expect(document.activeElement).toBe(files)
+    fireEvent.keyDown(files, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(browser)
+    fireEvent.keyDown(browser, { key: 'Enter' })
+    expect(layout.openUtility).toHaveBeenCalledOnce()
+    expect(layout.openUtility).toHaveBeenLastCalledWith('browser')
+  })
+
+  it('switches modes without closing and closes the same docked panel on Escape', () => {
     const { controller, layout, common } = setup()
     controller.open(sessionId, 'terminal')
     layout.setUtilityWidth.mockClear()
@@ -116,4 +154,25 @@ describe('desktop workbench shell', () => {
     expect(layout.setUtilityWidth).not.toHaveBeenCalled()
     expect(layout.openUtility).toHaveBeenLastCalledWith('browser')
   })
+
+  it('restores and persists only a valid recent mode without opening the panel', () => {
+    expect(loadMode({ getItem: () => 'review' })).toBe('review')
+    expect(loadMode({ getItem: () => 'side-chat' })).toBe('terminal')
+    expect(loadMode({ getItem: () => null })).toBe('terminal')
+
+    const layout = {
+      openUtility: vi.fn(), closeUtility: vi.fn(), toggleUtility: vi.fn(), setUtilityWidth: vi.fn(),
+    }
+    const storage = { getItem: vi.fn((key: string) => key === MODE_KEY ? 'files' : null), setItem: vi.fn() }
+    const controller = new WorkbenchController(layout, storage)
+    expect(controller.getSnapshot()).toMatchObject({ open: false, mode: 'files' })
+    expect(layout.openUtility).not.toHaveBeenCalled()
+
+    controller.toggle(sessionId)
+    expect(layout.openUtility).toHaveBeenLastCalledWith('files')
+    controller.selectMode('review')
+    expect(storage.setItem).toHaveBeenCalledWith(MODE_KEY, 'review')
+    expect(controller.getSnapshot().mode).toBe('review')
+  })
+
 })

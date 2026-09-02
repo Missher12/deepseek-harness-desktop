@@ -2,7 +2,7 @@
 export const NS = 'desktopWorkbench'
 /** Simplified-Chinese workbench copy. */
 export const zh = {
-  open: '打开工作台', close: '关闭工作台', terminal: '终端', browser: '浏览器', files: '文件',
+  open: '打开工作台', close: '关闭工作台', workbench: '工作台', modes: '工作台模式', terminal: '终端', browser: '浏览器', files: '文件',
   review: '审阅',
   'placeholder.terminal': '终端正在准备', 'placeholder.browser': '浏览器正在准备',
   'placeholder.files': '文件正在准备', 'placeholder.review': '审阅正在准备',
@@ -15,7 +15,7 @@ export const zh = {
 } as const
 /** English workbench copy. */
 export const en: Record<keyof typeof zh, string> = {
-  open: 'Open workbench', close: 'Close workbench', terminal: 'Terminal', browser: 'Browser', files: 'Files',
+  open: 'Open workbench', close: 'Close workbench', workbench: 'Workbench', modes: 'Workbench modes', terminal: 'Terminal', browser: 'Browser', files: 'Files',
   review: 'Review',
   'placeholder.terminal': 'Terminal is getting ready', 'placeholder.browser': 'Browser is getting ready',
   'placeholder.files': 'Files are getting ready', 'placeholder.review': 'Review is getting ready',

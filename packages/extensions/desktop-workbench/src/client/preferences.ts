@@ -3,6 +3,10 @@ import type { ILayout, UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/cli
 
 /** Local preference key for the utility width. */
 export const WIDTH_KEY = 'dsh.desktop-workbench.width.v1'
+/** Versioned local preference key for the last selected utility mode. */
+export const MODE_KEY = 'dsh.desktop-workbench.mode.v1'
+/** Stable presentation order for the docked Workbench launcher. */
+export const WORKBENCH_MODE_ORDER = ['review', 'terminal', 'browser', 'files'] as const satisfies readonly UtilityMode[]
 /** Minimal readable storage contract. */
 export interface StorageReader { getItem(key: string): string | null }
 /** Minimal writable storage contract. */
@@ -22,6 +26,16 @@ export function loadWidth(storage: StorageReader): number {
   return Number.isFinite(value) ? Math.min(720, Math.max(320, Math.round(value))) : 420
 }
 
+/**
+ * Restore only a closed, currently supported Workbench mode.
+ * @param storage - storage containing the optional mode preference.
+ * @returns the stored mode, or the existing Terminal default.
+ */
+export function loadMode(storage: StorageReader): UtilityMode {
+  const stored = storage.getItem(MODE_KEY)
+  return WORKBENCH_MODE_ORDER.some(mode => mode === stored) ? stored as UtilityMode : 'terminal'
+}
+
 /** Coordinates persisted workbench preferences with the generic layout service. */
 export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot> {
   #listeners = new Set<() => void>()
@@ -29,7 +43,7 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
   #widthApplied = false
 
   constructor(private readonly layout: Pick<ILayout, 'openUtility' | 'closeUtility' | 'toggleUtility' | 'setUtilityWidth'>, private readonly storage: StorageWriter) {
-    this.#snapshot = { open: false, mode: 'terminal', width: loadWidth(storage) }
+    this.#snapshot = { open: false, mode: loadMode(storage), width: loadWidth(storage) }
   }
 
   getSnapshot = (): WorkbenchSnapshot => this.#snapshot
@@ -51,9 +65,11 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
    * @param sessionId - current ordinary session.
    * @param mode - requested utility mode.
    */
-  open(sessionId: SessionId, mode: UtilityMode = this.#snapshot.mode): void {
-    this.#set({ ...this.#snapshot, sessionId, mode, open: true })
-    this.#openUtility(mode)
+  open(sessionId: SessionId, mode?: UtilityMode): void {
+    const nextMode = mode ?? this.#snapshot.mode
+    if (mode !== undefined) this.storage.setItem(MODE_KEY, mode)
+    this.#set({ ...this.#snapshot, sessionId, mode: nextMode, open: true })
+    this.#openUtility(nextMode)
   }
 
   /** Close the utility workbench. */
@@ -64,6 +80,7 @@ export class WorkbenchController implements ObservableSnapshot<WorkbenchSnapshot
    * @param mode - requested utility mode.
    */
   selectMode(mode: UtilityMode): void {
+    this.storage.setItem(MODE_KEY, mode)
     this.#set({ ...this.#snapshot, mode, open: true })
     this.#openUtility(mode)
   }
