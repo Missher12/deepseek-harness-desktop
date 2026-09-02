@@ -11,17 +11,17 @@ const readUpdateMetadata = (): { desktopVersion?: unknown; harnessVersion?: unkn
   }
 
 describe('official core Desktop migration', () => {
-  it('embeds official rc.2 in Desktop 0.5.1', () => {
+  it('embeds official rc.2 in Desktop 0.5.2', () => {
     expect(readManifest('package.json').version).toBe('0.1.1-rc.2')
     for (const manifest of [
       'apps/desktop/package.json',
       'apps/desktop-managed-memory/package.json',
       'apps/desktop-managed-evolution/package.json',
     ]) {
-      expect(readManifest(manifest).version, manifest).toBe('0.5.1')
+      expect(readManifest(manifest).version, manifest).toBe('0.5.2')
     }
     expect(readUpdateMetadata()).toMatchObject({
-      desktopVersion: '0.5.1',
+      desktopVersion: '0.5.2',
       harnessVersion: '0.1.1-rc.2',
     })
   })

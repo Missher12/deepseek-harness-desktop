@@ -134,7 +134,7 @@ Both commands target Intel (`x86_64`) macOS. `desktop:pack` produces a directly 
 pnpm run desktop:setup
 ```
 
-Run this command on native Windows x64. The Setup name is derived from `apps/desktop/package.json`; version 0.5.1 produces `apps/desktop/release/DeepSeek-Harness-Setup-0.5.1-win-x64.exe`. Production staging uses a dedicated short directory on Windows CI to keep native MSVC rebuilds below legacy path limits; all release output is written to `apps/desktop/release`.
+Run this command on native Windows x64. The Setup name is derived from `apps/desktop/package.json`; version 0.5.2 produces `apps/desktop/release/DeepSeek-Harness-Setup-0.5.2-win-x64.exe`. Production staging uses a dedicated short directory on Windows CI to keep native MSVC rebuilds below legacy path limits; all release output is written to `apps/desktop/release`.
 
 The Windows Setup is a visible assisted, per-user NSIS installer. A normal double-click walks through Welcome, installation directory, expanded progress/details, and Finish pages. It needs no administrator elevation, Node.js, pnpm, terminal, browser, or fixed port; it creates desktop and Start menu shortcuts and offers to launch DeepSeek Harness from the finish page. Uninstall removes the application and shortcuts while preserving Harness and Electron user data.
 
@@ -156,9 +156,9 @@ For Windows, build the Setup on native Windows and run:
 
 ```powershell
 ./scripts/windows-desktop-installer-ui-smoke.ps1 `
-  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.5.1-win-x64.exe
+  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.5.2-win-x64.exe
 ./scripts/windows-desktop-setup-smoke.ps1 `
-  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.5.1-win-x64.exe
+  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.5.2-win-x64.exe
 ```
 
 The packaged smokes use an external temporary working directory, temporary Electron data, and temporary `DSH_HOME`. Native macOS and Windows acceptance verifies the preload bridge, preference round-trips, hide-on-close with the Harness still running, window restoration, the three-column workspace, exact ordinary and archived Session IDs in the real system clipboard without opening, restoring, deleting, sending, or starting an Agent, peer-session send/reply metadata, ordinary no-card rendering and rejection side effects, the Add menu, the four-mode workbench, the down-first adaptive reasoning slider and persisted effort, visible Canvas output with the optional character off, all 371 Usage particles plus daily/weekly/cumulative hover semantics, stable Plugin Market category order plus separated search/filter/category geometry, random listener, and complete process cleanup after native exit. Protected self-update remains macOS-only and is explicitly absent on Windows. Tool-level acceptance separately proves bidirectional Agent wake/reply behavior, exact receipt-bound waiting, collaboration stop, and matching-reply refusal without making an external model request. Desktop staging additionally requires exactly one `dshmarket@1.10.1`, coherent compact and category-rail markers in its source, Client bundle, and source map, the Host self-protection marker, immutable Desktop patches, plugin-runtime providers, packaged pnpm bin, and the assisted-installer include. The Windows UI smoke walks the visible Welcome, destination, expanded progress/details, and Finish pages, while the lifecycle smoke proves the same feature behavior alongside silent install, shortcut creation, real clipboard copy, uninstall cleanup, and data preservation. Native Windows CI derives the artifact name from the package version, builds the Setup, runs both smokes, records SHA-256, and uploads both exact files.

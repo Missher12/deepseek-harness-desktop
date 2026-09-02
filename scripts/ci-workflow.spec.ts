@@ -59,7 +59,7 @@ describe('CI workflow', () => {
     expect(workflow.on).toMatchObject({
       workflow_dispatch: {
         inputs: {
-          tag: { default: 'desktop-v0.5.1' },
+          tag: { default: 'desktop-v0.5.2' },
         },
       },
     })

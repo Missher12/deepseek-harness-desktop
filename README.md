@@ -12,7 +12,7 @@ This community repository preserves the official source and adds an unofficial I
 
 Download the DMG or Setup executable from this repository's [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases). The current builds are unsigned; macOS may require **Open** from Finder's context menu on first launch, and Windows may show a SmartScreen prompt.
 
-Desktop 0.5.1 builds the Intel macOS DMG and Windows x64 Setup from the same tested Harness `0.1.1-rc.2` source revision. It recoverably migrates exact legacy 0.4.x module-fallback proxies before launch while retaining 0.5.0's bounded local document attachments and Memory & Learning experience. Windows remains installer-updated; the in-app updater is currently available only for Intel macOS.
+Desktop 0.5.2 builds the Intel macOS DMG and Windows x64 Setup from the same tested Harness `0.1.1-rc.2` source revision. It restores the v0.4.11 PromptRail, gives the existing Project/Session tree a clearer ChatGPT-like rhythm, keeps Review, Terminal, Browser, and Files in a fixed resizable Workbench, and adds a risk-confirmed **Don't ask again this session** action for the existing Full access preset. Startup phases are measured without skipping validation, while Windows packaging removes only unreachable platform assets and uses dedicated taskbar, tray, and installer icons. Exact legacy 0.4.x fallback migration, bounded local document attachments, and Memory & Learning remain intact. Windows remains installer-updated; the in-app updater is currently available only for Intel macOS.
 
 ## Developer preview
 
