@@ -23,6 +23,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { createChatStore } from '../src/client/stores.ts'
 import { ChatView } from '../src/client/chat/ChatView.tsx'
+import { nearestPromptIndex, PromptRail } from '../src/client/chat/PromptRail.tsx'
 import { zh } from '../src/client/locales.ts'
 import { AssistantNodeView } from '../src/client/chat/AssistantNodeView.tsx'
 import { CommandNodeView, ManualCompactionNodeView } from '../src/client/chat/CommandNodeView.tsx'
@@ -31,7 +32,7 @@ import {
   TurnMaxTokensNodeView, UnknownNodeView, UserMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
 import { TurnTailNodeView } from '../src/client/chat/TurnTailNodeView.tsx'
-import { formatRunDuration } from '../src/client/chat/message-chrome.ts'
+import { formatMessageClock, formatRunDuration } from '../src/client/chat/message-chrome.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 
 afterEach(() => {
@@ -348,6 +349,16 @@ function readerScroll(element: HTMLElement, top: number): void {
   fireEvent.scroll(element)
 }
 
+function promptRailAnchors(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    seq: 1_000 + index * 7,
+    turn: index + 1,
+    time: 1_000 + index,
+    kind: 'turn-opening' as const,
+    preview: `发言 ${String(index + 1)}`,
+  }))
+}
+
 function installScrollMetrics(element: HTMLElement, initialHeight: number, clientHeight: number) {
   let scrollHeight = initialHeight
   let scrollTop = 0
@@ -438,13 +449,17 @@ describe('ChatView', () => {
 
     const rail = view.getByRole('navigation', { name: '过往发言' })
     expect(rail.getAttribute('data-side')).toBe('left')
+    expect(within(rail).getByText('2 / 2')).toBeTruthy()
     const first = within(rail).getByRole('button', { name: '转到第 1 条发言：第一条' })
     const second = within(rail).getByRole('button', { name: '转到第 2 条发言：第二条' })
     expect(second.hasAttribute('data-steering')).toBe(true)
     expect(second.getAttribute('aria-current')).toBe('true')
+    expect(second.querySelector('[data-prompt-rail-active-dot]')).not.toBeNull()
 
-    fireEvent.mouseEnter(first)
-    expect(view.getByRole('tooltip').textContent).toContain('第一条')
+    fireEvent.focus(first)
+    const tooltip = view.getByRole('tooltip')
+    expect(tooltip.textContent).toContain(`第 1 条发言 · ${formatMessageClock(1_000, h.props.t)}`)
+    expect(tooltip.textContent).toContain('第一条')
     fireEvent.click(first)
 
     await waitFor(() => { expect(h.revealHistorySeq).toHaveBeenCalledWith(1) })
@@ -452,7 +467,7 @@ describe('ChatView', () => {
   })
 
   it('keeps the first and last prompts reachable when a long rail is bounded', () => {
-    installConversationViewport(CONVERSATION_VIEWPORTS.narrowedByWorkbench)
+    installConversationViewport(CONVERSATION_VIEWPORTS.wide)
     const promptAnchors = Array.from({ length: 130 }, (_, index) => ({
       seq: index + 1,
       turn: index + 1,
@@ -467,6 +482,121 @@ describe('ChatView', () => {
     expect(rail.getAllByRole('button')).toHaveLength(120)
     expect(rail.getByRole('button', { name: '转到第 1 条发言：发言 1' })).toBeTruthy()
     expect(rail.getByRole('button', { name: '转到第 130 条发言：发言 130' })).toBeTruthy()
+  })
+
+  it('keeps one desktop mark in the tab order and roves focus before activation', () => {
+    installConversationViewport(CONVERSATION_VIEWPORTS.wide)
+    const anchors = promptRailAnchors(4)
+    const onActivate = vi.fn()
+    const view = render(
+      <PromptRail anchors={anchors} activeSeq={anchors[1]!.seq} onActivate={onActivate} t={makeTranslate(zh, commonZh)} />,
+    )
+    const marks = [...view.container.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')]
+
+    expect(marks.map(mark => mark.tabIndex)).toEqual([-1, 0, -1, -1])
+    marks[1]!.focus()
+    fireEvent.keyDown(marks[1]!, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(marks[2])
+    fireEvent.keyDown(marks[2]!, { key: 'Home' })
+    expect(document.activeElement).toBe(marks[0])
+    fireEvent.keyDown(marks[0]!, { key: 'End' })
+    expect(document.activeElement).toBe(marks[3])
+    fireEvent.keyDown(marks[3]!, { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(marks[2])
+    expect(onActivate).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(marks[2]!, { key: 'Enter' })
+    expect(onActivate).toHaveBeenCalledWith(anchors[2]!.seq)
+  })
+
+  it('maps dense rail coordinates to a bounded nearest prompt', () => {
+    expect(nearestPromptIndex({ y: 20, top: 20, height: 180, count: 120 })).toBe(0)
+    expect(nearestPromptIndex({ y: 110, top: 20, height: 180, count: 120 })).toBe(60)
+    expect(nearestPromptIndex({ y: 200, top: 20, height: 180, count: 120 })).toBe(119)
+    expect(nearestPromptIndex({ y: -20, top: 20, height: 180, count: 120 })).toBe(0)
+    expect(nearestPromptIndex({ y: 260, top: 20, height: 180, count: 120 })).toBe(119)
+    expect(nearestPromptIndex({ y: 30, top: 20, height: 0, count: 120 })).toBe(0)
+    expect(nearestPromptIndex({ y: 30, top: 20, height: 180, count: 0 })).toBe(-1)
+  })
+
+  it('uses compact prompt navigation at a narrowed workbench viewport and restores focus after Escape', () => {
+    installConversationViewport(CONVERSATION_VIEWPORTS.narrowedByWorkbench)
+    const anchors = promptRailAnchors(3)
+    const onActivate = vi.fn()
+    const view = render(
+      <PromptRail anchors={anchors} activeSeq={anchors[1]!.seq} onActivate={onActivate} t={makeTranslate(zh, commonZh)} />,
+    )
+
+    expect(view.container.querySelector('[data-prompt-rail-mark]')).toBeNull()
+    const trigger = view.getByRole('button', { name: '发言导航（2 / 3）' })
+    fireEvent.click(trigger)
+    const dialog = view.getByRole('dialog', { name: '发言导航' })
+    expect(within(dialog).getAllByRole('listitem')).toHaveLength(3)
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(view.queryByRole('dialog', { name: '发言导航' })).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('hands owned rail focus across wide and narrowed workbench viewports', () => {
+    const viewport = installConversationViewport(CONVERSATION_VIEWPORTS.wide)
+    const anchors = promptRailAnchors(3)
+    const view = render(
+      <PromptRail anchors={anchors} activeSeq={anchors[1]!.seq} onActivate={vi.fn()} t={makeTranslate(zh, commonZh)} />,
+    )
+    const marks = [...view.container.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')]
+    marks[1]!.focus()
+
+    act(() => { viewport.setWidth(CONVERSATION_VIEWPORTS.narrowedByWorkbench) })
+    const trigger = view.getByRole('button', { name: '发言导航（2 / 3）' })
+    expect(document.activeElement).toBe(trigger)
+
+    act(() => { viewport.setWidth(CONVERSATION_VIEWPORTS.wide) })
+    const restoredMarks = [...view.container.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')]
+    expect(document.activeElement).toBe(restoredMarks[1])
+  })
+
+  it('does not steal external focus when the prompt rail changes responsive mode', () => {
+    const viewport = installConversationViewport(CONVERSATION_VIEWPORTS.wide)
+    const anchors = promptRailAnchors(3)
+    const view = render(
+      <>
+        <button type="button">会话输入框</button>
+        <PromptRail anchors={anchors} activeSeq={anchors[1]!.seq} onActivate={vi.fn()} t={makeTranslate(zh, commonZh)} />
+      </>,
+    )
+    const composer = view.getByRole('button', { name: '会话输入框' })
+    composer.focus()
+
+    act(() => { viewport.setWidth(CONVERSATION_VIEWPORTS.narrowedByWorkbench) })
+    expect(document.activeElement).toBe(composer)
+    act(() => { viewport.setWidth(CONVERSATION_VIEWPORTS.wide) })
+    expect(document.activeElement).toBe(composer)
+  })
+
+  it('moves owned focus to the active mark when a replacement changes prompt identities', () => {
+    installConversationViewport(CONVERSATION_VIEWPORTS.wide)
+    const anchors = promptRailAnchors(3)
+    const replacement = anchors.map((anchor, index) => ({
+      ...anchor,
+      seq: anchor.seq + 100,
+      time: anchor.time + 10_000,
+      preview: `替换发言 ${String(index + 1)}`,
+    }))
+    const onActivate = vi.fn()
+    const t = makeTranslate(zh, commonZh)
+    const view = render(
+      <PromptRail anchors={anchors} activeSeq={anchors[1]!.seq} onActivate={onActivate} t={t} />,
+    )
+    const oldMarks = [...view.container.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')]
+    oldMarks[0]!.focus()
+
+    view.rerender(
+      <PromptRail anchors={replacement} activeSeq={replacement[1]!.seq} onActivate={onActivate} t={t} />,
+    )
+
+    const replacementMarks = [...view.container.querySelectorAll<HTMLButtonElement>('[data-prompt-rail-mark]')]
+    expect(document.activeElement).toBe(replacementMarks[1])
+    expect(replacementMarks.map(mark => mark.tabIndex)).toEqual([-1, 0, -1])
   })
 
   it('reports an unavailable historical prompt without changing the transcript', async () => {

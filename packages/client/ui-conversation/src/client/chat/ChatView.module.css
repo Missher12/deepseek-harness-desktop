@@ -56,7 +56,7 @@
   top: 72px;
   z-index: 6;
   width: 100%;
-  max-width: var(--dsh-chat-content-width);
+  max-width: none;
   height: 0;
   margin: 0 auto;
   pointer-events: none;
@@ -64,10 +64,18 @@
 
 .promptRailTrack {
   position: absolute;
-  right: calc(100% + 12px);
-  width: 28px;
-  height: min(62vh, 520px);
-  min-height: 180px;
+  /* Anchor to the chat pane rather than the centered message column. This
+     keeps the ruler Codex-like: close to the sidebar with a quiet 16px inset,
+     while generated text retains the full content gutter. */
+  left: calc(-1 * var(--dsh-composer-side-clearance));
+  width: 30px;
+  /* The rail lives above the sticky composer. Subtract the live measured
+     composer stack so its end tooltip cannot paint across the input card. */
+  height: max(0px, min(
+    62vh,
+    520px,
+    calc(100dvh - var(--dsh-composer-height, 152px) - 120px)
+  ));
   pointer-events: auto;
 }
 
@@ -88,16 +96,8 @@
   padding: 0;
   border: 0;
   background: transparent;
-  cursor: pointer;
+  pointer-events: none;
   transform: translateY(-50%);
-}
-
-.promptRailMark[data-edge='start'] {
-  transform: none;
-}
-
-.promptRailMark[data-edge='end'] {
-  transform: translateY(-100%);
 }
 
 .promptRailTick {
@@ -107,7 +107,7 @@
   width: 10px;
   height: 1px;
   border-radius: 999px;
-  background: var(--dsw-alias-label-quaternary);
+  background: var(--dsw-alias-label-tertiary);
   opacity: 0.7;
   transform: translateY(-50%);
   transition: width 120ms ease, height 120ms ease, opacity 120ms ease, background 120ms ease;
@@ -125,10 +125,37 @@
 }
 
 .promptRailMark[data-active] .promptRailTick {
-  width: 22px;
+  width: 25px;
   height: 2px;
   background: var(--dsw-static-deepseek-500);
   opacity: 1;
+}
+
+/* A wide window can still leave a narrow conversation when the utility
+   workbench is open. Keep the desktop ruler in that pane, but tighten its
+   active mark into the outer gutter instead of painting across message rows. */
+@container (max-width: 720px) {
+  .promptRailTrack {
+    left: calc(-1 * var(--dsh-composer-side-clearance) - 7px);
+  }
+
+  .promptRailMark[data-active] .promptRailTick {
+    width: 15px;
+  }
+}
+
+.promptRailActiveDot {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--dsw-static-deepseek-500);
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-base);
+  transform: translateY(-50%);
 }
 
 .promptRailMark:focus-visible {
@@ -156,12 +183,12 @@
 }
 
 .promptRailMark[data-edge='start'] .promptRailTooltip {
-  top: 0;
+  top: 50%;
   transform: none;
 }
 
 .promptRailMark[data-edge='end'] .promptRailTooltip {
-  top: 100%;
+  top: 50%;
   transform: translateY(-100%);
 }
 
@@ -176,6 +203,84 @@
   overflow: hidden;
   font-size: 12px;
   line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.promptRailCount {
+  position: absolute;
+  top: calc(100% + 18px);
+  left: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.promptRailCompactTrigger {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-button-floating-fill);
+  box-shadow: var(--dsw-shadow-lv1);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.promptRailCompactTrigger:focus-visible,
+.promptRailCompactItem button:focus-visible {
+  outline: 2px solid var(--dsw-alias-button-info-fill);
+  outline-offset: 2px;
+}
+
+.promptRailCompactPopover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1;
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(48vh, 360px);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-tooltip-bg);
+  box-shadow: var(--dsw-shadow-lv2);
+}
+
+.promptRailCompactList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.promptRailCompactItem button {
+  display: flex;
+  align-items: baseline;
+  width: 100%;
+  gap: 8px;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 8px;
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+}
+
+.promptRailCompactItem button:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.promptRailCompactItem button span:last-child {
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -199,7 +304,60 @@
 
 @media (max-width: 860px) {
   .promptRail {
-    display: none;
+    position: sticky;
+    top: 8px;
+    z-index: 8;
+    height: 32px;
+    margin: 0 auto 8px;
+    pointer-events: auto;
+  }
+
+  .promptRailCompact {
+    position: relative;
+    display: flex;
+    justify-content: flex-end;
+  }
+}
+
+@media (forced-colors: active) {
+  .promptRailTick,
+  .promptRailActiveDot {
+    forced-color-adjust: none;
+  }
+
+  .promptRailTrack::before {
+    background-color: CanvasText !important;
+  }
+
+  /* Chromium keeps a button descendant's author background in forced colors.
+   * Paint the one- and two-pixel ticks as explicit system-color borders instead. */
+  .promptRailTick {
+    height: 0;
+    border-top: 1px solid CanvasText !important;
+    opacity: 1;
+  }
+
+  .promptRailMark[data-active] .promptRailTick {
+    border-top-color: Highlight !important;
+    border-top-width: 2px;
+  }
+
+  .promptRailActiveDot {
+    border-color: Highlight;
+    background-color: Canvas !important;
+  }
+
+  .promptRailMark:focus-visible,
+  .promptRailCompactTrigger:focus-visible,
+  .promptRailCompactItem button:focus-visible {
+    outline-color: Highlight;
+  }
+
+  .promptRailCompactTrigger,
+  .promptRailCompactPopover {
+    border-color: CanvasText;
+    color: CanvasText;
+    background: Canvas;
   }
 }
 

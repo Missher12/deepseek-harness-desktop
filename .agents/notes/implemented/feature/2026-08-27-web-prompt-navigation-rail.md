@@ -10,13 +10,13 @@ Long conversations made it difficult to return to an earlier user instruction. B
 
 ## Decision
 
-The conversation renders a navigation-only ruler in the left gutter on sufficiently wide viewports. Every mark represents an exact user-message sequence from a lightweight prompt index returned with the immutable tail history response. Turn-opening prompts use longer marks, steering prompts use shorter marks, and the currently visible prompt uses the accent color.
+The conversation renders a navigation-only ruler about 16px from the left edge of the conversation pane on sufficiently wide viewports, without narrowing the message column. Every mark represents an exact user-message sequence from a lightweight prompt index returned with the immutable tail history response. Turn-opening prompts use longer marks, steering prompts use shorter marks, and the currently visible prompt uses the accent color, a hollow dot, and a position count.
 
-Pointer hover and keyboard focus reveal a localized tooltip containing the prompt ordinal and a normalized preview. The preview is bounded to 48 Unicode code points, image-only prompts receive an explicit fallback label, and no tooltip contains hidden full message content.
+Pointer hover and keyboard focus reveal a localized tooltip containing the prompt ordinal, formatted time, and a normalized preview. The preview is bounded to 48 Unicode code points, image-only prompts receive an explicit fallback label, and no tooltip contains hidden full message content. Wide rulers support ArrowUp, ArrowDown, Home, End, and activation keys with exactly one mark in the tab order.
 
 Selecting a mark asks the session runtime to reveal that exact sequence. The runtime serializes navigation requests, fetches only the older pages needed to materialize the target, and then scrolls the exact message row to the viewport center. Reduced-motion users receive an immediate scroll. A stale or unavailable target reports a local non-destructive status instead of navigating to an approximate message.
 
-The rail renders at most 120 marks while keeping the first and last prompt reachable. It remains hidden below the supported content width rather than overlapping the composer or message column. Live user messages append anchors locally, while a resync replaces the index from the new immutable tail cut.
+The rail renders at most 120 marks while keeping the first and last prompt reachable. Below the supported width, dense marks are replaced by a compact prompt-navigation trigger rather than overlapping the composer or message column; width changes and anchor replacements transfer focus only when the rail already owned it. Live user messages append anchors locally, while a resync replaces the index from the new immutable tail cut.
 
 The rail does not delete, edit, rewind, resend, branch, or fork a session. Existing explicit session-fork actions remain separate and unchanged.
 
@@ -36,4 +36,4 @@ Users can return to an exact earlier instruction from a compact visual landmark,
 
 ## Testing
 
-Host history tests cover tail-only index delivery, normalized previews, long history, and immutable cuts. Session runtime tests cover exact target loading, request serialization, live-anchor updates, and resync. Conversation tests cover left placement, long and short marks, bounded first/last reachability, localized hover and focus tooltips, reduced motion, exact scrolling, narrow-view hiding, and unavailable-target status.
+Host history tests cover tail-only index delivery, normalized previews, long history, and immutable cuts. Session runtime tests cover exact target loading, request serialization, live-anchor updates, and resync. Conversation tests cover left placement, long and short marks, the current dot and count, bounded first/last reachability, localized hover and focus tooltips, roving focus, wide/narrow focus handoff, the compact trigger, reduced motion, exact scrolling, and unavailable-target status.
