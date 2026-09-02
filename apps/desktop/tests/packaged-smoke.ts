@@ -877,8 +877,11 @@ async function exerciseWindowsDirectoryPicker(
   await addWorkspace.click()
   await automation
 
-  await page.getByText(basename(selectedDirectory), { exact: true })
-    .waitFor({ state: 'visible', timeout: 30_000 })
+  const selectedWorkspace = page.locator('[role="treeitem"][aria-expanded]').filter({
+    has: page.getByText(basename(selectedDirectory), { exact: true }),
+  })
+  await expect.poll(() => selectedWorkspace.count(), { timeout: 30_000 }).toBe(1)
+  await selectedWorkspace.waitFor({ state: 'visible', timeout: 30_000 })
   const nativeBlankSession = page.getByRole('treeitem').filter({
     has: page.getByText(/^(?:New Session|新会话)$/u, { exact: true }),
   }).first()
