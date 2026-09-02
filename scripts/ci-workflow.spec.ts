@@ -49,6 +49,7 @@ describe('CI workflow', () => {
     const publishSteps = publish.steps.filter(isRecord)
     const macMetadata = macSteps.find(step => step.name === 'Resolve Desktop release metadata')
     const windowsMetadata = windowsSteps.find(step => step.name === 'Resolve Desktop release metadata')
+    const macBuild = macSteps.find(step => step.name === 'Build the Intel macOS DMG')
     const generate = macSteps.find(step => step.name === 'Generate verified Desktop update manifest')
     const macUpload = macSteps.find(step => (
       typeof step.uses === 'string' && step.uses.startsWith('actions/upload-artifact@')
@@ -66,6 +67,9 @@ describe('CI workflow', () => {
     expect(generate?.run).toContain('deepseek-harness-desktop-update.json')
     expect(macMetadata?.run).toContain('apps/desktop/package.json')
     expect(windowsMetadata?.run).toContain('apps/desktop/package.json')
+    expect(macBuild).toMatchObject({
+      env: { NODE_OPTIONS: '--max-old-space-size=4096' },
+    })
     expect(JSON.stringify(mac)).toContain('${{ steps.desktop.outputs.artifact }}')
     expect(JSON.stringify(windows)).toContain('${{ steps.desktop.outputs.artifact }}')
     expect(JSON.stringify(macUpload)).toContain('deepseek-harness-desktop-update.json')
