@@ -105,6 +105,19 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(packaged).toContain('const seeded = await runPackagedDesktopSmoke')
     expect(packaged).toContain('exerciseWindows150PercentSurface(executable, seeded)')
     expect(packaged).toContain('hasText: seeded.activeSessionTitle')
+    expect(packaged).not.toContain("expect(await page.locator('[class*=\"sidebarCol\"]').count()).toBe(1)")
+    expect(packaged).not.toContain("expect(await page.locator('[class*=\"centerCol\"]').count()).toBe(1)")
+    expect(packaged).not.toContain("expect(await page.locator('[class*=\"detailsCol\"]').count()).toBe(1)")
+    const desktopBody = packaged.indexOf('body[data-dsh-surface="desktop"]')
+    const frameColumns = packaged.indexOf('await expect.poll(async () => Promise.all([')
+    const rendererScale = packaged.indexOf('window.devicePixelRatio')
+    expect(desktopBody).toBeGreaterThan(-1)
+    expect(frameColumns).toBeGreaterThan(desktopBody)
+    expect(rendererScale).toBeGreaterThan(frameColumns)
+    expect(packaged).toContain("page.locator('[class*=\"sidebarCol\"]').count(),")
+    expect(packaged).toContain("page.locator('[class*=\"centerCol\"]').count(),")
+    expect(packaged).toContain("page.locator('[class*=\"detailsCol\"]').count(),")
+    expect(packaged).toContain(']), { timeout: 120_000 }).toEqual([1, 1, 1])')
     expect(packaged).not.toContain(
       "page.getByRole('navigation', { name: /^(?:Previous prompts|过往发言)$/u })\n"
       + "      .waitFor({ state: 'visible', timeout: 30_000 })",

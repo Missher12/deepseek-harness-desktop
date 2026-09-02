@@ -80,15 +80,17 @@ async function exerciseWindows150PercentSurface(
     await expect.poll(() => page.locator('body[data-dsh-surface="desktop"]').count(), {
       timeout: 120_000,
     }).toBe(1)
+    await expect.poll(async () => Promise.all([
+      page.locator('[class*="sidebarCol"]').count(),
+      page.locator('[class*="centerCol"]').count(),
+      page.locator('[class*="detailsCol"]').count(),
+    ]), { timeout: 120_000 }).toEqual([1, 1, 1])
     await expect.poll(() => page.evaluate(() => window.devicePixelRatio), { timeout: 15_000 })
       .toBeCloseTo(1.5, 1)
     await expect.poll(() => application?.evaluate(({ screen }) => screen.getPrimaryDisplay().scaleFactor), {
       timeout: 15_000,
     }).toBeCloseTo(1.5, 1)
 
-    expect(await page.locator('[class*="sidebarCol"]').count()).toBe(1)
-    expect(await page.locator('[class*="centerCol"]').count()).toBe(1)
-    expect(await page.locator('[class*="detailsCol"]').count()).toBe(1)
     const collapsedFrame = page.locator('[data-sidebar-collapsed="true"]')
     if (await collapsedFrame.count() === 1) {
       await page.getByRole('button', { name: /^(?:Open sidebar|打开侧边栏)$/u }).click()
