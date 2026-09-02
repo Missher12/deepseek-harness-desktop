@@ -59,6 +59,15 @@ jobs:
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
+      - name: Exercise legacy fallback migration contracts
+        shell: pwsh
+        run: >-
+          pnpm exec vitest run
+          packages/boot/app-boot/tests/profile.spec.ts
+          apps/desktop/tests/packaged-smoke-helpers.spec.ts
+          --config vitest.config.ts
+          --reporter=verbose
+
       - name: Resolve Desktop release metadata
         id: desktop
         shell: pwsh

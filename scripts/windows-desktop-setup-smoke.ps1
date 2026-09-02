@@ -106,6 +106,24 @@ function Stop-IsolatedInstalledProcesses {
   }
 }
 
+function Get-FileTreeSnapshot {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Directory
+  )
+
+  if (-not (Test-Path -LiteralPath $Directory -PathType Container)) {
+    throw "Expected a recovery directory: $Directory"
+  }
+  return @(Get-ChildItem -LiteralPath $Directory -Recurse -Force -File |
+    Sort-Object -Property FullName |
+    ForEach-Object {
+      $relative = [System.IO.Path]::GetRelativePath($Directory, $_.FullName).Replace('\', '/')
+      $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+      "$relative`t$($_.Length)`t$hash"
+    })
+}
+
 $resolvedSetup = (Resolve-Path -LiteralPath $SetupPath).Path
 $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
 # Match the eight-character default "Programs" parent length. A longer test
@@ -124,6 +142,7 @@ $uninstaller = $null
 $uninstallerLauncher = Join-Path $temporaryRoot 'DeepSeek-Harness-Uninstall-Smoke.exe'
 $executable = $null
 $installed = $false
+$legacyRecoverySnapshot = $null
 
 if ((Test-Path -LiteralPath $desktopShortcut) -or (Test-Path -LiteralPath $startMenuShortcut)) {
   throw 'Desktop Setup smoke refuses to overwrite an existing DeepSeek Harness shortcut.'
@@ -166,6 +185,11 @@ try {
   if ($remainingProcesses.Count -ne 0) {
     throw "Packaged smoke left $($remainingProcesses.Count) installed application process(es) running."
   }
+  $legacyRecoveryRoot = Join-Path $harnessHome 'recovery\legacy-module-fallback'
+  $legacyRecoverySnapshot = @(Get-FileTreeSnapshot -Directory $legacyRecoveryRoot)
+  if ($legacyRecoverySnapshot.Count -eq 0) {
+    throw 'Packaged smoke did not preserve the recovered legacy module fallback files.'
+  }
 
   Invoke-IsolatedUninstall -InstalledUninstaller $uninstaller -InstallRoot $installRoot -LauncherPath $uninstallerLauncher
   $installed = $false
@@ -180,8 +204,12 @@ try {
   if (-not (Test-Path -LiteralPath $userDataMarker -PathType Leaf)) {
     throw 'Uninstall removed the isolated Electron data marker.'
   }
+  $legacyRecoveryAfterUninstall = @(Get-FileTreeSnapshot -Directory $legacyRecoveryRoot)
+  if (Compare-Object -ReferenceObject $legacyRecoverySnapshot -DifferenceObject $legacyRecoveryAfterUninstall) {
+    throw 'Uninstall changed the recovered legacy module fallback files.'
+  }
 
-  Write-Host 'Windows desktop Setup smoke passed: install, shortcuts, launch, close, process cleanup, uninstall, and data preservation.'
+  Write-Host 'Windows desktop Setup smoke passed: install, shortcuts, legacy fallback recovery, launch, close, process cleanup, uninstall, and data preservation.'
 }
 finally {
   if ($null -ne $executable) {
