@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-09-02-desktop-0.5.2-interface.md
 2026-09-02-desktop-0.5.2-interface.md: f47beb924415556e10c9a002d1fab5d8fab9ffee
-2026-09-02-desktop-0.5.2-interface.zh.md: 27313c090cb9c795a0cf00f10c7d1e4d4ad1a6cd
+2026-09-02-desktop-0.5.2-interface.zh.md: e6804671d581c58212b414548aad9c9ced65893e
