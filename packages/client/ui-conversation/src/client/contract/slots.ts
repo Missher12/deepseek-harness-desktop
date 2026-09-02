@@ -762,16 +762,24 @@ export class PendingApproval {
   }
 }
 
+/** Narrow current-Session command face injected into the approval takeover. */
+export interface ApprovalComposerInjected {
+  /** Execute one slash command against the Session that owns this approval. */
+  runSessionCommand: (line: string) => Promise<boolean>
+}
+
 /**
  * Full approval-composer props: the framework runtime share (chain currency +
  * session/global standard kit) plus the chain `matched` share — the entry's
- * selector result, already narrowed to the approval carrier — plus the
- * standard locale seat. No injected share: the carrier plus the domain face
- * above carry the whole behavior surface; the paired command line derives
- * from useSession in-component.
+ * selector result, already narrowed to the approval carrier — plus one
+ * current-Session command verb and the standard locale seat. The command
+ * face exposes neither the Session object nor any global permission state.
  */
 export type ApprovalComposerProps =
-  PropsRuntime<'conversation.composer'> & { matched: ApprovalWait } & PropsLocale<'conversation'>
+  PropsRuntime<'conversation.composer'>
+  & { matched: ApprovalWait }
+  & InjectFace<ApprovalComposerInjected>
+  & PropsLocale<'conversation'>
 
 /** In-memory reader position resilient to transcript width reflow. */
 export interface ChatScrollPosition {

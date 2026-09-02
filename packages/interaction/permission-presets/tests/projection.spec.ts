@@ -103,6 +103,20 @@ describe('/permission command', () => {
     expect(run?.data).toMatchObject({ name: 'permission', args: ' danger-full-access' })
   })
 
+  it('changes only the addressed Session and can switch that Session back to Workspace Write', async () => {
+    const { ctx, session: first } = await harness()
+    const second = ctx.sessions.create(SessionId('perm-projected-second'))
+    const { agent } = await agentFor(ctx, first)
+
+    await ctx.commands.execute(agent, '/permission danger-full-access', [], new AbortController().signal)
+    expect(ctx.permissionPresets.current(first.events)).toBe('danger-full-access')
+    expect(ctx.permissionPresets.current(second.events)).toBe('workspace-write')
+
+    await ctx.commands.execute(agent, '/permission workspace-write', [], new AbortController().signal)
+    expect(ctx.permissionPresets.current(first.events)).toBe('workspace-write')
+    expect(ctx.permissionPresets.current(second.events)).toBe('workspace-write')
+  })
+
   it('reports the current preset and the table on bare invocation', async () => {
     const { ctx, session } = await harness()
     const { agent } = await agentFor(ctx, session)

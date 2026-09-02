@@ -43,6 +43,7 @@ function sessionFakeFor() {
     revealHistorySeq: vi.fn<ISession['revealHistorySeq']>(() => Promise.resolve()),
     prompt: vi.fn<ISession['prompt']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
     cancel: vi.fn<ISession['cancel']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
+    command: vi.fn<ISession['command']>(() => Promise.resolve({ ok: true, value: { matched: true } })),
   } satisfies SessionBehaviorOverrides
 }
 
@@ -101,6 +102,10 @@ async function bench() {
     const entry = entryOf('conversation.composer.bar')
     return (entry.inject as unknown as (sessionId: SessionId | undefined) => ComposerBarInjected)(id)
   }
+  const approvalApi = (id: SessionId) => {
+    const entry = runtime.slots.entries('conversation.composer')[0]!
+    return (entry.inject as unknown as (sessionId: SessionId) => { runSessionCommand: (line: string) => Promise<boolean> })(id)
+  }
   /** Same resolution for the chat entry riding the view ring. */
   const chatViewApi = (id: SessionId) => {
     const entry = entryOf('conversation.view')
@@ -124,7 +129,7 @@ async function bench() {
   }
   return {
     runtime, feature, slots: runtime.slots, entryOf,
-    conversationApi, conversationHeaderApi, residentApi, composerApi, chatViewApi, inputApi,
+    conversationApi, conversationHeaderApi, residentApi, composerApi, approvalApi, chatViewApi, inputApi,
     sessionFake, layoutFake,
   }
 }
@@ -197,6 +202,22 @@ describe('conversation slot inject API', () => {
     b.composerApi(ROOT).stop!()
     await new Promise(r => setTimeout(r, 0))
     expect(b.sessionFake.cancel).toHaveBeenCalledTimes(1)
+    await b.runtime.dispose()
+  })
+
+  it('shares one narrow current-Session command behavior with the bar and approval takeover', async () => {
+    const b = await bench()
+    const bar = b.composerApi(ROOT)
+    const approval = b.approvalApi(ROOT)
+
+    await expect(bar.command?.('/permission workspace-write')).resolves.toBe(true)
+    await expect(approval.runSessionCommand('/permission danger-full-access')).resolves.toBe(true)
+    expect(b.sessionFake.command).toHaveBeenNthCalledWith(1, '/permission workspace-write')
+    expect(b.sessionFake.command).toHaveBeenNthCalledWith(2, '/permission danger-full-access')
+    expect(Object.keys(approval)).toEqual(['runSessionCommand'])
+
+    b.sessionFake.command.mockResolvedValueOnce({ ok: false, error: { code: 'internal', message: 'x', details: {} } })
+    await expect(approval.runSessionCommand('/permission danger-full-access')).resolves.toBe(false)
     await b.runtime.dispose()
   })
 

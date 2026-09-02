@@ -107,6 +107,14 @@ function concreteConversation(ctx: Context): ConversationController {
   return conversation
 }
 
+/** Execute one command against one exact current Session without exposing its object to UI entries. */
+async function runSessionCommand(sessions: ISessions, sessionId: SessionId, line: string): Promise<boolean> {
+  const session = sessions.binding(sessionId)?.session
+  if (session === undefined) return false
+  const result = await session.command(line)
+  return result.ok && result.value.matched
+}
+
 /** Chain routing: claim the composer while an approval wait is pending (pure — owner props only). */
 function selectApproval({ interactions }: ComposerChainProps): ApprovalWait | null {
   return interactions.find((i): i is ApprovalWait => i.kind === 'approval') ?? null
@@ -386,10 +394,7 @@ export function apply(ctx: Context): void {
           })
         },
         command: async (line) => {
-          const session = sessions.binding(sessionId)?.session
-          if (session === undefined) return false
-          const result = await session.command(line)
-          return result.ok && result.value.matched
+          return await runSessionCommand(sessions, sessionId, line)
         },
         hooks: {
           notices: shell.notices,
@@ -403,12 +408,22 @@ export function apply(ctx: Context): void {
   // The approval takeover: a selector-routed entry of the chain this package
   // just declared (the ui-user-questions registration pattern; the entry lives here
   // because approval answering is core conversation UX, not an optional tool).
-  // Zero business face — data and verbs both ride the matched carrier.
+  // The carrier owns the approval response. The only injected verb is the
+  // exact current-Session command surface shared with the Access selector;
+  // no Session object or cross-Session permission authority reaches the UI.
   // priority 1: question takeovers (default 0) win when both kinds are
   // pending — a question is a conversation the model is waiting on, while an
   // approval only blocks one tool call; answering the question first cannot
   // strand the approval (it re-elects the moment the question resolves).
-  slots.register({ name: 'conversation.composer', select: selectApproval, priority: 1, locale: NS }, ApprovalPanel)
+  slots.register({
+    name: 'conversation.composer',
+    select: selectApproval,
+    priority: 1,
+    locale: NS,
+    inject: (sessionId: SessionId) => ({
+      runSessionCommand: (line: string) => runSessionCommand(sessions, sessionId, line),
+    }),
+  }, ApprovalPanel)
 
   // The chat view: first entry of the ring this package just declared.
   // ChatView owns only the stable ordered Node list. Business renderers are
