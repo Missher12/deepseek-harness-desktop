@@ -100,6 +100,12 @@ describe('desktop package manifest', () => {
     expect(manifest.devDependencies.playwright).toBe('^1.49.0')
     expect(manifest.scripts['pack:dir']).toContain('--mac dir --x64')
     expect(manifest.scripts['pack:dmg']).toContain('--mac dmg --x64')
+    expect(manifest.scripts['benchmark:startup']).toBe(
+      'node --import tsx/esm ../../scripts/desktop-startup-benchmark.ts',
+    )
+    expect(manifest.scripts['inventory:package']).toBe(
+      'node --import tsx/esm ../../scripts/desktop-package-inventory.ts',
+    )
   })
 
   it('builds Mac desktop artifacts with the official client brand profile', () => {

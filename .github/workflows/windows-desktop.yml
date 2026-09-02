@@ -91,6 +91,55 @@ jobs:
           $workspaceArtifact = Join-Path 'apps/desktop/release' $artifact
           New-Item -ItemType Directory -Force -Path (Split-Path -Parent $workspaceArtifact) | Out-Null
           Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact
+          $unpacked = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) 'release\win-unpacked'
+          pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package -- --output apps/desktop/release/desktop-package-staged.json $unpacked
+          if ($LASTEXITCODE -ne 0) { throw "Staged package inventory failed with exit code $LASTEXITCODE." }
+          $setupFile = Get-Item -LiteralPath $workspaceArtifact
+          $setupEvidence = [ordered]@{
+            schemaVersion = 1
+            path = $setupFile.Name
+            bytes = $setupFile.Length
+            sha256 = (Get-FileHash -LiteralPath $setupFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          [System.IO.File]::WriteAllText(
+            'apps/desktop/release/desktop-package-setup.json',
+            (($setupEvidence | ConvertTo-Json) + "`n"),
+            [System.Text.UTF8Encoding]::new($false)
+          )
+
+      - name: Measure the pinned 0.5.1 parent on this runner
+        shell: pwsh
+        run: |
+          $baselineName = 'DeepSeek-Harness-Setup-0.5.1-win-x64.exe'
+          $baselinePath = Join-Path $env:RUNNER_TEMP $baselineName
+          $baselineUrl = "https://github.com/Missher12/deepseek-harness-desktop/releases/download/desktop-v0.5.1/$baselineName"
+          Invoke-WebRequest -Uri $baselineUrl -OutFile $baselinePath
+          $baseline = Get-Item -LiteralPath $baselinePath
+          if ($baseline.Length -ne 154116788) {
+            throw "0.5.1 Setup size mismatch: expected 154116788, got $($baseline.Length)."
+          }
+          $baselineHash = (Get-FileHash -LiteralPath $baselinePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedHash = 'f4d661c6ff5fad93a50a6de2801da207efb54c021434c745b4c46c0982e57318'
+          if ($baselineHash -ne $expectedHash) {
+            throw "0.5.1 Setup SHA-256 mismatch: expected $expectedHash, got $baselineHash."
+          }
+          $baselineSetupEvidence = [ordered]@{
+            schemaVersion = 1
+            path = $baseline.Name
+            bytes = $baseline.Length
+            sha256 = $baselineHash
+          }
+          [System.IO.File]::WriteAllText(
+            'apps/desktop/release/desktop-package-setup-baseline-0.5.1.json',
+            (($baselineSetupEvidence | ConvertTo-Json) + "`n"),
+            [System.Text.UTF8Encoding]::new($false)
+          )
+          ./scripts/windows-desktop-setup-smoke.ps1 `
+            -SetupPath $baselinePath `
+            -StartupSummaryPath apps/desktop/release/desktop-startup-baseline-0.5.1.json `
+            -PackageInventoryPath apps/desktop/release/desktop-package-installed-baseline-0.5.1.json `
+            -RuntimeEvidenceOnly
+          Remove-Item -LiteralPath $baselinePath -Force
 
       - name: Exercise the visible installer pages
         shell: pwsh
@@ -103,6 +152,23 @@ jobs:
         run: >-
           ./scripts/windows-desktop-setup-smoke.ps1
           -SetupPath apps/desktop/release/${{ steps.desktop.outputs.artifact }}
+          -StartupSummaryPath apps/desktop/release/desktop-startup-summary.json
+          -PackageInventoryPath apps/desktop/release/desktop-package-installed.json
+
+      - name: Preserve portable runtime evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: Windows-runtime-evidence-${{ steps.source.outputs.sha }}
+          path: |
+            s/apps/desktop/release/desktop-startup-summary.json
+            s/apps/desktop/release/desktop-package-installed.json
+            s/apps/desktop/release/desktop-package-staged.json
+            s/apps/desktop/release/desktop-package-setup.json
+            s/apps/desktop/release/desktop-startup-baseline-0.5.1.json
+            s/apps/desktop/release/desktop-package-installed-baseline-0.5.1.json
+            s/apps/desktop/release/desktop-package-setup-baseline-0.5.1.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Preserve native title-bar diagnostics
         uses: actions/upload-artifact@v7

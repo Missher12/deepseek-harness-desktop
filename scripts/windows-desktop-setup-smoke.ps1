@@ -1,6 +1,9 @@
 param(
   [Parameter(Mandatory = $true)]
-  [string]$SetupPath
+  [string]$SetupPath,
+  [string]$StartupSummaryPath = 'apps/desktop/release/desktop-startup-summary.json',
+  [string]$PackageInventoryPath = 'apps/desktop/release/desktop-package-installed.json',
+  [switch]$RuntimeEvidenceOnly
 )
 
 Set-StrictMode -Version Latest
@@ -106,6 +109,155 @@ function Stop-IsolatedInstalledProcesses {
   }
 }
 
+function Wait-IsolatedInstalledProcessesStopped {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$ExecutablePath
+  )
+
+  $deadline = [DateTime]::UtcNow.AddSeconds(30)
+  $remaining = @(Get-IsolatedInstalledProcesses -ExecutablePath $ExecutablePath)
+  while ($remaining.Count -ne 0 -and [DateTime]::UtcNow -lt $deadline) {
+    Start-Sleep -Milliseconds 250
+    $remaining = @(Get-IsolatedInstalledProcesses -ExecutablePath $ExecutablePath)
+  }
+  if ($remaining.Count -ne 0) {
+    throw "Desktop startup sample left $($remaining.Count) installed process(es) running."
+  }
+}
+
+function Invoke-DesktopStartupSample {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$ExecutablePath,
+    [Parameter(Mandatory = $true)]
+    [string]$HarnessHome,
+    [Parameter(Mandatory = $true)]
+    [string]$UserData,
+    [Parameter(Mandatory = $true)]
+    [string]$EvidenceRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$SampleKind,
+    [Parameter(Mandatory = $true)]
+    [int]$SampleIndex
+  )
+
+  New-Item -ItemType Directory -Force -Path $HarnessHome, $UserData, $EvidenceRoot | Out-Null
+  $lifecyclePath = Join-Path $UserData 'logs\lifecycle.log'
+  if (Test-Path -LiteralPath $lifecyclePath) {
+    Remove-Item -LiteralPath $lifecyclePath -Force
+  }
+
+  $startInfo = [System.Diagnostics.ProcessStartInfo]::new($ExecutablePath)
+  $startInfo.UseShellExecute = $false
+  $startInfo.WorkingDirectory = Split-Path -Parent $ExecutablePath
+  $startInfo.ArgumentList.Add("--user-data-dir=$UserData")
+  $startInfo.Environment['DSH_HOME'] = $HarnessHome
+  $startInfo.Environment['DSH_TELEMETRY_DISABLED'] = '1'
+  $process = [System.Diagnostics.Process]::Start($startInfo)
+  if ($null -eq $process) {
+    throw "Windows did not start Desktop startup sample $SampleKind-$SampleIndex."
+  }
+
+  try {
+    $startupDeadline = [DateTime]::UtcNow.AddSeconds(120)
+    $running = $false
+    while (-not $running -and [DateTime]::UtcNow -lt $startupDeadline) {
+      if ($process.HasExited) {
+        throw "Desktop startup sample $SampleKind-$SampleIndex exited before desktop-running."
+      }
+      if (Test-Path -LiteralPath $lifecyclePath -PathType Leaf) {
+        $running = [bool](Select-String -LiteralPath $lifecyclePath -Quiet -Pattern ' startup desktop-running: [0-9]+ms$')
+      }
+      if (-not $running) {
+        Start-Sleep -Milliseconds 250
+      }
+    }
+    if (-not $running) {
+      throw "Desktop startup sample $SampleKind-$SampleIndex missed its startup deadline."
+    }
+
+    if (-not $process.CloseMainWindow()) {
+      throw "Desktop startup sample $SampleKind-$SampleIndex did not expose a closable native window."
+    }
+    if (-not $process.WaitForExit(60000)) {
+      throw "Desktop startup sample $SampleKind-$SampleIndex did not exit after native close."
+    }
+    Wait-IsolatedInstalledProcessesStopped -ExecutablePath $ExecutablePath
+
+    $startupPattern = '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z startup (app-ready|window-prerequisites|loading-visible|fallback-ready|url-reported|harness-ready|desktop-running): [0-9]+ms$'
+    $startupLines = @(Get-Content -LiteralPath $lifecyclePath | Where-Object { $_ -match $startupPattern })
+    $sampleLog = Join-Path $EvidenceRoot "$SampleKind-$SampleIndex.log"
+    [System.IO.File]::WriteAllLines($sampleLog, $startupLines, [System.Text.UTF8Encoding]::new($false))
+    return $sampleLog
+  }
+  finally {
+    if (-not $process.HasExited) {
+      Stop-IsolatedInstalledProcesses -ExecutablePath $ExecutablePath
+    }
+    $process.Dispose()
+  }
+}
+
+function Write-DesktopRuntimeEvidence {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$ExecutablePath,
+    [Parameter(Mandatory = $true)]
+    [string]$TemporaryRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$SummaryPath,
+    [Parameter(Mandatory = $true)]
+    [string]$InventoryPath
+  )
+
+  $summary = [System.IO.Path]::GetFullPath($SummaryPath)
+  $inventory = [System.IO.Path]::GetFullPath($InventoryPath)
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $summary), (Split-Path -Parent $inventory) | Out-Null
+  $benchmarkRoot = Join-Path $TemporaryRoot 'startup-benchmark'
+  $evidenceRoot = Join-Path $benchmarkRoot 'fixed-milestones'
+  $warmHome = Join-Path $benchmarkRoot 'warm\dsh-home'
+  $warmUserData = Join-Path $benchmarkRoot 'warm\electron-data'
+
+  Invoke-DesktopStartupSample -ExecutablePath $ExecutablePath -HarnessHome $warmHome -UserData $warmUserData -EvidenceRoot $evidenceRoot -SampleKind 'warm-prime' -SampleIndex 0 | Out-Null
+  $logs = @{ cold = [System.Collections.Generic.List[string]]::new(); warm = [System.Collections.Generic.List[string]]::new() }
+  foreach ($sampleKind in @('cold', 'warm')) {
+    for ($sampleIndex = 1; $sampleIndex -le 5; $sampleIndex += 1) {
+      if ($sampleKind -eq 'cold') {
+        $sampleRoot = Join-Path $benchmarkRoot "cold-$sampleIndex"
+        $sampleHome = Join-Path $sampleRoot 'dsh-home'
+        $sampleUserData = Join-Path $sampleRoot 'electron-data'
+      }
+      else {
+        $sampleHome = $warmHome
+        $sampleUserData = $warmUserData
+      }
+      $sampleLog = Invoke-DesktopStartupSample -ExecutablePath $ExecutablePath -HarnessHome $sampleHome -UserData $sampleUserData -EvidenceRoot $evidenceRoot -SampleKind $sampleKind -SampleIndex $sampleIndex
+      $logs[$sampleKind].Add($sampleLog)
+    }
+  }
+
+  $coldSummary = Join-Path $benchmarkRoot 'cold-summary.json'
+  $warmSummary = Join-Path $benchmarkRoot 'warm-summary.json'
+  & pnpm --filter '@deepseek-ai/dsh-desktop' run benchmark:startup -- --output $coldSummary @($logs.cold)
+  if ($LASTEXITCODE -ne 0) { throw "Cold startup benchmark failed with exit code $LASTEXITCODE." }
+  & pnpm --filter '@deepseek-ai/dsh-desktop' run benchmark:startup -- --output $warmSummary @($logs.warm)
+  if ($LASTEXITCODE -ne 0) { throw "Warm startup benchmark failed with exit code $LASTEXITCODE." }
+  $combined = [ordered]@{
+    schemaVersion = 1
+    cold = Get-Content -LiteralPath $coldSummary -Raw | ConvertFrom-Json
+    warm = Get-Content -LiteralPath $warmSummary -Raw | ConvertFrom-Json
+  }
+  [System.IO.File]::WriteAllText(
+    $summary,
+    (($combined | ConvertTo-Json -Depth 20) + "`n"),
+    [System.Text.UTF8Encoding]::new($false)
+  )
+
+  & pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package -- --output $inventory (Split-Path -Parent $ExecutablePath)
+  if ($LASTEXITCODE -ne 0) { throw "Installed package inventory failed with exit code $LASTEXITCODE." }
+}
+
 function Get-FileTreeSnapshot {
   param(
     [Parameter(Mandatory = $true)]
@@ -143,6 +295,7 @@ $uninstallerLauncher = Join-Path $temporaryRoot 'DeepSeek-Harness-Uninstall-Smok
 $executable = $null
 $installed = $false
 $legacyRecoverySnapshot = $null
+$legacyRecoveryRoot = $null
 
 if ((Test-Path -LiteralPath $desktopShortcut) -or (Test-Path -LiteralPath $startMenuShortcut)) {
   throw 'Desktop Setup smoke refuses to overwrite an existing DeepSeek Harness shortcut.'
@@ -173,22 +326,30 @@ try {
   }
   $uninstaller = $uninstallers[0].FullName
 
-  $env:DSH_WINDOWS_DESKTOP_EXECUTABLE = $executable
-  $env:DSH_DESKTOP_SMOKE_ROOT = $temporaryRoot
-  $env:DSH_DESKTOP_SMOKE_DSH_HOME = $harnessHome
-  $env:DSH_DESKTOP_SMOKE_USER_DATA = $userData
-  & pnpm exec vitest run apps/desktop/tests/windows-packaged-smoke.spec.ts --config vitest.config.ts
-  if ($LASTEXITCODE -ne 0) {
-    throw "Packaged Windows desktop smoke failed with exit code $LASTEXITCODE."
-  }
-  $remainingProcesses = @(Get-IsolatedInstalledProcesses -ExecutablePath $executable)
-  if ($remainingProcesses.Count -ne 0) {
-    throw "Packaged smoke left $($remainingProcesses.Count) installed application process(es) running."
-  }
-  $legacyRecoveryRoot = Join-Path $harnessHome 'recovery\legacy-module-fallback'
-  $legacyRecoverySnapshot = @(Get-FileTreeSnapshot -Directory $legacyRecoveryRoot)
-  if ($legacyRecoverySnapshot.Count -eq 0) {
-    throw 'Packaged smoke did not preserve the recovered legacy module fallback files.'
+  Write-DesktopRuntimeEvidence `
+    -ExecutablePath $executable `
+    -TemporaryRoot $temporaryRoot `
+    -SummaryPath $StartupSummaryPath `
+    -InventoryPath $PackageInventoryPath
+
+  if (-not $RuntimeEvidenceOnly) {
+    $env:DSH_WINDOWS_DESKTOP_EXECUTABLE = $executable
+    $env:DSH_DESKTOP_SMOKE_ROOT = $temporaryRoot
+    $env:DSH_DESKTOP_SMOKE_DSH_HOME = $harnessHome
+    $env:DSH_DESKTOP_SMOKE_USER_DATA = $userData
+    & pnpm exec vitest run apps/desktop/tests/windows-packaged-smoke.spec.ts --config vitest.config.ts
+    if ($LASTEXITCODE -ne 0) {
+      throw "Packaged Windows desktop smoke failed with exit code $LASTEXITCODE."
+    }
+    $remainingProcesses = @(Get-IsolatedInstalledProcesses -ExecutablePath $executable)
+    if ($remainingProcesses.Count -ne 0) {
+      throw "Packaged smoke left $($remainingProcesses.Count) installed application process(es) running."
+    }
+    $legacyRecoveryRoot = Join-Path $harnessHome 'recovery\legacy-module-fallback'
+    $legacyRecoverySnapshot = @(Get-FileTreeSnapshot -Directory $legacyRecoveryRoot)
+    if ($legacyRecoverySnapshot.Count -eq 0) {
+      throw 'Packaged smoke did not preserve the recovered legacy module fallback files.'
+    }
   }
 
   Invoke-IsolatedUninstall -InstalledUninstaller $uninstaller -InstallRoot $installRoot -LauncherPath $uninstallerLauncher
@@ -204,12 +365,19 @@ try {
   if (-not (Test-Path -LiteralPath $userDataMarker -PathType Leaf)) {
     throw 'Uninstall removed the isolated Electron data marker.'
   }
-  $legacyRecoveryAfterUninstall = @(Get-FileTreeSnapshot -Directory $legacyRecoveryRoot)
-  if (Compare-Object -ReferenceObject $legacyRecoverySnapshot -DifferenceObject $legacyRecoveryAfterUninstall) {
-    throw 'Uninstall changed the recovered legacy module fallback files.'
+  if (-not $RuntimeEvidenceOnly) {
+    $legacyRecoveryAfterUninstall = @(Get-FileTreeSnapshot -Directory $legacyRecoveryRoot)
+    if (Compare-Object -ReferenceObject $legacyRecoverySnapshot -DifferenceObject $legacyRecoveryAfterUninstall) {
+      throw 'Uninstall changed the recovered legacy module fallback files.'
+    }
   }
 
-  Write-Host 'Windows desktop Setup smoke passed: install, shortcuts, legacy fallback recovery, launch, close, process cleanup, uninstall, and data preservation.'
+  if ($RuntimeEvidenceOnly) {
+    Write-Host 'Windows desktop runtime evidence passed: install, five cold and warm launches, process cleanup, uninstall, and data preservation.'
+  }
+  else {
+    Write-Host 'Windows desktop Setup smoke passed: install, shortcuts, legacy fallback recovery, launch, close, process cleanup, uninstall, and data preservation.'
+  }
 }
 finally {
   if ($null -ne $executable) {

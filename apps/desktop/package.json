@@ -16,7 +16,9 @@
     "README.zh.md"
   ],
   "scripts": {
+    "benchmark:startup": "node --import tsx/esm ../../scripts/desktop-startup-benchmark.ts",
     "build:main": "tsc -b && tsdown",
+    "inventory:package": "node --import tsx/esm ../../scripts/desktop-package-inventory.ts",
     "start": "electron .",
     "pack:dir": "electron-builder --projectDir .stage --config electron-builder.yml --mac dir --x64",
     "pack:dmg": "electron-builder --projectDir .stage --config electron-builder.yml --mac dmg --x64",
