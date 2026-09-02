@@ -354,7 +354,7 @@
 .flatList > * + *,
 .searchTree > [role='treeitem'] + [role='treeitem'],
 .groupSection > * + * {
-  margin-top: 2px;
+  margin-top: var(--dsh-sidebar-row-gap);
 }
 
 .searchStatus,
@@ -374,8 +374,12 @@
   position: relative;
 }
 
+.groupSection > [role='treeitem']:first-child + [role='treeitem'] {
+  margin-top: var(--dsh-sidebar-project-session-gap);
+}
+
 .groupSection + .groupSection {
-  margin-top: 4px;
+  margin-top: var(--dsh-sidebar-project-group-gap);
 }
 
 .listTopDropIndicator,

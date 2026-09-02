@@ -69,11 +69,17 @@ describe('WorkspaceBrowser.module.css list', () => {
     expect(list!.get('scrollbar-gutter')).toBe('stable')
   })
 
-  it('keeps 2px between rows and 4px between workspace groups', () => {
-    expect(declarations('.flatList > * + *')?.get('margin-top')).toBe('2px')
-    expect(declarations(".searchTree > [role='treeitem'] + [role='treeitem']")?.get('margin-top')).toBe('2px')
-    expect(declarations('.groupSection > * + *')?.get('margin-top')).toBe('2px')
-    expect(declarations('.groupSection + .groupSection')?.get('margin-top')).toBe('4px')
+  it('separates Project groups while keeping compact rows and a smaller first-Session gap', () => {
+    expect(declarations('.flatList > * + *')?.get('margin-top'))
+      .toBe('var(--dsh-sidebar-row-gap)')
+    expect(declarations(".searchTree > [role='treeitem'] + [role='treeitem']")?.get('margin-top'))
+      .toBe('var(--dsh-sidebar-row-gap)')
+    expect(declarations('.groupSection > * + *')?.get('margin-top'))
+      .toBe('var(--dsh-sidebar-row-gap)')
+    expect(declarations(".groupSection > [role='treeitem']:first-child + [role='treeitem']")?.get('margin-top'))
+      .toBe('var(--dsh-sidebar-project-session-gap)')
+    expect(declarations('.groupSection + .groupSection')?.get('margin-top'))
+      .toBe('var(--dsh-sidebar-project-group-gap)')
   })
 
   it('draws drag targets as a leading chevron joined to the insertion line', () => {
@@ -105,7 +111,19 @@ describe('WorkspaceBrowser.module.css list', () => {
     expect(rowDeclarations('.flatSessionRowWithoutStatus .title')?.get('margin-left')).toBe('0')
     expect(rowDeclarations('.searchResultRow')?.get('min-height')).toBe('48px')
     expect(rowDeclarations('.sessionRow.selected')?.get('background'))
-      .toBe('var(--dsw-alias-interactive-bg-hover)')
+      .toBe('var(--dsw-alias-interactive-bg-active)')
+    expect(rowDeclarations('.searchResultRow.selected')?.get('background'))
+      .toBe('var(--dsw-alias-interactive-bg-active)')
+  })
+
+  it('keeps long titles isolated from the fixed status and action slots', () => {
+    expect(rowDeclarations('.projectText')?.get('min-width')).toBe('0')
+    expect(rowDeclarations('.title')?.get('min-width')).toBe('0')
+    expect(rowDeclarations('.title')?.get('overflow')).toBe('hidden')
+    expect(rowDeclarations('.title')?.get('text-overflow')).toBe('ellipsis')
+    expect(rowDeclarations('.title')?.get('white-space')).toBe('nowrap')
+    expect(rowDeclarations('.slot')?.get('flex')).toBe('none')
+    expect(rowDeclarations('.rowActions')?.get('flex')).toBe('none')
   })
 
   it('pins both rail controls to the shared left anchor during the column slide', () => {

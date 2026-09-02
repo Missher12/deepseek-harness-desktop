@@ -30,7 +30,7 @@ Workspace 注册表持有持久 `workspaceIds` 顺序，并提供采用 DOM `ins
 
 Workspace 命中测试使用完整渲染分组区段，包括可见 Session 行。前一分组的下半部与后一分组的上半部共享同一条插入边界，指示器是一条带有相连右向尖角且不影响布局的绝对定位横线。树主体覆盖层会在滚动裁切区外以相同的负偏移绘制第一条边界，因此左侧尖角保持可见，列表位置也不会改变。Workspace 或 Session 拖拽期间，文档级 `dragover` 与 `drop` 处理器会接受原生操作；若在 Workspace 列表外松手，`dragend` 会提交最后一个有效标记。
 
-搜索在折叠时是区头操作，展开后占据标题与尾部操作的空间。查询经清除首尾空白后为空时，点击外部会收起搜索；非空查询则会保留；轨道搜索手势仍在进行期间，外部点击监听器保持未挂载（[轨道搜索自我收起](../bug-fix/2026-08-18-rail-search-outside-click-self-dismissal.zh.md)）。紧凑的 Workspace 与 Session 行、24px 底部渐隐以及取消每个 Workspace 的 Session 数量共同节省纵向空间，同时保留导航入口。
+搜索在折叠时是区头操作，展开后占据标题与尾部操作的空间。查询经清除首尾空白后为空时，点击外部会收起搜索；非空查询则会保留；轨道搜索手势仍在进行期间，外部点击监听器保持未挂载（[轨道搜索自我收起](../bug-fix/2026-08-18-rail-search-outside-click-self-dismissal.zh.md)）。紧凑的 Workspace 与 Session 行、24px 底部渐隐以及取消每个 Workspace 的 Session 数量共同节省纵向空间，同时保留导航入口。侧栏壳层统一拥有列表节奏：普通相邻行仍相隔 2px，第一个 Session 位于其 Project 下方 4px，相邻 Project 组相隔 8px。Project 与 Session 行高分别保持 34px 与 32px，圆角均为 8px；选中 Session 使用低对比 active 填充，而固定的状态槽与操作槽会使省略显示的长标题在操作出现时既不碰撞也不位移。
 
 ## 考虑过的替代方案
 
@@ -56,4 +56,4 @@ Workspace 命中测试使用完整渲染分组区段，包括可见 Session 行�
 
 ## 测试
 
-领域与 Host 测试覆盖持久 Workspace 移动、无操作与无效锚点、重启恢复、完整顺序 RPC 响应、顺序帧以及每条 Host stream 基线只读取一份 Workspace 快照。运行时测试覆盖乐观顺序、帧／响应优先级、重叠拒绝后恢复 Host 已确认顺序、重连基线以及 New Session 目标优先级。UI 测试覆盖五行折叠、临时展开重置、Workspace 移除后清理持久状态、保持顺序的模式切换、一次性最近更新与“新会话”置顶、首条提示词落地后保留手动拖拽、浏览器本地 Ungrouped 与单列表拖拽持久化、无层级单列表行左侧间距、当前视图标记、展开区段的 Workspace 命中、未裁切的第一条插入边界、列表外 Workspace 与 Session 松手、搜索收起规则和紧凑 CSS 尺寸。
+领域与 Host 测试覆盖持久 Workspace 移动、无操作与无效锚点、重启恢复、完整顺序 RPC 响应、顺序帧以及每条 Host stream 基线只读取一份 Workspace 快照。运行时测试覆盖乐观顺序、帧／响应优先级、重叠拒绝后恢复 Host 已确认顺序、重连基线以及 New Session 目标优先级。UI 测试覆盖五行折叠、临时展开重置、Workspace 移除后清理持久状态、保持顺序的模式切换、一次性最近更新与“新会话”置顶、首条提示词落地后保留手动拖拽、浏览器本地 Ungrouped 与单列表拖拽持久化、无层级单列表行左侧间距、当前视图标记、展开区段的 Workspace 命中、未裁切的第一条插入边界、列表外 Workspace 与 Session 松手、搜索收起规则、紧凑 CSS 尺寸、Project 组间距以及固定的标题／状态／操作槽。
