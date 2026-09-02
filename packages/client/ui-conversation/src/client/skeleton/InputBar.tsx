@@ -252,7 +252,6 @@ export function InputBar({
   const revealSelectionFocus = (el: HTMLTextAreaElement): void => {
     // selectionStart/End are number|null in lib.dom; the type-aware lint program narrows them.
     const caret = el.selectionDirection === 'backward' ? el.selectionStart : el.selectionEnd
-    // oxlint-disable-next-line typescript/no-unnecessary-condition
     revealCaret(caret ?? el.value.length)
   }
 
@@ -321,12 +320,10 @@ export function InputBar({
   }, [])
 
   // selectionStart/End are number|null in lib.dom; the type-aware lint program narrows them.
-  /* oxlint-disable typescript/no-unnecessary-condition */
   const selectionOf = (el: HTMLTextAreaElement) => ({
     start: el.selectionStart ?? 0,
     end: el.selectionEnd ?? el.selectionStart ?? 0,
   })
-  /* oxlint-enable typescript/no-unnecessary-condition */
 
   // The machine's occurrence math needs the edit's real range, and a controlled
   // textarea's change event carries only the resulting string. `beforeinput`
@@ -371,7 +368,6 @@ export function InputBar({
     // IME guard so a composition-closing Shift+Enter still breaks the line.
     if (e.key === 'Enter' && e.shiftKey) return
     // keyCode 229 is the legacy IME-composition signal engines emit without isComposing.
-    // oxlint-disable-next-line typescript/no-deprecated
     const composing = composingRef.current || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229
     if (!composing && !machineBusy && !locked
       && (e.key === 'Backspace' || e.key === 'Delete')) {
@@ -455,7 +451,6 @@ export function InputBar({
     safariNativeShrinkRef.current = safari && next.length < draft.length
     keyboard.setDraft(next, editRangeOf(pending, draft.length, next.length))
     // selectionStart is number|null in lib.dom; the type-aware lint program narrows it.
-    // oxlint-disable-next-line typescript/no-unnecessary-condition
     keyboard.track(next, e.target.selectionStart ?? next.length)
   }
 
