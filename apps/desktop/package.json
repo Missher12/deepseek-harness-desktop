@@ -18,6 +18,7 @@
   "scripts": {
     "benchmark:startup": "node --import tsx/esm ../../scripts/desktop-startup-benchmark.ts",
     "build:main": "tsc -b && tsdown",
+    "candidate:descriptor": "node --import tsx/esm ../../scripts/desktop-candidate-descriptor.ts",
     "inventory:package": "node --import tsx/esm ../../scripts/desktop-package-inventory.ts",
     "start": "electron .",
     "pack:dir": "electron-builder --projectDir .stage --config electron-builder.yml --mac dir --x64",

@@ -105,6 +105,17 @@ describe('CI workflow', () => {
     })
   })
 
+  it('exposes the immutable Desktop candidate descriptor CLI from the Desktop package', () => {
+    const manifest: unknown = JSON.parse(readFileSync(resolve(root, 'apps/desktop/package.json'), 'utf8'))
+    if (!isRecord(manifest) || !isRecord(manifest.scripts)) {
+      throw new TypeError('Desktop package must define scripts')
+    }
+
+    expect(manifest.scripts['candidate:descriptor']).toBe(
+      'node --import tsx/esm ../../scripts/desktop-candidate-descriptor.ts',
+    )
+  })
+
   it('forwards staged Windows inventory arguments without a pnpm sentinel', () => {
     const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
     const windows = workflowJob(workflow, 'build-install-smoke')
