@@ -1212,7 +1212,9 @@ async function exerciseSessionMessenger(
   const relayText = await relay.innerText()
   expect(relayText).toContain(seeded.messengerSourceSessionTitle)
   expect(relayText).toMatch(/(?:Sent from another chat by .*|由 .* 从另一个聊天发来)/u)
-  expect(await activeRow.getAttribute('aria-selected')).toBe('true')
+  // The relay replay restores the owning row's selection asynchronously;
+  // poll through the same restore window used for the file snapshot above.
+  await expect.poll(() => activeRow.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
   expect(await waitForStableProtectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
   await page.screenshot({
     path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-messenger-${platform}.png`),
