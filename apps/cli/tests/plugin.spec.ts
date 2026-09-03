@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -56,6 +56,24 @@ describe('dsh plugin packaged pnpm entry', () => {
     process.env.DSH_DESKTOP_PNPM_ENTRY = '../pnpm.cjs'
     expect(() => runPlugin('web', ['install'])).toThrow(/absolute path without NUL/i)
     expect(spawnSync).not.toHaveBeenCalled()
+  })
+
+
+  it('clears fallback-managed symlinks before delegating to pnpm', () => {
+    const home = process.env.DSH_HOME as string
+    const modules = join(home, 'profiles', 'web', 'node_modules')
+    mkdirSync(join(modules, '@deepseek-ai'), { recursive: true })
+    const shared = join(home, 'profiles', 'node_modules')
+    mkdirSync(join(shared, 'dsh-client-runtime'), { recursive: true })
+    writeFileSync(join(shared, 'dsh-client-runtime', 'package.json'), '{}\n')
+    symlinkSync(join(shared, 'dsh-client-runtime'), join(modules, '@deepseek-ai', 'dsh-client-runtime'))
+    // A real directory (the seeded legacy package) must survive the cleanup.
+    mkdirSync(join(modules, 'dsh-missher-memory'), { recursive: true })
+    writeFileSync(join(modules, 'dsh-missher-memory', 'package.json'), '{}\n')
+
+    expect(runPlugin('web', ['install'])).toBe(0)
+    expect(existsSync(join(modules, '@deepseek-ai', 'dsh-client-runtime'))).toBe(false)
+    expect(lstatSync(join(modules, 'dsh-missher-memory')).isDirectory()).toBe(true)
   })
 
   it('preserves the ordinary PATH-based pnpm invocation when no packaged entry exists', () => {
