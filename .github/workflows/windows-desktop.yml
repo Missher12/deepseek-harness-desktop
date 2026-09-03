@@ -2,6 +2,22 @@ name: Windows Desktop Setup
 
 on:
   pull_request:
+  workflow_call:
+    inputs:
+      mode:
+        description: Native validation depth
+        type: string
+        default: quick
+    outputs:
+      artifact:
+        description: Validated Windows Setup basename
+        value: ${{ jobs.publish-candidate.outputs.artifact }}
+      artifact-name:
+        description: GitHub Actions artifact containing the validated Setup
+        value: ${{ jobs.publish-candidate.outputs.artifact-name }}
+      version:
+        description: Validated Desktop version
+        value: ${{ jobs.publish-candidate.outputs.version }}
   workflow_dispatch:
     inputs:
       mode:
@@ -16,12 +32,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-desktop-${{ github.ref }}
+  group: windows-desktop-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   DSH_TELEMETRY_DISABLED: '1'
-  DSH_DESKTOP_CANDIDATE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'quick' }}
+  DSH_DESKTOP_CANDIDATE_MODE: ${{ inputs.mode || 'quick' }}
 
 jobs:
   build-candidate:
@@ -351,6 +367,10 @@ jobs:
     defaults:
       run:
         working-directory: s
+    outputs:
+      artifact: ${{ needs.build-candidate.outputs.setup-basename }}
+      artifact-name: ${{ steps.validated.outputs.artifact-name }}
+      version: ${{ needs.build-candidate.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with: *consumer-checkout
@@ -362,14 +382,16 @@ jobs:
         shell: pwsh
         run: *verify-candidate
       - name: Record SHA-256
+        id: validated
         shell: pwsh
         run: |
           $artifact = 'apps/desktop/release/candidate/${{ needs.build-candidate.outputs.setup-basename }}'
           $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
           [System.IO.File]::WriteAllText("$artifact.sha256", "$hash  ${{ needs.build-candidate.outputs.setup-basename }}`n", [System.Text.Encoding]::ASCII)
+          "artifact-name=DeepSeek-Harness-Setup-win-x64-${{ needs.build-candidate.outputs.version }}-${{ needs.build-candidate.outputs.source-sha }}" >> $env:GITHUB_OUTPUT
       - uses: actions/upload-artifact@v7
         with:
-          name: DeepSeek-Harness-Setup-win-x64-${{ needs.build-candidate.outputs.version }}-${{ needs.build-candidate.outputs.source-sha }}
+          name: ${{ steps.validated.outputs.artifact-name }}
           path: |
             s/apps/desktop/release/candidate/${{ needs.build-candidate.outputs.setup-basename }}
             s/apps/desktop/release/candidate/${{ needs.build-candidate.outputs.setup-basename }}.sha256

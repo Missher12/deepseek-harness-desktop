@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
@@ -41,18 +41,19 @@ describe('CI workflow', () => {
     const mac = workflowJob(workflow, 'mac')
     const windows = workflowJob(workflow, 'windows')
     const publish = workflowJob(workflow, 'publish')
-    if (!Array.isArray(mac.steps) || !Array.isArray(windows.steps) || !Array.isArray(publish.steps)) {
+    if (!Array.isArray(mac.steps) || !Array.isArray(publish.steps)) {
       throw new TypeError('Desktop release jobs must define steps')
     }
     const macSteps = mac.steps.filter(isRecord)
-    const windowsSteps = windows.steps.filter(isRecord)
     const publishSteps = publish.steps.filter(isRecord)
     const macMetadata = macSteps.find(step => step.name === 'Resolve Desktop release metadata')
-    const windowsMetadata = windowsSteps.find(step => step.name === 'Resolve Desktop release metadata')
     const macBuild = macSteps.find(step => step.name === 'Build the Intel macOS DMG')
     const generate = macSteps.find(step => step.name === 'Generate verified Desktop update manifest')
     const macUpload = macSteps.find(step => (
       typeof step.uses === 'string' && step.uses.startsWith('actions/upload-artifact@')
+    ))
+    const downloads = publishSteps.filter(step => (
+      typeof step.uses === 'string' && step.uses.startsWith('actions/download-artifact@')
     ))
     const publishRelease = publishSteps.find(step => step.name === 'Upload assets and publish the draft')
 
@@ -66,13 +67,21 @@ describe('CI workflow', () => {
     expect(generate?.run).toContain('pnpm exec tsx scripts/create-desktop-update-manifest.ts')
     expect(generate?.run).toContain('deepseek-harness-desktop-update.json')
     expect(macMetadata?.run).toContain('apps/desktop/package.json')
-    expect(windowsMetadata?.run).toContain('apps/desktop/package.json')
     expect(macBuild).toMatchObject({
       env: { NODE_OPTIONS: '--max-old-space-size=4096' },
     })
+    expect(windows).toMatchObject({
+      uses: './.github/workflows/windows-desktop.yml',
+      with: { mode: 'full' },
+    })
+    expect(windows).not.toHaveProperty('steps')
     expect(JSON.stringify(mac)).toContain('${{ steps.desktop.outputs.artifact }}')
-    expect(JSON.stringify(windows)).toContain('${{ steps.desktop.outputs.artifact }}')
     expect(JSON.stringify(macUpload)).toContain('deepseek-harness-desktop-update.json')
+    expect(downloads).toHaveLength(2)
+    expect(downloads[0]).toMatchObject({ with: { name: 'desktop-mac-x64', path: 'release' } })
+    expect(downloads[1]).toMatchObject({
+      with: { name: '${{ needs.windows.outputs.artifact-name }}', path: 'release' },
+    })
     expect(publishRelease?.run).toContain('release/deepseek-harness-desktop-update.json')
     expect(JSON.stringify(workflow)).not.toContain('0.2.1')
   })
@@ -80,6 +89,7 @@ describe('CI workflow', () => {
   it('builds one immutable Windows candidate and fans out quick/full consumers', () => {
     const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
     const dispatch = workflowEvent(workflow, 'workflow_dispatch')
+    const workflowCall = workflowEvent(workflow, 'workflow_call')
     const build = workflowJob(workflow, 'build-candidate')
     const lifecycle = workflowJob(workflow, 'lifecycle')
     const installerUi = workflowJob(workflow, 'installer-ui')
@@ -101,6 +111,16 @@ describe('CI workflow', () => {
           default: 'quick',
           options: ['quick', 'full'],
         },
+      },
+    })
+    expect(workflowCall).toMatchObject({
+      inputs: {
+        mode: { type: 'string', default: 'quick' },
+      },
+      outputs: {
+        artifact: { value: '${{ jobs.publish-candidate.outputs.artifact }}' },
+        'artifact-name': { value: '${{ jobs.publish-candidate.outputs.artifact-name }}' },
+        version: { value: '${{ jobs.publish-candidate.outputs.version }}' },
       },
     })
     expect(Object.keys(workflow.jobs).sort()).toEqual([
@@ -147,6 +167,15 @@ describe('CI workflow', () => {
       expect(JSON.stringify(job)).not.toContain('desktop:stage')
       expect(JSON.stringify(job)).not.toContain('electron-builder')
     }
+  })
+
+  it('isolates reusable release concurrency from independent Windows validation', () => {
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+
+    expect(workflow.concurrency).toEqual({
+      group: 'windows-desktop-${{ github.workflow }}-${{ github.ref }}',
+      'cancel-in-progress': true,
+    })
   })
 
   it('exposes the immutable Desktop candidate descriptor CLI from the Desktop package', () => {
@@ -276,6 +305,7 @@ describe('CI workflow', () => {
     }
     const serialized = JSON.stringify(action)
     if (!isRecord(action.inputs)) throw new TypeError('Desktop Node setup action must define inputs')
+    expect(action.description).toBe('Install immutable Desktop dependencies with one cache writer and restore-only consumers')
     expect(action.runs.using).toBe('composite')
     expect(action.inputs['cache-write']).toMatchObject({ default: 'false' })
     expect(serialized).toContain('pnpm/action-setup@v4')
@@ -296,6 +326,8 @@ describe('CI workflow', () => {
       step.uses === 'actions/cache@v4' || step.uses === 'actions/cache/restore@v4'
     ))
     const install = action.runs.steps.filter(isRecord).find(step => step.name === 'Install immutable dependencies')
+    const cachePaths = action.runs.steps.filter(isRecord).find(step => step.id === 'cache-paths')
+    expect(cachePaths?.name).toBe('Resolve shared cache paths')
     expect(cacheSteps).toHaveLength(2)
     expect(cacheSteps[0]?.if).toBe("inputs.cache-write != 'true'")
     expect(cacheSteps[1]?.if).toBe("inputs.cache-write == 'true'")
@@ -335,6 +367,16 @@ describe('CI workflow', () => {
       'visual',
     ])
     expect(cacheWriters).toEqual(['build-candidate'])
+  })
+
+  it('documents candidate reuse as same-run only and rebuilds every new source revision', () => {
+    const runbookPath = resolve(root, 'docs/runbooks/desktop-candidate-validation.md')
+    const runbook = existsSync(runbookPath) ? readFileSync(runbookPath, 'utf8') : ''
+
+    expect(runbook).toContain('within the same GitHub Actions run and the same source SHA')
+    expect(runbook).toContain('Every new commit, including changes limited to tests or scripts, requires a new workflow run and a newly built candidate.')
+    expect(runbook).toContain('rebuilds both platform artifacts from the tag SHA in full mode')
+    expect(runbook).toContain('never downloads a candidate from an earlier manual validation run')
   })
 
   it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {

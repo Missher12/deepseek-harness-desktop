@@ -104,101 +104,10 @@ jobs:
           retention-days: 1
 
   windows:
-    name: Windows x64 Setup
-    runs-on: windows-2025
-    timeout-minutes: 75
-    outputs:
-      version: ${{ steps.desktop.outputs.version }}
-      artifact: ${{ steps.desktop.outputs.artifact }}
-    defaults:
-      run:
-        working-directory: s
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          path: s
-          persist-credentials: false
-
-      - name: Resolve Desktop release metadata
-        id: desktop
-        shell: pwsh
-        run: |
-          if ($env:GITHUB_REF -ne 'refs/tags/${{ inputs.tag }}') {
-            throw "Release workflow must be dispatched from tag ${{ inputs.tag }}, got $env:GITHUB_REF"
-          }
-          if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) {
-            throw 'Checked-out commit does not match the workflow SHA'
-          }
-          $manifest = Get-Content -LiteralPath 'apps/desktop/package.json' -Raw | ConvertFrom-Json
-          $version = [string]$manifest.version
-          if ($version -notmatch '^\d+\.\d+\.\d+$') {
-            throw "Desktop package version must be major.minor.patch, got: $version"
-          }
-          if ('${{ inputs.tag }}' -ne "desktop-v$version") {
-            throw "Release tag ${{ inputs.tag }} does not match Desktop $version"
-          }
-          "version=$version" >> $env:GITHUB_OUTPUT
-          "artifact=DeepSeek-Harness-Setup-$version-win-x64.exe" >> $env:GITHUB_OUTPUT
-
-      - name: Enable Developer Mode for workspace symlinks
-        shell: pwsh
-        run: >-
-          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
-          /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: '11.7.0'
-          dest: ${{ runner.temp }}/setup-pnpm
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-
-      - name: Install immutable dependencies
-        shell: pwsh
-        run: pnpm install --frozen-lockfile
-
-      - name: Build the assisted Windows Setup
-        shell: pwsh
-        run: |
-          $env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'
-          pnpm run desktop:stage
-          pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR" --config "$env:DSH_DESKTOP_STAGE_DIR\electron-builder.yml" --win nsis --x64
-          $artifact = '${{ steps.desktop.outputs.artifact }}'
-          $builtArtifact = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) "release\$artifact"
-          $workspaceArtifact = Join-Path 'apps/desktop/release' $artifact
-          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $workspaceArtifact) | Out-Null
-          Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact
-
-      - name: Exercise the visible installer pages
-        shell: pwsh
-        run: >-
-          ./scripts/windows-desktop-installer-ui-smoke.ps1
-          -SetupPath apps/desktop/release/${{ steps.desktop.outputs.artifact }}
-
-      - name: Install and exercise the packaged application lifecycle
-        shell: pwsh
-        run: >-
-          ./scripts/windows-desktop-setup-smoke.ps1
-          -SetupPath apps/desktop/release/${{ steps.desktop.outputs.artifact }}
-
-      - name: Record SHA-256
-        shell: pwsh
-        run: |
-          $artifact = 'apps/desktop/release/${{ steps.desktop.outputs.artifact }}'
-          $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
-          $checksum = "$hash  $(Split-Path -Leaf $artifact)`n"
-          [System.IO.File]::WriteAllText("$artifact.sha256", $checksum, [System.Text.Encoding]::ASCII)
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: desktop-windows-x64
-          path: |
-            s/apps/desktop/release/${{ steps.desktop.outputs.artifact }}
-            s/apps/desktop/release/${{ steps.desktop.outputs.artifact }}.sha256
-          if-no-files-found: error
-          retention-days: 1
+    name: Windows x64 Setup full validation
+    uses: ./.github/workflows/windows-desktop.yml
+    with:
+      mode: full
 
   publish:
     name: Verify and publish desktop release
@@ -208,9 +117,13 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          pattern: desktop-*-x64
+          name: desktop-mac-x64
           path: release
-          merge-multiple: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.windows.outputs.artifact-name }}
+          path: release
 
       - name: Verify release assets
         run: |

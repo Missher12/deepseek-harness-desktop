@@ -591,17 +591,23 @@ try {
         throw "Native Windows $dpiPercent percent visual smoke failed with exit code $LASTEXITCODE."
       }
     }
-  } else {
-    Invoke-DesktopStartupSample `
-      -ExecutablePath $executable `
-      -HarnessHome $harnessHome `
-      -UserData $userData `
-      -EvidenceRoot (Join-Path $temporaryRoot 'quick-milestones') `
-      -SampleKind 'quick' `
-      -SampleIndex 1 | Out-Null
+  } elseif ($Operation -eq 'quick') {
+    $env:DSH_WINDOWS_DESKTOP_EXECUTABLE = $executable
+    $env:DSH_DESKTOP_SMOKE_ROOT = $temporaryRoot
+    $env:DSH_DESKTOP_SMOKE_DSH_HOME = $harnessHome
+    $env:DSH_DESKTOP_SMOKE_USER_DATA = $userData
+    & pnpm exec vitest run apps/desktop/tests/windows-quick-surface-smoke.spec.ts --config vitest.config.ts
+    if ($LASTEXITCODE -ne 0) {
+      throw "Quick Windows desktop surface smoke failed with exit code $LASTEXITCODE."
+    }
   }
 
   Wait-IsolatedInstalledProcessesStopped -ExecutablePath $executable
+
+  if ($Operation -eq 'quick') {
+    Write-Host 'Windows desktop quick smoke passed: install, renderer surface, close, and process cleanup.'
+    return
+  }
 
   Invoke-IsolatedUninstall -InstalledUninstaller $uninstaller -InstallRoot $installRoot -LauncherPath $uninstallerLauncher
   $installed = $false
@@ -624,7 +630,6 @@ try {
   }
 
   switch ($Operation) {
-    'quick' { Write-Host 'Windows desktop quick smoke passed: install, launch, close, process cleanup, uninstall, and data preservation.' }
     'lifecycle' { Write-Host 'Windows desktop lifecycle smoke passed: install, shortcuts, legacy fallback recovery, launch, close, process cleanup, uninstall, and data preservation.' }
     'performance' { Write-Host 'Windows desktop runtime evidence passed: install, five cold and warm launches, process cleanup, uninstall, and data preservation.' }
     'visual' { Write-Host 'Windows desktop visual smoke passed: install, 100 and 150 percent evidence, process cleanup, uninstall, and data preservation.' }

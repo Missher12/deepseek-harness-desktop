@@ -1,7 +1,34 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 describe('Windows Desktop runtime evidence wiring', () => {
+  it('proves the quick installed renderer and AppFrame without running the full packaged smoke', () => {
+    const smoke = readFileSync(
+      new URL('./windows-desktop-setup-smoke.ps1', import.meta.url),
+      'utf8',
+    )
+    const quickPath = new URL('../apps/desktop/tests/windows-quick-surface-smoke.spec.ts', import.meta.url)
+    const quick = existsSync(quickPath) ? readFileSync(quickPath, 'utf8') : ''
+
+    expect(smoke).toContain('apps/desktop/tests/windows-quick-surface-smoke.spec.ts')
+    expect(smoke).not.toContain("-SampleKind 'quick'")
+    expect(quick).toContain('_electron as electron')
+    expect(quick).toContain('await expect.poll(async () => Promise.all([')
+    expect(quick).toContain("page.locator('body[data-dsh-surface=\"desktop\"]').count(),")
+    expect(quick).toContain("page.locator('[class*=\"sidebarCol\"]').count(),")
+    expect(quick).toContain("page.locator('[class*=\"centerCol\"]').count(),")
+    expect(quick).toContain("page.locator('[class*=\"detailsCol\"]').count(),")
+    expect(quick).toContain('{ timeout: 120_000 }).toEqual([1, 1, 1, 1])')
+    expect(quick).toContain('application.evaluate(({ app }) => { app.quit() })')
+    expect(quick).toContain('waitForWindowsProcessesStopped')
+    expect(quick).not.toContain('runPackagedDesktopSmoke')
+    expect(quick).not.toContain('lifecycle.log')
+    const quickCompletion = smoke.indexOf('Windows desktop quick smoke passed: install, renderer surface, close, and process cleanup.')
+    const fullUninstall = smoke.indexOf('Invoke-IsolatedUninstall -InstalledUninstaller $uninstaller')
+    expect(quickCompletion).toBeGreaterThan(-1)
+    expect(fullUninstall).toBeGreaterThan(quickCompletion)
+  })
+
   it('keeps lifecycle, visual, and performance consumers isolated behind explicit operations', () => {
     const smoke = readFileSync(
       new URL('./windows-desktop-setup-smoke.ps1', import.meta.url),

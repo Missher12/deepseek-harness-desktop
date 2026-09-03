@@ -1,5 +1,5 @@
 name: Desktop Node setup
-description: Install immutable Desktop dependencies with bounded read-only caches
+description: Install immutable Desktop dependencies with one cache writer and restore-only consumers
 
 inputs:
   working-directory:
@@ -22,7 +22,7 @@ runs:
       with:
         node-version: '24'
 
-    - name: Resolve read-only cache paths
+    - name: Resolve shared cache paths
       id: cache-paths
       shell: pwsh
       working-directory: ${{ inputs.working-directory }}
