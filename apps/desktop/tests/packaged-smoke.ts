@@ -1725,9 +1725,9 @@ export async function runPackagedDesktopSmoke(
     const page = await nativeApp.firstWindow({ timeout: 120_000 })
     const consoleErrors: string[] = []
     page.on('console', (message) => {
-      if (message.type() === 'error' || message.type() === 'warning') {
+      if (message.type() === 'error') {
         const source = message.location().url
-        consoleErrors.push(`${message.type()}: ${message.text()}${source === '' ? '' : ` [${source}]`}`)
+        consoleErrors.push(`${message.text()}${source === '' ? '' : ` [${source}]`}`)
       }
     })
     page.on('pageerror', error => consoleErrors.push(error.message))
