@@ -103,9 +103,12 @@ The repository is based on the pinned official source and adds the desktop appli
   default `lazyTools:true`, default `observationEnabled:true`, and the single
   startup `bsk --version` probe that the Desktop patch must remove. The npm
   package has no upstream `NOTICE`, so release attribution must be generated in
-  the repository rather than invented. The fixed CLI archives were not present
-  locally; implementation must verify each archive hash and enumerate its real
-  members before freezing the extraction allowlist. Plugin source provenance
+  the repository rather than invented. The fixed CLI archives were then each
+  downloaded exactly once and matched their pinned SHA-256 values: the
+  4,428,876-byte Mac archive contains only root `bsk` (10,461,920 bytes, mode
+  0755, Mach-O x86_64), while the 4,561,671-byte Windows archive contains only
+  root `bsk.exe` (11,401,216 bytes, PE32+ x86-64). Those exact sizes and
+  singleton member lists are the packaging allowlist. Plugin source provenance
   and CLI tag/archive provenance remain separate.
 - The 2026-09-03 core-sync preflight proved that the released Desktop history
   and the official alpha.5 repository history have no Git common ancestor. A
