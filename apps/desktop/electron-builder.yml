@@ -11,6 +11,10 @@ asarUnpack:
 extraResources:
   - from: "update-metadata.json"
     to: "update-metadata.json"
+  # The pinned BrowserSkill CLI is staged at resources/browser-skill/bin and
+  # shipped next to app.asar (never inside it) so the harness can spawn it.
+  - from: "resources/browser-skill/bin"
+    to: "browser-skill/bin"
 files:
   - "lib/**"
   - "renderer/**"

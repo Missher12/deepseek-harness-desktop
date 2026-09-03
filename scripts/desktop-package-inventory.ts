@@ -122,6 +122,31 @@ export function assertDesktopPackageInventoryPolicy(
   if (missing.length > 0) {
     throw new Error(`${policyLabel[policy]} package policy is missing preserved runtime assets: ${missing.join(', ')}`)
   }
+  assertBrowserSkillBinary(inventory, 'win32-x64')
+}
+
+/** Target whose pinned BrowserSkill CLI the package must ship. */
+export type BrowserSkillBinaryPlatform = 'darwin-x64' | 'win32-x64'
+
+/**
+ * Fail closed unless the package ships exactly the one declared BrowserSkill
+ * CLI member under resources/browser-skill/bin: missing binaries, the other
+ * platform's member, and stray extra files all reject the package.
+ */
+export function assertBrowserSkillBinary(
+  inventory: DesktopPackagePathInventory,
+  platform: BrowserSkillBinaryPlatform,
+): void {
+  const member = platform === 'win32-x64' ? 'bsk.exe' : 'bsk'
+  const expected = `resources/browser-skill/bin/${member}`
+  const paths = inventory.files.map(file => file.path.replaceAll('\\', '/'))
+  if (!paths.includes(expected)) {
+    throw new Error(`Desktop package is missing the ${platform} BrowserSkill CLI at ${expected}.`)
+  }
+  const strays = paths.filter(path => path.startsWith('resources/browser-skill/') && path !== expected)
+  if (strays.length > 0) {
+    throw new Error(`Desktop package carries unexpected browser-skill files: ${strays.join(', ')}`)
+  }
 }
 
 /** Ensure managed packages are linkable physical directories outside app.asar. */

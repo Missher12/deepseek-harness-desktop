@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
@@ -35,6 +35,34 @@ export function workbenchTerminalProbe(platform: NodeJS.Platform): string {
   return platform === 'win32'
     ? "Write-Output 'desktop-workbench-terminal-ok'"
     : "printf 'desktop-workbench-terminal-ok\\n'"
+}
+
+/** Packaged location of the pinned BrowserSkill CLI shipped via extraResources. */
+export function packagedBrowserSkillBinaryPath(executable: string, platform: NodeJS.Platform): string {
+  const member = platform === 'win32' ? 'bsk.exe' : 'bsk'
+  return platform === 'win32'
+    ? join(dirname(executable), 'resources', 'browser-skill', 'bin', member)
+    : join(dirname(executable), '..', 'Resources', 'browser-skill', 'bin', member)
+}
+
+/** Fail closed when the packaged app lost the staged BrowserSkill CLI. */
+export async function assertPackagedBrowserSkillBinary(
+  executable: string,
+  platform: NodeJS.Platform,
+): Promise<void> {
+  const path = packagedBrowserSkillBinaryPath(executable, platform)
+  let details
+  try {
+    details = await lstat(path)
+  } catch (error) {
+    throw new Error(`Packaged smoke: BrowserSkill CLI is missing at ${path}.`, { cause: error })
+  }
+  if (!details.isFile()) {
+    throw new Error(`Packaged smoke: BrowserSkill CLI at ${path} is not a regular file.`)
+  }
+  if (platform !== 'win32' && (details.mode & 0o111) === 0) {
+    throw new Error(`Packaged smoke: BrowserSkill CLI at ${path} is not executable.`)
+  }
 }
 
 interface ProviderTripwire {
@@ -1779,6 +1807,7 @@ export async function runPackagedDesktopSmoke(
   const harnessHome = process.env.DSH_DESKTOP_SMOKE_DSH_HOME ?? join(temporaryRoot, 'dsh-home')
   const userData = process.env.DSH_DESKTOP_SMOKE_USER_DATA ?? join(temporaryRoot, 'electron-data')
   await Promise.all([mkdir(harnessHome, { recursive: true }), mkdir(userData, { recursive: true })])
+  await assertPackagedBrowserSkillBinary(executable, platform)
   const legacyFallbackSeed = await seedLegacyModuleFallbackUpgradeState(harnessHome, platform)
   await seedLegacyExternalBrainProfile(harnessHome)
   const clipboardSeed = await seedWindowsClipboardSmokeState(harnessHome)

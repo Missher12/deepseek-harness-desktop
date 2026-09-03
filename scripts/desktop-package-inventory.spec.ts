@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  assertBrowserSkillBinary,
   assertDesktopPackageInventoryPolicy,
   assertManagedPackageRootsArePhysical,
   createDesktopPackageInventory,
@@ -106,6 +107,7 @@ describe('desktop package inventory', () => {
       'resources/app.asar.unpacked/node_modules/pdfjs-dist/standard_fonts/FoxitSerif.pfb',
       'resources/app.asar.unpacked/node_modules/pdfjs-dist/wasm/openjpeg.wasm',
       'resources/app.asar.unpacked/node_modules/pkg/lib/worker.js',
+      'resources/browser-skill/bin/bsk.exe',
     ]
 
     expect(() => {
@@ -114,20 +116,50 @@ describe('desktop package inventory', () => {
   })
 
   it('fails closed if pruning removes an offline renderer, license, worker, font, or WASM asset', () => {
-    const required = [
+    const preserved = [
       'resources/app.asar',
       'THIRD_PARTY_NOTICES.md',
       'resources/app.asar.unpacked/node_modules/@deepseek-ai/dsh-attachment-local/lib/pdf-worker.cjs',
       'resources/app.asar.unpacked/node_modules/pdfjs-dist/standard_fonts/FoxitSerif.pfb',
       'resources/app.asar.unpacked/node_modules/pdfjs-dist/wasm/openjpeg.wasm',
     ]
-    for (const removed of required) {
+    const required = [...preserved, 'resources/browser-skill/bin/bsk.exe']
+    for (const removed of preserved) {
       expect(() => {
         assertDesktopPackageInventoryPolicy({
           files: required.filter(path => path !== removed).map(path => ({ path })),
         }, 'windows-x64')
       }, removed).toThrow(/missing preserved runtime assets/u)
     }
+    expect(() => {
+      assertDesktopPackageInventoryPolicy({
+        files: required.filter(path => path !== 'resources/browser-skill/bin/bsk.exe').map(path => ({ path })),
+      }, 'windows-x64')
+    }).toThrow(/missing the win32-x64 BrowserSkill CLI/u)
+  })
+
+  it('requires exactly one declared BrowserSkill CLI and rejects stray or foreign members', () => {
+    const withExe = { files: [{ path: 'resources/app.asar' }, { path: 'resources/browser-skill/bin/bsk.exe' }] }
+    expect(() => assertBrowserSkillBinary(withExe, 'win32-x64')).not.toThrow()
+    expect(() => assertBrowserSkillBinary(withExe, 'darwin-x64')).toThrow(/missing the darwin-x64 BrowserSkill CLI/u)
+
+    const withBs = { files: [{ path: 'resources/app.asar' }, { path: 'resources/browser-skill/bin/bsk' }] }
+    expect(() => assertBrowserSkillBinary(withBs, 'darwin-x64')).not.toThrow()
+    expect(() => assertBrowserSkillBinary(withBs, 'win32-x64')).toThrow(/missing the win32-x64 BrowserSkill CLI/u)
+
+    expect(() => assertBrowserSkillBinary({ files: [] }, 'darwin-x64')).toThrow(/missing the darwin-x64 BrowserSkill CLI/u)
+    expect(() => assertBrowserSkillBinary({
+      files: [
+        { path: 'resources/browser-skill/bin/bsk.exe' },
+        { path: 'resources/browser-skill/bin/bsk' },
+      ],
+    }, 'win32-x64')).toThrow(/unexpected browser-skill files.*bsk$/u)
+    expect(() => assertBrowserSkillBinary({
+      files: [
+        { path: 'resources/browser-skill/bin/bsk.exe' },
+        { path: 'resources/browser-skill/bin/shim.dll' },
+      ],
+    }, 'win32-x64')).toThrow(/unexpected browser-skill files.*shim\.dll$/u)
   })
 
   it('requires every managed package root to remain physical under app.asar.unpacked', () => {

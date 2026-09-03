@@ -1,10 +1,16 @@
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { cp, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import * as yaml from 'js-yaml'
+import {
+  DEFAULT_ASSET_ROOT,
+  prepareBrowserSkillAssets,
+  type BrowserSkillPlatform,
+} from './prepare-browser-skill-assets.ts'
 
 const DESKTOP_PACKAGE = '@deepseek-ai/dsh-desktop'
 const SESSION_MESSENGER_PACKAGE = '@deepseek-ai/dsh-session-messenger'
@@ -21,6 +27,8 @@ export interface StageDesktopDependencies {
   findPackageDirectories(root: string, packageDirectoryName: string): Promise<readonly string[]>
   findNativeBinaries(root: string): Promise<readonly string[]>
   findForbiddenControlArtifacts(root: string): Promise<readonly string[]>
+  prepareBrowserSkillAssets(platform: BrowserSkillPlatform, root: string): Promise<string>
+  hashFile(path: string): Promise<string>
 }
 
 /** Auditable result returned by one staging operation. */
@@ -152,6 +160,21 @@ const realDependencies: StageDesktopDependencies = {
   findPackageDirectories,
   findNativeBinaries,
   findForbiddenControlArtifacts,
+  prepareBrowserSkillAssets: async (platform, root) => await prepareBrowserSkillAssets(platform, { root }),
+  hashFile: async path => createHash('sha256').update(await readFile(path)).digest('hex'),
+}
+
+/**
+ * Resolve the BrowserSkill CLI target. An explicit env override wins; without
+ * one the native build host selects its own platform (macOS and Linux hosts
+ * default to darwin-x64, Windows hosts to win32-x64).
+ */
+export function resolveBrowserSkillPlatform(envValue: string | undefined): BrowserSkillPlatform {
+  if (envValue === 'darwin-x64' || envValue === 'win32-x64') return envValue
+  if (envValue === undefined || envValue === '') {
+    return process.platform === 'win32' ? 'win32-x64' : 'darwin-x64'
+  }
+  throw new Error(`Desktop staging: unknown DSH_DESKTOP_TARGET_PLATFORM ${envValue}.`)
 }
 
 const REASONING_EFFORT_PACKAGE = '@deepseek-ai/dsh-reasoning-effort'
@@ -254,12 +277,15 @@ function assertCanonicalSessionMessengerRow(content: string): void {
  * Create a production-only, self-contained desktop package tree.
  * @param repositoryRoot - Exact DeepSeek Harness repository root.
  * @param dependencies - Injectable filesystem and command seams.
+ * @param requestedStageDir - Optional validated stage directory override.
+ * @param environment - Optional env override (target platform, asset root).
  * @returns Validated stage directory and repository-portable file list.
  */
 export async function stageDesktop(
   repositoryRoot: string,
   dependencies: StageDesktopDependencies = realDependencies,
   requestedStageDir?: string,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
 ): Promise<DesktopStageResult> {
   const root = resolve(repositoryRoot)
   const desktopDir = resolve(root, 'apps', 'desktop')
@@ -296,6 +322,25 @@ export async function stageDesktop(
     await dependencies.copy(join(desktopDir, entry), join(stageDir, entry))
   }
   await dependencies.copy(join(root, 'THIRD_PARTY_NOTICES.md'), join(stageDir, 'THIRD_PARTY_NOTICES.md'))
+
+  // The pinned BrowserSkill CLI: download and verify in a rebuildable ignored
+  // cache, then copy into the stage and re-hash so the shipped binary provably
+  // matches what the verified fetcher produced.
+  const browserSkillPlatform = resolveBrowserSkillPlatform(environment.DSH_DESKTOP_TARGET_PLATFORM)
+  const browserSkillRoot = environment.DSH_BROWSER_SKILL_ASSET_ROOT ?? DEFAULT_ASSET_ROOT
+  const browserSkillBin = await dependencies.prepareBrowserSkillAssets(browserSkillPlatform, browserSkillRoot)
+  const stagedBrowserSkillBin = join(stageDir, 'resources', 'browser-skill', 'bin', basename(browserSkillBin))
+  await dependencies.copy(browserSkillBin, stagedBrowserSkillBin)
+  if (!await dependencies.isFile(stagedBrowserSkillBin)) {
+    throw new Error('Desktop staging could not stage the BrowserSkill CLI binary.')
+  }
+  const [browserSkillSourceDigest, browserSkillStagedDigest] = await Promise.all([
+    dependencies.hashFile(browserSkillBin),
+    dependencies.hashFile(stagedBrowserSkillBin),
+  ])
+  if (browserSkillSourceDigest !== browserSkillStagedDigest) {
+    throw new Error('Desktop staging BrowserSkill CLI digest changed during copy.')
+  }
 
   assertNoDesktopControlArtifacts(await dependencies.findForbiddenControlArtifacts(stageDir))
 
@@ -406,7 +451,11 @@ export async function stageDesktop(
 
   return {
     stageDir,
-    validatedFiles: [...required, ...nativeBinaries.map(path => stageRelative(stageDir, path))],
+    validatedFiles: [
+      ...required,
+      stageRelative(stageDir, stagedBrowserSkillBin),
+      ...nativeBinaries.map(path => stageRelative(stageDir, path)),
+    ],
   }
 }
 
