@@ -88,6 +88,25 @@ The repository is based on the pinned official source and adds the desktop appli
   under `docs/superpowers/specs/2026-09-03-desktop-0.5.3-*` and
   `docs/superpowers/plans/2026-09-03-desktop-0.5.3-*`. No Desktop version bump,
   product implementation, tag, or release is part of this planning commit.
+- The 0.5.3 UI scope also extends the existing composer `@` trigger instead of
+  adding a parallel picker. Bare `@` will retain real file, folder, and Session
+  references, expose Goal and Plan through their existing command claims, list
+  only installed user-invocable skills and dynamic Plugins, and render selected
+  skills as structured plugin chips. Skill chips serialize to the existing
+  Host-validated slash gesture at submit time; stale or uninstalled capability
+  references block submission rather than degrading to plain text. External
+  names such as GitHub, Figma, and Vercel are never hard-coded when unavailable,
+  and BrowserSkill joins the list only while its adapter is actually mounted.
+- The 2026-09-03 core-sync preflight proved that the released Desktop history
+  and the official alpha.5 repository history have no Git common ancestor. A
+  direct unrelated-history merge would create about 1,864 conflict sections
+  across a 46 MB merge preview, so it is prohibited. The accepted route keeps
+  the Desktop product history as first parent, connects the exact alpha.5 tag
+  as second parent in a tree-identical provenance commit, then imports
+  upstream-owned paths from a committed ownership manifest. Files at Desktop
+  seams must take the alpha.5 contract first and reapply only the required
+  Desktop behavior under RED-to-GREEN tests; the provenance merge itself is
+  never treated as a code merge or passing evidence.
 - Desktop 0.5.2 starts from the released `desktop-v0.5.1` commit
   `b8595d75a9f94fb332689e28aef70cf5b7d72d4f`. Its integrated UI restores the
   v0.4.11 PromptRail against the current `PromptAnchor` data flow, adds
