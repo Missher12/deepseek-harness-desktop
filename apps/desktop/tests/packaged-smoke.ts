@@ -1861,7 +1861,11 @@ export async function runPackagedDesktopSmoke(
     }
     await welcomeDialog.getByRole('button', { name: /^(?:Continue|继续)$/u }).click()
     await welcomeDialog.waitFor({ state: 'detached', timeout: 30_000 })
-    const seededWorkspaceRow = page.getByText('desktop-smoke-active-workspace').first()
+    // Target the workspace row itself, not the first DOM match of its title
+    // text (the title also appears in breadcrumbs and hover cards, and the
+    // trailing "New session" action only surfaces on the row's hover state).
+    const seededWorkspaceRow = page.locator('[class*="projectRow"]')
+      .filter({ hasText: 'desktop-smoke-active-workspace' }).first()
     await seededWorkspaceRow.waitFor({ state: 'visible', timeout: 30_000 })
     await seededWorkspaceRow.hover()
     const seededWorkspace = page.getByRole('button', {
