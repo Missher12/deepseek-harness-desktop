@@ -97,6 +97,16 @@ The repository is based on the pinned official source and adds the desktop appli
   references block submission rather than degrading to plain text. External
   names such as GitHub, Figma, and Vercel are never hard-coded when unavailable,
   and BrowserSkill joins the list only while its adapter is actually mounted.
+- The 2026-09-03 BrowserSkill read-only preflight verified the cached
+  `@wxg-prc-cpg/browser-skill-dsh-plugin@0.1.2` tarball, its MIT `LICENSE`, six
+  structured `browser_*` tools, dynamic `browser-skill` registry lifecycle,
+  default `lazyTools:true`, default `observationEnabled:true`, and the single
+  startup `bsk --version` probe that the Desktop patch must remove. The npm
+  package has no upstream `NOTICE`, so release attribution must be generated in
+  the repository rather than invented. The fixed CLI archives were not present
+  locally; implementation must verify each archive hash and enumerate its real
+  members before freezing the extraction allowlist. Plugin source provenance
+  and CLI tag/archive provenance remain separate.
 - The 2026-09-03 core-sync preflight proved that the released Desktop history
   and the official alpha.5 repository history have no Git common ancestor. A
   direct unrelated-history merge would create about 1,864 conflict sections
