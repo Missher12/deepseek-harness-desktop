@@ -63,9 +63,22 @@
 
 .actionRow {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   padding: 14px 16px;
+}
+
+.feedback {
+  min-height: 18px;
+  padding: 8px 16px 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.feedback:empty {
+  display: none;
 }
 
 .reject:hover:not(:disabled) {

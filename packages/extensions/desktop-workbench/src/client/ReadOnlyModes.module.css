@@ -1,0 +1,17 @@
+.split { display: grid; grid-template-columns: minmax(130px, 36%) minmax(0, 1fr); min-height: 100%; margin: -18px; }
+.listPane { min-width: 0; overflow: auto; border-right: 1px solid var(--dsw-alias-border-l2); padding: 10px; }
+.toolbar { display: flex; min-height: 28px; align-items: center; justify-content: space-between; gap: 6px; }
+.toolbar code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toolbar button, .preview button { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border: 0; border-radius: 6px; color: var(--dsw-alias-label-secondary); background: transparent; cursor: pointer; }
+.toolbar button:hover, .preview button:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.filter { box-sizing: border-box; width: 100%; margin: 8px 0; padding: 7px 9px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; color: var(--dsw-alias-label-primary); background: transparent; }
+.listPane ul { margin: 6px 0 0; padding: 0; list-style: none; }
+.listPane li button { display: grid; grid-template-columns: 24px minmax(0, 1fr); width: 100%; padding: 6px 7px; border: 0; border-radius: 7px; overflow: hidden; color: var(--dsw-alias-label-primary); background: transparent; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.listPane li button:hover, .listPane li button[data-selected] { background: var(--dsw-alias-interactive-bg-hover); }
+.listPane p, .preview p { color: var(--dsw-alias-label-caption); font-size: 12px; }
+.preview { min-width: 0; overflow: auto; padding: 12px 14px; }
+.preview header { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 9px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.preview header > span { display: flex; flex: none; gap: 2px; }
+.preview header code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview pre { margin: 12px 0; overflow: visible; color: var(--dsw-alias-label-primary); font: var(--dsw-font-markdown-code); font-size: 11px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.preview small { color: var(--dsw-alias-label-caption); }

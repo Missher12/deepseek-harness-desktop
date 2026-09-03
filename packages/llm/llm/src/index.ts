@@ -32,7 +32,10 @@ import type { LlmCallConfig, LlmCallConfigAdapterDefaults } from './call-config.
 import { HarnessError, INVALID_CREDENTIAL_CODE } from './error.ts'
 import { normalizeLlmFailure } from './adapter-failure.ts'
 import { normalizeApiKey } from './api-key.ts'
-import { contentHasImage, projectImagesForTextModel } from './content.ts'
+import {
+  contentHasDocument, contentHasImage, documentExpansionTokenBudget,
+  projectDocumentsForRequest, projectImagesForTextModel,
+} from './content.ts'
 
 export * from './attribution.ts'
 export * from './brand.ts'
@@ -599,11 +602,13 @@ export class LlmRuntime extends TypertRemoteService {
     for (const model of discovered) {
       if (typeof model.id !== 'string' || model.id.length === 0 || seen.has(model.id)) continue
       seen.add(model.id)
+      const inputModalities = this.detachedModalities(model.inputModalities)
       models.push({
         id: model.id,
         ...model.name === undefined ? {} : { name: model.name },
         ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
         ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+        ...inputModalities === undefined ? {} : { inputModalities },
       })
     }
     return models
@@ -993,13 +998,35 @@ export class LlmRuntime extends TypertRemoteService {
         : Object.isFrozen(options)
           ? deepFreeze({ ...options, ...resolvedConfig })
           : { ...options, ...resolvedConfig }
-      const projectedOptions = modelInfo.inputModalities !== undefined
+      let projectedOptions = resolvedOptions
+      if (resolvedOptions.messages.some(message => contentHasDocument(message.content))) {
+        const attachments = this.ctx.get('attachments')
+        if (attachments === undefined) {
+          throw new LlmError(
+            'Document conversion requires the durable attachment service.',
+            'UNSUPPORTED_CONTENT',
+          )
+        }
+        const maxExpansionTokens = modelInfo.context === undefined
+          ? undefined
+          : documentExpansionTokenBudget(resolvedOptions, modelInfo.context.contextWindow)
+        const messages = await projectDocumentsForRequest(
+          resolvedOptions.messages,
+          attachments,
+          options.signal,
+          maxExpansionTokens === undefined ? {} : { maxExpansionTokens },
+        )
+        projectedOptions = Object.isFrozen(resolvedOptions)
+          ? deepFreeze({ ...resolvedOptions, messages: [...messages] })
+          : { ...resolvedOptions, messages: [...messages] }
+      }
+      projectedOptions = modelInfo.inputModalities !== undefined
         && !modelInfo.inputModalities.includes('image')
-        && resolvedOptions.messages.some(message => contentHasImage(message.content))
-        ? Object.isFrozen(resolvedOptions)
-          ? deepFreeze({ ...resolvedOptions, messages: projectImagesForTextModel(resolvedOptions.messages) as Message[] })
-          : { ...resolvedOptions, messages: projectImagesForTextModel(resolvedOptions.messages) as Message[] }
-        : resolvedOptions
+        && projectedOptions.messages.some(message => contentHasImage(message.content))
+        ? Object.isFrozen(projectedOptions)
+          ? deepFreeze({ ...projectedOptions, messages: projectImagesForTextModel(projectedOptions.messages) as Message[] })
+          : { ...projectedOptions, messages: projectImagesForTextModel(projectedOptions.messages) as Message[] }
+        : projectedOptions
       const stream = dispatch(this.forAdapter(projectedOptions, adapter))
       iterator = stream[Symbol.asyncIterator]()
     } catch (error: unknown) {

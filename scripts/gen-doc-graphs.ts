@@ -185,6 +185,20 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Projects the user-settings seam onto the generated Remote namespace: the read is always redacted and every refusal is classified here, not on the seam Definition.',
   },
   {
+    key: 'desktopPnpm',
+    pkg: 'desktop-plugin-runtime',
+    title: 'Packaged Desktop plugin command runner',
+    mode: 'core',
+    note: 'Runs only the validated bundled DSH plugin command through the packaged pnpm entry and owns its cancellation-aware process handle.',
+  },
+  {
+    key: 'desktopProfiles',
+    pkg: 'desktop-plugin-runtime',
+    title: 'Fixed Desktop profile facade',
+    mode: 'core',
+    note: 'Exposes the one Desktop-owned active profile to trusted package-management plugins and rejects profile switching.',
+  },
+  {
     key: 'workspaceController',
     pkg: 'api-workspace-controller',
     title: 'Host Workspace Remote controller',
@@ -290,6 +304,20 @@ const SERVICE_ROLES: ServiceRole[] = [
     mode: 'core',
     consumers: ['workspace', 'message-feedback'],
     note: 'Waits for every configured backend, then publishes the domain form as one lifecycle-bound service for typed durable state.',
+  },
+  {
+    key: 'usageInsights',
+    pkg: 'usage-insights',
+    title: 'Local usage insights projection',
+    mode: 'core',
+    note: 'Reads persisted Session history through the storage domain and exposes one immutable bounded snapshot without creating or resuming an Agent.',
+  },
+  {
+    key: 'missherBrain',
+    pkg: 'missher-brain',
+    title: 'Local memory and learning provider hub',
+    mode: 'seam',
+    note: 'Coordinates bounded factual-memory and procedural-learning providers and exposes only pathless status to the Client.',
   },
   {
     key: 'messageFeedback',

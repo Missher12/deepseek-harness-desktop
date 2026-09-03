@@ -8,9 +8,11 @@ kind: "package-reference"
 [English](README.md) | 中文
 
 ## 概述
+输入触发流水线插件：光标处的 `/` 与 `@` 检测（词边界 + guard tier 规则）、分组候选菜单，以及把 pick 路由到已注册 source。`ctx.inputTriggers` 拥有 source roster，并按会话 scope（`sessionOf`）各解析一个 `InputTriggerController`；对话接线层在 controller 上驱动 `track`／`arbitrate`／`onSpace`／`adjudicate`。同一个 controller 还暴露 `toggleSource` 与 `toggleSources`：前者为 chrome launcher 打开单一 source，后者按请求顺序组合多个 source，并可只投影 section／标题等展示字段；候选身份和 pick 仍回到原 source。`launcherOnly` source 不参与键入式 `/`／`@` tracking，只能由程序化入口打开。所得候选仍走通常的菜单、键盘仲裁、pick callback 与 scoped 输入改写。source 每次调用收到一个 `ClientSessionContext` 投影——会话始终由 agent（智能体）支撑，因此投影只含会话身份。source 在它能触达的每个会话 controller 中都会被预热：scope 创建时 roster 中已有的 source 会在 controller 构造期间预热，晚于此注册的 source 由注册动作本身预热进每个仍存续的 controller。`lexicon` 名录在预热后仍会变化的 source 实现 `subscribeLexicon(session, listener)`；controller 每收到通知就重拉，并把聚合结果经其 `lexicon` 快照 store 发布。流水线与命令无关：空格／回车裁决按注册序轮询可选的 `matchSpace`／`matchEnter` 钩子，第一个非 undefined 的应答胜出。回车裁决还携带 `SubmitEnvelope`（composer 的图片附件数量），使 source 能拒绝它无法整体消费的提交；命令接受 composer 图片时，`CommandClaim` 声明 `images: true`，其 `submit` 随之以第三个参数收到序列化后的图片载荷。
 
 本包为 Web GUI 提供输入触发流水线：检测光标处键入的 `/` 与 `@`，显示分组候选菜单，并把 pick 路由到已注册 source。source 经 `ctx.inputTriggers` 注册——`/` 命令 source（ui-commands）、`@` 文件与会话引用 source（ui-reference），以及任何业务包——对话接线层按会话驱动这条流水线。键入触发器会 seed 为该触发器注册的所有 source；chrome launcher 也可以在当前选区上只打开一个 source。流水线仅做呈现：pick 产出命令声明或引用插入，其后果属于消费它们的宿主与输入包。
 
+MenuView 把菜单 store 渲染进 `conversation.input.overlay` slot（列表类，会话 scope），菜单关闭期间渲染 null。键入式 trigger 会 seed 为该 trigger 注册的所有非 `launcherOnly` source；程序化 launcher seed 它请求的一个或多个 source，并在菜单关闭或重新开始键入式 tracking 前，通过 controller 的 `launcher` 快照 store 发布 launcher 名称。分组按可选的 `InputTriggerSource.order` 排序（越小越靠前，默认 0，同值保持注册序），组标题行经 `inputTriggers.menu` locale 命名空间本地化（未知 source 显示其原名）。`showGroupTitle: false` 会在 pending 与 ready 状态全程隐藏该行，ready 且候选项声明了 section 的组则以这些 section 标题行取代 source 标题。列表高度受限于 composer 上方的可用空间，指针落在菜单与所在 composer 卡片之外即关闭菜单。该 slot 由 ui-conversation 的组合器条目拥有（锚点、children 声明、生命周期）；其 SlotMap 类型合并放在本包的 `src/client/slots.ts`，因为依赖方向（ui-conversation → ui-input-trigger）不允许反向的类型导入。combobox 模式：焦点始终留在 textarea，行在 mousedown 时完成 pick，高亮由 `aria-activedescendant` 承载。
 ## 目录
 
 - [使用本包](#use-this-package)

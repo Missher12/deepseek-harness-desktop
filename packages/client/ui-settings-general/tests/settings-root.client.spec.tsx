@@ -1,11 +1,18 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useState } from 'react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
 import { en } from '../src/client/locales.ts'
+
+const settingsCss = readFileSync(resolve(
+  process.cwd(),
+  'packages/client/ui-settings-general/src/client/SettingsRoot.module.css',
+), 'utf8')
 
 afterEach(() => {
   cleanup()
@@ -250,20 +257,22 @@ describe('SettingsPanel navigation', () => {
         { id: 'general', order: 0, label: 'General' },
         { id: 'models', order: 10, label: 'Models' },
         { id: 'agent-presets', order: 20, label: 'Agent presets' },
-        { id: 'plugins', order: 30, label: 'Plugins' },
-        { id: 'contributed', order: 40, label: 'Contributed' },
+        { id: 'usage', order: 30, label: 'Usage' },
+        { id: 'personalization', order: 40, label: 'Personalization' },
+        { id: 'plugins', order: 50, label: 'Plugins' },
+        { id: 'contributed', order: 60, label: 'Contributed' },
       ],
     })
     openPanel()
     // Glyphs carry no id of their own, so the drawn paths are what tells them apart.
-    const glyphs = ['General', 'Models', 'Agent presets', 'Plugins', 'Contributed']
+    const glyphs = ['General', 'Models', 'Agent presets', 'Usage', 'Personalization', 'Plugins', 'Contributed']
       .map(name => screen.getByRole('button', { name }).querySelector('svg')?.innerHTML)
 
     expect(glyphs.every(glyph => glyph !== undefined && glyph !== '')).toBe(true)
-    // The three ids the shell names get their own glyph; every other section —
+    // Every id the shell names gets its own glyph; every other section —
     // including one this package never heard of — shares the gear.
-    expect(new Set(glyphs.slice(0, 4)).size).toBe(4)
-    expect(glyphs[4]).toBe(glyphs[0])
+    expect(new Set(glyphs.slice(0, 6)).size).toBe(6)
+    expect(glyphs[6]).toBe(glyphs[0])
   })
 
   it('switches the rendered section on nav click', () => {
@@ -273,6 +282,47 @@ describe('SettingsPanel navigation', () => {
     expect(screen.getByRole('button', { name: 'Models' }).getAttribute('aria-current')).toBe('true')
     expect(screen.getByTestId('section-models')).toBeTruthy()
     expect(screen.queryByTestId('section-general')).toBeNull()
+  })
+
+  it('keeps one wide settings geometry while exposing the active section', () => {
+    mount({
+      rows: [
+        { id: 'general', order: 0, label: 'General' },
+        { id: 'market', order: 40, label: 'Plugin Market' },
+      ],
+    })
+    openPanel()
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.getAttribute('data-settings-section')).toBe('general')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Plugin Market' }))
+
+    expect(dialog.getAttribute('data-settings-section')).toBe('market')
+    expect(settingsCss).toMatch(
+      /\.panel\s*\{[^}]*width:\s*min\(1040px, calc\(100vw - 48px\)\)/,
+    )
+    expect(settingsCss).not.toContain('.panel[data-settings-section="market"]')
+  })
+
+  it('gives every contributed settings page the same content width', () => {
+    expect(settingsCss).toMatch(
+      /\.options\s*>\s*:global\(\[data-slot=['"]settings\.section['"]\]\)\s*>\s*\*\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*760px;/s,
+    )
+  })
+
+  it('normalizes contributed page geometry and typography to the native Models baseline', () => {
+    expect(settingsCss).toMatch(/\.options\s*\{[^}]*--dsh-settings-page-title-size:\s*16px;/s)
+    expect(settingsCss).toMatch(/\.options\s*\{[^}]*--dsh-settings-page-intro-size:\s*14px;/s)
+    expect(settingsCss).toMatch(
+      /data-slot=['"]settings\.section['"][^}]*box-sizing:\s*border-box;[^}]*padding:\s*0\s+0\s+24px;/s,
+    )
+    expect(settingsCss).toMatch(
+      /data-slot=['"]settings\.section['"][^}]*h2\s*\{[^}]*font-size:\s*var\(--dsh-settings-page-title-size\);/s,
+    )
+    expect(settingsCss).toMatch(/h2\s*\+\s*p\s*\{[^}]*font-size:\s*var\(--dsh-settings-page-intro-size\);/s)
+    expect(settingsCss).toMatch(
+      /:global\(\[data-dshmarket-layout=['"]reference['"]\]\)\s*>\s*:first-child\s*\{[^}]*padding:\s*0\s+0\s+10px;/s,
+    )
   })
 
   it('mounts onboarding steps in order and transfers ownership only on completion', () => {

@@ -36,6 +36,151 @@ describe('CI workflow', () => {
     }
   })
 
+  it('publishes the updater manifest generated from the same verified macOS DMG', () => {
+    const workflow = loadWorkflow('.github/workflows/desktop-release.yml')
+    const mac = workflowJob(workflow, 'mac')
+    const windows = workflowJob(workflow, 'windows')
+    const publish = workflowJob(workflow, 'publish')
+    if (!Array.isArray(mac.steps) || !Array.isArray(windows.steps) || !Array.isArray(publish.steps)) {
+      throw new TypeError('Desktop release jobs must define steps')
+    }
+    const macSteps = mac.steps.filter(isRecord)
+    const windowsSteps = windows.steps.filter(isRecord)
+    const publishSteps = publish.steps.filter(isRecord)
+    const macMetadata = macSteps.find(step => step.name === 'Resolve Desktop release metadata')
+    const windowsMetadata = windowsSteps.find(step => step.name === 'Resolve Desktop release metadata')
+    const macBuild = macSteps.find(step => step.name === 'Build the Intel macOS DMG')
+    const generate = macSteps.find(step => step.name === 'Generate verified Desktop update manifest')
+    const macUpload = macSteps.find(step => (
+      typeof step.uses === 'string' && step.uses.startsWith('actions/upload-artifact@')
+    ))
+    const publishRelease = publishSteps.find(step => step.name === 'Upload assets and publish the draft')
+
+    expect(workflow.on).toMatchObject({
+      workflow_dispatch: {
+        inputs: {
+          tag: { default: 'desktop-v0.5.2' },
+        },
+      },
+    })
+    expect(generate?.run).toContain('pnpm exec tsx scripts/create-desktop-update-manifest.ts')
+    expect(generate?.run).toContain('deepseek-harness-desktop-update.json')
+    expect(macMetadata?.run).toContain('apps/desktop/package.json')
+    expect(windowsMetadata?.run).toContain('apps/desktop/package.json')
+    expect(macBuild).toMatchObject({
+      env: { NODE_OPTIONS: '--max-old-space-size=4096' },
+    })
+    expect(JSON.stringify(mac)).toContain('${{ steps.desktop.outputs.artifact }}')
+    expect(JSON.stringify(windows)).toContain('${{ steps.desktop.outputs.artifact }}')
+    expect(JSON.stringify(macUpload)).toContain('deepseek-harness-desktop-update.json')
+    expect(publishRelease?.run).toContain('release/deepseek-harness-desktop-update.json')
+    expect(JSON.stringify(workflow)).not.toContain('0.2.1')
+  })
+
+  it('derives every Windows Setup path from the Desktop package version', () => {
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+    const windows = workflowJob(workflow, 'build-install-smoke')
+    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
+    const steps = windows.steps.filter(isRecord)
+    const metadata = steps.find(step => step.name === 'Resolve Desktop release metadata')
+    const upload = steps.find(step => (
+      typeof step.uses === 'string'
+      && step.uses.startsWith('actions/upload-artifact@')
+      && JSON.stringify(step).includes('${{ steps.desktop.outputs.artifact }}')
+    ))
+
+    expect(workflow.permissions).toEqual({ contents: 'read' })
+    expect(metadata).toMatchObject({ id: 'desktop', shell: 'pwsh' })
+    expect(metadata?.run).toContain('apps/desktop/package.json')
+    expect(metadata?.run).toContain('$env:GITHUB_OUTPUT')
+    expect(metadata?.run).toContain('artifact=DeepSeek-Harness-Setup-$version-win-x64.exe')
+
+    const serialized = JSON.stringify(windows)
+    expect(serialized).not.toContain('0.2.1')
+    expect(serialized).toContain('${{ steps.desktop.outputs.artifact }}')
+    expect(upload).toMatchObject({
+      with: {
+        name: 'DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ steps.source.outputs.sha }}',
+      },
+    })
+  })
+
+  it('forwards staged Windows inventory arguments without a pnpm sentinel', () => {
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+    const windows = workflowJob(workflow, 'build-install-smoke')
+    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
+    const build = windows.steps
+      .filter(isRecord)
+      .find(step => step.name === 'Build the assisted Windows Setup')
+
+    expect(build?.run).toContain('run inventory:package --output')
+    expect(build?.run).not.toContain('run inventory:package -- --output')
+  })
+
+  it('parses every Windows Desktop PowerShell smoke before the Setup build', () => {
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+    const windows = workflowJob(workflow, 'build-install-smoke')
+    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
+    const steps = windows.steps.filter(isRecord)
+    const parserIndex = steps.findIndex(step => step.name === 'Parse Windows Desktop PowerShell smokes')
+    const buildIndex = steps.findIndex(step => step.name === 'Build the assisted Windows Setup')
+    const parser = steps[parserIndex]
+
+    expect(parserIndex).toBeGreaterThan(-1)
+    expect(buildIndex).toBeGreaterThan(parserIndex)
+    expect(parser).toMatchObject({ shell: 'pwsh' })
+    expect(parser?.run).toContain('[System.Management.Automation.Language.Parser]::ParseFile')
+    expect(parser?.run).toContain('scripts/windows-desktop-setup-smoke.ps1')
+    expect(parser?.run).toContain('scripts/windows-desktop-native-visual-smoke.ps1')
+    expect(parser?.run).toContain('scripts/windows-desktop-installer-ui-smoke.ps1')
+    expect(parser?.run).toContain('[System.IO.Path]::GetFileName($scriptName)')
+    expect(parser?.run).toContain('$parseError.Extent.StartLineNumber')
+    expect(parser?.run).toContain('$parseError.Extent.StartColumnNumber')
+    expect(parser?.run).toContain('$parseError.Message')
+    expect(parser?.run).not.toContain('Write-Output $scriptPath')
+  })
+
+  it('builds Windows Desktop from the exact pull-request head revision', () => {
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+    const windows = workflowJob(workflow, 'build-install-smoke')
+    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
+    const steps = windows.steps.filter(isRecord)
+    const checkout = steps.find(step => (
+      typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@')
+    ))
+    const source = steps.find(step => step.name === 'Verify exact source revision')
+
+    expect(checkout).toMatchObject({
+      with: {
+        path: 's',
+        'persist-credentials': false,
+        ref: '${{ github.event.pull_request.head.sha || github.sha }}',
+      },
+    })
+    expect(source).toMatchObject({ id: 'source', shell: 'pwsh' })
+    expect(source?.run).toContain('$expected = \'${{ github.event.pull_request.head.sha || github.sha }}\'')
+    expect(source?.run).toContain('git rev-parse HEAD')
+    expect(source?.run).toContain('source revision mismatch')
+    expect(source?.run).toContain('"sha=$actual" >> $env:GITHUB_OUTPUT')
+    expect(JSON.stringify(windows)).not.toContain('Windows-titlebar-diagnostics-${{ github.sha }}')
+    expect(JSON.stringify(windows)).not.toContain('DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ github.sha }}')
+  })
+
+  it('uploads only bounded Windows native visual evidence from the exact source revision', () => {
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+    const windows = workflowJob(workflow, 'build-install-smoke')
+    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
+    const serialized = JSON.stringify(windows)
+
+    expect(serialized).toContain('Windows-native-visual-evidence-${{ steps.source.outputs.sha }}')
+    expect(serialized).toContain('windows-installer-ui-evidence')
+    expect(serialized).toContain('windows-native-visual-evidence')
+    expect(serialized).toContain('desktop-windows-install-evidence.json')
+    expect(serialized).not.toContain('lifecycle.log')
+    expect(serialized).not.toContain('fixed-milestones')
+    expect(serialized).not.toContain('cpuprofile')
+  })
+
   it('isolates the python SDK exe pnpm setup destination per job', () => {
     const workflow: unknown = yaml.load(readFileSync(resolve(root, '.github/workflows/build-exe-for-python-sdk.yml'), 'utf8'))
     if (!isRecord(workflow) || !isRecord(workflow.jobs)) throw new TypeError('build-exe-for-python-sdk.yml must define jobs')
@@ -99,6 +244,13 @@ describe('CI workflow', () => {
     expect(windows.name).toBe('windows node 24 / wine blocking')
     expect(windows.if).toBe("github.event_name == 'pull_request'")
     expect(commandSteps.some(step => step.run.includes('wine-windows-gates.sh'))).toBe(true)
+
+    expect(node24Coverage.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: '6',
+      DSH_COVERAGE_PARTITIONS: '4',
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
+      DSH_GATE_CONCURRENCY: '3',
+    })
 
     // The split native jobs all resolve their pool through the Windows switch.
     for (const [jobName, job] of [['windows-build', windowsBuild], ['windows-coverage', windowsCoverage], ['windows-native-tests', windowsNativeTests], ['windows-observational', windowsObservational]] as const) {
@@ -236,7 +388,12 @@ describe('CI workflow', () => {
       expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
       expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
       expect(job['runs-on']).toContain('vm-backup')
+      expect(job['runs-on']).toContain("|| 'ubuntu-24.04'")
     }
+    if (!isRecord(node24Consumers.env)) throw new TypeError('node-24-consumers must define resource budgets')
+    expect(node24Consumers.env.DSH_GATE_CONCURRENCY).toContain("&& '8' || '3'")
+    expect(node24Consumers.env.DSH_WEB_SNAPSHOT_WORKERS).toContain("&& '6' || '2'")
+    expect(node24Consumers.env.DSH_SNAPSHOT_MAX_CONCURRENCY).toContain("&& '12' || '2'")
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')
@@ -672,7 +829,11 @@ describe('Issue lifecycle workflow', () => {
     expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
-    const gated = "${{ github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested' }}"
+    expect(lifecycleJob.if).toBeUndefined()
+    expect(workflowJob(policy, 'policy').if).toBe(
+      "${{ github.repository == 'deepseek-harness/deepseek-harness' }}",
+    )
+    const gated = "${{ github.repository == 'deepseek-harness/deepseek-harness' && (github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested') }}"
     const steps = lifecycleJob.steps.filter(isRecord)
     const tokenStep = steps.find(s => s.name === 'Create project token')
     const handleStep = steps.find(s => s.name === 'Handle repository event')

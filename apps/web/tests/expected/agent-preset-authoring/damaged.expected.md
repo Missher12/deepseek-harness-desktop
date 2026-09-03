@@ -4,9 +4,18 @@
     - button "通用设置":
       - img
       - text: 通用设置
+    - button "个性化":
+      - img
+      - text: 个性化
+    - button "记忆与学习":
+      - img
+      - text: 记忆与学习
     - button "模型":
       - img
       - text: 模型
+    - button "使用统计":
+      - img
+      - text: 使用统计
     - button "插件":
       - img
       - text: 插件
@@ -59,6 +68,86 @@
         - img
         - text: 查看
       - 'button "复制: 创造模式"':
+        - img
+        - text: 复制
+    - listitem:
+      - 'button "设为默认: 方案规划"':
+        - text: 方案规划 内置 澄清目标、检查证据、比较方案，并在实现前交付可执行计划。
+        - code: planner
+      - 'button "查看: 方案规划"':
+        - img
+        - text: 查看
+      - 'button "复制: 方案规划"':
+        - img
+        - text: 复制
+    - listitem:
+      - 'button "设为默认: 前端与 UI"':
+        - text: 前端与 UI 内置 构建精致界面，覆盖响应式布局、无障碍、交互状态和视觉验证。
+        - code: frontend
+      - 'button "查看: 前端与 UI"':
+        - img
+        - text: 查看
+      - 'button "复制: 前端与 UI"':
+        - img
+        - text: 复制
+    - listitem:
+      - 'button "设为默认: 后端与 API"':
+        - text: 后端与 API 内置 处理 API、数据模型、持久化、兼容性、安全边界和集成测试。
+        - code: backend
+      - 'button "查看: 后端与 API"':
+        - img
+        - text: 查看
+      - 'button "复制: 后端与 API"':
+        - img
+        - text: 复制
+    - listitem:
+      - 'button "设为默认: 故障排查"':
+        - text: 故障排查 内置 先复现并隔离根因，再执行最小且获得授权的修复。
+        - code: debugger
+      - 'button "查看: 故障排查"':
+        - img
+        - text: 查看
+      - 'button "复制: 故障排查"':
+        - img
+        - text: 复制
+    - listitem:
+      - 'button "设为默认: 代码审查"':
+        - text: 代码审查 内置 从正确性、回归、安全和测试完整性审查代码，按严重性报告问题。
+        - code: reviewer
+      - 'button "查看: 代码审查"':
+        - img
+        - text: 查看
+      - 'button "复制: 代码审查"':
+        - img
+        - text: 复制
+    - listitem:
+      - 'button "设为默认: 测试与 QA"':
+        - text: 测试与 QA 内置 设计基于风险的测试、复现用户流程，并区分环境失败与产品缺陷。
+        - code: qa
+      - 'button "查看: 测试与 QA"':
+        - img
+        - text: 查看
+      - 'button "复制: 测试与 QA"':
+        - img
+        - text: 复制
+    - listitem:
+      - 'button "设为默认: DevOps 与发布"':
+        - text: DevOps 与发布 内置 负责构建、打包、CI、部署预检、回滚规划和产物验证。
+        - code: devops
+      - 'button "查看: DevOps 与发布"':
+        - img
+        - text: 查看
+      - 'button "复制: DevOps 与发布"':
+        - img
+        - text: 复制
+    - listitem:
+      - 'button "设为默认: 文档与研究"':
+        - text: 文档与研究 内置 阅读代码和资料、综合结论、维护精确文档，并明确标注不确定性。
+        - code: research
+      - 'button "查看: 文档与研究"':
+        - img
+        - text: 查看
+      - 'button "复制: 文档与研究"':
         - img
         - text: 复制
   - heading "自定义" [level=3]

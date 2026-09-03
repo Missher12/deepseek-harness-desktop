@@ -1,34 +1,61 @@
 import { memo, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {
+  MessageAttachment, MessageAttachmentDisplayId, MessageImageSource,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { JsonBlock, projectUserText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { ModelRetryNode, TurnErrorNode, UserMessageNode } from '../contract/snapshot.ts'
 import { CompactionItem } from './CompactionItem.tsx'
 import { ContextInjectionRow } from './ContextInjectionRow.tsx'
 import { MessageIconActions } from './MessageIconActions.tsx'
+import { RelayNodeView, isSessionMessengerRelay } from './RelayNodeView.tsx'
 import css from './MessageItem.module.css'
 
 type UserImage = Extract<UserMessageNode['content'][number], { type: 'image' }>
+type UserDocument = Extract<UserMessageNode['content'][number], { type: 'document' }>
+
+function createImageAttachmentDisplayId(): MessageAttachmentDisplayId {
+  return `message-attachment:${randomUUID()}` as MessageAttachmentDisplayId
+}
 
 function contentParts(content: readonly unknown[]): {
   text: string
   images: { attachment: UserImage['attachment'] }[]
+  attachments: MessageAttachment[]
   rest: unknown[]
 } {
   const texts: string[] = []
   const images: { attachment: UserImage['attachment'] }[] = []
+  const attachments: MessageAttachment[] = []
   const rest: unknown[] = []
   for (const block of content) {
     const b = block as { type?: string; text?: string; attachment?: unknown }
     if (b.type === 'text' && typeof b.text === 'string') texts.push(b.text)
     else if (b.type === 'image' && b.attachment !== undefined) {
-      images.push({ attachment: (b as UserImage).attachment })
+      const attachment = (b as UserImage).attachment
+      images.push({ attachment })
+      attachments.push({ displayId: createImageAttachmentDisplayId(), kind: 'image', attachment })
+    }
+    else if (b.type === 'document' && b.attachment !== undefined) {
+      const attachment = (b as UserDocument).attachment
+      attachments.push({
+        displayId: attachment.displayId,
+        kind: 'document',
+        attachment: {
+          name: attachment.name,
+          mediaType: attachment.mediaType,
+          bytes: attachment.bytes,
+          extractedBytes: attachment.extractedBytes,
+          truncated: attachment.truncated,
+        },
+      })
     }
     else rest.push(block)
   }
-  return { text: texts.join(''), images, rest }
+  return { text: texts.join(''), images, attachments, rest }
 }
 
 function retrySeconds(milliseconds: number): number {
@@ -164,7 +191,7 @@ function UserStyleBubble({
   previewImages?: readonly MessageImageSource[]
   t: ChatViewSlotProps['t']
 }): ReactNode {
-  const { text, images: contentImages, rest } = contentParts(content)
+  const { text, images: contentImages, attachments, rest } = useMemo(() => contentParts(content), [content])
   const images = previewImages ?? contentImages
   const truncated = (total: number): string => t('json.truncated', { total })
   const showBubble = text !== '' || rest.length > 0
@@ -175,7 +202,7 @@ function UserStyleBubble({
       data-submission-echo={echo || undefined}
     >
       <div className={css.userStack}>
-        {renderMessageImages({ images, align: 'end' })}
+        {renderMessageImages({ images, attachments, align: 'end' })}
         {showBubble && <div className={css.bubble}>
           {projectUserText(text, referenceLabels)}
           {rest.map((block, i) => <JsonBlock key={i} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />)}
@@ -293,9 +320,21 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
   )
 })
 
-/** Injected-context keyed Chat renderer. */
-export const ContextMessageNodeView = memo(function ContextMessageNodeView({ node, t }: ChatNodeViewProps<'context'>) {
+/** Injected-context keyed Chat renderer: relays surface as visible chat cards. */
+export const ContextMessageNodeView = memo(function ContextMessageNodeView({
+  node, useSessions, t,
+}: ChatNodeViewProps<'context'>) {
   const data = node.data
+  if (isSessionMessengerRelay(data.source)) {
+    return (
+      <RelayNodeView
+        content={data.content}
+        source={data.source}
+        useSessions={useSessions}
+        t={t}
+      />
+    )
+  }
   return (
     <ContextInjectionRow
       content={data.content}

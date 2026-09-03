@@ -123,12 +123,15 @@ export class AppWebEntry {
 
     const rows = this.manifest.plugins.map(row => row.id)
     this.page.setTotal(rows.length)
-    await prefetching
-    await Promise.all(rows.map(async (name) => {
+    const creating = Promise.all(rows.map(async (name) => {
       this.page.setState(name, 'loading')
       const id = await loader.create({ name })
       if (loader.resolve(id).fiber === undefined) this.page.setState(name, 'failed')
     }))
+    // Immediate-tier transport and the rest of the local bundle graph are
+    // independent. Start both together; the module system deduplicates an
+    // immediate bundle's in-flight import when Loader reaches the same row.
+    await Promise.all([prefetching, creating])
 
     await loader.await()
     this.assertEntriesActive(ctx)

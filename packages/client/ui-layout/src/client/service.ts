@@ -10,6 +10,7 @@
  */
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { createLayoutStore } from './stores.ts'
+import type { UtilityMode } from './stores.ts'
 
 /** The layout store's bound action set (framework-baked, draft params peeled). */
 export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>
@@ -27,6 +28,23 @@ export interface ILayout {
   openDetails(): void
   /** Close the details panel. */
   closeDetails(): void
+  /**
+   * Open the utility workbench, optionally selecting a surface.
+   * @param mode - optional surface to open; absent keeps the current surface.
+   */
+  openUtility(mode?: UtilityMode): void
+  /** Close the utility workbench. */
+  closeUtility(): void
+  /**
+   * Toggle the current surface, or switch/open another surface.
+   * @param mode - optional surface to switch to; absent toggles the current one.
+   */
+  toggleUtility(mode?: UtilityMode): void
+  /**
+   * Set the preferred utility width.
+   * @param px - preferred width in CSS pixels.
+   */
+  setUtilityWidth(px: number): void
 }
 
 /** Cross-plugin panel-action face (ctx.layout). */
@@ -57,6 +75,22 @@ export class LayoutController implements ILayout {
   /** Close the details panel. */
   closeDetails(): void {
     this.#require().closeDetails()
+  }
+
+  openUtility(mode?: UtilityMode): void {
+    this.#require().openUtility(mode)
+  }
+
+  closeUtility(): void {
+    this.#require().closeUtility()
+  }
+
+  toggleUtility(mode?: UtilityMode): void {
+    this.#require().toggleUtility(mode)
+  }
+
+  setUtilityWidth(px: number): void {
+    this.#require().setUtilityWidth(px)
   }
 
   #require(): PanelActions {

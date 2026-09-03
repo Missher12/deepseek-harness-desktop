@@ -8,6 +8,14 @@ DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的�
 
 文档：[https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
 
+## 非官方桌面发行版
+
+这个社区仓库保留官方源码，并在 [`apps/desktop`](apps/desktop/README.zh.md) 下增加非官方 Intel macOS 与 Windows x64 桌面应用。它不是 DeepSeek 官方桌面版。应用在原生 Electron 窗口中内置现有 Harness Web 运行时，自主管理随机回环端口，并使用用户提供的鲸鱼图标。
+
+请从本仓库的 [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases) 下载 DMG 或 Setup 安装程序。当前成品未签名；首次启动时，macOS 可能要求在 Finder 右键菜单中选择“打开”，Windows 可能显示 SmartScreen 提示。
+
+Desktop 0.5.2 从同一份经过测试的 Harness `0.1.1-rc.2` 源码提交构建 Intel macOS DMG 与 Windows x64 Setup。它恢复 v0.4.11 的 PromptRail，为现有“项目／会话”树提供更清晰的 ChatGPT 式层次节奏，把“审查、终端、浏览器、文件”固定在可调整宽度的工作台中，并为现有“完全访问”预设增加经过风险确认的**本会话不再询问**操作。启动阶段会在不跳过校验的前提下精确测量；Windows 成品只裁剪目标平台不可达的资源，并使用专门的任务栏、托盘和安装程序图标。旧版 0.4.x 回退代理的精确迁移、有界本地文档附件与“记忆与学习”均保持不变。Windows 目前仍通过安装程序更新；应用内更新暂只支持 Intel macOS。
+
 ## 开发者预览
 
 DeepSeek Harness 处于 _开发者预览_ 阶段，正在快速迭代。**未来将出现破坏兼容性的变更。**

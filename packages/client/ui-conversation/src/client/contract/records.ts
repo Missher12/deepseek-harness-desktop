@@ -4,8 +4,8 @@
 
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { RendererContentBlock } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { LlmRetryEventData } from '@deepseek-ai/dsh-llm-retry/types'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 import type { ContextProvenanceView, KnownContextForm } from './context-provenance.ts'
@@ -43,7 +43,7 @@ export interface UserMessageNode {
   seq: number
   /** Unix epoch ms from the source session event. */
   time: number
-  content: readonly ContentBlock[]
+  content: readonly RendererContentBlock[]
   source: unknown
 }
 
@@ -91,7 +91,7 @@ export interface SteeringMessageNode {
   seq: number
   /** Unix epoch ms from the source session event. */
   time: number
-  content: readonly ContentBlock[]
+  content: readonly RendererContentBlock[]
   source: unknown
 }
 
@@ -101,7 +101,7 @@ export interface ContextMessageNode {
   seq: number
   /** Unix epoch ms from the source session event. */
   time: number
-  content: readonly ContentBlock[]
+  content: readonly RendererContentBlock[]
   source: unknown
   /** Role and producer name projected from `source` by the target. */
   provenance: ContextProvenanceView
@@ -164,7 +164,7 @@ export interface ToolResultNode {
   call: { name: string; argsRaw: string } | null
   /** Unix epoch ms of the paired tool/call when the call is still in-window; used for call-row duration. */
   callTime: number | null
-  content: readonly ContentBlock[]
+  content: readonly RendererContentBlock[]
   isError: boolean
   error?: { name: string; code: string }
   meta?: unknown

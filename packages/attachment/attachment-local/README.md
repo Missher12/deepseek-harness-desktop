@@ -8,9 +8,13 @@ kind: "package-reference"
 English | [中文](README.zh.md)
 
 ## Summary
+The private local implementation of [`@deepseek-ai/dsh-attachment`](../attachment). Normalized images land at `<DSH_HOME>/attachments/v1/objects/`; document sources and extracted text land in separate content-addressed trees below `<DSH_HOME>/attachments/v1/documents/`. Session data addresses every object with an opaque `sha256:` id. Each process proves a home durable once by syncing every ancestor entry to the filesystem root. Writes use a private staging directory, owner-only files, a synced temporary file, an atomic exclusive hard-link publish, and directory syncs on the publication path (POSIX; Windows relies on filesystem metadata journaling) so the reported reference survives a crash.
 
 This package provides the local storage and image-processing backend for attachments: source images are validated, oriented, stripped of metadata and color profiles, normalized to 8-bit sRGB/sRGBA, and saved below `DSH_HOME`; route-specific request versions are derived and cached separately. It is what the shipped `dsh` composition uses, so durable image attachments work without configuration. Identical normalized images are stored only once, concurrent reads of one request variant share work, and stored images stay readable after later admission-limit changes. Storage is local to this machine — other hosts cannot read these images — and objects are never deleted automatically.
 
+Document admission accepts PDF, DOCX, XLSX, UTF-8 text, Markdown, JSON, CSV, YAML, XML, and common source-code files. A message may contain at most five documents, 50MiB of source bytes in total, and 20MiB per document. Extraction keeps at most 96KiB of UTF-8 text per document and 256KiB per message, with truncation recorded in the durable reference. PDF.js reads page text without rendering or executing embedded actions inside a dedicated Worker; the Host applies a 30-second wall deadline and a 128MiB V8 old-generation limit, drains parser diagnostics without logging document-controlled text, and maps worker failure to the closed attachment error. Page count, text-item work, per-item characters, and output bytes are independently bounded. OOXML expansion is bounded by entry count, entry size, total expanded size, and path depth; traversal, encrypted containers, and macros are rejected. DOCX extraction reads paragraph text. XLSX extraction reads stored display values and shared strings but never evaluates formulas. External relationships are not followed. Every read verifies both the immutable source digest and the extracted-text digest before returning data.
+
+Request versions live below `<DSH_HOME>/attachments/v1/request-images/`. `readImageRequest` scales the stored normalized attachment under a total-pixel budget without enlargement, then enforces a separate encoded-byte cap. The request encoder uses the same color branches, with PNG (palette only without alpha) before WebP 85 and 80 for low-color images, WebP 85 then 80 for other alpha images, and JPEG 85 then 80 for other opaque images. It executes candidates lazily and reduces dimensions only after both quality attempts exceed the request cap. Its cache identity includes the attachment id, transform version, pixel and byte budgets, and fixed encoder settings. Cached bytes are fully decoded and checked as 8-bit sRGB/sRGBA before use. Concurrent calls for one identity share one transform and cache write; cancelling one waiter does not cancel the shared work. Callers compose ordered batches from singular reads, while the service's FIFO limiter applies `imageCompressionConcurrency` to simultaneous normalization and request transforms. The setting ranges from 1 through 8 and defaults to 2; file publication remains ordered after preparation.
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -98,6 +102,10 @@ Request versions live below `<DSH_HOME>/attachments/v1/request-images/`. `readIm
 | [`src/image.ts`](src/image.ts) | Full raster decode and metadata verification |
 | — | No runtime invariant companion is published; immutable writes and verified reads are enforced directly at the backend boundary. |
 
+### Invariant ownership
+
+No invariant companion is published because the attachment boundary is enforced by the caller at the Host boundary.
+
 </details>
 
 -----
@@ -117,7 +125,7 @@ For the full service contract and payload types, read the subsystem reference; f
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through request descriptors. A mapped execution filesystem lets the model see each image's identity, dimensions, media type, read-only process path, writable-copy extension, and normalization warning alongside the request bytes.
+Indirectly, through durable replay of historical user images and documents after restart and fork. Model adapters receive deterministic extracted document text rather than a host path. Indirectly, through request descriptors. A mapped execution filesystem lets the model see each image's identity, dimensions, media type, read-only process path, writable-copy extension, and normalization warning alongside the request bytes.
 
 #### KV Cache effect
 

@@ -1,7 +1,4 @@
----
-description: "面向用户与维护者的提供方无关模型调用服务说明：流式发起请求、注册提供方适配器或解析模型元数据。"
-kind: "package-reference"
----
+--- description: "面向用户与维护者的提供方无关模型调用服务说明：流式发起请求、注册提供方适配器或解析模型元数据。" kind: "package-reference" ---
 
 # @deepseek-ai/dsh-llm
 
@@ -69,6 +66,8 @@ for await (const chunk of ctx.llm.stream({
 每个流都恰好以一个终止 `finish` 分片结束：失败为 `{ kind: 'error', failure }`，取消为 `{ kind: 'aborted', failure }`。失败携带稳定 code，如 `NO_ADAPTER`、`MISSING_CREDENTIAL`、`AUTH`、`RATE_LIMIT` 与 `CONTEXT_WINDOW_EXCEEDED`；消费方依据 code 路由，绝不解析消息文本。点名未注册提供方的请求会以 `NO_ADAPTER` 失败，格式错误的凭据会以 `INVALID_CREDENTIAL` 失败，而不是表现为不透明的 fetch 错误。本服务从不自行重跑请求：重试是 `dsh-llm-retry` 在 agent 失败步骤扩展点上的职责。
 
 -----
+
+每次分发都使用随适配器世代捕获的确切模型模态。支持图片的适配器把持久图片引用投影为路由专用请求版本。纯文本路由则收到确定性的附件占位文本，其中也包括嵌套工具结果图片，追加式会话历史不会改变。`offloadRequestImagesWithPolicy()` 提供确定性的从旧到新图片移除，支持按原始字节或 base64 计数，也支持图片数量或字节量步长；适配器提供确切派生版本的字节长度。持久文档由共享请求投影校验并只展开一次，优先保留最新消息，同时维持同一消息内的附件顺序。最终展开使用精确解析出的路由上下文与输出预留；无法容纳的文档会在 Provider 分发前变为确定性的仅元数据占位文本，而不会让路由溢出。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现

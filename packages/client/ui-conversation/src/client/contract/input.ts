@@ -106,6 +106,22 @@ export interface InputTriggerHit {
   readonly span: TokenSpan
 }
 
+/** Presentation-only candidate shape accepted by a composed launcher. */
+export interface InputTriggerLauncherCandidate {
+  readonly name: string
+  readonly description?: string
+  readonly section?: string
+  readonly value?: string
+}
+
+/** One registered source selected into a programmatic launcher. */
+export interface InputTriggerLauncherSource {
+  readonly name: string
+  readonly project?: (
+    items: readonly InputTriggerLauncherCandidate[],
+  ) => readonly InputTriggerLauncherCandidate[]
+}
+
 /** Structural per-Session trigger provider consumed by the input shell. */
 export interface InputTriggerController {
   readonly launcher: ObservableSnapshot<string | null>
@@ -131,6 +147,12 @@ export interface InputTriggerController {
   ): Promise<PickOutcome>
   /** @param source - source name. @param hit - synthetic trigger hit. */
   toggleSource(source: string, hit: InputTriggerHit): void
+  /** @param launcher - launcher identity. @param sources - ordered source projections. @param hit - synthetic trigger hit. */
+  toggleSources(
+    launcher: string,
+    sources: readonly InputTriggerLauncherSource[],
+    hit: InputTriggerHit,
+  ): void
 }
 
 declare module '@deepseek-ai/cordis' {

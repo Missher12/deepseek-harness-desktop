@@ -418,6 +418,12 @@ export interface SurfaceIntent {
   sourceEventSeqs?: SessionSeq[]
 }
 
+/** Optional envelope metadata for a non-surface informational event. */
+export interface LogIntent {
+  /** Marks a plugin-owned event safe for older readers to skip. */
+  ignorable?: true
+}
+
 /**
  * One immutable entry in the session log.
  *

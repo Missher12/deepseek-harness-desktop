@@ -84,6 +84,10 @@ describe('catalog-route model discovery', () => {
     expect(models.map(model => model.id).sort())
       .toEqual(getBuiltinModels('deepseek').map(model => model.id).sort())
     expect(models.every(model => (model.contextWindow ?? 0) > 0 && (model.maxTokens ?? 0) > 0)).toBe(true)
+    const vision = getBuiltinModels('deepseek').find(model => model.input.includes('image'))
+    if (vision !== undefined) {
+      expect(models.find(model => model.id === vision.id)?.inputModalities).toEqual(vision.input)
+    }
     expect(server.paths).toEqual([])
   })
 
@@ -221,6 +225,31 @@ describe('draft-provider model discovery', () => {
 
     expect(await ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url }))
       .toEqual([{ id: 'good' }, { id: 'zero-capacity' }])
+  })
+
+  it('normalizes explicit listing modalities without guessing from model names', async () => {
+    const server = await listingServer({
+      body: JSON.stringify({
+        data: [
+          { id: 'declared', input_modalities: ['text', 'image', 'audio', 'image'] },
+          { id: 'alternate', modalities: ['image', 'text'] },
+          { id: 'nested', architecture: { input_modalities: ['text'] } },
+          { id: 'vision-in-name-only' },
+          { id: 'malformed', input_modalities: 'image' },
+          { id: 'unsupported-only', input_modalities: ['audio'] },
+        ],
+      }),
+    })
+    const ctx = await harness()
+
+    expect(await ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url })).toEqual([
+      { id: 'declared', inputModalities: ['text', 'image'] },
+      { id: 'alternate', inputModalities: ['image', 'text'] },
+      { id: 'nested', inputModalities: ['text'] },
+      { id: 'vision-in-name-only' },
+      { id: 'malformed' },
+      { id: 'unsupported-only' },
+    ])
   })
 
   it('points at the credential for a rejected one, and only then', async () => {

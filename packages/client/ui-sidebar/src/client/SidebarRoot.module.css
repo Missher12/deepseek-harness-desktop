@@ -8,6 +8,9 @@
 
 .root {
   --dsh-sidebar-inline-padding: 12px;
+  --dsh-sidebar-row-gap: 2px;
+  --dsh-sidebar-project-session-gap: 4px;
+  --dsh-sidebar-project-group-gap: 8px;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -98,6 +101,11 @@
   margin-bottom: 8px;
   box-sizing: border-box;
   overflow: hidden;
+}
+
+:global(body[data-dsh-surface='desktop']) .logoRow {
+  height: 48px;
+  margin-bottom: 4px;
 }
 
 .collapsed .logoRow {
@@ -265,6 +273,10 @@
   line-height: 22px;
   cursor: pointer;
   overflow: hidden;
+}
+
+:global(body[data-dsh-surface='desktop']) .newSession {
+  border-radius: 9px;
 }
 
 .newSession:hover {

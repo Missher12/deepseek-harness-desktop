@@ -88,6 +88,21 @@
   text-overflow: clip;
 }
 
+.summary[data-typing]::after {
+  content: '';
+  display: inline-block;
+  width: 1px;
+  height: 13px;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: currentColor;
+  animation: dsh-reasoning-caret 850ms steps(1, end) infinite;
+}
+
+@keyframes dsh-reasoning-caret {
+  50% { opacity: 0; }
+}
+
 .thinkBody {
   /* Indent under the title, which starts at leading (16 + delta) + gap 6. */
   padding: 4px 0 4px calc(22px + var(--dsh-content-font-delta, 0px));
@@ -99,7 +114,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .root[data-state='running'] .row::after {
-    animation: none;
-  }
+  .root[data-state='running'] .row::after { animation: none; }
+  .summary[data-typing]::after { display: none; animation: none; }
 }

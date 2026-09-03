@@ -103,3 +103,75 @@
   color: var(--dsw-alias-label-secondary, var(--dsh-boot-label-secondary));
   white-space: pre-wrap;
 }
+
+.boot[data-dsh-boot-desktop] {
+  --dsh-boot-bg: #f6f7fb;
+  --dsh-boot-label-primary: #171a21;
+  --dsh-boot-label-secondary: #4a5568;
+  --dsh-boot-label-tertiary: #697386;
+
+  background:
+    radial-gradient(circle at 50% 38%, rgb(77 107 254 / 9%), transparent 36%),
+    var(--dsh-boot-bg);
+}
+
+.boot[data-dsh-boot-desktop] .card {
+  width: min(300px, calc(100% - 48px));
+  gap: 0;
+}
+
+.macIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgb(77 107 254 / 24%);
+}
+
+.boot[data-dsh-boot-desktop] .wordmark {
+  margin-top: 17px;
+  font-size: 25px;
+  line-height: 30px;
+  font-weight: 600;
+  letter-spacing: -.035em;
+}
+
+.boot[data-dsh-boot-desktop] .hint { margin-top: 6px; }
+
+.macProgress {
+  position: relative;
+  width: 100%;
+  height: 5px;
+  margin-top: 27px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e4e8f2;
+}
+
+.macProgressFill {
+  width: var(--dsh-boot-progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4d6bfe, #6f8dff 68%, #79e8ff);
+  box-shadow: 0 0 10px rgb(77 107 254 / 34%);
+  transition: width 240ms ease-out;
+}
+
+.macStatus {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 10px;
+  color: #778197;
+  font-family: var(--ds-font-family-code, "SF Mono", ui-monospace, monospace);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.macStatus > :last-child {
+  color: #4a5568;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .macProgressFill { transition: none; }
+}

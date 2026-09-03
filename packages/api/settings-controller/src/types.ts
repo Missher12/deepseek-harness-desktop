@@ -37,3 +37,22 @@ export interface SettingsDocumentOpenValue {
 export type AgentPresetDirectoryOpenValue =
   | { readonly opened: true }
   | { readonly opened: false; readonly path: string }
+
+/** One supported global reply-style preference. */
+export type PersonalizationStyle = 'default' | 'concise' | 'friendly' | 'professional'
+
+/** Browser-safe projection of the fixed global personalization document. */
+export interface PersonalizationDocumentView {
+  instructions: string
+  style: PersonalizationStyle
+  revision: string
+  hasExternalContent: boolean
+  writable: boolean
+}
+
+/** Revision-checked input for replacing only the Desktop-owned block. */
+export interface PersonalizationDocumentWrite {
+  instructions: string
+  style: PersonalizationStyle
+  expectedRevision: string
+}

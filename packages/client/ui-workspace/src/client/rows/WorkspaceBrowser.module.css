@@ -106,7 +106,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  max-width: 60px;
+  max-width: 92px;
   opacity: 1;
   overflow: hidden;
   visibility: visible;
@@ -353,7 +353,7 @@
 .flatList > * + *,
 .searchTree > [role='treeitem'] + [role='treeitem'],
 .groupSection > * + * {
-  margin-top: 2px;
+  margin-top: var(--dsh-sidebar-row-gap);
 }
 
 .searchStatus,
@@ -373,8 +373,12 @@
   position: relative;
 }
 
+.groupSection > [role='treeitem']:first-child + [role='treeitem'] {
+  margin-top: var(--dsh-sidebar-project-session-gap);
+}
+
 .groupSection + .groupSection {
-  margin-top: 4px;
+  margin-top: var(--dsh-sidebar-project-group-gap);
 }
 
 .listTopDropIndicator,
@@ -488,6 +492,69 @@
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-secondary);
+}
+
+/* The archived-sessions dialog is wider and taller than the default modal:
+   the row actions (copy ID / restore / delete) need room side by side. */
+.archiveModal {
+  width: min(600px, 100%);
+}
+
+.archiveList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(640px, 72vh);
+  overflow-y: auto;
+}
+
+.archiveRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+}
+
+.archiveIdentity {
+  flex: 1;
+  min-width: 0;
+}
+
+.archiveTitle,
+.archiveSubtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archiveTitle {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.archiveSubtitle {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.archiveActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.archiveEmpty {
+  padding: 24px 4px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 @media (prefers-reduced-motion: reduce) {

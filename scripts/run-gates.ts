@@ -440,10 +440,11 @@ function ciArtifactGates(): Gate[] {
 function ciConsumerGates(): Gate[] {
   const builtTree = ['build']
   const validatedBuild = ['built-package-invariants']
-  // The HMR web test starts `dev:web`, which rewrites the shared `lib/` and
-  // `apps/web/dist/` trees. Let every build-artifact reader settle before that
-  // writer starts; `after` preserves the web diagnostic even if a reader fails.
-  const buildArtifactReaders = [
+  // The HMR web test starts `dev:web`, which temporarily rewrites source and
+  // built client files. Let every stable artifact reader settle before that
+  // writer starts; `after` preserves the web diagnostic if a reader fails.
+  const stableConsumers = [
+    'node-compat',
     'publint',
     'lint-and-duplication',
     'snapshot',
@@ -466,7 +467,7 @@ function ciConsumerGates(): Gate[] {
     }),
     snapshotGate(validatedBuild),
     expectedOutputGate(validatedBuild),
-    webSnapshotGate(validatedBuild, buildArtifactReaders),
+    webSnapshotGate(validatedBuild, stableConsumers),
     pnpmScript('doc-typecheck', 'doc-typecheck:contracts-ready', {
       needs: validatedBuild,
       env: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },
@@ -479,8 +480,7 @@ function ciConsumerGates(): Gate[] {
   ]
 }
 
-function webSnapshotGate(needs: string[], after?: string[]): Gate {
-  const order = after === undefined ? { needs } : { needs, after }
+function webSnapshotGate(needs: string[], after: string[] = []): Gate {
   const workerRaw = process.env.DSH_WEB_SNAPSHOT_WORKERS
   if (workerRaw !== undefined && workerRaw !== '') {
     const workers = Number.parseInt(workerRaw, 10)
@@ -491,7 +491,8 @@ function webSnapshotGate(needs: string[], after?: string[]): Gate {
       label: 'web browser snapshot',
       displayCommand: `DSH_SNAPSHOT=replay DSH_WEB_SNAPSHOT_WORKERS=${workers} pnpm run test:web:ci`,
       env: { DSH_SNAPSHOT: 'replay' },
-      ...order,
+      needs,
+      ...after.length === 0 ? {} : { after },
       streamOutput: true,
     })
   }
@@ -499,7 +500,8 @@ function webSnapshotGate(needs: string[], after?: string[]): Gate {
     label: 'web browser snapshot',
     displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
     env: { DSH_SNAPSHOT: 'replay' },
-    ...order,
+    needs,
+    ...after.length === 0 ? {} : { after },
   })
 }
 
@@ -511,9 +513,18 @@ function ciWindowsBlockingGates(): Gate[] {
 }
 
 function ciWindowsCompleteGates(): Gate[] {
+  // A hosted Windows runner has four vCPUs. Do not overlap the instrumented
+  // partitions with the highly parallel build, or the uninstrumented heavy
+  // suite with those partitions: subprocess and worker-thread fixtures need
+  // real scheduling headroom to keep their behavioral timeouts meaningful.
   const coverage = coverageGates().map(gate => ({
     ...gate,
-    needs: [...new Set(['build', ...(gate.needs ?? [])])],
+    needs: [...new Set([
+      'build',
+      'windows-site',
+      ...gate.id === 'coverage-exempt-heavy' ? ['coverage'] : [],
+      ...(gate.needs ?? []),
+    ])],
   }))
   const coverageAfter = coverage.map(gate => gate.id)
   const observational = ciWindowsObservationalGates()
@@ -641,7 +652,10 @@ function coverageGates(): Gate[] {
 // either on `build` or on a validation gate that transitively owns that build.
 function snapshotGate(needs: string[] = ['build']): Gate {
   return pnpmScript('snapshot', 'test:snapshot', {
-    env: { DSH_EXAMPLE_MODE: 'lib' },
+    // Loader snapshots spawn product processes with their own 30-second
+    // lifecycle bounds. Running files concurrently can starve otherwise
+    // healthy children and turn deterministic replay into false timeouts.
+    env: { DSH_EXAMPLE_MODE: 'lib', DSH_SNAPSHOT_MAX_CONCURRENCY: '1' },
     needs,
   })
 }
@@ -784,6 +798,7 @@ function builtBinSmokeGate(needs: string[] = ['build']): Gate {
     // unbuilt, so these files self-skip there.
     'packages/workflow/workflow-worker-thread/tests/built-worker.e2e.ts',
     'packages/code-runtime/code-runtime-worker-thread/tests/built-lib.e2e.ts',
+    'packages/attachment/attachment-local/tests/pdf-isolate.built.e2e.ts',
     'packages/lsp/lsp-stdio/tests/built-lib.e2e.ts',
   ], {
     label: 'built-bin smoke',

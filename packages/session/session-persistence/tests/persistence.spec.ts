@@ -126,6 +126,10 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
     return this.coordinator.append(id, events)
   }
 
+  override delete(id: SessionId): Promise<boolean> {
+    return this.coordinator.delete(id)
+  }
+
   override prepare(id: SessionId, signal?: AbortSignal): ReturnType<PersistenceCoordinator['prepare']> {
     return this.coordinator.prepare(id, signal)
   }
@@ -172,6 +176,10 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
   async readStoredRevision(id: SessionId): Promise<SessionPersistenceRevision | undefined> {
     const entry = this.store.get(id)
     return entry === undefined ? undefined : memoryRevision(entry)
+  }
+
+  async deleteStored(id: SessionId): Promise<boolean> {
+    return this.store.delete(id)
   }
 
   async appendBatch(
@@ -278,6 +286,10 @@ class ControlledBackend implements PersistenceBackend<never> {
     return entry === undefined ? undefined : memoryRevision(entry)
   }
 
+  async deleteStored(id: SessionId): Promise<boolean> {
+    return this.store.delete(id)
+  }
+
   async appendBatch(
     storage: SessionStorageMetadata,
     events: readonly SessionEvent[],
@@ -326,6 +338,11 @@ runPersistenceContract('memory', async () => {
     persistence: ctx.sessionPersistence,
     dispose: async () => { await fiber.dispose() },
   }
+})
+
+it('rejects deletion through the abstract compatibility default', async () => {
+  await expect(SessionPersistence.prototype.delete.call({} as SessionPersistence, SessionId('unsupported-delete')))
+    .rejects.toThrow(/does not support deletion/)
 })
 
 describe('the inherited readRaw default', () => {

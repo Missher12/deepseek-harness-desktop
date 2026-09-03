@@ -23,13 +23,14 @@
  * @module @deepseek-ai/dsh-app-boot/profile
  */
 
+import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync,
-  symlinkSync, unlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync,
+  statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
-import { basename, dirname, join, relative, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -45,6 +46,13 @@ export const PROFILE_PATCH_FILENAME = 'cordis.patch.yml'
 
 /** Profile-private package links projected into its pnpm-managed node_modules. */
 const PROFILE_MODULE_FALLBACK_DIR = '.dsh-module-fallback'
+
+/** Recoverable home-owned archive for byte-exact proxies from older installations. */
+const LEGACY_MODULE_FALLBACK_RECOVERY_DIR = join('recovery', 'legacy-module-fallback')
+
+const MAX_LEGACY_PROXY_MANIFEST_BYTES = 1024 * 1024
+const MAX_LEGACY_PROXY_ENTRY_BYTES = 1024 * 1024
+const MAX_LEGACY_PROXY_TARGETS = 4096
 
 /** The bundle half of the `dsh` manifest section: what a bundle package exports. */
 export interface DshBundleManifest {
@@ -100,6 +108,14 @@ export interface ProfileLayer {
   patchPath: string
   /** The parsed patch list. */
   patches: PatchOptions[]
+}
+
+/** One physical installation package exposed through the shared profile fallback. */
+export interface ProfileModuleFallbackLink {
+  /** npm package name used below `profiles/node_modules`. */
+  packageName: string
+  /** Absolute physical package directory targeted by the managed symlink. */
+  target: string
 }
 
 /** A loaded profile: resolved bundle layers plus the user's own patch layer. */
@@ -216,17 +232,164 @@ export function initProfile(
   if (!existsSync(workspacePath)) writeFileSync(workspacePath, PROFILE_PNPM_WORKSPACE)
 }
 
-function readModuleProxyRecord(link: string): ModuleProxyRecord | undefined {
+interface ModuleProxyManifest {
+  name: string
+  version: string
+  private: true
+  type: 'module'
+  exports: Record<string, string>
+  dsh: { moduleFallback: { targets: Record<string, string> } }
+}
+
+interface ManagedModuleProxy {
+  manifest: string
+  entries: string[]
+  version: string
+  targets: Record<string, string>
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value)
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index])
+}
+
+function isLegacyProxySubpath(value: string): boolean {
+  if (value === '.') return true
+  if (!value.startsWith('./') || value.endsWith('/') || value.includes('*') || value === './package.json') return false
+  return value.slice(2).split('/').every(part => part !== '' && part !== '.' && part !== '..')
+}
+
+function isLegacyPackagedTarget(value: string): boolean {
+  if (value.length === 0 || value.length > MAX_LEGACY_PROXY_ENTRY_BYTES) return false
   try {
-    return JSON.parse(readFileSync(join(link, 'package.json'), 'utf8')) as ModuleProxyRecord
+    const url = new URL(value)
+    if (url.protocol !== 'file:' || url.hostname !== '' || url.username !== '' || url.password !== ''
+      || url.search !== '' || url.hash !== '') return false
+    const filePath = fileURLToPath(url)
+    if (pathToFileURL(filePath).href !== value) return false
+    const path = filePath.replaceAll('\\', '/')
+    if (path.includes('\0')) return false
+    const parts = path.split('/')
+    const archiveIndex = parts.findIndex(part => part === 'app.asar' || part === 'snapshot')
+    return archiveIndex !== -1 && archiveIndex < parts.length - 1
   } catch {
-    // Missing or invalid metadata is not managed state; callers reject it.
+    return false
+  }
+}
+
+/** Read only a byte-exact proxy emitted by the historical module-fallback generator. */
+function readManagedModuleProxy(link: string, packageName: string): ManagedModuleProxy | undefined {
+  try {
+    const manifestPath = join(link, 'package.json')
+    const manifestStat = lstatSync(manifestPath)
+    if (!manifestStat.isFile() || manifestStat.size > MAX_LEGACY_PROXY_MANIFEST_BYTES) return undefined
+    const manifest = readFileSync(manifestPath, 'utf8')
+    const parsed: unknown = JSON.parse(manifest)
+    if (!isPlainRecord(parsed)
+      || !hasExactKeys(parsed, ['name', 'version', 'private', 'type', 'exports', 'dsh'])
+      || parsed.name !== packageName
+      || typeof parsed.version !== 'string' || parsed.version.length === 0 || parsed.version.length > 256
+      || parsed.private !== true || parsed.type !== 'module'
+      || !isPlainRecord(parsed.exports) || !isPlainRecord(parsed.dsh)
+      || !hasExactKeys(parsed.dsh, ['moduleFallback'])
+      || !isPlainRecord(parsed.dsh.moduleFallback)
+      || !hasExactKeys(parsed.dsh.moduleFallback, ['targets'])
+      || !isPlainRecord(parsed.dsh.moduleFallback.targets)) return undefined
+
+    const exports = parsed.exports
+    const targets = parsed.dsh.moduleFallback.targets
+    const targetEntries = Object.entries(targets)
+    if (targetEntries.length === 0 || targetEntries.length > MAX_LEGACY_PROXY_TARGETS
+      || targetEntries.some(([subpath, target]) => !isLegacyProxySubpath(subpath)
+        || typeof target !== 'string' || !isLegacyPackagedTarget(target))) return undefined
+    const expectedExports = Object.fromEntries(
+      targetEntries.map(([subpath], index) => [subpath, `./entry-${index}.js`]),
+    )
+    if (!hasExactKeys(exports, Object.keys(expectedExports))
+      || Object.entries(expectedExports).some(([subpath, entry]) => exports[subpath] !== entry)) return undefined
+
+    const expectedManifest: ModuleProxyManifest = {
+      name: packageName,
+      version: parsed.version,
+      private: true,
+      type: 'module',
+      exports: expectedExports,
+      dsh: { moduleFallback: { targets: targets as Record<string, string> } },
+    }
+    if (manifest !== JSON.stringify(expectedManifest, undefined, 2) + '\n') return undefined
+
+    const entries = targetEntries.map(([, target]) => {
+      const specifier = JSON.stringify(target)
+      return `export * from ${specifier}\nimport * as target from ${specifier}\nexport default target.default\n`
+    })
+    const expectedNames = ['package.json', ...entries.map((_, index) => `entry-${index}.js`)].sort()
+    const dirents = readdirSync(link, { withFileTypes: true })
+    if (dirents.length !== expectedNames.length
+      || dirents.some(dirent => !dirent.isFile())
+      || dirents.map(dirent => dirent.name).sort().some((name, index) => name !== expectedNames[index])) return undefined
+    for (const [index, expected] of entries.entries()) {
+      const entryPath = join(link, `entry-${index}.js`)
+      if (statSync(entryPath).size > MAX_LEGACY_PROXY_ENTRY_BYTES || readFileSync(entryPath, 'utf8') !== expected) {
+        return undefined
+      }
+    }
+    return {
+      manifest,
+      entries,
+      version: parsed.version,
+      targets: targets as Record<string, string>,
+    }
+  } catch {
     return undefined
   }
 }
 
-/** Ensure `link` is a symlink to `target`, replacing a wrong link or a dsh-managed packaged proxy. */
-function ensureSymlink(link: string, target: string): void {
+function ensureRealDirectory(path: string): void {
+  try {
+    mkdirSync(path, { mode: 0o700 })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+  }
+  const stat = lstatSync(path)
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error(`dsh: legacy module fallback recovery path ${path} must be a real directory`)
+  }
+}
+
+/** Atomically move one proven generated proxy into its same-home recovery area. */
+function recoverManagedModuleProxy(
+  link: string,
+  packageName: string,
+  home: string,
+  proxy: ManagedModuleProxy,
+): void {
+  const recoveryParent = join(home, 'recovery')
+  const recoveryRoot = join(home, LEGACY_MODULE_FALLBACK_RECOVERY_DIR)
+  ensureRealDirectory(recoveryParent)
+  ensureRealDirectory(recoveryRoot)
+  const digest = createHash('sha256')
+    .update(packageName).update('\0').update(proxy.manifest).update('\0').update(proxy.entries.join('\0'))
+    .digest('hex')
+  const backup = join(recoveryRoot, `${digest}-${randomUUID()}`)
+  try {
+    renameSync(link, backup)
+  } catch (error) {
+    // Another process may have moved the exact directory while this generation was being healed.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+}
+
+interface ManagedSymlinkRecovery {
+  packageName: string
+  home: string
+}
+
+/** Ensure `link` is a symlink, recovering only a byte-exact generated proxy when explicitly allowed. */
+function ensureSymlink(link: string, target: string, recovery?: ManagedSymlinkRecovery): void {
   let stat
   try {
     stat = lstatSync(link)
@@ -237,17 +400,18 @@ function ensureSymlink(link: string, target: string): void {
   }
   if (stat !== undefined) {
     if (!stat.isSymbolicLink()) {
-      const existing = stat.isDirectory() ? readModuleProxyRecord(link) : undefined
-      if (existing?.dsh?.moduleFallback?.targets === undefined) {
-        throw new Error(`dsh: ${link} exists and is not a symlink or dsh-managed module proxy; remove it so dsh can manage the installation fallback`)
+      const proxy = stat.isDirectory() && recovery !== undefined
+        ? readManagedModuleProxy(link, recovery.packageName)
+        : undefined
+      if (proxy === undefined || recovery === undefined) {
+        throw new Error(`dsh: ${link} exists and is not a symlink or byte-exact dsh-managed module proxy; remove it so dsh can manage the installation fallback`)
       }
-      rmSync(link, { recursive: true })
+      recoverManagedModuleProxy(link, recovery.packageName, recovery.home, proxy)
       stat = undefined
     }
     if (stat !== undefined) {
       if (symlinkPointsTo(link, target)) return
-      // unlink deletes the reparse point itself on Windows too; rmSync treats a
-      // junction as a directory and throws EISDIR unless recursive.
+      // unlink deletes the reparse point itself on Windows too.
       unlinkSync(link)
     }
   }
@@ -329,23 +493,19 @@ function removeProfileSymlink(profileModulesDir: string, ownedModulesDir: string
   }
 }
 
-interface ModuleProxyManifest {
-  name: string
-  version: string
-  private: true
-  type: 'module'
-  exports: Record<string, string>
-  dsh: { moduleFallback: { targets: Record<string, string> } }
-}
-
-interface ModuleProxyRecord {
-  version?: unknown
-  dsh?: { moduleFallback?: { targets?: unknown } }
-}
-
 /** Return whether the process reads application modules from pkg's virtual filesystem. */
 function isPackagedExecutable(): boolean {
   return (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
+}
+
+/** Resolve an Electron asar virtual package path to its unpacked filesystem copy when present. */
+function physicalSymlinkTarget(target: string): string {
+  const marker = `.asar${sep}`
+  const markerIndex = target.indexOf(marker)
+  if (markerIndex === -1) return target
+  const archiveEnd = markerIndex + '.asar'.length
+  const unpacked = `${target.slice(0, archiveEnd)}.unpacked${target.slice(archiveEnd)}`
+  return existsSync(unpacked) ? unpacked : target
 }
 
 /** Resolve one available explicit package export under Node ESM import conditions. */
@@ -436,6 +596,7 @@ function ensureModuleProxy(
   packageName: string,
   version: string,
   targets: Record<string, string>,
+  home: string,
 ): void {
   const proxyExports = Object.fromEntries(
     Object.keys(targets).map((subpath, index) => [subpath, `./entry-${index}.js`]),
@@ -459,14 +620,12 @@ function ensureModuleProxy(
     stat = undefined
   }
   if (stat !== undefined) {
-    const existing = readModuleProxyRecord(link)
-    if (existing?.dsh?.moduleFallback?.targets === undefined) {
-      throw new Error(`dsh: ${link} exists and is not a dsh-managed module proxy; remove it so dsh can manage the installation fallback`)
+    const existing = stat.isDirectory() ? readManagedModuleProxy(link, packageName) : undefined
+    if (existing === undefined) {
+      throw new Error(`dsh: ${link} exists and is not a dsh-managed module proxy with byte-exact generated contents; remove it so dsh can manage the installation fallback`)
     }
-    if (existing.version === version
-      && JSON.stringify(existing.dsh.moduleFallback.targets) === JSON.stringify(targets)
-      && Object.keys(targets).every((_, index) => existsSync(join(link, `entry-${index}.js`)))) return
-    rmSync(link, { recursive: true })
+    if (existing.version === version && JSON.stringify(existing.targets) === JSON.stringify(targets)) return
+    recoverManagedModuleProxy(link, packageName, home, existing)
   }
   mkdirSync(link, { recursive: true })
   writeFileSync(join(link, 'package.json'), JSON.stringify(manifest, undefined, 2) + '\n')
@@ -521,7 +680,11 @@ function resolveModuleFallbackEntries(
     }
   }
   const entries = !isPackagedExecutable()
-    ? [...links].map(([packageName, packageDir]) => ({ kind: 'symlink' as const, packageName, packageDir }))
+    ? [...links].map(([packageName, packageDir]) => ({
+      kind: 'symlink' as const,
+      packageName,
+      packageDir: physicalSymlinkTarget(packageDir),
+    }))
     : [...links].flatMap(([packageName, packageDir]) => {
       const source = packageProxySource(packageName, packageDir)
       return Object.keys(source.targets).length === 0
@@ -537,13 +700,11 @@ function moduleFallbackEntryCurrent(modulesDir: string, entry: ModuleFallbackEnt
   try {
     const stat = lstatSync(link)
     if (entry.kind === 'symlink') {
-      return stat.isSymbolicLink() && readlinkSync(link) === entry.packageDir
+      return stat.isSymbolicLink() && symlinkPointsTo(link, entry.packageDir)
     }
     if (!stat.isDirectory()) return false
-    const existing = readModuleProxyRecord(link)
-    return existing?.version === entry.version
-      && JSON.stringify(existing.dsh?.moduleFallback?.targets) === JSON.stringify(entry.targets)
-      && Object.keys(entry.targets).every((_, index) => existsSync(join(link, `entry-${index}.js`)))
+    const existing = readManagedModuleProxy(link, entry.packageName)
+    return existing?.version === entry.version && JSON.stringify(existing.targets) === JSON.stringify(entry.targets)
   } catch {
     return false
   }
@@ -564,6 +725,27 @@ export interface ProfileModuleFallbackOptions {
   home?: string
 }
 
+interface PreparedModuleFallback {
+  entries: ModuleFallbackEntry[]
+  home: string
+  modulesDir: string
+  packageNames: ReadonlySet<string>
+}
+
+function prepareModuleFallback(installAnchor: string, home: string): PreparedModuleFallback {
+  const profilesDir = join(home, PROFILES_DIR)
+  const modulesDir = join(profilesDir, 'node_modules')
+  mkdirSync(modulesDir, { recursive: true })
+  const { entries, packageNames } = resolveModuleFallbackEntries(installAnchor)
+  return { entries, home, modulesDir, packageNames }
+}
+
+function installationFallbackLinks(entries: readonly ModuleFallbackEntry[]): ProfileModuleFallbackLink[] {
+  return entries.flatMap(entry => entry.kind === 'symlink'
+    ? [{ packageName: entry.packageName, target: entry.packageDir }]
+    : [])
+}
+
 /**
  * Maintain module fallbacks for one profile launch. The shared
  * `$DSH_HOME/profiles/node_modules` mirrors the dsh installation dependency
@@ -573,18 +755,36 @@ export interface ProfileModuleFallbackOptions {
  * bundles are linked through a profile-owned directory into that profile's
  * `node_modules`; pnpm-managed entries remain authoritative, and another
  * profile's links cannot change its resolution.
+ * The positional overload remains for the Desktop verified-cache wrapper,
+ * which must settle synchronously before the packaged application starts.
  * @param options - installation anchor, optional loaded profile, and Harness home.
- * @returns settlement after the shared fallback and profile-local links are current.
+ * @returns settlement for the alpha.5 API, or current physical links for the Desktop cache overload.
  */
-export async function healProfilesModuleFallback(options: ProfileModuleFallbackOptions): Promise<void> {
+export function healProfilesModuleFallback(options: ProfileModuleFallbackOptions): Promise<void>
+export function healProfilesModuleFallback(
+  installAnchor: string,
+  home?: string,
+): ProfileModuleFallbackLink[]
+export function healProfilesModuleFallback(
+  optionsOrAnchor: ProfileModuleFallbackOptions | string,
+  positionalHome: string = resolveDshHome(),
+): Promise<void> | ProfileModuleFallbackLink[] {
+  if (typeof optionsOrAnchor === 'string') {
+    const prepared = prepareModuleFallback(optionsOrAnchor, positionalHome)
+    if (!moduleFallbackCurrent(prepared.modulesDir, prepared.entries)) {
+      healProfilesModuleFallbackLocked(prepared.entries, prepared.modulesDir, prepared.home)
+    }
+    return installationFallbackLinks(prepared.entries)
+  }
+  return healProfilesModuleFallbackAsync(optionsOrAnchor)
+}
+
+async function healProfilesModuleFallbackAsync(options: ProfileModuleFallbackOptions): Promise<void> {
   const { installAnchor, profile, home = resolveDshHome() } = options
-  const profilesDir = join(home, PROFILES_DIR)
-  const modulesDir = join(profilesDir, 'node_modules')
-  mkdirSync(modulesDir, { recursive: true })
-  const { entries, packageNames } = resolveModuleFallbackEntries(installAnchor)
+  const { entries, modulesDir, packageNames } = prepareModuleFallback(installAnchor, home)
   if (!moduleFallbackCurrent(modulesDir, entries)) {
     await withFileLock(modulesDir, () => {
-      if (!moduleFallbackCurrent(modulesDir, entries)) healProfilesModuleFallbackLocked(entries, modulesDir)
+      if (!moduleFallbackCurrent(modulesDir, entries)) healProfilesModuleFallbackLocked(entries, modulesDir, home)
       return Promise.resolve()
     })
   }
@@ -592,14 +792,18 @@ export async function healProfilesModuleFallback(options: ProfileModuleFallbackO
 }
 
 /** Heal one module-fallback generation while the cross-process writer lock is held. */
-function healProfilesModuleFallbackLocked(entries: readonly ModuleFallbackEntry[], modulesDir: string): void {
+function healProfilesModuleFallbackLocked(
+  entries: readonly ModuleFallbackEntry[],
+  modulesDir: string,
+  home: string,
+): void {
   for (const entry of entries) {
     const link = join(modulesDir, entry.packageName)
     mkdirSync(dirname(link), { recursive: true })
     if (entry.kind === 'proxy') {
-      ensureModuleProxy(link, entry.packageName, entry.version, entry.targets)
+      ensureModuleProxy(link, entry.packageName, entry.version, entry.targets, home)
     } else {
-      ensureSymlink(link, entry.packageDir)
+      ensureSymlink(link, entry.packageDir, { packageName: entry.packageName, home })
     }
   }
 }

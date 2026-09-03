@@ -228,6 +228,18 @@ describe('sessionOf', () => {
 })
 
 describe('track', () => {
+  it('excludes launcher-only sources from typed trigger menus', async () => {
+    const add = readySource('/', 'composer-add', [{ name: 'files' }])
+    const launcherOnly = { ...add.source, launcherOnly: true }
+    const command = readySource('/', 'command', [{ name: 'goal' }])
+    const { controller } = controllerBench([launcherOnly, command.source])
+
+    controller.track('/', 1, { tier: 'plain' }, 1)
+    await tick()
+
+    expect(controller.menu.getSnapshot().groups.map(group => group.source)).toEqual(['command'])
+  })
+
   it('drives seed → pending → ready through the store', async () => {
     const cmd = deferredSource('/', 'command')
     const skill = deferredSource('/', 'skill')
@@ -430,6 +442,78 @@ describe('programmatic source launcher', () => {
     await tick()
     expect(controller.launcher.getSnapshot()).toBeNull()
     expect(controller.menu.getSnapshot().groups.map(group => group.source)).toEqual(['command', 'skill'])
+  })
+
+  it('opens named sources in requested order, ignores missing sources, and projects display candidates without changing pick routing', async () => {
+    const command = readySource('/', 'command', [
+      { name: 'status', value: 'status-value' },
+      { name: 'goal', value: 'goal-value' },
+    ])
+    const skill = readySource('/', 'skill', [{ name: 'review', value: 'skill-value' }])
+    const add = readySource('/', 'composer-add', [{ name: 'files', value: 'files-value' }])
+    const { controller } = controllerBench([skill.source, command.source, add.source])
+    const hit = {
+      trigger: '/' as const,
+      query: '',
+      quoted: false,
+      position: 'inline' as const,
+      span: { start: 4, end: 4, draftRev: 9 },
+    }
+
+    controller.toggleSources('composer-add', [
+      { name: 'composer-add', project: items => items.map(item => ({ ...item, section: 'Add' })) },
+      {
+        name: 'command',
+        project: items => [...items]
+          .sort((left, right) => Number(right.name === 'goal') - Number(left.name === 'goal'))
+          .map(item => ({ ...item, section: item.name === 'goal' ? 'Add' : 'Commands' })),
+      },
+      { name: 'missing' },
+      { name: 'skill', project: items => items.map(item => ({ ...item, section: 'Plugins' })) },
+    ], hit)
+    await tick()
+
+    expect(controller.launcher.getSnapshot()).toBe('composer-add')
+    expect(controller.menu.getSnapshot().groups).toEqual([
+      { source: 'composer-add', status: 'ready', items: [{ name: 'files', value: 'files-value', section: 'Add' }] },
+      {
+        source: 'command',
+        status: 'ready',
+        items: [
+          { name: 'goal', value: 'goal-value', section: 'Add' },
+          { name: 'status', value: 'status-value', section: 'Commands' },
+        ],
+      },
+      { source: 'skill', status: 'ready', items: [{ name: 'review', value: 'skill-value', section: 'Plugins' }] },
+    ])
+
+    controller.pick('command', 0)
+    expect(command.picks[0]).toMatchObject({
+      candidate: { name: 'goal', value: 'goal-value', section: 'Add' },
+      span: hit.span,
+      via: 'menu',
+    })
+    expect(add.picks).toHaveLength(0)
+    expect(skill.picks).toHaveLength(0)
+  })
+
+  it('toggles the same multi-source launcher closed', async () => {
+    const command = readySource('/', 'command', [{ name: 'goal' }])
+    const { controller } = controllerBench([command.source])
+    const hit = {
+      trigger: '/' as const,
+      query: '',
+      quoted: false,
+      position: 'leading' as const,
+      span: { start: 0, end: 0, draftRev: 1 },
+    }
+    const sources = [{ name: 'command' }] as const
+
+    controller.toggleSources('composer-add', sources, hit)
+    controller.toggleSources('composer-add', sources, hit)
+
+    expect(controller.menu.getSnapshot().open).toBe(false)
+    expect(controller.launcher.getSnapshot()).toBeNull()
   })
 })
 

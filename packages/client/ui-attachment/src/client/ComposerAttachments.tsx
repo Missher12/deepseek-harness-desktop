@@ -4,6 +4,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { AttachmentRail } from '../AttachmentRail.tsx'
 import type { AttachmentRailItem } from '../AttachmentRail.tsx'
+import { documentTypeLabel } from '../DocumentChip.tsx'
 import { DropOverlay } from '../DropOverlay.tsx'
 import { ImageLightbox } from '../ImageLightbox.tsx'
 import { attachmentRailLabels, dropOverlayLabels, lightboxLabels } from './labels.ts'
@@ -14,11 +15,11 @@ interface ComposerRailItem extends AttachmentRailItem {
   attachment: ComposerAttachment
 }
 
-/** Draft-image rail, document drop target, and original-image preview slot entry. */
+/** Draft attachment rail, document drop target, and original-image preview slot entry. */
 export function ComposerAttachments({
   attachments, canAcceptDrop, onAddImages, onRemoveImage, dropLimits, t,
 }: ComposerAttachmentsProps) {
-  const [preview, setPreview] = useState<ComposerAttachment | null>(null)
+  const [preview, setPreview] = useState<Extract<ComposerAttachment, { kind: 'image' }> | null>(null)
   const [dragActive, setDragActive] = useState(false)
   const dragDepth = useRef(0)
   const closePreview = useCallback(() => { setPreview(null) }, [])
@@ -80,9 +81,11 @@ export function ComposerAttachments({
 
   const railItems = useMemo<ComposerRailItem[]>(() => attachments.map(attachment => ({
     id: attachment.id,
-    previewUrl: attachment.previewUrl,
-    alt: attachment.file.name || t('image.pending'),
-    removeLabel: t('image.remove', { name: attachment.file.name }),
+    ...(attachment.kind === 'image'
+      ? { previewUrl: attachment.previewUrl }
+      : { typeLabel: documentTypeLabel(attachment.file.name) }),
+    alt: attachment.file.name || t('attachment.pending'),
+    removeLabel: t('attachment.remove', { name: attachment.file.name }),
     attachment,
   })), [attachments, t])
 
@@ -99,7 +102,10 @@ export function ComposerAttachments({
           <AttachmentRail
             items={railItems}
             labels={attachmentRailLabels(t)}
-            onOpen={(item) => { setPreview(item.attachment) }}
+            onOpen={(item) => {
+              /* v8 ignore else -- AttachmentRail calls onOpen only for previewUrl-backed image items. */
+              if (item.attachment.kind === 'image') setPreview(item.attachment)
+            }}
             onRemove={(item) => { onRemoveImage(item.attachment.id) }}
           />
         </div>

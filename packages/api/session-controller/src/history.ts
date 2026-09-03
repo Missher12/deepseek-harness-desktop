@@ -30,8 +30,8 @@ import type {
   SessionProjectionBaseline,
   SessionProjectionValues,
   SessionWireHeader,
-  SessionWireEvent,
 } from './types.ts'
+import { rendererSessionEvent } from './renderer-projection.ts'
 
 const DEFAULT_MAX_MESSAGES = 50
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
@@ -89,7 +89,7 @@ export class SessionHistoryController {
       request.maxMessages ?? DEFAULT_MAX_MESSAGES,
       throughSeq,
     )
-    const records = pageRecords(page.events)
+    const records = pageRecords(source.header.id, page.events)
     return {
       records,
       hasMore: page.hasMore,
@@ -151,7 +151,7 @@ export class SessionHistoryController {
         type: 'snapshot',
         header: wireHeader(source.header, source.inheritedEventCount),
         cursor,
-        records: pageRecords(page.events),
+        records: pageRecords(source.header.id, page.events),
         hasMore: page.hasMore,
         projections: source.projections === undefined
           ? { asOfSeq: cursor, values: {} }
@@ -179,7 +179,7 @@ export class SessionHistoryController {
           throw new RemoteError('gateway/internal', `session event stream skipped seq ${String(expectedSeq)}`, {})
         }
         nextOffset = SessionLogOffset(nextOffset + 1)
-        yield entryFor(item)
+        yield entryFor(target, item)
       }
     } finally {
       this.closeFollowers.delete(close)
@@ -355,11 +355,10 @@ function wireHeader(
   }
 }
 
-function entryFor(event: SessionEvent): SessionEventEntry {
+function entryFor(sessionId: SessionId, event: SessionEvent): SessionEventEntry {
   return {
     type: 'event',
-    // Session.append validates and freezes event data as JSON before publication.
-    event: event as unknown as SessionWireEvent,
+    event: rendererSessionEvent(sessionId, event),
   }
 }
 
@@ -384,8 +383,8 @@ function chunkEntryFor(row: ChunkRow): SessionChunkRun {
 }
 
 /** Encode one bounded logical page without changing its pagination cut. */
-function pageRecords(events: readonly SessionEvent[]): SessionHistoryRecord[] {
+function pageRecords(sessionId: SessionId, events: readonly SessionEvent[]): SessionHistoryRecord[] {
   return packChunkRuns(events).map(record => isChunkRow(record)
     ? chunkEntryFor(record)
-    : entryFor(record))
+    : entryFor(sessionId, record))
 }

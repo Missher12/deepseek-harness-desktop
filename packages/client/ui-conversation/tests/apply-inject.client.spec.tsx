@@ -26,8 +26,10 @@ type ConversationActions = ConversationInstance['actions']
 function sessionFakeFor() {
   return {
     loadOlder: vi.fn<ISession['loadOlder']>(() => Promise.resolve()),
+    loadThrough: vi.fn<ISession['loadThrough']>(() => Promise.resolve()),
     prompt: vi.fn<ISession['prompt']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
     cancel: vi.fn<ISession['cancel']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
+    command: vi.fn<ISession['command']>(() => Promise.resolve({ ok: true, value: { matched: true } })),
   } satisfies SessionBehaviorOverrides
 }
 
@@ -35,7 +37,8 @@ async function bench() {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const connectWorkspace = vi.fn(async () => ROOT)
-  runtime.ctx.provide('uiWorkspace', { connectWorkspace } as never)
+  const connectNoProject = vi.fn(async () => ROOT)
+  runtime.ctx.provide('uiWorkspace', { connectWorkspace, connectNoProject } as never)
   const sessionFake = sessionFakeFor()
   await runtime.sessions.add({
     id: ROOT,
@@ -87,7 +90,7 @@ async function bench() {
     conversationApi(id).injected.hooks.conversationViews
   return {
     runtime, feature, slots: runtime.slots, entryOf, conversationApi, headerApi, residentApi, composerApi,
-    inputApi, viewSource, sessionFake, connectWorkspace,
+    inputApi, viewSource, sessionFake, connectWorkspace, connectNoProject,
   }
 }
 
@@ -223,7 +226,7 @@ describe('Conversation inject API', () => {
 
     const absent = injectBar(undefined)
     expect(absent.keyboard).toBeUndefined()
-    expect(absent.toggleCommandMenu).toBeUndefined()
+    expect(absent.toggleAddMenu).toBeUndefined()
     expect(absent.stop).toBeUndefined()
     expect(absent.hooks.notices.getSnapshot()).toBeNull()
     expect(absent.hooks.lexicon.getSnapshot().size).toBe(0)
@@ -253,6 +256,24 @@ describe('Conversation inject API', () => {
     expect(b.runtime.sessions.calls).toContainEqual({ method: 'open', args: [other] })
     expect(state.getSnapshot().draft).toBe('')
     expect(b.inputApi(other).state.getSnapshot().draft).toBe('carry me')
+    await b.runtime.dispose()
+  })
+
+  it('routes no-project switching through the runtime owner and carries the draft', async () => {
+    const b = await bench()
+    const OTHER = 'loose-1' as SessionId
+    await b.runtime.sessions.add({ id: OTHER }, { current: false })
+    b.connectNoProject.mockResolvedValueOnce(OTHER)
+    const resident = b.residentApi(ROOT)
+    const { state, actions } = b.inputApi(ROOT)
+    actions.setDraft('carry outside projects')
+
+    await resident.selectNoProject()
+
+    expect(b.runtime.sessions.calls).toContainEqual({ method: 'open', args: [OTHER] })
+    expect(b.connectNoProject).toHaveBeenCalledOnce()
+    expect(state.getSnapshot().draft).toBe('')
+    expect(b.inputApi(OTHER).state.getSnapshot().draft).toBe('carry outside projects')
     await b.runtime.dispose()
   })
 

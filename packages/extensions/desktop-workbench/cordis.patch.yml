@@ -1,0 +1,5 @@
+# Independently removable desktop workbench layer. The Desktop application is
+# the only shipped composition that includes this package.
+- insert:
+    - id: desktop-workbench
+      name: '@deepseek-ai/dsh-desktop-workbench'

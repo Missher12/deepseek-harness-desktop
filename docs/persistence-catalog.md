@@ -90,7 +90,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:366`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:373`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:402`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:434`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:366`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:373`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:402`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:440`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -512,7 +512,7 @@ Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src
 'model/selection': ModelSelection
 ```
 
-Source: [`packages/api/session-controller/src/types.ts:41`](../packages/api/session-controller/src/types.ts)
+Source: [`packages/api/session-controller/src/types.ts:47`](../packages/api/session-controller/src/types.ts)
 
 ### `permission/*`
 
@@ -705,6 +705,19 @@ Source: [`packages/session/session-title-llm/src/index.ts:45`](../packages/sessi
 ```
 
 Source: [`packages/session/session-log-deepseek/src/types.ts:57`](../packages/session/session-log-deepseek/src/types.ts)
+
+### `session-messenger/*`
+
+<a id="session-messengeroutgoing--log-only"></a>
+
+#### `session-messenger/outgoing` — log-only
+
+```ts persistence-catalog
+/** UI-only sender transcript; never enters model history. */
+'session-messenger/outgoing': OutgoingRelayEvent
+```
+
+Source: [`packages/extensions/session-messenger/src/types.ts:44`](../packages/extensions/session-messenger/src/types.ts)
 
 ### `step/*`
 

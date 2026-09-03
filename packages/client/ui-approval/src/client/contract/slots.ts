@@ -91,7 +91,11 @@ export class PendingApproval {
    * @param sessionId - Agent/Session identity owning the scoped request.
    * @param request - Host approval request projected through the Remote Event.
    */
-  constructor(readonly sessionId: SessionId, request: ApprovalPresentationRequest) {
+  constructor(
+    readonly sessionId: SessionId,
+    request: ApprovalPresentationRequest,
+    readonly enableSessionFullAccess: () => Promise<boolean> = () => Promise.resolve(false),
+  ) {
     nextApprovalKey += 1
     this.key = `approval:${String(nextApprovalKey)}`
     this.toolName = request.toolName

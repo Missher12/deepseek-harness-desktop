@@ -21,6 +21,14 @@ import type {
   SubmitEnvelope, TriggerChar, TriggerGuard,
 } from '../types.ts'
 
+/** One source requested by a named programmatic launcher. */
+export interface LauncherSource {
+  /** Registered source name under the launcher's trigger. */
+  readonly name: string
+  /** Optional presentation-only projection. Pick routing keeps the original source. */
+  readonly project?: (items: readonly InputTriggerCandidate[]) => readonly InputTriggerCandidate[]
+}
+
 /** Roster access the controller borrows from the root service (registration order preserved). */
 export interface SourceRoster {
   sources(trigger: string): readonly InputTriggerSource[]
@@ -120,7 +128,7 @@ export class InputTriggerController {
       && prev.hit.span.start === hit.span.start && prev.hit.span.end === hit.span.end
     this.hit = hit
     if (same) return
-    const roster = this.deps.roster.sources(hit.trigger)
+    const roster = this.deps.roster.sources(hit.trigger).filter(source => source.launcherOnly !== true)
     if (roster.length === 0) {
       this.stopFetch()
       this.reduce({ type: 'close' })
@@ -143,23 +151,47 @@ export class InputTriggerController {
    * @param hit - synthetic hit carrying position and pick-time draft CAS.
    */
   toggleSource(source: string, hit: TriggerHit): void {
+    this.toggleSources(source, [{ name: source }], hit)
+  }
+
+  /**
+   * Toggle a named launcher composed from several registered sources. Source
+   * order follows this request, not registration order. Candidate projections
+   * may reorder or decorate display data, but every pick is still dispatched
+   * to the registered source that produced the candidate.
+   * @param launcher - stable launcher identity published through the launcher store.
+   * @param requested - named sources and optional display projections.
+   * @param hit - synthetic hit carrying position and pick-time draft CAS.
+   */
+  toggleSources(launcher: string, requested: readonly LauncherSource[], hit: TriggerHit): void {
     if (this.disposed) return
-    if (this.launcher.getSnapshot() === source && this.menu.getSnapshot().open) {
+    if (this.launcher.getSnapshot() === launcher && this.menu.getSnapshot().open) {
       this.dismiss()
       return
     }
-    const match = this.deps.roster.sources(hit.trigger).find(item => item.name === source)
-    if (match === undefined) {
+    const registered = new Map(this.deps.roster.sources(hit.trigger).map(source => [source.name, source]))
+    const seen = new Set<string>()
+    const matches: InputTriggerSource[] = []
+    const projections = new Map<string, LauncherSource['project']>()
+    for (const request of requested) {
+      if (seen.has(request.name)) continue
+      const source = registered.get(request.name)
+      if (source === undefined) continue
+      seen.add(request.name)
+      matches.push(source)
+      if (request.project !== undefined) projections.set(request.name, request.project)
+    }
+    if (matches.length === 0) {
       this.dismiss()
       return
     }
     this.stopFetch()
     this.hit = hit
-    this.launcher.set(source)
-    this.menu.set(seedGroups(this.menu.getSnapshot(), [match]))
+    this.launcher.set(launcher)
+    this.menu.set(seedGroups(this.menu.getSnapshot(), matches))
     this.reduce({ type: 'hit', hit })
-    this.refreshHeaders(hit, [match])
-    this.fetchCandidates(hit, [match])
+    this.refreshHeaders(hit, matches)
+    this.fetchCandidates(hit, matches, projections)
   }
 
   /**
@@ -436,7 +468,11 @@ export class InputTriggerController {
   }
 
   /** Launch the candidate fetch for one hit generation, superseding the previous one. */
-  private fetchCandidates(hit: TriggerHit, roster: readonly InputTriggerSource[]): void {
+  private fetchCandidates(
+    hit: TriggerHit,
+    roster: readonly InputTriggerSource[],
+    projections: ReadonlyMap<string, LauncherSource['project']> = new Map(),
+  ): void {
     this.stopFetch()
     const controller = new AbortController()
     this.fetch = controller
@@ -454,7 +490,13 @@ export class InputTriggerController {
         .then(
           (items) => {
             if (controller.signal.aborted) return
-            this.reduce({ type: 'source-settled', generation, source: source.name, items })
+            const project = projections.get(source.name)
+            this.reduce({
+              type: 'source-settled',
+              generation,
+              source: source.name,
+              items: project === undefined ? items : project(items),
+            })
           },
           (error: unknown) => {
             if (controller.signal.aborted) return

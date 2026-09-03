@@ -2,18 +2,25 @@
 // Mounted on 'conversation.composer.dock' so it sticks with the composer in the
 // active conversation scrollport (see ConversationRoot data-conversation-scroll).
 
-import { Fragment, memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: merges the sessionStats key into SessionProjectionMap for useProjection.
 import type {} from '@deepseek-ai/dsh-session-stats/client'
-import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
+import type {
+  LatestTurnBillingProjection, TokenUsageProjection,
+} from '@deepseek-ai/dsh-token-meter/client'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
 import { formatTokensPerSecond } from './message-chrome.ts'
 import { assistantStepReading } from '../contract/turn-metrics.ts'
 import { formatCacheHitPercent, formatTokens } from './token-format.ts'
+import {
+  fetchBalanceSnapshot, formatBalance, formatCny, priceOfModel, pricingTierAt,
+  readBalanceBootstrap, sessionCostCny,
+  type BalanceSnapshot,
+} from './usage-money.ts'
 import css from './StatsLine.module.css'
 
 interface WindowStats {
@@ -122,6 +129,27 @@ export interface StatsLineProps {
   t: ChatViewSlotProps['t']
 }
 
+interface DesktopEstimateBridge {
+  getDesktopPreferences(): Promise<{ tieredPricingEstimates: boolean }>
+  onDesktopPreferences(listener: (value: { tieredPricingEstimates: boolean }) => void): () => void
+}
+
+function estimateBridge(): DesktopEstimateBridge | undefined {
+  if (typeof window === 'undefined') return undefined
+  const candidate = (window as unknown as { dshDesktop?: Partial<DesktopEstimateBridge> }).dshDesktop
+  return typeof candidate?.getDesktopPreferences === 'function'
+    && typeof candidate.onDesktopPreferences === 'function'
+    ? candidate as DesktopEstimateBridge
+    : undefined
+}
+
+function latestModel(latest: LatestTurnBillingProjection | null | undefined): string | undefined {
+  return latest?.billingModel.kind === 'single'
+    && latest.billingModel.provider === 'deepseek-official'
+    ? latest.billingModel.model
+    : undefined
+}
+
 /** Render and measure one non-empty statistics line. */
 const StatsLineContent = memo(function StatsLineContent({
   groups,
@@ -151,7 +179,7 @@ const StatsLineContent = memo(function StatsLineContent({
       <div ref={rootRef} className={css.root}>
         {groups.map((group, i) => (
           <Fragment key={group}>
-            {i > 0 && <><span className={css.sep} aria-hidden>|</span>{' '}</>}
+            {i > 0 && <>{' '}<span className={css.sep} aria-hidden>|</span>{' '}</>}
             <span>{group}</span>
           </Fragment>
         ))}
@@ -169,6 +197,63 @@ export const StatsLine = memo(function StatsLine({ useChat, useProjection, t }: 
   // while no projection value is served.
   const projected = useProjection('sessionStats')
   const stats = useMemo(() => projected ?? deriveStats(settledNodes), [projected, settledNodes])
+  const billingModel = useProjection('tokenBillingModel')
+  const latestBilling = useProjection('latestTurnBilling')
+  const model = billingModel?.kind === 'single' && billingModel.provider === 'deepseek-official'
+    ? billingModel.model
+    : undefined
+  // One wall-clock snapshot owns both price lookup and the visible tier. Its
+  // aligned minute tick makes documented Beijing boundaries self-updating,
+  // even when no conversation event causes another render.
+  const [clock, setClock] = useState(() => new Date())
+  useEffect(() => {
+    let interval: number | undefined
+    const tick = (): void => { setClock(new Date()) }
+    const timeout = window.setTimeout(() => {
+      tick()
+      interval = window.setInterval(tick, 60_000)
+    }, 60_000 - (Date.now() % 60_000))
+    return () => {
+      window.clearTimeout(timeout)
+      if (interval !== undefined) window.clearInterval(interval)
+    }
+  }, [])
+  // Account balance: fetched once on mount and re-read on a one-minute cycle
+  // through the Host bridge. A mounted bridge's failed read is explicit; an
+  // absent bridge remains absent because this capability is Desktop/Web-only.
+  const [balance, setBalance] = useState<BalanceSnapshot | null>(null)
+  const [balanceAttempted, setBalanceAttempted] = useState(false)
+  const [tieredEstimates, setTieredEstimates] = useState(true)
+  useEffect(() => {
+    const bridge = estimateBridge()
+    if (bridge === undefined) return
+    let disposed = false
+    void bridge.getDesktopPreferences().then((value) => {
+      if (!disposed) setTieredEstimates(value.tieredPricingEstimates)
+    }).catch(() => {})
+    const unsubscribe = bridge.onDesktopPreferences((value) => {
+      if (!disposed) setTieredEstimates(value.tieredPricingEstimates)
+    })
+    return () => { disposed = true; unsubscribe() }
+  }, [])
+  useEffect(() => {
+    const bootstrap = readBalanceBootstrap()
+    if (bootstrap === null) return
+    let disposed = false
+    const refresh = async (): Promise<void> => {
+      const snapshot = await fetchBalanceSnapshot(bootstrap)
+      if (!disposed) {
+        setBalance(snapshot)
+        setBalanceAttempted(true)
+      }
+    }
+    void refresh()
+    const timer = window.setInterval(() => { void refresh() }, 60_000)
+    return () => {
+      disposed = true
+      window.clearInterval(timer)
+    }
+  }, [])
   // Pipe-separated groups (figma stats strip); a group with no data drops out whole.
   const groups: string[] = []
   if (stats.steps > 0) {
@@ -203,7 +288,42 @@ export const StatsLine = memo(function StatsLine({ useChat, useProjection, t }: 
       output: formatTokens(usage.outputTokens, t),
     }))
   }
+  const financialGroups: string[] = []
+  if (tieredEstimates) {
+    const turnModel = latestModel(latestBilling)
+    const turnCost = latestBilling === null || latestBilling === undefined
+      ? null
+      : sessionCostCny(latestBilling, turnModel, clock)
+    if (turnCost !== null && turnCost > 0) {
+      financialGroups.push(t('stats.lastTurnCost', { cost: formatCny(turnCost) }))
+    }
+    if (usage !== undefined && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)) {
+      const cost = sessionCostCny(usage, model, clock)
+      if (cost !== null && cost > 0) financialGroups.push(t('stats.cost', { cost: formatCny(cost) }))
+    }
+  }
+  if (balance?.totalBalance !== null && balance?.totalBalance !== undefined) {
+    const formatted = formatBalance(balance.totalBalance, balance.currency)
+    if (formatted !== null) financialGroups.push(t('stats.balance', { balance: formatted }))
+  } else if (balanceAttempted) {
+    financialGroups.push(t('stats.balanceUnavailable'))
+  }
+  if (tieredEstimates && priceOfModel(model, clock) !== null) {
+    financialGroups.push(t(`stats.tier.${pricingTierAt(clock)}`))
+  }
   const line = groups.join(' | ')
-  if (groups.length === 0) return null
-  return <StatsLineContent groups={groups} line={line} />
+  if (groups.length === 0 && financialGroups.length === 0) return null
+  return (
+    <>
+      {groups.length > 0 && <StatsLineContent groups={groups} line={line} />}
+      {financialGroups.length > 0 && <div className={`${css.root} ${css.finance}`}>
+        {financialGroups.map((group, i) => (
+          <Fragment key={group}>
+            {i > 0 && <>{' '}<span className={css.sep} aria-hidden>|</span>{' '}</>}
+            <span>{group}</span>
+          </Fragment>
+        ))}
+      </div>}
+    </>
+  )
 })

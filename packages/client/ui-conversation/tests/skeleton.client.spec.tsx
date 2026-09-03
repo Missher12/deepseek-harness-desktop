@@ -121,6 +121,8 @@ function mount(
     composerBlock?: { reason: string }
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
+    /** Explicit no-project picker target. */
+    selectNoProject?: () => Promise<void>
   } = {},
 ) {
   const root = sid('root')
@@ -253,7 +255,8 @@ function mount(
           removeImage={() => {}}
           draftImages={() => []}
           resolveSubmitMode={() => 'queue'}
-          toggleCommandMenu={vi.fn()}
+          toggleAddMenu={vi.fn()}
+          toggleCommandMenu={undefined}
           useNotices={bindSnapshotSelector(wiring.notices)}
           useLexicon={bindSnapshotSelector(wiring.lexicon)}
           useMenuLauncher={bindSnapshotSelector(createSnapshotStore<string | null>(null))}
@@ -299,6 +302,7 @@ function mount(
     renderSlot,
     renderSlotChain,
     selectWorkspace: retargetWorkspace,
+    selectNoProject: options.selectNoProject ?? vi.fn(async () => {}),
     t,
   }
   const view = render(<ConversationRoot {...props} />)
@@ -367,20 +371,19 @@ describe('ConversationRoot resident composer', () => {
     expect(seat('conversation.input.plan')).toEqual({ locked: true })
   })
 
-  it('lets the no-workspace posture win over a block', () => {
-    // Picking a workspace is the earlier prerequisite; naming a model first
-    // would send the user somewhere they cannot act yet.
+  it('applies a composer block to an explicit no-project session', () => {
+    // Desktop treats no-project as a valid target, so an independent model
+    // prerequisite still owns the composer while the workspace picker stays live.
     const b = mount(sessionSnapshotOf({ blank: true }), [], undefined, {
       summaryBlank: true,
       composerBlock: { reason: 'select a model first' },
     })
     const box = b.view.getByRole('textbox')
-    expect(box.getAttribute('aria-disabled')).not.toBe('true')
-    expect(box.getAttribute('contenteditable')).not.toBe('true')
-    expect(box.getAttribute('aria-haspopup')).toBe('menu')
-    expect(box.getAttribute('data-placeholder')).not.toBe('select a model first')
+    expect(box.getAttribute('aria-disabled')).toBe('true')
+    expect(box.getAttribute('data-placeholder')).toBe('select a model first')
+    expect(b.view.getByText('不在项目中')).toBeTruthy()
     const modelSeat = b.seatOwners.filter(call => call.key === 'conversation.input.model').at(-1)?.owner
-    expect(modelSeat).toEqual({ locked: true })
+    expect(modelSeat).toEqual({ locked: false })
   })
 
   it('keeps composer text in the machine, mirrors to the Conversation store, and submits through the sink', () => {
@@ -477,6 +480,25 @@ describe('ConversationRoot resident composer', () => {
     act(() => { owner.onPick(wid('second')) })
     expect(b.retargetWorkspace).toHaveBeenCalledWith(wid('second'))
     expect(b.view.getByText('Selected Folder')).toBeTruthy()
+  })
+
+  it('treats an unaccounted blank session as no-project and keeps its composer usable', () => {
+    const selectNoProject = vi.fn(async () => {})
+    const b = mount(
+      sessionSnapshotOf({ blank: true }),
+      [],
+      undefined,
+      { summaryBlank: true, selectNoProject },
+    )
+
+    expect(b.view.getByText('不在项目中')).toBeTruthy()
+    const box = b.view.getByRole('textbox')
+    expect(box.getAttribute('aria-disabled')).not.toBe('true')
+    expect(box.getAttribute('contenteditable')).toBe('true')
+    fireEvent.click(b.view.getByRole('button', { name: '选择工作区' }))
+    const owner = b.pickerOwner() as { onPickNoProject(): void }
+    act(() => { owner.onPickNoProject() })
+    expect(selectNoProject).toHaveBeenCalledOnce()
   })
 
   it('keeps a rejected first prompt engaging instead of returning to the Hero', () => {

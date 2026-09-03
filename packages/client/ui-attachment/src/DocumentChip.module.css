@@ -1,0 +1,36 @@
+.root {
+  box-sizing: border-box;
+  display: grid;
+  grid-template: 18px minmax(0, 1fr) / minmax(0, 1fr);
+  justify-items: center;
+  width: 64px;
+  height: 64px;
+  padding: 7px 5px 5px;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-radius: 16px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.icon {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.name {
+  align-self: center;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.type {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 11px;
+  text-transform: uppercase;
+}

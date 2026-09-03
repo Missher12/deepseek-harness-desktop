@@ -150,6 +150,8 @@ export interface InputTriggerSource {
   readonly trigger: TriggerChar
   /** Menu group label; unique per trigger — duplicate registration throws. */
   readonly name: string
+  /** Programmatic launcher surface only; typed trigger detection excludes this source. */
+  readonly launcherOnly?: boolean
   /** Menu group display order (lower = higher in the list; default 0). */
   readonly order?: number
   /** Whether the menu renders the source-title row; defaults to true. */

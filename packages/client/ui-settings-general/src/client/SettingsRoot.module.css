@@ -75,16 +75,17 @@
 }
 
 /* Panel (figma Settings 501:29947): r24, white; the figma lv3 effects are
-   superseded by the shared elevation treatment; figma's 1080x700 is shrunk to 800 wide.
+   superseded by the shared elevation treatment; every section shares one 1040px width.
    One height for every section, taken from the viewport rather than the
    content: sections differ by hundreds of pixels (a settings list against the
-   composition editor), and a content-sized panel would resize under the
-   pointer on every nav click. Whatever does not fit scrolls in `.options`. */
+   composition editor), and a section-sized panel would resize under the
+   pointer on every nav click. Small viewports still contract to 48px gutters;
+   whatever does not fit scrolls in `.options`. */
 .panel {
   position: relative;
   z-index: 1;
   display: flex;
-  width: 800px;
+  width: min(1040px, calc(100vw - 48px));
   height: min(800px, calc(100vh - 48px));
   max-width: calc(100vw - 48px);
   border-radius: 32px;
@@ -223,6 +224,63 @@
   min-height: 0;
   padding: 0 24px 24px;
   overflow-y: auto;
+  --dsh-settings-page-title-size: 16px;
+  --dsh-settings-page-title-line: 24px;
+  --dsh-settings-page-intro-size: 14px;
+  --dsh-settings-page-intro-line: 22px;
+}
+
+/* Slot outlets are layout-neutral (`display: contents`), so normalize the
+   actual contributed section root here. This keeps General, Models, presets,
+   Usage, and Plugins on one 760px content measure regardless of package-local
+   legacy max-widths. */
+.options > :global([data-slot='settings.section']) > * {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 760px;
+  margin: 0;
+  padding: 0 0 24px;
+}
+
+/* A Settings contribution may be native, bundled, or profile-installed. The
+   shell owns the shared page header contract so every source lands on the same
+   baseline without requiring third-party packages to import private CSS. */
+.options > :global([data-slot='settings.section']) > * h2 {
+  margin: 0;
+  font-size: var(--dsh-settings-page-title-size);
+  line-height: var(--dsh-settings-page-title-line);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.options > :global([data-slot='settings.section']) > * h2 + p {
+  margin-top: 4px;
+  font-size: var(--dsh-settings-page-intro-size);
+  line-height: var(--dsh-settings-page-intro-line);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.options > :global([data-slot='settings.section']) > :global([data-dshmarket-layout='reference']) h2 + * {
+  margin-top: 4px;
+  font-size: var(--dsh-settings-page-intro-size);
+  line-height: var(--dsh-settings-page-intro-line);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* dshmarket marks its stable Desktop reference layout but retains an 8px
+   legacy inset inside the shared root. Remove that one nested header inset so
+   its title and search column land on the same origin as every other page. */
+.options > :global([data-slot='settings.section']) > :global([data-dshmarket-layout='reference']) > :first-child {
+  padding: 0 0 10px;
+}
+
+.options > :global([data-slot='settings.section']) > * h3 {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 /* Visually-hidden text seat (close button accessible name from slot content). */

@@ -18,6 +18,7 @@ import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
 const SCROLL_SAMPLE_INTERVAL_MS = 500
+const READER_SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'End', 'Home', 'PageDown', 'PageUp', ' '])
 
 /** Active column host when present; otherwise the view-local scroller. */
 function scrollerOf(from: HTMLElement): HTMLElement {
@@ -309,6 +310,8 @@ export function ChatView({
   const [atBottom, setAtBottom] = useState(() => chatScroll.read() === null)
   const atBottomRef = useRef(atBottom)
   const scrollSamplePendingRef = useRef(false)
+  const layoutShiftPendingRef = useRef(false)
+  const readerIntentUntilRef = useRef(0)
   const [, setScrollSampleTick] = useState(0)
   const [activeTurn, setActiveTurn] = useState<number | null>(
     () => turnNavigationItems.at(-1)?.turn ?? null,
@@ -556,6 +559,15 @@ export function ChatView({
     // the current ownership state.
     const floor = Math.max(0, el.scrollHeight - el.clientHeight)
     const movedByReader = Math.abs(el.scrollTop - Math.min(observedTopRef.current, floor)) > 0.5
+    const anchoredLayoutShift = movedByReader
+      && layoutShiftPendingRef.current
+      && atBottomRef.current
+      && performance.now() > readerIntentUntilRef.current
+    layoutShiftPendingRef.current = false
+    if (anchoredLayoutShift) {
+      toBottom(el)
+      return
+    }
     const isAtBottom = movedByReader
       ? floor - el.scrollTop <= FOLLOW_THRESHOLD + 1
       : atBottomRef.current
@@ -599,11 +611,28 @@ export function ChatView({
       scrollSamplePendingRef.current = true
       sampleTimer ??= window.setTimeout(sample, SCROLL_SAMPLE_INTERVAL_MS)
     }
+    const noteReaderIntent = (): void => {
+      readerIntentUntilRef.current = performance.now() + SCROLL_SAMPLE_INTERVAL_MS * 2
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (READER_SCROLL_KEYS.has(event.key)) noteReaderIntent()
+    }
+    const onPointerMove = (event: PointerEvent): void => {
+      if (event.pointerType === 'touch' || event.buttons !== 0) noteReaderIntent()
+    }
     el.addEventListener('scroll', onScroll, { passive: true })
     el.addEventListener('scrollend', sample, { passive: true })
+    el.addEventListener('wheel', noteReaderIntent, { passive: true })
+    el.addEventListener('touchmove', noteReaderIntent, { passive: true })
+    el.addEventListener('pointermove', onPointerMove, { passive: true })
+    el.addEventListener('keydown', onKeyDown)
     return () => {
       el.removeEventListener('scroll', onScroll)
       el.removeEventListener('scrollend', sample)
+      el.removeEventListener('wheel', noteReaderIntent)
+      el.removeEventListener('touchmove', noteReaderIntent)
+      el.removeEventListener('pointermove', onPointerMove)
+      el.removeEventListener('keydown', onKeyDown)
       if (sampleTimer !== undefined) window.clearTimeout(sampleTimer)
       scrollSamplePendingRef.current = false
     }
@@ -634,6 +663,7 @@ export function ChatView({
     // Flow-height changes (image loads, tool disclosures) move rows across the
     // reading line without a scroll event, so the active mark resyncs here too.
     const observer = new ResizeObserver(() => {
+      if (scrollSamplePendingRef.current) layoutShiftPendingRef.current = true
       followRef.current?.()
       activeTurnRef.current?.()
     })

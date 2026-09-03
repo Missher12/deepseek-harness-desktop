@@ -345,6 +345,23 @@ Host service backing the generated `ctx.remote.settings` namespace. Every remote
  * @throws RemoteError when the preset is missing, read-only, invalid, or cannot be opened.
  */
 @Remote async openAgentPresetDirectory( agentPreset: string, signal: AbortSignal, ): Promise<AgentPresetDirectoryOpenValue>
+
+/**
+ * Read the Desktop-owned personalization block from the canonical global
+ * AGENTS.md without creating or following a caller-selected path.
+ * @returns the bounded editable block and its optimistic revision.
+ * @throws RemoteError when the fixed document cannot be inspected safely.
+ */
+@Remote async personalizationRead(): Promise<PersonalizationDocumentView>
+
+/**
+ * Revision-check and atomically replace only the Desktop-owned
+ * personalization block in the canonical global AGENTS.md.
+ * @param input - bounded instructions, style, and revision returned by the last read.
+ * @returns the authoritative document view after the write.
+ * @throws RemoteError when validation, ownership, revision, or storage rejects the write.
+ */
+@Remote async personalizationWrite(input: PersonalizationDocumentWrite): Promise<PersonalizationDocumentView>
 ```
 
 Source: [`packages/api/settings-controller/src/index.ts`](../../packages/api/settings-controller/src/index.ts)

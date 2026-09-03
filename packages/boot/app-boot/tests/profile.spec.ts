@@ -5,16 +5,18 @@
  */
 
 import {
-  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync,
-  unlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync,
+  symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { describe, expect, it } from 'vitest'
 import {
   composeEntries,
   healProfilesModuleFallback,
+  healProfilesModuleFallbackCached,
   initProfile,
   loadProfile,
   PROFILE_PATCH_FILENAME,
@@ -28,12 +30,26 @@ import {
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'dsh-profile-'))
 
+const legacyPackagedTarget = (app = 'DeepSeek Harness.app'): string => pathToFileURL(join(
+  tmpdir(),
+  app,
+  'Contents',
+  'Resources',
+  'app.asar',
+  'lib',
+  'main.js',
+)).href
+
 /** Stage a fake installed app: package.json with deps and a node_modules holding bundles. */
 function stageInstallation(
   bundles: Record<string, { patch?: string; deps?: Record<string, string> }>,
   appName = 'dsh-app',
 ): string {
-  const root = tmp()
+  // A packaged executable resolves its installation through pkg's canonical
+  // `/snapshot` segment. Keeping that segment in the fixture lets ownership
+  // validation exercise the production URL shape instead of weakening it for
+  // an arbitrary temporary file URL.
+  const root = join(tmp(), 'snapshot')
   const appDir = join(root, 'app')
   mkdirSync(join(appDir, 'node_modules'), { recursive: true })
   const appDeps: Record<string, string> = {}
@@ -77,6 +93,46 @@ function stageProfile(home: string, name: string, bundleAnchor: string): Profile
     patches: [],
     patchReload: 'live',
   }
+}
+
+function writeLegacyModuleProxy(
+  dir: string,
+  packageName: string,
+  targets: Record<string, string>,
+): void {
+  mkdirSync(dir, { recursive: true })
+  const exports = Object.fromEntries(
+    Object.keys(targets).map((subpath, index) => [subpath, `./entry-${index}.js`]),
+  )
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({
+    name: packageName,
+    version: '0.4.11',
+    private: true,
+    type: 'module',
+    exports,
+    dsh: { moduleFallback: { targets } },
+  }, undefined, 2) + '\n')
+  for (const [index, target] of Object.values(targets).entries()) {
+    const specifier = JSON.stringify(target)
+    writeFileSync(
+      join(dir, `entry-${index}.js`),
+      `export * from ${specifier}\nimport * as target from ${specifier}\nexport default target.default\n`,
+    )
+  }
+}
+
+function snapshotFlatDirectory(dir: string): Record<string, string> {
+  return Object.fromEntries(readdirSync(dir).sort().map(name => [
+    name,
+    readFileSync(join(dir, name)).toString('base64'),
+  ]))
+}
+
+function rewriteLegacyManifest(dir: string, mutate: (manifest: Record<string, unknown>) => void): void {
+  const path = join(dir, 'package.json')
+  const manifest = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+  mutate(manifest)
+  writeFileSync(path, JSON.stringify(manifest, undefined, 2) + '\n')
 }
 
 describe('resolveProfileDir', () => {
@@ -912,7 +968,7 @@ describe('healProfilesModuleFallback', () => {
         version: string
       }
       stale.version = 'stale'
-      writeFileSync(join(proxy, 'package.json'), JSON.stringify(stale))
+      writeFileSync(join(proxy, 'package.json'), JSON.stringify(stale, undefined, 2) + '\n')
       await healProfilesModuleFallback({ installAnchor: anchor, home })
       expect(JSON.parse(readFileSync(join(proxy, 'package.json'), 'utf8'))).toMatchObject({
         version: '0.0.0',
@@ -954,5 +1010,257 @@ describe('healProfilesModuleFallback', () => {
     } finally {
       delete (process as NodeJS.Process & { pkg?: unknown }).pkg
     }
+  })
+})
+
+describe('Desktop legacy module-fallback compatibility', () => {
+  it('links packaged dependencies to their physical asar-unpacked copies', () => {
+    const root = tmp()
+    const archive = join(root, 'DeepSeek Harness.app', 'Contents', 'Resources', 'app.asar')
+    const archivedPackage = join(archive, 'node_modules', 'packaged-dep')
+    const unpackedPackage = join(
+      root,
+      'DeepSeek Harness.app',
+      'Contents',
+      'Resources',
+      'app.asar.unpacked',
+      'node_modules',
+      'packaged-dep',
+    )
+    mkdirSync(archivedPackage, { recursive: true })
+    mkdirSync(unpackedPackage, { recursive: true })
+    writeFileSync(join(archive, 'package.json'), JSON.stringify({
+      name: 'dsh-app',
+      dependencies: { 'packaged-dep': '0.0.0' },
+    }))
+    const dependencyManifest = JSON.stringify({ name: 'packaged-dep', version: '0.0.0' })
+    writeFileSync(join(archivedPackage, 'package.json'), dependencyManifest)
+    writeFileSync(join(unpackedPackage, 'package.json'), dependencyManifest)
+
+    const home = tmp()
+    healProfilesModuleFallback(join(archive, 'package.json'), home)
+
+    expect(readlinkSync(join(home, 'profiles', 'node_modules', 'packaged-dep'))).toBe(unpackedPackage)
+  })
+
+  it('keeps the archive target when no asar-unpacked copy exists', () => {
+    const root = tmp()
+    const archive = join(root, 'DeepSeek Harness.app', 'Contents', 'Resources', 'app.asar')
+    const archivedPackage = join(archive, 'node_modules', 'packaged-dep')
+    mkdirSync(archivedPackage, { recursive: true })
+    writeFileSync(join(archive, 'package.json'), JSON.stringify({
+      name: 'dsh-app',
+      dependencies: { 'packaged-dep': '0.0.0' },
+    }))
+    writeFileSync(join(archivedPackage, 'package.json'), JSON.stringify({
+      name: 'packaged-dep', version: '0.0.0',
+    }))
+
+    const home = tmp()
+    healProfilesModuleFallback(join(archive, 'package.json'), home)
+
+    expect(readlinkSync(join(home, 'profiles', 'node_modules', 'packaged-dep'))).toBe(archivedPackage)
+  })
+
+  it('keeps a foreign fallback directory byte-for-byte unchanged', () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const link = join(home, 'profiles', 'node_modules', 'dsh-app')
+    mkdirSync(link, { recursive: true })
+    writeFileSync(join(link, 'user-plugin.js'), 'export default "keep me"\n')
+    const before = snapshotFlatDirectory(link)
+
+    expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow('is not a symlink')
+    expect(snapshotFlatDirectory(link)).toEqual(before)
+    expect(existsSync(join(home, 'recovery'))).toBe(false)
+  })
+
+  it('backs up an exact scoped legacy proxy before replacing it with the current symlink', () => {
+    const packageName = '@deepseek-ai/dsh-desktop'
+    const anchor = stageInstallation({}, packageName)
+    const home = tmp()
+    const link = join(home, 'profiles', 'node_modules', packageName)
+    writeLegacyModuleProxy(link, packageName, { '.': legacyPackagedTarget() })
+    const original = snapshotFlatDirectory(link)
+
+    healProfilesModuleFallback(anchor, home)
+
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(link)).toBe(dirname(anchor))
+    const recoveryRoot = join(home, 'recovery', 'legacy-module-fallback')
+    const [backupName] = readdirSync(recoveryRoot)
+    expect(readdirSync(recoveryRoot)).toHaveLength(1)
+    expect(snapshotFlatDirectory(join(recoveryRoot, backupName!))).toEqual(original)
+  })
+
+  it.each([
+    ['an extra file', (link: string) => { writeFileSync(join(link, 'notes.txt'), 'user data\n') }],
+    ['an extra manifest field', (link: string) => {
+      rewriteLegacyManifest(link, (manifest) => { manifest.description = 'not generator-owned' })
+    }],
+    ['a different package name', (link: string) => {
+      rewriteLegacyManifest(link, (manifest) => { manifest.name = 'another-package' })
+    }],
+    ['an exports mismatch', (link: string) => {
+      rewriteLegacyManifest(link, (manifest) => {
+        (manifest.exports as Record<string, string>)['.'] = './other.js'
+      })
+    }],
+    ['an entry target mismatch', (link: string) => {
+      writeFileSync(join(link, 'entry-0.js'), 'export default "user code"\n')
+    }],
+    ['a manifest target mismatch', (link: string) => {
+      rewriteLegacyManifest(link, (manifest) => {
+        const dsh = manifest.dsh as { moduleFallback: { targets: Record<string, string> } }
+        dsh.moduleFallback.targets['.'] = legacyPackagedTarget('Another.app')
+      })
+    }],
+    ['a non-packaged target', (link: string) => {
+      writeLegacyModuleProxy(link, 'dsh-app', { '.': 'file:///tmp/user-package/index.js' })
+    }],
+    ['a forged archive marker', (link: string) => {
+      writeLegacyModuleProxy(link, 'dsh-app', { '.': 'file:///tmp/app.asar-copy/index.js' })
+    }],
+    ['an encoded path separator', (link: string) => {
+      writeLegacyModuleProxy(link, 'dsh-app', {
+        '.': legacyPackagedTarget().replace('/app.asar/', '/app.asar%2F'),
+      })
+    }],
+  ])('rejects a proxy-shaped directory with %s without changing its bytes', (_label, mutate) => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const link = join(home, 'profiles', 'node_modules', 'dsh-app')
+    writeLegacyModuleProxy(link, 'dsh-app', { '.': legacyPackagedTarget() })
+    mutate(link)
+    const before = snapshotFlatDirectory(link)
+
+    expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow('is not a symlink')
+    expect(snapshotFlatDirectory(link)).toEqual(before)
+    expect(existsSync(join(home, 'recovery'))).toBe(false)
+  })
+
+  it('recognizes the historical Windows drive-letter file URL form', () => {
+    const packageName = '@deepseek-ai/dsh-desktop'
+    const anchor = stageInstallation({ [packageName]: {} })
+    const home = tmp()
+    const link = join(home, 'profiles', 'node_modules', packageName)
+    writeLegacyModuleProxy(link, packageName, {
+      '.': 'file:///C:/Program%20Files/DeepSeek%20Harness/resources/app.asar/lib/main.js',
+      './preload': 'file:///C:/Program%20Files/DeepSeek%20Harness/resources/app.asar/lib/preload.js',
+    })
+
+    healProfilesModuleFallback(anchor, home)
+
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(link)).toBe(join(dirname(anchor), 'node_modules', packageName))
+    expect(readdirSync(join(home, 'recovery', 'legacy-module-fallback'))).toHaveLength(1)
+  })
+
+  it('retries idempotently after recovery completed but before link creation', () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const link = join(home, 'profiles', 'node_modules', 'dsh-app')
+    writeLegacyModuleProxy(link, 'dsh-app', { '.': legacyPackagedTarget() })
+    healProfilesModuleFallback(anchor, home)
+    const recoveryRoot = join(home, 'recovery', 'legacy-module-fallback')
+    const recoveryNames = readdirSync(recoveryRoot)
+    unlinkSync(link)
+
+    healProfilesModuleFallback(anchor, home)
+    healProfilesModuleFallback(anchor, home)
+
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(readdirSync(recoveryRoot)).toEqual(recoveryNames)
+  })
+
+  it('migrates through a Desktop cache miss and then verifies the cache', () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const link = join(home, 'profiles', 'node_modules', 'dsh-app')
+    writeLegacyModuleProxy(link, 'dsh-app', { '.': legacyPackagedTarget() })
+
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.5.1')).toBe('rebuilt')
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.5.1')).toBe('verified-cache')
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(readdirSync(join(home, 'recovery', 'legacy-module-fallback'))).toHaveLength(1)
+  })
+
+  it('does not follow a recovery-directory symlink or move the legacy proxy through it', () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const link = join(home, 'profiles', 'node_modules', 'dsh-app')
+    writeLegacyModuleProxy(link, 'dsh-app', { '.': legacyPackagedTarget() })
+    const before = snapshotFlatDirectory(link)
+    const foreign = tmp()
+    symlinkSync(foreign, join(home, 'recovery'), 'junction')
+
+    expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow('must be a real directory')
+    expect(snapshotFlatDirectory(link)).toEqual(before)
+    expect(readdirSync(foreign)).toEqual([])
+  })
+
+  it('rebuilds the Desktop cache after a linked package manifest changes', () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+    const home = tmp()
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.1')).toBe('rebuilt')
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.1')).toBe('verified-cache')
+    const manifestPath = join(dirname(anchor), 'node_modules', 'bundle-a', 'package.json')
+    const changed = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
+    changed.description = 'changed after the cache was written'
+    writeFileSync(manifestPath, JSON.stringify(changed))
+
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.1')).toBe('rebuilt')
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.1')).toBe('verified-cache')
+  })
+
+  it('rebuilds a parseable cache when a managed symlink is stale', () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.1')).toBe('rebuilt')
+    const link = join(home, 'profiles', 'node_modules', 'dsh-app')
+    unlinkSync(link)
+    symlinkSync(tmp(), link, 'junction')
+
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.1')).toBe('rebuilt')
+    expect(readlinkSync(link)).toBe(dirname(anchor))
+  })
+
+  it('treats malformed, oversized, and partial Desktop caches as misses', () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+    const home = tmp()
+    const cachePath = join(home, 'profiles', '.module-fallback-cache.json')
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.2')).toBe('rebuilt')
+    const valid = JSON.parse(readFileSync(cachePath, 'utf8')) as Record<string, unknown>
+    const links = valid.links as Array<Record<string, unknown>>
+    const link = links[0] ?? {}
+    const miss = (value: unknown): void => {
+      writeFileSync(cachePath, JSON.stringify(value))
+      expect(healProfilesModuleFallbackCached(anchor, home, '0.4.2')).toBe('rebuilt')
+    }
+
+    miss(null)
+    miss({ ...valid, format: 2 })
+    miss({ ...valid, installKey: 'another-install' })
+    miss({ ...valid, installAnchor: `${anchor}.moved` })
+    miss({ ...valid, rootManifestSha256: '0'.repeat(64) })
+    miss({ ...valid, links: null })
+    miss({ ...valid, links: Array.from({ length: 4097 }, () => link) })
+    miss({ ...valid, links: [null] })
+    for (const packageName of ['', 'bad\\name', 'bad\0name', '@scope', '@/pkg', '@scope/..', 'bad/name', '.', '..']) {
+      miss({ ...valid, links: [{ ...link, packageName }] })
+    }
+    miss({ ...valid, links: [{ ...link, packageName: '@scope/pkg' }] })
+    miss({ ...valid, links: [{ ...link, target: 'relative-target' }] })
+    miss({ ...valid, links: [{ ...link, manifestSha256: null }] })
+    miss({ ...valid, links: [{ ...link, manifestSha256: 'not-a-sha' }] })
+    writeFileSync(cachePath, 'x'.repeat(4 * 1024 * 1024 + 1))
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.2')).toBe('rebuilt')
+
+    const fallbackLink = join(home, 'profiles', 'node_modules', 'dsh-app')
+    unlinkSync(fallbackLink)
+    expect(healProfilesModuleFallbackCached(anchor, home, '0.4.2')).toBe('rebuilt')
+    rmSync(fallbackLink)
+    mkdirSync(fallbackLink)
+    expect(() => healProfilesModuleFallbackCached(anchor, home, '0.4.2')).toThrow('is not a symlink')
   })
 })

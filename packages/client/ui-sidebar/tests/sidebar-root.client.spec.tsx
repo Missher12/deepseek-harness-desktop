@@ -28,7 +28,13 @@ type AttentionSnapshot = Parameters<Parameters<SidebarRootComponentProps['useSes
 const noAttention: AttentionSnapshot = new Map()
 const useSessionPendingInteraction: SidebarRootComponentProps['useSessionPendingInteraction'] = selector => selector(noAttention)
 
-function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; width?: number } = {}) {
+const SIDEBAR_LAYOUTS = {
+  expanded: { collapsed: false, width: 300 },
+  collapsed: { collapsed: true, width: 56 },
+} as const
+
+function mountShell({ collapsed = SIDEBAR_LAYOUTS.expanded.collapsed, width = SIDEBAR_LAYOUTS.expanded.width }:
+{ collapsed?: boolean; width?: number } = {}) {
   const startSession = vi.fn()
   const toggleSidebar = vi.fn()
   let regionOwner: SidebarSectionOwnerProps | undefined
@@ -171,7 +177,7 @@ describe('SidebarRoot shell', () => {
   })
 
   it('renders statically collapsed on a cold start (no crossfade classes)', () => {
-    const b = mountShell({ collapsed: true })
+    const b = mountShell(SIDEBAR_LAYOUTS.collapsed)
     expect(b.regionOwner().wide).toBe(false)
     expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
   })

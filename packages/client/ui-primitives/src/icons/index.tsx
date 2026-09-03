@@ -545,6 +545,15 @@ export const IconPaperclipOutline16 = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
+/** image_outline_16 (composer Add menu: framed landscape) */
+export const IconImageOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1.3" y="2.3" width="13.4" height="11.4" rx="2.2" stroke="currentColor" strokeWidth="1.3" />
+    <circle cx="5.1" cy="6" r="1.15" fill="currentColor" />
+    <path d="M2.2 12.25L5.65 8.8C6.15 8.3 6.95 8.3 7.45 8.8L8.7 10.05L10.05 8.7C10.55 8.2 11.35 8.2 11.85 8.7L14 10.85" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
+
 /** ic_ds_loading_outline_16 */
 export const IconLoadingOutline16 = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">

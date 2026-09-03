@@ -233,6 +233,13 @@ if [ -d node_modules/vue ] && [ ! -e website/node_modules/vue ]; then
   mkdir -p website/node_modules
   ln -s ../../node_modules/vue website/node_modules/vue
 fi
+# Root-hoisted dependencies remain valid runtime inputs, but the Host typecheck
+# also follows Desktop's explicit dshmarket type path. Materialize that package
+# boundary in the scratch tree only; normal isolated installs already provide it.
+if [ -d node_modules/dshmarket ] && [ ! -e apps/desktop/node_modules/dshmarket ]; then
+  mkdir -p apps/desktop/node_modules
+  ln -s ../../../node_modules/dshmarket apps/desktop/node_modules/dshmarket
+fi
 
 wine_node "$scratch/logs/smoke.log" -p "'smoke: ' + process.platform + ' ' + process.arch + ' ' + process.version"
 cat "$scratch/logs/smoke.log"

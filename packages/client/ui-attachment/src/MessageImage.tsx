@@ -152,7 +152,7 @@ export function ImageGallery({ images, load, align, labels }: {
     <div className={css.gallery} data-align={align}>
       {images.map((image, index) => (
         <MessageImage
-          key={`${'attachment' in image ? image.attachment.attachmentId : image.preview.url}:${index}`}
+          key={`message-image:${String(index)}`}
           image={image}
           load={load}
           variant={variant}

@@ -13,6 +13,14 @@ export type BuiltInPresetCopyKey =
   | 'presetPtcName' | 'presetPtcDescription'
   | 'presetMinimalName' | 'presetMinimalDescription'
   | 'presetCordisName' | 'presetCordisDescription'
+  | 'presetPlannerName' | 'presetPlannerDescription'
+  | 'presetFrontendName' | 'presetFrontendDescription'
+  | 'presetBackendName' | 'presetBackendDescription'
+  | 'presetDebuggerName' | 'presetDebuggerDescription'
+  | 'presetReviewerName' | 'presetReviewerDescription'
+  | 'presetQaName' | 'presetQaDescription'
+  | 'presetDevopsName' | 'presetDevopsDescription'
+  | 'presetResearchName' | 'presetResearchDescription'
 
 /** Preset roster fields needed to resolve display copy. */
 export interface PresetDisplaySource {
@@ -44,6 +52,14 @@ const BUILT_IN_PRESET_KEYS: Readonly<Partial<Record<string, PresetLocaleKeys>>> 
   ptc: { name: 'presetPtcName', description: 'presetPtcDescription' },
   minimal: { name: 'presetMinimalName', description: 'presetMinimalDescription' },
   cordis: { name: 'presetCordisName', description: 'presetCordisDescription' },
+  planner: { name: 'presetPlannerName', description: 'presetPlannerDescription' },
+  frontend: { name: 'presetFrontendName', description: 'presetFrontendDescription' },
+  backend: { name: 'presetBackendName', description: 'presetBackendDescription' },
+  debugger: { name: 'presetDebuggerName', description: 'presetDebuggerDescription' },
+  reviewer: { name: 'presetReviewerName', description: 'presetReviewerDescription' },
+  qa: { name: 'presetQaName', description: 'presetQaDescription' },
+  devops: { name: 'presetDevopsName', description: 'presetDevopsDescription' },
+  research: { name: 'presetResearchName', description: 'presetResearchDescription' },
 }
 
 /**

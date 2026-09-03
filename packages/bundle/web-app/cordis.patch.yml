@@ -87,6 +87,10 @@
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
 
+    # Privacy-minimal derived index over all durable local session history.
+    - id: usage-insights
+      name: '@deepseek-ai/dsh-usage-insights'
+
     # Session commands, cold reads, and live control over Typert Remote.
     - id: session-controller
       name: '@deepseek-ai/dsh-api-session-controller'
@@ -198,8 +202,17 @@
     - id: ui-settings-general
       name: '@deepseek-ai/dsh-client-ui-settings-general'
 
+    - id: ui-settings-personalization
+      name: '@deepseek-ai/dsh-client-ui-settings-personalization'
+
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
+
+    - id: ui-settings-brain
+      name: '@deepseek-ai/dsh-client-ui-settings-brain'
+
+    - id: ui-settings-usage
+      name: '@deepseek-ai/dsh-client-ui-settings-usage'
 
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'

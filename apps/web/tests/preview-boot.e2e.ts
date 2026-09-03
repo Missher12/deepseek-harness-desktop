@@ -24,7 +24,7 @@ import { tmpdir } from 'node:os'
 import { dirname, extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
-import type { Browser } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { expect, it } from 'vitest'
 import {
   composeProfile, configTrees, indexWorkspacePackages, packVfsImage, packVfsOverlay,
@@ -241,6 +241,17 @@ async function within<T>(work: Promise<T>, ms: number, stalled: string): Promise
   }
 }
 
+/** Fail as soon as the boot surface reports a loader error instead of waiting out the milestone deadline. */
+async function waitForTreeActive(page: Page, treeActive: Promise<string>, stalled: string): Promise<string> {
+  const failed = page.getByText('Failed to load plugins', { exact: true })
+  return await within(Promise.race([
+    treeActive,
+    failed.waitFor({ timeout: BOOT_TIMEOUT_MS }).then(async () => {
+      throw new Error(`preview boot failed before tree activation:\n${await page.locator('body').innerText()}`)
+    }),
+  ]), BOOT_TIMEOUT_MS, stalled)
+}
+
 it('boots the packed worker deployment to an interactive page', async () => {
   requirePreviewPages()
   const assets = requireVfsAssets()
@@ -296,7 +307,11 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
     )
     await page.getByRole('button', { name: 'Start Preview' }).click()
     await page.getByText('Loading plugins…', { exact: true }).waitFor({ timeout: 10_000 })
-    const bootLine = await within(treeActive, BOOT_TIMEOUT_MS, `preview boot: the worker never reported "${TREE_ACTIVE}"`)
+    const bootLine = await waitForTreeActive(
+      page,
+      treeActive,
+      `preview boot: the worker never reported "${TREE_ACTIVE}"`,
+    )
     // The activated tree ran bodies lowered against the contract this
     // checkout's packer emits; a dist built before a contract change would
     // report the older one.
@@ -440,9 +455,9 @@ async function bootEmptyPreview(origin: string, browser: Browser): Promise<void>
   try {
     await page.goto(`${origin}/preview.html?preview-fixture=none`, { waitUntil: 'domcontentloaded' })
     expect(await page.getByRole('heading', { name: '选择 Preview 数据源' }).count()).toBe(0)
-    const bootLine = await within(
+    const bootLine = await waitForTreeActive(
+      page,
       treeActive,
-      BOOT_TIMEOUT_MS,
       `empty preview boot: the worker never reported "${TREE_ACTIVE}"`,
     )
     expect(bootLine).toContain(`image lowering=${WRAPPER_CONTRACT}`)

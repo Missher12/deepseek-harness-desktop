@@ -100,6 +100,12 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   { file: 'packages/preset/agent-presets/presets/cordis/agent.cordis.yml', upstream: ['cordis'] },
   // The preset-roster loop names the `cordis` preset id, not a package.
   { file: 'apps/cli/tests/windows-shell.spec.ts', upstream: ['cordis'] },
+  // These historical design records name the shipped `cordis` agent-preset id,
+  // not the vendored package. Preset ids are stable persisted product data.
+  { file: 'docs/superpowers/plans/2026-08-20-agent-presets-expansion.md', upstream: ['cordis'] },
+  { file: 'docs/superpowers/plans/2026-08-20-agent-presets-expansion.zh.md', upstream: ['cordis'] },
+  { file: 'docs/superpowers/specs/2026-08-20-agent-presets-expansion-design.md', upstream: ['cordis'] },
+  { file: 'docs/superpowers/specs/2026-08-20-agent-presets-expansion-design.zh.md', upstream: ['cordis'] },
   // GROUP_ORDER holds `packages/<group>/` directory names, not package names.
   { file: 'scripts/gen-module-graph.ts', upstream: ['cordis'] },
   { file: 'scripts/gen-doc-graphs.ts', upstream: ['cordis'] },

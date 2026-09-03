@@ -277,6 +277,78 @@ describe('model list editing', () => {
     })
   })
 
+  it('round-trips disabled and unknown reasoning declarations through explicit choices', async () => {
+    const { mutate } = await mountSection({
+      providers: {
+        openai: {
+          baseURL: 'https://proxy.example/v1',
+          models: [
+            { id: 'disabled', reasoningEfforts: false },
+            { id: 'unknown', reasoningEfforts: { custom: 'custom' } },
+          ],
+        },
+      },
+    })
+    openEditor('openai')
+    expandModel(1)
+    expandModel(2)
+
+    const disabled = screen.getByLabelText<HTMLSelectElement>(`${en.modelReasoningCeiling} 1`)
+    const unknown = screen.getByLabelText<HTMLSelectElement>(`${en.modelReasoningCeiling} 2`)
+    expect(disabled.value).toBe('off')
+    expect(unknown.value).toBe('')
+
+    fireEvent.change(disabled, { target: { value: '' } })
+    fireEvent.change(unknown, { target: { value: 'off' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([
+      { id: 'disabled' },
+      { id: 'unknown', reasoningEfforts: false },
+    ])
+  })
+
+  it('round-trips automatic, text-only, and image-capable model input choices', async () => {
+    const { mutate } = await mountSection({
+      providers: {
+        openai: {
+          baseURL: 'https://proxy.example/v1',
+          models: [
+            { id: 'automatic' },
+            { id: 'text', input: ['text'] },
+            { id: 'vision', input: ['text', 'image'] },
+            { id: 'unknown', input: ['audio'] },
+          ],
+        },
+      },
+    })
+    openEditor('openai')
+    expandModel(1)
+    expandModel(2)
+    expandModel(3)
+    expandModel(4)
+
+    const automatic = screen.getByLabelText<HTMLSelectElement>(`${en.modelInputCapability} 1`)
+    const text = screen.getByLabelText<HTMLSelectElement>(`${en.modelInputCapability} 2`)
+    const vision = screen.getByLabelText<HTMLSelectElement>(`${en.modelInputCapability} 3`)
+    const unknown = screen.getByLabelText<HTMLSelectElement>(`${en.modelInputCapability} 4`)
+    expect([automatic.value, text.value, vision.value, unknown.value]).toEqual(['', 'text', 'image', ''])
+
+    fireEvent.change(automatic, { target: { value: 'image' } })
+    fireEvent.change(text, { target: { value: '' } })
+    fireEvent.change(vision, { target: { value: 'text' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([
+      { id: 'automatic', input: ['text', 'image'] },
+      { id: 'text' },
+      { id: 'vision', input: ['text'] },
+      { id: 'unknown', input: ['audio'] },
+    ])
+  })
+
   it('names a duplicate model id in the edit flow too', async () => {
     const { mutate } = await mountSection({
       providers: { openai: { baseURL: 'https://proxy.example/v1', models: [{ id: 'dup' }] } },
@@ -529,7 +601,8 @@ describe('endpoint interrogation', () => {
 
   it('adopts only the picked candidates, keeping a row the user already tuned', async () => {
     const discover = vi.fn(() => Promise.resolve(ok([
-      { id: 'kept', contextWindow: 999 }, { id: 'fresh', contextWindow: 4096, name: 'Fresh' },
+      { id: 'kept', contextWindow: 999, inputModalities: ['text', 'image'] },
+      { id: 'fresh', contextWindow: 4096, name: 'Fresh', inputModalities: ['text', 'image'] },
     ])))
     const { mutate } = await mountSection({
       discover,
@@ -548,7 +621,7 @@ describe('endpoint interrogation', () => {
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
     expect(firstMutate(mutate).ops[0]?.value).toEqual([
       { id: 'kept', contextWindow: 111 },
-      { id: 'fresh', contextWindow: 4096, name: 'Fresh' },
+      { id: 'fresh', contextWindow: 4096, name: 'Fresh', input: ['text', 'image'] },
     ])
   })
 
@@ -1162,6 +1235,46 @@ describe('hand-declared providers', () => {
 
     await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
     expect(firstMutate(mutate).ops[0]?.value).toMatchObject({ models: [{ id: 'bare' }] })
+  })
+
+  it('declares a reasoning ceiling for a hand-added model', async () => {
+    const { mutate, onClose } = mountCard()
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'reasoner' } })
+    expandModel(1)
+
+    fireEvent.change(screen.getByLabelText(`${en.modelReasoningCeiling} 1`), { target: { value: 'high' } })
+    fireEvent.click(screen.getByText(en.create))
+
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+    expect(firstMutate(mutate).ops[0]?.value).toMatchObject({
+      models: [{
+        id: 'reasoner',
+        reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' },
+      }],
+    })
+  })
+
+  it('declares a High-only capability without inventing lower wire efforts', async () => {
+    const { mutate, onClose } = mountCard()
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'high-only' } })
+    expandModel(1)
+
+    fireEvent.change(screen.getByLabelText(`${en.modelReasoningCeiling} 1`), { target: { value: 'only-high' } })
+    fireEvent.click(screen.getByText(en.create))
+
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+    expect(firstMutate(mutate).ops[0]?.value).toMatchObject({
+      models: [{
+        id: 'high-only',
+        reasoningEfforts: { high: 'high' },
+      }],
+    })
   })
 
   it('refuses to create until the route, endpoint, and a model are usable', () => {

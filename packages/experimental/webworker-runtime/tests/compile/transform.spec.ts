@@ -78,7 +78,6 @@ function runBody(
 ): Record<string, unknown> {
   const exports: Record<string, unknown> = {}
   const module = { exports }
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval -- the wrapper contract under test is a `new Function` body
   const factory = new Function(...WRAPPER_PARAMS, code) as (...args: unknown[]) => void
   factory(exports, require, module, '/vfs/probe.js', '/vfs', { url: 'file:///vfs/probe.js' }, als)
   return exports
@@ -96,6 +95,7 @@ const parsesAsScript = (label: string, code: string): void => {
 // ---------------------------------------------------------------------------
 
 check('LOWERING_VERSION is a non-empty string', typeof LOWERING_VERSION === 'string' && LOWERING_VERSION.length > 0, true)
+check('named default declaration semantics use the second lowering contract', LOWERING_VERSION, 'dsh-worker-transform/2')
 check('WRAPPER_PARAMS is the frozen 7-parameter shape', [...WRAPPER_PARAMS], [
   'exports', 'require', 'module', '__filename', '__dirname', '__dsh$meta', '__als',
 ])
@@ -105,7 +105,6 @@ check(
   'every wrapper parameter is a usable identifier',
   (() => {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-implied-eval -- proves the parameter names compile where the loader uses them
       new Function(...WRAPPER_PARAMS, 'return 0')
       return true
     } catch {
@@ -323,13 +322,20 @@ check(
 }
 
 {
-  // Documented cost: the function name stops being a module-scope binding, but
-  // the named function expression can still refer to itself.
   const code = transformModule('export default function self(n) { return n <= 0 ? 0 : self(n - 1) }\n', 'probe.js')
   parsesAsScript('default export function', code)
   const fn = runBody(code).default as (n: number) => number
   check('default-exported function keeps self-reference', fn(3), 0)
 }
+
+test('named default function remains a module binding for later prototype assignments', () => {
+  const code = transformModule([
+    'export default function Builder(value) { this.value = value }',
+    'Builder.prototype.build = function () { return this.value }',
+  ].join('\n'))
+  const Builder = runBody(code).default as new (value: string) => { build(): string }
+  expect(new Builder('ready').build()).toBe('ready')
+})
 
 {
   const code = transformModule("export { x as default } from 'p'\n", 'probe.js')

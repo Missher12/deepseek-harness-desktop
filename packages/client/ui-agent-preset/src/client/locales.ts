@@ -8,6 +8,14 @@ export type AgentPresetSettingsKey =
   | 'presetPtcName' | 'presetPtcDescription'
   | 'presetMinimalName' | 'presetMinimalDescription'
   | 'presetCordisName' | 'presetCordisDescription'
+  | 'presetPlannerName' | 'presetPlannerDescription'
+  | 'presetFrontendName' | 'presetFrontendDescription'
+  | 'presetBackendName' | 'presetBackendDescription'
+  | 'presetDebuggerName' | 'presetDebuggerDescription'
+  | 'presetReviewerName' | 'presetReviewerDescription'
+  | 'presetQaName' | 'presetQaDescription'
+  | 'presetDevopsName' | 'presetDevopsDescription'
+  | 'presetResearchName' | 'presetResearchDescription'
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
   | 'displayName' | 'displayNamePlaceholder'
   | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
@@ -43,6 +51,30 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   presetCordisName: 'Creator mode',
   presetCordisDescription:
     'Built for creating custom agent presets, with all Standard mode capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance.',
+  presetPlannerName: 'Planning',
+  presetPlannerDescription:
+    'Clarifies intent, inspects evidence, compares options, and produces an executable plan before implementation.',
+  presetFrontendName: 'Frontend and UI',
+  presetFrontendDescription:
+    'Builds polished interfaces with responsive layout, accessibility, interaction states, and visual verification.',
+  presetBackendName: 'Backend and API',
+  presetBackendDescription:
+    'Handles APIs, data models, persistence, compatibility, security boundaries, and integration tests.',
+  presetDebuggerName: 'Troubleshooting',
+  presetDebuggerDescription:
+    'Reproduces failures and isolates root cause before applying the smallest authorized fix.',
+  presetReviewerName: 'Code review',
+  presetReviewerDescription:
+    'Reviews correctness, regressions, security, and test completeness, reporting findings by severity.',
+  presetQaName: 'Testing and QA',
+  presetQaDescription:
+    'Designs risk-based tests, reproduces user flows, and separates environment failures from product defects.',
+  presetDevopsName: 'DevOps and release',
+  presetDevopsDescription:
+    'Handles builds, packaging, CI, deployment preflight, rollback planning, and artifact verification.',
+  presetResearchName: 'Documentation and research',
+  presetResearchDescription:
+    'Reads code and sources, synthesizes findings, maintains precise documentation, and marks uncertainty explicitly.',
   duplicate: 'Duplicate',
   duplicateUnavailable: 'This deployment has no writable preset directory',
   delete: 'Delete',
@@ -101,6 +133,22 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   presetMinimalDescription: '仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。',
   presetCordisName: '创造模式',
   presetCordisDescription: '用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导。',
+  presetPlannerName: '方案规划',
+  presetPlannerDescription: '澄清目标、检查证据、比较方案，并在实现前交付可执行计划。',
+  presetFrontendName: '前端与 UI',
+  presetFrontendDescription: '构建精致界面，覆盖响应式布局、无障碍、交互状态和视觉验证。',
+  presetBackendName: '后端与 API',
+  presetBackendDescription: '处理 API、数据模型、持久化、兼容性、安全边界和集成测试。',
+  presetDebuggerName: '故障排查',
+  presetDebuggerDescription: '先复现并隔离根因，再执行最小且获得授权的修复。',
+  presetReviewerName: '代码审查',
+  presetReviewerDescription: '从正确性、回归、安全和测试完整性审查代码，按严重性报告问题。',
+  presetQaName: '测试与 QA',
+  presetQaDescription: '设计基于风险的测试、复现用户流程，并区分环境失败与产品缺陷。',
+  presetDevopsName: 'DevOps 与发布',
+  presetDevopsDescription: '负责构建、打包、CI、部署预检、回滚规划和产物验证。',
+  presetResearchName: '文档与研究',
+  presetResearchDescription: '阅读代码和资料、综合结论、维护精确文档，并明确标注不确定性。',
   duplicate: '复制',
   duplicateUnavailable: '此部署未配置可写的预设目录',
   delete: '删除',

@@ -47,10 +47,16 @@ export {
   type Profile,
   type ProfileLayer,
   type ProfileManifest,
+  type ProfileModuleFallbackLink,
   type ProfileModuleFallbackOptions,
   type ProfilePatchReload,
   type ProfileTemplate,
 } from './profile.ts'
+
+export {
+  healProfilesModuleFallbackCached,
+  type ProfileModuleFallbackCacheResult,
+} from './profile-fallback-cache.ts'
 
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for
@@ -763,6 +769,7 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
  * @param bareModuleBaseUrl - optional installed-host base for bare package
  * names; use it when the host, rather than the configuration project, owns the
  * complete plugin set.
+ * @param markTiming - optional fixed-phase observer for Desktop diagnostics.
  * @returns the root context once every entry has started, or as soon as a
  * surface disposed the tree while startup was still in flight.
  * @throws a labelled error after disposing the partial context — `host
@@ -775,6 +782,7 @@ export async function boot(
   patches?: PatchOptions[],
   prepare?: (ctx: Context) => Promise<void> | void,
   bareModuleBaseUrl?: string,
+  markTiming?: (phase: AppBootTimingPhase) => void,
 ): Promise<Context> {
   const ctx = new Context()
   // Two failure labels: `prepare` runs before any config-tree entry mounts,
@@ -787,6 +795,7 @@ export async function boot(
     await prepare?.(ctx)
     stage = 'plugin tree failed to load'
     await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl)
+    markTiming?.('loader-mount')
     // A surface can finish and dispose the whole tree while startup is still
     // in flight, before the last entry settles. The Loader service goes with
     // it, and the activation audit describes a live tree — reading `ctx.loader`
@@ -796,7 +805,9 @@ export async function boot(
     // re-check after every await.
     await ctx.get('loader')?.await()
     if (ctx.get('loader') === undefined) return ctx
+    markTiming?.('loader-settle')
     await assertEntriesActivated(ctx, binName)
+    markTiming?.('activation-audit')
     return ctx
   } catch (cause) {
     // Root-fiber disposal contains cleanup failures per observer (Cordis
@@ -817,6 +828,9 @@ export async function boot(
     throw new Error(`${binName}: ${stage}: ${detail}${stack}`, { cause })
   }
 }
+
+/** Fixed profile boot phases safe to expose in Desktop startup evidence. */
+export type AppBootTimingPhase = 'loader-mount' | 'loader-settle' | 'activation-audit'
 
 /** Prompt-section name for the harness-source location line an app bin adds after boot. */
 export const HARNESS_SOURCE_SECTION = 'harness:source'

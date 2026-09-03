@@ -268,6 +268,21 @@ export class SessionPreparations<Source extends PreparedSource, CommitState> {
   }
 
   /**
+   * Evict cold cached state before durable deletion while preserving an
+   * unpublished Session's exclusive reservation. A committing/reserved entry
+   * owns an object graph that may still publish and therefore must fail loud.
+   * @param id - session identity about to be deleted.
+   */
+  discardForDelete(id: SessionId): void {
+    const entry = this.entries.get(id)
+    if (entry === undefined) return
+    if (entry.phase === 'committing' || entry.phase === 'reserved') {
+      throw new Error(`cannot delete session "${id}" while its persisted preparation is reserved`)
+    }
+    this.remove(entry)
+  }
+
+  /**
    * Remove a completed entry for an already-serialized append adoption.
    * @param id - adopted session identity.
    * @returns the prepared source, or undefined when no ready entry exists.

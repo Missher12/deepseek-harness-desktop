@@ -1,6 +1,7 @@
 /** Chat-owned conversion from durable Session events to Chat view data. */
 
 import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm/types'
+import type { RendererContentBlock } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {
   AssistantBlock, ContextProvenanceView, KnownContextForm,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -93,7 +94,7 @@ export function sessionRecallLabels(source: unknown): string[] {
  * @param content - Core content blocks.
  * @returns Chat blocks in source order.
  */
-export function toAssistantBlocks(content: readonly ContentBlock[]): AssistantBlock[] {
+export function toAssistantBlocks(content: readonly (ContentBlock | RendererContentBlock)[]): AssistantBlock[] {
   return content.map(toAssistantBlock)
 }
 
@@ -102,7 +103,7 @@ export function toAssistantBlocks(content: readonly ContentBlock[]): AssistantBl
  * @param block - Core content block.
  * @returns Chat block.
  */
-export function toAssistantBlock(block: ContentBlock): AssistantBlock {
+export function toAssistantBlock(block: ContentBlock | RendererContentBlock): AssistantBlock {
   switch (block.type) {
     case 'text': return { kind: 'text', text: block.text }
     case 'reasoning': return { kind: 'reasoning', text: block.text }
@@ -110,6 +111,15 @@ export function toAssistantBlock(block: ContentBlock): AssistantBlock {
     case 'tool-call': return { kind: 'tool-call', callId: String(block.id), name: block.name, argsRaw: block.arguments }
     default: return { kind: 'other', block }
   }
+}
+
+/**
+ * Mark content that has already crossed Session Controller's renderer projection.
+ * Definitions receive the historical core event shape for merge-extensible
+ * matching, while the live transport has stripped durable document authority.
+ */
+export function rendererContent(content: readonly ContentBlock[]): readonly RendererContentBlock[] {
+  return content as unknown as readonly RendererContentBlock[]
 }
 
 /**

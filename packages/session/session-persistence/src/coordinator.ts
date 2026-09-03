@@ -166,6 +166,13 @@ export interface PersistenceBackend<TornMarker = unknown> {
   readStoredRevision(id: SessionId, signal?: AbortSignal): Promise<SessionPersistenceRevision | undefined>
 
   /**
+   * Permanently remove the exact backend-owned state for one session id.
+   * Called only after the coordinator's liveness and preparation fences pass.
+   * @returns whether durable state existed and was removed.
+   */
+  deleteStored(id: SessionId): Promise<boolean>
+
+  /**
    * Optional seek-capable suffix read behind the service's `readFrom`: return
    * the header plus the stored events with `seq >= fromSeq` without reading
    * the whole log. A backend whose medium can address events by seq implements
@@ -763,6 +770,28 @@ export class PersistenceCoordinator<TornMarker = unknown> {
       throw new TypeError('session event batch is not losslessly JSON-serializable because it contains non-JSON-serializable data')
     }
     return this.serialize(id, () => this.appendCore(id, batch))
+  }
+
+  /**
+   * Permanently remove one cold session, serialized behind its retirement and
+   * every other operation for the same identity.
+   * @param id - persisted session identity to remove.
+   * @returns whether durable or lazy coordinator state existed.
+   */
+  async delete(id: SessionId): Promise<boolean> {
+    await this.waitForRetirement(id)
+    return this.serialize(id, () => this.deleteCore(id))
+  }
+
+  private async deleteCore(id: SessionId): Promise<boolean> {
+    if (this.ctx.sessions.get(id) !== undefined) {
+      throw new Error(`cannot delete session "${id}" while it is attached`)
+    }
+    this.preparations.discardForDelete(id)
+    const tracked = this.states.has(id)
+    const deleted = await this.backend.deleteStored(id)
+    this.states.delete(id)
+    return deleted || tracked
   }
 
   private async appendCore(id: SessionId, events: readonly SessionEvent[]): Promise<void> {

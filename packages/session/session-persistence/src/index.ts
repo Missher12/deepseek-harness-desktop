@@ -195,6 +195,19 @@ export abstract class SessionPersistence extends Service {
   abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>
 
   /**
+   * Permanently remove one persisted session. Implementations serialize this
+   * operation with every read/write for the same id and reject while a live
+   * Session is attached. Shared attachments and project files are outside the
+   * session-persistence ownership boundary and are never removed.
+   * @param _id - persisted session identity to remove (unused by the default:
+   * deletion unsupported).
+   * @returns `true` when durable session state existed, `false` when absent.
+   */
+  delete(_id: SessionId): Promise<boolean> {
+    return Promise.reject(new Error('this session persistence backend does not support deletion'))
+  }
+
+  /**
    * Prepare the exact unpublished Session used by resume. Implementations may
    * reuse object graphs retained by an earlier {@link inspect} after confirming
    * their durable revision is still current; disposal releases an unpublished

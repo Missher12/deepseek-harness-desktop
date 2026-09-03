@@ -42,6 +42,17 @@ afterEach(() => {
 })
 
 describe('release families', () => {
+  it('excludes private applications from the dsh publish set', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-release-members-'))
+    roots.push(root)
+    write(join(root, 'apps/cli/package.json'), '{"name":"@deepseek-ai/dsh","version":"0.0.1"}\n')
+    write(join(root, 'apps/desktop/package.json'), '{"name":"@deepseek-ai/dsh-desktop","version":"2.0.0","private":true}\n')
+
+    const members = releaseFamily('dsh').members(root)
+
+    expect(members.map(entry => entry.name)).toEqual(['@deepseek-ai/dsh'])
+  })
+
   it('excludes private experimental packages from the dsh release', () => {
     const members = releaseFamily('dsh').members(resolve(import.meta.dirname, '../..'))
 

@@ -17,6 +17,7 @@ import {
   openNativePath,
   openNativeTextFile,
 } from '@deepseek-ai/dsh-native-command'
+import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import type { SettingsDescriptor, SettingsPathOp, SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type {
   SettingsDescribeValue, SettingsNamespaceView, SettingsPathOpView,
@@ -25,7 +26,17 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { z } from 'zod'
 import { CredentialsController } from './credentials.ts'
-import type { AgentPresetDirectoryOpenValue, SettingsDocumentOpenValue } from './types.ts'
+import {
+  PersonalizationDocumentError,
+  readPersonalizationDocument,
+  writePersonalizationDocument,
+} from './personalization-document.ts'
+import type {
+  AgentPresetDirectoryOpenValue,
+  PersonalizationDocumentView,
+  PersonalizationDocumentWrite,
+  SettingsDocumentOpenValue,
+} from './types.ts'
 
 export { CredentialsController } from './credentials.ts'
 export type * from './types.ts'
@@ -48,6 +59,8 @@ export interface SettingsControllerInternals {
   readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
   readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>
   readonly canOpenPath?: () => boolean
+  /** Fixed Host-owned AGENTS.md override for isolated tests. */
+  readonly personalizationPath?: string
 }
 
 /**
@@ -91,6 +104,7 @@ export class SettingsController extends TypertRemoteService {
   private readonly openPath: (path: string, signal: AbortSignal) => Promise<void>
   private readonly openTextFile: (path: string, signal: AbortSignal) => Promise<void>
   private readonly canOpenPath: () => boolean
+  private readonly personalizationPath: string
 
   /**
    * Register the settings namespace and mount the credentials namespace beside
@@ -104,6 +118,7 @@ export class SettingsController extends TypertRemoteService {
     this.openTextFile = internals.openTextFile ?? openNativeTextFile
     this.canOpenPath = internals.canOpenPath
       ?? (() => config.nativeOpen ?? (internals.openPath !== undefined || canOpenNativePath()))
+    this.personalizationPath = internals.personalizationPath ?? dshHomePath('AGENTS.md')
     ctx.plugin(CredentialsController)
   }
 
@@ -257,6 +272,37 @@ export class SettingsController extends TypertRemoteService {
     }
   }
 
+  /**
+   * Read the Desktop-owned personalization block from the canonical global
+   * AGENTS.md without creating or following a caller-selected path.
+   * @returns the bounded editable block and its optimistic revision.
+   * @throws RemoteError when the fixed document cannot be inspected safely.
+   */
+  @Remote
+  async personalizationRead(): Promise<PersonalizationDocumentView> {
+    try {
+      return await readPersonalizationDocument(this.personalizationPath)
+    } catch (error: unknown) {
+      throw personalizationRejected('read', error)
+    }
+  }
+
+  /**
+   * Revision-check and atomically replace only the Desktop-owned
+   * personalization block in the canonical global AGENTS.md.
+   * @param input - bounded instructions, style, and revision returned by the last read.
+   * @returns the authoritative document view after the write.
+   * @throws RemoteError when validation, ownership, revision, or storage rejects the write.
+   */
+  @Remote
+  async personalizationWrite(input: PersonalizationDocumentWrite): Promise<PersonalizationDocumentView> {
+    try {
+      return await writePersonalizationDocument(this.personalizationPath, input)
+    } catch (error: unknown) {
+      throw personalizationRejected('write', error)
+    }
+  }
+
   private async write(
     ns: string,
     mode: 'update' | 'replace' | 'mutate',
@@ -297,6 +343,13 @@ export class SettingsController extends TypertRemoteService {
     }
     return settings
   }
+}
+
+function personalizationRejected(operation: 'read' | 'write', error: unknown): RemoteError {
+  const message = error instanceof PersonalizationDocumentError
+    ? error.message
+    : `personalization document ${operation} failed`
+  return new RemoteError('settings/rejected', message, { ns: 'personalization' }, { cause: error })
 }
 
 function messageOf(error: unknown): string {

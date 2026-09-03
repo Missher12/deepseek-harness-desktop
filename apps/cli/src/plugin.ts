@@ -12,7 +12,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import {
   DEFAULT_PROFILE_BUNDLES,
   initProfile,
@@ -26,6 +26,7 @@ import {
 import { INSTALL_ANCHOR } from './profile-boot.ts'
 
 const NAME = 'dsh'
+const DESKTOP_PNPM_ENTRY_ENV = 'DSH_DESKTOP_PNPM_ENTRY'
 
 /**
  * Whether a resolved dependency exports a profile patch, i.e. is a bundle.
@@ -131,10 +132,19 @@ export function runPlugin(profile: string, args: readonly string[]): number {
   const before = readProfileManifest(NAME, dir)
   // Windows resolves pnpm through its .cmd shim, which spawn() refuses
   // without a shell since the CVE-2024-27980 hardening.
-  const result = spawnSync('pnpm', args.map(argument => anchorPathSpec(argument, process.cwd())), {
+  const forwarded = args.map(argument => anchorPathSpec(argument, process.cwd()))
+  const packagedEntry = process.env[DESKTOP_PNPM_ENTRY_ENV]
+  if (packagedEntry !== undefined && (!isAbsolute(packagedEntry) || packagedEntry.includes('\0'))) {
+    throw new Error(`${NAME}: packaged pnpm entry must be an absolute path without NUL`)
+  }
+  const command = packagedEntry === undefined ? 'pnpm' : process.execPath
+  const commandArgs = packagedEntry === undefined ? forwarded : [packagedEntry, ...forwarded]
+  const result = spawnSync(command, commandArgs, {
     cwd: dir,
     stdio: 'inherit',
-    shell: process.platform === 'win32',
+    // Windows needs a shell only for the ordinary `.cmd` shim. The packaged
+    // JavaScript entry always runs directly through the current Node runtime.
+    shell: packagedEntry === undefined && process.platform === 'win32',
   })
   if (result.error !== undefined) {
     const code = (result.error as NodeJS.ErrnoException).code

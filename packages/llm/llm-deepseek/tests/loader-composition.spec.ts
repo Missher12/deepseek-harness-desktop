@@ -258,4 +258,27 @@ describe('llm-deepseek real dynamic composition', () => {
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(server.headers[0]?.authorization).toBe('Bearer entry-key')
   })
+
+  it('mounts and disposes the balance bridge when webServer appears after the adapter', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', 'entry-key')
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const { ctx } = await loadComposition({ withDynamic: false, baseURL: server.url })
+    const disposeRoute = vi.fn()
+    const disposeTap = vi.fn()
+    const register = vi.fn(() => disposeRoute)
+    const tapIndex = vi.fn(() => disposeTap)
+
+    expect(register).not.toHaveBeenCalled()
+    ctx.provide('webServer', { register, tapIndex } as never)
+
+    await vi.waitFor(() => {
+      expect(register).toHaveBeenCalledOnce()
+      expect(tapIndex).toHaveBeenCalledOnce()
+    })
+
+    await ctx.fiber.dispose()
+    context = undefined
+    expect(disposeRoute).toHaveBeenCalledOnce()
+    expect(disposeTap).toHaveBeenCalledOnce()
+  })
 })

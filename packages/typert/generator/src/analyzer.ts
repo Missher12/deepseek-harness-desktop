@@ -310,7 +310,17 @@ export class WorkspaceAnalyzer {
         }
         const aggregatePath = resolve(this.options.root, face === 'host' ? this.options.hostConfig : this.options.clientConfig)
         const aggregate = this.caches.config(aggregatePath)
-        const rootNames = [...new Set(registrations.flatMap(registration => registration.config.parsed.fileNames))]
+        // Package tsconfigs may exclude a tsdown clientBundle entry (its sibling
+        // .tsx implementation would collide on emit). The export inventory below
+        // still resolves those subpaths to sources, so add any existing TypeScript
+        // export source that the face config left out of the program.
+        const rootNames = [...new Set([
+          ...registrations.flatMap(registration => registration.config.parsed.fileNames),
+          ...registrations.flatMap(registration =>
+            packageExportTargets(registration.manifest)
+              .map(([, target]) => sourcePathForExport(registration.root, target))
+              .filter(sourcePath => /\.(?:ts|tsx|mts|cts)$/u.test(sourcePath) && existsSync(sourcePath))),
+        ])]
         const options: ts.CompilerOptions = {
           ...aggregate.parsed.options,
           composite: false,
@@ -2487,8 +2497,16 @@ class FaceAnalyzer {
     const target = packageExportTargets(registration.manifest)
       .find(([subpath]) => subpath === module.subpath)?.[1]
     if (target === undefined) return undefined
-    const sourceFile = this.sourceFiles.get(realPath(sourcePathForExport(registration.root, target))) as ts.SourceFile
+    const sourceCandidates = [
+      sourcePathForExport(registration.root, target),
+      resolve(registration.root, target.replace(/^\.\//u, '')),
+    ].map(candidate => realPath(candidate))
+    const sourceFile = sourceCandidates
+      .map(candidate => this.sourceFiles.get(candidate))
+      .find((candidate): candidate is ts.SourceFile => candidate !== undefined)
+    if (sourceFile === undefined) return undefined
     const moduleSymbol = this.checker.getSymbolAtLocation(sourceFile) as ts.Symbol
+    if (moduleSymbol === undefined) return undefined
     const exported = this.checker.getExportsOfModule(moduleSymbol)
       .find(candidate => candidate.name === requestedName && this.resolveSymbol(candidate) === symbol)
     return exported?.name

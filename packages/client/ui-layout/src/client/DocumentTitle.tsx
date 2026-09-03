@@ -1,5 +1,4 @@
 import { useEffect } from 'react'
-
 /** Props for the browser title projection. */
 export interface DocumentTitleProps {
   /** Durable title of the selected session, or undefined for the product title. */

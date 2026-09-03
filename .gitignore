@@ -1,5 +1,12 @@
 CLAUDE.local.md
 .env
+.env.*
+!.env.example
+.npmrc
+credentials.json
+*.pem
+*.key
+*.p12
 node_modules/
 lib/
 *.tsbuildinfo
@@ -41,3 +48,6 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+.superpowers/
+apps/desktop/.stage/
+apps/desktop/release/

@@ -1,9 +1,28 @@
 /** Content-block structure helpers. @module @deepseek-ai/dsh-llm/content */
 
-import type { ContentBlock } from './types.ts'
+import type { ContentBlock, GenerateOptions } from './types.ts'
 import type { Message } from './message.ts'
-import type { AttachmentStore, ImageAttachmentRef, ImageMediaType, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type {
+  AttachmentStore, DocumentAttachmentRef, ImageAttachmentRef, ImageMediaType, RequestImageAttachment,
+} from '@deepseek-ai/dsh-attachment'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
+
+/** Model-facing stand-in for an image removed to fit a provider request bound. */
+export const OFFLOADED_IMAGE_TEXT
+  = '[image omitted to keep the request within its image limit; older images are omitted first. If this image is still needed, read its file again when a path is available; otherwise ask the user to attach it again.]'
+/** Stable bounded replacement for a document excluded from one model request. */
+export const OFFLOADED_DOCUMENT_TEXT
+  = '[document omitted to keep the request within its document limits.]'
+
+const DOCUMENT_PROJECTION_READ_CONCURRENCY = 2
+const DOCUMENT_REQUEST_SAFETY_TOKENS = 1024
+const UTF8_ENCODER = new TextEncoder()
+
+/** Route-owned expansion allowance applied after verified document reads. */
+export interface DocumentProjectionOptions {
+  /** Additional tokens available beyond the fixed omission placeholders. */
+  maxExpansionTokens?: number
+}
 
 /** Execution-world path that model tools can use to read one normalized attachment. */
 export interface ImageAttachmentAccess {
@@ -124,6 +143,291 @@ export function offloadedImageText(
 export function contentHasImage(content: readonly ContentBlock[]): boolean {
   return content.some(block => block.type === 'image'
     || (block.type === 'tool-result' && contentHasImage(block.content)))
+}
+
+/**
+ * Test typed model content for a document, including nested tool results.
+ * @param content - typed model content blocks.
+ * @returns whether any nested block is a document.
+ */
+export function contentHasDocument(content: readonly ContentBlock[]): boolean {
+  return content.some(block => block.type === 'document'
+    || (block.type === 'tool-result' && contentHasDocument(block.content)))
+}
+
+/** Exact integrity and display identity used to deduplicate repeated document references. */
+function documentRefKey(ref: DocumentAttachmentRef): string {
+  return JSON.stringify([
+    String(ref.attachmentId), String(ref.extractedTextId), ref.mediaType, ref.name,
+    ref.bytes, ref.extractedBytes, ref.truncated,
+  ])
+}
+
+interface DocumentOccurrence {
+  key: string
+  ref: DocumentAttachmentRef
+  messageIndex: number
+  included: boolean
+}
+
+/** Newest messages win; attachment order inside one message remains stable. */
+function prioritizedDocumentOccurrences(
+  occurrences: readonly DocumentOccurrence[],
+): readonly DocumentOccurrence[] {
+  return occurrences
+    .map((occurrence, order) => ({ occurrence, order }))
+    .sort((left, right) => (
+      right.occurrence.messageIndex - left.occurrence.messageIndex
+      || left.order - right.order
+    ))
+    .map(({ occurrence }) => occurrence)
+}
+
+/** Collect every projected occurrence in durable message order. */
+function collectDocumentOccurrences(
+  blocks: readonly ContentBlock[],
+  occurrences: DocumentOccurrence[],
+  messageIndex: number,
+): void {
+  for (const block of blocks) {
+    if (block.type === 'document') {
+      occurrences.push({
+        key: documentRefKey(block.attachment),
+        ref: block.attachment,
+        messageIndex,
+        included: false,
+      })
+    } else if (block.type === 'tool-result') {
+      collectDocumentOccurrences(block.content, occurrences, messageIndex)
+    }
+  }
+}
+
+/** Select occurrences without exceeding any deployment-owned request budget. */
+function planDocumentProjection(
+  occurrences: DocumentOccurrence[],
+  attachments: AttachmentStore,
+): Map<string, DocumentAttachmentRef> {
+  const limits = attachments.documentLimits
+  const selected = new Map<string, DocumentAttachmentRef>()
+  let count = 0
+  let sourceBytes = 0
+  let extractedBytes = 0
+  for (const occurrence of prioritizedDocumentOccurrences(occurrences)) {
+    const ref = occurrence.ref
+    if (count >= limits.maxDocumentsPerMessage
+      || ref.bytes > limits.maxMessageDocumentBytes - sourceBytes
+      || ref.extractedBytes > limits.maxMessageExtractedTextBytes - extractedBytes) continue
+    occurrence.included = true
+    count += 1
+    sourceBytes += ref.bytes
+    extractedBytes += ref.extractedBytes
+    selected.set(occurrence.key, ref)
+  }
+  return selected
+}
+
+/** UTF-8 bytes are a conservative upper bound for ordinary byte-token BPEs. */
+function utf8TokenUpperBound(value: string): number {
+  return UTF8_ENCODER.encode(value).byteLength
+}
+
+/** JSON bytes for bounded metadata, preserving an upper-bound token estimate. */
+function jsonTokenUpperBound(value: unknown): number {
+  const json = JSON.stringify(value) as string | undefined
+  return json === undefined ? 0 : utf8TokenUpperBound(json)
+}
+
+/** Model-request baseline with every document represented by its fixed placeholder. */
+function baselineContentTokens(blocks: readonly ContentBlock[]): number {
+  let tokens = 0
+  for (const block of blocks) {
+    switch (block.type) {
+      case 'text':
+      case 'reasoning':
+        tokens += utf8TokenUpperBound(block.text) + 32
+        break
+      case 'image':
+        tokens += base64Length(block.attachment.bytes) + 256
+        break
+      case 'document':
+        tokens += utf8TokenUpperBound(OFFLOADED_DOCUMENT_TEXT) + 32
+        break
+      case 'tool-call':
+        tokens += utf8TokenUpperBound(block.name) + utf8TokenUpperBound(block.arguments) + 64
+        break
+      case 'tool-result':
+        tokens += baselineContentTokens(block.content) + 64
+        break
+      default:
+        tokens += jsonTokenUpperBound(block) + 64
+    }
+  }
+  return tokens
+}
+
+/**
+ * Compute the expansion budget left by one exact resolved model route. The
+ * baseline prices every UTF-8 or inline-image byte as one token, includes the
+ * requested output allowance, and leaves fixed provider-framing headroom.
+ * @param options - exact provider request before document expansion.
+ * @param contextWindow - resolved route context-window size.
+ * @returns conservative token budget available for verified document text.
+ */
+export function documentExpansionTokenBudget(
+  options: GenerateOptions,
+  contextWindow: number,
+): number {
+  if (!Number.isSafeInteger(contextWindow) || contextWindow <= 0) return 0
+  const outputTokens = options.maxTokens ?? Math.ceil(contextWindow / 4)
+  let baseline = DOCUMENT_REQUEST_SAFETY_TOKENS
+    + utf8TokenUpperBound(options.provider)
+    + utf8TokenUpperBound(options.model)
+    + jsonTokenUpperBound(options.system)
+    + jsonTokenUpperBound(options.tools)
+    + jsonTokenUpperBound(options.stop)
+    + jsonTokenUpperBound(options.temperature)
+    + jsonTokenUpperBound(options.reasoningEffort)
+    + jsonTokenUpperBound(options.sessionId)
+    + jsonTokenUpperBound(options.purpose)
+  for (const message of options.messages) {
+    baseline += jsonTokenUpperBound({ role: message.role, source: message.source })
+      + baselineContentTokens(message.content)
+      + 64
+  }
+  return Math.max(0, contextWindow - outputTokens - baseline)
+}
+
+/** Escape untrusted document metadata and text inside the deterministic model envelope. */
+function escapeDocumentXml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;')
+}
+
+/** Build one provider-neutral bounded document projection. */
+function documentText(ref: DocumentAttachmentRef, text: string): string {
+  return `<dsh-document name="${escapeDocumentXml(ref.name)}" media-type="${escapeDocumentXml(ref.mediaType)}" truncated="${String(ref.truncated)}">\n${escapeDocumentXml(text)}\n</dsh-document>`
+}
+
+/** Replace document blocks recursively without mutating durable messages. */
+function replaceDocuments(
+  blocks: readonly ContentBlock[],
+  occurrences: readonly DocumentOccurrence[],
+  cursor: { index: number },
+  texts: ReadonlyMap<string, string>,
+): ContentBlock[] {
+  let next: ContentBlock[] | undefined
+  for (const [index, block] of blocks.entries()) {
+    if (block.type === 'document') {
+      next ??= blocks.slice(0, index)
+      const occurrence = occurrences[cursor.index]
+      cursor.index += 1
+      if (occurrence === undefined || occurrence.key !== documentRefKey(block.attachment)) {
+        throw new Error('Document projection occurrence order diverged from message traversal.')
+      }
+      const text = occurrence.included ? texts.get(occurrence.key) : OFFLOADED_DOCUMENT_TEXT
+      /* v8 ignore next -- selected reads are inserted under the exact occurrence key; keep a fail-closed invariant. */
+      if (text === undefined) throw new Error('Document projection completed without verified text.')
+      next.push({ type: 'text', text })
+      continue
+    }
+    if (block.type === 'tool-result') {
+      const content = replaceDocuments(block.content, occurrences, cursor, texts)
+      if (content !== block.content) {
+        next ??= blocks.slice(0, index)
+        next.push({ ...block, content })
+        continue
+      }
+    }
+    next?.push(block)
+  }
+  return next ?? blocks as ContentBlock[]
+}
+
+/** Read selected unique documents through a fixed-size worker set. */
+async function readProjectedDocuments(
+  ordered: readonly [string, DocumentAttachmentRef][],
+  attachments: AttachmentStore,
+  signal?: AbortSignal,
+): Promise<ReadonlyMap<string, string>> {
+  const texts = new Map<string, string>()
+  let cursor = 0
+  const readNext = async (): Promise<void> => {
+    while (cursor < ordered.length) {
+      signal?.throwIfAborted()
+      const entry = ordered[cursor]
+      cursor += 1
+      /* v8 ignore next -- the synchronous cursor reservation is guarded by the loop condition. */
+      if (entry === undefined) throw new Error('Document projection worker exceeded its selected input.')
+      const [key, ref] = entry
+      const stored = await attachments.readDocument(ref, signal)
+      texts.set(key, documentText(ref, stored.text))
+    }
+  }
+  const workers = Math.min(DOCUMENT_PROJECTION_READ_CONCURRENCY, ordered.length)
+  await Promise.all(Array.from({ length: workers }, readNext))
+  return texts
+}
+
+/** Offload category-selected occurrences whose verified expansion cannot fit this route. */
+function fitDocumentExpansion(
+  occurrences: readonly DocumentOccurrence[],
+  texts: ReadonlyMap<string, string>,
+  maxExpansionTokens: number | undefined,
+): void {
+  if (maxExpansionTokens === undefined) return
+  if (!Number.isSafeInteger(maxExpansionTokens) || maxExpansionTokens < 0) {
+    throw new TypeError('Document expansion budget must be a non-negative safe integer.')
+  }
+  const placeholderTokens = utf8TokenUpperBound(OFFLOADED_DOCUMENT_TEXT)
+  let consumed = 0
+  for (const occurrence of prioritizedDocumentOccurrences(occurrences)) {
+    if (!occurrence.included) continue
+    const text = texts.get(occurrence.key)
+    /* v8 ignore next -- selected reads are keyed by the same immutable reference descriptor. */
+    if (text === undefined) throw new Error('Document projection completed without verified text.')
+    const expansion = Math.max(0, utf8TokenUpperBound(text) - placeholderTokens)
+    if (expansion > maxExpansionTokens - consumed) {
+      occurrence.included = false
+      continue
+    }
+    consumed += expansion
+  }
+}
+
+/**
+ * Verify durable documents and project their extracted text at the final model
+ * boundary. Identical references are read once per request; session history
+ * keeps the original document blocks.
+ * @param messages - durable provider-neutral messages.
+ * @param attachments - authoritative attachment reader.
+ * @param signal - optional request cancellation.
+ * @param options - route-specific document expansion limits.
+ * @returns transient model messages with verified documents replaced by bounded text.
+ */
+export async function projectDocumentsForRequest(
+  messages: readonly Message[],
+  attachments: AttachmentStore,
+  signal?: AbortSignal,
+  options: DocumentProjectionOptions = {},
+): Promise<readonly Message[]> {
+  const occurrences: DocumentOccurrence[] = []
+  for (const [messageIndex, message] of messages.entries()) {
+    collectDocumentOccurrences(message.content, occurrences, messageIndex)
+  }
+  if (occurrences.length === 0) return messages
+  const selected = planDocumentProjection(occurrences, attachments)
+  const texts = await readProjectedDocuments([...selected.entries()], attachments, signal)
+  fitDocumentExpansion(occurrences, texts, options.maxExpansionTokens)
+  const cursor = { index: 0 }
+  return messages.map((message) => {
+    const content = replaceDocuments(message.content, occurrences, cursor, texts)
+    return content === message.content ? message : { ...message, content }
+  })
 }
 
 /** Base64 length of raw image bytes, including padding. */

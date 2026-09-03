@@ -23,7 +23,9 @@
  */
 
 import { INVALID_CREDENTIAL_CODE, LlmError, normalizeApiKey } from '@deepseek-ai/dsh-llm'
-import type { LlmDiscoveredModel, LlmModelDiscoveryOperation } from '@deepseek-ai/dsh-llm'
+import type {
+  LlmDiscoveredModel, LlmModelDiscoveryOperation, ModelModality,
+} from '@deepseek-ai/dsh-llm'
 import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import { catalogModels } from './catalog.ts'
 
@@ -59,6 +61,9 @@ interface ListingEntry {
   context_length?: unknown
   max_tokens?: unknown
   max_output_tokens?: unknown
+  input_modalities?: unknown
+  modalities?: unknown
+  architecture?: { input_modalities?: unknown } | null
 }
 
 /** A positive integer field of a listing entry, or `undefined` when absent or unusable. */
@@ -73,6 +78,20 @@ function capacity(...candidates: readonly unknown[]): number | undefined {
 function label(...candidates: readonly unknown[]): string | undefined {
   for (const candidate of candidates) {
     if (typeof candidate === 'string' && candidate.length > 0) return candidate
+  }
+  return undefined
+}
+
+/** Normalize an explicit provider modality list, never a model-name guess. */
+function inputModalities(...candidates: readonly unknown[]): ModelModality[] | undefined {
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue
+    const modalities: ModelModality[] = []
+    for (const raw of candidate as readonly unknown[]) {
+      if (raw !== 'text' && raw !== 'image') continue
+      if (!modalities.includes(raw)) modalities.push(raw)
+    }
+    if (modalities.length > 0) return modalities
   }
   return undefined
 }
@@ -151,11 +170,17 @@ function readListing(body: unknown): LlmDiscoveredModel[] {
     const name = label(entry?.name, entry?.display_name)
     const contextWindow = capacity(entry?.context_window, entry?.context_length)
     const maxTokens = capacity(entry?.max_output_tokens, entry?.max_tokens)
+    const modalities = inputModalities(
+      entry?.input_modalities,
+      entry?.modalities,
+      entry?.architecture?.input_modalities,
+    )
     models.push({
       id,
       ...name === undefined ? {} : { name },
       ...contextWindow === undefined ? {} : { contextWindow },
       ...maxTokens === undefined ? {} : { maxTokens },
+      ...modalities === undefined ? {} : { inputModalities: modalities },
     })
   }
   return models
@@ -212,6 +237,7 @@ export async function discoverModels(
         name: model.name,
         contextWindow: model.contextWindow,
         maxTokens: model.maxTokens,
+        inputModalities: [...model.input],
       }))
     }
   }

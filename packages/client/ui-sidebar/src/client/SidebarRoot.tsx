@@ -191,6 +191,7 @@ export function SidebarRoot({
         <button
           type="button"
           className={css.newSession}
+          data-dsh-desktop-command="new-session"
           aria-label={t('session.new.label')}
           onClick={() => { startSession() }}
         >

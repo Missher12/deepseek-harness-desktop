@@ -88,6 +88,7 @@ function fakeSessions(ctx: Context): { sessions: ISessions; binding: SessionBind
     clear: () => {},
     refresh: () => Promise.reject(new Error('unused fake Sessions operation')),
     search: () => Promise.reject(new Error('unused fake Sessions operation')),
+    delete: () => Promise.reject(new Error('unused fake Sessions operation')),
     fork: () => Promise.reject(new Error('unused fake Sessions operation')),
     scope: id => id === SESSION_ID ? binding.ctx : undefined,
     scopeOf: candidate => candidate === binding.ctx ? SESSION_ID : undefined,

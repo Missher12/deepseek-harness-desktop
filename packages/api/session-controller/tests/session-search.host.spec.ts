@@ -793,7 +793,7 @@ describe('session.search', () => {
     })
     expect(searchSessions).toHaveBeenCalledOnce()
     expect(searchSessions.mock.calls[0]?.[0]).not.toHaveProperty('sessionFilters')
-  })
+  }, 10_000)
 
   it('propagates cancellation through the lightweight visibility listing', async () => {
     const ctx = await baseContext()

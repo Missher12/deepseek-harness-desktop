@@ -110,7 +110,14 @@ describe('web e2e: plan review takeover round trip', () => {
     // Card gone; regular input restored.
     expect(await page.locator('[data-plan-review-key]').count()).toBe(0)
     expect(await selectedRow.locator('[data-state="warning"]').count()).toBe(0)
-    await expect.poll(() => page.locator('[data-composer-input]').first().isEnabled(), { timeout: 10_000 }).toBe(true)
+    await expect.poll(() => page.locator('[data-composer-input]').first().getAttribute('aria-disabled'), { timeout: 10_000 })
+      .not.toBe('true')
+    // Keep pointer-only session-stat tooltips out of this page-level golden.
+    // The preceding approval click can leave the pointer over responsive
+    // footer content at some runner widths, making the accessibility tree
+    // depend on viewport geometry rather than the approved-plan state.
+    await page.mouse.move(0, 0)
+    await expect.poll(() => page.getByRole('tooltip').count(), { timeout: 5_000 }).toBe(0)
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(APPROVED_EXPECTED, snapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(

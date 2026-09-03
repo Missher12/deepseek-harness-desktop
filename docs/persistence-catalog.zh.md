@@ -92,7 +92,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-来源：[`packages/core/session/src/types.ts:366`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:373`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:402`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:434`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:366`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:373`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:402`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:440`](../packages/core/session/src/types.ts)
 
 ## 事件
 
@@ -707,6 +707,19 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```
 
 来源：[`packages/session/session-log-deepseek/src/types.ts:57`](../packages/session/session-log-deepseek/src/types.ts)
+
+### `session-messenger/*`
+
+<a id="session-messengeroutgoing--log-only"></a>
+
+#### `session-messenger/outgoing` — log-only
+
+```ts persistence-catalog
+/** UI-only sender transcript; never enters model history. */
+'session-messenger/outgoing': OutgoingRelayEvent
+```
+
+来源：[`packages/extensions/session-messenger/src/types.ts:44`](../packages/extensions/session-messenger/src/types.ts)
 
 ### `step/*`
 

@@ -131,6 +131,31 @@ describe('search', () => {
   })
 })
 
+describe('permanent delete', () => {
+  it('removes a host-confirmed archived session from the local list immediately', async () => {
+    const b = bench()
+    await feedList(b, [{ id: 's1' }, { id: 's2' }])
+    expect(b.svc.binding(sid('s1'))).toBeDefined()
+
+    await expect(b.svc.delete(sid('s1'))).resolves.toBeUndefined()
+
+    expect(b.api.callsOf('session.delete')).toEqual([{ sessionId: 's1' }])
+    expect(b.svc.list.getSnapshot().ids).toEqual(['s2'])
+    expect(b.svc.binding(sid('s1'))).toBeUndefined()
+  })
+
+  it('keeps the local row when the host rejects deletion', async () => {
+    const b = bench()
+    await feedList(b, [{ id: 's1' }])
+    b.api.onDelete = () => Promise.resolve(err(new RemoteError(
+      'session/not-archived', 'archive first', { sessionId: sid('s1') },
+    )))
+
+    await expect(b.svc.delete(sid('s1'))).rejects.toThrow(/session\/not-archived/)
+    expect(b.svc.list.getSnapshot().ids).toEqual(['s1'])
+  })
+})
+
 describe('scope tree', () => {
   it('retains a Host-addressed scope until the first Session baseline owns pruning', async () => {
     const b = bench()

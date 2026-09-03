@@ -135,6 +135,7 @@ export class WebServer extends Service {
   private readonly upgrades = new Map<string, WebUpgradeRoute>()
   private readonly upgradedSockets = new Set<Duplex>()
   private readonly indexTaps: ((html: string) => string)[] = []
+  private readonly generationValues = new Map<string, unknown>()
   private fallback: WebRoute['handler'] | undefined
   private server!: Server
   private listenedPort!: number
@@ -154,6 +155,19 @@ export class WebServer extends Service {
   /** The configured bind host (the loopback or all-interfaces literal). */
   get host(): Config['host'] {
     return this.config.host
+  }
+
+  /**
+   * Memoize one value for this WebServer service generation and no longer.
+   * @param key - service-generation-local identity for the shared value.
+   * @param initialize - initializer invoked only when the key is absent.
+   * @returns the existing or newly initialized generation value.
+   */
+  generationValue<T>(key: string, initialize: () => T): T {
+    if (this.generationValues.has(key)) return this.generationValues.get(key) as T
+    const value = initialize()
+    this.generationValues.set(key, value)
+    return value
   }
 
   /**

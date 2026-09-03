@@ -434,7 +434,7 @@ describe('fixture session face', () => {
     expect(() => bare.loadOlder()).toThrow(/loadOlder is not stubbed/)
     expect(() => bare.loadThrough()).toThrow(/loadThrough is not stubbed/)
     expect(() => bare.rename()).toThrow(/rename is not stubbed/)
-    const submission = bare.beginSubmission()
+    const submission = bare.beginSubmission({ mode: 'queue', text: '', images: [] })
     expect(submission.requestId).toBe('test-submission-1')
     expect(() => { submission.abandon() }).not.toThrow()
     await runtime.dispose()

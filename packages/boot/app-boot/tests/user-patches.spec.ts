@@ -343,6 +343,20 @@ describe('boot with user patches', () => {
     }
   })
 
+  it('mounts config-only HMR when Node module internals are unavailable', async () => {
+    const ctx = new Context()
+    ctx.baseUrl = pathToFileURL(`${tmp()}/`).href
+    await ctx.plugin(Loader)
+    ctx.loader.internal = undefined
+    await ctx.plugin(Timer)
+    try {
+      await expect(ctx.plugin(Hmr, { root: [], ignored: [], debounce: 0 })).resolves.toBeDefined()
+      expect(ctx.get('hmr')).toBeDefined()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('watches add, failure, recovery, and removal through transactional HMR', { timeout: 20_000 }, async () => {
     const dir = tmp()
     const userDir = tmp()

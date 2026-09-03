@@ -471,6 +471,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'readonly documentLimits: DocumentAttachmentLimits = Object.freeze({ maxDocumentBytes: 0, maxDocumentsPerMessage: 0, maxMessageDocumentBytes: 0, maxExtractedTextBytes: 0, maxMessageExtractedTextBytes: 0, maxDocumentNameBytes: 0, mediaTypes: Object.freeze([]), })',
+        description: 'Deployment-resolved document policy; an empty media roster means unsupported.',
+        parameters: [],
+      },
+      {
         signature: 'abstract validateImage(input: SaveImageAttachment): Promise<void>',
         description: 'Validate one image without persisting it. Batch callers validate every member before saving any member.',
         parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
@@ -481,6 +486,29 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Validate and durably commit one ordered image batch.',
         parameters: [{ name: 'inputs', description: 'encoded images in owning-message order.' }],
         returns: 'durable normalized attachment references in the same order after every member succeeds.',
+      },
+      {
+        signature: 'async saveDocuments(inputs: readonly SaveDocumentAttachment[]): Promise<readonly DocumentAttachmentRef[]>',
+        description: 'Validate every document before durably committing any member in caller order.',
+        parameters: [{ name: 'inputs', description: 'document bytes and metadata in owning-message order.' }],
+        returns: 'durable references in the exact input order.',
+      },
+      {
+        signature: 'validateDocument(_input: SaveDocumentAttachment): Promise<void>',
+        description: 'Validate one document without persistence. Unsupported providers fail closed.',
+        parameters: [{ name: '_input', description: 'proposed document bytes and metadata.' }],
+      },
+      {
+        signature: 'saveDocument(_input: SaveDocumentAttachment): Promise<DocumentAttachmentRef>',
+        description: 'Validate, extract, and durably commit one document. Unsupported providers fail closed.',
+        parameters: [{ name: '_input', description: 'proposed document bytes and metadata.' }],
+        returns: 'the durable immutable document reference.',
+      },
+      {
+        signature: 'readDocument(_ref: DocumentAttachmentRef, signal?: AbortSignal): Promise<StoredDocumentAttachment>',
+        description: 'Read and verify one immutable document source and extraction.',
+        parameters: [{ name: '_ref', description: 'durable document reference from session history.' }, { name: 'signal', description: 'optional cancellation for storage and integrity work.' }],
+        returns: 'verified source bytes, extracted text, and immutable metadata.',
       },
       {
         signature: 'abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>',
@@ -772,6 +800,38 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Prepare every currently registered field from one immutable base request. Preparation failures reject before HTTP dispatch. Field values are cloned and frozen; providers retain no mutable alias to the outgoing request.',
         parameters: [{ name: 'request', description: 'exact serialized request facts before extension fields.' }],
         returns: 'detached fields and their idempotent joint acceptance transaction.',
+      },
+    ],
+  },
+  {
+    key: 'desktopPnpm',
+    summary: 'Restricted command runner that invokes the bundled DSH plugin command.',
+    description: 'Restricted command runner that invokes the bundled DSH plugin command.',
+    methods: [
+      {
+        signature: 'runPlugin(args: readonly string[], invokingDir: string, signal?: AbortSignal): DesktopPnpmHandle',
+        description: 'Run one validated DSH plugin command through the packaged pnpm entry.',
+        parameters: [{ name: 'args', description: 'Trusted plugin-command arguments supplied by the Host plugin.' }, { name: 'invokingDir', description: 'Absolute caller directory used for package resolution.' }, { name: 'signal', description: 'Optional cancellation signal scoped to the operation.' }],
+        returns: 'Managed output streams, completion promise, and cancellation hook.',
+      },
+    ],
+  },
+  {
+    key: 'desktopProfiles',
+    summary: 'Fixed-profile facade consumed by trusted package-management plugins.',
+    description: 'Fixed-profile facade consumed by trusted package-management plugins.',
+    methods: [
+      {
+        signature: 'list(): readonly DesktopCurrentProfile[]',
+        description: 'List profiles exposed to the package manager.',
+        parameters: [],
+        returns: 'The single Desktop-owned profile available in this generation.',
+      },
+      {
+        signature: 'select(name: string): Promise<void>',
+        description: 'Accept the active profile name and reject every profile switch attempt.',
+        parameters: [{ name: 'name', description: 'Requested Harness profile name.' }],
+        returns: 'A settled promise when the requested name is already active.',
       },
     ],
   },
@@ -1231,6 +1291,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'missherBrain',
+    summary: 'Coordinates bounded local-knowledge providers and exposes pathless status.',
+    description: 'Coordinates bounded local-knowledge providers and exposes pathless status.',
+    methods: [
+      {
+        signature: 'register(provider: BrainProvider): () => void',
+        description: 'Register one factual-memory or procedural-learning provider.',
+        parameters: [{ name: 'provider', description: 'Provider whose prepared contributions enter shared arbitration.' }],
+        returns: 'Disposer for this exact registration.',
+      },
+      {
+        signature: 'listProviders(): readonly BrainProvider[]',
+        description: 'Snapshot the providers currently participating in recall.',
+        parameters: [],
+        returns: 'Providers in deterministic registration order.',
+      },
+      {
+        signature: '@Remote(\'snapshot\') async snapshot(): Promise<BrainHubSnapshot>',
+        description: 'Read only pathless facts; provider failures become unavailable rows.',
+        parameters: [],
+        returns: 'Current provider availability and fixed arbitration limits.',
+      },
+    ],
+  },
+  {
     key: 'permissionPresets',
     summary: 'Owns the deployment\'s permission presets and their write path.',
     description: 'Owns the deployment\'s permission presets and their write path. Requires a confining `ctx.shell` executor and `ctx.approval`; unmatched knob values are reported as CUSTOM_PRESET, not an error.',
@@ -1365,6 +1450,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the Session identity and resolved preset when configured.',
       },
       {
+        signature: '@Remote(\'delete\') delete(request: SessionDeleteRequest): Promise<SessionDeleteValue>',
+        description: 'Permanently delete one archived ordinary Session.',
+        parameters: [{ name: 'request', description: 'archived Session identity.' }],
+        returns: 'confirmation after durable deletion and accounting cleanup.',
+      },
+      {
         signature: '@Remote(\'selectModel\') selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue>',
         description: 'Select one Session-local model after explicitly resuming the Session.',
         parameters: [{ name: 'request', description: 'Session identity and requested model selection.' }],
@@ -1495,6 +1586,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>',
         description: 'Durably persist a batch of events. Honors the append-only and contiguous- seq contracts: the first event\'s `seq` MUST equal the stored next-seq (after `load` has durably closed any interrupted turn). Rejects non-JSON- serializable `event.data` with an error naming the offending event type. A seeded session\'s first materializing batch must reach its complete inherited prefix.',
         parameters: [{ name: 'id', description: 'the session the batch belongs to.' }, { name: 'events', description: 'the contiguous batch to persist, in seq order.' }],
+      },
+      {
+        signature: 'delete(_id: SessionId): Promise<boolean>',
+        description: 'Permanently remove one persisted session. Implementations serialize this operation with every read/write for the same id and reject while a live Session is attached. Shared attachments and project files are outside the session-persistence ownership boundary and are never removed.',
+        parameters: [{ name: '_id', description: 'persisted session identity to remove (unused by the default: deletion unsupported).' }],
+        returns: '`true` when durable session state existed, `false` when absent.',
       },
       {
         signature: 'async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation>',
@@ -2017,6 +2114,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'agentPreset', description: 'preset id resolved against Host-owned roots.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
         returns: 'an opened confirmation or the resolved directory for text display.',
         throws: ['RemoteError when the preset is missing, read-only, invalid, or cannot be opened.'],
+      },
+      {
+        signature: '@Remote async personalizationRead(): Promise<PersonalizationDocumentView>',
+        description: 'Read the Desktop-owned personalization block from the canonical global AGENTS.md without creating or following a caller-selected path.',
+        parameters: [],
+        returns: 'the bounded editable block and its optimistic revision.',
+        throws: ['RemoteError when the fixed document cannot be inspected safely.'],
+      },
+      {
+        signature: '@Remote async personalizationWrite(input: PersonalizationDocumentWrite): Promise<PersonalizationDocumentView>',
+        description: 'Revision-check and atomically replace only the Desktop-owned personalization block in the canonical global AGENTS.md.',
+        parameters: [{ name: 'input', description: 'bounded instructions, style, and revision returned by the last read.' }],
+        returns: 'the authoritative document view after the write.',
+        throws: ['RemoteError when validation, ownership, revision, or storage rejects the write.'],
       },
     ],
   },
@@ -2647,6 +2758,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'usageInsights',
+    summary: 'Remote-only service exposing an immutable bounded usage snapshot.',
+    description: 'Remote-only service exposing an immutable bounded usage snapshot.',
+    methods: [
+      {
+        signature: '@Remote(\'snapshot\') snapshot(): Promise<UsageInsightsSnapshot>',
+        description: 'Read one current all-history snapshot, sharing concurrent refresh work.',
+        parameters: [],
+        returns: 'The locally derived usage snapshot after any required cache refresh.',
+      },
+    ],
+  },
+  {
     key: 'userQuestions',
     summary: '`ctx.userQuestions`: validation plus the scoped answerer waterfall.',
     description: '`ctx.userQuestions`: validation plus the scoped answerer waterfall.',
@@ -2715,6 +2839,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     summary: 'The browser HTTP carrier service.',
     description: 'The browser HTTP carrier service. Activation listens immediately. Route registration order does not affect requests because configured named routes must be distinct, and the fallback handler answers anything not yet claimed during startup with 404 until its owner registers. A listen failure rejects initialization, and the boot process reports the failed fiber.',
     methods: [
+      {
+        signature: 'generationValue<T>(key: string, initialize: () => T): T',
+        description: 'Memoize one value for this WebServer service generation and no longer.',
+        parameters: [{ name: 'key', description: 'service-generation-local identity for the shared value.' }, { name: 'initialize', description: 'initializer invoked only when the key is absent.' }],
+        returns: 'the existing or newly initialized generation value.',
+      },
       {
         signature: 'register(route: WebRoute): () => void',
         description: 'Register a named route. Duplicate (kind, path) throws — route patterns are a composition-level contract, so a collision is a misconfiguration.',
@@ -2814,6 +2944,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the complete resulting archive set.',
       },
       {
+        signature: '@Remote(\'restoreSession\') restoreSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>',
+        description: 'Restore one archived Session to Workspace grouping surfaces.',
+        parameters: [{ name: 'request', description: 'Session identity to restore.' }],
+        returns: 'the complete resulting archive set.',
+      },
+      {
         signature: '@Remote({ mode: \'stream\' }) follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame>',
         description: 'Stream a complete Workspace baseline followed by ordered increments.',
         parameters: [{ name: 'signal', description: 'generation cancellation.' }],
@@ -2861,6 +2997,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Archive one session durably. The session must exist (live or in session persistence); its workspace accounting — or lack of one — is irrelevant. An already archived id resolves without writing.',
         parameters: [{ name: 'sessionId', description: 'The session to archive.' }],
         returns: 'resolution after durability.',
+      },
+      {
+        signature: 'restoreSession(sessionId: SessionId): Promise<void>',
+        description: 'Restore one archived session to normal grouping surfaces. The workspace accounting slot was retained by archiveSession, so removing the archive marker also restores the session\'s former group and order. Unknown and already-restored ids are idempotent no-ops.',
+        parameters: [{ name: 'sessionId', description: 'The archived session to restore.' }],
+        returns: 'resolution after durability, when a write was needed.',
+      },
+      {
+        signature: 'purgeSession(sessionId: SessionId): Promise<void>',
+        description: 'Remove a deleted session from every workspace account and from the archive set. This method never deletes the session log itself; callers invoke it only after the persistence owner confirms durable deletion. Repeats are safe and perform no writes once every reference is gone.',
+        parameters: [{ name: 'sessionId', description: 'The durably deleted session id.' }],
+        returns: 'resolution after all workspace-domain writes settle.',
       },
       {
         signature: 'async resolveByPath(path: string): Promise<Workspace | undefined>',
@@ -3611,6 +3759,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BorrowedSessionSource = Disposable & ({\n    readonly source: \'prepared\';\n    readonly inspection: SessionInspection;\n    readonly revision: SessionPersistenceRevision;\n    readonly preparedSession: Session;\n} | {\n    readonly source: \'live\';\n    readonly inspection: SessionInspection;\n});',
   },
   {
+    name: 'BrainContribution',
+    declaration: 'export interface BrainContribution {\n    handle: string;\n    providerId: string;\n    kind: BrainContributionKind;\n    text: string;\n    reference: string;\n    recordedAt: string;\n    score: number;\n    pinned: boolean;\n}',
+  },
+  {
+    name: 'BrainContributionKind',
+    declaration: 'export type BrainContributionKind = \'reviewed-memory\' | \'memory-capsule\' | \'legacy-memory\' | \'learned-rule\';',
+  },
+  {
+    name: 'BrainHubSnapshot',
+    declaration: 'export interface BrainHubSnapshot {\n    generatedAt: number;\n    limits: {\n        maxItems: number;\n        maxBytes: number;\n        timeoutMs: number;\n    };\n    providers: BrainProviderSnapshot[];\n}',
+  },
+  {
+    name: 'BrainPrepareInput',
+    declaration: 'export interface BrainPrepareInput {\n    projectKey: string;\n    sessionId: string;\n    turn: number;\n    query: string;\n    signal: AbortSignal;\n}',
+  },
+  {
+    name: 'BrainProvider',
+    declaration: 'export interface BrainProvider {\n    readonly protocolVersion: 1;\n    readonly id: string;\n    readonly byteBudget: number;\n    prepare(input: BrainPrepareInput): Promise<PreparedBrainBatch>;\n    status(): Promise<BrainProviderStatus>;\n}',
+  },
+  {
+    name: 'BrainProviderSnapshot',
+    declaration: 'export interface BrainProviderSnapshot extends BrainProviderStatus {\n    id: string;\n    byteBudget: number;\n}',
+  },
+  {
+    name: 'BrainProviderStatus',
+    declaration: 'export interface BrainProviderStatus {\n    state: \'ready\' | \'disabled\' | \'unavailable\';\n    count: number;\n}',
+  },
+  {
     name: 'Branded',
     declaration: 'export type Branded<B extends string> = string & {\n    readonly [BRAND]: B;\n};',
   },
@@ -3720,7 +3896,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ContentBlockMap',
-    declaration: 'export interface ContentBlockMap {\n    \'text\': TextBlock;\n    \'reasoning\': ReasoningBlock;\n    \'image\': ImageBlock;\n    \'tool-call\': ToolCallBlock;\n    \'tool-result\': ToolResultBlock;\n}',
+    declaration: 'export interface ContentBlockMap {\n    \'text\': TextBlock;\n    \'reasoning\': ReasoningBlock;\n    \'image\': ImageBlock;\n    \'document\': DocumentBlock;\n    \'tool-call\': ToolCallBlock;\n    \'tool-result\': ToolResultBlock;\n}',
   },
   {
     name: 'ContentBlockType',
@@ -3883,6 +4059,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type DeepSeekLlmApiJson = null | boolean | number | string | DeepSeekLlmApiJson[] | {\n    [key: string]: DeepSeekLlmApiJson;\n};',
   },
   {
+    name: 'DesktopCurrentProfile',
+    declaration: 'export interface DesktopCurrentProfile {\n    readonly name: string;\n    readonly dir: string;\n}',
+  },
+  {
+    name: 'DesktopPnpmHandle',
+    declaration: 'export interface DesktopPnpmHandle {\n    readonly stdout: Readable;\n    readonly stderr: Readable;\n    readonly done: Promise<SubprocessOutcome>;\n    cancel(): void;\n}',
+  },
+  {
     name: 'DiffCallView',
     declaration: 'export interface DiffCallView {\n    card: \'diff\';\n    title: string;\n    diffs: FileDiff[];\n    locations?: FileLocation[];\n}',
   },
@@ -3917,6 +4101,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DirectoryRegistrationHandle',
     declaration: 'export interface DirectoryRegistrationHandle {\n    (): void;\n    replace(entries: readonly LlmConfigurableProvider[]): void;\n}',
+  },
+  {
+    name: 'DocumentAttachmentLimits',
+    declaration: 'export interface DocumentAttachmentLimits {\n    maxDocumentBytes: number;\n    maxDocumentsPerMessage: number;\n    maxMessageDocumentBytes: number;\n    maxExtractedTextBytes: number;\n    maxMessageExtractedTextBytes: number;\n    maxDocumentNameBytes: number;\n    mediaTypes: readonly DocumentMediaType[];\n}',
+  },
+  {
+    name: 'DocumentAttachmentRef',
+    declaration: 'export interface DocumentAttachmentRef {\n    attachmentId: AttachmentId;\n    extractedTextId: AttachmentId;\n    mediaType: DocumentMediaType;\n    name: string;\n    bytes: number;\n    extractedBytes: number;\n    truncated: boolean;\n}',
+  },
+  {
+    name: 'DocumentBlock',
+    declaration: 'export interface DocumentBlock {\n    type: \'document\';\n    attachment: DocumentAttachmentRef;\n}',
+  },
+  {
+    name: 'DocumentMediaType',
+    declaration: 'export type DocumentMediaType = typeof DOCUMENT_MEDIA_TYPES[number];',
   },
   {
     name: 'Domain',
@@ -4288,7 +4488,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmDiscoveredModel',
-    declaration: 'export interface LlmDiscoveredModel {\n    id: string;\n    name?: string;\n    contextWindow?: number;\n    maxTokens?: number;\n}',
+    declaration: 'export interface LlmDiscoveredModel {\n    id: string;\n    name?: string;\n    contextWindow?: number;\n    maxTokens?: number;\n    inputModalities?: readonly ModelModality[];\n}',
   },
   {
     name: 'LlmFailure',
@@ -4333,6 +4533,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LlmRuntime',
     declaration: 'export class LlmRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    @Remote\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    @Remote\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    @Remote(\'discoverModels\')\n    async remoteDiscoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+  },
+  {
+    name: 'LogIntent',
+    declaration: 'export interface LogIntent {\n    ignorable?: true;\n}',
   },
   {
     name: 'LspHover',
@@ -4523,12 +4727,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
   {
+    name: 'PersonalizationDocumentView',
+    declaration: 'export interface PersonalizationDocumentView {\n    instructions: string;\n    style: PersonalizationStyle;\n    revision: string;\n    hasExternalContent: boolean;\n    writable: boolean;\n}',
+  },
+  {
+    name: 'PersonalizationDocumentWrite',
+    declaration: 'export interface PersonalizationDocumentWrite {\n    instructions: string;\n    style: PersonalizationStyle;\n    expectedRevision: string;\n}',
+  },
+  {
+    name: 'PersonalizationStyle',
+    declaration: 'export type PersonalizationStyle = \'default\' | \'concise\' | \'friendly\' | \'professional\';',
+  },
+  {
     name: 'PostToolDecision',
     declaration: 'export type PostToolDecision = {\n    kind: \'accept\';\n    content?: ContentBlock[];\n    value?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'accept\';\n    value: JsonValue;\n    content?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'block\';\n    feedback: ContentBlock[];\n    additionalContexts?: UserMessage[];\n};',
   },
   {
     name: 'PreparedAdapterCall',
     declaration: 'export interface PreparedAdapterCall {\n    readonly model: LlmResolvedModelInfo;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+  },
+  {
+    name: 'PreparedBrainBatch',
+    declaration: 'export interface PreparedBrainBatch {\n    readonly items: readonly BrainContribution[];\n    accept(handles: readonly string[]): Promise<void>;\n    cancel(): Promise<void>;\n}',
   },
   {
     name: 'PreparedDeepSeekLlmApiExtension',
@@ -4663,6 +4883,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RemoteEventHostInfo {\n    readonly home: string;\n}',
   },
   {
+    name: 'RendererContentBlock',
+    declaration: 'export type RendererContentBlock = RendererProjection<ContentBlock>;',
+  },
+  {
     name: 'ReplayEnvelope',
     declaration: 'export interface ReplayEnvelope {\n    response: unknown;\n    blocks?: readonly unknown[];\n}',
   },
@@ -4743,6 +4967,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SandboxPolicyRequest {\n    session?: Session;\n    mode?: SandboxMode;\n}',
   },
   {
+    name: 'SaveDocumentAttachment',
+    declaration: 'export interface SaveDocumentAttachment {\n    data: Uint8Array;\n    mediaType: DocumentMediaType;\n    name: string;\n}',
+  },
+  {
     name: 'SaveImageAttachment',
     declaration: 'export interface SaveImageAttachment {\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    name?: string;\n}',
   },
@@ -4796,7 +5024,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Session',
-    declaration: 'export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    readonly inheritedEventCount: SessionLogOffset;\n    get id(): SessionId;\n    readonly firstLiveSeq: SessionLogOffset;\n    static create(id: SessionId, seed?: readonly SessionEvent[], header?: SessionHeader, inheritedEventCount?: SessionLogOffset): Session;\n    static fromRestore(id: SessionId, seed: readonly SessionEvent[], header: SessionHeader, inheritedEventCount: SessionLogOffset): Session;\n    eventAt(seq: SessionSeq): SessionEvent | undefined;\n    snapshotEvents(fromSeq: SessionLogOffset = SessionLogOffset(0), toSeqExclusive: SessionLogOffset = this.seq): readonly SessionEvent[];\n    ownEvents(): readonly SessionEvent[];\n    isOwnSeq(seq: SessionSeq): boolean;\n    get seq(): SessionLogOffset;\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [\n        opts: SurfaceIntent\n    ] : [\n    ]): SessionEvent<T>;\n    requestHeader(): EpochHeader | undefined;\n    requestContext(): RequestContext | undefined;\n    deriveMessages(): Message[];\n    deriveEventMessage(event: SessionEvent): Message | null;\n}',
+    declaration: 'export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    readonly inheritedEventCount: SessionLogOffset;\n    get id(): SessionId;\n    readonly firstLiveSeq: SessionLogOffset;\n    static create(id: SessionId, seed?: readonly SessionEvent[], header?: SessionHeader, inheritedEventCount?: SessionLogOffset): Session;\n    static fromRestore(id: SessionId, seed: readonly SessionEvent[], header: SessionHeader, inheritedEventCount: SessionLogOffset): Session;\n    eventAt(seq: SessionSeq): SessionEvent | undefined;\n    snapshotEvents(fromSeq: SessionLogOffset = SessionLogOffset(0), toSeqExclusive: SessionLogOffset = this.seq): readonly SessionEvent[];\n    ownEvents(): readonly SessionEvent[];\n    isOwnSeq(seq: SessionSeq): boolean;\n    get seq(): SessionLogOffset;\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [\n        opts: SurfaceIntent\n    ] : [\n        opts?: import(\'./types.ts\').LogIntent\n    ]): SessionEvent<T>;\n    requestHeader(): EpochHeader | undefined;\n    requestContext(): RequestContext | undefined;\n    deriveMessages(): Message[];\n    deriveEventMessage(event: SessionEvent): Message | null;\n}',
   },
   {
     name: 'SessionAddress',
@@ -4841,6 +5069,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionCreateValue',
     declaration: 'export interface SessionCreateValue {\n    readonly sessionId: SessionId;\n    readonly agentPreset?: string;\n}',
+  },
+  {
+    name: 'SessionDeleteRequest',
+    declaration: 'export interface SessionDeleteRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'SessionDeleteValue',
+    declaration: 'export interface SessionDeleteValue {\n    readonly deleted: true;\n}',
   },
   {
     name: 'SessionEvent',
@@ -5060,7 +5296,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionQueuedItem',
-    declaration: 'export interface SessionQueuedItem {\n    readonly id: MessageId;\n    readonly placement: \'queued\' | \'steering\' | \'context\';\n    readonly rpcId?: SessionRequestId;\n    readonly message: {\n        readonly id: MessageId;\n        readonly content: readonly JsonValue[];\n    };\n}',
+    declaration: 'export interface SessionQueuedItem {\n    readonly id: MessageId;\n    readonly placement: \'queued\' | \'steering\' | \'context\';\n    readonly rpcId?: SessionRequestId;\n    readonly message: {\n        readonly id: MessageId;\n        readonly content: readonly RendererContentBlock[];\n    };\n}',
   },
   {
     name: 'SessionRawArtifact',
@@ -5415,6 +5651,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface StorageForms {\n}',
   },
   {
+    name: 'StoredDocumentAttachment',
+    declaration: 'export interface StoredDocumentAttachment {\n    ref: DocumentAttachmentRef;\n    data: Uint8Array;\n    text: string;\n}',
+  },
+  {
     name: 'StoredImageAttachment',
     declaration: 'export interface StoredImageAttachment {\n    ref: ImageAttachmentRef;\n    data: Uint8Array;\n}',
   },
@@ -5672,7 +5912,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TerminalSendRequest',
-    declaration: 'export interface TerminalSendRequest {\n    text: string;\n    submit: boolean;\n    signal?: AbortSignal;\n}',
+    declaration: 'export interface TerminalSendRequest {\n    text: string;\n    submit: boolean;\n    allowInferredIdle?: boolean;\n    signal?: AbortSignal;\n}',
   },
   {
     name: 'TerminalSendResult',
@@ -5949,6 +6189,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UpdateTeamTaskRequest',
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: string;\n}',
+  },
+  {
+    name: 'UsageActivityDay',
+    declaration: 'export interface UsageActivityDay extends UsageDay {\n    level: 0 | 1 | 2 | 3 | 4;\n}',
+  },
+  {
+    name: 'UsageDay',
+    declaration: 'export interface UsageDay {\n    date: string;\n    humanMessages: number;\n    tokens: number;\n    toolCalls: number;\n}',
+  },
+  {
+    name: 'UsageFeature',
+    declaration: 'export interface UsageFeature {\n    kind: UsageFeatureKind;\n    name: string;\n    count: number;\n}',
+  },
+  {
+    name: 'UsageFeatureKind',
+    declaration: 'export type UsageFeatureKind = \'skill\' | \'tool\';',
+  },
+  {
+    name: 'UsageInsightsSnapshot',
+    declaration: 'export interface UsageInsightsSnapshot {\n    generatedAt: number;\n    timeZone: string;\n    sessionCount: number;\n    omittedSessions: number;\n    incompleteUsageSamples: number;\n    summary: {\n        totalTokens: number | null;\n        peakDailyTokens: number | null;\n        longestSessionMs: number | null;\n        currentStreakDays: number;\n        longestStreakDays: number;\n    };\n    insights: {\n        cacheHitRate: number | null;\n        mostUsedModel: string | null;\n        mostUsedReasoningEffort: string | null;\n        uniqueSkills: number;\n        totalToolCalls: number;\n        chatDays: number;\n    };\n    activity: UsageActivityDay[];\n    features: UsageFeature[];\n}',
   },
   {
     name: 'UserMessage',

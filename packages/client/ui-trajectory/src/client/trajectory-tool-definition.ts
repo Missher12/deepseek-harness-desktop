@@ -3,8 +3,10 @@ import type {
   ConversationMatch, ConversationNodeContext, ConversationNodeDefinition, RunningToolCall,
   ToolCallBlock, ToolResultNode,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type {} from '@deepseek-ai/dsh-tools/types'
 import { trajectoryNode } from './trajectory-definition-common.ts'
+import { rendererContent } from './trajectory-event-projection.ts'
 
 /* jscpd:ignore-start -- Target-owned Definitions intentionally keep their event
  * state machines independent; see ../../../../../.agents/notes/implemented/
@@ -24,7 +26,7 @@ interface DispatchData {
   readonly name: string
   readonly arguments: unknown
   readonly isError?: boolean
-  readonly content?: ToolResultNode['content']
+  readonly content?: readonly ContentBlock[]
 }
 
 function rootCall(match: ConversationMatch): RunningToolCall {
@@ -55,7 +57,7 @@ function rootResult(
     callId: String(match.event.data.message.source.callId),
     call: previous === undefined ? null : { name: previous.name, argsRaw: previous.argsRaw },
     callTime: previous?.time ?? null,
-    content: result.content,
+    content: rendererContent(result.content),
     isError: result.isError === true,
     ...(match.event.data.error === undefined ? {} : { error: match.event.data.error }),
     meta: match.event.data.meta,
@@ -99,7 +101,7 @@ function childResult(
     parentCallId: data.parentCallId,
     call: { name: data.name, argsRaw: JSON.stringify(data.arguments) },
     callTime: previous === undefined || 'kind' in previous ? null : previous.time,
-    content: data.content ?? [],
+    content: rendererContent(data.content ?? []),
     isError: data.isError === true,
     subCalls: [],
   }

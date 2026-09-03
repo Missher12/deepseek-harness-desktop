@@ -327,10 +327,7 @@ export function readClientBuildRecord(
 
 /** Return the deterministic digest of every artifact affected by the public client environment. */
 function clientArtifactDigest(root: string): ClientArtifactDigest {
-  const paths = globSync([...CLIENT_ARTIFACT_PATTERNS], { cwd: root })
-    .map(path => path.replaceAll('\\', '/'))
-    .filter(path => statSync(resolve(root, path)).isFile())
-    .sort()
+  const paths = clientArtifactPaths(root)
   if (paths.length === 0) throw new Error('complete client build produced no Vite or dynamic client artifacts')
 
   const digest = createHash('sha256')
@@ -342,6 +339,24 @@ function clientArtifactDigest(root: string): ClientArtifactDigest {
     digest.update(content)
   }
   return { fileCount: paths.length, sha256: digest.digest('hex') }
+}
+
+/**
+ * List every artifact bound by the complete client-build record.
+ *
+ * Tests that temporarily run the watch build use this same authority to save
+ * and restore the full artifact set. Keeping the list shared prevents a watch
+ * build from restoring plugin bundles while accidentally leaving a rewritten
+ * Vite dist tree behind.
+ *
+ * @param root - repository root containing generated client artifacts.
+ * @returns sorted repository-relative POSIX paths for regular artifact files.
+ */
+export function clientArtifactPaths(root: string): string[] {
+  return globSync([...CLIENT_ARTIFACT_PATTERNS], { cwd: root })
+    .map(path => path.replaceAll('\\', '/'))
+    .filter(path => statSync(resolve(root, path)).isFile())
+    .sort()
 }
 
 /** Parse and validate the persisted record before any consumer trusts it. */

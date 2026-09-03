@@ -12,6 +12,7 @@ import type {
   SubagentCatalog, SubagentInterruptReceipt, SubagentPromptReceipt, SubagentPromptRequest,
 } from '@deepseek-ai/dsh-subagent/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { SessionDeleteRequest, SessionDeleteValue } from '../../types.ts'
 import type { SessionRemote } from '../transport.ts'
 
 /** Narrow Commands namespace consumed by a Client Session. */
@@ -38,10 +39,15 @@ export interface SessionSubagentsRemote {
   ): Promise<RemoteResult<SubagentInterruptReceipt>>
 }
 
+/** Alpha.5 Session Remote plus the Desktop archived-session deletion extension. */
+export type DesktopSessionRemote = SessionRemote & {
+  delete(request: SessionDeleteRequest, signal?: AbortSignal): Promise<RemoteResult<SessionDeleteValue>>
+}
+
 /** Generated Remote namespaces consumed by the Client Session object layer. */
 export interface SessionRemotes {
   readonly $stream: ClientRemote['$stream']
   readonly commands: SessionCommandsRemote
-  readonly session: SessionRemote
+  readonly session: DesktopSessionRemote
   readonly subagents: SessionSubagentsRemote
 }

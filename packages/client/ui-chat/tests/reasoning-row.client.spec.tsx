@@ -1,13 +1,42 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { zh } from '../src/client/locale.ts'
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
 
+let nextAnimationFrameId = 1
+let animationFrames = new Map<number, FrameRequestCallback>()
+
+function flushAnimationFrames(count: number): void {
+  act(() => {
+    for (let index = 0; index < count; index += 1) {
+      const callbacks = [...animationFrames.values()]
+      animationFrames.clear()
+      for (const callback of callbacks) callback(index)
+    }
+  })
+}
+
+beforeEach(() => {
+  nextAnimationFrameId = 1
+  animationFrames = new Map()
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    const id = nextAnimationFrameId
+    nextAnimationFrameId += 1
+    animationFrames.set(id, callback)
+    return id
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+    animationFrames.delete(id)
+  })
+})
+
 afterEach(() => {
   cleanup()
+  animationFrames.clear()
+  vi.unstubAllGlobals()
 })
 
 const t = makeTranslate(zh, commonZh)
@@ -24,6 +53,14 @@ describe('ReasoningRow', () => {
       />,
     )
     expect(view.getByText('运行中')).toBeTruthy()
+    const summary = view.container.querySelector('[class*="summary"]') as HTMLSpanElement
+    expect(summary.textContent).not.toBe('Newest reasoning tokens')
+    flushAnimationFrames(16)
+    expect(summary.textContent).toBe('Newest reasoning tokens')
+    Object.defineProperties(summary, {
+      scrollWidth: { configurable: true, value: 300 },
+      clientWidth: { configurable: true, value: 100 },
+    })
     expect(view.getByText('Newest reasoning tokens').parentElement?.getAttribute('data-follow-end'))
       .toBe('true')
 
@@ -35,6 +72,7 @@ describe('ReasoningRow', () => {
         renderMessageImages={renderMessageImages}
       />,
     )
+    flushAnimationFrames(16)
     expect(view.getByText('Newest reasoning tokens keep arriving').parentElement
       ?.getAttribute('data-follow-end')).toBe('true')
 
@@ -48,7 +86,22 @@ describe('ReasoningRow', () => {
     )
     const settledSummary = view.getByText('Inspect the session')
     expect(view.queryByText('运行中')).toBeNull()
+    expect(summary.scrollLeft).toBe(0)
+    expect(summary.hasAttribute('data-follow-end')).toBe(false)
+    expect(animationFrames.size).toBe(0)
     expect(settledSummary.parentElement?.hasAttribute('data-follow-end')).toBe(false)
+  })
+
+  it('flushes immediately for reduced motion and cancels work on unmount', () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })))
+    const view = render(
+      <AssistantMarkdown t={t} blocks={[{ kind: 'reasoning', text: 'Quiet reasoning' }]} streaming renderMessageImages={renderMessageImages} />,
+    )
+    expect(view.getByText('Quiet reasoning')).toBeTruthy()
+    view.unmount()
+    expect(animationFrames.size).toBe(0)
   })
 
   it('expands from either Think or the reasoning summary', () => {

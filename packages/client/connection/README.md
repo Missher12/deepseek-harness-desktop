@@ -58,7 +58,7 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **The `/api` bridge buffers each request body in memory** — `maxRequestBodyBytes` (default 300 MiB, sized for the default 200 MiB aggregate image limit after base64 expansion plus envelope headroom) is therefore also the per-request resident bound; a streaming body path would be needed to lower it without shrinking the image limits.
+- **The `/api` bridge buffers each request body in memory** — `maxRequestBodyBytes` is 300 MiB. Prompt admission reserves at most 296 MiB of canonical base64 code units across images and documents, leaving 4 MiB for the closed JSON envelope. The renderer checks that combined limit before reading file bytes and serializes reads, while the Host independently repeats the exact check before decoding. A streaming body path would be needed to lower this resident bound without shrinking attachment limits.
 - **The browser cookie is not marked `Secure`** — loopback HTTP is the shipped transport, so exposing the same authority over plaintext networking can expose the bearer cookie in transit.
 - **There is no logout operation** — clearing the browser cookie ends one browser session; deleting the owner credential record and restarting `dsh` revokes every session.
 

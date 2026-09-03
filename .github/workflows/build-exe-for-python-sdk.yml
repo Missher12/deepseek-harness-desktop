@@ -169,12 +169,15 @@ jobs:
           reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
           /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
 
-      # setup-node's built-in pnpm store cache keys on platform AND arch, so
-      # the Linux architectures sharing runner.os stay on separate caches.
+      # Do not restore pnpm's side-effects cache in this native wheel builder.
+      # A cached node-pty Makefile embeds a relative path to node-addon-api in
+      # the virtual store; restoring only the cached side effect can omit that
+      # sibling and makes the later manylinux rebuild non-reproducible. The
+      # hosted build runner is clean, and its uncached immutable install keeps
+      # the Makefile and dependency tree from the same installation.
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: pnpm
 
       - uses: actions/setup-python@v6.3.0
         with:

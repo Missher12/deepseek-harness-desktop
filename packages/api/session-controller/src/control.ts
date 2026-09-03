@@ -16,6 +16,7 @@ import type {
   SessionProjectionValues,
   SessionQueuedItem,
 } from './types.ts'
+import { rendererValue } from './renderer-projection.ts'
 
 /** Owns the Host-wide Session control stream. */
 export class SessionControlController {
@@ -186,13 +187,29 @@ function queueItems(
       id: message.id,
       placement: 'queued' as const,
       ...promptRpcId(message),
-      message: { id: message.id, content: message.content as unknown as JsonValue[] },
+      message: {
+        id: message.id,
+        content: rendererValue(
+          message.content,
+          agent.id,
+          `message:${String(message.id)}`,
+          ['content'],
+        ) as unknown as SessionQueuedItem['message']['content'],
+      },
     })),
     ...project('next-step').map(message => ({
       id: message.id,
       placement: message.source.kind === 'user' ? 'steering' as const : 'context' as const,
       ...promptRpcId(message),
-      message: { id: message.id, content: message.content as unknown as JsonValue[] },
+      message: {
+        id: message.id,
+        content: rendererValue(
+          message.content,
+          agent.id,
+          `message:${String(message.id)}`,
+          ['content'],
+        ) as unknown as SessionQueuedItem['message']['content'],
+      },
     })),
   ]
 }

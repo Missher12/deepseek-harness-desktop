@@ -146,6 +146,13 @@ class FakeWorkspaces implements IWorkspaces {
     this.archiveCalls.push(sessionId)
     return this.onArchive(sessionId)
   }
+
+  async restoreSession(sessionId: SessionId): Promise<void> {
+    this.list.update(state => ({
+      ...state,
+      archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+    }))
+  }
 }
 
 const listing: DirectoryListing = {
@@ -246,6 +253,37 @@ describe('UiWorkspaceService', () => {
     expect(b.sessions.create).toHaveBeenLastCalledWith({ workspaceId: wid('gamma') })
     await expect(b.uiWorkspace.connectWorkspace(wid('ghost')))
       .rejects.toThrow('uiWorkspace.connectWorkspace: unknown workspace ghost')
+  })
+
+  it('reuses one unaccounted ordinary blank for no-project and coalesces a fresh create', async () => {
+    const loose = summary('loose', { blank: true, cwd: '/safe/default' })
+    const accounted = summary('accounted', { blank: true, cwd: '/w/alpha' })
+    const subagent = summary('subagent', {
+      blank: true,
+      cwd: '/safe/default',
+      parentId: accounted.id,
+      origin: 'subagent',
+    })
+    const b = bench({
+      workspaces: workspaceState([workspace('alpha', [accounted.id])]),
+      sessions: sessionState([accounted, subagent, loose]),
+    })
+
+    await expect(b.uiWorkspace.connectNoProject()).resolves.toBe(loose.id)
+    expect(b.sessions.create).not.toHaveBeenCalled()
+
+    b.workspaces.list.set(workspaceState([workspace('alpha', [accounted.id])], [loose.id]))
+    const creation = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockImplementation(() => creation.promise)
+    const first = b.uiWorkspace.connectNoProject()
+    const second = b.uiWorkspace.connectNoProject()
+    expect(b.sessions.create).toHaveBeenCalledOnce()
+    expect(b.sessions.create).toHaveBeenCalledWith({})
+    creation.resolve(sid('fresh-loose'))
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      sid('fresh-loose'),
+      sid('fresh-loose'),
+    ])
   })
 
   it('targets an explicit, current-session, then recent Workspace and reports failed starts', async () => {

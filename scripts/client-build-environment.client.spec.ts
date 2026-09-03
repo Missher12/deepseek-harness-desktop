@@ -6,6 +6,7 @@ import yaml from 'js-yaml'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   assertClientBuildEnvironment,
+  clientArtifactPaths,
   clientBuildEnvironmentDefines,
   clientBuildProcessEnvironment,
   officialClientBuildEnvironment,
@@ -270,6 +271,10 @@ describe('client build environment', () => {
     const defaultBuild = buildFixture({})
 
     expect(readClientBuildRecord(official, officialEnvironment).environment).toEqual(officialEnvironment)
+    expect(clientArtifactPaths(official)).toEqual([
+      'apps/web/dist/index.html',
+      'packages/client/example/lib/client.js',
+    ])
     expect(() => { readClientBuildRecord(defaultBuild, officialEnvironment) }).toThrow(/DSH_CLIENT_/)
     expect(() => { readClientBuildRecord(join(defaultBuild, 'missing')) }).toThrow(/record.*missing/)
 

@@ -17,12 +17,15 @@ import type {
 } from './contract/slots.ts'
 import type { InputNotice } from './contract/input.ts'
 import { createConversationStore, readConversationViewPreference } from './stores.ts'
-import { ConversationController, UnsupportedImageMediaTypeError } from './service.ts'
+import { UnsupportedDocumentMediaTypeError, UnsupportedImageMediaTypeError } from './attachment-files.ts'
+import { ConversationController } from './service.ts'
 import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
 import type { ComposerBlock } from './contract/composer-blocks.ts'
 import { InputHub } from './input/hub.ts'
 import { ComposerSubmissionPolicy } from './input/submission-policy.ts'
+import { composerAddLauncherSources, createComposerAddSource } from './input/composer-add-source.ts'
+import { DesktopPreferencesRow, desktopPreferencesBridge } from './settings/DesktopPreferencesRow.tsx'
 import { queueDockEntry } from './queue/QueueDock.tsx'
 import { EnterBehaviorRow } from './settings/EnterBehaviorRow.tsx'
 import type { EnterBehaviorRowInjected } from './settings/EnterBehaviorRow.tsx'
@@ -70,6 +73,7 @@ interface WorkspaceNavigation {
   connectWorkspace(
     workspaceId: Parameters<ConversationInjected['selectWorkspace']>[0],
   ): Promise<SessionId>
+  connectNoProject(): Promise<SessionId>
 }
 
 /** Resolve the session-scoped Conversation action face, failing loud. */
@@ -90,6 +94,14 @@ function concreteConversation(ctx: Context): ConversationController {
   return conversation
 }
 
+/** Execute one command against one exact current Session without exposing its object to UI entries. */
+async function runSessionCommand(sessions: ISessions, sessionId: SessionId, line: string): Promise<boolean> {
+  const session = sessions.binding(sessionId)?.session
+  if (session === undefined) return false
+  const result = await session.command(line)
+  return result.ok && result.value.matched
+}
+
 /**
  * Mount the Conversation core and target-neutral presentation.
  * @param ctx - Client root context.
@@ -102,6 +114,19 @@ export function apply(ctx: Context): void {
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-conversation: dictionaries')
   const t = ctx.locale.bind(NS)
+
+  ctx.inject(['inputTriggers'], (scope: Context) => {
+    const inputTriggers = scope.get('inputTriggers')
+    if (inputTriggers === undefined) return
+    scope.effect(() => inputTriggers.registerSource(createComposerAddSource({
+      files: t('add.files'),
+      filesDescription: t('add.filesDescription'),
+      image: t('add.image'),
+      imageDescription: t('add.imageDescription'),
+      section: t('add.section'),
+    })), 'ui-conversation: composer Add source')
+  })
+
   const conversationStore = createConversationStore()
   const submissionPolicy = new ComposerSubmissionPolicy(
     ctx.settingsScope.bind<ConversationSettings>({ namespace: CONVERSATION_SETTINGS_NAMESPACE }),
@@ -118,6 +143,14 @@ export function apply(ctx: Context): void {
     }),
   }, EnterBehaviorRow))
 
+  if (desktopPreferencesBridge() !== undefined) {
+    ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+      name: 'settings.general.item',
+      id: 'desktop-preferences',
+      order: 24,
+      locale: NS,
+    }, DesktopPreferencesRow))
+  }
   const viewTabs = (): ViewTab[] => {
     const tabs: ViewTab[] = []
     for (const entry of slots.entries('conversation.view')) {
@@ -207,12 +240,8 @@ export function apply(ctx: Context): void {
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
     },
-    inject: (sessionId: SessionId | undefined): ConversationInjected => ({
-      hooks: {
-        composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId),
-      },
-      selectWorkspace: async (workspaceId) => {
-        const nextId = await workspaceNavigation.connectWorkspace(workspaceId)
+    inject: (sessionId: SessionId | undefined): ConversationInjected => {
+      const openTarget = (nextId: SessionId): void => {
         if (sessionId !== undefined && nextId !== sessionId) {
           const from = inputHub.shell(sessionId)
           const draft = from.snapshot.draft
@@ -229,8 +258,17 @@ export function apply(ctx: Context): void {
           }
         }
         sessions.open(nextId)
-      },
-    }),
+      }
+      return {
+        hooks: { composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId) },
+        selectWorkspace: async (workspaceId) => {
+          openTarget(await workspaceNavigation.connectWorkspace(workspaceId))
+        },
+        selectNoProject: async () => {
+          openTarget(await workspaceNavigation.connectNoProject())
+        },
+      }
+    },
   }, ConversationRoot)
 
   const registerConversationSession = () => slots.register({
@@ -289,6 +327,7 @@ export function apply(ctx: Context): void {
           draftImages: undefined,
           resolveSubmitMode: (running, gesture, steeringAvailable) =>
             submissionPolicy.resolve(running, gesture, steeringAvailable),
+          toggleAddMenu: undefined,
           toggleCommandMenu: undefined,
           stop: undefined,
           command: undefined,
@@ -312,7 +351,12 @@ export function apply(ctx: Context): void {
             }
             return null
           } catch (error: unknown) {
-            if (error instanceof UnsupportedImageMediaTypeError) return t('image.unsupportedType')
+            if (error instanceof UnsupportedImageMediaTypeError) {
+              // Positive copy: the supported list is fixed in imageMediaType,
+              // and naming it beats echoing the rejected MIME type back.
+              return t('image.unsupportedType')
+            }
+            if (error instanceof UnsupportedDocumentMediaTypeError) return t('document.unsupportedType')
             return error instanceof Error ? error.message : String(error)
           }
         },
@@ -323,6 +367,23 @@ export function apply(ctx: Context): void {
         draftImages: ids => conversation.draftImages(ids),
         resolveSubmitMode: (running, gesture, steeringAvailable) =>
           submissionPolicy.resolve(running, gesture, steeringAvailable),
+        toggleAddMenu: inputTriggers === undefined
+          ? undefined
+          : (selection) => {
+            shell.dismissPopup()
+            const snapshot = shell.snapshot
+            inputTriggers.toggleSources('composer-add', composerAddLauncherSources({
+              addSection: t('add.section'),
+              commandsSection: t('add.commandsSection'),
+              pluginsSection: t('add.pluginsSection'),
+            }), {
+              trigger: '/',
+              query: '',
+              quoted: false,
+              position: snapshot.draft.slice(0, selection.start).trim() === '' ? 'leading' : 'inline',
+              span: { ...selection, draftRev: snapshot.draftRev },
+            })
+          },
         toggleCommandMenu: inputTriggers === undefined
           ? undefined
           : (selection) => {
@@ -341,12 +402,7 @@ export function apply(ctx: Context): void {
             // Stop failure is published through Session promptError.
           })
         },
-        command: async (line) => {
-          const session = sessions.binding(sessionId)?.session
-          if (session === undefined) return false
-          const result = await session.command(line)
-          return result.ok && result.value.matched
-        },
+        command: line => runSessionCommand(sessions, sessionId, line),
         hooks: {
           notices: shell.notices,
           lexicon: shell.lexicon,
@@ -362,7 +418,6 @@ export function apply(ctx: Context): void {
     yield registerConversationHeader()
     yield registerComposerBar()
   })
-
   ctx.plugin(ConversationController, { input: inputHub, blocks: composerBlocks })
   ctx.plugin(todoDockEntry)
   ctx.plugin(queueDockEntry)

@@ -1,7 +1,4 @@
----
-description: "Web GUI 的 agent preset 表面：默认 preset 设置、新建会话 chip、会话标题标签与 preset 名单管理分区；供 agent 组装的用户与维护者阅读。"
-kind: "package-reference"
----
+--- description: "Web GUI 的 agent preset 表面：默认 preset 设置、新建会话 chip、会话标题标签与 preset 名单管理分区；供 agent 组装的用户与维护者阅读。" kind: "package-reference" ---
 
 # @deepseek-ai/dsh-client-ui-agent-preset
 
@@ -36,6 +33,10 @@ kind: "package-reference"
 名单携带自指的 `cordis` preset 时，一张虚线添加卡会暂存它并开启新会话——分区关闭设置面板，新建会话 chip 自己的应用器负责组装工作区流程产出的空白会话。
 
 -----
+
+preset 文件提供一套未国际化的 `name` 与 `description`，Web 将其用于所有 `user` 行和未知的 `system` 行。对于十二个随附 id（`standard`、`code`、`minimal`、`cordis`、`planner`、`frontend`、`backend`、`debugger`、`reviewer`、`qa`、`devops` 与 `research`），只有名单将该行标记为 `system` 时，Web 才会从当前 locale 解析这两个字段；同名的 `user` preset 仍使用其文件元数据。
+
+新增八个角色预设是在现有四个基础上扩展，而不是替换它们。它们覆盖方案规划、前端/UI、后端/API、故障排查、代码审查、测试/QA、DevOps/发布和文档/研究。选择继续由用户在新会话表层明确完成：没有需求分类器或自动路由，而且会话保持开始时的组装。角色指令塑造 Agent 行为，但不是权限边界；文件系统修改、Shell 执行、生产访问与审批仍由组装工具、沙箱策略、权限预设和用户授权控制。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现

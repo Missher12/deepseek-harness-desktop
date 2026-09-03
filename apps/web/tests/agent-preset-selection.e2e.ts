@@ -252,10 +252,17 @@ describe('web e2e: agent-preset selection', () => {
     const snapshot = await captureStableAria(page, '[role="menu"]', scaffold.workspaceCwd)
 
     await compareOrRefreshGolden(MENU_EXPECTED, snapshot, MODE)
-    // Every shipped preset, each with the sentence saying what it composes —
-    // the id alone never said what a preset does.
+    // Every shipped preset, plus the lane-owned refusing fixture, each with
+    // the sentence saying what it composes — the id alone never said what a
+    // preset does. The eight Desktop role presets now live in the package's
+    // alpha.5 shipped root rather than the retired CLI config directory.
+    expect(await menu.getByRole('menuitem').count()).toBe(13)
     expect(snapshot).toContain('Minimal mode')
     expect(snapshot).toContain('Creator mode')
+    expect(snapshot).toContain('Planning')
+    expect(snapshot).toContain('Frontend and UI')
+    expect(snapshot).toContain('Code review')
+    expect(snapshot).toContain('DevOps and release')
     await page.keyboard.press('Escape')
   })
 

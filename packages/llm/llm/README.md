@@ -1,7 +1,4 @@
----
-description: "The provider-neutral model-call service for users and maintainers streaming requests, registering provider adapters, or resolving model metadata."
-kind: "package-reference"
----
+--- description: "The provider-neutral model-call service for users and maintainers streaming requests, registering provider adapters, or resolving model metadata." kind: "package-reference" ---
 
 # @deepseek-ai/dsh-llm
 
@@ -69,6 +66,8 @@ After a successful mount, `ctx.llm.listProviders()` reports the registered route
 Every stream ends in exactly one terminal `finish` chunk: `{ kind: 'error', failure }` on failure, `{ kind: 'aborted', failure }` on cancellation. Failures carry stable codes such as `NO_ADAPTER`, `MISSING_CREDENTIAL`, `AUTH`, `RATE_LIMIT`, and `CONTEXT_WINDOW_EXCEEDED`; consumers route on the code, never on message text. A request naming an unregistered provider fails with `NO_ADAPTER`, and a malformed credential fails with `INVALID_CREDENTIAL` instead of surfacing as an opaque fetch error. This service never re-runs a request: retrying is the job of `dsh-llm-retry` at the agent's failed-step extension point.
 
 -----
+
+Every dispatch uses the exact model modalities captured with its adapter generation. An image-capable adapter projects durable image references into route-specific request versions. A text-only route instead receives deterministic attachment placeholders, including nested tool-result images, without changing append-only session history. `offloadRequestImagesWithPolicy()` provides deterministic oldest-first image removal with raw or base64 accounting and count or byte quanta; adapters supply the exact derived-version byte length. Durable documents are verified and expanded once through the shared request projection, prioritizing the newest messages while preserving attachment order inside each message. The final expansion uses the exact resolved route context and output reserve; documents that cannot fit become deterministic metadata-only placeholders before provider dispatch rather than overflowing the route.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

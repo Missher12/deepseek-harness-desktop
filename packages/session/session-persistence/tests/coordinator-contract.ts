@@ -248,6 +248,48 @@ export function runCoordinatorContract(name: string, makeFixture: () => Promise<
       }
     })
 
+    it('deletes a retired durable session idempotently and allows the id to be created again', async () => {
+      const fix = await makeFixture()
+      const { ctx, fiber } = await freshCtx(fix)
+      try {
+        let session!: Session
+        const sessionFiber = await ctx.plugin(Object.assign((inner: Context) => {
+          session = inner.sessions.create(SessionId('delete-retired'), { meta: { cwd: WORK } })
+        }, { inject: ['sessions'] }))
+        send(session, oneTurnLog())
+        await ctx.sessions.flush(session)
+        await sessionFiber.dispose()
+
+        expect(await ctx.sessionPersistence.delete(session.id)).toBe(true)
+        expect((await ctx.sessionPersistence.list()).map(item => item.id)).not.toContain(session.id)
+        await expect(ctx.sessionPersistence.load(session.id)).rejects.toThrow(/not found/)
+        expect(await ctx.sessionPersistence.delete(session.id)).toBe(false)
+
+        await ctx.sessionPersistence.create(meta(session.id, WORK))
+        await ctx.sessionPersistence.append(session.id, oneTurnLog())
+        expect((await ctx.sessionPersistence.load(session.id)).events).toHaveLength(oneTurnLog().length)
+      } finally {
+        await fiber.dispose()
+        await fix.cleanup()
+      }
+    })
+
+    it('refuses to delete a session while a live owner is attached', async () => {
+      const fix = await makeFixture()
+      const { ctx, fiber } = await freshCtx(fix)
+      try {
+        const session = ctx.sessions.create(SessionId('delete-live'), { meta: { cwd: WORK } })
+        send(session, oneTurnLog())
+        await ctx.sessions.flush(session)
+
+        await expect(ctx.sessionPersistence.delete(session.id)).rejects.toThrow(/attached/)
+        expect((await ctx.sessionPersistence.list()).map(item => item.id)).toContain(session.id)
+      } finally {
+        await fiber.dispose()
+        await fix.cleanup()
+      }
+    })
+
     it('rejects crash-repair load while a live session owns the persisted prefix', async () => {
       const fix = await makeFixture()
       const { ctx, fiber } = await freshCtx(fix)

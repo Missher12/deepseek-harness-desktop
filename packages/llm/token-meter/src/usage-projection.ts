@@ -8,7 +8,9 @@ import type {} from '@deepseek-ai/dsh-llm-retry/types'
 import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
-import type { ContextPressureProjection, TokenUsageProjection } from './projection.ts'
+import type {
+  ContextPressureProjection, LatestTurnBillingProjection, TokenBillingModelProjection, TokenUsageProjection,
+} from './projection.ts'
 import { foldSurfaceProjection } from './surface-projection.ts'
 
 const zeroBuckets = (): TokenUsageProjection => ({
@@ -89,6 +91,8 @@ const usageOf = (event: SessionEvent): TokenUsage | undefined =>
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
     tokenUsage: TokenUsageState
+    tokenBillingModel: BillingModelState
+    latestTurnBilling: LatestTurnBillingState
     contextPressure: ContextPressureState
   }
 }
@@ -156,6 +160,179 @@ export const tokenUsageProjectionDefinition = {
   },
   wire: { viewSchema: projectionSchema, view: state => state.totals },
 } satisfies ProjectionDefinition<'tokenUsage', TokenUsageState>
+
+const billingModelSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('none') }).strict(),
+  z.object({ kind: z.literal('single'), provider: z.string().min(1), model: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal('mixed') }).strict(),
+]) as z.ZodType<TokenBillingModelProjection>
+
+const billingRouteSchema = z.object({
+  provider: z.string().min(1),
+  model: z.string().min(1),
+}).strict()
+
+const billingModelStateSchema = z.object({
+  current: billingRouteSchema.optional(),
+  billing: billingModelSchema,
+  last: z.object({
+    turn: z.number().int().nonnegative(),
+    step: z.number().int().nonnegative(),
+    route: billingRouteSchema.optional(),
+    before: billingModelSchema,
+  }).strict().optional(),
+}).strict()
+
+type BillingRoute = z.infer<typeof billingRouteSchema>
+type BillingModelState = z.infer<typeof billingModelStateSchema>
+
+const sameBillingRoute = (left: BillingRoute | undefined, right: BillingRoute | undefined): boolean =>
+  left?.provider === right?.provider && left?.model === right?.model
+
+const mergeBillingRoute = (
+  state: TokenBillingModelProjection,
+  route: BillingRoute | undefined,
+): TokenBillingModelProjection => {
+  if (route === undefined || state.kind === 'mixed') return { kind: 'mixed' }
+  if (state.kind === 'none') return { kind: 'single', ...route }
+  return state.provider === route.provider && state.model === route.model
+    ? state
+    : { kind: 'mixed' }
+}
+
+const latestTurnViewSchema: z.ZodType<LatestTurnBillingProjection | null> = z.object({
+  turn: z.number().int().nonnegative(),
+  settledAt: z.number().int().nonnegative(),
+  billingModel: billingModelSchema,
+  ...projectionSchema.shape,
+}).strict().nullable()
+
+const latestTurnDraftSchema = z.object({
+  turn: z.number().int().nonnegative(),
+  totals: projectionSchema,
+  billing: billingModelSchema,
+  last: z.object({
+    step: z.number().int().nonnegative(),
+    buckets: projectionSchema,
+    route: billingRouteSchema.optional(),
+    beforeBilling: billingModelSchema,
+  }).optional(),
+}).strict()
+
+const latestTurnBillingStateSchema = z.object({
+  current: billingRouteSchema.optional(),
+  draft: latestTurnDraftSchema.optional(),
+  settled: latestTurnViewSchema,
+}).strict()
+
+type LatestTurnBillingState = z.infer<typeof latestTurnBillingStateSchema>
+
+/** Latest billed turn, deliberately hidden from the wire until `turn/end`. */
+export const latestTurnBillingProjectionDefinition = {
+  key: 'latestTurnBilling',
+  stateVersion: 1,
+  stateSchema: latestTurnBillingStateSchema,
+  init: () => ({ settled: null }),
+  apply: (state, event) => {
+    if (event.type === 'request/header') {
+      const route = event.data.header.config
+      const current = { provider: route.provider, model: route.model }
+      return sameBillingRoute(state.current, current) ? state : { ...state, current }
+    }
+    if (event.type === 'turn/end') {
+      if (state.draft?.turn !== event.data.turn) return state
+      return {
+        ...state,
+        settled: {
+          turn: state.draft.turn,
+          settledAt: event.time,
+          billingModel: state.draft.billing,
+          ...state.draft.totals,
+        },
+      }
+    }
+
+    let turn: number
+    let step: number
+    let usage: TokenUsage
+    let route: BillingRoute | undefined
+    if (event.type === 'assistant/chunk' && event.data.chunk.type === 'usage') {
+      ;({ turn, step } = event.data)
+      usage = event.data.chunk.usage
+      route = state.current
+    } else if (event.type === 'assistant/message' && event.data.usage !== undefined) {
+      ;({ turn, step, usage } = event.data)
+      const source = event.data.message.source
+      route = { provider: source.provider, model: source.model }
+    } else {
+      return state
+    }
+
+    const draft = state.draft?.turn === turn
+      ? state.draft
+      : { turn, totals: zeroBuckets(), billing: { kind: 'none' as const } }
+    const sameStep = draft.last?.step === step ? draft.last : undefined
+    const buckets = bucketsFrom(usage)
+    const beforeBilling = sameStep?.beforeBilling ?? draft.billing
+    return {
+      ...state,
+      draft: {
+        turn,
+        totals: addReplacing(draft.totals, sameStep?.buckets, buckets),
+        billing: mergeBillingRoute(beforeBilling, route),
+        last: { step, buckets, ...route === undefined ? {} : { route }, beforeBilling },
+      },
+    }
+  },
+  wire: { viewSchema: latestTurnViewSchema, view: state => state.settled },
+} satisfies ProjectionDefinition<'latestTurnBilling', LatestTurnBillingState>
+
+/**
+ * Durable billing-route projection. It waits for a finalized usage-bearing
+ * assistant message so the provider/model identity comes from the exact
+ * completed result rather than the currently visible or pending request.
+ */
+export const tokenBillingModelProjectionDefinition = {
+  key: 'tokenBillingModel',
+  stateVersion: 1,
+  stateSchema: billingModelStateSchema,
+  init: () => ({ billing: { kind: 'none' } }),
+  apply: (state, event) => {
+    if (event.type === 'request/header') {
+      const next = event.data.header.config
+      if (sameBillingRoute(state.current, next)) return state
+      return { ...state, current: { provider: next.provider, model: next.model } }
+    }
+
+    let turn: number
+    let step: number
+    let route: BillingRoute | undefined
+    if (event.type === 'assistant/chunk' && event.data.chunk.type === 'usage') {
+      ;({ turn, step } = event.data)
+      route = state.current
+    } else if (event.type === 'assistant/message' && event.data.usage !== undefined) {
+      ;({ turn, step } = event.data)
+      const source = event.data.message.source
+      route = { provider: source.provider, model: source.model }
+    } else {
+      return state
+    }
+
+    const sameStep = state.last !== undefined
+      && state.last.turn === turn
+      && state.last.step === step
+      ? state.last
+      : undefined
+    if (sameStep !== undefined && sameBillingRoute(sameStep.route, route)) return state
+    const before = sameStep?.before ?? state.billing
+    return {
+      ...state,
+      billing: mergeBillingRoute(before, route),
+      last: { turn, step, ...route === undefined ? {} : { route }, before },
+    }
+  },
+  wire: { viewSchema: billingModelSchema, view: state => state.billing },
+} satisfies ProjectionDefinition<'tokenBillingModel', BillingModelState>
 
 /**
  * Token-meter's context-occupancy projection unit.

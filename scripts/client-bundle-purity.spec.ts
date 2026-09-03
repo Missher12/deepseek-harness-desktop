@@ -94,6 +94,8 @@ describe('client bundle purity gate', () => {
   it('lets inline-safe libraries inline', () => {
     expect(resolveId('@deepseek-ai/dsh-session/surface')).toBeNull()
     expect(resolveId('@deepseek-ai/dsh-brand')).toBeNull()
+    expect(resolveId('@deepseek-ai/dsh-attachment/types')).toBeNull()
+    expect(() => resolveId('@deepseek-ai/dsh-attachment')).toThrow(/purity/)
     expect(resolveId('@deepseek-ai/dsh-deque')).toBeNull()
     expect(resolveId('@deepseek-ai/dsh-util-values')).toBeNull()
     expect(resolveId('@deepseek-ai/dsh-token-meter/client')).toBeNull()

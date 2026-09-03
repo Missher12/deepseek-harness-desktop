@@ -12,7 +12,11 @@
  */
 import { Fragment, useEffect, useRef, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
-import { IconChevronRightOutline14, ReferenceIcon, useAnchoredMaxHeight } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  IconChevronRightOutline14, IconCodeOutline16, IconGoalOutline16, IconImageOutline16,
+  IconPaperclipOutline16, IconSkillOutline16, IconThinkOutline16, ReferenceIcon,
+  useAnchoredMaxHeight,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './MenuView.module.css'
 import type { MenuViewInjected } from './slots.ts'
@@ -34,11 +38,16 @@ function optionId(source: string, index: number): string {
  * @param props - injected face (the menu store and the pick route); `t` rides the standard locale seat.
  * @returns the dropdown while open; null while closed.
  */
-export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t }: MenuViewProps) {
+export function MenuView({ menu, launcher, headers, onPick, onCrumb, onHover, onDismiss, t }: MenuViewProps) {
   const state = useSyncExternalStore(
     fn => menu.subscribe(fn),
     () => menu.getSnapshot(),
   )
+  const launcherName = useSyncExternalStore(
+    fn => launcher.subscribe(fn),
+    () => launcher.getSnapshot(),
+  )
+  const composerAdd = launcherName === 'composer-add'
   const crumbs = useSyncExternalStore(
     fn => headers.subscribe(fn),
     () => headers.getSnapshot(),
@@ -71,10 +80,16 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
     return () => { document.removeEventListener('pointerdown', onPointerDown, true) }
   }, [state.open, onDismiss])
   if (!state.open) return null
+
+  let previousSection: string | undefined
   return (
-    // The listbox role sits on the scrolling viewport, not this shell: a
-    // breadcrumb header is not an option, and a listbox may not carry one.
-    <div ref={listRef} className={css.menu} style={{ maxHeight }} data-trigger-menu="">
+    <div
+      ref={listRef}
+      className={clsx(css.menu, composerAdd && css.composerAdd)}
+      style={{ maxHeight }}
+      data-composer-add-menu={composerAdd || undefined}
+      data-trigger-menu=""
+    >
       {state.groups.map((group) => {
         const trail = crumbs.get(group.source)
         return trail === undefined ? null : (
@@ -101,7 +116,7 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
         )
       })}
       <div
-        className={css.viewport}
+        className={clsx(css.viewport, composerAdd && css.addViewport)}
         role="listbox"
         aria-label={t('suggestions.aria')}
         aria-activedescendant={highlight !== null ? optionId(highlight.source, highlight.index) : undefined}
@@ -113,7 +128,7 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
               {/* Source names key the dictionary open-endedly: the lookup chain
                   returns an unknown key verbatim, so an unregistered source
                   shows its raw name — hence the cast past the typed key union. */}
-              {group.showGroupTitle === false || group.items.some(item => item.section !== undefined)
+              {composerAdd || group.showGroupTitle === false || group.items.some(item => item.section !== undefined)
                 ? null
                 : <div className={css.groupTitle} role="presentation" data-source={group.source}>{t(group.source as MenuKey)}</div>}
               {group.status === 'pending' && group.items.length === 0
@@ -125,17 +140,32 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
                 )
                 : group.items.map((item, index) => {
                   const active = highlight !== null && highlight.source === group.source && highlight.index === index
+                  const showSection = item.section !== undefined && (composerAdd
+                    ? item.section !== previousSection
+                    : item.section !== group.items[index - 1]?.section)
+                  if (composerAdd && item.section !== undefined) previousSection = item.section
+                  const icon = composerAdd
+                    ? group.source === 'composer-add'
+                      ? item.value === 'image' ? <IconImageOutline16 /> : <IconPaperclipOutline16 />
+                      : group.source === 'skill'
+                        ? <IconSkillOutline16 />
+                        : item.name === 'goal'
+                          ? <IconGoalOutline16 />
+                          : item.name === 'plan'
+                            ? <IconThinkOutline16 />
+                            : <IconCodeOutline16 />
+                    : item.icon === undefined ? undefined : <ReferenceIcon kind={item.icon} size={16} />
                   return (
                     <Fragment key={optionId(group.source, index)}>
-                      {item.section !== undefined && item.section !== group.items[index - 1]?.section
-                        ? <div className={css.sectionTitle} role="presentation">{item.section}</div>
+                      {showSection
+                        ? <div className={css.sectionTitle} role="presentation" data-add-section={composerAdd || undefined}>{item.section}</div>
                         : null}
                       <button
                         id={optionId(group.source, index)}
                         type="button"
                         role="option"
                         aria-selected={active}
-                        className={clsx(css.item, active && css.active)}
+                        className={clsx(css.item, composerAdd && css.addItem, active && css.active)}
                         // mousedown, not click: the textarea keeps focus (combobox
                         // pattern) — preventing default stops the focus steal, and the
                         // pick runs before any blur-driven teardown.
@@ -148,11 +178,7 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
                         // pointer must not steal it back.
                         onMouseMove={active ? undefined : () => { onHover(group.source, index) }}
                       >
-                        {item.icon !== undefined && (
-                          <span className={css.itemIcon} aria-hidden>
-                            <ReferenceIcon kind={item.icon} size={16} />
-                          </span>
-                        )}
+                        {icon !== undefined && <span className={css.itemIcon} aria-hidden>{icon}</span>}
                         <span className={css.itemName}>{item.name}</span>
                         {item.description !== undefined && <span className={css.itemDescription}>{item.description}</span>}
                         {item.drill === true && (

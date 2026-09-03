@@ -1,6 +1,9 @@
 /** Target-neutral Conversation slot declarations and composed component props. */
 import type { ReactNode, RefObject } from 'react'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type {
+  DocumentAttachmentDisplayId, DocumentMediaType, ImageAttachmentRef, RendererDocumentAttachment,
+} from '@deepseek-ai/dsh-attachment'
+import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {
@@ -23,7 +26,7 @@ import type { ConversationSnapshot } from './snapshot.ts'
 import type { ViewTab } from './views.ts'
 
 /** Browser-owned image that has not crossed the durable Host boundary. */
-export interface ComposerAttachment {
+export interface ComposerImageAttachment {
   kind: 'image'
   id: DraftAttachmentId
   file: File
@@ -34,19 +37,52 @@ export interface ComposerAttachment {
   height?: number
 }
 
+/** Browser-owned document that has not crossed the durable Host boundary. */
+export interface ComposerDocumentAttachment {
+  kind: 'document'
+  id: DraftAttachmentId
+  file: File
+  mediaType: DocumentMediaType
+}
+
+/** Ordered browser-owned attachment draft. */
+export type ComposerAttachment = ComposerImageAttachment | ComposerDocumentAttachment
+
 /** Input state handed to the optional attachment presentation plugin. */
 export interface ComposerAttachmentsOwnerProps {
-  /** Browser-owned draft images in input order. */
+  /** Browser-owned draft attachments in input order. */
   attachments: readonly ComposerAttachment[]
-  /** Whether a document-level file drop may add images now. */
+  /** Whether a document-level file drop may add attachments now. */
   canAcceptDrop: boolean
   /** Add one dropped batch through the composer's validation path. */
   onAddImages: (files: readonly File[]) => void
-  /** Remove one draft image through the Conversation service. */
+  /** Remove one draft attachment through the conversation service. */
   onRemoveImage: (id: DraftAttachmentId) => void
   /** Display-ready limits for the drop invitation. */
-  dropLimits?: { readonly count: number; readonly size: string } | undefined
+  dropLimits?: {
+    readonly images?: { readonly count: number; readonly size: string }
+    readonly documents?: { readonly count: number; readonly size: string }
+  } | undefined
 }
+
+/** Ephemeral browser identity unrelated to attachment contents or durable storage. */
+export type MessageAttachmentDisplayId = Branded<'MessageAttachmentDisplayId'>
+
+/** Bounded document metadata safe for the historical attachment renderer. */
+export type MessageDocumentAttachment = Omit<RendererDocumentAttachment, 'displayId'>
+
+/** One ordered attachment rendered in message history. */
+export type MessageAttachment =
+  | {
+    readonly displayId: MessageAttachmentDisplayId
+    readonly kind: 'image'
+    readonly attachment: ImageAttachmentRef
+  }
+  | {
+    readonly displayId: DocumentAttachmentDisplayId
+    readonly kind: 'document'
+    readonly attachment: MessageDocumentAttachment
+  }
 
 /**
  * One image inside a message record: a durable admitted reference, or the
@@ -75,6 +111,8 @@ export type MessageImageLoader = ((attachment: ImageAttachmentRef) => Promise<st
 export interface MessageImagesOwnerProps {
   /** Durable references or submission-echo previews in source order. */
   images: readonly MessageImageSource[]
+  /** Ordered user attachments; absent for legacy and assistant image-only calls. */
+  attachments?: readonly MessageAttachment[] | undefined
   /** Session-authorized image URL loader for the durable arm. */
   loadImage: MessageImageLoader
   /** Horizontal placement inside the owning record. */
@@ -216,6 +254,8 @@ export type ConvViewProps = PropsRuntime<'conversation.view'>
 export interface ConversationInjected {
   /** Connect and open a blank Session in the selected Workspace. */
   selectWorkspace: (workspaceId: WorkspaceId) => Promise<void>
+  /** Connect and open an unaccounted blank session, carrying any draft. */
+  selectNoProject: () => Promise<void>
   /** Session-addressed composer block source, or the stable absent source. */
   hooks: { composerBlock: ObservableSnapshot<ComposerBlock | undefined> }
 }
@@ -268,7 +308,11 @@ export interface ComposerBarInjected {
     gesture: ComposerSubmitGesture,
     steeringAvailable: boolean,
   ) => InputSubmitMode
+  /** Toggle the shared composer Add launcher; absent without ui-input-trigger or a session. */
+  toggleAddMenu: ((selection: EditSelection) => void) | undefined
+  /** Toggle the slash-command launcher at the current selection. */
   toggleCommandMenu: ((selection: EditSelection) => void) | undefined
+  /** Cancel the in-flight turn; absent with the session. */
   stop: (() => void) | undefined
   command: ((line: string) => Promise<boolean>) | undefined
   hooks: {
@@ -349,7 +393,6 @@ export type ConversationSessionHeaderSlotProps =
   & PropsStore<ConversationStore>
   & InjectFace<ConversationSessionHeaderInjected>
   & PropsLocale<'conversation'>
-
 /** Full props of the draft-image attachment renderer. */
 export type ComposerAttachmentsProps =
   PropsRuntime<'conversation.input.attachments'> & PropsLocale<'conversation'>
@@ -360,6 +403,10 @@ export interface EmptyWorkspaceOwnerProps {
   anchorRef?: RefObject<HTMLElement>
   /** Currently selected Workspace, when available. */
   selectedId?: WorkspaceId | undefined
+  /** The current blank session is not accounted to any Workspace. */
+  noProjectSelected?: boolean | undefined
   onPick: (workspaceId: WorkspaceId) => void
+  /** Explicitly choose a session outside every Workspace. */
+  onPickNoProject: () => void
   onClose: () => void
 }

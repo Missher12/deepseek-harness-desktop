@@ -28,11 +28,17 @@ import type {} from '@deepseek-ai/dsh-goal/client'
 // wire types: apiproxy's sessions contract declares it, and client-runtime's
 // api-remotes import already places it in every client program.
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
+import {
+  MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS,
+  promptAttachmentBase64CodeUnits,
+} from '@deepseek-ai/dsh-attachment/types'
 import type { ComposerBarProps } from '../contract/slots.ts'
 import { ComposerContentEditable } from '../input/editor/ComposerContentEditable.tsx'
 import { DecoratorPortals } from '../input/editor/DecoratorPortals.tsx'
 import { registerComposerKeymap } from '../input/editor/keymap.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
+import { classifyComposerFile, COMPOSER_ATTACHMENT_ACCEPT } from '../attachment-files.ts'
+import { bindComposerImagePicker } from '../input/composer-add-source.ts'
 import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
 import css from './InputBar.module.css'
@@ -41,7 +47,7 @@ export type InputBarProps = ComposerBarProps
 
 export const InputBar = memo(function InputBar({
   useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages,
-  resolveSubmitMode, toggleCommandMenu, stop, command, t,
+  resolveSubmitMode, toggleAddMenu, stop, command, t,
   renderSlot, useNotices, useLexicon, useMenuLauncher,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
@@ -50,7 +56,7 @@ export const InputBar = memo(function InputBar({
   const input = useInput(s => s)
   const notice = useNotices(s => s)
   void useLexicon // hook seat stays bound by the inject compartment; text-ref decoration rides the shell's editor transforms
-  const commandMenuOpen = useMenuLauncher(source => source === 'command')
+  const addMenuOpen = useMenuLauncher(source => source === 'composer-add')
   const promptError = useSession(s => s.promptError) ?? null
   const running = useSession(s => s.running) ?? false
   const subagent = useSession(s => s.subagent) ?? null
@@ -83,6 +89,7 @@ export const InputBar = memo(function InputBar({
   // The deployment's image-intake limits (absent while no attachment service
   // is composed — the pre-check below then defers entirely to the host).
   const imageLimits = useProjection('imageLimits')
+  const documentLimits = useProjection('documentLimits')
   // Prompt failures are ordinary failures (no create/attach transaction exists
   // anymore): the toast announces promptError, the draft stays in the machine,
   // and the user resubmits. A remount over a session whose machine still holds
@@ -95,14 +102,18 @@ export const InputBar = memo(function InputBar({
     if (promptError === null) return
     const { error } = promptError
     showToast(error.code === 'session/attachment-invalid' || error.code === 'subagent/attachment-invalid'
-      ? attachmentErrorText(t, error.details.reason, imageLimits)
+      ? attachmentErrorText(t, error.details.reason, imageLimits, documentLimits)
       : `${error.message} (${error.code})`)
-  }, [promptError, showToast, t, imageLimits])
+  }, [promptError, showToast, t, imageLimits, documentLimits])
   useEffect(() => {
     if (notice?.level === 'error') showToast(notice.text)
   }, [notice, showToast])
+  const imagePickerRef = useRef<HTMLInputElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => addImages === undefined || sessionId === undefined
+    ? undefined
+    : bindComposerImagePicker(sessionId, () => { imagePickerRef.current?.click() }), [addImages, sessionId])
 
   // The Access seat's data: the host-computed permissions projection
   // (undefined = capability absent → the chip renders nothing).
@@ -131,7 +142,7 @@ export const InputBar = memo(function InputBar({
   const workspaceTrigger = inert && !removed && onRequestWorkspace !== undefined
   const editorDisabled = removed || (locked && !workspaceTrigger)
   const editable = live && !locked && !machineBusy
-  const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && subagent === null
+  const canSteerQueue = !locked && !machineBusy && !addMenuOpen && empty && running && subagent === null
     && input.queue.some(row => row.placement === 'queued')
 
   useEffect(() => {
@@ -217,41 +228,84 @@ export const InputBar = memo(function InputBar({
   // never enters the rail — no more submit-time failure rolling the rail
   // back. The host enforces the same limits at submit for callers that bypass
   // this composer.
-  const intakeImages = useCallback((files: readonly File[]): void => {
+  const intakeAttachments = useCallback((files: readonly File[]): void => {
     if (addImages === undefined || files.length === 0) return
     const rejected = ((): string | null => {
+      let classified: ReturnType<typeof classifyComposerFile>[]
+      try {
+        classified = files.map(classifyComposerFile)
+      } catch {
+        return addImages(files)
+      }
+      const newImages = files.filter((_file, index) => classified[index]?.kind === 'image')
+      const newDocuments = files.filter((_file, index) => classified[index]?.kind === 'document')
+      const heldImages = attachments.filter(attachment => attachment.kind === 'image')
+      const heldDocuments = attachments.filter(attachment => attachment.kind === 'document')
       if (imageLimits !== undefined) {
-        // Format precedes limits: a batch with
-        // a non-image must announce the format problem, not a count or size
-        // it could never pass anyway — addImages rejects it authoritatively.
-        if (files.some(file => !(imageLimits.mediaTypes as readonly string[]).includes(file.type))) {
+        if (classified.some(item => item.kind === 'image'
+          && !(imageLimits.mediaTypes as readonly string[]).includes(item.mediaType))) {
           return addImages(files)
         }
-        if (attachments.length + files.length > imageLimits.maxImagesPerMessage) {
+        if (heldImages.length + newImages.length > imageLimits.maxImagesPerMessage) {
           return t('image.tooMany', { count: imageLimits.maxImagesPerMessage })
         }
-        if (files.some(file => file.size > imageLimits.maxImageBytes)) {
+        if (newImages.some(file => file.size > imageLimits.maxImageBytes)) {
           return t('image.fileTooLarge', { size: imageSizeText(imageLimits.maxImageBytes) })
         }
-        const total = attachments.reduce((sum, attachment) => sum + attachment.file.size, 0)
-          + files.reduce((sum, file) => sum + file.size, 0)
+        const total = heldImages.reduce((sum, attachment) => sum + attachment.file.size, 0)
+          + newImages.reduce((sum, file) => sum + file.size, 0)
         if (total > imageLimits.maxMessageImageBytes) {
           return t('image.totalTooLarge', { size: imageSizeText(imageLimits.maxMessageImageBytes) })
         }
       }
+      if (documentLimits !== undefined) {
+        if (classified.some(item => item.kind === 'document'
+          && !(documentLimits.mediaTypes as readonly string[]).includes(item.mediaType))) {
+          return addImages(files)
+        }
+        if (heldDocuments.length + newDocuments.length > documentLimits.maxDocumentsPerMessage) {
+          return t('document.tooMany', { count: documentLimits.maxDocumentsPerMessage })
+        }
+        if (newDocuments.some(file => file.size > documentLimits.maxDocumentBytes)) {
+          return t('document.fileTooLarge', { size: imageSizeText(documentLimits.maxDocumentBytes) })
+        }
+        if (newDocuments.some(file => new TextEncoder().encode(file.name).byteLength > documentLimits.maxDocumentNameBytes)) {
+          return t('document.nameTooLong')
+        }
+        const total = heldDocuments.reduce((sum, attachment) => sum + attachment.file.size, 0)
+          + newDocuments.reduce((sum, file) => sum + file.size, 0)
+        if (total > documentLimits.maxMessageDocumentBytes) {
+          return t('document.totalTooLarge', { size: imageSizeText(documentLimits.maxMessageDocumentBytes) })
+        }
+      }
+      const combined = [
+        ...heldImages.map(attachment => attachment.file),
+        ...heldDocuments.map(attachment => attachment.file),
+        ...files,
+      ]
+      let remaining = MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS
+      for (const file of combined) {
+        const encodedLength = promptAttachmentBase64CodeUnits(file.size)
+        if (encodedLength > remaining) {
+          return t('attachment.totalTooLarge', {
+            size: imageSizeText(MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS),
+          })
+        }
+        remaining -= encodedLength
+      }
       return addImages(files)
     })()
     if (rejected !== null) showToast(rejected)
-  }, [addImages, attachments, imageLimits, showToast, t])
+  }, [addImages, attachments, documentLimits, imageLimits, showToast, t])
 
   const canAcceptDrop = !locked && !machineBusy && addImages !== undefined
 
   // The keymap handlers read live bar state through this ref so the editor
   // registration survives re-renders without re-arming per keystroke.
   const gate = useRef({
-    locked, machineBusy, canSteerQueue, running, subagent, resolveSubmitMode, intakeImages,
+    locked, machineBusy, canSteerQueue, running, subagent, resolveSubmitMode, intakeAttachments,
   })
-  gate.current = { locked, machineBusy, canSteerQueue, running, subagent, resolveSubmitMode, intakeImages }
+  gate.current = { locked, machineBusy, canSteerQueue, running, subagent, resolveSubmitMode, intakeAttachments }
 
   useEffect(() => {
     if (editor === null || keyboard === undefined) return
@@ -278,7 +332,7 @@ export const InputBar = memo(function InputBar({
           g.subagent === null,
         ))
       },
-      intakeFiles: (files) => { gate.current.intakeImages(files) },
+      intakeFiles: (files) => { gate.current.intakeAttachments(files) },
       pasteText: (text) => {
         if (gate.current.machineBusy || gate.current.locked) return
         keyboard.paste(text)
@@ -295,8 +349,8 @@ export const InputBar = memo(function InputBar({
     editor?.getRootElement()?.focus({ preventScroll: true })
   }
 
-  const onToggleCommandMenu = (): void => {
-    if (keyboard !== undefined) toggleCommandMenu?.(keyboard.caretSpan())
+  const onToggleAddMenu = (): void => {
+    if (keyboard !== undefined) toggleAddMenu?.(keyboard.caretSpan())
   }
 
   // The no-session Workspace trigger: the resident editable div acts as the
@@ -365,6 +419,19 @@ export const InputBar = memo(function InputBar({
 
   return (
     <div className={clsx(css.root, variant === 'hero' && css.hero)}>
+      <input
+        ref={imagePickerRef}
+        type="file"
+        accept={COMPOSER_ATTACHMENT_ACCEPT}
+        multiple
+        hidden
+        data-composer-image-picker
+        onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? [])
+          event.currentTarget.value = ''
+          if (files.length > 0) intakeAttachments(files)
+        }}
+      />
       {toast !== null && (
         <Toast
           key={toast.seq}
@@ -398,12 +465,24 @@ export const InputBar = memo(function InputBar({
         {renderSlot('conversation.input.attachments', {
           attachments,
           canAcceptDrop,
-          onAddImages: intakeImages,
+          onAddImages: intakeAttachments,
           onRemoveImage: (id) => { removeImage?.(id) },
-          dropLimits: imageLimits === undefined ? undefined : {
-            count: imageLimits.maxImagesPerMessage,
-            size: imageSizeText(imageLimits.maxImageBytes),
-          },
+          dropLimits: imageLimits === undefined && documentLimits === undefined
+            ? undefined
+            : {
+              ...(imageLimits === undefined
+                ? {}
+                : { images: {
+                  count: imageLimits.maxImagesPerMessage,
+                  size: imageSizeText(imageLimits.maxImageBytes),
+                } }),
+              ...(documentLimits === undefined
+                ? {}
+                : { documents: {
+                  count: documentLimits.maxDocumentsPerMessage,
+                  size: imageSizeText(documentLimits.maxDocumentBytes),
+                } }),
+            },
         })}
         {/* One scrollport, one text surface: the contenteditable grows with
             its content and .scroll — capped at 14 lines in CSS — is the only
@@ -438,16 +517,17 @@ export const InputBar = memo(function InputBar({
         </div>
         <div className={css.row}>
           <div className={css.tools}>
-            <Tooltip label={t('input.commands')} side="top" delayMs={500}>
+            <Tooltip label={t('input.add')} side="top" delayMs={500}>
               <button
                 type="button"
                 className={css.add}
-                aria-label={t('input.commands')}
+                data-dsh-desktop-command="open-add-menu"
+                aria-label={t('input.add')}
                 aria-haspopup="listbox"
-                aria-expanded={commandMenuOpen}
-                disabled={locked || toggleCommandMenu === undefined}
+                aria-expanded={addMenuOpen}
+                disabled={locked || toggleAddMenu === undefined}
                 onMouseDown={keepFocus}
-                onClick={onToggleCommandMenu}
+                onClick={onToggleAddMenu}
               >
                 <IconPlusOutline16 size={14} />
               </button>

@@ -131,7 +131,7 @@ function WidthHandle(props: {
 export function ConversationRoot({
   sessionId, useSession, useSessions, useSessionPendingInteraction,
   useWorkspaces, useConversation, useInput, useComposerBlock,
-  renderSlot, renderSlotChain, selectWorkspace, t,
+  renderSlot, renderSlotChain, selectWorkspace, selectNoProject, t,
 }: ConversationRootProps) {
   const session = useSession(s => s)
   const pendingInteraction = useSessionPendingInteraction(snapshot =>
@@ -151,6 +151,7 @@ export function ConversationRoot({
 
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pendingWorkspaceId, setPendingWorkspaceId] = useState<WorkspaceId | undefined>()
+  const [pendingNoProject, setPendingNoProject] = useState(false)
   const pickerAnchor = useRef<HTMLButtonElement>(null)
 
   // Publishes the two live measurements floating View chrome reads off the
@@ -251,6 +252,13 @@ export function ConversationRoot({
     }
   }, [pendingWorkspaceId, sessionWorkspace?.workspaceId, workspaces.phase, pendingWorkspace])
 
+  useEffect(() => {
+    if (!pendingNoProject) return
+    if (sessionId !== undefined && sessionWorkspace === undefined && workspaces.phase === 'ready') {
+      setPendingNoProject(false)
+    }
+  }, [pendingNoProject, sessionId, sessionWorkspace, workspaces.phase])
+
   // While a session is still replaying (loading + blank) the hero/docked
   // choice is unknowable — render the composer hidden instead of flashing
   // the centered hero and snapping to the docked bar (or vice versa).
@@ -280,21 +288,28 @@ export function ConversationRoot({
   //   3. the blank session's workspace is in the list → its title;
   //   4. list still loading → cwd folder name bridges so the title does not
   //      flash on refresh (empty cwd → placeholder);
-  //   5. list ready but no owning workspace (deleted from the sidebar) →
-  //      placeholder, never the deleted folder's name via cwd.
-  const chipTitle = pendingWorkspace?.title
-    ?? (sessionId === undefined
-      ? undefined
-      : sessionWorkspace?.title
-        ?? (workspaces.phase === 'ready' || cwd === undefined || cwd === ''
-          ? undefined
-          : workspaceLabel(cwd)))
+  //   5. list ready but no owning workspace → the explicit no-project target,
+  //      never a stale folder name inferred from cwd.
+  const currentNoProject = sessionId !== undefined
+    && sessionWorkspace === undefined
+    && workspaces.phase === 'ready'
+  const chipNoProject = pendingNoProject || (pendingWorkspaceId === undefined && currentNoProject)
+  const chipTitle = chipNoProject
+    ? t('hero.noProject')
+    : pendingWorkspace?.title
+      ?? (sessionId === undefined
+        ? undefined
+        : sessionWorkspace?.title
+          ?? (workspaces.phase === 'ready' || cwd === undefined || cwd === ''
+            ? undefined
+            : workspaceLabel(cwd)))
 
   const heroWorkspaceRow = (
     <div className={css.heroWorkspaceRow}>
       <WorkspaceChip
         buttonRef={pickerAnchor}
         label={chipTitle}
+        noProject={chipNoProject}
         menuOpen={pickerOpen}
         onClick={() => { setPickerOpen(open => !open) }}
         t={t}
@@ -303,12 +318,20 @@ export function ConversationRoot({
         open: pickerOpen,
         anchorRef: pickerAnchor,
         selectedId: pendingWorkspaceId ?? sessionWorkspace?.workspaceId,
+        noProjectSelected: chipNoProject,
         onPick: (workspaceId) => {
           setPickerOpen(false)
+          setPendingNoProject(false)
           setPendingWorkspaceId(workspaceId)
           void selectWorkspace(workspaceId).catch(() => {
             setPendingWorkspaceId(current => current === workspaceId ? undefined : current)
           })
+        },
+        onPickNoProject: () => {
+          setPickerOpen(false)
+          setPendingWorkspaceId(undefined)
+          setPendingNoProject(true)
+          void selectNoProject().catch(() => { setPendingNoProject(false) })
         },
         onClose: () => { setPickerOpen(false) },
       })}

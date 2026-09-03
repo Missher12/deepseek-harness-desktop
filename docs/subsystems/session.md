@@ -514,7 +514,7 @@ declare class Session {
   append<T extends SessionEventType>(
     type: T,
     data: SessionEventMap[T],
-    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []
+    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : [opts?: import('./types.ts').LogIntent]
   ): SessionEvent<T>;
   /**
    * The {@link EpochHeader} in force after the log's last header event — the
@@ -704,6 +704,13 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspectio
  * @returns the Session identity and resolved preset when configured.
  */
 @Remote('create') create(request: SessionCreateRequest): Promise<SessionCreateValue>
+
+/**
+ * Permanently delete one archived ordinary Session.
+ * @param request - archived Session identity.
+ * @returns confirmation after durable deletion and accounting cleanup.
+ */
+@Remote('delete') delete(request: SessionDeleteRequest): Promise<SessionDeleteValue>
 
 /**
  * Select one Session-local model after explicitly resuming the Session.
@@ -939,6 +946,22 @@ fork(source: SessionForkSource, boundary?: SessionSeq, childSessionId?: SessionI
 Types: [CreateSessionOptions](persistence.md) · [PrepareSessionOptions](persistence.md) · [SessionId](core.md)
 
 Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
+
+<a id="ctxusageinsights--usageinsightsgateway"></a>
+
+### `ctx.usageInsights` — `UsageInsightsGateway`
+
+Remote-only service exposing an immutable bounded usage snapshot.
+
+```ts cordis-catalog
+/**
+ * Read one current all-history snapshot, sharing concurrent refresh work.
+ * @returns The locally derived usage snapshot after any required cache refresh.
+ */
+@Remote('snapshot') snapshot(): Promise<UsageInsightsSnapshot>
+```
+
+Source: [`packages/session/usage-insights/src/index.ts`](../../packages/session/usage-insights/src/index.ts)
 
 <a id="api-session-events"></a>
 

@@ -195,6 +195,10 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     return this.coordinator.append(id, events)
   }
 
+  override delete(id: SessionId): Promise<boolean> {
+    return this.coordinator.delete(id)
+  }
+
   override prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation> {
     return this.coordinator.prepare(id, signal)
   }
@@ -252,6 +256,21 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       if (isENOENT(error)) return undefined
       throw error
     }
+  }
+
+  /** Validate and remove only the exact per-session directory. */
+  async deleteStored(id: SessionId): Promise<boolean> {
+    await this.ensureRootEncoding()
+    const path = await this.findLog(id)
+    if (path === undefined) return false
+    await this.readPrefix(path, id)
+    // The exact log was observed above; force makes a cross-process deletion
+    // race idempotent instead of surfacing a spurious ENOENT.
+    await rm(dirname(path), { recursive: true, force: true })
+    /* v8 ignore next -- Windows namespace durability is owned by rm; POSIX
+       coverage exercises the directory fsync. */
+    if (process.platform !== 'win32') await this.syncDirPosix(dirname(dirname(path)))
+    return true
   }
 
   /**

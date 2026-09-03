@@ -565,8 +565,10 @@ describe('runScenario', () => {
       .find(f => f.params?.update?.content?.text?.startsWith('env:'))
     const env = JSON.parse((envChunk?.params?.update?.content?.text ?? 'env:{}').slice('env:'.length)) as {
       childFiles: string | null
+      nodeOptions: string | null
     }
     expect(env.childFiles).toBe(childFiles.join(delimiter))
+    expect(env.nodeOptions).toContain('--disable-warning=ExperimentalWarning')
   })
 
   it('gives concurrent scenarios distinct equal-length spill roots', { timeout: 20_000 }, async () => {
@@ -815,8 +817,55 @@ describe('runScenario', () => {
     expect(result.sessionLogs[0]?.content).toContain('"turn":3')
   })
 
+  it.each([
+    {
+      step: { op: 'waitForTurnStart', minimumTurn: 3, timeoutMs: 20 } as InputStep,
+      expected: /turn\/start at or beyond turn 3 within 20ms/,
+    },
+    {
+      step: { op: 'waitForTurnEnd', timeoutMs: 20 } as InputStep,
+      expected: /did not persist turn\/end within 20ms/,
+    },
+    {
+      step: { op: 'waitForSubagentTurnEnd', timeoutMs: 20 } as InputStep,
+      expected: /subagent child #1 did not persist closed turn 1 within 20ms/,
+    },
+    {
+      step: { op: 'waitForGoalPhase', phase: 'active', timeoutMs: 20 } as InputStep,
+      expected: /did not persist goal phase "active" within 20ms/,
+    },
+    {
+      step: { op: 'waitForInboxMessage', text: 'missing', timeoutMs: 20 } as InputStep,
+      expected: /did not persist expected inbox message within 20ms/,
+    },
+    {
+      step: { op: 'waitForTitleAfterTurnEnd', timeoutMs: 20 } as InputStep,
+      expected: /did not persist session\/title after turn\/end within 20ms/,
+    },
+    {
+      step: { op: 'waitForEventAfterTurnEnd', type: 'user/message', timeoutMs: 20 } as InputStep,
+      expected: /did not persist user\/message after turn\/end within 20ms/,
+    },
+  ])('$step.op preserves its domain timeout when the first async probe outlives the timer', async ({ step, expected }) => {
+    const missing = await scenario({})
+    const waitFor = vi.spyOn(vi, 'waitFor').mockRejectedValueOnce(new Error('Timed out in waitFor!'))
+    try {
+      await expect(runScenario(
+        { steps: [...boot, step] },
+        { agent: AGENT, mode: 'replay', fixtureFile: missing.fixtureFile },
+      )).rejects.toThrow(expected)
+    } finally {
+      waitFor.mockRestore()
+    }
+  })
+
   it('waitForTurnStart rejects missing, earlier, and malformed durable turns', { timeout: 20_000 }, async () => {
     const missing = await scenario({})
+    await expect(runScenario(
+      { steps: [...boot, { op: 'waitForTurnStart', timeoutMs: 0 }] },
+      { agent: AGENT, mode: 'replay', fixtureFile: missing.fixtureFile },
+    )).rejects.toThrow(/did not persist turn\/start within 0ms/)
+
     await expect(runScenario(
       { steps: [...boot, { op: 'waitForTurnStart', timeoutMs: 200 }] },
       { agent: AGENT, mode: 'replay', fixtureFile: missing.fixtureFile },

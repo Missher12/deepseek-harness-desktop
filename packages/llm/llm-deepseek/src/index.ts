@@ -37,6 +37,7 @@ import {
   DeepSeekAdapter,
 } from './adapter.ts'
 import type { DeepSeekCatalogModel, DeepSeekConnectionOptions } from './adapter.ts'
+import { installDeepSeekBalanceHttp } from './balance.ts'
 import {
   DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET,
   DEFAULT_MAX_IMAGES_PER_REQUEST,
@@ -59,6 +60,17 @@ export {
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   DeepSeekAdapter,
 } from './adapter.ts'
+export {
+  BALANCE_BOOTSTRAP_GLOBAL,
+  BALANCE_CAPABILITY_HEADER,
+  BALANCE_PATH,
+  BALANCE_TIMEOUT_MS,
+  BALANCE_TTL_MS,
+  injectDeepSeekBalanceBootstrap,
+  installDeepSeekBalanceHttp,
+  parseDeepSeekBalance,
+} from './balance.ts'
+export type { DeepSeekBalanceFacts, DeepSeekBalanceSnapshot } from './balance.ts'
 export type { DeepSeekAdapterOptions, DeepSeekCatalogModel, DeepSeekConnectionOptions } from './adapter.ts'
 export {
   DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET,
@@ -494,5 +506,15 @@ export function apply(ctx: Context, config: Config): void {
       },
       onChange: ensureRegistrationFacts,
     })
+  })
+
+  // Read-only account-balance bridge: an optional child of the WebServer
+  // service. Desktop loads this adapter before the server, so a one-shot
+  // lookup here would permanently miss the bridge for the real application.
+  ctx.inject(['webServer'], (balanceCtx) => {
+    const disposeBalance = installDeepSeekBalanceHttp(balanceCtx, { options, resolveApiKey })
+    /* v8 ignore next -- the declared injection guarantees the service; the installer stays optional for direct callers. */
+    if (disposeBalance === undefined) return
+    balanceCtx.effect(() => disposeBalance, 'llm-deepseek: account balance HTTP bridge')
   })
 }

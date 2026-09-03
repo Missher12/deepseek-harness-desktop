@@ -100,6 +100,16 @@ const BUILD_TIME_TOOLS = [
   },
 ]
 
+/** Attributed source incorporated into a first-party workspace package. */
+const ADAPTED_THIRD_PARTY_SOURCE = {
+  name: 'dsh-reasoning-effort',
+  version: 'v0.6.0',
+  commit: 'f94622b46078ac8c064f91bdc10ab27e8cf32270',
+  repo: 'https://github.com/HanaAyane/dsh-reasoning-effort',
+  license: 'MIT',
+  attribution: 'Copyright (c) 2026 HanaAyane',
+} as const
+
 /** The `package.json` fields this generator reads. */
 export interface Manifest {
   name?: string
@@ -738,6 +748,14 @@ The Cordis framework and its foundation libraries are source-vendored into this 
 | Package | Upstream name | Upstream | License |
 | --- | --- | --- | --- |
 ${vendored.map(row => `| \`${row.npmName}\` | \`${row.upstreamName}\` | [${row.upstream.replace('https://', '')}](${row.upstream}) | MIT |`).join('\n')}
+
+## Adapted third-party source
+
+The removable \`@deepseek-ai/dsh-reasoning-effort\` workspace package retains the following pinned upstream Canvas implementation and sprite under its original MIT terms. Its package-local \`LICENSE\` and \`THIRD_PARTY_NOTICES.md\` carry the complete attribution.
+
+| Source | Version | Commit | License and attribution |
+| --- | --- | --- | --- |
+| [\`${ADAPTED_THIRD_PARTY_SOURCE.name}\`](${ADAPTED_THIRD_PARTY_SOURCE.repo}) | \`${ADAPTED_THIRD_PARTY_SOURCE.version}\` | \`${ADAPTED_THIRD_PARTY_SOURCE.commit}\` | ${ADAPTED_THIRD_PARTY_SOURCE.license}; ${ADAPTED_THIRD_PARTY_SOURCE.attribution} |
 
 ## Runtime npm dependencies
 

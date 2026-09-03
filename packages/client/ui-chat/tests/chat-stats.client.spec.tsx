@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import type {
   AssistantMessageNode, ChatSnapshot, LegacyConversationSlice, ToolResultNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -186,13 +186,133 @@ describe('StatsLine', () => {
     const view = render(<StatsLine {...props(source)} />)
     // No timing on the fixture: the duration group drops out whole. Tokens come
     // from the projection, so paging the window cannot change them.
-    expect(view.container.textContent).toBe('1 turns · 1 steps| Cache hit 90%| Input 100 tok · Output 5 tok')
+    expect(view.container.textContent).toBe('1 turns · 1 steps | Cache hit 90% | Input 100 tok · Output 5 tok')
     const empty = makeSource()
     const emptyView = render(<StatsLine {...props(empty.source, {
       tokenUsage: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
       contextPressure: {},
     })} />)
     expect(emptyView.container.textContent).toBe('')
+  })
+
+  it('shows an estimated official-price cost only for a single supported DeepSeek model', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T04:00:00.000Z'))
+    const usage = {
+      uncachedInputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      cacheWriteTokens: 1_000_000,
+      outputTokens: 1_000_000,
+    }
+    const single = makeSource()
+    const view = render(<StatsLine {...props(single.source, {
+      tokenUsage: usage,
+      tokenBillingModel: { kind: 'single', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    })} />)
+    expect(view.container.textContent).toContain('Session est. ¥7.55')
+    expect(view.container.textContent).toContain('Weekday off-peak')
+
+    const mixed = makeSource()
+    const mixedView = render(<StatsLine {...props(mixed.source, {
+      tokenUsage: usage,
+      tokenBillingModel: { kind: 'mixed' },
+    })} />)
+    expect(mixedView.container.textContent).not.toContain('¥')
+    vi.useRealTimers()
+  })
+
+  it('shows a validated account balance from the same-origin Host bridge', async () => {
+    vi.stubGlobal('__DSH_DEEPSEEK_BALANCE__', {
+      path: '/plugins/llm-deepseek/balance',
+      capabilityHeader: 'x-dsh-llm-deepseek-capability',
+      capability: 'test-capability',
+    })
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      fetchedAt: 100,
+      currency: 'CNY',
+      totalBalance: 8.5,
+      grantedBalance: 0,
+      toppedUpBalance: 8.5,
+      error: null,
+    }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { source } = makeSource()
+    const view = render(<StatsLine {...props(source)} />)
+
+    await waitFor(() => { expect(view.container.textContent).toContain('Available ¥8.50') })
+    expect(fetchMock).toHaveBeenCalledWith('/plugins/llm-deepseek/balance', expect.objectContaining({
+      method: 'GET',
+      headers: { 'x-dsh-llm-deepseek-capability': 'test-capability' },
+    }))
+  })
+
+  it('shows an unavailable balance after a mounted bridge fails instead of hiding the fact', async () => {
+    vi.stubGlobal('__DSH_DEEPSEEK_BALANCE__', {
+      path: '/plugins/llm-deepseek/balance',
+      capabilityHeader: 'x-dsh-llm-deepseek-capability',
+      capability: 'test-capability',
+    })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 503 })))
+    const { source } = makeSource()
+    const view = render(<StatsLine {...props(source)} />)
+
+    await waitFor(() => { expect(view.container.textContent).toContain('Balance unavailable') })
+  })
+
+  it('refreshes the Beijing pricing tier at the next minute without another conversation render', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-24T00:59:59.500Z'))
+    const { source } = makeSource()
+    const view = render(<StatsLine {...props(source, {
+      tokenUsage: { uncachedInputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      tokenBillingModel: { kind: 'single', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    })} />)
+
+    expect(view.container.textContent).toContain('Weekday off-peak')
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(view.container.textContent).toContain('Weekday peak')
+  })
+
+  it('keeps literal spaces around every visible statistics separator', () => {
+    const { source } = makeSource()
+    const view = render(<StatsLine {...props(source, {
+      tokenUsage: USAGE,
+      sessionStats: sessionStats({ turns: 2, steps: 281, llmMs: 46 * 60_000 + 58_000 }),
+    })} />)
+
+    expect(view.container.textContent).toContain('2 turns · 281 steps | LLM 46m58s | Cache hit 90% | Input 100 tok · Output 5 tok')
+  })
+
+  it('shows the settled latest-turn estimate and hides estimates/tier without hiding balance', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-24T01:30:00.000Z'))
+    const listeners = new Set<(value: { tieredPricingEstimates: boolean }) => void>()
+    const desktop = {
+      getDesktopPreferences: vi.fn(async () => ({ tieredPricingEstimates: true })),
+      onDesktopPreferences: vi.fn((listener: (value: { tieredPricingEstimates: boolean }) => void) => {
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      }),
+    }
+    Object.assign(window, { dshDesktop: desktop })
+    const { source } = makeSource()
+    const view = render(<StatsLine {...props(source, {
+      tokenUsage: { uncachedInputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      tokenBillingModel: { kind: 'single', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      latestTurnBilling: {
+        turn: 1, settledAt: Date.now(), uncachedInputTokens: 1_000_000,
+        outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0,
+        billingModel: { kind: 'single', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      },
+    })} />)
+    await act(async () => {})
+    expect(view.container.textContent).toContain('Turn est. ¥12.00')
+    expect(view.container.textContent).toContain('Weekday peak')
+    act(() => { for (const listener of listeners) listener({ tieredPricingEstimates: false }) })
+    expect(view.container.textContent).not.toContain('est.')
+    expect(view.container.textContent).not.toContain('peak')
+    delete (window as unknown as { dshDesktop?: unknown }).dshDesktop
+    vi.useRealTimers()
   })
 
   it.each([
@@ -250,7 +370,7 @@ describe('StatsLine', () => {
     }
     const { source } = makeSource({ nodes: [timed] })
     const view = render(<StatsLine {...props(source)} />)
-    expect(view.container.textContent).toContain('LLM 3.8s| TTFT avg 0.8s · 20 tok/s')
+    expect(view.container.textContent).toContain('LLM 3.8s | TTFT avg 0.8s · 20 tok/s')
   })
 
   it('takes every stats label from the active locale', () => {
@@ -261,7 +381,7 @@ describe('StatsLine', () => {
     const { source } = makeSource({ nodes: [timed] })
     const view = render(<StatsLine {...props(source, { tokenUsage: tokenUsage(9_995, 5) })} t={t} />)
     expect(view.container.textContent)
-      .toBe('1 轮 · 1 步| LLM 3.8秒| 首 token 平均 0.8秒 · 20 tok/s| 缓存命中 99.95%| 输入 10K tok · 输出 1 tok')
+      .toBe('1 轮 · 1 步 | LLM 3.8秒 | 首 token 平均 0.8秒 · 20 tok/s | 缓存命中 99.95% | 输入 10K tok · 输出 1 tok')
   })
 
   it('renders without ResizeObserver support', () => {
@@ -278,7 +398,7 @@ describe('StatsLine', () => {
     })} />)
     // Context occupancy lives on the composer's ContextMeter ring, not here.
     expect(view.container.textContent)
-      .toBe('Cache hit 90%| Input 100 tok · Output 5 tok')
+      .toBe('Cache hit 90% | Input 100 tok · Output 5 tok')
   })
 
   it('drops every token group when no projection is composed', () => {
@@ -296,7 +416,7 @@ describe('StatsLine', () => {
       sessionStats: sessionStats({ turns: 10, steps: 89 }),
     })} />)
     expect(view.container.textContent)
-      .toBe('10 turns · 89 steps| Cache hit 90%| Input 100 tok · Output 5 tok')
+      .toBe('10 turns · 89 steps | Cache hit 90% | Input 100 tok · Output 5 tok')
   })
 
   it('treats a defined zero-count projection as empty, not as fallback', () => {
@@ -330,7 +450,7 @@ describe('StatsLine', () => {
       sessionStats: sessionStats({ turns: 7, steps: 44 }),
     })} />)
     expect(view.container.textContent)
-      .toBe('7 turns · 44 steps| Cache hit 90%| Input 100 tok · Output 5 tok')
+      .toBe('7 turns · 44 steps | Cache hit 90% | Input 100 tok · Output 5 tok')
   })
 
   it('renders whole-log wall times and speeds from the projection, not the loaded window', () => {
@@ -346,7 +466,7 @@ describe('StatsLine', () => {
       }),
     })} />)
     expect(view.container.textContent).toBe(
-      '200 turns · 200 steps| LLM 1m40s · Tool call 1m2s| TTFT avg 0.8s · 20 tok/s| Cache hit 90%| Input 100 tok · Output 5 tok',
+      '200 turns · 200 steps | LLM 1m40s · Tool call 1m2s | TTFT avg 0.8s · 20 tok/s | Cache hit 90% | Input 100 tok · Output 5 tok',
     )
   })
 
@@ -355,7 +475,7 @@ describe('StatsLine', () => {
     const view = render(<StatsLine {...props(source, {
       tokenUsage: { uncachedInputTokens: 0, outputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 0 },
     })} />)
-    expect(view.container.textContent).toBe('1 turns · 1 steps| Input 0 tok · Output 7 tok')
+    expect(view.container.textContent).toBe('1 turns · 1 steps | Input 0 tok · Output 7 tok')
   })
 
   it('includes cache writes in billed input and the cache-hit denominator', () => {
@@ -369,7 +489,7 @@ describe('StatsLine', () => {
       },
     })} />)
     expect(view.container.textContent)
-      .toBe('1 turns · 1 steps| Cache hit 45%| Input 200 tok · Output 7 tok')
+      .toBe('1 turns · 1 steps | Cache hit 45% | Input 200 tok · Output 7 tok')
   })
 
   it('renders ZERO times during streaming chunk frames (RFC hard acceptance)', () => {

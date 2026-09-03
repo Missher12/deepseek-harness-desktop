@@ -53,6 +53,42 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
 afterEach(cleanup)
 
 describe('ModelSelect reasoning effort', () => {
+  it('renders the original Host-advertised effort rows without an enhanced slider surface', async () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state())
+    const select = vi.fn().mockResolvedValue(true)
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={select}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择模型，当前/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /推理等级/ }))
+
+    expect(screen.queryByRole('slider', { name: '推理等级' })).toBeNull()
+    expect(document.querySelector('canvas')).toBeNull()
+    expect(screen.queryByText('ULTRACODE')).toBeNull()
+    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
+      .toEqual(['Off', 'High', 'Max'])
+    expect(screen.queryByText('Largest budget')).toBeNull()
+    expect(screen.queryByText(/^Low$/)).toBeNull()
+    expect(screen.queryByText(/^Medium$/)).toBeNull()
+
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Max/ }))
+    await waitFor(() => {
+      expect(select).toHaveBeenCalledWith({
+        provider: 'deepseek-official',
+        model: 'deepseek-v4-flash',
+        reasoningEffort: 'max',
+      })
+    })
+    expect(select).not.toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'low' }))
+    expect(select).not.toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'medium' }))
+  })
+
   it('renders effort names without descriptions and submits the effort as part of the session selection', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())
     const select = vi.fn(async (selection: ModelSelection) => {

@@ -158,6 +158,33 @@ describe('SessionPreparations inspection', () => {
     expect(preparations.discardReady(ready.session.id, ready)).toBe('retained')
     preparations.release(reserved!, false)
   })
+
+  it('discards cold delete state but rejects committing and reserved preparations', async () => {
+    const preparations = new SessionPreparations<PreparedSource, string>(2)
+    const ready = prepared('delete-ready')
+    preparations.discardForDelete(SessionId('missing-delete'))
+    await preparations.inspect(ready.session.id, () => Promise.resolve(ready))
+    preparations.discardForDelete(ready.session.id)
+    expect(preparations.has(ready.session.id)).toBe(false)
+
+    const commitStarted = Promise.withResolvers<undefined>()
+    const commitGate = Promise.withResolvers<{ source: PreparedSource; state: string }>()
+    const committingId = SessionId('delete-committing')
+    const committing = preparations.reserve(
+      committingId,
+      () => Promise.resolve(prepared(committingId)),
+      (source) => {
+        commitStarted.resolve(undefined)
+        return commitGate.promise.then(() => ({ source, state: source.label }))
+      },
+    )
+    await commitStarted.promise
+    expect(() => { preparations.discardForDelete(committingId) }).toThrow(/reserved/)
+    commitGate.resolve({ source: prepared('ignored'), state: 'ignored' })
+    const reserved = await committing
+    expect(() => { preparations.discardForDelete(committingId) }).toThrow(/reserved/)
+    preparations.discard(reserved!)
+  })
 })
 
 describe('SessionPreparations borrowing', () => {

@@ -16,7 +16,12 @@ import type {
   ToolResultMessage,
   UserMessage,
 } from '@deepseek-ai/dsh-llm'
-import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type {
+  AttachmentIdType,
+  DocumentAttachmentDisplayId,
+  ImageAttachmentRef,
+  RendererDocumentAttachment,
+} from '@deepseek-ai/dsh-attachment'
 import type {
   SessionEvent,
   SessionId,
@@ -41,6 +46,58 @@ import type {
 } from '../rpc.ts'
 
 const FIXTURE_SESSION_SEARCH_RESULT_LIMIT = 20
+/** One fake-Host generation identity; renderer document ids never derive from content. */
+const FIXTURE_DOCUMENT_DISPLAY_SCOPE = randomUuid()
+
+function fixtureRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+/** Fake-Host equivalent of the production document wire projection. */
+function fixtureRendererValue(
+  value: unknown,
+  sessionId: SessionId,
+  owner: string,
+  path: readonly (string | number)[],
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item, index) => fixtureRendererValue(item, sessionId, owner, [...path, index]))
+  }
+  const record = fixtureRecord(value)
+  if (record === null) return value
+  const attachment = record['type'] === 'document' ? fixtureRecord(record['attachment']) : null
+  if (attachment !== null
+    && typeof attachment['attachmentId'] === 'string'
+    && typeof attachment['extractedTextId'] === 'string'
+    && typeof attachment['mediaType'] === 'string'
+    && typeof attachment['name'] === 'string'
+    && typeof attachment['bytes'] === 'number'
+    && typeof attachment['extractedBytes'] === 'number'
+    && typeof attachment['truncated'] === 'boolean') {
+    const displayId = [
+      'document-view', FIXTURE_DOCUMENT_DISPLAY_SCOPE, String(sessionId), owner, JSON.stringify(path),
+    ].join(':') as DocumentAttachmentDisplayId
+    const projected: RendererDocumentAttachment = {
+      displayId,
+      name: attachment['name'],
+      mediaType: attachment['mediaType'] as RendererDocumentAttachment['mediaType'],
+      bytes: attachment['bytes'],
+      extractedBytes: attachment['extractedBytes'],
+      truncated: attachment['truncated'],
+    }
+    return { type: 'document', attachment: projected }
+  }
+  return Object.fromEntries(Object.entries(record).map(([key, item]) => [
+    key,
+    fixtureRendererValue(item, sessionId, owner, [...path, key]),
+  ]))
+}
+
+function fixtureRendererEvent(sessionId: SessionId, event: SessionEvent): SessionEvent {
+  return fixtureRendererValue(event, sessionId, `event:${String(event.seq)}`, []) as SessionEvent
+}
 
 interface ModelSelection {
   readonly provider: string
@@ -244,6 +301,12 @@ type FixturePromptPart =
     readonly mediaType: ImageAttachmentRef['mediaType']
     readonly data: string
     readonly name?: string
+  }
+  | {
+    readonly type: 'document'
+    readonly mediaType: RendererDocumentAttachment['mediaType']
+    readonly data: string
+    readonly name: string
   }
 
 interface FixtureSessionApi {
@@ -1293,6 +1356,25 @@ function projectionValuesOf(log: readonly SessionEvent[]): Record<string, unknow
     maxImageDimension: 2000,
     mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
   }
+  values['documentLimits'] = {
+    maxDocumentBytes: 20 * 1024 * 1024,
+    maxDocumentsPerMessage: 5,
+    maxMessageDocumentBytes: 50 * 1024 * 1024,
+    maxExtractedTextBytes: 96 * 1024,
+    maxMessageExtractedTextBytes: 256 * 1024,
+    maxDocumentNameBytes: 255,
+    mediaTypes: [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain',
+      'text/markdown',
+      'application/json',
+      'text/csv',
+      'application/yaml',
+      'application/xml',
+    ],
+  }
   return values
 }
 
@@ -1435,6 +1517,7 @@ function projectionFramesOf(
  * backwards from the end and cut at a turn/start boundary.
  */
 function pageOf(
+  sessionId: SessionId,
   log: readonly SessionEvent[],
   beforeSeq: number | undefined,
   maxMessages: number,
@@ -1453,7 +1536,7 @@ function pageOf(
     }
   }
   const records = packChunkRuns(log.slice(start, end)).map((record): FixtureHistoryRecord => {
-    if (!isChunkRow(record)) return { type: 'event', event: record }
+    if (!isChunkRow(record)) return { type: 'event', event: fixtureRendererEvent(sessionId, record) }
     switch (record.type) {
       case 'text-chunks':
         return {
@@ -1792,6 +1875,19 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     // DeepSeek route so unrelated GUI journeys do not enter first-run setup.
     ['DEEPSEEK_API_KEY', true],
   ])
+  let fixturePersonalization: {
+    instructions: string
+    style: 'default' | 'concise' | 'friendly' | 'professional'
+    revision: string
+    hasExternalContent: boolean
+    writable: boolean
+  } = {
+    instructions: '',
+    style: 'default',
+    revision: '0'.repeat(64),
+    hasExternalContent: false,
+    writable: true,
+  }
 
   /** Canonical fixture implementation of the generated Settings Remote contract. */
   const settingsRemotes = {
@@ -1848,6 +1944,33 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     },
     openSettingsDocument(): RpcResult<{ opened: true }> {
       return { ok: true, value: { opened: true } }
+    },
+    personalizationRead(): RpcResult<typeof fixturePersonalization> {
+      return { ok: true, value: fixturePersonalization }
+    },
+    personalizationWrite(input: {
+      readonly instructions: string
+      readonly style: 'default' | 'concise' | 'friendly' | 'professional'
+      readonly expectedRevision: string
+    }): RpcResult<typeof fixturePersonalization> {
+      if (input.expectedRevision !== fixturePersonalization.revision) {
+        return {
+          ok: false,
+          error: {
+            code: 'settings/rejected',
+            message: 'fixture: global personalization changed; reload before saving',
+            details: { ns: 'personalization' },
+          },
+        }
+      }
+      fixturePersonalization = {
+        instructions: input.instructions,
+        style: input.style,
+        revision: '1'.repeat(64),
+        hasExternalContent: false,
+        writable: true,
+      }
+      return { ok: true, value: fixturePersonalization }
     },
     openAgentPresetDirectory(agentPreset: string): RpcResult<
       { opened: true } | { opened: false; path: string }
@@ -2062,7 +2185,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     const log = logOf(id)
     const event = { seq: SessionSeq(log.length), time: Date.now(), ...e } as unknown as SessionEvent
     log.push(event)
-    emitFollow(id, { type: 'event', event })
+    emitFollow(id, { type: 'event', event: fixtureRendererEvent(id, event) })
     // Host eager-drive parallel: a unit-advancing event pushes its finished value.
     for (const frame of projectionFramesOf(id, log, event)) emitControl(frame)
     if (event.type === 'user/message' && event.data.source.kind === 'user') {
@@ -2912,7 +3035,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const throughSeq = request.throughSeq ?? log.length - 1
       const boundedLog = log.slice(0, throughSeq + 1)
       // Snapshot at request time, then deliver after the transit delay.
-      const page = pageOf(boundedLog, request.beforeSeq, request.maxMessages ?? 50)
+      const page = pageOf(request.sessionId, boundedLog, request.beforeSeq, request.maxMessages ?? 50)
       const doomed = failNextHistory
       failNextHistory = false
       const delay = historyDelayMs
@@ -2958,6 +3081,20 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const userText = content.map(b => (b.type === 'text' ? b.text : '')).join('')
       const durable: ContentBlock[] = content.map((block) => {
         if (block.type === 'text') return block
+        if (block.type === 'document') {
+          return {
+            type: 'document',
+            attachment: {
+              attachmentId: `fixture:${randomUuid()}` as AttachmentIdType,
+              extractedTextId: `fixture:${randomUuid()}` as AttachmentIdType,
+              mediaType: block.mediaType,
+              name: block.name,
+              bytes: Math.max(1, Math.floor(block.data.length * 3 / 4)),
+              extractedBytes: 0,
+              truncated: false,
+            },
+          }
+        }
         const attachment: ImageAttachmentRef = {
           attachmentId: `fixture:${randomUuid()}` as AttachmentIdType,
           mediaType: block.mediaType,
@@ -3200,7 +3337,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     const summary = summaryOf(sessionId)
     /* v8 ignore next -- existence was checked before the stream registered. */
     if (summary === undefined) throw new Error(`fixture: no session ${sessionId}`)
-    const initial = pageOf(snapshot, undefined, request.maxMessages ?? 50)
+    const initial = pageOf(sessionId, snapshot, undefined, request.maxMessages ?? 50)
     let nextSeq = cursor + 1
     try {
       yield {
@@ -3477,6 +3614,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         case 'credentials/set': return Promise.resolve(credentialRemotes.set(args.ref as string))
         case 'credentials/unset': return Promise.resolve(credentialRemotes.unset(args.ref as string))
         case 'settings/describe': return Promise.resolve(settingsRemotes.describe())
+        case 'settings/personalizationRead': return Promise.resolve(settingsRemotes.personalizationRead())
+        case 'settings/personalizationWrite': return Promise.resolve(settingsRemotes.personalizationWrite(
+          request as Parameters<typeof settingsRemotes.personalizationWrite>[0],
+        ))
         case 'settings/canOpenAgentPresetDirectory': return Promise.resolve({ ok: true, value: true })
         case 'settings/openSettingsDocument': return Promise.resolve(settingsRemotes.openSettingsDocument())
         case 'settings/openAgentPresetDirectory': return Promise.resolve(

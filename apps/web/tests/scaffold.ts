@@ -1101,8 +1101,8 @@ async function persistSeedSession(
 
 /**
  * Normalize an aria snapshot: uuid, cwd, workspace-basename, duration,
- * decode-throughput, and path-sensitive compaction estimates collapse to
- * stable tokens.
+ * decode-throughput, and path-sensitive compaction/session estimates collapse
+ * to stable tokens.
  *
  * Throughput needs a token for the same reason durations do, and no fixture
  * can supply one: the figure divides a replayed step's output tokens by the
@@ -1142,9 +1142,22 @@ function normalizeAria(snapshot: string, workspaceCwd: string, age: boolean): st
       duration => duration.startsWith('约') ? duration : '{{duration}}',
     )
     .replace(/\d+(?:\.\d+)?(?= tok\/s(?!\w))/g, '{{throughput}}')
+    // Realizing fixture cwd values changes their heuristic prompt price between
+    // a local worktree and the hosted runner without changing UI behavior.
+    .replace(/(Session est\. ≈ ¥)<?\d+(?:\.\d+)?/g, '$1{{price}}')
     // Seeded compaction prices realized file paths, whose length differs
     // between local worktrees and CI scratch directories.
     .replace(/(Compacted \d+ history items \(~)\d+( tokens\))/g, '$1{{tokens}}$2')
+    // Pricing tiers intentionally follow the current Beijing weekday and
+    // clock, so a golden must not flip between weekday and weekend runs.
+    .replace(
+      /(?:Weekday peak|Weekday off-peak|Weekend off-peak|工作日高峰价|工作日低谷价|周末低谷价)/g,
+      '{{pricing tier}}',
+    )
+    // The displayed estimates use the same live tier as the label above. Keep
+    // browser goldens stable across peak/off-peak boundaries while unit tests
+    // continue to pin the exact price table and formatting behavior.
+    .replace(/((?:Turn|Session) est\. ¥)<?\d+(?:\.\d+)?/g, '$1{{price}}')
     // Session summaries and Message IconActions clocks cross calendar
     // boundaries; collapse every shape so goldens stay stable across them.
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, '{{timestamp}}')

@@ -68,6 +68,14 @@ The browser HTTP carrier service. Activation listens immediately. Route registra
 
 ```ts cordis-catalog
 /**
+ * Memoize one value for this WebServer service generation and no longer.
+ * @param key - service-generation-local identity for the shared value.
+ * @param initialize - initializer invoked only when the key is absent.
+ * @returns the existing or newly initialized generation value.
+ */
+generationValue<T>(key: string, initialize: () => T): T
+
+/**
  * Register a named route. Duplicate (kind, path) throws — route patterns are
  * a composition-level contract, so a collision is a misconfiguration.
  * @param route - kind, path, and the owning handler.

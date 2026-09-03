@@ -113,7 +113,7 @@ interface Harness {
  * flowing through the in-process write path, which is deterministic; external
  * file watching is the providers' own covered concern.
  */
-async function boot(dir: string, config: object): Promise<Harness> {
+async function boot(dir: string, config: object, webServer?: object): Promise<Harness> {
   vi.stubEnv('DSH_HOME', dir)
   const ctx = new Context()
   cleanups.push(async () => {
@@ -124,6 +124,7 @@ async function boot(dir: string, config: object): Promise<Harness> {
   const settingsFiber = ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
   await settingsFiber
   await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
+  if (webServer !== undefined) ctx.provide('webServer', webServer as never)
   await ctx.plugin(LlmDeepSeek, config)
   return { ctx, settingsFiber }
 }
@@ -133,6 +134,22 @@ function prompt(ctx: Context) {
 }
 
 describe('request-level dynamic configuration', () => {
+  it('owns the optional balance bridge for exactly the DeepSeek plugin lifetime', async () => {
+    const disposeRoute = vi.fn()
+    const disposeTap = vi.fn()
+    const webServer = {
+      register: vi.fn(() => disposeRoute),
+      tapIndex: vi.fn(() => disposeTap),
+    }
+    const { ctx } = await boot(await home(), {}, webServer)
+
+    expect(webServer.register).toHaveBeenCalledOnce()
+    expect(webServer.tapIndex).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+    expect(disposeRoute).toHaveBeenCalledOnce()
+    expect(disposeTap).toHaveBeenCalledOnce()
+  })
+
   it('routes the next request with the freshly resolved base URL and credential', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const dir = await home()

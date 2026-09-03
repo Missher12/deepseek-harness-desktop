@@ -40,6 +40,13 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.collapsed .regionArea')?.get('margin-right')).toBe('0')
   })
 
+  it('owns the compact Project and Session rhythm inherited by its workspace slot', () => {
+    const root = declarations('.root')
+    expect(root?.get('--dsh-sidebar-row-gap')).toBe('2px')
+    expect(root?.get('--dsh-sidebar-project-session-gap')).toBe('4px')
+    expect(root?.get('--dsh-sidebar-project-group-gap')).toBe('8px')
+  })
+
   it('moves the four upper controls while the settings seat only fades', () => {
     const animation = 'rail-in 150ms var(--ds-ease-in-out) backwards'
     for (const selector of [

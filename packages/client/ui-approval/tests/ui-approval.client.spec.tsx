@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { createScope, scopeOf } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApprovalPanel } from '../src/client/ApprovalPanel.tsx'
 import type { ApprovalComposerProps } from '../src/client/contract/slots.ts'
@@ -31,6 +31,7 @@ interface PluginBench {
   readonly disposeLocale: ReturnType<typeof vi.fn>
   readonly register: ReturnType<typeof vi.fn>
   readonly injectSlot: ReturnType<typeof vi.fn>
+  readonly command: ReturnType<typeof vi.fn>
   releasePending(): Promise<void>
   registration(): {
     options: {
@@ -71,13 +72,17 @@ function setupPlugin(): PluginBench {
     const dispose = ctx.effect(() => mount())
     return () => { void dispose() }
   })
+  const command = vi.fn(async () => ({ ok: true, value: { matched: true } }))
   ctx.provide('remote', {
     $on: (_event: string, callback: ApprovalListener) => {
       listener = callback
       return () => {}
     },
   } as never)
-  ctx.provide('sessions', { scopeOf } as never)
+  ctx.provide('sessions', {
+    scopeOf,
+    binding: (sessionId: SessionId) => sessionId === id('s1') ? { session: { command } } : undefined,
+  } as never)
   ctx.provide('uiSession', { registerPendingInteraction } as never)
   ctx.provide('slots', { inject: injectSlot, register } as never)
   ctx.provide('locale', {
@@ -95,6 +100,7 @@ function setupPlugin(): PluginBench {
     disposeLocale,
     register,
     injectSlot,
+    command,
     async releasePending() {
       const delegates = [...pending.values()]
       pending.clear()
@@ -296,6 +302,20 @@ describe('approval Remote Event consumer', () => {
     await scope.fiber.dispose()
   })
 
+  it('keeps the persistent choice on the exact scoped permission command', async () => {
+    const bench = setupPlugin()
+    const scope = createScope(bench.ctx, id('s1'))
+    await scope.fiber.await()
+    const result = bench.listener.call(scope.ctx, { toolName: 'write' }, () => Promise.resolve('unavailable'))
+    const pending = bench.pending.getSnapshot()[0]!
+
+    await expect(pending.enableSessionFullAccess()).resolves.toBe(true)
+    expect(bench.command).toHaveBeenCalledExactlyOnceWith('/permission danger-full-access')
+    await pending.answer('allowed-once')
+    await expect(result).resolves.toBe('allowed-once')
+    await scope.fiber.dispose()
+  })
+
   it('removes stable registrations with the plugin lifetime', async () => {
     const bench = setupPlugin()
     await bench.ctx.fiber.dispose()
@@ -314,6 +334,16 @@ function panelProps(
     escalation: `Tool ${pending.toolName} asks`,
     reject: 'Reject',
     allowOnce: 'Allow once',
+    allowSession: 'Allow for this session',
+    retryCurrent: 'Retry current approval',
+    fullAccessFailed: 'Could not enable Full access. Try again.',
+    retryAfterFullAccess: 'Full access is enabled. Retry this approval.',
+    responseFailed: 'Could not answer this approval. Try again.',
+    'confirm.title': 'Enable Full access?',
+    'confirm.description': 'Full access reduces confirmation steps for this Session.',
+    'confirm.acknowledge': 'I understand the risks',
+    'confirm.cancel': 'Cancel',
+    'confirm.enable': 'Enable Full access',
   }
   return {
     matched: pending,
@@ -369,6 +399,93 @@ describe('ApprovalPanel', () => {
     })
     pending.abort(new Error('test cleanup'))
     await pending.result.catch(() => {})
+  })
+
+  it('confirms and enables Session Full access before allowing the current request', async () => {
+    const order: string[] = []
+    const enable = vi.fn(async () => { order.push('permission'); return true })
+    const pending = new PendingApproval(id('s1'), { toolName: 'bash' }, enable)
+    vi.spyOn(pending, 'answer').mockImplementation(async () => { order.push('answer') })
+    render(<ApprovalPanel {...panelProps(pending)} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Allow for this session' }))
+    expect(enable).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: 'Enable Full access?' })).toBeTruthy()
+    const confirm = screen.getByRole<HTMLButtonElement>('button', { name: 'Enable Full access' })
+    expect(confirm.disabled).toBe(true)
+    fireEvent.click(screen.getByRole('checkbox', { name: 'I understand the risks' }))
+    fireEvent.click(confirm)
+
+    await waitFor(() => { expect(pending.answer).toHaveBeenCalledWith('allowed-once') })
+    expect(enable).toHaveBeenCalledOnce()
+    expect(order).toEqual(['permission', 'answer'])
+  })
+
+  it('disables all three card actions while Session permission is pending', async () => {
+    const permission = Promise.withResolvers<boolean>()
+    const enable = vi.fn(() => permission.promise)
+    const pending = new PendingApproval(id('s1'), { toolName: 'bash' }, enable)
+    const answer = vi.spyOn(pending, 'answer')
+    render(<ApprovalPanel {...panelProps(pending)} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Allow for this session' }))
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Enable Full access' }))
+
+    const actions = ['Reject', 'Allow once', 'Allow for this session'].map(name =>
+      screen.getByRole<HTMLButtonElement>('button', { name }))
+    expect(actions.map(action => action.disabled)).toEqual([true, true, true])
+    fireEvent.click(actions[2]!)
+    expect(enable).toHaveBeenCalledOnce()
+    expect(answer).not.toHaveBeenCalled()
+
+    permission.resolve(false)
+    await waitFor(() => { expect(actions[2]!.disabled).toBe(false) })
+    pending.abort(new Error('test cleanup'))
+    await pending.result.catch(() => {})
+  })
+
+  it.each([
+    ['an unmatched command', vi.fn(() => Promise.resolve(false))],
+    ['a command transport failure', vi.fn(() => Promise.reject(new Error('private detail')))],
+  ])('keeps the approval retryable after %s', async (_label, enable) => {
+    const pending = new PendingApproval(id('s1'), { toolName: 'bash' }, enable)
+    const answer = vi.spyOn(pending, 'answer')
+    render(<ApprovalPanel {...panelProps(pending)} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Allow for this session' }))
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Enable Full access' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toBe('Could not enable Full access. Try again.')
+    })
+    expect(screen.queryByText('private detail')).toBeNull()
+    expect(answer).not.toHaveBeenCalled()
+    pending.abort(new Error('test cleanup'))
+    await pending.result.catch(() => {})
+  })
+
+  it('retries only the current approval after permission succeeds but answering fails', async () => {
+    const enable = vi.fn(() => Promise.resolve(true))
+    const pending = new PendingApproval(id('s1'), { toolName: 'bash' }, enable)
+    vi.spyOn(pending, 'answer')
+      .mockRejectedValueOnce(new Error('private response detail'))
+      .mockResolvedValueOnce()
+    render(<ApprovalPanel {...panelProps(pending)} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Allow for this session' }))
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Enable Full access' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent)
+        .toBe('Full access is enabled. Retry this approval.')
+    })
+    expect(screen.queryByText('private response detail')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry current approval' }))
+
+    await act(async () => {})
+    expect(enable).toHaveBeenCalledOnce()
+    expect(pending.answer).toHaveBeenCalledTimes(2)
   })
 })
 

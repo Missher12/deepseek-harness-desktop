@@ -170,6 +170,36 @@ describe('SubagentHeaderLineage', () => {
     expect(input.setCatalogOpen).toHaveBeenLastCalledWith(PARENT, false)
   })
 
+  it('repositions the portaled catalog after viewport resize and document scroll', () => {
+    render(<SubagentHeaderLineage {...props(catalog())} />)
+    const trigger = screen.getByRole('button', { name: /2 个子代理/ })
+    const rect = vi.spyOn(trigger, 'getBoundingClientRect')
+      .mockReturnValue({
+        bottom: 40, height: 20, left: 24, right: 124, top: 20, width: 100,
+        x: 24, y: 20, toJSON: () => ({}),
+      })
+    hoverCatalog(trigger)
+    const tree = screen.getByRole('tree')
+    expect(tree.style.top).toBe('45px')
+    expect(tree.style.left).toBe('24px')
+
+    rect.mockReturnValue({
+      bottom: 92, height: 20, left: 72, right: 172, top: 72, width: 100,
+      x: 72, y: 72, toJSON: () => ({}),
+    })
+    fireEvent(window, new Event('resize'))
+    expect(tree.style.top).toBe('97px')
+    expect(tree.style.left).toBe('72px')
+
+    rect.mockReturnValue({
+      bottom: 108, height: 20, left: 88, right: 188, top: 88, width: 100,
+      x: 88, y: 88, toJSON: () => ({}),
+    })
+    fireEvent.scroll(document)
+    expect(tree.style.top).toBe('113px')
+    expect(tree.style.left).toBe('88px')
+  })
+
   it('selects singular count keys for one descendant', () => {
     const base = props(catalog({
       entries: [{

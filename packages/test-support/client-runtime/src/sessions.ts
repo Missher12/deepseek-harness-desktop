@@ -7,7 +7,7 @@ import {
 import type {
   AgentContext, ISessions, ProjectionsFace, SessionBinding, SessionFace, SessionListState,
   SessionEventLikeEntry, SessionLiveEventEntry, SessionSearchResultItem,
-  SessionSnapshot, SessionSummary, SubmissionHandle,
+  BeginSubmissionInput, SessionSnapshot, SessionSummary, SubmissionHandle,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
@@ -101,7 +101,7 @@ export class FixtureSession implements SessionFace {
    * Supply `beginSubmission` on the fixture's session face to observe echoes.
    * @returns a handle whose abandon is a no-op.
    */
-  beginSubmission(): SubmissionHandle {
+  beginSubmission(_input: BeginSubmissionInput): SubmissionHandle {
     this.submissionSeq += 1
     return {
       requestId: `test-submission-${this.submissionSeq}` as SessionRequestId,
@@ -198,7 +198,7 @@ export class TestSessions implements ISessions {
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
     method: 'create' | 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
-      | 'clear' | 'refresh' | 'search' | 'fork'
+      | 'clear' | 'refresh' | 'search' | 'delete' | 'fork'
     args: unknown[]
   }[] = []
 
@@ -356,6 +356,12 @@ export class TestSessions implements ISessions {
       })
       if (record.scopeFiber !== undefined) await record.scopeFiber.dispose()
     })
+  }
+
+  /** Delete one archived Session through the production service-shaped face. */
+  async delete(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'delete', args: [sessionId] })
+    await this.remove(sessionId)
   }
 
   /**

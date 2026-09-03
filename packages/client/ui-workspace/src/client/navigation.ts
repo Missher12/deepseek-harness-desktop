@@ -20,6 +20,11 @@ export interface UiWorkspace {
    */
   connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>
   /**
+   * Resolve an unarchived, unaccounted ordinary blank Session.
+   * @returns a Session already addressable through the Session Controller.
+   */
+  connectNoProject(): Promise<SessionId>
+  /**
    * Start a New Session flow and navigate to its Session.
    * @param workspaceId - explicit target; absent inherits the current or most recent Workspace.
    */
@@ -70,6 +75,7 @@ export class DirectoryBrowseError extends Error {
 /** Implements Workspace archive and directory UI operations. */
 class UiWorkspaceService extends Service implements UiWorkspace {
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
+  private connectingNoProject: Promise<SessionId> | undefined
 
   /**
    * @param ctx - Client root Context.
@@ -108,6 +114,28 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const attempt = this.sessions.create({ workspaceId })
       .finally(() => { this.connecting.delete(workspaceId) })
     this.connecting.set(workspaceId, attempt)
+    return attempt
+  }
+
+  async connectNoProject(): Promise<SessionId> {
+    const workspace = this.workspaces.list.getSnapshot()
+    const accounted = new Set(workspace.items.flatMap(item => item.sessionIds))
+    const archived = new Set(workspace.archivedSessionIds)
+    const sessions = this.sessions.list.getSnapshot()
+    for (const id of sessions.ids) {
+      const summary = sessions.byId[id]
+      if (summary?.blank === true
+        && summary.parentId === undefined
+        && summary.origin !== 'subagent'
+        && !accounted.has(id)
+        && !archived.has(id)) return id
+    }
+    if (this.connectingNoProject !== undefined) return this.connectingNoProject
+    const attempt = this.sessions.create({})
+      .finally(() => {
+        if (this.connectingNoProject === attempt) this.connectingNoProject = undefined
+      })
+    this.connectingNoProject = attempt
     return attempt
   }
 

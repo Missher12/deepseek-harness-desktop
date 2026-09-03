@@ -1,6 +1,7 @@
 /** Trajectory-owned conversion from durable Session events to ledger view data. */
 
 import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm/types'
+import type { RendererContentBlock } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {
   AssistantBlock, ContextProvenanceView, KnownContextForm,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -99,6 +100,11 @@ export function toAssistantBlock(block: ContentBlock): AssistantBlock {
     case 'tool-call': return { kind: 'tool-call', callId: String(block.id), name: block.name, argsRaw: block.arguments }
     default: return { kind: 'other', block }
   }
+}
+
+/** Mark content already stripped of durable document authority by Session Controller. */
+export function rendererContent(content: readonly ContentBlock[]): readonly RendererContentBlock[] {
+  return content as unknown as readonly RendererContentBlock[]
 }
 
 /**

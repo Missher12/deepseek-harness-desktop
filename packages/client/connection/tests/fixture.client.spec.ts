@@ -144,6 +144,11 @@ interface FixtureSessionRequests {
       readonly mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
       readonly data: string
       readonly name?: string
+    } | {
+      readonly type: 'document'
+      readonly mediaType: 'text/markdown'
+      readonly data: string
+      readonly name: string
     })[]
   }
   cancel: { readonly sessionId: SessionId }
@@ -340,6 +345,12 @@ interface FixtureCredentialRemote {
 /** The settings Remote reads the fixture serves, addressed like the credential half. */
 interface FixtureSettingsRemote {
   describe(): Promise<ConnectionRpcResult<unknown>>
+  personalizationRead(): Promise<ConnectionRpcResult<unknown>>
+  personalizationWrite(input: {
+    readonly instructions: string
+    readonly style: 'default' | 'concise' | 'friendly' | 'professional'
+    readonly expectedRevision: string
+  }): Promise<ConnectionRpcResult<unknown>>
   update(ns: string, patch: unknown, expectedRevision?: number): Promise<ConnectionRpcResult<unknown>>
   replace(ns: string, section: unknown, expectedRevision?: number): Promise<ConnectionRpcResult<unknown>>
 }
@@ -347,6 +358,10 @@ interface FixtureSettingsRemote {
 function createSettingsRemote(rpc: ClientConnectionRpc): FixtureSettingsRemote {
   return {
     describe: () => rpc.call('/api', 'settings/describe', { args: {} }),
+    personalizationRead: () => rpc.call('/api', 'settings/personalizationRead', { args: {} }),
+    personalizationWrite: input => rpc.call('/api', 'settings/personalizationWrite', {
+      args: { request: input },
+    }),
     update: (ns, patch, expectedRevision) => rpc.call('/api', 'settings/update', {
       args: { ns, patch, expectedRevision },
     }),
@@ -782,6 +797,24 @@ describe('createFixtureApi', () => {
         error: { code: 'settings/rejected', message: 'fixture: the minimal readiness settings descriptor is read-only' },
       })
     }
+    const personalization = await api.settingsRemote.personalizationRead()
+    expect(personalization).toMatchObject({
+      ok: true,
+      value: { instructions: '', style: 'default', revision: '0'.repeat(64), writable: true },
+    })
+    expect(await api.settingsRemote.personalizationWrite({
+      instructions: 'Prefer concise answers.',
+      style: 'concise',
+      expectedRevision: '0'.repeat(64),
+    })).toMatchObject({
+      ok: true,
+      value: { instructions: 'Prefer concise answers.', style: 'concise', revision: '1'.repeat(64) },
+    })
+    expect(await api.settingsRemote.personalizationWrite({
+      instructions: 'stale',
+      style: 'friendly',
+      expectedRevision: '0'.repeat(64),
+    })).toMatchObject({ ok: false, error: { code: 'settings/rejected' } })
 
     const describe = async (refs: readonly string[]): Promise<Record<string, unknown>> => {
       const result = await api.credentialRemote.describe(refs)
@@ -939,6 +972,7 @@ describe('createFixtureApi', () => {
       plan: { active: false, pending: false },
       goal: null,
       imageLimits: { maxImagesPerMessage: 20, maxImageBytes: 5 * 1024 * 1024 },
+      documentLimits: { maxDocumentsPerMessage: 5, maxDocumentBytes: 20 * 1024 * 1024 },
     })
     expect((alpha?.values['contextBreakdown'] as { messageTokens: number }).messageTokens).toBeGreaterThan(0)
     expect((alpha?.values['sessionStats'] as { steps: number }).steps).toBeGreaterThan(0)
@@ -1486,6 +1520,57 @@ describe('createFixtureApi', () => {
       ok: false,
       error: { code: 'session/attachment-invalid', details: { reason: 'IMAGE_DIMENSION_TOO_LARGE' } },
     })
+  })
+
+  it('projects fixture document history to stable renderer-only metadata', async () => {
+    const api = createFixtureApi({ empty: true })
+    const sessionId = sid('fx-renderer-document')
+    const created = await api.sessions.create(req({ sessionId }))
+    expect(created.result.ok).toBe(true)
+    const prompted = await api.sessions.prompt(req({
+      sessionId,
+      mode: 'queue',
+      content: [{
+        type: 'document',
+        mediaType: 'text/markdown',
+        data: 'IyBmaXh0dXJl',
+        name: 'fixture.md',
+      }],
+    }))
+    expect(prompted.result.ok).toBe(true)
+
+    const first = await api.sessions.history(req({ sessionId }))
+    const second = await api.sessions.history(req({ sessionId }))
+    if (!first.result.ok || !second.result.ok) throw new Error('history failed')
+    const documentFrom = (records: readonly FixtureHistoryRecord[]): Record<string, unknown> => {
+      const entry = records.find(record => record.type === 'event' && record.event.type === 'user/message')
+      if (entry?.type !== 'event') throw new Error('document message missing')
+      const data = entry.event.data as unknown as { readonly content?: readonly unknown[] }
+      const block = data.content?.find(candidate =>
+        typeof candidate === 'object' && candidate !== null
+        && (candidate as { readonly type?: unknown }).type === 'document') as
+        | { readonly attachment?: Record<string, unknown> }
+        | undefined
+      if (block?.attachment === undefined) throw new Error('document block missing')
+      return block.attachment
+    }
+    const firstAttachment = documentFrom(first.result.value.records)
+    const secondAttachment = documentFrom(second.result.value.records)
+    expect(firstAttachment['displayId']).toMatch(/^document-view:/u)
+    expect(firstAttachment).toEqual({
+      displayId: firstAttachment['displayId'],
+      name: 'fixture.md',
+      mediaType: 'text/markdown',
+      bytes: 9,
+      extractedBytes: 0,
+      truncated: false,
+    })
+    expect(secondAttachment['displayId']).toBe(firstAttachment['displayId'])
+    expect(JSON.stringify(firstAttachment)).not.toContain('fixture:')
+    expect(firstAttachment).not.toHaveProperty('attachmentId')
+    expect(firstAttachment).not.toHaveProperty('extractedTextId')
+
+    await api.sessions.cancel(req({ sessionId }))
   })
 
   it('timing hooks: history delay + one-shot failure, silent append, and breakStreams end open generators', async () => {

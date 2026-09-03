@@ -58,7 +58,7 @@ API Gateway Client 把内部 `$events` logical stream 注册为唯一 generation
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **`/api` 桥把每个请求体整体缓冲在内存里**：`maxRequestBodyBytes`（默认 300 MiB，按默认 200 MiB 图片总量上限经 base64 膨胀加信封余量得出）因此同时是单请求的驻留内存上界；要降低它而不缩小图片限额，需要流式请求体路径。
+- **`/api` 桥把每个请求体整体缓冲在内存里**：`maxRequestBodyBytes` 为 300 MiB。Prompt 接纳为图片和文档合计最多保留 296 MiB canonical base64 code unit，并给闭合 JSON 信封留下 4 MiB。Renderer 会在读取文件字节前检查组合上限并串行读取，Host 则在解码前独立重复同一精确检查。要降低这项驻留内存上界而不缩小附件限额，需要流式请求体路径。
 - **浏览器 cookie 不带 `Secure`**：随附载体是 loopback HTTP；若部署经明文网络暴露同一 authority，bearer cookie 可能在传输中泄露。
 - **没有 logout 操作**：清除浏览器 cookie 会结束单个浏览器会话；删除 owner 凭据记录并重启 `dsh` 会撤销全部会话。
 

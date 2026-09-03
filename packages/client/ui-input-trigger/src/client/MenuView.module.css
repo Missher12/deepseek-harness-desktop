@@ -31,6 +31,19 @@
   overflow-y: auto;
 }
 
+.composerAdd {
+  width: min(424px, 100%);
+  min-width: min(360px, 100%);
+  padding: 5px;
+  border-color: color-mix(in srgb, var(--dsw-alias-border-inverted) 82%, transparent);
+  border-radius: 11px;
+  box-shadow: 0 12px 34px rgb(0 0 0 / 13%), 0 2px 8px rgb(0 0 0 / 8%);
+}
+
+.addViewport {
+  gap: 0;
+}
+
 .item {
   display: flex;
   align-items: center;
@@ -48,6 +61,14 @@
   text-align: left;
 }
 
+.addItem {
+  min-height: 32px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
 /* One shared highlight: pointer motion parks it here through the hover event,
    so there is no separate :hover tint competing with the keyboard's. */
 .item.active {
@@ -60,6 +81,13 @@
   padding: 6px 10px 2px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.composerAdd .sectionTitle {
+  min-height: 24px;
+  padding: 5px 8px 1px;
   font-weight: 500;
   line-height: 18px;
 }
@@ -84,6 +112,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.composerAdd .itemName {
+  max-width: 44%;
 }
 
 .itemDescription {

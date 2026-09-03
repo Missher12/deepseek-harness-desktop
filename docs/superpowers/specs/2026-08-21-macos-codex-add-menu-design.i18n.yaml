@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/superpowers/specs/2026-08-21-macos-codex-add-menu-design.md
+2026-08-21-macos-codex-add-menu-design.md: 83b08d04245232c70df73a46ea367c6ba8b2cd23
+2026-08-21-macos-codex-add-menu-design.zh.md: 725348dbc17bd85a42de0862b04d8bb8ef0e27f1

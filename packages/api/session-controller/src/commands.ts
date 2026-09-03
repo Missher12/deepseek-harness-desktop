@@ -34,6 +34,8 @@ import type {
   SessionCancelValue,
   SessionCreateRequest,
   SessionCreateValue,
+  SessionDeleteRequest,
+  SessionDeleteValue,
   SessionForkRequest,
   SessionForkValue,
   SessionPromptRequest,
@@ -109,6 +111,80 @@ export class SessionCommandController {
     }
     const agentPreset = this.agents.presetForSession(adopted.session)
     return { sessionId, ...(agentPreset === undefined ? {} : { agentPreset }) }
+  }
+
+  /**
+   * Permanently delete one archived ordinary Session without touching project files or attachments.
+   * @param request - archived Session identity.
+   * @returns confirmation after persistence and workspace accounting settle.
+   */
+  async delete(request: SessionDeleteRequest): Promise<SessionDeleteValue> {
+    const { sessionId } = request
+    if (!this.ctx.workspaceRegistry.archivedSessionIds.includes(sessionId)) {
+      throw new RemoteError(
+        'session/not-archived',
+        `session "${sessionId}" must be archived before it can be permanently deleted`,
+        { sessionId },
+      )
+    }
+
+    const attached = this.ctx.sessions.get(sessionId)
+    const live = this.ctx.agents.get(sessionId)
+    if (attached !== undefined && hasApiSessionSubagentOwner(this.ctx, attached, live)) {
+      throw apiSessionSubagentOwnershipError(sessionId)
+    }
+    if (live?.status === 'running') {
+      throw new RemoteError(
+        'session/agent-busy',
+        `session "${sessionId}" is still running`,
+        { reason: 'running-session' },
+      )
+    }
+    if (live !== undefined && !await this.agents.disposeOwned(sessionId)) {
+      throw new RemoteError(
+        'session/agent-busy',
+        `session "${sessionId}" is active under another owner`,
+        { reason: 'unowned-session' },
+      )
+    }
+    if (live === undefined && attached !== undefined) {
+      throw new RemoteError(
+        'session/agent-busy',
+        `session "${sessionId}" is attached without an owned Agent`,
+        { reason: 'unowned-session' },
+      )
+    }
+    if (live === undefined) {
+      try {
+        const source = await this.readSessionState(sessionId)
+        if (source.header.origin === 'subagent') throw apiSessionSubagentOwnershipError(sessionId)
+      } catch (error) {
+        if (!(error instanceof ApiSessionNotFound)) throw error
+      }
+    }
+    if (!this.ctx.workspaceRegistry.archivedSessionIds.includes(sessionId)) {
+      throw new RemoteError(
+        'session/not-archived',
+        `session "${sessionId}" is no longer archived`,
+        { sessionId },
+      )
+    }
+    const persistence = this.ctx.get('sessionPersistence')
+    if (persistence === undefined) {
+      throw new RemoteError('gateway/internal', 'session persistence is unavailable', {})
+    }
+    try {
+      await persistence.delete(sessionId)
+      await this.ctx.workspaceRegistry.purgeSession(sessionId)
+      return { deleted: true }
+    } catch (error) {
+      if (remoteErrorOf(error) !== undefined) throw error
+      throw new RemoteError(
+        'gateway/internal',
+        `failed to delete session "${sessionId}": ${String(error)}`,
+        {},
+      )
+    }
   }
 
   /**
@@ -244,7 +320,7 @@ export class SessionCommandController {
     const composition = await this.agents.composeAgent(this.agents.presetForObservation(source))
     try {
       const { provider, model } = this.ctx.agentDefaultModel.currentSelection()
-      await this.ctx.agents.create({
+      await this.agents.createOwned({
         sessionId: childId,
         seed: source.events.slice(0, cut),
         inheritedEventCount: cut,

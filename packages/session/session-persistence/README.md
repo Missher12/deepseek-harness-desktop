@@ -106,6 +106,28 @@ Read these pages when the package-level contract is not enough. They move from t
 - [Session checkpoint policy](../session-checkpoint-policy/README.md) — the plugin that flushes through this service at semantic boundaries.
 - [Session package map](../README.md) — adjacent persistence, projection, title, and telemetry packages.
 
+The side-effect-free `locate`, lightweight `listSnapshots`, and per-id `readStoredRevision` queries remain backend-owned because they describe storage topology and revision identity rather than write orchestration. `listSnapshots(signal?)` passes the caller's exact signal into backend discovery so observers can cancel that work without detaching it.
+
+The `PersistenceBackend<TornMarker>` hooks (the only contract between the coordinator and storage):
+
+| Hook | Role |
+|---|---|
+| `name` | Backend label for the dispose-failure `AggregateError`. |
+| `loadStored(id, signal?)` | Read a stored prefix by id across every storage scope. Used by resume/load, non-mutating inspect, live adoption, and the create-collision probe. The optional signal belongs to observation-only reads. Returned metadata identifies `id`; `revision` identifies exactly the returned header and events; an opaque `tornMarker` is present iff a torn tail must be truncated. |
+| `readStoredRevision(id, signal?)` | Read the current source-qualified revision for one id without loading its event log. It uses the same revision representation as `loadStored` and returns `undefined` when the id is absent. |
+| `deleteStored(id)` | Permanently remove only the backend-owned state for one id and report whether it existed. The coordinator invokes it only after liveness, retirement, reservation, and per-id serialization fences pass. |
+| `loadStoredFrom?(id, fromSeq, signal?)` | Optional seek-capable suffix read behind the service's `readFrom`: the header plus stored events with `seq >= fromSeq`, non-mutating, no torn marker. SQLite implements it (`WHERE seq >= ?`); a backend that omits it gets the coordinator's fallback — `loadStored` plus a forward skip. |
+| `appendBatch(meta, events, isMaterialized)` | Durably append a contiguous batch, lazily materializing ATOMICALLY when not yet materialized. |
+| `commitRepair(meta, tornMarker, closers)` | Make a crash repair durable: truncate the torn tail (iff `tornMarker !== undefined` — a marker may be falsy, e.g. seq/offset `0`) and append `closers`. NOT required to be atomic. Used by load (truncate + closers) and live-adoption (truncate only). |
+| `list(signal?)` | List all stored metadata, observing optional cancellation. |
+| `close?()` | Optional lifecycle teardown (e.g. close a db handle), awaited after the dispose drain. |
+
+The coordinator asserts the stored id and compares stored/live cwd before repair or live adoption. Its `inspect()` path takes ownership of fresh backend values, validates and freezes them once, and retains at most the configured number of unpublished Sessions without calling `commitRepair`. A retained source is reused or repaired only when its revision still equals `readStoredRevision`; otherwise the coordinator reloads it. This freshness check does not add cross-process writer exclusion. Revision retries converge when the durable log remains unchanged for one read/check round trip; continuous external writers can delay `load`, `inspect`, or `prepare`. The `tornMarker` is fully OPAQUE: the coordinator only tests `!== undefined` and round-trips it to `commitRepair`, never inspecting its value (the JSONL backend uses the byte offset to truncate to, the SQLite backend the seq to delete from). A third-party backend MAY implement the abstract service directly without the coordinator, but it must provide the same non-mutating inspection and trustworthy lightweight snapshot revisions. See [the write-coordinator Agent Note](../../../.agents/notes/implemented/architecture/2026-06-18-shared-persistence-write-coordinator.md).
+
+## Metadata and location types
+
+Re-exported from `dsh-session`: `SessionHeader` (immutable session metadata: `version`, `id`, `createdAt`, `cwd?`, `parentSession?`, `seedLength?`, `origin?`, `delegationDepth?`). `SessionLocation` is `{ readonly kind: string; readonly path: string }`; its path is an absolute backend target, not proof that the artifact exists or contains an unflushed turn.
+
 -----
 
 <a id="model-experience"></a>
@@ -132,7 +154,6 @@ Persistence does not mutate live request prefixes. A resumed loop can reuse prov
 
 These limits define where the seam's guarantees stop. They are current package constraints, not a task backlog.
 
-- **No deletion or retention API** — pruning stored sessions is out-of-band backend maintenance.
 - **`list()` is unpaginated and unfiltered** — it returns every stored session's header; fine for local stores, unindexed at scale.
 - **Synthetic closers are the only crash story** — a backend must synthesize `tool/result`/`step/end`/`turn/end` closers on load; there is no partial-turn resume that continues an interrupted turn instead of closing it.
 

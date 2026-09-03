@@ -8,6 +8,8 @@ import type { MenuState } from '../core/contract.ts'
 export interface MenuViewInjected {
   /** The service's menu state store (read-only here; MenuView subscribes). */
   menu: SnapshotStore<MenuState>
+  /** Named programmatic launcher, used only to select the launcher's presentation. */
+  launcher: SnapshotStore<string | null>
   /** Crumbs published per source for the open menu; sources without a header never appear. */
   headers: SnapshotStore<ReadonlyMap<string, readonly InputTriggerCrumb[]>>
   /**

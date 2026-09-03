@@ -85,6 +85,11 @@ export interface ISessions {
     signal: AbortSignal,
   ): Promise<RemoteResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>>
   /**
+   * Permanently delete one archived ordinary session.
+   * @param sessionId - archived session to delete.
+   */
+  delete(sessionId: SessionId): Promise<void>
+  /**
    * Fork a session from a completed-turn prefix of the source; on resolution
    * the child is in the list store and `open()` can target it.
    * @param opts - source session id, the optional event seq anchoring the

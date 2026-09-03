@@ -30,6 +30,43 @@ import styles from './ModelsSection.module.css'
  */
 export type ModelDraft = DeepSeekModelDraft
 
+/** Standard provider-neutral reasoning levels accepted by llm-pi-ai profiles. */
+const REASONING_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+
+type ReasoningLevel = typeof REASONING_LEVELS[number]
+type ReasoningChoice = '' | 'off' | 'only-high' | ReasoningLevel
+type InputChoice = '' | 'text' | 'image'
+
+/** The highest standard level described by a model draft. */
+function reasoningChoiceOf(model: ModelDraft): ReasoningChoice {
+  const efforts = model['reasoningEfforts']
+  if (efforts === false) return 'off'
+  if (typeof efforts !== 'object' || efforts === null || Array.isArray(efforts)) return ''
+  const positive = Object.entries(efforts)
+    .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].length > 0)
+  if (positive.length === 1 && positive[0]?.[0] === 'high') return 'only-high'
+  for (const level of [...REASONING_LEVELS].reverse()) {
+    const wire = (efforts as Record<string, unknown>)[level]
+    if (typeof wire === 'string' && wire.length > 0) return level
+  }
+  return ''
+}
+
+/** Build an explicit capability map through the chosen ceiling. */
+function reasoningEffortsThrough(ceiling: ReasoningLevel): Partial<Record<ReasoningLevel, string>> {
+  const last = REASONING_LEVELS.indexOf(ceiling)
+  return Object.fromEntries(REASONING_LEVELS.slice(0, last + 1).map(level => [level, level]))
+}
+
+/** Resolve the three UI states without interpreting unknown hand-written values. */
+function inputChoiceOf(model: ModelDraft): InputChoice {
+  const input = model['input']
+  if (!Array.isArray(input)) return ''
+  if (input.includes('image')) return 'image'
+  if (input.includes('text')) return 'text'
+  return ''
+}
+
 /** A row's text field, or the empty string when unset or not a string. */
 function textOf(model: ModelDraft, key: string): string {
   const value = model[key]
@@ -148,6 +185,7 @@ function adopt(candidate: LlmDiscoveredModel): ModelDraft {
     ...candidate.name === undefined ? {} : { name: candidate.name },
     ...candidate.contextWindow === undefined ? {} : { contextWindow: candidate.contextWindow },
     ...candidate.maxTokens === undefined ? {} : { maxTokens: candidate.maxTokens },
+    ...candidate.inputModalities === undefined ? {} : { input: [...candidate.inputModalities] },
   }
 }
 
@@ -209,7 +247,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     })
   }
 
-  const patch = (index: number, next: Record<string, string | number | undefined>): void => {
+  const patch = (index: number, next: Record<string, unknown>): void => {
     onChange(models.map((model, at) => {
       if (at !== index) return model
       // Rebuilt rather than spread over: an emptied optional field has to leave
@@ -433,6 +471,57 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     disabled={disabled}
                     onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
                   />
+                </label>
+                <label className={styles['modelField']}>
+                  <span className={styles['modelFieldLabel']}>{t('modelReasoningCeiling')}</span>
+                  <select
+                    className={`${styles['input']} ${styles['selectInput']}`}
+                    value={reasoningChoiceOf(model)}
+                    aria-label={`${t('modelReasoningCeiling')} ${index + 1}`}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      const choice = event.target.value as ReasoningChoice
+                      patch(index, {
+                        reasoningEfforts: choice === ''
+                          ? undefined
+                          : choice === 'off'
+                            ? false
+                            : choice === 'only-high'
+                              ? { high: 'high' }
+                              : reasoningEffortsThrough(choice),
+                      })
+                    }}
+                  >
+                    <option value="">{t('modelReasoningAutomatic')}</option>
+                    <option value="off">{t('modelReasoningDisabled')}</option>
+                    <option value="only-high">{t('modelReasoningOnlyHigh')}</option>
+                    {REASONING_LEVELS.map(level => (
+                      <option key={level} value={level}>{level === 'xhigh' ? t('modelReasoningLevelXHigh') : `${level.charAt(0).toUpperCase()}${level.slice(1)}`}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className={styles['modelField']}>
+                  <span className={styles['modelFieldLabel']}>{t('modelInputCapability')}</span>
+                  <select
+                    className={`${styles['input']} ${styles['selectInput']}`}
+                    value={inputChoiceOf(model)}
+                    aria-label={`${t('modelInputCapability')} ${index + 1}`}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      const choice = event.target.value as InputChoice
+                      patch(index, {
+                        input: choice === ''
+                          ? undefined
+                          : choice === 'text'
+                            ? ['text']
+                            : ['text', 'image'],
+                      })
+                    }}
+                  >
+                    <option value="">{t('modelInputAutomatic')}</option>
+                    <option value="text">{t('modelInputText')}</option>
+                    <option value="image">{t('modelInputImages')}</option>
+                  </select>
                 </label>
               </div>
             )

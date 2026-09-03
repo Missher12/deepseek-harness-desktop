@@ -110,6 +110,16 @@ export class WorkspaceController extends TypertRemoteService {
   }
 
   /**
+   * Restore one archived Session to Workspace grouping surfaces.
+   * @param request - Session identity to restore.
+   * @returns the complete resulting archive set.
+   */
+  @Remote('restoreSession')
+  restoreSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
+    return this.commands.restoreSession(request)
+  }
+
+  /**
    * Stream a complete Workspace baseline followed by ordered increments.
    * @param signal - generation cancellation.
    * @returns baseline followed by ordered Workspace increments.

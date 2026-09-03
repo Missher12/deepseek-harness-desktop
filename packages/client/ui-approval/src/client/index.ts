@@ -2,6 +2,8 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { PendingInteractionPublisher } from '@deepseek-ai/dsh-client-ui-session/client'
@@ -30,6 +32,14 @@ type ClientApprovalRequest = Parameters<ApprovalListener>[0]
 type ClientApprovalNext = Parameters<ApprovalListener>[1]
 type ClientApprovalOutcome = Awaited<ReturnType<ApprovalListener>>
 
+/** Execute the one closed Session permission command without exposing a general command face. */
+async function enableSessionFullAccess(sessions: ISessions, sessionId: SessionId): Promise<boolean> {
+  const session = sessions.binding(sessionId)?.session
+  if (session === undefined) return false
+  const result = await session.command('/permission danger-full-access')
+  return result.ok && result.value.matched
+}
+
 /* jscpd:ignore-start -- Approval and Question intentionally mirror one Remote waterfall lifecycle. */
 /** Present one request until the user answers or its lifetime ends. */
 async function answerApproval(
@@ -48,7 +58,7 @@ async function answerApproval(
       : { callId: request.callId }),
     ...(request.reason === undefined ? {} : { reason: request.reason }),
     ...(request.signal === undefined ? {} : { signal: request.signal }),
-  })
+  }, () => enableSessionFullAccess(ctx.sessions, sessionId))
   const completed = Promise.withResolvers<void>()
   const remove = registerPendingInteraction(pending, async () => {
     pending.delegate()

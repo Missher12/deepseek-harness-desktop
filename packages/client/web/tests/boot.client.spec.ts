@@ -90,6 +90,60 @@ describe('bootstrap failure rendering', () => {
 })
 
 describe('plugin activation', () => {
+  it('starts ordinary bundle imports while immediate-tier prefetch is still in flight', async () => {
+    const events: string[] = []
+    const container = document.createElement('div')
+    document.body.append(container)
+    const target = installFacade()
+    let releaseImmediate = (): void => {}
+    const immediateGate = new Promise<void>((resolve) => { releaseImmediate = resolve })
+    win.__DSH_BOOT__ = {
+      rev: 'graph',
+      entries: [
+        { id: 'immediate', url: '/immediate.js', rev: '1', immediately: true },
+        { id: 'renderer', url: '/renderer.js', rev: '1' },
+      ],
+      batches: [
+        { phase: 'bootstrap', url: '/immediate.js', rev: 'immediate-batch', entries: ['immediate'] },
+        { phase: 'application', url: '/renderer.js', rev: 'renderer-batch', entries: ['renderer'] },
+      ],
+    }
+    const registrations = new Map<string, ClientBundleRegistration>([
+      ['/immediate.js', { id: 'immediate', factory: () => ({ apply: () => {} }) }],
+      ['/renderer.js', {
+        id: 'renderer',
+        factory: () => ({
+          apply: (ctx: Context) => {
+            ctx.reflect.provide('uiRenderer', {
+              mount: (element: HTMLElement) => {
+                element.textContent = 'mounted'
+                return () => {}
+              },
+            })
+          },
+        }),
+      }],
+    ])
+    const entry = new AppWebEntry(container, {
+      loadBundle: async (url) => {
+        events.push(url)
+        if (url === '/immediate.js') await immediateGate
+        const registration = registrations.get(url)
+        if (registration === undefined) throw new Error(`missing fixture registration ${url}`)
+        target.load(registration)
+      },
+    })
+
+    const running = entry.run()
+    await vi.waitFor(() => { expect(events).toContain('/immediate.js') })
+    await vi.waitFor(() => { expect(events).toContain('/renderer.js') })
+    releaseImmediate()
+    await running
+
+    expect(container.textContent).toBe('mounted')
+    await entry.dispose()
+  })
+
   it('prefetches a parser-loaded immediate row through the injected bundle transport', async () => {
     const container = document.createElement('div')
     document.body.append(container)

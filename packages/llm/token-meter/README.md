@@ -11,6 +11,7 @@ English | [中文](README.zh.md)
 
 `@deepseek-ai/dsh-token-meter` is the replay-aware token measurement service: `ctx.tokenMeter` advances one isolated fold per session from the durable event log, so compaction and other pressure-sensitive plugins share one accounting without depending on the compaction engine. With it you can measure current request and context pressure, price a single message, and — when the session-projection seam is mounted — read the `tokenUsage`, `contextPressure`, and `contextBreakdown` projections. It uses a fixed heuristic for text and routes without image pricing, applies adapter-declared visual-token pricing when available, and reuses provider-reported usage only when the request envelope matches exactly. It adds no prompt, message, schema, or tool of its own, and it never makes decisions for the loop.
 
+The estimator has no settings. It intentionally uses one fixed heuristic: four characters per token plus structural overhead for roles, blocks, and request-envelope fields. A durable document is the deliberate exception: because the final model request replaces its small reference with XML-escaped extracted text, the meter reserves the worst-case six output bytes per stored UTF-8 text byte, priced at one token per byte, plus bounded metadata. Any key is rejected; model capacity belongs to the adapter that owns an exact provider/model route and is available through `ctx.llm.resolveModelInfo().context`.
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -126,12 +127,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 
 ## Known Limitations and Deferred Work
 
-<a id="known-limitations-and-deferred-work"></a>
-
-
-These limits define where the measurement stops and future work begins. They are current package constraints, not a general token-accounting comparison or a task backlog.
-
-- **The fixed heuristic is approximate** — text without reusable provider usage is priced by character count plus structural overhead, not an exact provider tokenizer or request serializer; only image occurrences on routes with declared pricing carry provider-exact visual tokens.
+- **The fixed heuristic is approximate** — ordinary content without reusable provider usage is priced by character count plus structural overhead, not an exact provider tokenizer or request serializer. Documents reserve their worst-case XML-escaped byte expansion so context planning cannot mistake a large future projection for a tiny durable reference.
 - **Every measurement clones the current surface** — coherent immutable snapshots make reads O(surface), including below-threshold pressure checks.
 - **Provider usage is only reusable for an identical canonical envelope** — prompt, prefix, tools, provider, model, or call-config changes deliberately fall back to full heuristic estimation.
 - **Missing legacy source seqs are handled conservatively** — assistant messages without `sourceEventSeqs` cannot distinguish provider output from listener rewrites, so the fold avoids claiming a known empty or exact chunk stream.

@@ -63,6 +63,15 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
+:global(body[data-dsh-surface='desktop']) .card {
+  border-radius: 16px;
+  box-shadow: var(--dsw-shadow-lv1);
+}
+
+:global(body[data-dsh-surface='desktop']) .cardWorkspaceTrigger::after {
+  border-radius: 16px;
+}
+
 /* No-workspace trigger state: dashed l4 stroke marks the card as a pick-a-
    workspace affordance rather than a live composer; hover answers in the
    business blue to invite the click. Native `dashed` has a fixed browser

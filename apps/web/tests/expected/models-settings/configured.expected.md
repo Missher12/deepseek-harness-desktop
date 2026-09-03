@@ -4,9 +4,18 @@
     - button "通用设置":
       - img
       - text: 通用设置
+    - button "个性化":
+      - img
+      - text: 个性化
+    - button "记忆与学习":
+      - img
+      - text: 记忆与学习
     - button "模型":
       - img
       - text: 模型
+    - button "使用统计":
+      - img
+      - text: 使用统计
     - button "插件":
       - img
       - text: 插件

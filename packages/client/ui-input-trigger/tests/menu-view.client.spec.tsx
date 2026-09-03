@@ -59,9 +59,14 @@ afterEach(() => {
 // unknown source comes back verbatim (its raw name).
 const t = makeTranslate(zh, commonZh)
 
-function mount(state: MenuState, crumbs: ReadonlyMap<string, readonly InputTriggerCrumb[]> = new Map()) {
+function mount(
+  state: MenuState,
+  crumbs: ReadonlyMap<string, readonly InputTriggerCrumb[]> = new Map(),
+  launcherName: string | null = null,
+) {
   const menu = createSnapshotStore<MenuState>(state)
   const headers = createSnapshotStore<ReadonlyMap<string, readonly InputTriggerCrumb[]>>(crumbs)
+  const launcher = createSnapshotStore<string | null>(launcherName)
   const onPick = vi.fn()
   const onCrumb = vi.fn()
   const onHover = vi.fn()
@@ -69,6 +74,7 @@ function mount(state: MenuState, crumbs: ReadonlyMap<string, readonly InputTrigg
   const view = render(
     <MenuView
       menu={menu}
+      launcher={launcher}
       headers={headers}
       onPick={onPick}
       onCrumb={onCrumb}
@@ -77,7 +83,7 @@ function mount(state: MenuState, crumbs: ReadonlyMap<string, readonly InputTrigg
       t={t}
     />,
   )
-  return { menu, headers, onPick, onCrumb, onHover, onDismiss, view }
+  return { menu, launcher, headers, onPick, onCrumb, onHover, onDismiss, view }
 }
 
 /** The bounded menu shell: it owns the height clamp, the listbox scrolls inside it. */
@@ -170,6 +176,54 @@ describe('MenuView', () => {
     expect(onPick).toHaveBeenCalledWith('reference', 2)
   })
 
+  it('renders the composer Add launcher as one compact sectioned list with SVG icons and no duplicate section title', () => {
+    const { view, onPick } = mount(openState({
+      groups: [
+        {
+          source: 'composer-add',
+          showGroupTitle: false,
+          status: 'ready',
+          items: [
+            { name: '文件和文件夹', value: 'files', description: '引用工作区内容', section: '添加' },
+            { name: '添加图片', value: 'image', description: 'PNG、JPG、WebP 或 GIF', section: '添加' },
+          ],
+        },
+        {
+          source: 'command',
+          status: 'ready',
+          items: [
+            { name: 'goal', description: '设置目标', section: '添加' },
+            { name: 'plan', description: '进入计划模式', section: '添加' },
+            { name: 'compact', description: '压缩上下文', section: '命令' },
+          ],
+        },
+        {
+          source: 'skill',
+          status: 'ready',
+          items: [{ name: 'github', description: '处理 GitHub 工作流', section: '插件' }],
+        },
+      ],
+      highlight: { source: 'composer-add', index: 0 },
+    }), new Map(), 'composer-add')
+
+    expect(view.container.querySelector('[data-composer-add-menu]')).not.toBeNull()
+    expect([...view.container.querySelectorAll('[data-add-section]')].map(node => node.textContent)).toEqual([
+      '添加', '命令', '插件',
+    ])
+    const options = screen.getAllByRole('option')
+    expect(options.map(option => option.textContent)).toEqual([
+      '文件和文件夹引用工作区内容',
+      '添加图片PNG、JPG、WebP 或 GIF',
+      'goal设置目标',
+      'plan进入计划模式',
+      'compact压缩上下文',
+      'github处理 GitHub 工作流',
+    ])
+    expect(options.every(option => option.querySelector('svg') !== null)).toBe(true)
+    fireEvent.mouseDown(options[3]!)
+    expect(onPick).toHaveBeenCalledWith('command', 1)
+  })
+
   it('renders the drill chevron only on drillable rows and routes its own action', () => {
     const { onPick } = mount(openState({
       groups: [{
@@ -256,6 +310,7 @@ describe('MenuView', () => {
       <div data-composer-card="">
         <MenuView
           menu={menu}
+          launcher={createSnapshotStore<string | null>(null)}
           headers={createSnapshotStore<ReadonlyMap<string, readonly InputTriggerCrumb[]>>(new Map())}
           onPick={vi.fn()}
           onCrumb={vi.fn()}

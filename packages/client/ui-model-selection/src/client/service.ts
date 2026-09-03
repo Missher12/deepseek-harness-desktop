@@ -38,6 +38,9 @@ export class ModelDirectoryResolver extends Service {
   private readonly live: LiveState = { directories: new Map() }
   private readonly catalog: ModelCatalogDirectory
 
+  /** The owning root context; service methods must not read caller-routed `this.ctx`. */
+  private readonly root: Context
+
   /** Localized composer-block copy; this plugin owns the string it raises. */
   private readonly blockReason: () => string
 
@@ -47,6 +50,7 @@ export class ModelDirectoryResolver extends Service {
    */
   constructor(ctx: Context, config: { blockReason: () => string }) {
     super(ctx, 'modelDirectories')
+    this.root = ctx
     this.blockReason = config.blockReason
     this.catalog = new ModelCatalogDirectory(ctx)
     void this.catalog.load().catch(() => { /* selectors expose the shared error */ })
@@ -69,13 +73,13 @@ export class ModelDirectoryResolver extends Service {
     const { live } = this
     const existing = live.directories.get(sessionId)
     if (existing !== undefined) return existing
-    const sessions = this.ctx.sessions
+    const sessions = this.root.sessions
     const actx = sessions.scope(sessionId)
     if (actx === undefined) throw new Error(`ui-model-selection: session "${String(sessionId)}" resolved no scope`)
     const binding = sessions.binding(sessionId)
     if (binding === undefined) throw new Error(`ui-model-selection: session "${String(sessionId)}" resolved no binding`)
     const directory = new ModelDirectory(
-      this.ctx.remote.session,
+      this.root.remote.session,
       sessionId,
       () => sessions.subagentAddress(sessionId) === undefined,
       this.catalog,
@@ -87,7 +91,7 @@ export class ModelDirectoryResolver extends Service {
     // session's route, and only a definite `false` makes the input inert.
     // `null` — before the first load, or after one failed — must not, or a
     // slow or unreachable Host would lock a working composer.
-    const conversation = this.ctx.get('conversation')
+    const conversation = this.root.get('conversation')
     if (conversation !== undefined) {
       const publish = (): void => {
         conversation.blocks.set(sessionId, directory.store.getSnapshot().routable === false

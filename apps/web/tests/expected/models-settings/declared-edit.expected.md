@@ -4,9 +4,18 @@
     - button "通用设置":
       - img
       - text: 通用设置
+    - button "个性化":
+      - img
+      - text: 个性化
+    - button "记忆与学习":
+      - img
+      - text: 记忆与学习
     - button "模型":
       - img
       - text: 模型
+    - button "使用统计":
+      - img
+      - text: 使用统计
     - button "插件":
       - img
       - text: 插件
@@ -55,8 +64,29 @@
             - text: acme-large
           - textbox "显示名称 1":
             - /placeholder: 显示名称
-          - button "容量 1"
+          - button "模型详情 1" [expanded]
           - button "删除模型 1"
+          - text: 上下文窗口
+          - textbox "上下文窗口 1":
+            - /placeholder: 256K
+          - text: 最大输出 token
+          - textbox "最大输出 token 1":
+            - /placeholder: 32K
+          - text: 推理能力
+          - combobox "推理能力 1":
+            - option "自动（使用模型目录能力）"
+            - option "不支持推理调节"
+            - option "仅 High"
+            - option "Low"
+            - option "Medium"
+            - option "High" [selected]
+            - option "XHigh"
+            - option "Max"
+          - text: 输入能力
+          - combobox "输入能力 1":
+            - option "自动（模型目录或提供方默认）" [selected]
+            - option "仅文本"
+            - option "文本和图片"
           - button "添加模型"
       - button "取消"
       - button "保存"

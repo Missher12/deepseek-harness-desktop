@@ -266,8 +266,12 @@ describe('gate graph validation', () => {
     expect(byId.get('coverage')?.allowFailure).not.toBe(true)
     expect(byId.get('coverage')?.needs).toContain('build')
     expect(byId.get('coverage-exempt-heavy')?.allowFailure).not.toBe(true)
-    expect(byId.get('coverage')?.needs).toContain('build')
-    expect(byId.get('coverage-exempt-heavy')?.needs).toContain('build')
+    expect(byId.get('coverage')?.needs).toEqual(['build', 'windows-site'])
+    expect(byId.get('coverage-exempt-heavy')?.needs).toEqual([
+      'build',
+      'windows-site',
+      'coverage',
+    ])
     expect(byId.get('coverage-exempt-heavy')?.args).toContain(
       'packages/experimental/webworker-packer/tests/image-loadable.spec.ts',
     )
@@ -540,7 +544,23 @@ describe('Node 24 lane ownership', () => {
     ]) {
       expect(subject.find(item => item.id === id)?.needs).toEqual(['built-package-invariants'])
     }
-    expect(subject.find(item => item.id === 'snapshot')?.env).toEqual({ DSH_EXAMPLE_MODE: 'lib' })
+    expect(subject.find(item => item.id === 'web-snapshot')).toMatchObject({
+      needs: ['built-package-invariants'],
+      after: [
+        'node-compat',
+        'publint',
+        'lint-and-duplication',
+        'snapshot',
+        'expected-output',
+        'doc-typecheck',
+        'node-next-types',
+        'built-bin-smoke',
+      ],
+    })
+    expect(subject.find(item => item.id === 'snapshot')?.env).toEqual({
+      DSH_EXAMPLE_MODE: 'lib',
+      DSH_SNAPSHOT_MAX_CONCURRENCY: '1',
+    })
     expect(subject.find(item => item.id === 'expected-output')?.env).toEqual({ DSH_EXAMPLE_MODE: 'lib' })
     expect(subject.find(item => item.id === 'doc-typecheck')?.env).toEqual({
       DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1',
@@ -549,6 +569,7 @@ describe('Node 24 lane ownership', () => {
       expect.arrayContaining([
         'packages/subagent/subagent-codex/tests/loader-composition.e2e.ts',
         'packages/subagent/subagent-claude-code/tests/loader-composition.e2e.ts',
+        'packages/attachment/attachment-local/tests/pdf-isolate.built.e2e.ts',
         'packages/experimental/agent-team/tests/built-lib.e2e.ts',
       ]),
     )
@@ -556,6 +577,7 @@ describe('Node 24 lane ownership', () => {
       displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
       env: { DSH_SNAPSHOT: 'replay' },
       after: [
+        'node-compat',
         'publint',
         'lint-and-duplication',
         'snapshot',

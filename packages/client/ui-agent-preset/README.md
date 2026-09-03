@@ -1,7 +1,4 @@
----
-description: "Agent-preset surfaces for the Web GUI: the default-preset setting, the new-session chip, the session-header label, and the preset roster management section; for users and maintainers of agent composition."
-kind: "package-reference"
----
+--- description: "Agent-preset surfaces for the Web GUI: the default-preset setting, the new-session chip, the session-header label, and the preset roster management section; for users and maintainers of agent composition." kind: "package-reference" ---
 
 # @deepseek-ai/dsh-client-ui-agent-preset
 
@@ -36,6 +33,10 @@ The settings section shows the roster as cards: a copy dialog is the only way a 
 When the roster carries the self-referential `cordis` preset, a dashed add-card stages it and starts a new session — the section closes the settings panel and the new-session chip's own applier composes the blank session the workspace flow produces.
 
 -----
+
+Preset files publish one unlocalized `name` and `description`, which Web uses for every `user` row and unknown `system` row. For the twelve shipped ids (`standard`, `code`, `minimal`, `cordis`, `planner`, `frontend`, `backend`, `debugger`, `reviewer`, `qa`, `devops`, and `research`), Web resolves both fields from its active locale only when the roster marks the row `system`; an identically named `user` preset keeps its file metadata.
+
+The eight role presets extend the existing four rather than replacing them. They cover planning, frontend/UI, backend/API, troubleshooting, code review, testing/QA, DevOps/release, and documentation/research. Selection remains explicit on the new-session surface: there is no prompt classifier or automatic router, and a session keeps the composition it started with. Role instructions shape Agent behavior but are not a permission boundary; filesystem mutation, shell execution, production access, and approvals remain governed by the composed tools, sandbox policy, permission preset, and user authorization.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

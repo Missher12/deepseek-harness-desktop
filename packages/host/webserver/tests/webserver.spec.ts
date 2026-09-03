@@ -203,6 +203,14 @@ describe('real Loader composition', () => {
     expect(server).toBeInstanceOf(HttpServer)
     const port = server.port
     expect(port).toBeGreaterThan(0)
+    let generationInitializers = 0
+    const firstGenerationValue = server.generationValue('test-generation-value', () => {
+      generationInitializers += 1
+      return { marker: 'stable' }
+    })
+    expect(server.generationValue('test-generation-value', () => ({ marker: 'replacement' })))
+      .toBe(firstGenerationValue)
+    expect(generationInitializers).toBe(1)
 
     // Routing precedence: exact beats prefix, longest prefix wins, a prefix
     // route answers its own path, and routes own their method handling

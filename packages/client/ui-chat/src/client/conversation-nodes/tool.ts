@@ -7,6 +7,7 @@ import type {} from '@deepseek-ai/dsh-tools/types'
 import type { ToolChatData } from '../contract/chat-nodes.ts'
 import type { RunningToolCall, ToolCallBlock, ToolResultNode } from '../contract/snapshot.ts'
 import { CHAT_SYNTHETIC_SEQ_OFFSETS, chatNode } from './common.ts'
+import { rendererContent } from './event-projection.ts'
 
 declare module '../contract/chat-nodes.ts' {
   interface ChatNodeDataMap {
@@ -59,7 +60,7 @@ function rootResult(match: ConversationMatch, previous?: RunningToolCall): ToolR
     callId: String(match.event.data.message.source.callId),
     call: previous === undefined ? null : { name: previous.name, argsRaw: previous.argsRaw },
     callTime: previous?.time ?? null,
-    content: result.content,
+    content: rendererContent(result.content),
     isError: result.isError === true,
     ...match.event.data.error === undefined ? {} : { error: match.event.data.error },
     meta: match.event.data.meta,
@@ -140,12 +141,12 @@ function acceptsEdge(state: ToolState, parent: string, child: string): boolean {
 function updateDispatch(state: ToolState, match: ConversationMatch): ToolState {
   const event = match.event
   if (event.type !== 'tool/code-dispatch-start' && event.type !== 'tool/code-dispatch') return state
-  const data = event.data
-  const parentCallId = String(data.parentCallId)
-  const subCallId = String(data.subCallId)
+  const parentCallId = String(event.data.parentCallId)
+  const subCallId = String(event.data.subCallId)
   const siblings = state.children.get(parentCallId) ?? []
   const index = siblings.findIndex(candidate => candidate.callId === subCallId)
   if (event.type === 'tool/code-dispatch-start') {
+    const data = event.data
     if (index >= 0 || !acceptsEdge(state, parentCallId, subCallId)) return state
     const children = new Map(state.children)
     children.set(parentCallId, [...siblings, childCall(match, data)])
@@ -155,6 +156,10 @@ function updateDispatch(state: ToolState, match: ConversationMatch): ToolState {
   }
   if (index < 0 && !acceptsEdge(state, parentCallId, subCallId)) return state
   const previous = index < 0 ? undefined : siblings[index]
+  const data: DispatchData = {
+    ...event.data,
+    content: rendererContent(event.data.content),
+  }
   const settled = childResult(match, data, previous)
   const children = new Map(state.children)
   children.set(parentCallId, index < 0

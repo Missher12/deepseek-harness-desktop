@@ -4,9 +4,18 @@
     - button "General":
       - img
       - text: General
+    - button "Personalization":
+      - img
+      - text: Personalization
+    - button "Memory & Learning":
+      - img
+      - text: Memory & Learning
     - button "Models":
       - img
       - text: Models
+    - button "Usage":
+      - img
+      - text: Usage
     - button "Plugins":
       - img
       - text: Plugins

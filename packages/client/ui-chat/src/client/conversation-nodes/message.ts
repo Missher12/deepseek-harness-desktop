@@ -4,7 +4,7 @@ import { isAppendSurfaceEvent, isReplacementSurfaceEvent } from '@deepseek-ai/ds
 import type { ContextMessageNode, SteeringMessageNode, UserMessageNode } from '../contract/snapshot.ts'
 import type { InboxState } from './inbox.ts'
 import { chatNode } from './common.ts'
-import { contextForm, contextProvenance } from './event-projection.ts'
+import { contextForm, contextProvenance, rendererContent } from './event-projection.ts'
 
 interface ReferencedUserMessageNode extends UserMessageNode {
   /** Labels cited by the immediately following session-reference context. */
@@ -52,7 +52,7 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
         kind: 'context',
         seq: event.seq,
         time: event.time,
-        content: event.data.content,
+        content: rendererContent(event.data.content),
         source: event.data.source,
         provenance: contextProvenance(event.data.source),
         form: contextForm(event.data.source),
@@ -66,14 +66,14 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
         messageId: event.data.id,
         seq: event.seq,
         time: event.time,
-        content: event.data.content,
+        content: rendererContent(event.data.content),
         source: event.data.source,
       }
       : {
         kind: 'user',
         seq: event.seq,
         time: event.time,
-        content: event.data.content,
+        content: rendererContent(event.data.content),
         source: event.data.source,
       }
   },

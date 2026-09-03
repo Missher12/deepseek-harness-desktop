@@ -3,7 +3,8 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
+import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { Workspace, WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { describe, expect, it, vi } from 'vitest'
@@ -26,6 +27,16 @@ function controllerAgents(overrides: object = {}): ApiSessionAgentController {
     presetForObservation: () => undefined,
     ...overrides,
   } as unknown as ApiSessionAgentController
+}
+
+function controllerAgentsFor(
+  ctx: Context,
+  overrides: object = {},
+): ApiSessionAgentController {
+  return controllerAgents({
+    createOwned: async (options: CreateAgentOptions) => (await ctx.agents.create(options)).agent,
+    ...overrides,
+  })
 }
 
 async function baseContext(): Promise<Context> {
@@ -151,6 +162,117 @@ describe('Session creation failures', () => {
 
 })
 
+describe('archived Session deletion', () => {
+  async function deletionHarness(
+    sessionId: SessionId,
+    options: {
+      archived?: boolean
+      header?: SessionHeader
+      disposeOwned?: (id: SessionId) => Promise<boolean>
+    } = {},
+  ) {
+    const ctx = await baseContext()
+    const archivedSessionIds = options.archived === false ? [] : [sessionId]
+    const purgeSession = vi.fn(async (id: SessionId) => {
+      const index = archivedSessionIds.indexOf(id)
+      if (index >= 0) archivedSessionIds.splice(index, 1)
+    })
+    ctx.provide('workspaceRegistry', {
+      get archivedSessionIds() { return archivedSessionIds },
+      get: () => undefined,
+      list: () => [],
+      purgeSession,
+    } as never)
+    const remove = vi.fn(() => Promise.resolve(true))
+    ctx.provide('sessionPersistence', testSessionPersistence(ctx, {
+      list: () => Promise.resolve(options.header === undefined ? [] : [options.header]),
+      inspect: (id: SessionId) => options.header?.id === id
+        ? Promise.resolve({ meta: options.header, inheritedEventCount: SessionLogOffset(0), events: [] })
+        : Promise.resolve(undefined),
+      delete: remove,
+    }) as never)
+    const disposeOwned = vi.fn(options.disposeOwned ?? (() => Promise.resolve(true)))
+    return {
+      ctx,
+      controller: new SessionCommandController(
+        ctx,
+        controllerAgents({ disposeOwned }),
+        '/default',
+      ),
+      disposeOwned,
+      purgeSession,
+      remove,
+    }
+  }
+
+  it('requires archive state before touching an ordinary Session', async () => {
+    const sessionId = SessionId('not-archived')
+    const b = await deletionHarness(sessionId, { archived: false })
+
+    await expectFailure(b.controller.delete({ sessionId }), 'session/not-archived')
+    expect(b.disposeOwned).not.toHaveBeenCalled()
+    expect(b.remove).not.toHaveBeenCalled()
+    expect(b.purgeSession).not.toHaveBeenCalled()
+    await b.ctx.fiber.dispose()
+  })
+
+  it('deletes an archived cold ordinary Session and purges its Workspace references', async () => {
+    const sessionId = SessionId('cold-ordinary')
+    const b = await deletionHarness(sessionId, {
+      header: {
+        version: 0, id: sessionId, createdAt: 1, cwd: '/workspace', isSeeded: false,
+      },
+    })
+
+    await expect(b.controller.delete({ sessionId })).resolves.toEqual({ deleted: true })
+    expect(b.disposeOwned).not.toHaveBeenCalled()
+    expect(b.remove).toHaveBeenCalledWith(sessionId)
+    expect(b.purgeSession).toHaveBeenCalledWith(sessionId)
+    await b.ctx.fiber.dispose()
+  })
+
+  it('keeps archived subagent and unowned live Sessions intact', async () => {
+    const childId = SessionId('cold-child')
+    const child = await deletionHarness(childId, {
+      header: {
+        version: 0,
+        id: childId,
+        createdAt: 1,
+        cwd: '/workspace',
+        isSeeded: false,
+        parentSession: SessionId('parent'),
+        origin: 'subagent',
+      },
+    })
+    await expectFailure(child.controller.delete({ sessionId: childId }), 'session/agent-busy')
+    expect(child.remove).not.toHaveBeenCalled()
+    await child.ctx.fiber.dispose()
+
+    const liveId = SessionId('unowned-live')
+    const unowned = await deletionHarness(liveId, {
+      disposeOwned: () => Promise.resolve(false),
+    })
+    const session = unowned.ctx.sessions.create(liveId, { meta: { cwd: '/workspace' } })
+    unowned.ctx.agents.register({ id: liveId, session, status: 'idle', ctx: unowned.ctx } as Agent)
+    await expectFailure(unowned.controller.delete({ sessionId: liveId }), 'session/agent-busy')
+    expect(unowned.remove).not.toHaveBeenCalled()
+    await unowned.ctx.fiber.dispose()
+  })
+
+  it('stops an exact owned idle Agent before deleting durable state', async () => {
+    const sessionId = SessionId('owned-live')
+    const b = await deletionHarness(sessionId)
+    const session = b.ctx.sessions.create(sessionId, { meta: { cwd: '/workspace' } })
+    b.ctx.agents.register({ id: sessionId, session, status: 'idle', ctx: b.ctx } as Agent)
+
+    await expect(b.controller.delete({ sessionId })).resolves.toEqual({ deleted: true })
+    expect(b.disposeOwned).toHaveBeenCalledWith(sessionId)
+    expect(b.remove).toHaveBeenCalledWith(sessionId)
+    expect(b.purgeSession).toHaveBeenCalledWith(sessionId)
+    await b.ctx.fiber.dispose()
+  })
+})
+
 function completedSession(
   ctx: Context,
   id: string,
@@ -237,7 +359,11 @@ describe('Session fork failures', () => {
     creation.provide('workspaceRegistry', { list: () => [] } as never)
     const source = completedSession(creation, 'creation-source', '/workspace')
     vi.spyOn(creation.agents, 'create').mockRejectedValue(new Error('factory failed'))
-    const creationController = new SessionCommandController(creation, controllerAgents(), '/default')
+    const creationController = new SessionCommandController(
+      creation,
+      controllerAgentsFor(creation),
+      '/default',
+    )
     await expectFailure(creationController.fork({ sessionId: source.id }), 'gateway/internal')
     await creation.fiber.dispose()
   })
@@ -254,7 +380,7 @@ describe('Session fork failures', () => {
     const create = vi.spyOn(ctx.agents, 'create').mockImplementation(
       (options: CreateAgentOptions) => Promise.resolve(resolvedHandle(ctx, options.sessionId)),
     )
-    const controller = new SessionCommandController(ctx, controllerAgents(), '/default')
+    const controller = new SessionCommandController(ctx, controllerAgentsFor(ctx), '/default')
 
     await expectFailure(controller.fork({ sessionId: source.id }), 'session/workspace-attach-failed')
     const options = create.mock.calls[0]?.[0]
@@ -271,7 +397,7 @@ describe('Session fork failures', () => {
     const create = vi.spyOn(ctx.agents, 'create').mockImplementation(
       (options: CreateAgentOptions) => Promise.resolve(resolvedHandle(ctx, options.sessionId)),
     )
-    const controller = new SessionCommandController(ctx, controllerAgents({
+    const controller = new SessionCommandController(ctx, controllerAgentsFor(ctx, {
       composeAgent: () => Promise.resolve({ agentPreset: 'minimal', setup: () => {} }),
     }), '/default')
 

@@ -11,7 +11,13 @@ import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-sto
 import {
   clampWidth, DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN,
   SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
+  UTILITY_DEFAULT, UTILITY_MAX, UTILITY_MIN,
 } from './columns.ts'
+
+/** Workbench surfaces supported by the generic utility column. */
+export const UTILITY_MODES = ['terminal', 'browser', 'files', 'review'] as const
+/** One workbench surface identifier. */
+export type UtilityMode = typeof UTILITY_MODES[number]
 
 /**
  * Layout store state: panel width preferences in px (0 = closed), plus the
@@ -20,7 +26,15 @@ import {
  * `narrowExpanded` is the manual override that re-expands the auto-collapsed
  * sidebar over the squeezed center without rewriting the width preference.
  */
-type LayoutState = { sidebar: number; details: number; narrow: boolean; narrowExpanded: boolean }
+export type LayoutState = {
+  sidebar: number
+  details: number
+  utilityOpen: boolean
+  utilityMode: UtilityMode
+  utilityWidth: number
+  narrow: boolean
+  narrowExpanded: boolean
+}
 
 /**
  * Annotation twin of the actions literal below (the export needs a declared
@@ -33,6 +47,10 @@ type LayoutActions = {
   setNarrow: (draft: LayoutState, narrow: boolean) => void
   openDetails: (draft: LayoutState) => void
   closeDetails: (draft: LayoutState) => void
+  openUtility: (draft: LayoutState, mode?: UtilityMode) => void
+  closeUtility: (draft: LayoutState) => void
+  toggleUtility: (draft: LayoutState, mode?: UtilityMode) => void
+  setUtilityWidth: (draft: LayoutState, px: number) => void
 }
 
 /**
@@ -47,10 +65,19 @@ type LayoutActions = {
  */
 export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutActions>  {
   const handle = defineStore({
-    init: (): LayoutState => ({ sidebar: SIDEBAR_DEFAULT, details: 0, narrow: false, narrowExpanded: false }),
+    init: (): LayoutState => ({
+      sidebar: SIDEBAR_DEFAULT,
+      details: 0,
+      utilityOpen: false,
+      utilityMode: 'terminal',
+      utilityWidth: UTILITY_DEFAULT,
+      narrow: false,
+      narrowExpanded: false,
+    }),
     actions: {
       setSidebar: (d, px: number) => { d.sidebar = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX) },
       setDetails: (d, px: number) => { d.details = clampWidth(px, DETAILS_MIN, DETAILS_MAX) },
+      setUtilityWidth: (d, px: number) => { d.utilityWidth = clampWidth(px, UTILITY_MIN, UTILITY_MAX) },
       // Narrow toggles flip only the override: the width preference survives
       // untouched, so re-widening restores the pre-squeeze layout.
       toggleSidebar: (d) => {
@@ -64,8 +91,27 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         d.narrow = narrow
         d.narrowExpanded = false
       },
-      openDetails: (d) => { if (d.details === 0) d.details = DETAILS_DEFAULT },
+      openDetails: (d) => {
+        d.utilityOpen = false
+        if (d.details === 0) d.details = DETAILS_DEFAULT
+      },
       closeDetails: (d) => { d.details = 0 },
+      openUtility: (d, mode?: UtilityMode) => {
+        if (mode !== undefined) d.utilityMode = mode
+        d.details = 0
+        d.utilityOpen = true
+      },
+      closeUtility: (d) => { d.utilityOpen = false },
+      toggleUtility: (d, mode?: UtilityMode) => {
+        if (mode !== undefined && mode !== d.utilityMode) {
+          d.utilityMode = mode
+          d.details = 0
+          d.utilityOpen = true
+          return
+        }
+        d.utilityOpen = !d.utilityOpen
+        if (d.utilityOpen) d.details = 0
+      },
     },
   })
   return handle

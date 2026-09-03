@@ -1,7 +1,9 @@
 /** Browser-safe request, result, and lifecycle vocabulary for the Session Remote service. */
 
 import type {
-  AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
+  AttachmentIdType, DocumentAttachmentLimits, DocumentAttachmentRef,
+  ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
+  RendererDocumentAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
@@ -19,6 +21,8 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
     sessionListMetadata: SessionListMetadata
     /** Host state for the boot-constant image-limit view. */
     imageLimits: null
+    /** Host state for the boot-constant document-limit view. */
+    documentLimits: null
     /** Durable model selection already used by a request and still pending for a later request. */
     modelSelection: ModelSelectionProjectionState
   }
@@ -27,6 +31,8 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
     sessionListMetadata: SessionListMetadata
     /** Image-intake limits enforced by the Session prompt endpoint. */
     imageLimits: ImageAttachmentLimits
+    /** Document-intake limits enforced by the Session prompt endpoint. */
+    documentLimits: DocumentAttachmentLimits
     /** Durable model selection already used and selected for the next request. */
     modelSelection: ModelSelectionProjection
   }
@@ -77,6 +83,27 @@ export type PromptContentPart =
     readonly data: string
     readonly name?: string
   }
+  | {
+    readonly type: 'document'
+    readonly mediaType: DocumentAttachmentRef['mediaType']
+    readonly data: string
+    readonly name: string
+  }
+
+/** Replace durable document read authority with bounded renderer metadata. */
+type RendererProjection<Value> =
+  Value extends DocumentAttachmentRef
+    ? RendererDocumentAttachment
+    : Value extends string | number | boolean | null | undefined
+      ? Value
+      : Value extends readonly (infer Item)[]
+        ? readonly RendererProjection<Item>[]
+        : Value extends object
+          ? { readonly [Key in keyof Value]: RendererProjection<Value[Key]> }
+          : Value
+
+/** Provider-neutral content after the Host strips durable document addresses. */
+export type RendererContentBlock = RendererProjection<ContentBlock>
 
 /** Complete model selection for one Session. */
 export interface ModelSelection {
@@ -177,6 +204,7 @@ export const SESSION_SEARCH_SNIPPET_MAX_CODE_POINTS = 240
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
+    'session/not-archived': { readonly sessionId: SessionId }
     'session/model-unavailable': { readonly provider: string; readonly model: string }
     'session/conflict': {
       readonly sessionId: SessionId
@@ -263,6 +291,16 @@ export interface SessionCreateRequest {
 export interface SessionCreateValue {
   readonly sessionId: SessionId
   readonly agentPreset?: string
+}
+
+/** Permanent deletion request for one archived ordinary Session. */
+export interface SessionDeleteRequest {
+  readonly sessionId: SessionId
+}
+
+/** Confirmation that Session-owned persistence and workspace accounting were removed. */
+export interface SessionDeleteValue {
+  readonly deleted: true
 }
 
 /** Session model-selection request. */
@@ -475,7 +513,7 @@ export interface SessionQueuedItem {
   /** JSON-safe message fields consumed by pending-queue presentation. */
   readonly message: {
     readonly id: MessageId
-    readonly content: readonly JsonValue[]
+    readonly content: readonly RendererContentBlock[]
   }
 }
 

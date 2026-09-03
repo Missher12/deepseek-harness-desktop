@@ -297,6 +297,10 @@ class SingleExeBuild {
       '--config.node-linker=hoisted',
       '--config.auto-install-peers=false',
       '--config.link-workspace-packages=true',
+      // The deploy root intentionally excludes Desktop-only dshmarket. Keep
+      // its reviewed workspace patch strict for installs that include it,
+      // while allowing this narrower production closure to omit the package.
+      '--config.allow-unused-patches=true',
       this.staging,
     ])
     await this.restoreLegacyHoists()

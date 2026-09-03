@@ -10,6 +10,8 @@
 - textbox "Search sessions..."
 - button "View options":
   - img
+- button "Archive":
+  - img
 - button "Add workspace":
   - img
 - tree "Sessions":
@@ -31,7 +33,7 @@
   - img
 - textbox "Describe what you want to build... / commands, @ files or sessions":
   - paragraph
-- button "Commands":
+- button "Add":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
 - button "Select model, current DeepSeek-V4-Flash":
