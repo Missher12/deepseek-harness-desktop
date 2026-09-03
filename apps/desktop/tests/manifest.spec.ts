@@ -134,6 +134,30 @@ describe('desktop package manifest', () => {
     expect(rootManifest.scripts['desktop:dmg']).toContain('desktop:stage')
   })
 
+  it('keeps one authoritative turn navigator and rejects the rc.2 PromptRail', () => {
+    // The alpha.5 TurnNavigator is the sole runtime navigation authority.
+    expect(existsSync(new URL(
+      '../../../packages/client/ui-chat/src/client/chat/TurnNavigator.tsx',
+      import.meta.url,
+    ))).toBe(true)
+    // The rc.2 PromptRail must not resurface beside it, either as source or
+    // as a Desktop composition row.
+    expect(existsSync(new URL(
+      '../../../packages/client/ui-conversation/src/client/chat/PromptRail.tsx',
+      import.meta.url,
+    ))).toBe(false)
+    expect(existsSync(new URL(
+      '../../../packages/client/ui-chat/src/client/chat/PromptRail.tsx',
+      import.meta.url,
+    ))).toBe(false)
+    const desktopPatch = readFileSync(
+      new URL('../desktop.cordis.patch.yml', import.meta.url),
+      'utf8',
+    )
+    expect(desktopPatch).not.toMatch(/PromptRail/u)
+    expect(desktopPatch).not.toMatch(/ui-conversation.*rail/u)
+  })
+
   it('keeps packaged update metadata aligned with the Desktop and Harness versions', () => {
     const desktop = JSON.parse(
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
