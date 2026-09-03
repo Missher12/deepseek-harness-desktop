@@ -36,14 +36,21 @@ function displayName(value: string | undefined): string | undefined {
   return clean === '' ? undefined : clean
 }
 
-function objectPath(root: string, sha256: string): string {
-  return join(root, 'objects', sha256.slice(0, 2), sha256)
-}
-
 function ensureReference(ref: ImageAttachmentRef): string {
   const match = ID_PATTERN.exec(String(ref.attachmentId))
   if (match?.[1] === undefined) throw new AttachmentError('Attachment reference is invalid.', 'INVALID_ATTACHMENT_REF')
   return match[1]
+}
+
+/**
+ * Derive the absolute immutable-object path for one normalized attachment.
+ * @param root - absolute `DSH_HOME/attachments/v1` root.
+ * @param ref - durable normalized attachment reference.
+ * @returns provider-local path without reading the object.
+ */
+export function normalizedImagePath(root: string, ref: ImageAttachmentRef): string {
+  const sha256 = ensureReference(ref)
+  return join(root, 'objects', sha256.slice(0, 2), sha256)
 }
 
 async function inspectMetadata(
@@ -176,47 +183,6 @@ async function ensureDurableHome(path: string): Promise<string> {
 }
 
 /**
- * Write, fsync, and publish one immutable object through a same-filesystem hard
- * link, accepting only an integrity-identical concurrent winner.
- * @param temporary - exclusive staging path owned by this write attempt.
- * @param target - final content-addressed path.
- * @param data - bytes whose digest was verified before publication.
- * @param sha256 - lowercase SHA-256 expected at {@link target}.
- * @param corruptMessage - domain-specific integrity failure message.
- */
-export async function publishStagedObject(
-  temporary: string,
-  target: string,
-  data: Uint8Array,
-  sha256: string,
-  corruptMessage: string,
-): Promise<void> {
-  let handle
-  try {
-    handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
-    await handle.writeFile(data)
-    await handle.sync()
-    await handle.close()
-    handle = undefined
-  } catch (error) {
-    /* v8 ignore next -- A descriptor remains open only when write/sync/close itself fails. */
-    if (handle !== undefined) await handle.close().catch(
-      /* v8 ignore next -- Preserve the operation that entered cleanup. */
-      () => {},
-    )
-    throw error
-  }
-  try {
-    await link(temporary, target)
-  } catch (error) {
-    /* v8 ignore next -- Private same-filesystem directories make EEXIST the only recoverable link race. */
-    if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error
-    const existing = new Uint8Array(await readFile(target))
-    if (digest(existing) !== sha256) throw new AttachmentError(corruptMessage, 'ATTACHMENT_CORRUPT')
-  }
-}
-
-/**
  * Publish one already verified normalized image below a versioned attachment root.
  * @param root - absolute `DSH_HOME/attachments/v1` root.
  * @param prepared - deterministic normalized bytes and reference.
@@ -240,23 +206,40 @@ export async function commitPreparedImageFile(
   await ensureDurableDirectory(bucket, boundary)
   await ensureDurableDirectory(staging, boundary)
   const temporary = join(staging, randomUUID())
-  const target = objectPath(root, sha256)
+  const target = normalizedImagePath(root, prepared.ref)
+  let handle
   try {
-    await publishStagedObject(
-      temporary,
-      target,
-      normalized,
-      sha256,
-      'Stored attachment failed integrity verification.',
-    )
+    handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
+    await handle.writeFile(normalized)
+    await handle.sync()
+    await handle.close()
+    handle = undefined
+    try {
+      await link(temporary, target)
+    } catch (error) {
+      /* v8 ignore next -- Private same-filesystem directories make EEXIST the only recoverable link race. */
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error
+      const existing = new Uint8Array(await readFile(target))
+      if (digest(existing) !== sha256) throw new AttachmentError('Stored attachment failed integrity verification.', 'ATTACHMENT_CORRUPT')
+    }
+    // Windows shares the read-only attribute across hard links and refuses to
+    // unlink either name once it is set, so discard the staging name first.
+    await unlink(temporary)
+    // The target remains the sole link for a new object; this also restores
+    // read-only mode when the deduplication path observes an existing object.
+    await chmod(target, 0o400)
     // Persist the target entry and close a concurrent bucket-creation window
     // before the reference can reach a session checkpoint. The dedup path
     // repeats both syncs because it may observe another writer's link before
     // that writer reaches its own durability boundary.
     await syncDirectory(bucket)
     await syncDirectory(join(root, 'objects'))
-    await unlink(temporary)
   } catch (error) {
+    /* v8 ignore next -- A descriptor can remain open only when the underlying write/sync/close operation fails. */
+    if (handle !== undefined) await handle.close().catch(
+      /* v8 ignore next -- Close failure is superseded by the storage operation that entered cleanup. */
+      () => {},
+    )
     await unlink(temporary).catch(
       /* v8 ignore next -- The callback requires a second independent staging-unlink failure. */
       (cleanupError: unknown) => {
@@ -304,7 +287,7 @@ export async function readImageFile(
   const sha256 = ensureReference(ref)
   let data: Uint8Array
   try {
-    data = new Uint8Array(await readFile(objectPath(root, sha256), { signal }))
+    data = new Uint8Array(await readFile(normalizedImagePath(root, ref), { signal }))
   } catch (error) {
     signal?.throwIfAborted()
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') throw new AttachmentError('Attachment object is missing.', 'ATTACHMENT_NOT_FOUND')

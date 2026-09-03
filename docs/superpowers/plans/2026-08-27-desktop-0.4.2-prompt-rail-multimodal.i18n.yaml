@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-08-27-desktop-0.4.2-prompt-rail-multimodal.md
-2026-08-27-desktop-0.4.2-prompt-rail-multimodal.md: dc656db6960322b7ab38ae825c68a4025eed26e3
-2026-08-27-desktop-0.4.2-prompt-rail-multimodal.zh.md: 483fdcd8123b2898b86d52a52cd7b6d294e39cd5

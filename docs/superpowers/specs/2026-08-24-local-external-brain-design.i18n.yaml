@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write docs/superpowers/specs/2026-08-24-local-external-brain-design.md
-2026-08-24-local-external-brain-design.md: 2b5ec9e860f7a5cedbc8b016c0349869092bb29e
-2026-08-24-local-external-brain-design.zh.md: 1488de4018ee59f06ac00927a49afa296dc487a7

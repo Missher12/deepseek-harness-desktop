@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write docs/superpowers/specs/2026-08-21-windows-0.3.2-sync-design.md
-2026-08-21-windows-0.3.2-sync-design.md: 21c5b0efdd9d0fbe5f5df12147f2191d7ff52899
-2026-08-21-windows-0.3.2-sync-design.zh.md: 39f6702d7e3abf3a3b18adb0400a25345d5f96a4

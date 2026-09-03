@@ -10,7 +10,7 @@ Source: [`packages/attachment/attachment/src/types.ts`](../../packages/attachmen
 
 ## Identity and verified metadata
 
-`AttachmentId` is a branded opaque string. The local backend currently emits `sha256:<digest>`, but consumers must neither parse that representation nor derive a filesystem path from it.
+`AttachmentId` is a branded opaque string. The local backend currently emits `sha256:<digest>`, but consumers must neither parse that representation nor derive a filesystem path from it. A consumer may ask the attachment provider for its object location through `imageHostPath()`, then must use the current execution filesystem to decide whether model tools can read that host path.
 
 ```ts type-equiv
 /** Raster image formats accepted by the version-one attachment path. */
@@ -62,46 +62,6 @@ The reference records intrinsic dimensions and encoded length so clients can lay
 
 ## Commit and verified-read payloads
 
-Documents use separate content addresses for the original bytes and the bounded extracted text. Neither id is exposed to the renderer, and neither is accepted as a filesystem path or bearer capability.
-
-```ts type-equiv
-/** Durable reference to immutable source bytes and their immutable extracted text. */
-interface DocumentAttachmentRef {
-  /** Content address for the original source bytes. */
-  attachmentId: AttachmentId
-  /** Content address for the exact UTF-8 extracted text. */
-  extractedTextId: AttachmentId
-  /** Media type verified against the source container or UTF-8 content. */
-  mediaType: DocumentMediaType
-  /** Sanitized leaf display name; never an absolute or relative path. */
-  name: string
-  /** Exact original source byte length. */
-  bytes: number
-  /** Exact UTF-8 byte length of the stored extracted text. */
-  extractedBytes: number
-  /** Whether extraction was deterministically cut at the configured text budget. */
-  truncated: boolean
-}
-```
-
-```ts type-equiv
-/** Request to validate, extract, and durably commit one document. */
-interface SaveDocumentAttachment {
-  data: Uint8Array
-  mediaType: DocumentMediaType
-  name: string
-}
-```
-
-```ts type-equiv
-/** Verified original and extracted bytes loaded for one durable document reference. */
-interface StoredDocumentAttachment {
-  ref: DocumentAttachmentRef
-  data: Uint8Array
-  text: string
-}
-```
-
 ```ts type-equiv
 /** Base64-encoded image upload accompanying one wire request. */
 interface EncodedImageAttachment {
@@ -138,7 +98,7 @@ interface StoredImageAttachment {
 interface ImageRequestPolicy {
   /** Maximum width multiplied by height after aspect-preserving projection. */
   maxPixels: number
-  /** Encoded-byte cap before base64 expansion or Files API upload. */
+  /** Encoded-byte target before base64 expansion or Files API upload; the smallest quality-ladder output is kept when no quality fits. */
   maxBytes: number
 }
 ```
@@ -165,7 +125,7 @@ interface RequestImageAttachment {
 }
 ```
 
-`saveImage()` prepares and atomically commits a provider-independent normalized attachment before returning its `ImageAttachmentRef`. `saveImages()` prepares every validated attachment once before publishing the batch, so validation rejection leaves no partial objects and publication does not repeat decoding or quality selection. `admitEncodedImages()` is the wire entry for base64 uploads and delegates count, aggregate-byte, and ordered batch admission to `saveImages()`. `readImage()` verifies a normalized attachment from an authorized session path. `readImageRequest()` derives and caches one request version under an exact route pixel and byte budget; new entries are fully decoded before publication, while cache hits use a bounded metadata probe. Callers use `Promise.all` over the singular method when they need an ordered batch. The local implementation lazily encodes preferred candidates, singleflights equal request identities, lets each waiter cancel independently, stops shared work when no waiter remains, and bounds all transforms with its instance-level limiter, which defaults to two simultaneous transformations. The service is retention-neutral: resumed and forked sessions may share objects, so reference-aware garbage collection is deferred rather than tied to one session's deletion.
+`saveImage()` prepares and atomically commits a provider-independent normalized attachment before returning its `ImageAttachmentRef`. `saveImages()` prepares every validated attachment once before publishing the batch, so validation rejection leaves no partial objects and publication does not repeat decoding or quality selection. `admitEncodedImages()` is the wire entry for base64 uploads and delegates count, aggregate-byte, and ordered batch admission to `saveImages()`. `readImage()` verifies a normalized attachment from an authorized session path. `imageHostPath()` exposes only the provider-owned host object location; it does not decide whether the current tool execution world can read it. `readImageRequest()` derives and caches one deterministic request version under an exact route pixel and byte budget. That version contains encoded bytes and metadata but no execution-world path. New entries are fully decoded before publication, while cache hits use a bounded metadata probe. Callers use `Promise.all` over the singular method when they need an ordered batch. The local implementation lazily encodes preferred candidates, singleflights equal request identities, lets each waiter cancel independently, stops shared work when no waiter remains, and bounds all transforms with its instance-level limiter, which defaults to two simultaneous transformations. The service is retention-neutral: resumed and forked sessions may share objects, so reference-aware garbage collection is deferred rather than tied to one session's deletion.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -198,34 +158,6 @@ abstract validateImage(input: SaveImageAttachment): Promise<void>
 async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>
 
 /**
- * Validate every document before durably committing any member in caller order.
- * @param inputs - document bytes and metadata in owning-message order.
- * @returns durable references in the exact input order.
- */
-async saveDocuments(inputs: readonly SaveDocumentAttachment[]): Promise<readonly DocumentAttachmentRef[]>
-
-/**
- * Validate one document without persistence. Unsupported providers fail closed.
- * @param _input - proposed document bytes and metadata.
- */
-validateDocument(_input: SaveDocumentAttachment): Promise<void>
-
-/**
- * Validate, extract, and durably commit one document. Unsupported providers fail closed.
- * @param _input - proposed document bytes and metadata.
- * @returns the durable immutable document reference.
- */
-saveDocument(_input: SaveDocumentAttachment): Promise<DocumentAttachmentRef>
-
-/**
- * Read and verify one immutable document source and extraction.
- * @param _ref - durable document reference from session history.
- * @param signal - optional cancellation for storage and integrity work.
- * @returns verified source bytes, extracted text, and immutable metadata.
- */
-readDocument(_ref: DocumentAttachmentRef, signal?: AbortSignal): Promise<StoredDocumentAttachment>
-
-/**
  * Validate and durably commit one image before its owning session event is appended.
  * The returned reference describes the persisted normalized image. When
  * normalization reduces the raster, its `originalDimensions` records the
@@ -245,9 +177,17 @@ abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
 
 /**
+ * Locate the provider-owned normalized object in the harness host filesystem.
+ * @param ref - durable normalized attachment reference.
+ * @returns an absolute host path, or undefined when this backend is not host-file-backed.
+ * @throws an AttachmentError when the durable reference is invalid.
+ */
+imageHostPath(ref: ImageAttachmentRef): string | undefined
+
+/**
  * Generate or read one deterministic model-request version from the stored normalized image.
  * @param ref - durable provider-independent normalized attachment reference.
- * @param policy - exact route pixel and encoded-byte budget.
+ * @param policy - exact route pixel budget and encoded-byte target; a target no ladder quality meets yields the smallest ladder output.
  * @param signal - optional cancellation.
  * @returns request bytes and the cache/upload identity covering every transform input.
  */

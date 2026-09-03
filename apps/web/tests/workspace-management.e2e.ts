@@ -15,7 +15,7 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join, sep } from 'node:path'
 import type { Browser, Locator, Page } from 'playwright'
-import { chromium, errors as playwrightErrors } from 'playwright'
+import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -24,10 +24,10 @@ import {
 } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/workspace-management', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/workspace-management', import.meta.url))
 // The seed is another scenario's committed fixture, reused read-only: this
 // spec needs any one cold session row, not new recorded content.
-const SEED = fileURLToPath(new URL('./snapshots/seeded-history/seed.jsonl', import.meta.url))
+const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.jsonl', import.meta.url))
 const MODE = webSnapshotMode()
 const BROWSER_EXPECTED = join(SNAPSHOT_DIR, 'directory-browser.expected.md')
 const SEED_ID = 'workspace-management-web-e2e'
@@ -54,11 +54,7 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     await dialog.getByRole('button', { name: 'Edit path' }).click()
     const pathInput = dialog.locator('input[aria-label="Edit path"]')
     await pathInput.fill(path)
-    // Enter commits by replacing the edit zone. Send it through the focused
-    // page so Playwright does not keep retrying an action against the input
-    // node that the successful commit intentionally detached.
-    await page.keyboard.press('Enter')
-    await pathInput.waitFor({ state: 'hidden', timeout: 10_000 })
+    await pathInput.press('Enter')
     return dialog
   }
 
@@ -109,21 +105,12 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
    * the row before its hover-only button becomes visible.
    */
   async function clickHoverAction(row: Locator, name: string): Promise<void> {
+    const button = row.getByRole('button', { name })
     await expect.poll(async () => {
       await row.hover()
-      // A wire projection can replace the row between hover and click. Resolve
-      // the button afresh on every attempt and retry only Playwright's bounded
-      // actionability timeout; successful clicks are still real pointer input.
-      const button = row.getByRole('button', { name })
-      if (!await button.isVisible()) return false
-      try {
-        await button.click({ timeout: 1_000 })
-        return true
-      } catch (error) {
-        if (!(error instanceof playwrightErrors.TimeoutError)) throw error
-        return false
-      }
+      return await button.isVisible()
     }, { timeout: 10_000 }).toBe(true)
+    await button.click()
   }
 
   beforeAll(async () => {
@@ -137,7 +124,7 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
 
@@ -475,11 +462,10 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
   }, 60_000)
 
   /**
-   * Expand Ungrouped, select, and return its one non-blank seeded session row.
-   * A preceding New Session flow can publish its current blank row later when
-   * the suite runs under load. Blank rows deliberately have no action button,
-   * so use that product boundary instead of a transient positional index.
-   * @returns the selected seeded session row locator, already present.
+   * Expand Ungrouped and return its seeded session row. The only visible child
+   * is the non-blank persisted Session; the blank Session created while
+   * adopting the Workspace stays hidden.
+   * @returns the session row locator, already present.
    */
   async function seededSessionRow() {
     const ungroupedRow = page.getByText('Ungrouped', { exact: true }).locator('..').locator('..')
@@ -493,16 +479,8 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
       }
       return await ungroupedRow.getAttribute('aria-expanded')
     }, { timeout: 5_000 }).toBe('true')
-    const rows = ungroupedSection.locator('[role="treeitem"]')
-      .filter({ has: page.locator('button[aria-label^="Session actions for "]') })
-    await expect.poll(() => rows.count(), { timeout: 10_000 }).toBe(1)
-    const row = rows.first()
-    await row.click()
-    await expect.poll(() => row.getAttribute('aria-selected'), { timeout: 10_000 }).toBe('true')
-    // `click()` leaves the synthetic pointer inside the row. A following
-    // `hover()` at the same coordinates is allowed to emit no pointerenter,
-    // so move to neutral ground before callers exercise hover-only UI.
-    await page.mouse.move(0, 0)
+    const row = ungroupedSection.locator('[role="treeitem"]').nth(1)
+    await row.waitFor({ timeout: 10_000 })
     return row
   }
 
@@ -573,9 +551,26 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
 
   it('archives the seeded session from its row menu, hiding it durably across reload', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-archive'))
-    // Re-select the exact non-blank seed for order independence. This also
-    // hides any current blank row before the archive clears the selection.
-    const sessionRow = await seededSessionRow()
+    // The seeded session lives under Ungrouped (expanded by the hover-card
+    // test's gesture; converge again for order independence).
+    const ungroupedRow = page.getByText('Ungrouped', { exact: true }).locator('..').locator('..')
+    const ungroupedSection = ungroupedRow.locator('..')
+    await expect.poll(async () => {
+      if (await ungroupedRow.getAttribute('aria-expanded') !== 'true') {
+        await page.getByText('Ungrouped', { exact: true }).click()
+        await page.waitForTimeout(50)
+      }
+      return await ungroupedRow.getAttribute('aria-expanded')
+    }, { timeout: 5_000 }).toBe('true')
+    // Anchor on session rows (the rows carrying a session actions button),
+    // not a positional index, and assert the single-stray assumption loudly
+    // so a fixture gaining a second stray fails here instead of archiving
+    // the wrong row. CSS attribute match, not getByRole: the button is
+    // display:none until its row hovers, and role queries skip hidden nodes.
+    const sessionRows = ungroupedSection.locator('[role="treeitem"]')
+      .filter({ has: page.locator('button[aria-label^="Session actions for "]') })
+    await expect.poll(() => sessionRows.count(), { timeout: 10_000 }).toBe(1)
+    const sessionRow = sessionRows.first()
     const rowTitle = await sessionRow.locator('[class*="title"]').innerText()
     // Row menu: hover reveals the actions button; Archive session commits
     // without a confirmation dialog (non-destructive: log + accounting stay).

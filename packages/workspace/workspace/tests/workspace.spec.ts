@@ -23,6 +23,7 @@ const header = (id: string, cwd?: string, createdAt = 0): SessionHeader => ({
   version: 0,
   id: SessionId(id),
   createdAt,
+  isSeeded: false,
   ...(cwd === undefined ? {} : { cwd }),
 })
 
@@ -893,44 +894,6 @@ describe('registry-global session archive', () => {
 
     await result.registry.archiveSession(SessionId('kept'))
     expect(result.registry.archivedSessionIds).toEqual(['gone', 'kept'])
-  })
-
-  it('restores an archived session idempotently without moving its workspace slot', async () => {
-    const dir = await makeDir('archive-restore')
-    const result = await harness({ sessions: [header('kept', dir, 100), header('gone', dir, 200)] })
-    const workspace = result.registry.list()[0]!
-    const originalOrder = [...workspace.sessionIds]
-
-    await result.registry.archiveSession(SessionId('gone'))
-    await result.registry.restoreSession(SessionId('gone'))
-    expect(result.registry.archivedSessionIds).toEqual([])
-    expect(workspace.sessionIds).toEqual(originalOrder)
-    expect(storedState(result.pool).archivedSessionIds).toEqual([])
-    const changesAfterFirst = result.changes.filter(change => change.table === '').length
-
-    await result.registry.restoreSession(SessionId('gone'))
-    expect(result.changes.filter(change => change.table === '').length).toBe(changesAfterFirst)
-  })
-
-  it('purges an archived session from the archive set and every workspace account', async () => {
-    const firstDir = await makeDir('archive-purge-first')
-    const secondDir = await makeDir('archive-purge-second')
-    const result = await harness({
-      sessions: [header('gone', firstDir, 100), header('kept', secondDir, 200)],
-    })
-    const first = result.registry.list().find(workspace => workspace.path === firstDir)!
-    const second = result.registry.list().find(workspace => workspace.path === secondDir)!
-
-    await result.registry.archiveSession(SessionId('gone'))
-    await result.registry.purgeSession(SessionId('gone'))
-
-    expect(result.registry.archivedSessionIds).toEqual([])
-    expect(first.sessionIds).not.toContain('gone')
-    expect(second.sessionIds).toEqual(['kept'])
-    expect(storedState(result.pool).archivedSessionIds).toEqual([])
-    expect(storedRecord(result.pool, first.id).sessionIds).not.toContain('gone')
-
-    await expect(result.registry.purgeSession(SessionId('gone'))).resolves.toBeUndefined()
   })
 
   it('accepts unaccounted and live sessions but rejects unknown ids without writing', async () => {

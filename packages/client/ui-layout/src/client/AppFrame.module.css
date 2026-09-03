@@ -1,6 +1,4 @@
 .frame {
-  --dsh-native-titlebar-inset: 0px;
-
   position: relative; /* anchors the drag handles, which straddle column borders */
   display: grid;
   grid-template-rows: 100%;
@@ -10,27 +8,6 @@
   /* Collapse/expand animates the tracks on the deepsuite sider curve
      (--ds-ease-in-out / --ds-transition-duration-slow, ui-theme base.css). */
   transition: grid-template-columns var(--ds-transition-duration-slow) var(--ds-ease-in-out);
-}
-
-/* Electron's hidden-inset title bar leaves traffic lights above the web
-   shell. Only the platform marker paired with that native window style
-   reserves the drag strip; Windows and ordinary `dsh web` start at y=0. */
-:global(body[data-dsh-surface='desktop'][data-dsh-titlebar='hidden-inset']) .frame {
-  --dsh-native-titlebar-inset: 38px;
-
-  grid-template-rows: minmax(0, 1fr);
-  padding-top: var(--dsh-native-titlebar-inset);
-  box-sizing: border-box;
-}
-
-:global(body[data-dsh-surface='desktop'][data-dsh-titlebar='hidden-inset']) .frame::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  z-index: 3;
-  height: 38px;
-  background: var(--dsw-specific-sidebar-fill);
-  -webkit-app-region: drag;
 }
 
 /* Dragging writes widths at pointer cadence; easing them would detach the
@@ -49,7 +26,7 @@
   min-width: 0;
   overflow: hidden;
   background: var(--dsw-specific-sidebar-fill);
-  border-right: 1px solid var(--dsw-alias-border-l1);
+  border-right: 0.5px solid var(--dsw-alias-border-l3);
 }
 
 .centerCol {
@@ -62,25 +39,7 @@
 .detailsCol {
   min-width: 0;
   overflow: hidden;
-  border-left: 1px solid var(--dsw-alias-border-l2);
-}
-
-.utilityCol {
-  min-width: 0;
-  overflow: hidden;
-  border-left: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
-}
-
-.utilityDrawer {
-  position: absolute;
-  inset: var(--dsh-native-titlebar-inset) 0 0 auto;
-  z-index: 12;
-  max-width: 100%;
-  overflow: hidden;
-  border-left: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
-  box-shadow: -16px 0 40px rgb(0 0 0 / 12%);
+  border-left: 0.5px solid var(--dsw-alias-border-l3);
 }
 
 /* The details subtree stays mounted at zero width, so its border must not paint
@@ -116,8 +75,7 @@
   }
 }
 
-.handle[data-side='details']::after,
-.handle[data-side='utility']::after {
+.handle[data-side='details']::after {
   content: '';
   position: absolute;
   top: 50%;
@@ -128,7 +86,7 @@
   border-radius: 10px;
   box-sizing: border-box;
   background: var(--dsw-alias-button-floating-fill);
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin);
   /* Hover affordance: the details pill hides until the pointer is over its
      column, the strip itself, or a drag. */
   opacity: 0;
@@ -139,17 +97,12 @@
 
 .detailsCol:hover ~ .handle[data-side='details']::after,
 .handle[data-side='details']:hover::after,
-.handle[data-side='details'][data-dragging='true']::after,
-.utilityCol:hover ~ .handle[data-side='utility']::after,
-.handle[data-side='utility']:hover::after,
-.handle[data-side='utility'][data-dragging='true']::after {
+.handle[data-side='details'][data-dragging='true']::after {
   opacity: 1;
 }
 
 .handle[data-side='details']:hover::after,
-.handle[data-side='details'][data-dragging='true']::after,
-.handle[data-side='utility']:hover::after,
-.handle[data-side='utility'][data-dragging='true']::after {
+.handle[data-side='details'][data-dragging='true']::after {
   background: var(--dsw-alias-button-floating-hover);
   border-color: var(--dsw-alias-border-l3);
 }

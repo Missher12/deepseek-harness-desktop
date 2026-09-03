@@ -13,17 +13,18 @@ import { afterEach, describe, expect, it, onTestFailed } from 'vitest'
 import { deriveReplayScript, parseSessionLog, type ReplayEntry } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
+  assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/queue-actions', import.meta.url))
-const FIXTURE = fileURLToPath(new URL('./snapshots/live-interactions/session.jsonl', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/queue-actions', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/live-interactions/session.jsonl', import.meta.url))
 const COLLAPSED_EXPECTED = join(SNAPSHOT_DIR, 'collapsed.expected.md')
 const EDITING_EXPECTED = join(SNAPSHOT_DIR, 'editing.expected.md')
 const LAYOUT_EXPECTED = join(SNAPSHOT_DIR, 'layout.expected.md')
 const PRESERVED_EXPECTED = join(SNAPSHOT_DIR, 'preserved.expected.md')
+const PRESERVED_EXPANDED_EXPECTED = join(SNAPSHOT_DIR, 'preserved-expanded.expected.md')
 const UI_EXPECTED = join(SNAPSHOT_DIR, 'ui.expected.md')
 const MODE = webSnapshotMode()
 
@@ -76,23 +77,25 @@ describe('web e2e: queue row actions', () => {
     await writeFile(overridePath, JSON.stringify(replay))
 
     const sessionEvents: SessionEvent[] = []
-    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, replayOverride: overridePath })
+    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, replayOverride: overridePath, compareReplaySession: false })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     const tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
     onTestFailed(() => saveFailureShot(page, 'web-e2e-queue-actions'))
 
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     const firstSettled = scaffold.whenTurnSettled()
     await input.fill(ACTIVE_PROMPT)
     await input.press('Enter')
     await expect.poll(() => existsSync(readyFile), { timeout: 15_000 }).toBe(true)
 
     for (const text of [REMOVE, EDIT]) {
+      // A just-submitted composer is read-only for the prompt round-trip.
+      await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor({ timeout: 10_000 })
       await input.fill(text)
       await input.press('Enter')
     }
@@ -112,70 +115,35 @@ describe('web e2e: queue row actions', () => {
     ).toBe(2)
 
     await page.setViewportSize({ width: 640, height: 1000 })
-    type QueueGeometry = {
-      readonly composerLeft: number
-      readonly composerRight: number
-      readonly dockInset: number
-      readonly queueLeft: number
-      readonly queueRight: number
-    }
-    let previousGeometry: QueueGeometry | undefined
-    let queueGeometry: QueueGeometry | undefined
-    await expect.poll(async () => {
-      const current = await page.locator('[data-composer-card]').evaluate((composer) => {
-        const queue = document.querySelector('[data-queue-dock]')
-        if (!(queue instanceof HTMLElement)) return undefined
-        const composerBox = composer.getBoundingClientRect()
-        const queueBox = queue.getBoundingClientRect()
-        return {
-          composerLeft: composerBox.left,
-          composerRight: composerBox.right,
-          dockInset: Number.parseFloat(
-            getComputedStyle(composer).getPropertyValue('--dsh-composer-dock-inset'),
-          ),
-          queueLeft: queueBox.left,
-          queueRight: queueBox.right,
-        }
-      })
-      if (current === undefined || !Number.isFinite(current.dockInset)) return false
-      const queueLeftInset = current.queueLeft - current.composerLeft
-      const queueRightInset = current.composerRight - current.queueRight
-      const matchesInset = Math.abs(queueLeftInset - current.dockInset) < 0.05
-        && Math.abs(queueRightInset - current.dockInset) < 0.05
-      const stable = previousGeometry !== undefined
-        && Object.keys(current).every((key) => {
-          const field = key as keyof QueueGeometry
-          return Math.abs(current[field] - previousGeometry![field]) < 0.05
-        })
-      previousGeometry = current
-      queueGeometry = current
-      return matchesInset && stable
-    }, { timeout: 10_000 }).toBe(true)
-    expect(queueGeometry).toBeDefined()
-    expect(queueGeometry!.queueLeft).toBeGreaterThanOrEqual(queueGeometry!.composerLeft)
-    expect(queueGeometry!.queueRight).toBeLessThanOrEqual(queueGeometry!.composerRight)
-    expect(queueGeometry!.queueLeft - queueGeometry!.composerLeft)
-      .toBeCloseTo(queueGeometry!.dockInset, 1)
-    expect(queueGeometry!.composerRight - queueGeometry!.queueRight)
-      .toBeCloseTo(queueGeometry!.dockInset, 1)
+    const queueBox = await page.locator('[data-queue-dock]').boundingBox()
+    const composerBox = await page.locator('[data-composer-card]').boundingBox()
+    expect(queueBox).not.toBeNull()
+    expect(composerBox).not.toBeNull()
+    expect(queueBox!.x).toBeGreaterThanOrEqual(composerBox!.x)
+    expect(queueBox!.x + queueBox!.width)
+      .toBeLessThanOrEqual(composerBox!.x + composerBox!.width)
+    const queueLeftInset = queueBox!.x - composerBox!.x
+    const queueRightInset = composerBox!.x + composerBox!.width - queueBox!.x - queueBox!.width
+    const composerMetrics = await page.locator('[data-composer-card]').evaluate((element) => {
+      const style = getComputedStyle(element)
+      return {
+        dockInset: Number.parseFloat(style.getPropertyValue('--dsh-composer-dock-inset')),
+      }
+    })
+    expect(queueLeftInset).toBeCloseTo(composerMetrics.dockInset, 1)
+    expect(queueRightInset).toBeCloseTo(composerMetrics.dockInset, 1)
     await page.setViewportSize({ width: 1680, height: 1000 })
 
-    const editRow = page.getByText(EDIT, { exact: true }).locator('..')
+    const editRow = page.locator('[data-queue-dock] li', { hasText: EDIT })
     await editRow.getByRole('button', { name: 'Edit queued message' }).click()
     const editor = page.getByRole('textbox', { name: 'Edit queued message' })
     await editor.fill(EDITED)
-    // The golden intentionally includes the Save tooltip. Pin its real focus
-    // state and wait for the delayed tooltip instead of depending on whatever
-    // hover happened to survive the edit-row projection update.
-    const saveQueuedMessage = page.getByRole('button', { name: 'Save queued message' })
-    await saveQueuedMessage.focus()
-    await page.getByRole('tooltip', { name: 'Save queued message' }).waitFor({ timeout: 5_000 })
     const editingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(EDITING_EXPECTED, editingSnapshot, MODE)
-    await saveQueuedMessage.click()
+    await page.getByRole('button', { name: 'Save queued message' }).click()
     await page.getByText(EDITED, { exact: true }).waitFor()
 
-    const removeRow = page.getByText(REMOVE, { exact: true }).locator('..')
+    const removeRow = page.locator('[data-queue-dock] li', { hasText: REMOVE })
     await removeRow.getByRole('button', { name: 'Remove queued message' }).click()
     await expect.poll(() => page.getByText(REMOVE, { exact: true }).count()).toBe(0)
 
@@ -201,6 +169,12 @@ describe('web e2e: queue row actions', () => {
 
     const preservedSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(PRESERVED_EXPECTED, preservedSnapshot, MODE)
+    const expanded = await captureExpandedTurnProcessAria(
+      page,
+      '[class*="centerCol"]',
+      scaffold.workspaceCwd,
+    )
+    await compareOrRefreshGolden(PRESERVED_EXPANDED_EXPECTED, expanded, MODE)
 
     const settled = scaffold.whenTurnSettled()
     await input.fill(WAKE)
@@ -221,18 +195,19 @@ describe('web e2e: queue row actions', () => {
     await writeFile(overridePath, JSON.stringify([{ kind: 'hang', readyFile } satisfies ReplayEntry]))
 
     const sessionEvents: SessionEvent[] = []
-    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, replayOverride: overridePath })
+    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, replayOverride: overridePath, compareReplaySession: false })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     const tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
     onTestFailed(() => saveFailureShot(page, 'web-e2e-context-layout'))
 
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     const settled = scaffold.whenTurnSettled()
+    await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor({ timeout: 10_000 })
     await input.fill('/goal Keep the composer context panels aligned')
     await input.press('Enter')
     await expect.poll(() => existsSync(readyFile), { timeout: 15_000 }).toBe(true)
@@ -249,6 +224,8 @@ describe('web e2e: queue row actions', () => {
     await page.locator('[data-testid="todo-panel"]').waitFor({ timeout: 10_000 })
 
     for (const text of ['Layout queue first', 'Layout queue second']) {
+      // A just-submitted composer is read-only for the prompt round-trip.
+      await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor({ timeout: 10_000 })
       await input.fill(text)
       await input.press('Enter')
     }
@@ -264,18 +241,18 @@ describe('web e2e: queue row actions', () => {
     await compareOrRefreshGolden(LAYOUT_EXPECTED, layoutSnapshot, MODE)
 
     const expectAlignedContextPanels = async () => {
-      await expect.poll(async () => {
-        const queuePanelBox = await page.locator('[data-queue-dock] > div').boundingBox()
-        const todoBox = await page.locator('[data-testid="todo-panel"]').boundingBox()
-        const goalBox = await page.locator('[data-goal-bar] > div').boundingBox()
-        if (queuePanelBox === null || todoBox === null || goalBox === null) return false
-        return todoBox.y < goalBox.y
-          && goalBox.y < queuePanelBox.y
-          && Math.abs(todoBox.x - goalBox.x) < 0.1
-          && Math.abs(todoBox.x - queuePanelBox.x) < 0.1
-          && Math.abs(todoBox.width - goalBox.width) < 0.1
-          && Math.abs(todoBox.width - queuePanelBox.width) < 0.1
-      }, { timeout: 10_000 }).toBe(true)
+      const queuePanelBox = await page.locator('[data-queue-dock] > div').boundingBox()
+      const todoBox = await page.locator('[data-testid="todo-panel"]').boundingBox()
+      const goalBox = await page.locator('[data-goal-bar] > div').boundingBox()
+      expect(queuePanelBox).not.toBeNull()
+      expect(todoBox).not.toBeNull()
+      expect(goalBox).not.toBeNull()
+      expect(todoBox!.y).toBeLessThan(goalBox!.y)
+      expect(goalBox!.y).toBeLessThan(queuePanelBox!.y)
+      expect(todoBox!.x).toBeCloseTo(goalBox!.x, 1)
+      expect(todoBox!.x).toBeCloseTo(queuePanelBox!.x, 1)
+      expect(todoBox!.width).toBeCloseTo(goalBox!.width, 1)
+      expect(todoBox!.width).toBeCloseTo(queuePanelBox!.width, 1)
     }
     await expectAlignedContextPanels()
     await page.setViewportSize({ width: 640, height: 1000 })
@@ -302,7 +279,10 @@ describe('web e2e: queue row actions', () => {
   it.skipIf(MODE === 'record')('keeps its snapshot inventory closed', async () => {
     await assertFixtureInventory(
       SNAPSHOT_DIR,
-      ['collapsed.expected.md', 'editing.expected.md', 'layout.expected.md', 'preserved.expected.md', 'ui.expected.md'],
+      [
+        'collapsed.expected.md', 'editing.expected.md', 'layout.expected.md',
+        'preserved.expected.md', 'preserved-expanded.expected.md', 'ui.expected.md',
+      ],
     )
   })
 })

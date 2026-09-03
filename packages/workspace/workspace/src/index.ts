@@ -255,49 +255,6 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
-   * Restore one archived session to normal grouping surfaces. The workspace
-   * accounting slot was retained by {@link archiveSession}, so removing the
-   * archive marker also restores the session's former group and order.
-   * Unknown and already-restored ids are idempotent no-ops.
-   * @param sessionId - The archived session to restore.
-   * @returns resolution after durability, when a write was needed.
-   */
-  restoreSession(sessionId: SessionId): Promise<void> {
-    return this.enqueueOperation(async () => {
-      const state = this.requireState()
-      if (!state.archivedSessionIds.includes(sessionId)) return
-      await this.setState({
-        ...state,
-        archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
-      })
-    })
-  }
-
-  /**
-   * Remove a deleted session from every workspace account and from the archive
-   * set. This method never deletes the session log itself; callers invoke it
-   * only after the persistence owner confirms durable deletion. Repeats are
-   * safe and perform no writes once every reference is gone.
-   * @param sessionId - The durably deleted session id.
-   * @returns resolution after all workspace-domain writes settle.
-   */
-  purgeSession(sessionId: SessionId): Promise<void> {
-    return this.enqueueOperation(async () => {
-      for (const workspace of this.list()) await workspace.detachSession(sessionId)
-      const state = this.requireState()
-      if (state.archivedSessionIds.includes(sessionId)) {
-        await this.setState({
-          ...state,
-          archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
-        })
-      }
-      this.headers.delete(sessionId)
-      this.sessionPaths.delete(sessionId)
-      this.invalidSessionPaths.delete(sessionId)
-    })
-  }
-
-  /**
    * Whether a session is live, header-indexed, or present in a fresh
    * persistence listing. Only a definite miss returns false — a failing
    * `sessionPersistence.list()` propagates so storage faults never

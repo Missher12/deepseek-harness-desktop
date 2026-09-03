@@ -65,6 +65,31 @@ describe('loadOptionalPatches', () => {
     expect(patches?.[1]?.insert).toHaveLength(1)
   })
 
+  it('anchors inserted relative plugins to the patch file and keeps assertion names literal', () => {
+    const dir = tmp()
+    const patchPath = join(dir, PROFILE_PATCH_FILENAME)
+    writeFileSync(patchPath, [
+      '- id: existing',
+      '  name: ./assertion.mjs',
+      '- insert:',
+      '    - id: rule',
+      '      name: ./rule.mjs',
+      '    - id: nested',
+      '      name: cordis:group',
+      '      group: true',
+      '      config:',
+      '        - id: child',
+      '          name: ../child.mjs',
+      '',
+    ].join('\n'))
+
+    const patches = loadOptionalPatches(NAME, patchPath)
+    expect(patches?.[0]?.name).toBe('./assertion.mjs')
+    expect(patches?.[1]?.insert?.[0]?.name).toBe(pathToFileURL(join(dir, 'rule.mjs')).href)
+    expect((patches?.[1]?.insert?.[1]?.config as { name: string }[])[0]?.name)
+      .toBe(pathToFileURL(join(dir, '..', 'child.mjs')).href)
+  })
+
   it('fails loud on an unreadable file (a present user patch layer is never skipped)', () => {
     const dir = tmp()
     mkdirSync(join(dir, PROFILE_PATCH_FILENAME)) // a directory: present, unreadable as a file
@@ -271,6 +296,12 @@ describe('boot with user patches', () => {
   it('applies id-targeted overrides, inserts, and interpolates !!js from the environment', async () => {
     const dir = tmp()
     const userDir = tmp()
+    writeFileSync(join(userDir, 'noop.mjs'), [
+      'export function apply(_ctx, config = {}) {',
+      '  if (config.fail) throw new Error("candidate config failed")',
+      '}',
+      '',
+    ].join('\n'))
     writeFileSync(join(userDir, PROFILE_PATCH_FILENAME), [
       '- id: noop',
       '  name: ./noop.mjs',
@@ -309,20 +340,6 @@ describe('boot with user patches', () => {
       expect(entryConfig(ctxEmpty, 'noop')).toEqual({ value: 'base' })
     } finally {
       await ctxEmpty.fiber.dispose()
-    }
-  })
-
-  it('mounts config-only HMR when Node module internals are unavailable', async () => {
-    const ctx = new Context()
-    ctx.baseUrl = pathToFileURL(`${tmp()}/`).href
-    await ctx.plugin(Loader)
-    ctx.loader.internal = undefined
-    await ctx.plugin(Timer)
-    try {
-      await expect(ctx.plugin(Hmr, { root: [], ignored: [], debounce: 0 })).resolves.toBeDefined()
-      expect(ctx.get('hmr')).toBeDefined()
-    } finally {
-      await ctx.fiber.dispose()
     }
   })
 

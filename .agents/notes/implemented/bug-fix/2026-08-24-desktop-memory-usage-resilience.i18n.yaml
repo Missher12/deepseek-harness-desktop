@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-24-desktop-memory-usage-resilience.md
-2026-08-24-desktop-memory-usage-resilience.md: ac670c364a0a70d77202eeb0ffcb9aa9046c77ec
-2026-08-24-desktop-memory-usage-resilience.zh.md: e8e23b033b64141649820f55118edc83ebb7c49d

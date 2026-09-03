@@ -15,11 +15,19 @@ const CHARS_PER_TOKEN = 4
 /** Per-block structural overhead for JSON framing and type tags. */
 const BLOCK_OVERHEAD = 4
 
-/** One UTF-8 source byte can become six ASCII bytes through `&apos;`. */
-const DOCUMENT_XML_ESCAPE_EXPANSION = 6
-
 /** Role-field framing overhead added to every priced message. */
 export const ROLE_OVERHEAD = 4
+
+/**
+ * Structural JSON price of one block outside the typed pricing arms: the
+ * fixed heuristic for merge-extended blocks and for image references, whose
+ * request price is route-owned rather than fixed.
+ * @param block - block to price without mutation.
+ * @returns heuristic tokens for the block's JSON structure.
+ */
+export function estimateStructuralBlock(block: ContentBlock): number {
+  return BLOCK_OVERHEAD + Math.ceil(JSON.stringify(block).length / CHARS_PER_TOKEN)
+}
 
 /**
  * Price content blocks recursively under the fixed density heuristic.
@@ -42,21 +50,11 @@ export function estimateContent(blocks: readonly ContentBlock[]): number {
       case 'tool-result':
         tokens += estimateContent(block.content) + BLOCK_OVERHEAD
         break
-      case 'document':
-        // The durable block is only a small reference, but the final model
-        // request replaces it with verified extracted text. Price that future
-        // projection conservatively at up to one token per worst-case escaped
-        // UTF-8 byte; otherwise repeated apostrophes can expand sixfold after
-        // context planning. Metadata keeps the ordinary fixed-density estimate
-        // because it remains a small bounded envelope.
-        tokens += block.attachment.extractedBytes * DOCUMENT_XML_ESCAPE_EXPANSION
-          + Math.ceil((block.attachment.name.length + block.attachment.mediaType.length) / CHARS_PER_TOKEN)
-          + BLOCK_OVERHEAD
-        break
       default:
-        // ContentBlockMap is merge-extensible; unknown blocks retain a
+        // ContentBlockMap is merge-extensible; unknown blocks (and image
+        // references, whose request price is route-owned) retain a
         // conservative structural JSON price under the fixed heuristic.
-        tokens += BLOCK_OVERHEAD + Math.ceil(JSON.stringify(block).length / CHARS_PER_TOKEN)
+        tokens += estimateStructuralBlock(block)
     }
   }
   return tokens

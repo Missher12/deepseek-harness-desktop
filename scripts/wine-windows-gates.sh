@@ -233,13 +233,6 @@ if [ -d node_modules/vue ] && [ ! -e website/node_modules/vue ]; then
   mkdir -p website/node_modules
   ln -s ../../node_modules/vue website/node_modules/vue
 fi
-# Root-hoisted dependencies remain valid runtime inputs, but the Host typecheck
-# also follows Desktop's explicit dshmarket type path. Materialize that package
-# boundary in the scratch tree only; normal isolated installs already provide it.
-if [ -d node_modules/dshmarket ] && [ ! -e apps/desktop/node_modules/dshmarket ]; then
-  mkdir -p apps/desktop/node_modules
-  ln -s ../../../node_modules/dshmarket apps/desktop/node_modules/dshmarket
-fi
 
 wine_node "$scratch/logs/smoke.log" -p "'smoke: ' + process.platform + ' ' + process.arch + ' ' + process.version"
 cat "$scratch/logs/smoke.log"
@@ -250,7 +243,7 @@ grep -q '^smoke: win32 x64' "$scratch/logs/smoke.log" || { echo 'wine-windows-ga
 # Host face before compiling and bundling the Client face.
 # Both statuses are captured so one failure cannot hide the other's result.
 build_gate() {
-  wine_node "$scratch/logs/host-tsc.log" "$tsc_js" -b tsconfig.host.json --pretty false || return $?
+  wine_node "$scratch/logs/host-tsc.log" --max-old-space-size=4096 "$tsc_js" -b tsconfig.host.json --pretty false || return $?
   wine_node "$scratch/logs/host-tsdown.log" "$tsdown_js" --env.DSH_BUILD_FACE host || return $?
   wine_node "$scratch/logs/client-tsc.log" "$tsc_js" -b tsconfig.client.json --pretty false || return $?
   wine_node "$scratch/logs/client-tsdown.log" "$tsdown_js" --env.DSH_BUILD_FACE client

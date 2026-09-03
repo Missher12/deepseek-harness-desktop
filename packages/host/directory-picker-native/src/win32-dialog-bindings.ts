@@ -16,29 +16,31 @@ import type { Win32DialogBindings, Win32FolderDialog } from './win32-dialog-logi
 
 interface KoffiFunction { (...args: unknown[]): unknown }
 interface KoffiLibrary { func(convention: string, name: string, result: string, args: string[]): KoffiFunction }
-interface KoffiDecode {
-  (value: unknown, offsetOrType: unknown, type?: unknown): unknown
-  string16(value: unknown): string
-}
 interface Koffi {
   load(path: string): KoffiLibrary
   proto(declaration: string): unknown
   pointer(type: unknown): unknown
   call(pointer: unknown, proto: unknown, ...args: unknown[]): unknown
-  decode: KoffiDecode
+  decode(value: unknown, offsetOrType: unknown, type?: unknown): unknown
   register(fn: (...args: unknown[]) => unknown, type: unknown): unknown
   unregister(callback: unknown): void
   sizeof(type: string): number
+  view(ref: unknown, len: number): ArrayBuffer
 }
 
 /**
  * Read a NUL-terminated UTF-16 string at a native address. koffi's
- * `_Out_ void **` out-params surface the first character's raw address. The
- * dedicated decoder reads through the first NUL without mapping an arbitrary
- * fixed-size view beyond the COM allocation.
+ * `_Out_ void **` out-params surface a raw address, and
+ * `koffi.decode(addr, 'str16')` would dereference it as a pointer — crash
+ * on real Windows — so view the memory directly instead.
  */
 function readUtf16(koffi: Koffi, address: unknown): string {
-  return koffi.decode.string16(address)
+  const bytes = Buffer.from(koffi.view(address, 32768))
+  let end = 0
+  // UTF-16LE NUL is two zero bytes. A single zero low byte is a valid BMP
+  // code unit (U+XX00, e.g. 开 = U+5F00) and must not terminate the scan.
+  while (end + 1 < bytes.length && !(bytes[end] === 0 && bytes[end + 1] === 0)) end += 2
+  return bytes.toString('utf16le', 0, end)
 }
 
 const COINIT_APARTMENTTHREADED = 0x2

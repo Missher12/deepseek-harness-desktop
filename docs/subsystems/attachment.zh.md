@@ -10,7 +10,7 @@
 
 ## 标识与经过校验的元数据
 
-`AttachmentId` 是带类型标记的不透明字符串。本地后端目前生成 `sha256:<digest>`，但消费方既不能解析这种表示，也不能据此派生文件系统路径。
+`AttachmentId` 是带类型标记的不透明字符串。本地后端目前生成 `sha256:<digest>`，但消费方既不能解析这种表示，也不能据此派生文件系统路径。消费方可以通过 `imageHostPath()` 询问附件提供方所持对象的位置，然后必须由当前执行文件系统判断模型工具能否读取该宿主路径。
 
 ```ts type-equiv
 /** Raster image formats accepted by the version-one attachment path. */
@@ -62,46 +62,6 @@ interface ImageAttachmentLimits {
 
 ## 提交与经校验读取的数据
 
-文档分别对原始字节和有界提取文本使用内容地址。两个标识都不会暴露给渲染器，也不能作为文件系统路径或 bearer capability 使用。
-
-```ts type-equiv
-/** Durable reference to immutable source bytes and their immutable extracted text. */
-interface DocumentAttachmentRef {
-  /** Content address for the original source bytes. */
-  attachmentId: AttachmentId
-  /** Content address for the exact UTF-8 extracted text. */
-  extractedTextId: AttachmentId
-  /** Media type verified against the source container or UTF-8 content. */
-  mediaType: DocumentMediaType
-  /** Sanitized leaf display name; never an absolute or relative path. */
-  name: string
-  /** Exact original source byte length. */
-  bytes: number
-  /** Exact UTF-8 byte length of the stored extracted text. */
-  extractedBytes: number
-  /** Whether extraction was deterministically cut at the configured text budget. */
-  truncated: boolean
-}
-```
-
-```ts type-equiv
-/** Request to validate, extract, and durably commit one document. */
-interface SaveDocumentAttachment {
-  data: Uint8Array
-  mediaType: DocumentMediaType
-  name: string
-}
-```
-
-```ts type-equiv
-/** Verified original and extracted bytes loaded for one durable document reference. */
-interface StoredDocumentAttachment {
-  ref: DocumentAttachmentRef
-  data: Uint8Array
-  text: string
-}
-```
-
 ```ts type-equiv
 /** Base64-encoded image upload accompanying one wire request. */
 interface EncodedImageAttachment {
@@ -138,7 +98,7 @@ interface StoredImageAttachment {
 interface ImageRequestPolicy {
   /** Maximum width multiplied by height after aspect-preserving projection. */
   maxPixels: number
-  /** Encoded-byte cap before base64 expansion or Files API upload. */
+  /** Encoded-byte target before base64 expansion or Files API upload; the smallest quality-ladder output is kept when no quality fits. */
   maxBytes: number
 }
 ```
@@ -165,7 +125,7 @@ interface RequestImageAttachment {
 }
 ```
 
-`saveImage()` 准备并原子提交提供方无关的规范化附件，然后直接返回 `ImageAttachmentRef`。`saveImages()` 在发布批次前为每个成员各准备一次经过验证的附件，因此校验拒绝不会留下部分对象，发布也不会重复解码或选择质量。`admitEncodedImages()` 是面向 base64 上传的 wire 入口，把张数、聚合字节和有序批量准入交给 `saveImages()`。`readImage()` 校验来自已授权会话路径的规范化附件。`readImageRequest()` 按确切路由的像素和字节预算派生并缓存请求版本；新条目在发布前完整解码，缓存命中只做有界元数据探测。调用方需要有序批次时，对单数方法使用 `Promise.all`。本地实现按需编码首选候选、合并相同请求身份的并发任务、允许每个等待方单独取消、没有等待方时停止共享任务，并通过实例级限流器限制全部变换，默认同时执行两项。该服务不规定保留策略：恢复和 fork 后的会话可能共享对象，因此基于引用的垃圾回收会延期实现，不与单个会话的删除绑定。
+`saveImage()` 准备并原子提交提供方无关的规范化附件，然后直接返回 `ImageAttachmentRef`。`saveImages()` 在发布批次前为每个成员各准备一次经过验证的附件，因此校验拒绝不会留下部分对象，发布也不会重复解码或选择质量。`admitEncodedImages()` 是面向 base64 上传的 wire 入口，把张数、聚合字节和有序批量准入交给 `saveImages()`。`readImage()` 校验来自已授权会话路径的规范化附件。`imageHostPath()` 只公开提供方所持对象的宿主位置，不判断当前工具执行环境能否读取它。`readImageRequest()` 按确切路由的像素和字节预算派生并缓存确定性请求版本。该版本包含编码字节和元数据，不包含执行环境路径。新条目在发布前完整解码，缓存命中只做有界元数据探测。调用方需要有序批次时，对单数方法使用 `Promise.all`。本地实现按需编码首选候选、合并相同请求身份的并发任务、允许每个等待方单独取消、没有等待方时停止共享任务，并通过实例级限流器限制全部变换，默认同时执行两项。该服务不规定保留策略：恢复和 fork 后的会话可能共享对象，因此基于引用的垃圾回收会延期实现，不与单个会话的删除绑定。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -198,34 +158,6 @@ abstract validateImage(input: SaveImageAttachment): Promise<void>
 async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>
 
 /**
- * Validate every document before durably committing any member in caller order.
- * @param inputs - document bytes and metadata in owning-message order.
- * @returns durable references in the exact input order.
- */
-async saveDocuments(inputs: readonly SaveDocumentAttachment[]): Promise<readonly DocumentAttachmentRef[]>
-
-/**
- * Validate one document without persistence. Unsupported providers fail closed.
- * @param _input - proposed document bytes and metadata.
- */
-validateDocument(_input: SaveDocumentAttachment): Promise<void>
-
-/**
- * Validate, extract, and durably commit one document. Unsupported providers fail closed.
- * @param _input - proposed document bytes and metadata.
- * @returns the durable immutable document reference.
- */
-saveDocument(_input: SaveDocumentAttachment): Promise<DocumentAttachmentRef>
-
-/**
- * Read and verify one immutable document source and extraction.
- * @param _ref - durable document reference from session history.
- * @param signal - optional cancellation for storage and integrity work.
- * @returns verified source bytes, extracted text, and immutable metadata.
- */
-readDocument(_ref: DocumentAttachmentRef, signal?: AbortSignal): Promise<StoredDocumentAttachment>
-
-/**
  * Validate and durably commit one image before its owning session event is appended.
  * The returned reference describes the persisted normalized image. When
  * normalization reduces the raster, its `originalDimensions` records the
@@ -245,9 +177,17 @@ abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
 
 /**
+ * Locate the provider-owned normalized object in the harness host filesystem.
+ * @param ref - durable normalized attachment reference.
+ * @returns an absolute host path, or undefined when this backend is not host-file-backed.
+ * @throws an AttachmentError when the durable reference is invalid.
+ */
+imageHostPath(ref: ImageAttachmentRef): string | undefined
+
+/**
  * Generate or read one deterministic model-request version from the stored normalized image.
  * @param ref - durable provider-independent normalized attachment reference.
- * @param policy - exact route pixel and encoded-byte budget.
+ * @param policy - exact route pixel budget and encoded-byte target; a target no ladder quality meets yields the smallest ladder output.
  * @param signal - optional cancellation.
  * @returns request bytes and the cache/upload identity covering every transform input.
  */

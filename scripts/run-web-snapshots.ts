@@ -5,10 +5,6 @@ import { pnpmInvocation } from './pnpm-invocation.ts'
 const serialFiles = [
   'apps/web/tests/hmr-live.e2e.ts',
   'apps/web/tests/cordis-tool-round.e2e.ts',
-  // This contract compares transcript geometry at a two-pixel tolerance.
-  // Keep its compositor measurements away from the bounded browser pool;
-  // the rest of the snapshot inventory still runs with multiple workers.
-  'apps/web/tests/chat-scroll-contract.e2e.ts',
 ]
 const workerRaw = process.env.DSH_WEB_SNAPSHOT_WORKERS
 const workers = Number.parseInt(workerRaw ?? '', 10)

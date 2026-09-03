@@ -1,5 +1,0 @@
-# Standalone reasoning-effort bundle layer. A profile may disable or replace
-# this exact row without changing the Web application bundle.
-- insert:
-    - id: reasoning-effort
-      name: '@deepseek-ai/dsh-reasoning-effort'

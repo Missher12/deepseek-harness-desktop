@@ -2,17 +2,17 @@
  * Trigger candidate menu: renders the InputTriggerService menu store into the
  * conversation.input.overlay anchor. Closed state renders null (the overlay
  * slot stays mounted); groups render in roster order under localized title
- * rows, pending groups as a loading row; pointer picks route back through
+ * rows. A pending group keeps showing the items it already had (the reducer
+ * retains them across a query refinement) and falls back to two skeleton
+ * rows only while it has none; pointer picks route back through
  * the service (combobox pattern — focus never leaves the textarea, so rows
  * are mousedown-handled and the highlight is exposed via
- * aria-activedescendant on the listbox).
+ * aria-activedescendant on the listbox). A source publishing crumbs gets a
+ * breadcrumb header pinned above the scrolling list.
  */
 import { Fragment, useEffect, useRef, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
-import {
-  IconCodeOutline16, IconGoalOutline16, IconImageOutline16, IconPaperclipOutline16,
-  IconSkillOutline16, IconThinkOutline16, useAnchoredMaxHeight,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronRightOutline14, ReferenceIcon, useAnchoredMaxHeight } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './MenuView.module.css'
 import type { MenuViewInjected } from './slots.ts'
@@ -34,16 +34,15 @@ function optionId(source: string, index: number): string {
  * @param props - injected face (the menu store and the pick route); `t` rides the standard locale seat.
  * @returns the dropdown while open; null while closed.
  */
-export function MenuView({ menu, launcher, onPick, onDismiss, t }: MenuViewProps) {
+export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t }: MenuViewProps) {
   const state = useSyncExternalStore(
     fn => menu.subscribe(fn),
     () => menu.getSnapshot(),
   )
-  const launcherName = useSyncExternalStore(
-    fn => launcher.subscribe(fn),
-    () => launcher.getSnapshot(),
+  const crumbs = useSyncExternalStore(
+    fn => headers.subscribe(fn),
+    () => headers.getSnapshot(),
   )
-  const composerAdd = launcherName === 'composer-add'
   const listRef = useRef<HTMLDivElement>(null)
   // The list is bottom-anchored above the composer; clamp the design cap to
   // the space above it, re-measured on every store update (the anchor moves
@@ -72,19 +71,41 @@ export function MenuView({ menu, launcher, onPick, onDismiss, t }: MenuViewProps
     return () => { document.removeEventListener('pointerdown', onPointerDown, true) }
   }, [state.open, onDismiss])
   if (!state.open) return null
-
-  let previousSection: string | undefined
   return (
-    <div
-      ref={listRef}
-      className={clsx(css.menu, composerAdd && css.composerAdd)}
-      style={{ maxHeight }}
-      role="listbox"
-      data-composer-add-menu={composerAdd || undefined}
-      aria-label={t('suggestions.aria')}
-      aria-activedescendant={highlight !== null ? optionId(highlight.source, highlight.index) : undefined}
-    >
-      <div className={clsx(css.viewport, composerAdd && css.addViewport)}>
+    // The listbox role sits on the scrolling viewport, not this shell: a
+    // breadcrumb header is not an option, and a listbox may not carry one.
+    <div ref={listRef} className={css.menu} style={{ maxHeight }} data-trigger-menu="">
+      {state.groups.map((group) => {
+        const trail = crumbs.get(group.source)
+        return trail === undefined ? null : (
+          <nav key={group.source} className={css.crumbs} aria-label={t('crumbs.aria')}>
+            {trail.map((crumb, index) => (
+              <Fragment key={`${String(index)}-${crumb.value}`}>
+                {index > 0 && <span className={css.crumbSeparator} aria-hidden><IconChevronRightOutline14 /></span>}
+                <button
+                  type="button"
+                  className={clsx(css.crumb, crumb.current === true && css.crumbCurrent)}
+                  aria-current={crumb.current === true ? 'location' : undefined}
+                  disabled={crumb.current === true}
+                  // mousedown, not click: the composer keeps focus, same as a row.
+                  onMouseDown={(ev) => {
+                    ev.preventDefault()
+                    onCrumb(group.source, index)
+                  }}
+                >
+                  {crumb.label}
+                </button>
+              </Fragment>
+            ))}
+          </nav>
+        )
+      })}
+      <div
+        className={css.viewport}
+        role="listbox"
+        aria-label={t('suggestions.aria')}
+        aria-activedescendant={highlight !== null ? optionId(highlight.source, highlight.index) : undefined}
+      >
         {state.groups.map(group => (group.status === 'ready' && group.items.length === 0)
           ? null
           : (
@@ -92,39 +113,29 @@ export function MenuView({ menu, launcher, onPick, onDismiss, t }: MenuViewProps
               {/* Source names key the dictionary open-endedly: the lookup chain
                   returns an unknown key verbatim, so an unregistered source
                   shows its raw name — hence the cast past the typed key union. */}
-              {composerAdd || group.showGroupTitle === false || group.items.some(item => item.section !== undefined)
+              {group.showGroupTitle === false || group.items.some(item => item.section !== undefined)
                 ? null
                 : <div className={css.groupTitle} role="presentation" data-source={group.source}>{t(group.source as MenuKey)}</div>}
-              {group.status === 'pending'
-                ? <div className={css.loading} data-source={group.source}>{t('loading')}</div>
+              {group.status === 'pending' && group.items.length === 0
+                ? (
+                  <div role="status" aria-label={t('loading')} data-source={group.source}>
+                    <div className={css.skeletonRow}><span className={css.skeletonBar} style={{ width: '32%' }} /></div>
+                    <div className={css.skeletonRow}><span className={css.skeletonBar} style={{ width: '48%' }} /></div>
+                  </div>
+                )
                 : group.items.map((item, index) => {
                   const active = highlight !== null && highlight.source === group.source && highlight.index === index
-                  const showSection = item.section !== undefined && (composerAdd
-                    ? item.section !== previousSection
-                    : item.section !== group.items[index - 1]?.section)
-                  if (composerAdd && item.section !== undefined) previousSection = item.section
-                  const icon = composerAdd
-                    ? group.source === 'composer-add'
-                      ? item.value === 'image' ? <IconImageOutline16 /> : <IconPaperclipOutline16 />
-                      : group.source === 'skill'
-                        ? <IconSkillOutline16 />
-                        : item.name === 'goal'
-                          ? <IconGoalOutline16 />
-                          : item.name === 'plan'
-                            ? <IconThinkOutline16 />
-                            : <IconCodeOutline16 />
-                    : item.icon
                   return (
                     <Fragment key={optionId(group.source, index)}>
-                      {showSection
-                        ? <div className={css.sectionTitle} role="presentation" data-add-section={composerAdd || undefined}>{item.section}</div>
+                      {item.section !== undefined && item.section !== group.items[index - 1]?.section
+                        ? <div className={css.sectionTitle} role="presentation">{item.section}</div>
                         : null}
                       <button
                         id={optionId(group.source, index)}
                         type="button"
                         role="option"
                         aria-selected={active}
-                        className={clsx(css.item, composerAdd && css.addItem, active && css.active)}
+                        className={clsx(css.item, active && css.active)}
                         // mousedown, not click: the textarea keeps focus (combobox
                         // pattern) — preventing default stops the focus steal, and the
                         // pick runs before any blur-driven teardown.
@@ -132,10 +143,40 @@ export function MenuView({ menu, launcher, onPick, onDismiss, t }: MenuViewProps
                           ev.preventDefault()
                           onPick(group.source, index)
                         }}
+                        // mousemove, not mouseenter: real pointer motion moves the
+                        // shared highlight; keyboard scrolling rows under a resting
+                        // pointer must not steal it back.
+                        onMouseMove={active ? undefined : () => { onHover(group.source, index) }}
                       >
-                        {icon !== undefined && <span className={css.itemIcon} aria-hidden>{icon}</span>}
+                        {item.icon !== undefined && (
+                          <span className={css.itemIcon} aria-hidden>
+                            <ReferenceIcon kind={item.icon} size={16} />
+                          </span>
+                        )}
                         <span className={css.itemName}>{item.name}</span>
                         {item.description !== undefined && <span className={css.itemDescription}>{item.description}</span>}
+                        {item.drill === true && (
+                          <span className={css.trailing}>
+                            {/* Visual hint only: Tab drills the highlighted row (the
+                                keyboard twin of the chevron, which owns the aria label). */}
+                            <span className={css.drillHintText} aria-hidden>{t('drill.hint')}</span>
+                            <kbd className={css.drillHint} aria-hidden>{t('drill.key')}</kbd>
+                            <span
+                              role="button"
+                              aria-label={t('drill.aria')}
+                              className={css.drill}
+                              // mousedown so the composer keeps focus, same as the row;
+                              // stopPropagation keeps the row's settling pick out of it.
+                              onMouseDown={(ev) => {
+                                ev.preventDefault()
+                                ev.stopPropagation()
+                                onPick(group.source, index, 'drill')
+                              }}
+                            >
+                              <IconChevronRightOutline14 />
+                            </span>
+                          </span>
+                        )}
                       </button>
                     </Fragment>
                   )

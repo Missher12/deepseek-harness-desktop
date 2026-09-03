@@ -3,53 +3,31 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import { AttachmentError } from './error.ts'
 import type {
-  DocumentAttachmentLimits,
-  DocumentAttachmentRef,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
   RequestImageAttachment,
-  SaveDocumentAttachment,
   SaveImageAttachment,
-  StoredDocumentAttachment,
   StoredImageAttachment,
 } from './types.ts'
 
 export { AttachmentId, ImageVariantId } from './brand.ts'
-export { AttachmentError, isDocumentAdmissionError, isImageAdmissionError } from './error.ts'
-export type { AttachmentErrorCode, DocumentAdmissionErrorCode, ImageAdmissionErrorCode } from './error.ts'
-export {
-  admitEncodedDocuments,
-  admitEncodedImages,
-  assertPromptAttachmentBase64CodeUnits,
-} from './admission.ts'
+export { AttachmentError, isImageAdmissionError } from './error.ts'
+export type { AttachmentErrorCode, ImageAdmissionErrorCode } from './error.ts'
+export { admitEncodedImages, admitPromptContent } from './admission.ts'
+export { requestImageDimensions } from './request-projection.ts'
 export type {
   AttachmentId as AttachmentIdType,
-  DocumentAttachmentDisplayId,
-  DocumentAttachmentLimits,
-  DocumentAttachmentRef,
-  DocumentMediaType,
-  EncodedDocumentAttachment,
+  AdmittedPromptContentPart,
   EncodedImageAttachment,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
   ImageMediaType,
+  PromptContentPart,
   RequestImageAttachment,
-  RendererDocumentAttachment,
-  SaveDocumentAttachment,
   SaveImageAttachment,
-  StoredDocumentAttachment,
   StoredImageAttachment,
-} from './types.ts'
-export {
-  DOCUMENT_DOTFILE_TEXT_NAMES,
-  DOCUMENT_EXTENSIONLESS_TEXT_NAMES,
-  DOCUMENT_EXTENSION_MEDIA_TYPES,
-  DOCUMENT_MEDIA_TYPES,
-  isCanonicalAttachmentBase64,
-  MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS,
-  promptAttachmentBase64CodeUnits,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -66,17 +44,6 @@ export abstract class AttachmentStore extends Service {
 
   /** Deployment-resolved image policy used by authoritative and fast-path validation. */
   abstract readonly imageLimits: ImageAttachmentLimits
-
-  /** Deployment-resolved document policy; an empty media roster means unsupported. */
-  readonly documentLimits: DocumentAttachmentLimits = Object.freeze({
-    maxDocumentBytes: 0,
-    maxDocumentsPerMessage: 0,
-    maxMessageDocumentBytes: 0,
-    maxExtractedTextBytes: 0,
-    maxMessageExtractedTextBytes: 0,
-    maxDocumentNameBytes: 0,
-    mediaTypes: Object.freeze([]),
-  })
 
   /**
    * Validate one image without persisting it.
@@ -124,77 +91,6 @@ export abstract class AttachmentStore extends Service {
     return refs
   }
 
-  /** Validate count, source-byte, and media-type bounds without starting extraction or writes. */
-  protected validateDocumentBatch(inputs: readonly SaveDocumentAttachment[]): void {
-    const { maxDocumentsPerMessage, maxMessageDocumentBytes, mediaTypes } = this.documentLimits
-    if (inputs.length > maxDocumentsPerMessage) {
-      throw new AttachmentError('Document batch exceeds the configured document-count limit.', 'TOO_MANY_DOCUMENTS')
-    }
-    const totalBytes = inputs.reduce((sum, input) => sum + input.data.byteLength, 0)
-    if (totalBytes > maxMessageDocumentBytes) {
-      throw new AttachmentError('Document batch exceeds the configured aggregate byte limit.', 'DOCUMENTS_TOO_LARGE')
-    }
-    for (const input of inputs) {
-      if (!mediaTypes.includes(input.mediaType)) {
-        throw new AttachmentError(
-          `Document type ${input.mediaType} is not accepted by this deployment.`,
-          'UNSUPPORTED_DOCUMENT_TYPE',
-        )
-      }
-    }
-  }
-
-  /**
-   * Validate every document before durably committing any member in caller order.
-   * @param inputs - document bytes and metadata in owning-message order.
-   * @returns durable references in the exact input order.
-   */
-  async saveDocuments(inputs: readonly SaveDocumentAttachment[]): Promise<readonly DocumentAttachmentRef[]> {
-    this.validateDocumentBatch(inputs)
-    for (const input of inputs) await this.validateDocument(input)
-    const refs: DocumentAttachmentRef[] = []
-    for (const input of inputs) refs.push(await this.saveDocument(input))
-    return refs
-  }
-
-  /**
-   * Validate one document without persistence. Unsupported providers fail closed.
-   * @param _input - proposed document bytes and metadata.
-   */
-  validateDocument(_input: SaveDocumentAttachment): Promise<void> {
-    return this.unsupportedDocuments<void>()
-  }
-
-  /**
-   * Validate, extract, and durably commit one document. Unsupported providers fail closed.
-   * @param _input - proposed document bytes and metadata.
-   * @returns the durable immutable document reference.
-   */
-  saveDocument(_input: SaveDocumentAttachment): Promise<DocumentAttachmentRef> {
-    return this.unsupportedDocuments<DocumentAttachmentRef>()
-  }
-
-  private unsupportedDocuments<T>(): Promise<T> {
-    return Promise.reject(new AttachmentError(
-      'The mounted attachment provider does not accept documents.',
-      'UNSUPPORTED_DOCUMENT_TYPE',
-    ))
-  }
-
-  /**
-   * Read and verify one immutable document source and extraction.
-   * @param _ref - durable document reference from session history.
-   * @param signal - optional cancellation for storage and integrity work.
-   * @returns verified source bytes, extracted text, and immutable metadata.
-   */
-  readDocument(_ref: DocumentAttachmentRef, signal?: AbortSignal): Promise<StoredDocumentAttachment> {
-    signal?.throwIfAborted()
-    return Promise.reject(new AttachmentError(
-      'The mounted attachment provider does not accept documents.',
-      'ATTACHMENT_PROJECTION_UNSUPPORTED',
-    ))
-  }
-
   /**
    * Validate and durably commit one image before its owning session event is appended.
    * The returned reference describes the persisted normalized image. When
@@ -215,9 +111,20 @@ export abstract class AttachmentStore extends Service {
   abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
 
   /**
+   * Locate the provider-owned normalized object in the harness host filesystem.
+   * @param ref - durable normalized attachment reference.
+   * @returns an absolute host path, or undefined when this backend is not host-file-backed.
+   * @throws an AttachmentError when the durable reference is invalid.
+   */
+  imageHostPath(ref: ImageAttachmentRef): string | undefined {
+    void ref
+    return undefined
+  }
+
+  /**
    * Generate or read one deterministic model-request version from the stored normalized image.
    * @param ref - durable provider-independent normalized attachment reference.
-   * @param policy - exact route pixel and encoded-byte budget.
+   * @param policy - exact route pixel budget and encoded-byte target; a target no ladder quality meets yields the smallest ladder output.
    * @param signal - optional cancellation.
    * @returns request bytes and the cache/upload identity covering every transform input.
    */

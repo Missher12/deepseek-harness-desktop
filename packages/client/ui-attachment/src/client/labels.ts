@@ -39,37 +39,25 @@ export function messageImageLabels(t: TranslateNS<'conversation'>): MessageImage
 export function dropOverlayLabels(
   t: TranslateNS<'conversation'>,
   accepting: boolean,
-  limits?: {
-    readonly images?: { readonly count: number; readonly size: string }
-    readonly documents?: { readonly count: number; readonly size: string }
-  },
+  limits?: { readonly count: number; readonly size: string },
 ): DropOverlayLabels {
-  if (!accepting) return { title: t('attachment.dropBlocked') }
-  const images = limits?.images
-  const documents = limits?.documents
+  if (!accepting) return { title: t('image.dropBlocked') }
   return {
-    title: t('attachment.dropTitle'),
-    desc: images === undefined || documents === undefined
-      ? undefined
-      : t('attachment.dropDesc', {
-        imageCount: images.count,
-        imageSize: images.size,
-        documentCount: documents.count,
-        documentSize: documents.size,
-      }),
+    title: t('image.dropTitle'),
+    desc: limits === undefined ? undefined : t('image.dropDesc', limits),
   }
 }
 
 /**
- * Resolve draft-attachment rail strings from the conversation namespace.
+ * Resolve draft-image rail strings from the conversation namespace.
  * @param t - conversation namespace translator.
  * @returns translated attachment-rail labels.
  */
 export function attachmentRailLabels(t: TranslateNS<'conversation'>): AttachmentRailLabels {
   return {
-    group: t('attachment.pending'),
+    group: t('image.pending'),
     open: t('image.openOriginal'),
-    scrollLeft: t('attachment.scrollLeft'),
-    scrollRight: t('attachment.scrollRight'),
+    scrollLeft: t('image.scrollLeft'),
+    scrollRight: t('image.scrollRight'),
   }
 }

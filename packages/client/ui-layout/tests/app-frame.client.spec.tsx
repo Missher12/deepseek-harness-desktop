@@ -2,7 +2,7 @@
 /**
  * AppFrame interaction spec under the four-share props form: real layout
  * store instance (createLayoutStore().create() — the test-sanctioned engine
- * path), a recording renderSlot stub, and a render-prop SessionProvider stub
+ * path), a recording renderSlot stub, and a SessionProvider component stub
  * (the real one is framework-wired to the renderer host; its own behavior is
  * ui-renderer's spec territory). Drag sequences (pointer capture + rAF flush),
  * concession response to viewport change, and details staying mounted at
@@ -17,22 +17,24 @@ import { AppFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.
 import type { AppFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
 import { SIDEBAR_COLLAPSED } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
-import type {
-  SessionId, SessionListState, WorkspaceListState,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 // Session selection controls for the SessionProvider and useSessions stubs.
 const selectedSession = { current: 's-test' as SessionId | undefined }
 const selectedSessionBlank = { current: false }
-const baselinesReady = { current: true }
+const selectedSessionTitle = { current: undefined as string | undefined }
+const workspacesReady = { current: true }
+type AttentionSnapshot = Parameters<Parameters<AppFrameProps['useSessionPendingInteraction']>[0]>[0]
+const noAttention: AttentionSnapshot = new Map()
+const useSessionPendingInteraction: AppFrameProps['useSessionPendingInteraction'] = selector => selector(noAttention)
 
-// Render-prop contract stub fed through the standard seat prop (the renderer
-// injects the real one in production): session mode runs children(id), empty
-// mode runs the empty branch — the frame must work against exactly this
-// shape. Typed as the seat's own component type so the branded sessionId
-// parameter stays contract-checked.
+// Provider contract stub fed through the standard seat prop (the renderer
+// injects the real one in production): session mode renders children and
+// empty mode runs the empty branch.
 const SessionProviderStub: AppFrameProps['SessionProvider'] = ({ children, empty }) =>
-  selectedSession.current === undefined ? <>{empty?.() ?? null}</> : <>{children(selectedSession.current)}</>
+  selectedSession.current === undefined ? <>{empty?.() ?? null}</> : <>{children}</>
 
 
 /** Observer stub: captures the callback so tests can fire resizes manually. */
@@ -61,7 +63,6 @@ function mountFrame() {
     if (key === 'sidebar') return <div data-testid="sidebar-content" />
     if (key === 'conversation') return <div data-testid="center-content" />
     if (key === 'details') return <div data-testid="details-content" />
-    if (key === 'layout.utility') return <div data-testid="utility-content" />
     if (key === 'conversation.empty') return <div data-testid="empty-content" />
     return <div data-testid="other-content" />
   }) as AppFrameProps['renderSlot']
@@ -71,15 +72,24 @@ function mountFrame() {
       ids: current === undefined ? [] : [current],
       byId: current === undefined
         ? {}
-        : { [current]: { id: current, displayTitle: 'Test', running: false, blank: selectedSessionBlank.current, updatedAt: 1 } },
+        : {
+          [current]: {
+            id: current,
+            displayTitle: 'Test',
+            running: false,
+            blank: selectedSessionBlank.current,
+            updatedAt: 1,
+            ...(selectedSessionTitle.current === undefined ? {} : { title: selectedSessionTitle.current }),
+          },
+        },
       current,
       phase: 'ready',
     } as SessionListState
     return sel(sessionState)
   }) as never
-  const workspaceState: WorkspaceListState = {
+  const workspaceState: WorkspaceSnapshot = {
     items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
-    baselinesReady: baselinesReady.current, recentWorkspaceId: undefined,
+    ...(workspacesReady.current ? {} : { state: 'loading' as const, phase: 'pending' as const }),
   }
   const element = () => (
     <AppFrame
@@ -87,8 +97,10 @@ function mountFrame() {
       actions={instance.actions}
       renderSlot={renderSlot}
       useSessions={useSessions}
-      useWorkspaces={((sel: (s: WorkspaceListState) => unknown) => sel(workspaceState)) as never}
+      useSessionPendingInteraction={useSessionPendingInteraction}
+      useWorkspaces={((sel: (s: WorkspaceSnapshot) => unknown) => sel(workspaceState)) as never}
       SessionProvider={SessionProviderStub}
+      t={key => key === 'brand.localBuild' ? 'DSH Local Build' : key}
     />
   )
   const utils = render(element())
@@ -97,9 +109,9 @@ function mountFrame() {
 }
 
 function tracks(frame: HTMLElement): number[] {
-  const m = /^(\d+)px minmax\(0, 1fr\) (\d+)px (\d+)px$/.exec(frame.style.gridTemplateColumns)
+  const m = /^(\d+)px minmax\(0, 1fr\) (\d+)px$/.exec(frame.style.gridTemplateColumns)
   if (m === null) throw new Error(`unexpected template: ${frame.style.gridTemplateColumns}`)
-  return [Number(m[1]), Number(m[2]), Number(m[3])]
+  return [Number(m[1]), Number(m[2])]
 }
 
 function drag(handle: Element, fromX: number, toX: number): void {
@@ -115,7 +127,8 @@ beforeEach(() => {
   frameWidth = 1920
   selectedSession.current = 's-test' as SessionId
   selectedSessionBlank.current = false
-  baselinesReady.current = true
+  selectedSessionTitle.current = undefined
+  workspacesReady.current = true
   vi.useFakeTimers()
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => { cb(0) }, 16) as unknown as number)
@@ -133,14 +146,36 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  document.title = ''
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
 describe('AppFrame', () => {
+  it('localizes the product title when the build does not supply one', () => {
+    mountFrame()
+    expect(document.title).toBe('DSH Local Build')
+  })
+
+  it('projects the selected durable Session title', () => {
+    vi.stubEnv('DSH_CLIENT_TITLE', 'Product')
+    selectedSessionTitle.current = 'First'
+    const { rerenderFrame } = mountFrame()
+    expect(document.title).toBe('First — Product')
+
+    selectedSessionTitle.current = 'Revised'
+    act(() => { rerenderFrame() })
+    expect(document.title).toBe('Revised — Product')
+
+    selectedSession.current = undefined
+    act(() => { rerenderFrame() })
+    expect(document.title).toBe('Product')
+  })
+
   it('renders three tracks from store state', () => {
     const { frame } = mountFrame()
-    expect(tracks(frame)).toEqual([280, 0, 0])
+    expect(tracks(frame)).toEqual([280, 0])
   })
 
   it('renders the session pair with empty owner shares (sessionId is framework-standard)', () => {
@@ -159,15 +194,17 @@ describe('AppFrame', () => {
     // No current session: the session-maybe conversation shell owns the New
     // Session view itself — the center column renders it unconditionally.
     selectedSession.current = undefined
-    const { slotCalls, getByTestId } = mountFrame()
+    const { slotCalls, getByTestId, queryByTestId } = mountFrame()
     expect(getByTestId('center-content')).toBeTruthy()
     expect(slotCalls.map(c => c.key)).toContain('conversation')
+    expect(queryByTestId('details-content')).toBeNull()
+    expect(slotCalls.map(c => c.key)).toContain('details')
   })
 
   it('renders both column occupants before baselines settle (no loading gate)', () => {
     // No loading gate: a bare loading status reads worse than the shell's own
     // pending rendering — both occupants mount from first paint.
-    baselinesReady.current = false
+    workspacesReady.current = false
     const { slotCalls } = mountFrame()
     expect(slotCalls.map(c => c.key)).toContain('conversation')
     expect(slotCalls.map(c => c.key)).toContain('details')
@@ -175,44 +212,44 @@ describe('AppFrame', () => {
 
   it('ignores unselected states and closes only when the Session id changes', () => {
     const { frame, instance, rerenderFrame } = mountFrame()
-    expect(tracks(frame)).toEqual([280, 0, 0])
+    expect(tracks(frame)).toEqual([280, 0])
 
     act(() => { instance.actions.openDetails() })
-    expect(tracks(frame)).toEqual([280, 360, 0])
+    expect(tracks(frame)).toEqual([280, 360])
 
     selectedSession.current = 's-next' as SessionId
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 0, 0])
+    expect(tracks(frame)).toEqual([280, 0])
 
     act(() => { instance.actions.openDetails() })
     selectedSession.current = 's-blank' as SessionId
     selectedSessionBlank.current = true
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 0, 0])
+    expect(tracks(frame)).toEqual([280, 0])
     expect(instance.getSnapshot().details).toBe(360)
 
     selectedSession.current = 's-next' as SessionId
     selectedSessionBlank.current = false
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 360, 0])
+    expect(tracks(frame)).toEqual([280, 360])
 
     selectedSession.current = undefined
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 0, 0])
+    expect(tracks(frame)).toEqual([280, 0])
     selectedSession.current = 's-test' as SessionId
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 0, 0])
+    expect(tracks(frame)).toEqual([280, 0])
   })
 
   it('keeps details closed when the first Session materializes', () => {
     selectedSession.current = undefined
     const { frame, instance, rerenderFrame } = mountFrame()
-    expect(tracks(frame)).toEqual([280, 0, 0])
+    expect(tracks(frame)).toEqual([280, 0])
     expect(instance.getSnapshot().details).toBe(0)
 
     selectedSession.current = 's-first' as SessionId
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 0, 0])
+    expect(tracks(frame)).toEqual([280, 0])
   })
 
   it('sidebar slot receives live concession output as owner props', () => {
@@ -239,7 +276,7 @@ describe('AppFrame', () => {
     frameWidth = 1250 // step-2 squeeze: details renders 330 while preference is 360
     const { frame, instance } = mountFrame()
     act(() => { instance.actions.openDetails() })
-    expect(tracks(frame)).toEqual([280, 330, 0])
+    expect(tracks(frame)).toEqual([280, 330])
     const handles = frame.querySelectorAll('[class*="handle"]')
     drag(handles[1]!, 920, 930) // shrink by 10 from the rendered width
     expect(instance.getSnapshot().details).toBe(320)
@@ -247,50 +284,15 @@ describe('AppFrame', () => {
 
   it('details column stays mounted at zero width', () => {
     const { frame, getByTestId } = mountFrame()
-    expect(tracks(frame)).toEqual([280, 0, 0])
+    expect(tracks(frame)).toEqual([280, 0])
     expect(getByTestId('details-content')).toBeTruthy()
     expect(frame.hasAttribute('data-details-collapsed')).toBe(true)
-  })
-
-  it('mounts the utility slot only while open and gives it the active mode', () => {
-    const { frame, instance, queryByTestId, getByTestId, slotCalls } = mountFrame()
-    expect(queryByTestId('utility-content')).toBeNull()
-    act(() => { instance.actions.openUtility('files') })
-    expect(tracks(frame)).toEqual([280, 0, 420])
-    expect(getByTestId('utility-content')).toBeTruthy()
-    expect(slotCalls.filter(c => c.key === 'layout.utility').at(-1)?.props).toEqual({ mode: 'files' })
-    act(() => { instance.actions.closeUtility() })
-    expect(tracks(frame)).toEqual([280, 0, 0])
-    expect(queryByTestId('utility-content')).toBeNull()
-  })
-
-  it('renders utility as an overlay drawer below the narrow breakpoint', () => {
-    frameWidth = 980
-    const { frame, instance, getByTestId } = mountFrame()
-    act(() => { instance.actions.openUtility('browser') })
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0, 0])
-    expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBe('true')
-  })
-
-  it('renders utility as an overlay drawer when the center cannot retain its floor', () => {
-    frameWidth = 1180
-    const { frame, instance, getByTestId } = mountFrame()
-    act(() => { instance.actions.openUtility('terminal') })
-    expect(tracks(frame)).toEqual([280, 0, 0])
-    expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBe('true')
-  })
-
-  it('keeps every narrow utility surface in the overlay drawer even when columns barely fit', () => {
-    frameWidth = 1020
-    const { instance, getByTestId } = mountFrame()
-    act(() => { instance.actions.openUtility('terminal') })
-    expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBe('true')
   })
 
   it('closed sidebar keeps its compact rail with mounted slot content and collapsed owner props', () => {
     const { frame, instance, slotCalls, getByTestId } = mountFrame()
     act(() => { instance.actions.toggleSidebar() })
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0, 0])
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
     expect(getByTestId('sidebar-content')).toBeTruthy()
     expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
     const lastSidebarCall = slotCalls.filter(c => c.key === 'sidebar').at(-1)!
@@ -302,10 +304,10 @@ describe('AppFrame', () => {
     act(() => { instance.actions.openDetails() })
     frameWidth = 1250
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
-    expect(tracks(frame)).toEqual([280, 330, 0])
+    expect(tracks(frame)).toEqual([280, 330])
     frameWidth = 1920
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
-    expect(tracks(frame)).toEqual([280, 360, 0])
+    expect(tracks(frame)).toEqual([280, 360])
   })
 
   it('drag handles disappear for collapsed columns', () => {
@@ -324,7 +326,7 @@ describe('AppFrame — narrow-viewport auto-collapse', () => {
   it('mounts collapsed below the breakpoint with no sidebar handle', () => {
     frameWidth = 980
     const { frame, slotCalls } = mountFrame()
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0, 0])
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
     expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
     expect(slotCalls.filter(c => c.key === 'sidebar').at(-1)!.props).toEqual({ collapsed: true, width: SIDEBAR_COLLAPSED })
     expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(0)
@@ -334,11 +336,11 @@ describe('AppFrame — narrow-viewport auto-collapse', () => {
     frameWidth = 980
     const { frame, instance } = mountFrame()
     act(() => { instance.actions.toggleSidebar() })
-    expect(tracks(frame)).toEqual([280, 0, 0])
+    expect(tracks(frame)).toEqual([280, 0])
     expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(false)
     expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(1)
     act(() => { instance.actions.toggleSidebar() })
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0, 0])
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
   })
 
   it('a wide-closed preference re-expands at the contract default while narrow', () => {
@@ -348,7 +350,7 @@ describe('AppFrame — narrow-viewport auto-collapse', () => {
     frameWidth = 980
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
     act(() => { instance.actions.toggleSidebar() })
-    expect(tracks(frame)).toEqual([280, 0, 0])
+    expect(tracks(frame)).toEqual([280, 0])
     expect(instance.getSnapshot().sidebar).toBe(0) // preference untouched
   })
 
@@ -357,10 +359,10 @@ describe('AppFrame — narrow-viewport auto-collapse', () => {
     act(() => { instance.actions.setSidebar(400) })
     frameWidth = 980
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0, 0])
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
     frameWidth = 1920
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
-    expect(tracks(frame)).toEqual([400, 0, 0])
+    expect(tracks(frame)).toEqual([400, 0])
   })
 })
 
@@ -410,7 +412,7 @@ describe('AppFrame — guard branches', () => {
     frameWidth = 0
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
     // Track template still reflects the last non-zero viewport.
-    expect(tracks(frame)).toEqual([280, 0, 0])
+    expect(tracks(frame)).toEqual([280, 0])
   })
 })
 
@@ -429,6 +431,6 @@ describe('AppFrame — unmount with an in-flight resize frame', () => {
     act(() => { instance.actions.openDetails() })
     frameWidth = 1250
     act(() => { fireResize?.(); fireResize?.(); vi.advanceTimersByTime(20) })
-    expect(tracks(frame)).toEqual([280, 330, 0])
+    expect(tracks(frame)).toEqual([280, 330])
   })
 })

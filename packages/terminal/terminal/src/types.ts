@@ -66,13 +66,6 @@ export interface TerminalSendRequest {
   text: string
   /** Whether to write the backend's Enter sequence after {@link text}. */
   submit: boolean
-  /**
-   * Permit a backend's bounded silence fallback after exact readiness was
-   * established. This is only safe for serialized callers that own an
-   * independent command-completion marker and never use settlement alone to
-   * start a successor command.
-   */
-  allowInferredIdle?: boolean
   /** Cancellation for the wait; backends also interrupt the foreground command. */
   signal?: AbortSignal
 }

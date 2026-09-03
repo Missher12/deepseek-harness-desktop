@@ -1,4 +1,0 @@
-# Independently removable cross-session messaging layer.
-- insert:
-    - id: session-messenger
-      name: '@deepseek-ai/dsh-session-messenger'

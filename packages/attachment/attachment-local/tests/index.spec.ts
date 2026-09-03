@@ -1,6 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -8,17 +9,13 @@ import sharp from 'sharp'
 import LocalAttachmentStore, {
   DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
   DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
+  DEFAULT_NORMALIZED_IMAGE_MAX_PIXELS,
   DEFAULT_IMAGE_COMPRESSION_CONCURRENCY,
   DEFAULT_MAX_IMAGE_BYTES,
   DEFAULT_MAX_IMAGE_DIMENSION,
   DEFAULT_MAX_IMAGE_PIXELS,
   DEFAULT_MAX_IMAGES_PER_MESSAGE,
   DEFAULT_MAX_MESSAGE_IMAGE_BYTES,
-  DEFAULT_MAX_DOCUMENT_BYTES,
-  DEFAULT_MAX_DOCUMENTS_PER_MESSAGE,
-  DEFAULT_MAX_MESSAGE_DOCUMENT_BYTES,
-  DEFAULT_MAX_EXTRACTED_TEXT_BYTES,
-  DEFAULT_MAX_MESSAGE_EXTRACTED_TEXT_BYTES,
 } from '../src/index.ts'
 
 describe('local attachment service', () => {
@@ -37,30 +34,27 @@ describe('local attachment service', () => {
       maxImageDimension: DEFAULT_MAX_IMAGE_DIMENSION,
       mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
     })
-    expect(service.documentLimits).toEqual({
-      maxDocumentBytes: DEFAULT_MAX_DOCUMENT_BYTES,
-      maxDocumentsPerMessage: DEFAULT_MAX_DOCUMENTS_PER_MESSAGE,
-      maxMessageDocumentBytes: DEFAULT_MAX_MESSAGE_DOCUMENT_BYTES,
-      maxExtractedTextBytes: DEFAULT_MAX_EXTRACTED_TEXT_BYTES,
-      maxMessageExtractedTextBytes: DEFAULT_MAX_MESSAGE_EXTRACTED_TEXT_BYTES,
-      maxDocumentNameBytes: 255,
-      mediaTypes: [
-        'application/pdf',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'text/plain',
-        'text/markdown',
-        'application/json',
-        'text/csv',
-        'application/yaml',
-        'application/xml',
-      ],
-    })
     expect(service.normalizationPolicy).toEqual({
+      maxPixels: DEFAULT_NORMALIZED_IMAGE_MAX_PIXELS,
       maxDimension: DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
       maxBytes: DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
     })
     expect(service.imageCompressionConcurrency).toBe(DEFAULT_IMAGE_COMPRESSION_CONCURRENCY)
+    const ref = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png' as const,
+      bytes: 1,
+      width: 1,
+      height: 1,
+    }
+    expect(service.imageHostPath(ref)).toBe(join(
+      service.root,
+      'objects',
+      'aa',
+      'a'.repeat(64),
+    ))
+    expect(() => service.imageHostPath({ ...ref, attachmentId: AttachmentId('invalid') }))
+      .toThrow(expect.objectContaining({ code: 'INVALID_ATTACHMENT_REF' }))
   })
 
   it('resolves and validates the instance image-compression concurrency', () => {
@@ -81,73 +75,18 @@ describe('local attachment service', () => {
       ))
       const ref = await service.saveImage({ data, mediaType: 'image/png' })
       await expect(service.readImage(ref)).resolves.toEqual({ ref, data })
-    } finally {
-      await rm(dshHome, { recursive: true, force: true })
-    }
-  })
-
-  it('saves and verifies documents through the service boundary', async () => {
-    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-document-service-'))
-    try {
-      const service = new LocalAttachmentStore(new Context(), { dshHome })
-      const ref = await service.saveDocument({
-        data: new TextEncoder().encode('document body'),
-        mediaType: 'text/plain',
-        name: 'notes.txt',
-      })
-      await expect(service.readDocument(ref)).resolves.toMatchObject({ ref, text: 'document body' })
-    } finally {
-      await rm(dshHome, { recursive: true, force: true })
-    }
-  })
-
-  it('validates documents without persisting and commits successful batches in order', async () => {
-    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-document-validation-'))
-    try {
-      const service = new LocalAttachmentStore(new Context(), { dshHome })
-      const first = { data: new TextEncoder().encode('first'), mediaType: 'text/plain' as const, name: 'first.txt' }
-      const second = { data: new TextEncoder().encode('second'), mediaType: 'text/plain' as const, name: 'second.txt' }
-      await expect(service.validateDocument(first)).resolves.toBeUndefined()
-      expect(existsSync(service.root)).toBe(false)
-      const refs = await service.saveDocuments([first, second])
-      expect(refs.map(ref => ref.name)).toEqual(['first.txt', 'second.txt'])
-      await expect(Promise.all(refs.map(ref => service.readDocument(ref))))
-        .resolves.toMatchObject([{ text: 'first' }, { text: 'second' }])
-    } finally {
-      await rm(dshHome, { recursive: true, force: true })
-    }
-  })
-
-  it('prepares the full document batch before enforcing aggregate extracted text', async () => {
-    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-document-batch-'))
-    try {
-      const service = new LocalAttachmentStore(new Context(), {
+      const hostPath = service.imageHostPath(ref)
+      expect(hostPath).toBe(join(
         dshHome,
-        maxExtractedTextBytes: 20,
-        maxMessageExtractedTextBytes: 10,
-      })
-      await expect(service.saveDocuments([
-        { data: new TextEncoder().encode('12345678'), mediaType: 'text/plain', name: 'one.txt' },
-        { data: new TextEncoder().encode('abcdefgh'), mediaType: 'text/plain', name: 'two.txt' },
-      ])).rejects.toMatchObject({ code: 'DOCUMENT_EXTRACTED_TEXT_TOO_LARGE' })
-      expect(existsSync(service.root)).toBe(false)
-    } finally {
-      await rm(dshHome, { recursive: true, force: true })
-    }
-  })
-
-  it('enforces the aggregate extracted-text cap for direct single-document saves', async () => {
-    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-document-single-'))
-    try {
-      const service = new LocalAttachmentStore(new Context(), {
-        dshHome,
-        maxExtractedTextBytes: 20,
-        maxMessageExtractedTextBytes: 5,
-      })
-      await expect(service.saveDocument({
-        data: new TextEncoder().encode('12345678'), mediaType: 'text/plain', name: 'one.txt',
-      })).rejects.toMatchObject({ code: 'DOCUMENT_EXTRACTED_TEXT_TOO_LARGE' })
-      expect(existsSync(service.root)).toBe(false)
+        'attachments',
+        'v1',
+        'objects',
+        String(ref.attachmentId).slice('sha256:'.length, 'sha256:'.length + 2),
+        String(ref.attachmentId).slice('sha256:'.length),
+      ))
+      await expect(readFile(hostPath)).resolves.toEqual(Buffer.from(data))
+      const request = await service.readImageRequest(ref, { maxPixels: 1, maxBytes: 1024 })
+      expect(request).not.toHaveProperty('access')
     } finally {
       await rm(dshHome, { recursive: true, force: true })
     }
@@ -199,15 +138,15 @@ describe('local attachment service', () => {
   it('prepares every batch member before any write', async () => {
     const dshHome = await mkdtemp(join(tmpdir(), 'dsh-attachment-batch-'))
     try {
-      const service = new LocalAttachmentStore(new Context(), { dshHome, normalizedImageMaxBytes: 1 })
+      const service = new LocalAttachmentStore(new Context(), { dshHome })
       const valid = Uint8Array.from(Buffer.from(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgZGIGAAAOAAeCcsnOAAAAAElFTkSuQmCC',
         'base64',
       ))
       await expect(service.saveImages([
         { data: valid, mediaType: 'image/png' },
-        { data: valid, mediaType: 'image/png' },
-      ])).rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
+        { data: Uint8Array.of(1, 2, 3), mediaType: 'image/png' },
+      ])).rejects.toThrow(/Unsupported or malformed image data/)
       expect(existsSync(service.root)).toBe(false)
     } finally {
       await rm(dshHome, { recursive: true, force: true })

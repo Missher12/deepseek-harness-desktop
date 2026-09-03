@@ -6,19 +6,16 @@ import clsx from 'clsx'
 import {
   IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { DocumentChip } from './DocumentChip.tsx'
 import css from './AttachmentRail.module.css'
 
 /** One rail thumbnail; strings arrive resolved (zero-cordis atom). */
 export interface AttachmentRailItem {
   /** Stable identity for the React key. */
   id: string
-  /** Object or data URL rendered as the image thumbnail; absent for documents. */
-  previewUrl?: string
-  /** Image alt text or document display name. */
+  /** Object or data URL rendered as the thumbnail. */
+  previewUrl: string
+  /** Image alt text (display name with the owner's fallback applied). */
   alt: string
-  /** Short document type label; required when previewUrl is absent. */
-  typeLabel?: string
   /** Accessible label of the item's remove control. */
   removeLabel: string
 }
@@ -169,18 +166,14 @@ export function AttachmentRail<T extends AttachmentRailItem>({ items, labels, on
       >
         {items.map(item => (
           <div key={item.id} className={css.item}>
-            {item.previewUrl === undefined
-              ? <DocumentChip name={item.alt} typeLabel={item.typeLabel ?? ''} />
-              : (
-                <button
-                  type="button"
-                  className={css.thumbnail}
-                  title={labels.open}
-                  onClick={() => { onOpen(item) }}
-                >
-                  <img src={item.previewUrl} alt={item.alt} />
-                </button>
-              )}
+            <button
+              type="button"
+              className={css.thumbnail}
+              title={labels.open}
+              onClick={() => { onOpen(item) }}
+            >
+              <img src={item.previewUrl} alt={item.alt} />
+            </button>
             <button
               type="button"
               className={css.remove}

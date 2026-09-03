@@ -40,8 +40,6 @@ interface ComWorld {
   registered: number
   unregistered: number
   uninitialized: number
-  viewed: number
-  string16Reads: number
 }
 
 function comWorld(overrides: Partial<ComWorld> = {}): ComWorld {
@@ -50,7 +48,7 @@ function comWorld(overrides: Partial<ComWorld> = {}): ComWorld {
     hasThreadDpi: true, supportedDpiContexts: [-4], enumThrows: false,
     path: 'C:\\选中\\directory',
     titles: [], options: [], dpiContexts: [], freed: [], released: [], posted: [],
-    registered: 0, unregistered: 0, uninitialized: 0, viewed: 0, string16Reads: 0,
+    registered: 0, unregistered: 0, uninitialized: 0,
     ...overrides,
   }
 }
@@ -63,24 +61,6 @@ function installFakeKoffi(world: ComWorld): void {
   const itemPtr: FakePtr = { kind: 'item' }
   const namePtr: FakePtr = { kind: 'name', text: world.path }
   const outBuffers = new Map<unknown, FakePtr>()
-
-  const decode = Object.assign((value: unknown, offsetOrType: unknown): unknown => {
-    if (offsetOrType === 'str16') return (value as FakePtr).text
-    if (typeof offsetOrType === 'number') {
-      // Vtable slot read: offsets must be multiples of the fake width.
-      if (offsetOrType % FAKE_POINTER_SIZE !== 0) throw new Error(`vtable offset ${offsetOrType} is not pointer-aligned`)
-      const owner = (value as { owner: FakePtr }).owner
-      return { call: (args: unknown[]) => dispatch(owner, offsetOrType / FAKE_POINTER_SIZE, args) }
-    }
-    // decode(x, 'void *'): out-buffer read or vtable read.
-    if (outBuffers.has(value)) return outBuffers.get(value)
-    return { owner: value as FakePtr }
-  }, {
-    string16: (value: unknown): string => {
-      world.string16Reads += 1
-      return (value as FakePtr).text as string
-    },
-  })
 
   const dispatch = (self: FakePtr, slot: number, args: unknown[]): number => {
     if (self.kind === 'dialog') {
@@ -148,14 +128,24 @@ function installFakeKoffi(world: ComWorld): void {
       pointer: (type: unknown) => type,
       sizeof: (type: string) => { void type; return FAKE_POINTER_SIZE },
       view: (value: unknown, len: number): ArrayBuffer => {
-        world.viewed += 1
         const bytes = Buffer.alloc(len)
         bytes.write((value as FakePtr).text as string, 'utf16le')
         return bytes.buffer
       },
       register: (fn: (hwnd: unknown, lparam: unknown) => number) => { world.registered += 1; return { fn } },
       unregister: () => { world.unregistered += 1 },
-      decode,
+      decode: (value: unknown, offsetOrType: unknown): unknown => {
+        if (offsetOrType === 'str16') return (value as FakePtr).text
+        if (typeof offsetOrType === 'number') {
+          // Vtable slot read: offsets must be multiples of the fake width.
+          if (offsetOrType % FAKE_POINTER_SIZE !== 0) throw new Error(`vtable offset ${offsetOrType} is not pointer-aligned`)
+          const owner = (value as { owner: FakePtr }).owner
+          return { call: (args: unknown[]) => dispatch(owner, offsetOrType / FAKE_POINTER_SIZE, args) }
+        }
+        // decode(x, 'void *'): out-buffer read or vtable read.
+        if (outBuffers.has(value)) return outBuffers.get(value)
+        return { owner: value as FakePtr }
+      },
       call: (fn: { call: (args: unknown[]) => number }, _proto: unknown, _self: unknown, ...args: unknown[]) => fn.call(args),
     },
   }))
@@ -186,10 +176,17 @@ describe('loadWin32DialogBindings over the fake COM world', () => {
     expect(world.options).toHaveLength(1)
     expect(showing).toHaveBeenCalledWith(31337)
     expect(world.freed).toHaveLength(1)
-    expect(world.string16Reads).toBe(1)
-    expect(world.viewed).toBe(0)
     expect(world.released).toEqual(['item', 'dialog'])
     expect(world.uninitialized).toBe(1)
+  })
+
+  it('reads a UTF-16 path whose BMP code unit has a zero low byte (U+5F00 开)', async () => {
+    // 开 = U+5F00 → UTF-16LE bytes 00 5F. A scan that treats any zero low
+    // byte as NUL truncates here and returns the nonexistent ...\安卓.
+    const world = comWorld({ path: 'C:\\fixture\\安卓开发' })
+    installFakeKoffi(world)
+    const bindings = await (await loadBindingsModule()).loadWin32DialogBindings()
+    expect(runFolderDialog(bindings, 'Pick', vi.fn())).toBe('C:\\fixture\\安卓开发')
   })
 
   it('maps dismissal and the S_FALSE CoInitializeEx', async () => {

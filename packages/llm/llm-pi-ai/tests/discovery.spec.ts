@@ -84,10 +84,6 @@ describe('catalog-route model discovery', () => {
     expect(models.map(model => model.id).sort())
       .toEqual(getBuiltinModels('deepseek').map(model => model.id).sort())
     expect(models.every(model => (model.contextWindow ?? 0) > 0 && (model.maxTokens ?? 0) > 0)).toBe(true)
-    const vision = getBuiltinModels('deepseek').find(model => model.input.includes('image'))
-    if (vision !== undefined) {
-      expect(models.find(model => model.id === vision.id)?.inputModalities).toEqual(vision.input)
-    }
     expect(server.paths).toEqual([])
   })
 
@@ -150,7 +146,7 @@ describe('draft-provider model discovery', () => {
     expect(server.headers[0]?.authorization).toBeUndefined()
   })
 
-  it('authenticates a configured route the draft cannot supply a key for', async () => {
+  it('authenticates configured routes the draft cannot supply a key for', async () => {
     // What the Models page actually sends after a key is saved: the form holds
     // the redacted descriptor, so the draft names the route and the endpoint
     // and no credential at all. Interrogating unauthenticated would answer 401
@@ -166,20 +162,34 @@ describe('draft-provider model discovery', () => {
           apiKeyEnv: 'ACME_GATEWAY_KEY',
           api: 'openai-completions',
           baseURL: server.url,
+          headers: { 'X-Company-Code': 'private-tenant' },
           models: [{ id: 'acme-large' }],
+        },
+        'plain-gateway': {
+          apiKeyEnv: 'ACME_GATEWAY_KEY',
+          api: 'openai-completions',
+          baseURL: server.url,
+          models: [{ id: 'plain-large' }],
         },
       },
     })
 
     await ctx.llm.discoverModels('llm-pi-ai', { provider: 'acme-gateway', baseURL: server.url })
     // A key typed into the form is the one being tested — possibly the
-    // replacement for the stored one — so it wins.
+    // replacement for the stored one — so it wins without resolving the
+    // missing stored credential, while the route's headers still apply.
+    Reflect.deleteProperty(process.env, 'ACME_GATEWAY_KEY')
     await ctx.llm.discoverModels('llm-pi-ai', { provider: 'acme-gateway', baseURL: server.url, apiKey: 'typed' })
     // A route no profile declares yet is the create case: nothing is stored.
     await ctx.llm.discoverModels('llm-pi-ai', { provider: 'not-declared-yet', baseURL: server.url })
+    // A configured route without deployment headers still contributes its
+    // stored credential without inventing a header map.
+    await ctx.llm.discoverModels('llm-pi-ai', { provider: 'plain-gateway', baseURL: server.url, apiKey: 'plain-typed' })
 
     expect(server.headers.map(headers => headers.authorization))
-      .toEqual(['Bearer stored-key', 'Bearer typed', undefined])
+      .toEqual(['Bearer stored-key', 'Bearer typed', undefined, 'Bearer plain-typed'])
+    expect(server.headers.map(headers => headers['x-company-code']))
+      .toEqual(['private-tenant', 'private-tenant', undefined, undefined])
   })
 
   it('leaves a catalog route\'s credential unresolved, having never reached the network', async () => {
@@ -211,31 +221,6 @@ describe('draft-provider model discovery', () => {
 
     expect(await ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url }))
       .toEqual([{ id: 'good' }, { id: 'zero-capacity' }])
-  })
-
-  it('normalizes explicit listing modalities without guessing from model names', async () => {
-    const server = await listingServer({
-      body: JSON.stringify({
-        data: [
-          { id: 'declared', input_modalities: ['text', 'image', 'audio', 'image'] },
-          { id: 'alternate', modalities: ['image', 'text'] },
-          { id: 'nested', architecture: { input_modalities: ['text'] } },
-          { id: 'vision-in-name-only' },
-          { id: 'malformed', input_modalities: 'image' },
-          { id: 'unsupported-only', input_modalities: ['audio'] },
-        ],
-      }),
-    })
-    const ctx = await harness()
-
-    expect(await ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url })).toEqual([
-      { id: 'declared', inputModalities: ['text', 'image'] },
-      { id: 'alternate', inputModalities: ['image', 'text'] },
-      { id: 'nested', inputModalities: ['text'] },
-      { id: 'vision-in-name-only' },
-      { id: 'malformed' },
-      { id: 'unsupported-only' },
-    ])
   })
 
   it('points at the credential for a rejected one, and only then', async () => {
@@ -322,8 +307,7 @@ describe('draft-provider model discovery', () => {
     })
     const probe = ctx.llm.discoverModels('llm-pi-ai', {
       baseURL: 'https://slow.example/v1',
-      signal: controller.signal,
-    })
+    }, controller.signal)
     await bodyRead.promise
     controller.abort('test cancellation')
 
@@ -335,8 +319,7 @@ describe('draft-provider model discovery', () => {
     const aborted = AbortSignal.abort('test cancellation')
     await expect(ctx.llm.discoverModels('llm-pi-ai', {
       baseURL: 'http://127.0.0.1:9/v1',
-      signal: aborted,
-    })).rejects.toMatchObject({ code: 'ABORTED' })
+    }, aborted)).rejects.toMatchObject({ code: 'ABORTED' })
   })
 
   it('is offered for the namespace, and refuses one it does not serve', async () => {

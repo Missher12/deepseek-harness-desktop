@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-// AttachmentRail behavior in the jsdom lane: item rendering and callbacks,
-// arrow paging over stubbed scroll geometry (jsdom lays nothing out), the
-// exclusive vertical-wheel pan, and the new-item end reveal.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
@@ -67,13 +64,6 @@ describe('AttachmentRail', () => {
     expect(onOpen).toHaveBeenCalledWith(items[0])
     fireEvent.click(view.getByRole('button', { name: '移除图片 b.png' }))
     expect(onRemove).toHaveBeenCalledWith(items[1])
-  })
-
-  it('renders a document without a supplied type label using an empty visual label', () => {
-    const document = { id: 'document', alt: 'README', removeLabel: 'Remove README' }
-    const view = render(<AttachmentRail items={[document]} labels={labels} onOpen={vi.fn()} onRemove={vi.fn()} />)
-    expect(view.getByText('README')).toBeTruthy()
-    expect(view.queryByTitle('查看原图')).toBeNull()
   })
 
   it('shows edge arrows from scroll geometry and pages a viewport at a time', () => {

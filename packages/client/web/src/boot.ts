@@ -45,6 +45,13 @@ export class AppWebEntry {
    */
   async run(): Promise<void> {
     try {
+      // Boot-readiness gate: whichever bootstrap applies the injection table
+      // settles this deferred once every row has taken effect — the served
+      // index resolves it in the rendered tail, so the await returns on the
+      // next microtask; an asynchronous bootstrap resolves it after its last
+      // row, or rejects it into the failure rendering below. An absent global
+      // means no bootstrap owns the document and there is nothing to wait for.
+      await (globalThis as { __DSH_BOOT_READY__?: { promise: Promise<void> } }).__DSH_BOOT_READY__?.promise
       const win = globalThis as DshWindow
       const moduleLoader = win.__ModuleLoader__
       if (moduleLoader === undefined) {
@@ -93,15 +100,8 @@ export class AppWebEntry {
     await mounted
   }
 
-  /** Prefetch stage-one bundles; their import path owns any eventual failure. */
+  /** Prefetch stage-one bundles and their dynamic requests before concurrent plugin imports. */
   private async prefetchImmediateTier(): Promise<void> {
-    // A transport carrying loadBundle owns the bundle bytes; HTTP prefetch
-    // against its static deployment answers nothing. A transport without
-    // loadBundle leaves bundles on HTTP, prefetch included.
-    const transport = (globalThis as {
-      __DSH_TRANSPORT__?: { loadBundle?: unknown }
-    }).__DSH_TRANSPORT__
-    if (transport?.loadBundle !== undefined) return
     await Promise.all(this.manifest.plugins
       .filter(row => row.immediately)
       .map(row => this.modules.prefetch(row.id).catch((_prefetchError: unknown) => {
@@ -123,15 +123,12 @@ export class AppWebEntry {
 
     const rows = this.manifest.plugins.map(row => row.id)
     this.page.setTotal(rows.length)
-    const creating = Promise.all(rows.map(async (name) => {
+    await prefetching
+    await Promise.all(rows.map(async (name) => {
       this.page.setState(name, 'loading')
       const id = await loader.create({ name })
       if (loader.resolve(id).fiber === undefined) this.page.setState(name, 'failed')
     }))
-    // Immediate-tier transport and the rest of the local bundle graph are
-    // independent. Start both together; the module system deduplicates an
-    // immediate bundle's in-flight import when Loader reaches the same row.
-    await Promise.all([prefetching, creating])
 
     await loader.await()
     this.assertEntriesActive(ctx)
