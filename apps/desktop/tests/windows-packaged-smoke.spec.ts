@@ -103,6 +103,15 @@ async function exerciseWindows150PercentSurface(
       await ungrouped.click()
       await expect.poll(() => ungroupedRow.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('true')
     }
+    // Session rows render under their workspace group, which the 150% layout
+    // may keep collapsed; expand it before looking for the seeded row.
+    const workspaceRow = page.locator('[class*="projectRow"]')
+      .filter({ hasText: seeded.activeSessionTitle }).first()
+    await workspaceRow.waitFor({ state: 'visible', timeout: 15_000 })
+    if (await workspaceRow.getAttribute('aria-expanded') !== 'true') {
+      await workspaceRow.click()
+      await expect.poll(() => workspaceRow.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('true')
+    }
     const activeRow = page.locator('[class*="sessionRow"]').filter({ hasText: seeded.activeSessionTitle }).first()
     await activeRow.waitFor({ state: 'visible', timeout: 15_000 })
     await activeRow.click()
