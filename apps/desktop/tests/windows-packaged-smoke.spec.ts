@@ -117,7 +117,9 @@ async function exerciseWindows150PercentSurface(
     await activeRow.click()
     await expect.poll(() => activeRow.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
     const turnRail = page.locator('nav[aria-label*="轮次导航"], nav[aria-label*="Turn navigation"]')
-    await turnRail.waitFor({ state: 'visible', timeout: 30_000 })
+    // The 150% surface keeps the navigation column collapsed, so the rail
+    // stays attached but hidden — assert attachment and mark population.
+    await turnRail.waitFor({ state: 'attached', timeout: 30_000 })
     expect(await turnRail.locator('button[aria-label*="跳转"], button[aria-label*="jump to"]').count())
       .toBeGreaterThanOrEqual(1)
     expect(await turnRail.locator('button[aria-current="true"]').count()).toBe(1)
