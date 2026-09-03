@@ -11,7 +11,7 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, rmSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import {
   DEFAULT_PROFILE_BUNDLES,
@@ -113,6 +113,42 @@ function anchorPathSpec(argument: string, cwd: string): string {
 }
 
 /**
+ * Remove fallback-managed symlinks from a profile's `node_modules` before
+ * pnpm takes ownership. The boot-time module fallback links the packaged
+ * installation closure into the profile so plugins can import without pnpm;
+ * a later pnpm run reconciles that tree and can trip over a link whose
+ * packaged target is itself a store symlink. pnpm rebuilds every entry it
+ * owns from the manifest and lockfile, so clearing managed links is safe.
+ * @param profileDir - the profile directory.
+ */
+function removeManagedFallbackLinks(profileDir: string): void {
+  const modulesDir = join(profileDir, 'node_modules')
+  if (!existsSync(modulesDir)) return
+  for (const entry of readdirSync(modulesDir)) {
+    if (entry.startsWith('.')) continue
+    const path = join(modulesDir, entry)
+    try {
+      if (lstatSync(path).isSymbolicLink()) rmSync(path, { force: true })
+    } catch {
+      continue // a vanished entry needs no cleanup
+    }
+    try {
+      if (!lstatSync(path).isDirectory()) continue
+      for (const scoped of readdirSync(path)) {
+        const scopedPath = join(path, scoped)
+        try {
+          if (lstatSync(scopedPath).isSymbolicLink()) rmSync(scopedPath, { force: true })
+        } catch {
+          continue
+        }
+      }
+    } catch {
+      continue
+    }
+  }
+}
+
+/**
  * Run one `dsh plugin` invocation: init if needed, forward to pnpm, reconcile.
  * @param profile - the profile name.
  * @param args - pnpm arguments with relative path specs anchored to the invoking directory.
@@ -130,6 +166,7 @@ export function runPlugin(profile: string, args: readonly string[]): number {
     process.stderr.write(`${NAME}: initialized profile ${profile} at ${dir}\n`)
   }
   const before = readProfileManifest(NAME, dir)
+  removeManagedFallbackLinks(dir)
   // Windows resolves pnpm through its .cmd shim, which spawn() refuses
   // without a shell since the CVE-2024-27980 hardening.
   const forwarded = args.map(argument => anchorPathSpec(argument, process.cwd()))
