@@ -264,6 +264,27 @@ export async function createDesktopPackageInventory(packageRoot: string): Promis
   }
 }
 
+/** PE COFF machine constant for x64. */
+const PE_MACHINE_X64 = 0x8664
+
+/**
+ * Verify one PE image declares the x64 machine. Reads only the DOS and COFF
+ * headers and fails closed on any truncated or malformed header.
+ */
+export function assertWindowsX64PE(bytes: Buffer): void {
+  if (bytes.length < 0x40 || bytes.readUInt16LE(0) !== 0x5a4d) {
+    throw new Error('not a PE image (missing MZ header)')
+  }
+  const peOffset = bytes.readUInt32LE(0x3c)
+  if (peOffset + 6 > bytes.length || bytes.readUInt32LE(peOffset) !== 0x00004550) {
+    throw new Error('PE signature missing or out of bounds')
+  }
+  const machine = bytes.readUInt16LE(peOffset + 4)
+  if (machine !== PE_MACHINE_X64) {
+    throw new Error(`PE machine is 0x${machine.toString(16)}, expected x64 (0x8664)`)
+  }
+}
+
 async function main(args: readonly string[]): Promise<void> {
   const usage = 'Desktop package inventory usage: --output <inventory.json> [--policy windows-x64 --manifest <package.json>] <package root>'
   let output: string | undefined
@@ -301,6 +322,10 @@ async function main(args: readonly string[]): Promise<void> {
       ...manifest.optionalDependencies,
     }).sort((left, right) => left.localeCompare(right, 'en'))
     assertManagedPackageRootsArePhysical(inventory, managedPackages)
+    if (policy === 'windows-x64') {
+      const bsk = await readFile(resolve(packageRoot, 'resources/browser-skill/bin/bsk.exe'))
+      assertWindowsX64PE(bsk)
+    }
   }
   await mkdir(dirname(output), { recursive: true })
   await writeFile(output, `${JSON.stringify(inventory, null, 2)}\n`, 'utf8')

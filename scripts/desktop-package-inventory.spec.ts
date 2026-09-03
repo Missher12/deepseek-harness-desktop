@@ -7,6 +7,7 @@ import {
   assertBrowserSkillBinary,
   assertDesktopPackageInventoryPolicy,
   assertManagedPackageRootsArePhysical,
+  assertWindowsX64PE,
   createDesktopPackageInventory,
 } from './desktop-package-inventory.ts'
 
@@ -175,5 +176,21 @@ describe('desktop package inventory', () => {
     expect(() => {
       assertManagedPackageRootsArePhysical(physical, ['@deepseek-ai/dsh', 'missing-runtime'])
     }).toThrow(/missing-runtime.*app\.asar\.unpacked/u)
+  })
+
+  it('accepts only an x64 PE image for the bundled BrowserSkill CLI', () => {
+    const pe = (machine: number) => {
+      const bytes = Buffer.alloc(0x200)
+      bytes.writeUInt16LE(0x5a4d, 0)
+      bytes.writeUInt32LE(0x80, 0x3c)
+      bytes.writeUInt32LE(0x00004550, 0x80)
+      bytes.writeUInt16LE(machine, 0x84)
+      return bytes
+    }
+    expect(() => assertWindowsX64PE(pe(0x8664))).not.toThrow()
+    expect(() => assertWindowsX64PE(pe(0x014c))).toThrow(/expected x64/u)
+    expect(() => assertWindowsX64PE(Buffer.from('not a pe'))).toThrow(/MZ header/u)
+    expect(() => assertWindowsX64PE(Buffer.alloc(0x10))).toThrow(/MZ header/u)
+    expect(() => assertWindowsX64PE(pe(0x8664).subarray(0, 0x85))).toThrow(/signature missing/u)
   })
 })
