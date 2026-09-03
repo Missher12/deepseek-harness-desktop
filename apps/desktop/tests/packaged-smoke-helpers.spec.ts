@@ -136,7 +136,9 @@ describe('packaged desktop process inspection', () => {
       const seeded = await seedWindowsClipboardSmokeState(root)
       expect(seeded.activeSessionId).not.toBe(seeded.archivedSessionId)
       expect(seeded.protectedPaths).toHaveLength(6)
-      expect(seeded.expectedDailyTokens).toBe(8_000)
+      // (4 seeded sessions - 1 + 30 navigation turns) × 2000 tokens per usage
+      // record — the same closed formula the smoke asserts in the rendered UI.
+      expect(seeded.expectedDailyTokens).toBe(66_000)
       await expect(Promise.all(seeded.protectedPaths.map(path => readFile(path)))).resolves.toHaveLength(6)
 
       const reader = new Context()
@@ -173,10 +175,14 @@ describe('packaged desktop process inspection', () => {
             projectedHumanPrompts.push({ seq: event.seq, turn: currentTurn })
           }
         }
-        expect(projectedHumanPrompts).toEqual([
-          { seq: 1, turn: 1 },
-          { seq: 2, turn: 1 },
-        ])
+        // Thirty seeded navigation turns, two user prompts each at the turn's
+        // first two sequence slots (TURN_SEQ_SPAN = 10).
+        expect(projectedHumanPrompts).toEqual(
+          Array.from({ length: 30 }, (_, index) => [
+            { seq: index * 10 + 1, turn: index + 1 },
+            { seq: index * 10 + 2, turn: index + 1 },
+          ]).flat(),
+        )
         expect(active.events.slice(-5, -1).map(event => ({ type: event.type, data: event.data }))).toEqual([
           { type: 'permission/preset', data: { preset: 'workspace-write' } },
           { type: 'sandbox/mode', data: { mode: 'workspace-write' } },
@@ -207,14 +213,17 @@ describe('packaged desktop process inspection', () => {
         global: { initialized: boolean; workspaceIds: string[]; archivedSessionIds: string[] }
         tables: { workspaces: Record<string, unknown> }
       }
-      expect(workspace).toEqual({
-        unit: { name: 'workspace', version: 2 },
-        global: {
-          initialized: true,
-          workspaceIds: [],
-          archivedSessionIds: [seeded.archivedSessionId],
-        },
-        tables: { workspaces: {} },
+      expect(workspace.unit).toEqual({ name: 'workspace', version: 2 })
+      expect(workspace.global).toMatchObject({
+        initialized: true,
+        workspaceIds: ['desktop-smoke-workspace'],
+        archivedSessionIds: [seeded.archivedSessionId],
+      })
+      const seededWorkspaces = workspace.tables.workspaces as Record<string, { path: string; sessionIds: string[] }>
+      expect(Object.keys(seededWorkspaces)).toEqual(['desktop-smoke-workspace'])
+      expect(seededWorkspaces['desktop-smoke-workspace']).toMatchObject({
+        path: expect.stringContaining('desktop-smoke-active-workspace') as unknown as string,
+        sessionIds: [seeded.activeSessionId, seeded.archivedSessionId],
       })
     } finally {
       await rm(root, { recursive: true, force: true })
