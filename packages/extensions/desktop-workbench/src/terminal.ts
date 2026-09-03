@@ -68,13 +68,15 @@ export class WorkbenchTerminalRegistry {
     if (owned.length >= MAX_TERMINALS) {
       // A previous mount's cleanup closes are fire-and-forget; a fresh mount
       // that opens while they are still in flight supersedes the oldest
-      // leftover so a rapid close/reopen can never 400 on capacity.
+      // leftover so a rapid close/reopen can never 400 on capacity. The
+      // superseded tree is force-escalated by the Host service even when its
+      // grace window is outrun, so eviction stays best-effort.
       const oldest = owned[0]
       if (oldest === undefined) {
         throw new Error(`at most ${String(MAX_TERMINALS)} terminals may be open`)
       }
       this.records.delete(oldest.id)
-      await oldest.handle.terminate()
+      await oldest.handle.terminate().catch(() => {})
     }
     const handle = await this.spawn({ argv: await this.shell(), cwd, rows: clamp(rows, 8, 120), cols: clamp(cols, 20, 240), graceMs: 1500,
       env: { TERM: 'xterm-256color', DSH_UI_TERMINAL: '1' } })
@@ -143,7 +145,12 @@ export class WorkbenchTerminalRegistry {
     if (record === undefined) return
     if (record.owner !== owner) throw new Error('foreign terminal')
     this.records.delete(id)
-    await record.handle.terminate()
+    // Best-effort teardown, matching closeOwner/closeAll: the Host service
+    // escalates TERM→KILL and force-stops stragglers at host exit, and the
+    // owning Client already treats a close as terminal, so outrunning the
+    // grace window (a login shell's startup children) must not 400 a
+    // fire-and-forget unmount.
+    await record.handle.terminate().catch(() => {})
   }
 
   /**

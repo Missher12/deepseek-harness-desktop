@@ -107,4 +107,33 @@ describe('WorkbenchTerminalRegistry', () => {
     await expect(registry.close('owner-a', opened.id)).resolves.toBeUndefined()
     expect(terminate).toHaveBeenCalledOnce()
   })
+
+  it('keeps an owner close best-effort when the host grace window is outrun', async () => {
+    // A login shell's startup children can survive the Host TERM→KILL grace;
+    // the record is already removed and the client treats close as terminal,
+    // so the outrun must resolve instead of failing the teardown request.
+    const handle: SubprocessTerminalHandle = {
+      pid: 42, output: new PassThrough(), done: new Promise(() => {}), write: async () => {},
+      terminate: async () => { throw new Error('terminal cleanup failed; surviving pids: 9, 8') },
+      inspectForeground: async () => undefined, signalForeground: async () => 42,
+    }
+    const registry = new WorkbenchTerminalRegistry(async () => handle, async () => ['/bin/zsh', '-l'])
+    const opened = await registry.open('owner-a', '/workspace')
+    await expect(registry.close('owner-a', opened.id)).resolves.toBeUndefined()
+    await expect(registry.write('owner-a', opened.id, 'pwd\n')).resolves.toBeUndefined()
+    await registry.closeAll()
+  })
+
+  it('supersedes the oldest terminal even when its host cleanup outruns the grace', async () => {
+    const terminate = vi.fn(async () => { throw new Error('grace outrun') })
+    const registry = new WorkbenchTerminalRegistry(async () => ({
+      pid: 42, output: new PassThrough(), done: new Promise(() => {}), write: async () => {},
+      terminate, inspectForeground: async () => undefined, signalForeground: async () => 42,
+    }), async () => ['/bin/zsh', '-l'])
+    for (let index = 0; index < 4; index += 1) await registry.open('owner', '/workspace')
+    await expect(registry.open('owner', '/workspace')).resolves.toMatchObject({ cwd: '/workspace' })
+    expect((await registry.list('owner')).map(item => item.id)).toHaveLength(4)
+    expect(terminate).toHaveBeenCalledOnce()
+    await registry.closeAll()
+  })
 })
