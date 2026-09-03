@@ -873,7 +873,10 @@ function healProfileModuleFallback(profile: Profile, installationPackageNames: R
   for (const [packageName, target] of bundleLinks) {
     const ownedLink = join(ownedModulesDir, packageName)
     mkdirSync(dirname(ownedLink), { recursive: true })
-    ensureSymlink(ownedLink, target)
+    // Resolutions anchored inside a packaged archive must project onto the
+    // unpacked node_modules tree: an OS-level open() through the asar path
+    // fails with ENOTDIR (only Electron's patched fs can read it).
+    ensureSymlink(ownedLink, physicalSymlinkTarget(target))
     const profileLink = join(profileModulesDir, packageName)
     mkdirSync(dirname(profileLink), { recursive: true })
     ensureProfileSymlink(profileLink, ownedLink)
