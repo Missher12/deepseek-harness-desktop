@@ -3,18 +3,27 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { BrowserSkillMode } from '../src/client/BrowserSkillMode.tsx'
 import { HeaderButton, type HeaderButtonProps } from '../src/client/HeaderButton.tsx'
 import { workbenchModeDefinitions } from '../src/client/modes.ts'
 import { WorkbenchPanel, type WorkbenchPanelProps } from '../src/client/WorkbenchPanel.tsx'
 import { MODE_KEY, WorkbenchController, loadMode, loadWidth } from '../src/client/preferences.ts'
+import { workbenchTransport } from '../src/client/transport.ts'
 
 afterEach(cleanup)
 
 const sessionId = 'session-a' as never
-const WORKBENCH_MODE_FIXTURE: readonly UtilityMode[] = ['review', 'terminal', 'browser', 'files']
+const WORKBENCH_MODE_FIXTURE: readonly UtilityMode[] = ['review', 'terminal', 'browser', 'files', 'browserSkill']
 const labels = {
   open: '打开工作台', close: '关闭工作台', terminal: '终端', browser: '浏览器',
   files: '文件', review: '审阅', workbench: '工作台', modes: '工作台模式', clearView: '清屏', changes: '变更',
+  browserSkill: '浏览器技能', browserSkillIdle: '点击“检测”运行内置 CLI 与浏览器扩展状态检查。',
+  browserSkillCheck: '检测', browserSkillChecking: '正在检测…', browserSkillBundled: 'CLI 已内置',
+  browserSkillMissing: 'CLI 缺失', browserSkillIncompatible: 'CLI 版本不匹配', browserSkillUnhealthy: 'CLI 状态异常',
+  browserSkillVersion: '版本 {version}', browserSkillExtensionConnected: '扩展已连接',
+  browserSkillExtensionNotConnected: '扩展未连接', browserSkillInstallExtension: '安装官方扩展',
+  browserSkillSessions: '会话：自有 {owned} · 借用 {borrowed}', browserSkillSessionFact: '浏览器会话',
+  browserSkillFailed: '状态检测失败：{message}',
 } as const
 const t = (key: keyof typeof labels) => labels[key]
 
@@ -38,10 +47,10 @@ describe('desktop workbench mode registry', () => {
   it('exposes one frozen, uniquely keyed, order-stable tab definition list', () => {
     expect(Object.isFrozen(workbenchModeDefinitions)).toBe(true)
     expect(workbenchModeDefinitions.map(definition => definition.id)).toEqual([
-      'review', 'terminal', 'browser', 'files',
+      'review', 'terminal', 'browser', 'files', 'browserSkill',
     ])
-    expect(workbenchModeDefinitions.map(definition => definition.order)).toEqual([0, 1, 2, 3])
-    expect(new Set(workbenchModeDefinitions.map(definition => definition.id)).size).toBe(4)
+    expect(workbenchModeDefinitions.map(definition => definition.order)).toEqual([0, 1, 2, 3, 4])
+    expect(new Set(workbenchModeDefinitions.map(definition => definition.id)).size).toBe(5)
   })
 
   it('keeps every page reachable through the frozen registry', () => {
@@ -132,7 +141,7 @@ describe('desktop workbench shell', () => {
     expect(panel).not.toBeNull()
     const tablist = screen.getByRole('tablist', { name: '工作台模式' })
     expect(tablist.getAttribute('aria-orientation')).toBe('vertical')
-    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['审阅', '终端', '浏览器', '文件'])
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['审阅', '终端', '浏览器', '文件', '浏览器技能'])
     expect(screen.queryByRole('tab', { name: '侧边聊天' })).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(screen.queryByRole('menu')).toBeNull()
@@ -155,6 +164,7 @@ describe('desktop workbench shell', () => {
     const terminal = screen.getByRole('tab', { name: '终端' })
     const browser = screen.getByRole('tab', { name: '浏览器' })
     const files = screen.getByRole('tab', { name: '文件' })
+    const browserSkill = screen.getByRole('tab', { name: '浏览器技能' })
 
     terminal.focus()
     fireEvent.keyDown(terminal, { key: 'ArrowDown' })
@@ -163,6 +173,8 @@ describe('desktop workbench shell', () => {
     fireEvent.keyDown(browser, { key: 'Home' })
     expect(document.activeElement).toBe(review)
     fireEvent.keyDown(review, { key: 'End' })
+    expect(document.activeElement).toBe(browserSkill)
+    fireEvent.keyDown(browserSkill, { key: 'ArrowUp' })
     expect(document.activeElement).toBe(files)
     fireEvent.keyDown(files, { key: 'ArrowUp' })
     expect(document.activeElement).toBe(browser)
@@ -216,5 +228,43 @@ describe('desktop workbench shell', () => {
     expect(storage.setItem).toHaveBeenCalledWith(MODE_KEY, 'review')
     expect(controller.getSnapshot().mode).toBe('review')
   })
+})
 
+describe('BrowserSkill status page', () => {
+  it('stays idle on mount and probes only on the explicit check', async () => {
+    const spy = vi.spyOn(workbenchTransport, 'browserSkillStatus').mockResolvedValue({
+      state: 'bundled-ready', cliVersion: '0.1.11', extension: 'not-connected', ownedSessions: 1, borrowedSessions: 2,
+    })
+    const { common } = setup()
+    const props = common as unknown as Parameters<typeof BrowserSkillMode>[0]
+    render(<BrowserSkillMode {...props} />)
+
+    expect(screen.getByText('点击“检测”运行内置 CLI 与浏览器扩展状态检查。')).toBeTruthy()
+    expect(spy).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '检测' }))
+    expect(await screen.findByText('CLI 已内置')).toBeTruthy()
+    expect(screen.getByText('扩展未连接')).toBeTruthy()
+    expect(screen.getByText('浏览器会话')).toBeTruthy()
+    expect(spy).toHaveBeenCalledOnce()
+    spy.mockRestore()
+  })
+
+  it('links only the official HTTPS install page and surfaces probe failures', async () => {
+    const spy = vi.spyOn(workbenchTransport, 'browserSkillStatus').mockRejectedValue(new Error('bridge down'))
+    const { common } = setup()
+    const props = common as unknown as Parameters<typeof BrowserSkillMode>[0]
+    render(<BrowserSkillMode {...props} />)
+
+    const link = screen.getByRole('link', { name: '安装官方扩展' })
+    expect(link.getAttribute('href')).toBe('https://github.com/Tencent/BrowserSkill#readme')
+    expect(link.getAttribute('href')?.startsWith('https://')).toBe(true)
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toContain('noopener')
+    expect(link.getAttribute('rel')).toContain('noreferrer')
+
+    fireEvent.click(screen.getByRole('button', { name: '检测' }))
+    expect(await screen.findByText(/状态检测失败/u)).toBeTruthy()
+    spy.mockRestore()
+  })
 })

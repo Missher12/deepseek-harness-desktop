@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { BrowserSkillProbe, BROWSER_SKILL_STATUS_PATH } from './browser-skill.ts'
 import { listWorkspace, readWorkspaceFile } from './files.ts'
 import { gitDiff, gitStatus } from './review.ts'
 import { WorkbenchTerminalRegistry } from './terminal.ts'
@@ -90,6 +91,7 @@ export function installWorkbenchHttp(ctx: Context): void {
   const authority = `127.0.0.1:${String(ctx.webServer.port)}`
   const origin = `http://${authority}`
   const terminals = new WorkbenchTerminalRegistry(spec => ctx.subprocess.spawnTerminal(spec))
+  const browserSkill = new BrowserSkillProbe()
   const authorized = (req: IncomingMessage): boolean => (
     req.method === 'POST'
     && exactHeader(req, 'host') === authority
@@ -127,7 +129,7 @@ export function installWorkbenchHttp(ctx: Context): void {
     respond(res, 200, await action(workspaceOf(ctx, body.sessionId), body.path))
   })
   ctx.effect(function* () {
-    yield async () => { await terminals.closeAll() }
+    yield async () => { await terminals.closeAll(); browserSkill.dispose() }
     yield ctx.webServer.register(route(LIST_PATH, (root, child) => listWorkspace(root, child)))
     yield ctx.webServer.register(route(READ_PATH, (root, child) => {
       if (child === undefined || child === '') throw new Error('file path required')
@@ -153,6 +155,11 @@ export function installWorkbenchHttp(ctx: Context): void {
       else throw new Error('invalid terminal action')
       return { ok: true }
     }))
+    yield ctx.webServer.register(authenticated(BROWSER_SKILL_STATUS_PATH, (body) => {
+      if (!safeId(body.sessionId)) throw new Error('invalid request')
+      workspaceOf(ctx, body.sessionId)
+      return browserSkill.status()
+    }))
     yield ctx.webServer.tapIndex(html => injectWorkbenchBootstrap(html, capability))
   }, 'desktop-workbench: read-only HTTP bridge')
 }
@@ -168,6 +175,7 @@ export function injectWorkbenchBootstrap(html: string, capability: string): stri
     listPath: LIST_PATH, readPath: READ_PATH, reviewPath: REVIEW_PATH, diffPath: DIFF_PATH,
     terminalOpenPath: TERMINAL_OPEN_PATH, terminalActionPath: TERMINAL_ACTION_PATH,
     terminalSnapshotPath: TERMINAL_SNAPSHOT_PATH,
+    browserSkillStatusPath: BROWSER_SKILL_STATUS_PATH,
     capabilityHeader: WORKBENCH_CAPABILITY_HEADER, capability,
   }
   const value = JSON.stringify(data).replaceAll('<', '\\u003c')

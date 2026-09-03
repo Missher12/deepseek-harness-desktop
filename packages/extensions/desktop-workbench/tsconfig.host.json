@@ -12,7 +12,8 @@
     "src/review.ts",
     "src/workspace-path.ts",
     "src/protocol.ts",
-    "src/terminal.ts"
+    "src/terminal.ts",
+    "src/browser-skill.ts"
   ],
   "references": [
     { "path": "../../../vendor/cordis" },

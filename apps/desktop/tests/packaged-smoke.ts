@@ -1239,10 +1239,10 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): 
   const panel = page.locator('[data-desktop-workbench-panel]:visible')
   await panel.waitFor({ state: 'visible', timeout: 15_000 })
   const tabs = panel.getByRole('tablist').getByRole('tab')
-  await expect.poll(() => tabs.count(), { timeout: 15_000 }).toBe(4)
+  await expect.poll(() => tabs.count(), { timeout: 15_000 }).toBe(5)
   expect([
-    ['审阅', '终端', '浏览器', '文件'],
-    ['Review', 'Terminal', 'Browser', 'Files'],
+    ['审阅', '终端', '浏览器', '文件', '浏览器技能'],
+    ['Review', 'Terminal', 'Browser', 'Files', 'BrowserSkill'],
   ]).toContainEqual(await tabs.allTextContents())
   const originalPanelBounds = await panel.boundingBox()
   const utilityHandle = page.locator('[data-side="utility"]')

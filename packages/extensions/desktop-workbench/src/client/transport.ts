@@ -1,7 +1,7 @@
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { REQUEST_FAILED_FALLBACK } from './locales.ts'
 import type {
-  FileListing, FilePreview, ReviewDiff, ReviewStatus, WorkbenchBootstrap, WorkbenchTerminalSnapshot,
+  BrowserSkillStatus, FileListing, FilePreview, ReviewDiff, ReviewStatus, WorkbenchBootstrap, WorkbenchTerminalSnapshot,
 } from '../protocol.ts'
 
 function bootstrap(): WorkbenchBootstrap {
@@ -11,7 +11,8 @@ function bootstrap(): WorkbenchBootstrap {
 }
 
 type RequestPath = keyof Pick<WorkbenchBootstrap,
-  'listPath' | 'readPath' | 'reviewPath' | 'diffPath' | 'terminalOpenPath' | 'terminalActionPath' | 'terminalSnapshotPath'>
+  'listPath' | 'readPath' | 'reviewPath' | 'diffPath' | 'terminalOpenPath'
+  | 'terminalActionPath' | 'terminalSnapshotPath' | 'browserSkillStatusPath'>
 
 async function request<T>(path: RequestPath, sessionId: SessionId, extra: Record<string, unknown> = {}): Promise<T> {
   const config = bootstrap()
@@ -38,4 +39,6 @@ export const workbenchTransport = {
   terminalSnapshots: (sessionId: SessionId) => request<{ terminals: WorkbenchTerminalSnapshot[] }>('terminalSnapshotPath', sessionId),
   terminalAction: (sessionId: SessionId, id: string, action: 'write' | 'signal' | 'close', value?: string) =>
     request<{ ok: true }>('terminalActionPath', sessionId, { id, action, ...(value === undefined ? {} : { value }) }),
+  browserSkillStatus: (sessionId: SessionId) =>
+    request<BrowserSkillStatus>('browserSkillStatusPath', sessionId),
 }

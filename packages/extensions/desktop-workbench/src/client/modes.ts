@@ -13,6 +13,7 @@ import { ReviewMode } from './ReviewMode.tsx'
 import { TerminalMode } from './TerminalMode.tsx'
 import { BrowserMode } from './BrowserMode.tsx'
 import { FilesMode } from './FilesMode.tsx'
+import { BrowserSkillMode } from './BrowserSkillMode.tsx'
 
 /** One Workbench page definition: identity, presentation order, component. */
 export interface DesktopWorkbenchTabDefinition {
@@ -25,7 +26,9 @@ export interface DesktopWorkbenchTabDefinition {
 }
 
 /** Stable presentation order for the docked Workbench launcher. */
-export const WORKBENCH_MODE_ORDER = ['review', 'terminal', 'browser', 'files'] as const satisfies readonly UtilityMode[]
+export const WORKBENCH_MODE_ORDER = [
+  'review', 'terminal', 'browser', 'files', 'browserSkill',
+] as const satisfies readonly UtilityMode[]
 
 /** Frozen registry; unknown or duplicate ids are rejected by construction. */
 export const workbenchModeDefinitions: readonly DesktopWorkbenchTabDefinition[] = Object.freeze([
@@ -33,4 +36,5 @@ export const workbenchModeDefinitions: readonly DesktopWorkbenchTabDefinition[] 
   { id: 'terminal', order: 1, Component: TerminalMode },
   { id: 'browser', order: 2, Component: BrowserMode },
   { id: 'files', order: 3, Component: FilesMode },
+  { id: 'browserSkill', order: 4, Component: BrowserSkillMode },
 ])

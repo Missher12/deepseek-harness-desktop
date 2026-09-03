@@ -15,7 +15,7 @@ import {
 } from './columns.ts'
 
 /** Workbench surfaces supported by the generic utility column. */
-export const UTILITY_MODES = ['terminal', 'browser', 'files', 'review'] as const
+export const UTILITY_MODES = ['terminal', 'browser', 'files', 'review', 'browserSkill'] as const
 /** One workbench surface identifier. */
 export type UtilityMode = typeof UTILITY_MODES[number]
 

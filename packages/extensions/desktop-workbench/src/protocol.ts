@@ -8,6 +8,10 @@ export const MAX_DIFF_BYTES = 256 * 1024
 export const MAX_TERMINAL_OUTPUT_BYTES = 1024 * 1024
 /** Maximum bytes accepted by one terminal write. */
 export const MAX_TERMINAL_INPUT_BYTES = 16 * 1024
+/** Maximum bytes accepted from one BrowserSkill probe. */
+export const MAX_BSK_PROBE_OUTPUT_BYTES = 64 * 1024
+/** BrowserSkill probe budget: one version and one status call. */
+export const BSK_PROBE_TIMEOUT_MS = 10_000
 
 /** Generation-bound Client bootstrap for exact Host routes. */
 export interface WorkbenchBootstrap {
@@ -18,8 +22,26 @@ export interface WorkbenchBootstrap {
   terminalOpenPath: string
   terminalActionPath: string
   terminalSnapshotPath: string
+  browserSkillStatusPath: string
   capabilityHeader: string
   capability: string
+}
+
+/** Closed BrowserSkill health state; anything worse than ready fails open for the user. */
+export type BrowserSkillHealth = 'bundled-ready' | 'missing' | 'incompatible' | 'unhealthy'
+/** Whether at least one browser carries the official BrowserSkill extension. */
+export type BrowserSkillExtensionState = 'connected' | 'not-connected'
+/**
+ * Sanitized BrowserSkill status exposed to the Workbench page. Deliberately
+ * excludes the daemon pid, socket path, ws port, and any cookie, URL, title,
+ * screenshot, or session id.
+ */
+export interface BrowserSkillStatus {
+  state: BrowserSkillHealth
+  cliVersion?: string
+  extension: BrowserSkillExtensionState
+  ownedSessions: number
+  borrowedSessions: number
 }
 
 /** One read-only workspace listing entry. */

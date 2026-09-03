@@ -1,7 +1,7 @@
 import { useId, useRef, type KeyboardEvent } from 'react'
 import type { UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/client'
 import {
-  IconApiOutline14, IconChecklistOutline14, IconCloseOutline16,
+  IconApiOutline14, IconChecklistOutline14, IconCloseOutline16, IconCordisPluginOutline14,
   IconFolderOpenOutline16, IconGlobeOutline14,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -16,6 +16,7 @@ function ModeIcon({ mode }: { mode: UtilityMode }) {
   if (mode === 'review') return <IconChecklistOutline14 size={16} />
   if (mode === 'terminal') return <IconApiOutline14 size={16} />
   if (mode === 'browser') return <IconGlobeOutline14 size={16} />
+  if (mode === 'browserSkill') return <IconCordisPluginOutline14 size={16} />
   return <IconFolderOpenOutline16 size={16} />
 }
 
