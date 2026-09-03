@@ -1837,6 +1837,11 @@ export async function runPackagedDesktopSmoke(
       timeout: 120_000,
     })
     const page = await nativeApp.firstWindow({ timeout: 120_000 })
+    // The Windows CI screen is narrower than the app's default window, which
+    // folds the workspace sidebar into its auto-collapsed narrow mode and
+    // hides the workspace rows this smoke drives. Pin the page metrics before
+    // the first interaction (the workbench exercise relies on the same seam).
+    await page.setViewportSize({ width: 1600, height: 1000 })
     const consoleErrors: string[] = []
     page.on('console', (message) => {
       if (message.type() === 'error') {
@@ -1862,11 +1867,33 @@ export async function runPackagedDesktopSmoke(
     await welcomeDialog.getByRole('button', { name: /^(?:Continue|继续)$/u }).click()
     await welcomeDialog.waitFor({ state: 'detached', timeout: 30_000 })
     // Target the workspace row itself, not the first DOM match of its title
-    // text (the title also appears in breadcrumbs and hover cards, and the
-    // trailing "New session" action only surfaces on the row's hover state).
+    // text (the title also appears in breadcrumbs, hover cards, and the
+    // seeded Session title, and the trailing "New session" action only
+    // surfaces on the row's hover state).
     const seededWorkspaceRow = page.locator('[class*="projectRow"]')
       .filter({ hasText: 'desktop-smoke-active-workspace' }).first()
-    await seededWorkspaceRow.waitFor({ state: 'visible', timeout: 30_000 })
+    try {
+      await seededWorkspaceRow.waitFor({ state: 'visible', timeout: 30_000 })
+    } catch (error) {
+      const dump = await page.evaluate(() => ({
+        innerText: document.body.innerText.slice(0, 1600),
+        rows: [...document.querySelectorAll('[class*="row"], [class*="Row"]')]
+          .filter(element => element.textContent?.includes('desktop-smoke-active-workspace'))
+          .slice(0, 8)
+          .map((element) => {
+            const bounds = element.getBoundingClientRect()
+            return {
+              tag: element.tagName,
+              cls: String(element.className).slice(0, 200),
+              visible: bounds.width > 0 && bounds.height > 0,
+              text: (element.textContent ?? '').slice(0, 90),
+            }
+          }),
+      }))
+      throw new Error(
+        `Packaged smoke: seeded workspace row is missing.\n${JSON.stringify(dump, null, 2)}\n${String(error)}`,
+      )
+    }
     await seededWorkspaceRow.hover()
     const seededWorkspace = page.getByRole('button', {
       name: /(?:在“desktop-smoke-active-workspace”中新建会话|New session in desktop-smoke-active-workspace)/u,
