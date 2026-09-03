@@ -4,45 +4,55 @@
 
 - Released Desktop product tree: `7384b863e88b005b3309e49a0aebb7a2ea91d4c3`.
 - Task-book child used for this branch: `6155fc78bfd4ffeef196979157bb1d82b1243bfc`.
-- Task-book revision read out-of-tree: `727335c8e67902f06b6eb4b8f0fd699d7bb3b722`.
+- Task-book revision read out-of-tree: `6fcd393f40f0e83c6ba79925c38e28c94bebb092`.
 - Official rc.2 comparison tree: `dsh-v0.1.1-rc.2` at `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`.
 - Official import target: `dsh-v0.1.2-alpha.5` at `db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5`.
 - Task 2 Desktop overlay head: `f6944b1ad34c0ed2132584ae1b623950c18813a6`.
-- Explicit-base merged tree (diagnostic only): `d6620128d10d05cd0f7aae178c4df0b121f6d67f`.
+- Product-index preflight tree: `f1bafd1ca6e21d965b34a8a2cb192ce741150599` (307 conflict messages).
+- Post-alpha.5-index simulation sample: `493be26fc5bd5588ad31412b45ea93ee4bd13ee6` (308 conflict messages, using Task 2 head only).
 
 The Desktop and official repositories have unrelated Git roots. A normal merge, empty-tree merge, or unrelated-history content merge is not an accepted content-integration mechanism. The approved route is a later tree-invariant two-parent provenance commit, an exact alpha.5 tree materialization commit, then an explicit-base semantic merge whose conflicts are resolved one by one under this manifest. None of those topology or materialization steps has been executed in this worktree yet.
 
 The broader ownership inventory compares each product tree against the exact official rc.2 tree with rename detection disabled, intersects the changed path sets, and then rejects paths whose final Desktop and alpha.5 bytes already match. The released Desktop changes 1,074 raw path endpoints, alpha.5 changes 7,991 raw path endpoints, and the intersection contains 443 paths whose final contents differ. Git rename accounting reports about 7,633 alpha.5 file changes; the raw endpoint count is retained below so neither side of a rename disappears from ownership review.
 
-After Task 2, the exact diagnostic command was `git merge-tree --write-tree --name-only --messages --merge-base=b150a551b8d465e31e418e1b2eaf5e79bbb7d28e f6944b1ad34c0ed2132584ae1b623950c18813a6 db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5`. It returned status 1 as expected, wrote no index/worktree state, and produced the tree recorded above. Its 307 conflict messages comprise 242 `content`, 56 `modify/delete`, eight `file location`, and one `directory rename split`; the name-only prelude contains 306 concrete paths because the directory-split message names a structural source prefix instead of one output path.
+After Task 2, the exact diagnostic command was `git merge-tree --write-tree --name-only --messages --merge-base=b150a551b8d465e31e418e1b2eaf5e79bbb7d28e f6944b1ad34c0ed2132584ae1b623950c18813a6 db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5`. Two byte-for-byte identical runs under the Desktop product index returned status 1 as expected, wrote no index/worktree state, and produced preflight tree `f1bafd1ca6e21d965b34a8a2cb192ce741150599`. Its 307 conflict messages comprise 242 `content`, 56 `modify/delete`, eight `file location`, and one `directory rename split`; the name-only prelude contains 306 concrete paths because the directory-split message names a structural source prefix instead of one output path.
+
+An earlier diagnostic used symbolic `HEAD` for the Desktop input and produced a non-authoritative tree. `git merge-tree` persists the command-line input spelling in unresolved conflict markers, so that tree contains `<<<<<<< HEAD` while the authoritative tree contains `<<<<<<< f6944b1ad34c0ed2132584ae1b623950c18813a6`. The object-level difference is 215 files and 524 label-only insertions plus 524 label-only deletions. Every reproducibility command and later materialization step must therefore use the full immutable commit IDs above, never a symbolic ref.
+
+The translation-pairing merge driver is also index-sensitive: `repositoryTranslationPairSource` reads the pairing manifest from the current index, and `gitMergeInputPaths` combines that index with advertised merge heads. An isolated simulation with the tracked tree and index already materialized to alpha.5, an available alpha.5 driver runtime, and the same immutable Task 2 input produced sample tree `493be26fc5bd5588ad31412b45ea93ee4bd13ee6`. It has 308 messages: 243 `content`, 56 `modify/delete`, eight `file location`, and one `directory rename split`. The only added conflict path is `.agents/notes/implemented/architecture/2026-08-12-pi-ai-route-default-input-modalities.i18n.yaml`, classified `generated-after-import`. This sample proves the execution inventory but is not the final materialization tree: the manifest-revision commit created by this phase must become the frozen pre-provenance Desktop overlay input, and that exact commit must be simulated once before topology work without creating a self-referential follow-up commit to record its resulting tree hash.
 
 ## Dispositions
 
 - `take-upstream`: import the alpha.5 path exactly. Official application, core, test, documentation, and tool structure owns it.
-- `retain-desktop-extension`: retain the released Desktop path exactly. This includes existing platform workflow and native Windows-owned boundaries that this Mac task must not edit.
+- `retain-desktop-extension`: retain the released Desktop path exactly. This includes Desktop-only applications and platform-specific boundaries that do not also own the official package graph or shared test topology.
 - `reimplement-on-alpha5-seam`: first import the alpha.5 package/layout truth, then restore only the required Desktop behavior through focused tests. The old rc.2 file is not copied wholesale.
 - `generated-after-import`: regenerate from resolved source with the repository generators or snapshot/pairing workflow; do not choose either generated copy by hand.
 
-Explicit-base conflict-message dispositions: `take-upstream` 23, `retain-desktop-extension` 3, `reimplement-on-alpha5-seam` 198, `generated-after-import` 83 (307 total). The broader 443-path final-byte overlap inventory remains classified as `take-upstream` 57, `retain-desktop-extension` 7, `reimplement-on-alpha5-seam` 262, `generated-after-import` 117.
+Expected execution-state conflict-message dispositions: `take-upstream` 18, `retain-desktop-extension` 1, `reimplement-on-alpha5-seam` 205, `generated-after-import` 84 (308 total). The product-index preflight is the same inventory without the one index-sensitive pairing sidecar, for 307 messages. The broader 443-path final-byte overlap inventory is classified as `take-upstream` 40, `retain-desktop-extension` 5, `reimplement-on-alpha5-seam` 281, `generated-after-import` 117.
 
-## Explicit-base conflict inventory
+## Task 2 upgrade RED baseline
 
-Every conflict message from the post-Task-2 explicit-base run has one row below. File-location rows record both the Desktop source and Git-suggested alpha.5 destination; the one directory-split row records its structural source prefix.
+The exact command was `pnpm vitest run packages/session/session-projection-cache/tests/desktop-upgrade-fixtures.spec.ts packages/boot/app-boot/tests/profile.spec.ts apps/desktop/tests/packaged-smoke-helpers.spec.ts --config vitest.config.ts`. On the unchanged Desktop product behavior it ran 44 tests: 41 existing profile and packaged-helper contracts passed, while the three new upgrade fixtures failed as intended. The failures prove that rc.2 whole-unit titles are not yet migrated into alpha.5 per-record files, alpha.3 per-record titles are not yet read, and invalid derived records are not yet backed up and skipped. Those three cases remain RED until the alpha.5 session seam is imported and implemented; they are not claimed GREEN merely because the fixture files and the unaffected 41 tests are valid.
+
+## Expected execution-state conflict inventory
+
+Every conflict message from the post-alpha.5-index simulation has one row below. File-location rows record both the Desktop source and Git-suggested alpha.5 destination; the one directory-split row records its structural source prefix. The frozen post-manifest overlay must reproduce this 308-path/type/disposition set before topology work proceeds.
 
 | Path or structural prefix | Conflict type | Disposition |
 |---|---|---|
 | `.agents/notes/implemented/architecture/2026-08-05-profile-plugin-bundles.i18n.yaml` | `content` | `generated-after-import` |
+| `.agents/notes/implemented/architecture/2026-08-12-pi-ai-route-default-input-modalities.i18n.yaml` | `content` | `generated-after-import` |
 | `.agents/notes/implemented/feature/2026-08-11-workspace-sidebar-order-and-folding.i18n.yaml` | `content` | `generated-after-import` |
 | `.agents/notes/implemented/feature/2026-08-11-workspace-sidebar-order-and-folding.md` | `content` | `take-upstream` |
 | `.agents/notes/implemented/feature/2026-08-11-workspace-sidebar-order-and-folding.zh.md` | `content` | `take-upstream` |
-| `.github/workflows/ci.yml` | `content` | `retain-desktop-extension` |
-| `.github/workflows/e2e.yml` | `content` | `retain-desktop-extension` |
+| `.github/workflows/ci.yml` | `content` | `reimplement-on-alpha5-seam` |
+| `.github/workflows/e2e.yml` | `content` | `reimplement-on-alpha5-seam` |
 | `README.i18n.yaml` | `content` | `generated-after-import` |
 | `THIRD_PARTY_NOTICES.md` | `content` | `generated-after-import` |
 | `apps/cli/src/profile-boot.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `apps/cli/tests/web-agent-presets.e2e.ts` | `content` | `take-upstream` |
-| `apps/web/tests/built-boot.expected.e2e.ts` | `content` | `take-upstream` |
-| `apps/web/tests/command-image-envelope.expected.e2e.ts` | `content` | `take-upstream` |
+| `apps/web/tests/built-boot.expected.e2e.ts` | `content` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/command-image-envelope.expected.e2e.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `apps/web/tests/expected/agent-preset-selection/menu.expected.md` | `content` | `generated-after-import` |
 | `apps/web/tests/expected/goal-command-presentation/ui.expected.md` | `content` | `generated-after-import` |
 | `apps/web/tests/expected/markdown-cjk-strong/ui.expected.md` | `content` | `generated-after-import` |
@@ -54,10 +64,10 @@ Every conflict message from the post-Task-2 explicit-base run has one row below.
 | `apps/web/tests/expected/stats-paged-history/ui.expected.md` | `content` | `generated-after-import` |
 | `apps/web/tests/expected/steer-all/mid-steer.expected.md` | `content` | `generated-after-import` |
 | `apps/web/tests/expected/steer-all/settled-expanded.expected.md` | `content` | `generated-after-import` |
-| `apps/web/tests/lifecycle-chrome.e2e.ts` | `content` | `take-upstream` |
-| `apps/web/tests/plan-review.e2e.ts` | `content` | `take-upstream` |
+| `apps/web/tests/lifecycle-chrome.e2e.ts` | `content` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/plan-review.e2e.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `apps/web/tests/snapshots/skill-tool-row/ui.expected.md` | `modify/delete` | `generated-after-import` |
-| `apps/web/tests/support.ts` | `content` | `take-upstream` |
+| `apps/web/tests/support.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `docs/capability-seams.i18n.yaml` | `content` | `generated-after-import` |
 | `docs/capability-seams.md` | `content` | `take-upstream` |
 | `docs/capability-seams.zh.md` | `content` | `take-upstream` |
@@ -343,7 +353,8 @@ Every conflict message from the post-Task-2 explicit-base run has one row below.
 
 | Area | Ownership and import rule |
 |---|---|
-| `apps/web/**` | `take-upstream`; alpha.5 application and expected-test layout are authoritative. Snapshot outputs are `generated-after-import`. |
+| `apps/web/src/**` | `take-upstream`; alpha.5 application structure is authoritative. |
+| `apps/web/tests/**/*.ts` | `reimplement-on-alpha5-seam` for every overlapping test source: begin from the alpha.5 harness and test topology, then restore the Desktop attachment, official TurnNavigator, Workbench, approval, and installed-lifecycle contracts listed below. Snapshot outputs remain `generated-after-import`. |
 | `apps/cli/**` | `take-upstream`, except `src/profile-boot.ts`, whose packaged Desktop boot contract is `reimplement-on-alpha5-seam`. |
 | `packages/client/**` | Import alpha.5 package splits and official Turn outline/TurnNavigator first; reimplement renderer attachment privacy, Desktop slots, sidebar, settings, and Workbench integration on those seams. |
 | `packages/host/apiproxy/**` and `packages/api/session-controller/**` | Import the alpha.5 API/session-controller layout, then reimplement Desktop projections and private transport boundaries there; do not retain the removed apiproxy layout as a second authority. |
@@ -357,7 +368,32 @@ Every conflict message from the post-Task-2 explicit-base run has one row below.
 | Browser/computer control extension packages | `retain-desktop-extension`; only compatibility imports are allowed in this core-sync stage. BrowserSkill is out of scope. |
 | Prompt navigation | Remove or leave unmounted the rc.2 `PromptRail`; alpha.5 Turn outline/TurnNavigator is the sole runtime navigation authority. |
 | `scripts/stage-desktop.ts`, update-manifest tooling, Electron builder files, and Desktop assets | `retain-desktop-extension`; later staging tests prove they include the alpha.5 runtime and all Desktop private extensions. |
+| Shared `.github/workflows/ci.yml` and `.github/workflows/e2e.yml` | `reimplement-on-alpha5-seam`; start from the alpha.5 package graph and test topology, then restore every Desktop static, build, snapshot, staging, packaging, and lifecycle gate. Windows-only workflow and PowerShell ownership remains with the Windows task. |
 | Lockfile, notices, paired sidecars, generated subsystem pages, and snapshots | `generated-after-import`; repository generators own the final bytes. |
+
+## Web test contract reconciliation
+
+Every overlapping Web test source is a seam rather than an exact upstream copy. The official alpha.5 filename, harness, and test structure is the starting point; the Desktop delta below is then restored with focused assertions. Removed upstream test files are not resurrected as a parallel suite: their still-required contract moves into the corresponding alpha.5 test.
+
+| Test source | Desktop contract that must survive on the alpha.5 structure |
+|---|---|
+| `apps/web/tests/agent-preset-selection.e2e.ts` | Managed Desktop preset groups and the official alpha.5 selection/catalog behavior. |
+| `apps/web/tests/approval-composer.e2e.ts` | Allow-once plus current-Session full-access command ordering, disabled pending actions, and official approval rendering. |
+| `apps/web/tests/built-boot.snapshot.ts` / `built-boot.expected.e2e.ts` | Built application boot, packaged module resolution, and alpha.5 renamed expected-test structure. |
+| `apps/web/tests/chat-scroll-contract.e2e.ts` | Official TurnNavigator scroll/focus behavior inside the Desktop conversation layout. |
+| `apps/web/tests/command-image-envelope.snapshot.ts` / `command-image-envelope.expected.e2e.ts` | Image and document attachment envelopes, bounded renderer projection, and alpha.5 renamed expected-test structure. |
+| `apps/web/tests/hmr-live.e2e.ts` | Official HMR lifecycle while preserving the Desktop surface marker and bridge isolation. |
+| `apps/web/tests/image-display.snapshot.ts` | Required image/document display and privacy assertions must move to the alpha.5 replacement rather than retaining a deleted legacy suite. |
+| `apps/web/tests/lifecycle-chrome.e2e.ts` | Installed/built lifecycle plus attachment, TurnNavigator, fixed Workbench, permission, Memory & Learning, and Desktop surface assertions. |
+| `apps/web/tests/models-settings.e2e.ts` | Official model catalog with Desktop provider and reasoning-effort settings. |
+| `apps/web/tests/onboarding-deepseek-config.e2e.ts` | Official onboarding with the Desktop DeepSeek provider bootstrap contract. |
+| `apps/web/tests/plan-review.e2e.ts` | Official plan review with Desktop approval state and current-Session permission isolation. |
+| `apps/web/tests/queue-actions.e2e.ts` | Queue semantics plus stable Desktop composer/sidebar/Workbench geometry and keyboard behavior. |
+| `apps/web/tests/reference-composer.e2e.ts` | Official reference picker plus Desktop files, folders, Sessions, Goal/Plan claims, and dynamically installed skills/plugins. |
+| `apps/web/tests/scaffold.ts` | Alpha.5 fixture APIs plus Desktop surface, installed lifecycle, model, workspace, attachment, and permission seeds. |
+| `apps/web/tests/steering.e2e.ts` | Official steering event order plus Desktop question/approval composer convergence. |
+| `apps/web/tests/support.ts` | Alpha.5 runner utilities plus bounded Desktop boot, fixture, viewport, and snapshot stabilization helpers. |
+| `apps/web/tests/workspace-management.e2e.ts` | Existing Project/Session tree, current blank-session handling, long-label layout, and workspace persistence. |
 
 ## Broader final-byte overlap inventory
 
@@ -373,8 +409,8 @@ Every conflict message from the post-Task-2 explicit-base run has one row below.
 | `.agents/notes/implemented/feature/2026-08-11-workspace-sidebar-order-and-folding.md` | `take-upstream` |
 | `.agents/notes/implemented/feature/2026-08-11-workspace-sidebar-order-and-folding.zh.md` | `take-upstream` |
 | `.github/workflows/build-exe-for-python-sdk.yml` | `retain-desktop-extension` |
-| `.github/workflows/ci.yml` | `retain-desktop-extension` |
-| `.github/workflows/e2e.yml` | `retain-desktop-extension` |
+| `.github/workflows/ci.yml` | `reimplement-on-alpha5-seam` |
+| `.github/workflows/e2e.yml` | `reimplement-on-alpha5-seam` |
 | `.gitignore` | `reimplement-on-alpha5-seam` |
 | `README.i18n.yaml` | `generated-after-import` |
 | `README.md` | `take-upstream` |
@@ -385,20 +421,20 @@ Every conflict message from the post-Task-2 explicit-base run has one row below.
 | `apps/cli/src/profile-boot.ts` | `reimplement-on-alpha5-seam` |
 | `apps/cli/tests/web-agent-presets.e2e.ts` | `take-upstream` |
 | `apps/web/src/main.ts` | `take-upstream` |
-| `apps/web/tests/agent-preset-selection.e2e.ts` | `take-upstream` |
-| `apps/web/tests/approval-composer.e2e.ts` | `take-upstream` |
-| `apps/web/tests/built-boot.snapshot.ts` | `take-upstream` |
-| `apps/web/tests/chat-scroll-contract.e2e.ts` | `take-upstream` |
-| `apps/web/tests/command-image-envelope.snapshot.ts` | `take-upstream` |
-| `apps/web/tests/hmr-live.e2e.ts` | `take-upstream` |
-| `apps/web/tests/image-display.snapshot.ts` | `take-upstream` |
-| `apps/web/tests/lifecycle-chrome.e2e.ts` | `take-upstream` |
-| `apps/web/tests/models-settings.e2e.ts` | `take-upstream` |
-| `apps/web/tests/onboarding-deepseek-config.e2e.ts` | `take-upstream` |
-| `apps/web/tests/plan-review.e2e.ts` | `take-upstream` |
-| `apps/web/tests/queue-actions.e2e.ts` | `take-upstream` |
-| `apps/web/tests/reference-composer.e2e.ts` | `take-upstream` |
-| `apps/web/tests/scaffold.ts` | `take-upstream` |
+| `apps/web/tests/agent-preset-selection.e2e.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/approval-composer.e2e.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/built-boot.snapshot.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/chat-scroll-contract.e2e.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/command-image-envelope.snapshot.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/hmr-live.e2e.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/image-display.snapshot.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/lifecycle-chrome.e2e.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/models-settings.e2e.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/onboarding-deepseek-config.e2e.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/plan-review.e2e.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/queue-actions.e2e.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/reference-composer.e2e.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/scaffold.ts` | `reimplement-on-alpha5-seam` |
 | `apps/web/tests/snapshots/agent-preset-authoring/created.expected.md` | `generated-after-import` |
 | `apps/web/tests/snapshots/agent-preset-authoring/damaged.expected.md` | `generated-after-import` |
 | `apps/web/tests/snapshots/agent-preset-authoring/section.expected.md` | `generated-after-import` |
@@ -456,9 +492,9 @@ Every conflict message from the post-Task-2 explicit-base run has one row below.
 | `apps/web/tests/snapshots/turn-tail-actions/running.expected.md` | `generated-after-import` |
 | `apps/web/tests/snapshots/turn-tail-actions/settled.expected.md` | `generated-after-import` |
 | `apps/web/tests/snapshots/web-search-round/ui.expected.md` | `generated-after-import` |
-| `apps/web/tests/steering.e2e.ts` | `take-upstream` |
-| `apps/web/tests/support.ts` | `take-upstream` |
-| `apps/web/tests/workspace-management.e2e.ts` | `take-upstream` |
+| `apps/web/tests/steering.e2e.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/support.ts` | `reimplement-on-alpha5-seam` |
+| `apps/web/tests/workspace-management.e2e.ts` | `reimplement-on-alpha5-seam` |
 | `apps/web/vite.config.ts` | `take-upstream` |
 | `docs/capability-seams.i18n.yaml` | `generated-after-import` |
 | `docs/capability-seams.md` | `take-upstream` |
@@ -809,9 +845,13 @@ Every conflict message from the post-Task-2 explicit-base run has one row below.
 
 ## Import checkpoints
 
-1. Add the alpha.5 commit as a tree-invariant provenance parent only after the commander authorizes that step; verify the tree before and after is identical.
-2. Import every `take-upstream` path in bounded batches and record each batch path list and focused test result.
-3. For every `reimplement-on-alpha5-seam` path, begin from alpha.5 bytes/layout and add the smallest Desktop behavior needed by the upgrade fixtures and existing contracts.
-4. Keep every `retain-desktop-extension` path byte-identical unless a later, explicitly owned compatibility commit must update only its dependency seam.
-5. Regenerate every `generated-after-import` path after source and package composition are resolved.
-6. Prove the old Session title/JSONL/workspace and Memory/Evolution/Brain markers are unchanged by SHA-256, then run host/client typecheck, focused tests, Desktop staging, and isolated Intel packaged smoke.
+1. Commit this manifest revision without changing production files. Freeze that new full commit ID as the sole `desktop_overlay_head`; it replaces the earlier Task 2 commit in every later merge-tree command so this manifest and the upgrade fixtures are restored by the semantic overlay.
+2. Before any topology commit, use an isolated temporary worktree and index both materialized to the alpha.5 tracked tree, while exposing only an already-installed dependency runtime. Require `node --import tsx/esm scripts/merge-translation-pairing.ts --probe` to pass there, then run the explicit-base merge with full immutable `desktop_overlay_head`, rc.2 base `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, and alpha.5 `db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5`. Record the resulting tree hash and 308-path/type set outside the commit. Do not amend or create another pre-provenance commit merely to insert that hash, because doing so would change the overlay input and make the evidence self-referential. A missing driver runtime or a 312-message fallback result is a hard failure.
+3. Stop after that isolated recomputation until the commander explicitly authorizes topology work. No provenance merge, production-worktree `read-tree`, or production-tree mutation belongs to the current phase.
+4. Once authorized, create one tree-invariant two-parent provenance commit with the frozen Desktop overlay history as first parent and exact alpha.5 commit as second parent. Verify its tree is byte-identical to its first parent. The `ours` merge strategy is permitted only for this ancestry link, never for content selection.
+5. In a clean worktree, materialize and commit the complete alpha.5 tracked tree. Verify the staged tree and committed tree both equal `db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5^{tree}`. This exact-tree checkpoint, not a per-path import, guarantees that upstream additions and deletions are complete.
+6. From the post-materialization alpha.5 index, rerun the driver `--probe`, then repeat the explicit-base command with the same frozen `desktop_overlay_head`. Require the exact tree hash, all 308 paths, and all conflict types to match the isolated checkpoint from step 2; fail closed if the runtime is unavailable, the count becomes 312, or any path differs. Only then may that verified tree be loaded with `read-tree`.
+7. Resolve all 308 conflict messages individually. Preserve merged alpha.5 content for `take-upstream`, preserve the automatically overlaid Desktop content for `retain-desktop-extension`, and implement every `reimplement-on-alpha5-seam` path from the alpha.5 contract without copying the rc.2 file wholesale. Reject all remaining conflict markers before committing. Record the verified execution tree hash in the final conflict-resolution version of this manifest; its merge input remains the already frozen pre-provenance overlay SHA, so no recursion is introduced.
+8. Reconcile shared CI and Web tests before regenerating outputs. Run `scripts/ci-workflow.spec.ts` plus the alpha.5 package/run-gate tests for `.github/workflows/ci.yml` and `.github/workflows/e2e.yml`. Run the focused Web sources listed above, including `approval-composer.e2e.ts`, `command-image-envelope.expected.e2e.ts`, `chat-scroll-contract.e2e.ts`, `lifecycle-chrome.e2e.ts`, `plan-review.e2e.ts`, `queue-actions.e2e.ts`, `reference-composer.e2e.ts`, and `workspace-management.e2e.ts`, so attachments, TurnNavigator, Workbench, approval, and installed lifecycle remain explicit contracts.
+9. Keep every `retain-desktop-extension` path byte-identical unless a later, explicitly owned compatibility commit updates only its alpha.5 dependency seam. Regenerate every `generated-after-import` path only after source and package composition are resolved.
+10. Make the three Task 2 upgrade fixtures GREEN while proving the old Session title, source JSONL, workspace, and Memory/Evolution/Brain markers are unchanged by SHA-256. Then run host/client typecheck, the complete focused matrix, Desktop staging, and isolated Intel packaged smoke.
