@@ -1,5 +1,6 @@
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
-import { isAbsolute } from 'node:path'
+import { realpathSync, statSync } from 'node:fs'
+import { dirname, isAbsolute, join } from 'node:path'
 import { readHarnessUrl } from './startup-url.ts'
 import { waitForHarness as probeHarness } from './readiness.ts'
 import { terminateProcessTree, type TerminationMode } from './process-tree.ts'
@@ -11,6 +12,39 @@ import {
 
 const MAX_STARTUP_OUTPUT_BYTES = 64 * 1024
 const DEFAULT_STOP_TIMEOUT_MS = 3_000
+
+/** Prepend one directory to a PATH string exactly once, platform-delimited. */
+export function prependPathEntry(
+  currentPath: string | undefined,
+  entry: string,
+  platform: NodeJS.Platform,
+): string {
+  const delimiter = platform === 'win32' ? ';' : ':'
+  return currentPath === undefined || currentPath === '' ? entry : `${entry}${delimiter}${currentPath}`
+}
+
+/**
+ * Resolve the packaged BrowserSkill CLI directory only when its platform
+ * member is a physical regular file outside app.asar. Anything else —
+ * missing, symlink into app.asar, or a non-regular node — resolves to
+ * undefined so the harness child simply starts without the tools.
+ */
+export function physicalBrowserSkillCliDir(
+  resourcesPath: string,
+  platform: NodeJS.Platform,
+): string | undefined {
+  const member = platform === 'win32' ? 'bsk.exe' : 'bsk'
+  const candidate = join(resourcesPath, 'browser-skill', 'bin', member)
+  try {
+    const real = realpathSync(candidate)
+    if (!statSync(real).isFile()) return undefined
+    const normalized = real.replaceAll('\\', '/')
+    if (normalized.includes('/app.asar/') || normalized.endsWith('/app.asar')) return undefined
+    return dirname(real)
+  } catch {
+    return undefined
+  }
+}
 
 /** Settlement reported when the exact owned child exits. */
 export interface ExitState {
@@ -32,6 +66,7 @@ export interface HarnessProcessOptions {
   platform?: NodeJS.Platform
   terminateTree?: (pid: number, mode: TerminationMode, platform: NodeJS.Platform) => void
   stopTimeoutMs?: number
+  browserSkillDir?: string
   onOutput?: (source: 'stdout' | 'stderr', text: string) => void
   onExit?: (state: ExitState) => void
   markStartup?: (milestone: DesktopStartupMilestone) => void
@@ -65,7 +100,7 @@ export class HarnessProcess {
   private readonly options: Required<Pick<HarnessProcessOptions,
     'executable' | 'spawn' | 'waitForHarness' | 'platform' | 'terminateTree' | 'stopTimeoutMs'>>
     & Pick<HarnessProcessOptions,
-      'cli' | 'patch' | 'prepare' | 'onOutput' | 'onExit' | 'markStartup' | 'onStartupTiming'>
+      'cli' | 'patch' | 'prepare' | 'browserSkillDir' | 'onOutput' | 'onExit' | 'markStartup' | 'onStartupTiming'>
   private child: ChildProcess | undefined
   private exitPromise: Promise<ExitState> | undefined
   private detachOutput: (() => void) | undefined
@@ -104,6 +139,14 @@ export class HarnessProcess {
     if (this.child !== undefined) throw new Error('Harness process is already running.')
     this.options.prepare?.()
     this.options.markStartup?.('fallback-ready')
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      DSH_DESKTOP_STARTUP_TIMING: '1',
+    }
+    if (this.options.browserSkillDir !== undefined) {
+      env.PATH = prependPathEntry(process.env.PATH, this.options.browserSkillDir, this.options.platform)
+    }
     const child = this.options.spawn(this.options.executable, [
       // Electron's Node mode does not expose the internal ESM resolver through
       // node-addon-require-builtin. Loader needs this flag so bare plugin names
@@ -120,7 +163,7 @@ export class HarnessProcess {
     ], {
       cwd: workspace,
       detached: this.options.platform !== 'win32',
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', DSH_DESKTOP_STARTUP_TIMING: '1' },
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     if (child.pid === undefined || child.pid <= 0 || child.stdout === null || child.stderr === null) {

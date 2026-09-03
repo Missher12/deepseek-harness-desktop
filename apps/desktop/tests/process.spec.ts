@@ -1,9 +1,23 @@
 import type { ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
-import { describe, expect, it, vi } from 'vitest'
-import { HarnessProcess, type HarnessProcessOptions } from '../src/harness/process.ts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  HarnessProcess,
+  physicalBrowserSkillCliDir,
+  prependPathEntry,
+  type HarnessProcessOptions,
+} from '../src/harness/process.ts'
 import type { DesktopStartupMilestone } from '../src/startup-timeline.ts'
+
+const cleanup: string[] = []
+
+afterEach(async () => {
+  await Promise.all(cleanup.splice(0).map(async (root) => { await rm(root, { force: true, recursive: true }) }))
+})
 
 class FakeChild extends EventEmitter {
   readonly pid = 4321
@@ -213,5 +227,100 @@ describe('HarnessProcess', () => {
 
     child.exit(9)
     await vi.waitFor(() => { expect(onExit).toHaveBeenCalledWith({ code: 9, signal: null }) })
+  })
+
+  it('prepends the packaged CLI directory to the child PATH exactly once per platform', () => {
+    expect(prependPathEntry('/usr/bin:/bin', '/bsk/bin', 'darwin')).toBe('/bsk/bin:/usr/bin:/bin')
+    expect(prependPathEntry('C:\\Windows;C:\\Tools', 'C:\\bsk\\bin', 'win32')).toBe('C:\\bsk\\bin;C:\\Windows;C:\\Tools')
+    expect(prependPathEntry(undefined, '/bsk/bin', 'darwin')).toBe('/bsk/bin')
+    expect(prependPathEntry('', '/bsk/bin', 'linux')).toBe('/bsk/bin')
+  })
+
+  it('injects only the prepended PATH entry and keeps the inherited environment intact', async () => {
+    const child = new FakeChild()
+    const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(
+      () => child as unknown as ChildProcess,
+    )
+    const owned = new HarnessProcess({
+      spawn,
+      executable: '/Electron',
+      cli: '/cli.js',
+      waitForHarness: async () => undefined,
+      platform: 'darwin',
+      terminateTree: vi.fn(),
+      browserSkillDir: '/Applications/DeepSeek Harness.app/Contents/Resources/browser-skill/bin',
+    })
+    const pending = owned.start('/workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await pending
+
+    const [, , options] = spawn.mock.calls[0]!
+    expect(options.env?.PATH).toBe(
+      `/Applications/DeepSeek Harness.app/Contents/Resources/browser-skill/bin:${process.env.PATH}`,
+    )
+    expect(options.env?.ELECTRON_RUN_AS_NODE).toBe('1')
+    expect(options.env?.DSH_DESKTOP_STARTUP_TIMING).toBe('1')
+  })
+
+  it('uses the Windows PATH delimiter for the Windows harness child', async () => {
+    const child = new FakeChild()
+    const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(
+      () => child as unknown as ChildProcess,
+    )
+    const owned = new HarnessProcess({
+      spawn,
+      executable: 'C:\\Electron.exe',
+      cli: 'C:\\cli.js',
+      waitForHarness: async () => undefined,
+      platform: 'win32',
+      terminateTree: vi.fn(),
+      browserSkillDir: 'C:\\Program Files\\DeepSeek Harness\\resources\\browser-skill\\bin',
+    })
+    const pending = owned.start('C:\\workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await pending
+
+    const [, , options] = spawn.mock.calls[0]!
+    expect(options.env?.PATH).toBe(
+      `C:\\Program Files\\DeepSeek Harness\\resources\\browser-skill\\bin;${process.env.PATH}`,
+    )
+  })
+
+  it('leaves the inherited PATH untouched when no CLI directory is configured', async () => {
+    const child = new FakeChild()
+    const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(
+      () => child as unknown as ChildProcess,
+    )
+    const owned = new HarnessProcess({
+      spawn,
+      executable: '/Electron',
+      cli: '/cli.js',
+      waitForHarness: async () => undefined,
+      platform: 'darwin',
+      terminateTree: vi.fn(),
+    })
+    const pending = owned.start('/workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await pending
+
+    const [, , options] = spawn.mock.calls[0]!
+    expect(options.env?.PATH).toBe(process.env.PATH)
+  })
+
+  it('resolves the CLI directory only for a physical file outside app.asar', async () => {
+    const resources = await mkdtemp(join(tmpdir(), 'dsh-bsk-resources-'))
+    cleanup.push(resources)
+    await mkdir(join(resources, 'browser-skill', 'bin'), { recursive: true })
+    await writeFile(join(resources, 'browser-skill', 'bin', 'bsk'), 'binary')
+
+    expect(physicalBrowserSkillCliDir(resources, 'darwin')).toBe(
+      join(await realpath(resources), 'browser-skill', 'bin'),
+    )
+    expect(physicalBrowserSkillCliDir(resources, 'win32')).toBeUndefined()
+    expect(physicalBrowserSkillCliDir(join(resources, 'missing'), 'darwin')).toBeUndefined()
+
+    await mkdir(join(resources, 'app.asar'), { recursive: true })
+    await writeFile(join(resources, 'app.asar', 'bsk'), 'binary')
+    expect(physicalBrowserSkillCliDir(join(resources, 'app.asar'), 'darwin')).toBeUndefined()
   })
 })

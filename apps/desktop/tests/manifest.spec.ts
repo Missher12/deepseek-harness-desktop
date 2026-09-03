@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 
@@ -192,6 +193,40 @@ describe('desktop package manifest', () => {
       id: 'reasoning-effort',
       name: '@deepseek-ai/dsh-reasoning-effort',
     }])
+  })
+
+  it('mounts exactly one dormant BrowserSkill row with the packaged CLI on PATH', () => {
+    const patch = yaml.load(
+      readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8'),
+    ) as Array<{ insert?: Array<{ id?: string; name?: string; config?: Record<string, unknown> }> }>
+    const rows = patch.flatMap(operation => operation.insert ?? [])
+      .filter(row => row.id === 'browser-skill'
+        || row.name === '@wxg-prc-cpg/browser-skill-dsh-plugin')
+
+    expect(rows).toEqual([{
+      id: 'browser-skill',
+      name: '@wxg-prc-cpg/browser-skill-dsh-plugin',
+      config: { bskPath: 'bsk', lazyTools: true, observationEnabled: false },
+    }])
+  })
+
+  it('exposes exactly the six phase-one BrowserSkill tools with no evaluate, record, or CDP surface', () => {
+    const require = createRequire(import.meta.url)
+    const entry = require.resolve('@wxg-prc-cpg/browser-skill-dsh-plugin')
+    const source = readFileSync(entry, 'utf8')
+    const names = [...source.matchAll(/name:\s*"(browser_[a-z_]+)"/gu)].map(match => match[1]!)
+
+    expect([...new Set(names)].sort()).toEqual([
+      'browser_assist',
+      'browser_inspect',
+      'browser_interact',
+      'browser_page',
+      'browser_session',
+      'browser_tabs',
+    ])
+    for (const name of names) {
+      expect(name, name).not.toMatch(/evaluate|record|cdp/u)
+    }
   })
 
   it('keeps module, missing-service, and apply failures outside the activated Web UI', () => {

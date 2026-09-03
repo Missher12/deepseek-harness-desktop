@@ -85,9 +85,11 @@
 
     # BrowserSkill stays default-sleeping: tools reveal only after the skill
     # is invoked, and the floating PiP observation overlay stays off so the
-    # one fixed Workbench owns every browsing surface.
+    # one fixed Workbench owns every browsing surface. The packaged CLI is
+    # resolved as `bsk` from the harness child's prepended PATH.
     - id: browser-skill
       name: '@wxg-prc-cpg/browser-skill-dsh-plugin'
       config:
+        bskPath: bsk
         lazyTools: true
         observationEnabled: false

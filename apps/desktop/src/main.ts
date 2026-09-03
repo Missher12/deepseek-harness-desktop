@@ -23,7 +23,7 @@ import {
   type DesktopWindow,
   type FailureReason,
 } from './application.ts'
-import { HarnessProcess } from './harness/process.ts'
+import { HarnessProcess, physicalBrowserSkillCliDir } from './harness/process.ts'
 import { findConflictingHarness } from './harness/ownership.ts'
 import { createLifecycleLogger } from './logging.ts'
 import {
@@ -155,9 +155,19 @@ const updateService = new DesktopUpdateService({
 })
 const startupTimeline = new DesktopStartupTimeline(record)
 
+// The packaged BrowserSkill CLI is a physical extraResource next to
+// app.asar. It enters only the harness child's PATH; when missing (e.g. an
+// unpacked dev launch), the dormant plugin still mounts and the first real
+// browser tool call reports the missing CLI.
+const browserSkillDir = physicalBrowserSkillCliDir(process.resourcesPath, process.platform)
+if (browserSkillDir === undefined) {
+  record('BrowserSkill CLI: no physical packaged binary in resources; browser tools stay dormant.')
+}
+
 const runtime = new HarnessProcess({
   cli: resolveCliPath(),
   patch: desktopPatchPath,
+  ...(browserSkillDir === undefined ? {} : { browserSkillDir }),
   prepare: () => {
     const result = healProfilesModuleFallbackCached(desktopInstallAnchorPath, dshHome, app.getVersion())
     record(`module fallback: ${result}`)

@@ -61,8 +61,9 @@ export function readAssetManifest(path = ASSET_MANIFEST_PATH): BrowserSkillAsset
     if (typeof asset.sha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(asset.sha256)) {
       throw new Error(`browser-skill-assets: ${platform} sha256 must be 64 lowercase hex`)
     }
-    if (!Number.isSafeInteger(asset.archiveBytes) || (asset.archiveBytes ?? 0) <= 0
-      || (asset.archiveBytes ?? 0) > MAX_ARCHIVE_BYTES) {
+    const archiveBytes = asset.archiveBytes
+    if (archiveBytes === undefined || !Number.isSafeInteger(archiveBytes)
+      || archiveBytes <= 0 || archiveBytes > MAX_ARCHIVE_BYTES) {
       throw new Error(`browser-skill-assets: ${platform} archiveBytes must be a bounded positive integer`)
     }
     if (typeof asset.member !== 'string' || asset.member.length === 0
@@ -72,7 +73,7 @@ export function readAssetManifest(path = ASSET_MANIFEST_PATH): BrowserSkillAsset
     assets[platform] = {
       url: asset.url,
       sha256: asset.sha256,
-      archiveBytes: asset.archiveBytes,
+      archiveBytes,
       member: asset.member,
       executable: asset.executable === true,
     }

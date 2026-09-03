@@ -273,6 +273,51 @@ function assertCanonicalSessionMessengerRow(content: string): void {
   }
 }
 
+const BROWSER_SKILL_PACKAGE = '@wxg-prc-cpg/browser-skill-dsh-plugin'
+const BROWSER_SKILL_ROW_ID = 'browser-skill'
+const BROWSER_SKILL_CANONICAL_CONFIG = JSON.stringify({
+  bskPath: 'bsk',
+  lazyTools: true,
+  observationEnabled: false,
+})
+
+/**
+ * Fail closed unless the immutable Desktop patch carries exactly one dormant
+ * BrowserSkill row: tools stay lazy (no schema in the prompt before the skill
+ * is invoked) and the observation overlay stays off.
+ */
+export function assertCanonicalBrowserSkillRow(content: string): void {
+  let parsed: unknown
+  try {
+    parsed = yaml.load(content)
+  } catch (cause) {
+    throw new Error('Desktop staging requires exactly one canonical browser-skill row.', { cause })
+  }
+  const rows: Array<Record<string, unknown>> = []
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item)
+      return
+    }
+    if (value === null || typeof value !== 'object') return
+    const row = value as Record<string, unknown>
+    const id = typeof row.id === 'string' ? row.id : undefined
+    const name = typeof row.name === 'string' ? row.name : undefined
+    if (id === BROWSER_SKILL_ROW_ID || name === BROWSER_SKILL_PACKAGE) rows.push(row)
+    for (const child of Object.values(row)) visit(child)
+  }
+  visit(parsed)
+  const candidate = rows[0]
+  if (rows.length !== 1
+    || candidate === undefined
+    || candidate.id !== BROWSER_SKILL_ROW_ID
+    || candidate.name !== BROWSER_SKILL_PACKAGE
+    || Object.keys(candidate).sort().join(',') !== 'config,id,name'
+    || JSON.stringify(candidate.config) !== BROWSER_SKILL_CANONICAL_CONFIG) {
+    throw new Error('Desktop staging requires exactly one canonical dormant browser-skill row.')
+  }
+}
+
 /**
  * Create a production-only, self-contained desktop package tree.
  * @param repositoryRoot - Exact DeepSeek Harness repository root.
@@ -300,6 +345,7 @@ export async function stageDesktop(
   const desktopPatch = await dependencies.readText(join(desktopDir, 'desktop.cordis.patch.yml'))
   validateReasoningEffortPatch(desktopPatch)
   assertCanonicalSessionMessengerRow(desktopPatch)
+  assertCanonicalBrowserSkillRow(desktopPatch)
   await dependencies.remove(stageDir)
   // pnpm 11's legacy deploy writes its dependency mode into the root workspace
   // state. Passing --prod there corrupts later root commands into production-
