@@ -102,11 +102,13 @@ The repository is based on the pinned official source and adds the desktop appli
   direct unrelated-history merge would create about 1,864 conflict sections
   across a 46 MB merge preview, so it is prohibited. The accepted route keeps
   the Desktop product history as first parent, connects the exact alpha.5 tag
-  as second parent in a tree-identical provenance commit, then imports
-  upstream-owned paths from a committed ownership manifest. Files at Desktop
-  seams must take the alpha.5 contract first and reapply only the required
-  Desktop behavior under RED-to-GREEN tests; the provenance merge itself is
-  never treated as a code merge or passing evidence.
+  as second parent in a tree-identical provenance commit, materializes the
+  exact alpha.5 tracked tree, then computes a semantic merge with official
+  rc.2 as the explicit base. Files outside that automatic merge are resolved
+  from a committed ownership manifest; Desktop seams take the alpha.5 contract
+  first and reapply only the required Desktop behavior under RED-to-GREEN
+  tests. The provenance merge itself is never treated as a code merge or
+  passing evidence.
 - Desktop 0.5.2 starts from the released `desktop-v0.5.1` commit
   `b8595d75a9f94fb332689e28aef70cf5b7d72d4f`. Its integrated UI restores the
   v0.4.11 PromptRail against the current `PromptAnchor` data flow, adds
