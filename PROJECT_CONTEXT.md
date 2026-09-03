@@ -69,6 +69,25 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
+- Desktop 0.5.3 planning is approved against public 0.5.2 commit
+  `7384b863e88b005b3309e49a0aebb7a2ea91d4c3`. The first implementation phase
+  will sync the exact official `dsh-v0.1.2-alpha.5` commit
+  `db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5` with rc.2/alpha.3 upgrade
+  fixtures before any UI or BrowserSkill work. The only conversation navigator
+  will then be the official complete-history TurnNavigator, restyled with the
+  requested piano-key geometry and composer-aware preview clamp. The existing
+  Desktop Workbench remains the sole right utility column and will gain a
+  typed lazy mode registry instead of importing the third-party
+  DSH-better-sidebar dependency tree. BrowserSkill will pin the public DSH
+  plugin 0.1.2 and CLI 0.1.11 platform assets, expose only structured
+  `browser_*` tools, remain process-idle at startup, and require the user's
+  separately installed browser extension. Delivery work will build one
+  immutable candidate per platform and run lifecycle, visual, and performance
+  consumers in parallel; the final tag still rebuilds and passes full Mac and
+  Windows native gates. The binding design and four implementation plans are
+  under `docs/superpowers/specs/2026-09-03-desktop-0.5.3-*` and
+  `docs/superpowers/plans/2026-09-03-desktop-0.5.3-*`. No Desktop version bump,
+  product implementation, tag, or release is part of this planning commit.
 - Desktop 0.5.2 starts from the released `desktop-v0.5.1` commit
   `b8595d75a9f94fb332689e28aef70cf5b7d72d4f`. Its integrated UI restores the
   v0.4.11 PromptRail against the current `PromptAnchor` data flow, adds
