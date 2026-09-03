@@ -43,16 +43,20 @@ describe('Windows Desktop assisted installer smoke', () => {
     expect(source).toContain('installer-finish.png')
   })
 
-  it('is wired into native Windows CI before the packaged lifecycle smoke', () => {
+  it('is wired into the full native Windows installer consumer without serializing lifecycle', () => {
     const workflow = readFileSync(
       new URL('../.github/workflows/windows-desktop.yml', import.meta.url),
       'utf8',
     )
-    const visible = workflow.indexOf('./scripts/windows-desktop-installer-ui-smoke.ps1')
-    const lifecycle = workflow.lastIndexOf('./scripts/windows-desktop-setup-smoke.ps1')
+    const installerJob = workflow.indexOf('  installer-ui:')
+    const visualJob = workflow.indexOf('  visual:')
+    const installerSection = workflow.slice(installerJob, visualJob)
 
-    expect(visible).toBeGreaterThan(-1)
-    expect(lifecycle).toBeGreaterThan(visible)
-    expect(workflow).toContain('-EvidenceRoot apps/desktop/release/windows-installer-ui-evidence')
+    expect(installerJob).toBeGreaterThan(-1)
+    expect(installerSection).toContain('needs: build-candidate')
+    expect(installerSection).toContain("if: needs.build-candidate.outputs.mode == 'full'")
+    expect(installerSection).toContain('./scripts/windows-desktop-installer-ui-smoke.ps1')
+    expect(installerSection).toContain('-EvidenceRoot apps/desktop/release/windows-installer-ui-evidence')
+    expect(installerSection).not.toContain('./scripts/windows-desktop-setup-smoke.ps1')
   })
 })

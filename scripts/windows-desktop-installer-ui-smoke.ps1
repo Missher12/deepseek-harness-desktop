@@ -326,9 +326,25 @@ function Invoke-IsolatedUninstall {
   )
 
   Copy-Item -LiteralPath $InstalledUninstaller -Destination $LauncherPath -Force
-  $uninstall = Start-Process -FilePath $LauncherPath -ArgumentList @('/S', "_?=$InstallRoot") -Wait -PassThru
-  if ($uninstall.ExitCode -ne 0) {
-    throw "Uninstaller failed with exit code $($uninstall.ExitCode)."
+  $uninstall = Start-Process -FilePath $LauncherPath -ArgumentList @('/S', "_?=$InstallRoot") -PassThru
+  $processIds = @()
+  try {
+    Start-Sleep -Milliseconds 100
+    $processIds = @(Get-DescendantProcessIds -RootProcessId $uninstall.Id)
+    if (-not $uninstall.WaitForExit(90000)) {
+      throw 'Uninstaller did not exit within 90 seconds.'
+    }
+    if ($uninstall.ExitCode -ne 0) {
+      throw "Uninstaller failed with exit code $($uninstall.ExitCode)."
+    }
+    Wait-ProcessIdsStopped -ProcessIds $processIds
+  }
+  finally {
+    foreach ($processId in @($processIds | Sort-Object -Descending)) {
+      Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    }
+    if ($processIds.Count -ne 0) { Wait-ProcessIdsStopped -ProcessIds $processIds }
+    $uninstall.Dispose()
   }
 }
 
@@ -344,27 +360,70 @@ function Wait-PathRemoved {
   }
 }
 
+function Get-DescendantProcessIds {
+  param([Parameter(Mandatory = $true)][int]$RootProcessId)
+
+  $rows = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId)
+  $found = [System.Collections.Generic.List[int]]::new()
+  $seen = [System.Collections.Generic.HashSet[int]]::new()
+  $found.Add($RootProcessId)
+  [void]$seen.Add($RootProcessId)
+  for ($index = 0; $index -lt $found.Count; $index += 1) {
+    foreach ($row in @($rows | Where-Object { $_.ParentProcessId -eq $found[$index] })) {
+      $child = [int]$row.ProcessId
+      if ($seen.Add($child)) { $found.Add($child) }
+    }
+  }
+  return @($found)
+}
+
+function Wait-ProcessIdsStopped {
+  param(
+    [Parameter(Mandatory = $true)][int[]]$ProcessIds,
+    [int]$TimeoutSeconds = 30
+  )
+
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  $remaining = @($ProcessIds | Where-Object { $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue) })
+  while ($remaining.Count -ne 0 -and [DateTime]::UtcNow -lt $deadline) {
+    Start-Sleep -Milliseconds 200
+    $remaining = @($ProcessIds | Where-Object { $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue) })
+  }
+  if ($remaining.Count -ne 0) {
+    throw "Installer smoke left $($remaining.Count) process tree member(s) running."
+  }
+}
+
 $resolvedSetup = (Resolve-Path -LiteralPath $SetupPath).Path
 $resolvedEvidenceRoot = [System.IO.Path]::GetFullPath($EvidenceRoot)
 $smokeId = [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $temporaryRoot = Join-Path $env:RUNNER_TEMP "dsh-installer-ui-$smokeId"
 $requestedInstallRoot = $temporaryRoot
 $installRoot = Join-Path $temporaryRoot 'DeepSeek Harness'
+$harnessHome = Join-Path $temporaryRoot 'smoke-data\dsh-home'
+$userData = Join-Path $temporaryRoot 'smoke-data\electron-data'
+$harnessMarker = Join-Path $harnessHome 'preserve-after-uninstall.txt'
+$userDataMarker = Join-Path $userData 'preserve-after-uninstall.txt'
 $uninstallerLauncher = Join-Path $temporaryRoot 'DeepSeek-Harness-Uninstall-UI-Smoke.exe'
 $desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'DeepSeek Harness.lnk'
 $startMenuShortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'DeepSeek Harness.lnk'
 $installed = $false
 $setup = $null
+$setupProcessIds = @()
 
 if ((Test-Path -LiteralPath $desktopShortcut) -or (Test-Path -LiteralPath $startMenuShortcut)) {
   throw 'Installer UI smoke refuses to overwrite an existing DeepSeek Harness shortcut.'
 }
 
 try {
-  New-Item -ItemType Directory -Force -Path $temporaryRoot, $resolvedEvidenceRoot | Out-Null
+  New-Item -ItemType Directory -Force -Path $temporaryRoot, $harnessHome, $userData, $resolvedEvidenceRoot | Out-Null
+  Set-Content -LiteralPath $harnessMarker -Value 'preserve Harness data'
+  Set-Content -LiteralPath $userDataMarker -Value 'preserve Electron data'
 
   $startInfo = [System.Diagnostics.ProcessStartInfo]::new($resolvedSetup)
   $startInfo.UseShellExecute = $false
+  $startInfo.Environment['DSH_HOME'] = $harnessHome
+  $startInfo.Environment['DSH_DESKTOP_SMOKE_USER_DATA'] = $userData
   [void]$startInfo.ArgumentList.Add('/currentuser')
   # electron-builder appends the product subdirectory on the progress page.
   # Keep the /D value space-free because NSIS requires this last argument to
@@ -452,7 +511,9 @@ try {
   # in `finally`; recursive temp deletion alone would leave those registrations.
   $installed = $true
   Wait-InstallerToggleOff
+  $setupProcessIds = @(Get-DescendantProcessIds -RootProcessId $setup.Id)
   Complete-InstallerFinish -Setup $setup
+  Wait-ProcessIdsStopped -ProcessIds $setupProcessIds
 
   $executable = Join-Path $installRoot 'DeepSeek Harness.exe'
   if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
@@ -477,12 +538,25 @@ try {
   if ((Test-Path -LiteralPath $desktopShortcut) -or (Test-Path -LiteralPath $startMenuShortcut)) {
     throw 'Visible Setup uninstall left a shortcut behind.'
   }
+  if (-not (Test-Path -LiteralPath $harnessMarker -PathType Leaf)) {
+    throw 'Visible Setup uninstall removed the isolated Harness data marker.'
+  }
+  if (-not (Test-Path -LiteralPath $userDataMarker -PathType Leaf)) {
+    throw 'Visible Setup uninstall removed the isolated Electron data marker.'
+  }
 
   Write-Host 'Windows installer UI smoke passed: welcome, destination, progress/details, finish, shortcuts, and uninstall.'
 }
 finally {
-  if ($null -ne $setup -and -not $setup.HasExited) {
-    Stop-Process -Id $setup.Id -Force -ErrorAction SilentlyContinue
+  if ($null -ne $setup) {
+    if ($setupProcessIds.Count -eq 0 -and -not $setup.HasExited) {
+      $setupProcessIds = @(Get-DescendantProcessIds -RootProcessId $setup.Id)
+    }
+    foreach ($processId in @($setupProcessIds | Sort-Object -Descending)) {
+      Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    }
+    if ($setupProcessIds.Count -ne 0) { Wait-ProcessIdsStopped -ProcessIds $setupProcessIds }
+    $setup.Dispose()
   }
   if ($installed -and (Test-Path -LiteralPath $installRoot)) {
     $fallback = @(Get-ChildItem -LiteralPath $installRoot -Filter 'Uninstall*.exe' -File -ErrorAction SilentlyContinue)

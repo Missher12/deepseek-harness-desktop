@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -10,6 +10,8 @@ import {
 
 const roots: string[] = []
 const sourceSha = 'a'.repeat(40)
+const productInputContent = '{"schemaVersion":1}\n'
+const productInputSha256 = createHash('sha256').update(productInputContent).digest('hex')
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map(async root => rm(root, { force: true, recursive: true })))
@@ -26,7 +28,7 @@ async function fixture(): Promise<{
   const productInputPath = join(root, 'desktop-package-staged.json')
   const descriptorPath = join(root, 'desktop-candidate.json')
   await writeFile(artifactPath, 'setup-bytes')
-  await writeFile(productInputPath, '{"schemaVersion":1}\n')
+  await writeFile(productInputPath, productInputContent)
   return { artifactPath, descriptorPath, productInputPath }
 }
 
@@ -51,7 +53,7 @@ describe('Desktop candidate descriptor', () => {
         bytes: 11,
         sha256: createHash('sha256').update('setup-bytes').digest('hex'),
       },
-      productInputSha256: createHash('sha256').update('{"schemaVersion":1}\n').digest('hex'),
+      productInputSha256,
     })
     expect(JSON.parse(await readFile(paths.descriptorPath, 'utf8'))).toEqual(descriptor)
     expect(await readFile(paths.descriptorPath, 'utf8')).toMatch(/\n$/u)
@@ -70,6 +72,8 @@ describe('Desktop candidate descriptor', () => {
     await expect(verifyDesktopCandidateDescriptor({
       artifactPath: paths.artifactPath,
       descriptorPath: paths.descriptorPath,
+      productInputPath: paths.productInputPath,
+      expectedProductInputSha256: productInputSha256,
       sourceSha,
       platform: 'win-x64',
       mode: 'full',
@@ -79,6 +83,8 @@ describe('Desktop candidate descriptor', () => {
     await expect(verifyDesktopCandidateDescriptor({
       artifactPath: paths.artifactPath,
       descriptorPath: paths.descriptorPath,
+      productInputPath: paths.productInputPath,
+      expectedProductInputSha256: productInputSha256,
       sourceSha,
       platform: 'win-x64',
       mode: 'full',
@@ -88,6 +94,8 @@ describe('Desktop candidate descriptor', () => {
     await expect(verifyDesktopCandidateDescriptor({
       artifactPath: paths.artifactPath,
       descriptorPath: paths.descriptorPath,
+      productInputPath: paths.productInputPath,
+      expectedProductInputSha256: productInputSha256,
       sourceSha,
       platform: 'win-x64',
       mode: 'full',
@@ -111,6 +119,8 @@ describe('Desktop candidate descriptor', () => {
       await expect(verifyDesktopCandidateDescriptor({
         artifactPath: paths.artifactPath,
         descriptorPath: paths.descriptorPath,
+        productInputPath: paths.productInputPath,
+        expectedProductInputSha256: productInputSha256,
         ...expected,
       })).rejects.toThrow(/candidate (?:source|platform|mode) mismatch/u)
     }
@@ -140,10 +150,110 @@ describe('Desktop candidate descriptor', () => {
       await expect(verifyDesktopCandidateDescriptor({
         artifactPath: paths.artifactPath,
         descriptorPath: paths.descriptorPath,
+        productInputPath: paths.productInputPath,
+        expectedProductInputSha256: productInputSha256,
         sourceSha,
         platform: 'win-x64',
         mode: 'quick',
       })).rejects.toThrow(/Desktop candidate descriptor/u)
+    }
+  })
+
+  it('requires one external product-input digest and verifies the actual product input bytes', async () => {
+    const paths = await fixture()
+    await createDesktopCandidateDescriptor({
+      ...paths,
+      sourceSha,
+      platform: 'win-x64',
+      mode: 'quick',
+    })
+
+    await expect(verifyDesktopCandidateDescriptor({
+      artifactPath: paths.artifactPath,
+      descriptorPath: paths.descriptorPath,
+      productInputPath: paths.productInputPath,
+      expectedProductInputSha256: 'b'.repeat(64),
+      sourceSha,
+      platform: 'win-x64',
+      mode: 'quick',
+    })).rejects.toThrow(/expected product input SHA-256 mismatch/u)
+
+    await writeFile(paths.productInputPath, '{"schemaVersion":2}\n')
+    await expect(verifyDesktopCandidateDescriptor({
+      artifactPath: paths.artifactPath,
+      descriptorPath: paths.descriptorPath,
+      productInputPath: paths.productInputPath,
+      expectedProductInputSha256: productInputSha256,
+      sourceSha,
+      platform: 'win-x64',
+      mode: 'quick',
+    })).rejects.toThrow(/product input SHA-256 mismatch/u)
+  })
+
+  it('rejects artifact and product-input symlinks instead of hashing their targets', async () => {
+    const paths = await fixture()
+    const artifactLink = join(join(paths.artifactPath, '..'), 'linked-setup.exe')
+    const productInputLink = join(join(paths.productInputPath, '..'), 'linked-product-input.json')
+    await symlink(paths.artifactPath, artifactLink)
+    await symlink(paths.productInputPath, productInputLink)
+
+    await expect(createDesktopCandidateDescriptor({
+      artifactPath: artifactLink,
+      descriptorPath: paths.descriptorPath,
+      productInputPath: paths.productInputPath,
+      sourceSha,
+      platform: 'win-x64',
+      mode: 'quick',
+    })).rejects.toThrow(/artifact must be a physical regular file/u)
+
+    await expect(createDesktopCandidateDescriptor({
+      artifactPath: paths.artifactPath,
+      descriptorPath: paths.descriptorPath,
+      productInputPath: productInputLink,
+      sourceSha,
+      platform: 'win-x64',
+      mode: 'quick',
+    })).rejects.toThrow(/product input must be a physical regular file/u)
+  })
+
+  it('rejects non-portable characters, edge whitespace, trailing dots, and Windows device names', async () => {
+    const paths = await fixture()
+    const valid = await createDesktopCandidateDescriptor({
+      ...paths,
+      sourceSha,
+      platform: 'win-x64',
+      mode: 'quick',
+    })
+    const invalidNames = [
+      'bad<name.exe',
+      'bad|name.exe',
+      'bad\u0001name.exe',
+      ' setup.exe',
+      'setup.exe ',
+      'setup.exe.',
+      'CON',
+      'con.exe',
+      'PRN.txt',
+      'AUX',
+      'NUL.json',
+      'COM1.exe',
+      'LPT9.exe',
+    ]
+
+    for (const basename of invalidNames) {
+      await writeFile(paths.descriptorPath, `${JSON.stringify({
+        ...valid,
+        artifact: { ...valid.artifact, basename },
+      })}\n`)
+      await expect(verifyDesktopCandidateDescriptor({
+        artifactPath: paths.artifactPath,
+        descriptorPath: paths.descriptorPath,
+        productInputPath: paths.productInputPath,
+        expectedProductInputSha256: productInputSha256,
+        sourceSha,
+        platform: 'win-x64',
+        mode: 'quick',
+      }), basename).rejects.toThrow(/portable basename/u)
     }
   })
 })

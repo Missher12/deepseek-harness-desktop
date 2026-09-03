@@ -1,0 +1,52 @@
+name: Desktop Node setup
+description: Install immutable Desktop dependencies with bounded read-only caches
+
+inputs:
+  working-directory:
+    description: Repository checkout directory
+    required: true
+  cache-write:
+    description: Allow this job to be the unique exact-lock cache writer
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+      with:
+        version: '11.7.0'
+        dest: ${{ runner.temp }}/setup-pnpm
+
+    - uses: actions/setup-node@v6
+      with:
+        node-version: '24'
+
+    - name: Resolve read-only cache paths
+      id: cache-paths
+      shell: pwsh
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        "pnpm-store=$((pnpm store path --silent).Trim())" >> $env:GITHUB_OUTPUT
+        "PLAYWRIGHT_BROWSERS_PATH=$env:RUNNER_TEMP\ms-playwright" >> $env:GITHUB_ENV
+
+    - uses: actions/cache/restore@v4
+      if: inputs.cache-write != 'true'
+      with:
+        path: |
+          ${{ steps.cache-paths.outputs.pnpm-store }}
+          ${{ runner.temp }}/ms-playwright
+        key: desktop-node-24-${{ runner.os }}-${{ hashFiles(format('{0}/pnpm-lock.yaml', inputs.working-directory)) }}
+
+    - uses: actions/cache@v4
+      if: inputs.cache-write == 'true'
+      with:
+        path: |
+          ${{ steps.cache-paths.outputs.pnpm-store }}
+          ${{ runner.temp }}/ms-playwright
+        key: desktop-node-24-${{ runner.os }}-${{ hashFiles(format('{0}/pnpm-lock.yaml', inputs.working-directory)) }}
+
+    - name: Install immutable dependencies
+      shell: pwsh
+      working-directory: ${{ inputs.working-directory }}
+      run: pnpm install --frozen-lockfile

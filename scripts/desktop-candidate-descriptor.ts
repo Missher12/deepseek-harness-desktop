@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -38,6 +38,8 @@ export interface VerifyDesktopCandidateDescriptorOptions {
   readonly mode: DesktopCandidateMode
   readonly artifactPath: string
   readonly descriptorPath: string
+  readonly productInputPath: string
+  readonly expectedProductInputSha256: string
 }
 
 const LOWER_SHA256 = /^[0-9a-f]{64}$/u
@@ -84,12 +86,21 @@ function assertSha256(value: unknown, label: string): asserts value is string {
 }
 
 function assertPortableBasename(value: unknown): asserts value is string {
+  const hasControlCharacter = typeof value === 'string' && Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0)
+    return codePoint !== undefined && (codePoint <= 0x1F || codePoint === 0x7F)
+  })
+  const reservedStem = typeof value === 'string' ? value.split('.', 1)[0]?.toUpperCase() : undefined
   if (typeof value !== 'string'
     || value.length === 0
     || value === '.'
     || value === '..'
-    || /[\\/:]/u.test(value)) {
-    fail('artifact.basename must be a portable basename without a path')
+    || value.trim() !== value
+    || value.endsWith('.')
+    || hasControlCharacter
+    || /[<>:"/\\|?*]/u.test(value)
+    || (reservedStem !== undefined && /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/u.test(reservedStem))) {
+    fail('artifact.basename must be a portable basename')
   }
 }
 
@@ -122,14 +133,19 @@ async function hashFile(path: string): Promise<string> {
   return hash.digest('hex')
 }
 
+async function inspectPhysicalFile(path: string, label: string): Promise<number> {
+  const details = await lstat(path)
+  if (details.isSymbolicLink() || !details.isFile()) fail(`${label} must be a physical regular file`)
+  return details.size
+}
+
 async function inspectArtifact(path: string): Promise<DesktopCandidateDescriptor['artifact']> {
-  const details = await stat(path)
-  if (!details.isFile()) fail('artifact must be a file')
+  const bytes = await inspectPhysicalFile(path, 'artifact')
   const name = basename(path)
   assertPortableBasename(name)
   return {
     basename: name,
-    bytes: details.size,
+    bytes,
     sha256: await hashFile(path),
   }
 }
@@ -141,8 +157,7 @@ export async function createDesktopCandidateDescriptor(
   assertSourceSha(options.sourceSha)
   assertPlatform(options.platform)
   assertMode(options.mode)
-  const productInput = await stat(options.productInputPath)
-  if (!productInput.isFile()) fail('product input must be a file')
+  await inspectPhysicalFile(options.productInputPath, 'product input')
   const descriptor = parseDesktopCandidateDescriptor({
     schemaVersion: 1,
     sourceSha: options.sourceSha,
@@ -163,6 +178,7 @@ export async function verifyDesktopCandidateDescriptor(
   assertSourceSha(options.sourceSha)
   assertPlatform(options.platform)
   assertMode(options.mode)
+  assertSha256(options.expectedProductInputSha256, 'expected product input SHA-256')
   let raw: unknown
   try {
     raw = JSON.parse(await readFile(options.descriptorPath, 'utf8')) as unknown
@@ -173,6 +189,13 @@ export async function verifyDesktopCandidateDescriptor(
   if (descriptor.sourceSha !== options.sourceSha) fail('candidate source mismatch')
   if (descriptor.platform !== options.platform) fail('candidate platform mismatch')
   if (descriptor.mode !== options.mode) fail('candidate mode mismatch')
+  if (descriptor.productInputSha256 !== options.expectedProductInputSha256) {
+    fail('expected product input SHA-256 mismatch')
+  }
+  await inspectPhysicalFile(options.productInputPath, 'product input')
+  if (await hashFile(options.productInputPath) !== descriptor.productInputSha256) {
+    fail('product input SHA-256 mismatch')
+  }
   const artifact = await inspectArtifact(options.artifactPath)
   if (descriptor.artifact.basename !== artifact.basename) fail('artifact basename mismatch')
   if (descriptor.artifact.bytes !== artifact.bytes) fail('artifact byte length mismatch')
@@ -201,7 +224,7 @@ function parseArguments(args: readonly string[]): ParsedArguments {
   }
   const expected = command === 'create'
     ? ['source', 'platform', 'mode', 'artifact', 'product-input', 'output']
-    : ['source', 'platform', 'mode', 'artifact', 'descriptor']
+    : ['source', 'platform', 'mode', 'artifact', 'product-input', 'product-input-sha256', 'descriptor']
   assertExactKeys(values, expected, `${command} arguments`)
   return { command, values }
 }
@@ -232,8 +255,20 @@ async function main(args: readonly string[]): Promise<void> {
     return
   }
   const descriptorPath = parsed.values.descriptor
-  if (descriptorPath === undefined) fail('descriptor path is required')
-  await verifyDesktopCandidateDescriptor({ sourceSha, platform, mode, artifactPath, descriptorPath })
+  const productInputPath = parsed.values['product-input']
+  const expectedProductInputSha256 = parsed.values['product-input-sha256']
+  if (descriptorPath === undefined || productInputPath === undefined || expectedProductInputSha256 === undefined) {
+    fail('verify paths and product input SHA-256 are required')
+  }
+  await verifyDesktopCandidateDescriptor({
+    sourceSha,
+    platform,
+    mode,
+    artifactPath,
+    descriptorPath,
+    productInputPath,
+    expectedProductInputSha256,
+  })
   process.stdout.write('desktop candidate descriptor: verified\n')
 }
 

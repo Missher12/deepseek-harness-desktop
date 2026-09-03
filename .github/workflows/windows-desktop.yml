@@ -3,6 +3,14 @@ name: Windows Desktop Setup
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Native validation depth
+        type: choice
+        default: quick
+        options:
+          - quick
+          - full
 
 permissions:
   contents: read
@@ -13,15 +21,23 @@ concurrency:
 
 env:
   DSH_TELEMETRY_DISABLED: '1'
+  DSH_DESKTOP_CANDIDATE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'quick' }}
 
 jobs:
-  build-install-smoke:
-    name: build, install, launch, and uninstall
+  build-candidate:
+    name: build immutable candidate once
     runs-on: windows-2025
-    timeout-minutes: 60
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: s
+    outputs:
+      candidate-name: ${{ steps.candidate.outputs.name }}
+      mode: ${{ steps.candidate.outputs.mode }}
+      product-input-sha256: ${{ steps.candidate.outputs.product-input-sha256 }}
+      setup-basename: ${{ steps.desktop.outputs.artifact }}
+      source-sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.desktop.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -56,14 +72,10 @@ jobs:
               [ref]$tokens,
               [ref]$parseErrors
             )
-            if (@($parseErrors).Count -eq 0) {
-              continue
-            }
+            if (@($parseErrors).Count -eq 0) { continue }
             $fileName = [System.IO.Path]::GetFileName($scriptName)
             foreach ($parseError in @($parseErrors)) {
-              $lineNumber = $parseError.Extent.StartLineNumber
-              $columnNumber = $parseError.Extent.StartColumnNumber
-              Write-Output ('{0}:{1}:{2}: {3}' -f $fileName, $lineNumber, $columnNumber, $parseError.Message)
+              Write-Output ('{0}:{1}:{2}: {3}' -f $fileName, $parseError.Extent.StartLineNumber, $parseError.Extent.StartColumnNumber, $parseError.Message)
             }
             throw "PowerShell parse failed for $fileName."
           }
@@ -74,23 +86,18 @@ jobs:
           reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
           /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
 
-      - uses: pnpm/action-setup@v4
+      - uses: ./s/.github/actions/desktop-node-setup
         with:
-          version: '11.7.0'
-          dest: ${{ runner.temp }}/setup-pnpm
+          working-directory: s
+          cache-write: 'true'
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-
-      - name: Install immutable dependencies
-        shell: pwsh
-        run: pnpm install --frozen-lockfile
-
-      - name: Exercise legacy fallback migration contracts
+      - name: Exercise candidate and native smoke contracts
         shell: pwsh
         run: >-
           pnpm exec vitest run
+          scripts/desktop-candidate-descriptor.spec.ts
+          scripts/windows-desktop-runtime-evidence.spec.ts
+          scripts/windows-desktop-installer-ui-smoke.spec.ts
           packages/boot/app-boot/tests/profile.spec.ts
           apps/desktop/tests/packaged-smoke-helpers.spec.ts
           --config vitest.config.ts
@@ -124,137 +131,249 @@ jobs:
           $manifestPath = [System.IO.Path]::GetFullPath('apps/desktop/package.json')
           pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package --output $inventoryPath --policy windows-x64 --manifest $manifestPath $unpacked
           if ($LASTEXITCODE -ne 0) { throw "Staged package inventory failed with exit code $LASTEXITCODE." }
-          $setupFile = Get-Item -LiteralPath $workspaceArtifact
-          $setupEvidence = [ordered]@{
-            schemaVersion = 1
-            path = $setupFile.Name
-            bytes = $setupFile.Length
-            sha256 = (Get-FileHash -LiteralPath $setupFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          }
-          [System.IO.File]::WriteAllText(
-            'apps/desktop/release/desktop-package-setup.json',
-            (($setupEvidence | ConvertTo-Json) + "`n"),
-            [System.Text.UTF8Encoding]::new($false)
-          )
 
-      - name: Measure the pinned 0.5.1 parent on this runner
+      - name: Create immutable candidate descriptor
+        id: candidate
         shell: pwsh
         run: |
-          $baselineName = 'DeepSeek-Harness-Setup-0.5.1-win-x64.exe'
-          $baselinePath = Join-Path $env:RUNNER_TEMP $baselineName
-          $baselineUrl = "https://github.com/Missher12/deepseek-harness-desktop/releases/download/desktop-v0.5.1/$baselineName"
-          Invoke-WebRequest -Uri $baselineUrl -OutFile $baselinePath
-          $baseline = Get-Item -LiteralPath $baselinePath
-          if ($baseline.Length -ne 154116788) {
-            throw "0.5.1 Setup size mismatch: expected 154116788, got $($baseline.Length)."
+          $artifact = [System.IO.Path]::GetFullPath('apps/desktop/release/${{ steps.desktop.outputs.artifact }}')
+          $productInput = [System.IO.Path]::GetFullPath('apps/desktop/release/desktop-package-staged.json')
+          foreach ($inputPath in @($artifact, $productInput)) {
+            $inputFile = Get-Item -LiteralPath $inputPath -Force
+            if (-not ($inputFile -is [System.IO.FileInfo]) -or (($inputFile.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) {
+              throw "Candidate input must be a physical regular file: $($inputFile.Name)"
+            }
           }
-          $baselineHash = (Get-FileHash -LiteralPath $baselinePath -Algorithm SHA256).Hash.ToLowerInvariant()
-          $expectedHash = 'f4d661c6ff5fad93a50a6de2801da207efb54c021434c745b4c46c0982e57318'
-          if ($baselineHash -ne $expectedHash) {
-            throw "0.5.1 Setup SHA-256 mismatch: expected $expectedHash, got $baselineHash."
-          }
-          $baselineSetupEvidence = [ordered]@{
-            schemaVersion = 1
-            path = $baseline.Name
-            bytes = $baseline.Length
-            sha256 = $baselineHash
-          }
-          [System.IO.File]::WriteAllText(
-            'apps/desktop/release/desktop-package-setup-baseline-0.5.1.json',
-            (($baselineSetupEvidence | ConvertTo-Json) + "`n"),
-            [System.Text.UTF8Encoding]::new($false)
-          )
-          ./scripts/windows-desktop-setup-smoke.ps1 `
-            -SetupPath $baselinePath `
-            -StartupSummaryPath apps/desktop/release/desktop-startup-baseline-0.5.1.json `
-            -PackageInventoryPath apps/desktop/release/desktop-package-installed-baseline-0.5.1.json `
-            -InstallationEvidencePath apps/desktop/release/desktop-windows-install-evidence-baseline-0.5.1.json `
-            -RuntimeEvidenceOnly
-          Remove-Item -LiteralPath $baselinePath -Force
+          $productInputSha256 = (Get-FileHash -LiteralPath $productInput -Algorithm SHA256).Hash.ToLowerInvariant()
+          $descriptor = [System.IO.Path]::GetFullPath('apps/desktop/release/desktop-candidate-win-x64.json')
+          pnpm --filter '@deepseek-ai/dsh-desktop' run candidate:descriptor create --source ${{ steps.source.outputs.sha }} --platform win-x64 --mode $env:DSH_DESKTOP_CANDIDATE_MODE --artifact $artifact --product-input $productInput --output $descriptor
+          if ($LASTEXITCODE -ne 0) { throw "Candidate descriptor creation failed with exit code $LASTEXITCODE." }
+          "name=DeepSeek-Harness-win-x64-${{ steps.source.outputs.sha }}-$env:DSH_DESKTOP_CANDIDATE_MODE" >> $env:GITHUB_OUTPUT
+          "mode=$env:DSH_DESKTOP_CANDIDATE_MODE" >> $env:GITHUB_OUTPUT
+          "product-input-sha256=$productInputSha256" >> $env:GITHUB_OUTPUT
 
-      - name: Exercise the visible installer pages
-        shell: pwsh
-        run: >-
-          ./scripts/windows-desktop-installer-ui-smoke.ps1
-          -SetupPath apps/desktop/release/${{ steps.desktop.outputs.artifact }}
-          -EvidenceRoot apps/desktop/release/windows-installer-ui-evidence
-
-      - name: Install and exercise the packaged application lifecycle
-        shell: pwsh
-        run: >-
-          ./scripts/windows-desktop-setup-smoke.ps1
-          -SetupPath apps/desktop/release/${{ steps.desktop.outputs.artifact }}
-          -StartupSummaryPath apps/desktop/release/desktop-startup-summary.json
-          -PackageInventoryPath apps/desktop/release/desktop-package-installed.json
-          -InstallationEvidencePath apps/desktop/release/desktop-windows-install-evidence.json
-          -VisualEvidenceRoot apps/desktop/release/windows-native-visual-evidence
-          -PackagePolicy windows-x64
-          -PackageManifestPath apps/desktop/package.json
-
-      - name: Preserve portable runtime evidence
+      - name: Upload immutable candidate
         uses: actions/upload-artifact@v7
         with:
-          name: Windows-runtime-evidence-${{ steps.source.outputs.sha }}
+          name: ${{ steps.candidate.outputs.name }}
           path: |
-            s/apps/desktop/release/desktop-startup-summary.json
-            s/apps/desktop/release/desktop-package-installed.json
-            s/apps/desktop/release/desktop-windows-install-evidence.json
+            s/apps/desktop/release/${{ steps.desktop.outputs.artifact }}
             s/apps/desktop/release/desktop-package-staged.json
-            s/apps/desktop/release/desktop-package-setup.json
-            s/apps/desktop/release/desktop-startup-baseline-0.5.1.json
-            s/apps/desktop/release/desktop-package-installed-baseline-0.5.1.json
-            s/apps/desktop/release/desktop-windows-install-evidence-baseline-0.5.1.json
-            s/apps/desktop/release/desktop-package-setup-baseline-0.5.1.json
+            s/apps/desktop/release/desktop-candidate-win-x64.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1
 
-      - name: Preserve native title-bar diagnostics
+  lifecycle:
+    name: validate installed lifecycle
+    needs: build-candidate
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: s
+    steps:
+      - uses: actions/checkout@v6
+        with: &consumer-checkout
+          path: s
+          persist-credentials: false
+          ref: ${{ needs.build-candidate.outputs.source-sha }}
+      - uses: ./s/.github/actions/desktop-node-setup
+        with: &desktop-setup
+          working-directory: s
+      - uses: actions/download-artifact@v7
+        with: &candidate-download
+          name: ${{ needs.build-candidate.outputs.candidate-name }}
+          path: s/apps/desktop/release/candidate
+      - name: Verify immutable candidate
+        shell: pwsh
+        run: &verify-candidate |
+          $candidateRoot = [System.IO.Path]::GetFullPath('apps/desktop/release/candidate')
+          $artifact = Join-Path $candidateRoot '${{ needs.build-candidate.outputs.setup-basename }}'
+          $productInput = Join-Path $candidateRoot 'desktop-package-staged.json'
+          foreach ($inputPath in @($artifact, $productInput)) {
+            $inputFile = Get-Item -LiteralPath $inputPath -Force
+            if (-not ($inputFile -is [System.IO.FileInfo]) -or (($inputFile.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) {
+              throw "Downloaded candidate input must be a physical regular file: $($inputFile.Name)"
+            }
+          }
+          pnpm --filter '@deepseek-ai/dsh-desktop' run candidate:descriptor verify --source ${{ needs.build-candidate.outputs.source-sha }} --platform win-x64 --mode ${{ needs.build-candidate.outputs.mode }} --artifact $artifact --product-input $productInput --product-input-sha256 ${{ needs.build-candidate.outputs.product-input-sha256 }} --descriptor (Join-Path $candidateRoot 'desktop-candidate-win-x64.json')
+          if ($LASTEXITCODE -ne 0) { throw "Candidate verification failed with exit code $LASTEXITCODE." }
+      - name: Exercise installed application lifecycle
+        shell: pwsh
+        run: |
+          $operation = if ('${{ needs.build-candidate.outputs.mode }}' -eq 'full') { 'lifecycle' } else { 'quick' }
+          ./scripts/windows-desktop-setup-smoke.ps1 -SetupPath apps/desktop/release/candidate/${{ needs.build-candidate.outputs.setup-basename }} -Operation $operation -PackagePolicy windows-x64 -PackageManifestPath apps/desktop/package.json
+      - name: Preserve bounded lifecycle evidence
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: Windows-titlebar-diagnostics-${{ steps.source.outputs.sha }}
+          name: Windows-lifecycle-evidence-${{ needs.build-candidate.outputs.source-sha }}
           path: |
             s/apps/desktop/release/desktop-smoke-titlebar-win32.json
             s/apps/desktop/release/desktop-smoke-titlebar-win32.png
-          if-no-files-found: ignore
-          retention-days: 14
-
-      - name: Preserve bounded native visual evidence
-        uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: Windows-native-visual-evidence-${{ steps.source.outputs.sha }}
-          path: |
-            s/apps/desktop/release/windows-installer-ui-evidence/*.png
-            s/apps/desktop/release/windows-native-visual-evidence/*.png
-            s/apps/desktop/release/windows-native-visual-evidence/*.json
-            s/apps/desktop/release/desktop-smoke-win32.png
-            s/apps/desktop/release/desktop-smoke-messenger-win32.png
-            s/apps/desktop/release/desktop-smoke-workbench-win32.png
-            s/apps/desktop/release/desktop-smoke-reasoning-win32.png
-            s/apps/desktop/release/desktop-smoke-usage-win32.png
-            s/apps/desktop/release/desktop-smoke-personalization-win32.png
-            s/apps/desktop/release/desktop-smoke-memory-win32.png
-            s/apps/desktop/release/desktop-smoke-market-win32.png
-            s/apps/desktop/release/desktop-smoke-system-update-win32.png
-            s/apps/desktop/release/desktop-smoke-dpi-150-win32.png
+            s/apps/desktop/release/desktop-smoke-*.png
             s/apps/desktop/release/desktop-smoke-dpi-150-win32.json
           if-no-files-found: ignore
           retention-days: 14
 
+  installer-ui:
+    name: validate visible installer pages
+    needs: build-candidate
+    if: needs.build-candidate.outputs.mode == 'full'
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: s
+    steps:
+      - uses: actions/checkout@v6
+        with: *consumer-checkout
+      - uses: ./s/.github/actions/desktop-node-setup
+        with: *desktop-setup
+      - uses: actions/download-artifact@v7
+        with: *candidate-download
+      - name: Verify immutable candidate
+        shell: pwsh
+        run: *verify-candidate
+      - name: Exercise the visible installer pages
+        shell: pwsh
+        run: ./scripts/windows-desktop-installer-ui-smoke.ps1 -SetupPath apps/desktop/release/candidate/${{ needs.build-candidate.outputs.setup-basename }} -EvidenceRoot apps/desktop/release/windows-installer-ui-evidence
+      - name: Preserve bounded installer evidence
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Windows-installer-ui-evidence-${{ needs.build-candidate.outputs.source-sha }}
+          path: s/apps/desktop/release/windows-installer-ui-evidence/*.png
+          if-no-files-found: ignore
+          retention-days: 14
+
+  visual:
+    name: validate native visuals at 100 and 150 percent
+    needs: build-candidate
+    if: needs.build-candidate.outputs.mode == 'full'
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: s
+    steps:
+      - uses: actions/checkout@v6
+        with: *consumer-checkout
+      - uses: ./s/.github/actions/desktop-node-setup
+        with: *desktop-setup
+      - uses: actions/download-artifact@v7
+        with: *candidate-download
+      - name: Verify immutable candidate
+        shell: pwsh
+        run: *verify-candidate
+      - name: Exercise native visuals
+        shell: pwsh
+        run: ./scripts/windows-desktop-setup-smoke.ps1 -SetupPath apps/desktop/release/candidate/${{ needs.build-candidate.outputs.setup-basename }} -Operation visual -VisualEvidenceRoot apps/desktop/release/windows-native-visual-evidence -PackagePolicy windows-x64 -PackageManifestPath apps/desktop/package.json
+      - name: Preserve bounded visual evidence
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Windows-visual-evidence-${{ needs.build-candidate.outputs.source-sha }}
+          path: |
+            s/apps/desktop/release/windows-native-visual-evidence/*.png
+            s/apps/desktop/release/windows-native-visual-evidence/*.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  performance:
+    name: compare the pinned parent and candidate
+    needs: build-candidate
+    if: needs.build-candidate.outputs.mode == 'full'
+    runs-on: windows-2025
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: s
+    steps:
+      - uses: actions/checkout@v6
+        with: *consumer-checkout
+      - uses: ./s/.github/actions/desktop-node-setup
+        with: *desktop-setup
+      - uses: actions/download-artifact@v7
+        with: *candidate-download
+      - name: Verify immutable candidate
+        shell: pwsh
+        run: *verify-candidate
+      - name: Measure the pinned 0.5.2 parent and candidate
+        shell: pwsh
+        run: |
+          $baselineName = 'DeepSeek-Harness-Setup-0.5.2-win-x64.exe'
+          $baselinePath = Join-Path $env:RUNNER_TEMP $baselineName
+          Invoke-WebRequest -Uri "https://github.com/Missher12/deepseek-harness-desktop/releases/download/desktop-v0.5.2/$baselineName" -OutFile $baselinePath
+          $baseline = Get-Item -LiteralPath $baselinePath -Force
+          if ($baseline.Length -ne 145768890) { throw "0.5.2 Setup size mismatch: $($baseline.Length)." }
+          $baselineHash = (Get-FileHash -LiteralPath $baselinePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($baselineHash -ne '7694568950fb4812788f28066d22bbf308f88255f82b52e7f0719e0a923b06d7') { throw '0.5.2 Setup SHA-256 mismatch.' }
+          $baselineSetupEvidence = [ordered]@{ schemaVersion = 1; path = $baseline.Name; bytes = $baseline.Length; sha256 = $baselineHash }
+          [System.IO.File]::WriteAllText('apps/desktop/release/desktop-package-setup-baseline-0.5.2.json', (($baselineSetupEvidence | ConvertTo-Json) + "`n"), [System.Text.UTF8Encoding]::new($false))
+          ./scripts/windows-desktop-setup-smoke.ps1 -SetupPath $baselinePath -Operation performance -StartupSummaryPath apps/desktop/release/desktop-startup-baseline-0.5.2.json -PackageInventoryPath apps/desktop/release/desktop-package-installed-baseline-0.5.2.json -InstallationEvidencePath apps/desktop/release/desktop-windows-install-evidence-baseline-0.5.2.json
+          ./scripts/windows-desktop-setup-smoke.ps1 -SetupPath apps/desktop/release/candidate/${{ needs.build-candidate.outputs.setup-basename }} -Operation performance -StartupSummaryPath apps/desktop/release/desktop-startup-summary.json -PackageInventoryPath apps/desktop/release/desktop-package-installed.json -InstallationEvidencePath apps/desktop/release/desktop-windows-install-evidence.json -PackagePolicy windows-x64 -PackageManifestPath apps/desktop/package.json
+          Remove-Item -LiteralPath $baselinePath -Force
+      - name: Preserve portable performance evidence
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Windows-performance-evidence-${{ needs.build-candidate.outputs.source-sha }}
+          path: |
+            s/apps/desktop/release/desktop-startup-summary.json
+            s/apps/desktop/release/desktop-package-installed.json
+            s/apps/desktop/release/desktop-windows-install-evidence.json
+            s/apps/desktop/release/desktop-startup-baseline-0.5.2.json
+            s/apps/desktop/release/desktop-package-installed-baseline-0.5.2.json
+            s/apps/desktop/release/desktop-windows-install-evidence-baseline-0.5.2.json
+            s/apps/desktop/release/desktop-package-setup-baseline-0.5.2.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  publish-candidate:
+    name: expose fully validated candidate
+    needs:
+      - build-candidate
+      - lifecycle
+      - installer-ui
+      - visual
+      - performance
+    if: >-
+      always() &&
+      needs.build-candidate.result == 'success' &&
+      needs.lifecycle.result == 'success' &&
+      (needs.build-candidate.outputs.mode != 'full' ||
+        (needs.installer-ui.result == 'success' &&
+         needs.visual.result == 'success' &&
+         needs.performance.result == 'success'))
+    runs-on: windows-2025
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: s
+    steps:
+      - uses: actions/checkout@v6
+        with: *consumer-checkout
+      - uses: ./s/.github/actions/desktop-node-setup
+        with: *desktop-setup
+      - uses: actions/download-artifact@v7
+        with: *candidate-download
+      - name: Verify immutable candidate
+        shell: pwsh
+        run: *verify-candidate
       - name: Record SHA-256
         shell: pwsh
         run: |
-          $artifact = 'apps/desktop/release/${{ steps.desktop.outputs.artifact }}'
+          $artifact = 'apps/desktop/release/candidate/${{ needs.build-candidate.outputs.setup-basename }}'
           $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
-          $checksum = "$hash  $(Split-Path -Leaf $artifact)`n"
-          [System.IO.File]::WriteAllText("$artifact.sha256", $checksum, [System.Text.Encoding]::ASCII)
-
+          [System.IO.File]::WriteAllText("$artifact.sha256", "$hash  ${{ needs.build-candidate.outputs.setup-basename }}`n", [System.Text.Encoding]::ASCII)
       - uses: actions/upload-artifact@v7
         with:
-          name: DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ steps.source.outputs.sha }}
+          name: DeepSeek-Harness-Setup-win-x64-${{ needs.build-candidate.outputs.version }}-${{ needs.build-candidate.outputs.source-sha }}
           path: |
-            s/apps/desktop/release/${{ steps.desktop.outputs.artifact }}
-            s/apps/desktop/release/${{ steps.desktop.outputs.artifact }}.sha256
+            s/apps/desktop/release/candidate/${{ needs.build-candidate.outputs.setup-basename }}
+            s/apps/desktop/release/candidate/${{ needs.build-candidate.outputs.setup-basename }}.sha256
+            s/apps/desktop/release/candidate/desktop-candidate-win-x64.json
+            s/apps/desktop/release/candidate/desktop-package-staged.json
           if-no-files-found: error
           retention-days: 14

@@ -8,7 +8,8 @@ param(
   [ValidateSet('windows-x64')]
   [string]$PackagePolicy,
   [string]$PackageManifestPath,
-  [switch]$RuntimeEvidenceOnly
+  [ValidateSet('quick', 'lifecycle', 'performance', 'visual')]
+  [string]$Operation = 'lifecycle'
 )
 
 Set-StrictMode -Version Latest
@@ -22,9 +23,25 @@ function Invoke-CheckedProcess {
     [string[]]$ArgumentList
   )
 
-  $process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -Wait -PassThru
-  if ($process.ExitCode -ne 0) {
-    throw "Process failed with exit code $($process.ExitCode): $FilePath $($ArgumentList -join ' ')"
+  $process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -PassThru
+  $processIds = @()
+  try {
+    Start-Sleep -Milliseconds 100
+    $processIds = @(Get-DescendantProcessIds -RootProcessId $process.Id)
+    if (-not $process.WaitForExit(90000)) {
+      throw "Process did not exit within 90 seconds: $FilePath"
+    }
+    if ($process.ExitCode -ne 0) {
+      throw "Process failed with exit code $($process.ExitCode): $FilePath $($ArgumentList -join ' ')"
+    }
+    Wait-ProcessIdsStopped -ProcessIds $processIds
+  }
+  finally {
+    foreach ($processId in @($processIds | Sort-Object -Descending)) {
+      Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    }
+    if ($processIds.Count -ne 0) { Wait-ProcessIdsStopped -ProcessIds $processIds }
+    $process.Dispose()
   }
 }
 
@@ -46,13 +63,23 @@ function Invoke-CheckedNsisInstall {
   if ($null -eq $process) {
     throw 'Windows did not start the Setup executable.'
   }
+  $processIds = @()
   try {
-    $process.WaitForExit()
+    Start-Sleep -Milliseconds 100
+    $processIds = @(Get-DescendantProcessIds -RootProcessId $process.Id)
+    if (-not $process.WaitForExit(180000)) {
+      throw "Setup did not exit within 180 seconds: $FilePath"
+    }
     if ($process.ExitCode -ne 0) {
       throw "Setup failed with exit code $($process.ExitCode): $FilePath"
     }
+    Wait-ProcessIdsStopped -ProcessIds $processIds
   }
   finally {
+    foreach ($processId in @($processIds | Sort-Object -Descending)) {
+      Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    }
+    if ($processIds.Count -ne 0) { Wait-ProcessIdsStopped -ProcessIds $processIds }
     $process.Dispose()
   }
 }
@@ -128,6 +155,41 @@ function Wait-IsolatedInstalledProcessesStopped {
   }
   if ($remaining.Count -ne 0) {
     throw "Desktop startup sample left $($remaining.Count) installed process(es) running."
+  }
+}
+
+function Get-DescendantProcessIds {
+  param([Parameter(Mandatory = $true)][int]$RootProcessId)
+
+  $rows = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId)
+  $found = [System.Collections.Generic.List[int]]::new()
+  $seen = [System.Collections.Generic.HashSet[int]]::new()
+  $found.Add($RootProcessId)
+  [void]$seen.Add($RootProcessId)
+  for ($index = 0; $index -lt $found.Count; $index += 1) {
+    foreach ($row in @($rows | Where-Object { $_.ParentProcessId -eq $found[$index] })) {
+      $child = [int]$row.ProcessId
+      if ($seen.Add($child)) { $found.Add($child) }
+    }
+  }
+  return @($found)
+}
+
+function Wait-ProcessIdsStopped {
+  param(
+    [Parameter(Mandatory = $true)]
+    [int[]]$ProcessIds,
+    [int]$TimeoutSeconds = 30
+  )
+
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  $remaining = @($ProcessIds | Where-Object { $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue) })
+  while ($remaining.Count -ne 0 -and [DateTime]::UtcNow -lt $deadline) {
+    Start-Sleep -Milliseconds 250
+    $remaining = @($ProcessIds | Where-Object { $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue) })
+  }
+  if ($remaining.Count -ne 0) {
+    throw "Desktop smoke left $($remaining.Count) process tree member(s) running."
   }
 }
 
@@ -282,6 +344,7 @@ function Invoke-DesktopStartupSample {
     throw "Windows did not start Desktop startup sample $SampleKind-$SampleIndex."
   }
 
+  $trackedProcessIds = @()
   try {
     $startupDeadline = [DateTime]::UtcNow.AddSeconds(120)
     $running = $false
@@ -300,12 +363,14 @@ function Invoke-DesktopStartupSample {
       throw "Desktop startup sample $SampleKind-$SampleIndex missed its startup deadline."
     }
 
+    $trackedProcessIds = @(Get-DescendantProcessIds -RootProcessId $process.Id)
     if (-not $process.CloseMainWindow()) {
       throw "Desktop startup sample $SampleKind-$SampleIndex did not expose a closable native window."
     }
     if (-not $process.WaitForExit(60000)) {
       throw "Desktop startup sample $SampleKind-$SampleIndex did not exit after native close."
     }
+    Wait-ProcessIdsStopped -ProcessIds $trackedProcessIds
     Wait-IsolatedInstalledProcessesStopped -ExecutablePath $ExecutablePath
 
     $startupPattern = '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z startup (app-ready|window-prerequisites|loading-visible|fallback-ready|url-reported|harness-ready|desktop-running): [0-9]+ms$'
@@ -318,8 +383,14 @@ function Invoke-DesktopStartupSample {
     return $sampleLog
   }
   finally {
-    if (-not $process.HasExited) {
-      Stop-IsolatedInstalledProcesses -ExecutablePath $ExecutablePath
+    if ($trackedProcessIds.Count -eq 0 -and -not $process.HasExited) {
+      $trackedProcessIds = @(Get-DescendantProcessIds -RootProcessId $process.Id)
+    }
+    foreach ($processId in @($trackedProcessIds | Sort-Object -Descending)) {
+      Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    }
+    if ($trackedProcessIds.Count -ne 0) {
+      Wait-ProcessIdsStopped -ProcessIds $trackedProcessIds
     }
     $process.Dispose()
   }
@@ -468,25 +539,25 @@ try {
     Assert-ManagedPackageRootsPhysical -InstallRoot $installRoot -ManifestPath $resolvedPackageManifest
   }
 
-  Write-DesktopRuntimeEvidence `
-    -ExecutablePath $executable `
-    -TemporaryRoot $temporaryRoot `
-    -SummaryPath $StartupSummaryPath `
-    -InventoryPath $PackageInventoryPath `
-    -PackagePolicy $PackagePolicy `
-    -PackageManifestPath $PackageManifestPath
+  if ($Operation -eq 'performance') {
+    Write-DesktopRuntimeEvidence `
+      -ExecutablePath $executable `
+      -TemporaryRoot $temporaryRoot `
+      -SummaryPath $StartupSummaryPath `
+      -InventoryPath $PackageInventoryPath `
+      -PackagePolicy $PackagePolicy `
+      -PackageManifestPath $PackageManifestPath
 
-  $shortcutEvidence = @(
-    Get-InstalledShortcutEvidence -ShortcutPath $desktopShortcut -ExecutablePath $executable -Location 'desktop'
-    Get-InstalledShortcutEvidence -ShortcutPath $startMenuShortcut -ExecutablePath $executable -Location 'start-menu'
-  )
-  Write-InstalledPackageEvidence `
-    -InstallRoot $installRoot `
-    -InventoryPath $PackageInventoryPath `
-    -OutputPath $InstallationEvidencePath `
-    -Shortcuts $shortcutEvidence
-
-  if (-not $RuntimeEvidenceOnly) {
+    $shortcutEvidence = @(
+      Get-InstalledShortcutEvidence -ShortcutPath $desktopShortcut -ExecutablePath $executable -Location 'desktop'
+      Get-InstalledShortcutEvidence -ShortcutPath $startMenuShortcut -ExecutablePath $executable -Location 'start-menu'
+    )
+    Write-InstalledPackageEvidence `
+      -InstallRoot $installRoot `
+      -InventoryPath $PackageInventoryPath `
+      -OutputPath $InstallationEvidencePath `
+      -Shortcuts $shortcutEvidence
+  } elseif ($Operation -eq 'lifecycle') {
     $env:DSH_WINDOWS_DESKTOP_EXECUTABLE = $executable
     $env:DSH_DESKTOP_SMOKE_ROOT = $temporaryRoot
     $env:DSH_DESKTOP_SMOKE_DSH_HOME = $harnessHome
@@ -504,7 +575,7 @@ try {
     if ($legacyRecoverySnapshot.Count -eq 0) {
       throw 'Packaged smoke did not preserve the recovered legacy module fallback files.'
     }
-
+  } elseif ($Operation -eq 'visual') {
     $powerShell = (Get-Process -Id $PID).Path
     $visualSmoke = './scripts/windows-desktop-native-visual-smoke.ps1'
     foreach ($dpiPercent in @(100, 150)) {
@@ -520,7 +591,17 @@ try {
         throw "Native Windows $dpiPercent percent visual smoke failed with exit code $LASTEXITCODE."
       }
     }
+  } else {
+    Invoke-DesktopStartupSample `
+      -ExecutablePath $executable `
+      -HarnessHome $harnessHome `
+      -UserData $userData `
+      -EvidenceRoot (Join-Path $temporaryRoot 'quick-milestones') `
+      -SampleKind 'quick' `
+      -SampleIndex 1 | Out-Null
   }
+
+  Wait-IsolatedInstalledProcessesStopped -ExecutablePath $executable
 
   Invoke-IsolatedUninstall -InstalledUninstaller $uninstaller -InstallRoot $installRoot -LauncherPath $uninstallerLauncher
   $installed = $false
@@ -535,18 +616,18 @@ try {
   if (-not (Test-Path -LiteralPath $userDataMarker -PathType Leaf)) {
     throw 'Uninstall removed the isolated Electron data marker.'
   }
-  if (-not $RuntimeEvidenceOnly) {
+  if ($Operation -eq 'lifecycle') {
     $legacyRecoveryAfterUninstall = @(Get-FileTreeSnapshot -Directory $legacyRecoveryRoot)
     if (Compare-Object -ReferenceObject $legacyRecoverySnapshot -DifferenceObject $legacyRecoveryAfterUninstall) {
       throw 'Uninstall changed the recovered legacy module fallback files.'
     }
   }
 
-  if ($RuntimeEvidenceOnly) {
-    Write-Host 'Windows desktop runtime evidence passed: install, five cold and warm launches, process cleanup, uninstall, and data preservation.'
-  }
-  else {
-    Write-Host 'Windows desktop Setup smoke passed: install, shortcuts, legacy fallback recovery, launch, close, process cleanup, uninstall, and data preservation.'
+  switch ($Operation) {
+    'quick' { Write-Host 'Windows desktop quick smoke passed: install, launch, close, process cleanup, uninstall, and data preservation.' }
+    'lifecycle' { Write-Host 'Windows desktop lifecycle smoke passed: install, shortcuts, legacy fallback recovery, launch, close, process cleanup, uninstall, and data preservation.' }
+    'performance' { Write-Host 'Windows desktop runtime evidence passed: install, five cold and warm launches, process cleanup, uninstall, and data preservation.' }
+    'visual' { Write-Host 'Windows desktop visual smoke passed: install, 100 and 150 percent evidence, process cleanup, uninstall, and data preservation.' }
   }
 }
 finally {

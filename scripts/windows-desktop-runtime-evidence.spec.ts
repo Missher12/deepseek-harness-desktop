@@ -2,6 +2,34 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 describe('Windows Desktop runtime evidence wiring', () => {
+  it('keeps lifecycle, visual, and performance consumers isolated behind explicit operations', () => {
+    const smoke = readFileSync(
+      new URL('./windows-desktop-setup-smoke.ps1', import.meta.url),
+      'utf8',
+    )
+    const installer = readFileSync(
+      new URL('./windows-desktop-installer-ui-smoke.ps1', import.meta.url),
+      'utf8',
+    )
+
+    expect(smoke).toContain("[ValidateSet('quick', 'lifecycle', 'performance', 'visual')]")
+    expect(smoke).toContain("if ($Operation -eq 'performance')")
+    expect(smoke).toContain("if ($Operation -eq 'lifecycle')")
+    expect(smoke).toContain("if ($Operation -eq 'visual')")
+    expect(smoke).not.toContain('[switch]$RuntimeEvidenceOnly')
+    expect(smoke).toContain("$smokeId = 'dh' + [Guid]::NewGuid().ToString('N').Substring(0, 6)")
+    expect(smoke).toContain('$temporaryRoot = Join-Path $localAppData $smokeId')
+    expect(smoke).toContain("$harnessHome = Join-Path $temporaryRoot 'dsh-home'")
+    expect(smoke).toContain("$userData = Join-Path $temporaryRoot 'electron-data'")
+    expect(smoke).toContain('function Get-DescendantProcessIds')
+    expect(smoke).toContain('Wait-ProcessIdsStopped -ProcessIds $trackedProcessIds')
+    expect(smoke).toContain('Wait-IsolatedInstalledProcessesStopped -ExecutablePath $executable')
+    expect(installer).toContain("$harnessHome = Join-Path $temporaryRoot 'smoke-data\\dsh-home'")
+    expect(installer).toContain("$userData = Join-Path $temporaryRoot 'smoke-data\\electron-data'")
+    expect(installer).toContain('function Get-DescendantProcessIds')
+    expect(installer).toContain('Wait-ProcessIdsStopped -ProcessIds $setupProcessIds')
+  })
+
   it('measures five isolated cold launches and five same-home warm launches before uninstall', () => {
     const smoke = readFileSync(
       new URL('./windows-desktop-setup-smoke.ps1', import.meta.url),
@@ -41,7 +69,7 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(workflow).toContain('desktop-package-staged.json')
     expect(workflow).toContain('-StartupSummaryPath')
     expect(workflow).toContain('-PackageInventoryPath')
-    expect(workflow).toContain('runtime-evidence-${{ steps.source.outputs.sha }}')
+    expect(workflow).toContain('Windows-performance-evidence-${{ needs.build-candidate.outputs.source-sha }}')
     expect(workflow).not.toContain('lifecycle.log\n')
     expect(workflow).not.toContain('cpuprofile')
   })
@@ -187,12 +215,12 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(packaged).toContain("promptRail.locator('[data-prompt-rail-track]')")
     expect(packaged).toContain('Open workbench|打开工作台')
     expect(packaged).toContain('waitForWindowsProcessesStopped')
-    expect(workflow).toContain('Windows-native-visual-evidence-${{ steps.source.outputs.sha }}')
+    expect(workflow).toContain('Windows-visual-evidence-${{ needs.build-candidate.outputs.source-sha }}')
     expect(workflow).not.toContain('fixed-milestones/')
     expect(workflow).not.toContain('lifecycle.log')
   })
 
-  it('benchmarks the pinned 0.5.1 parent Setup on the same runner before the candidate', () => {
+  it('benchmarks the pinned 0.5.2 parent Setup in the performance consumer only', () => {
     const smoke = readFileSync(
       new URL('./windows-desktop-setup-smoke.ps1', import.meta.url),
       'utf8',
@@ -202,15 +230,14 @@ describe('Windows Desktop runtime evidence wiring', () => {
       'utf8',
     )
 
-    expect(smoke).toContain('[switch]$RuntimeEvidenceOnly')
-    expect(smoke).toContain('if (-not $RuntimeEvidenceOnly)')
-    expect(workflow).toContain('DeepSeek-Harness-Setup-0.5.1-win-x64.exe')
-    expect(workflow).toContain('154116788')
-    expect(workflow).toContain('f4d661c6ff5fad93a50a6de2801da207efb54c021434c745b4c46c0982e57318')
-    expect(workflow).toContain('-RuntimeEvidenceOnly')
-    expect(workflow).toContain('desktop-startup-baseline-0.5.1.json')
-    expect(workflow).toContain('desktop-package-installed-baseline-0.5.1.json')
-    expect(workflow).toContain('desktop-package-setup-baseline-0.5.1.json')
+    expect(smoke).toContain("[ValidateSet('quick', 'lifecycle', 'performance', 'visual')]")
+    expect(workflow).toContain('DeepSeek-Harness-Setup-0.5.2-win-x64.exe')
+    expect(workflow).toContain('145768890')
+    expect(workflow).toContain('7694568950fb4812788f28066d22bbf308f88255f82b52e7f0719e0a923b06d7')
+    expect(workflow).toContain('-Operation performance')
+    expect(workflow).toContain('desktop-startup-baseline-0.5.2.json')
+    expect(workflow).toContain('desktop-package-installed-baseline-0.5.2.json')
+    expect(workflow).toContain('desktop-package-setup-baseline-0.5.2.json')
     expect(workflow).toContain('-PackagePolicy windows-x64')
   })
 })

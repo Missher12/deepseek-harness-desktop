@@ -77,32 +77,76 @@ describe('CI workflow', () => {
     expect(JSON.stringify(workflow)).not.toContain('0.2.1')
   })
 
-  it('derives every Windows Setup path from the Desktop package version', () => {
+  it('builds one immutable Windows candidate and fans out quick/full consumers', () => {
     const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
-    const windows = workflowJob(workflow, 'build-install-smoke')
-    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
-    const steps = windows.steps.filter(isRecord)
+    const dispatch = workflowEvent(workflow, 'workflow_dispatch')
+    const build = workflowJob(workflow, 'build-candidate')
+    const lifecycle = workflowJob(workflow, 'lifecycle')
+    const installerUi = workflowJob(workflow, 'installer-ui')
+    const visual = workflowJob(workflow, 'visual')
+    const performance = workflowJob(workflow, 'performance')
+    const publish = workflowJob(workflow, 'publish-candidate')
+    if (!isRecord(workflow.jobs) || !Array.isArray(build.steps)) {
+      throw new TypeError('Windows Desktop workflow must define candidate jobs and build steps')
+    }
+    const steps = build.steps.filter(isRecord)
     const metadata = steps.find(step => step.name === 'Resolve Desktop release metadata')
-    const upload = steps.find(step => (
-      typeof step.uses === 'string'
-      && step.uses.startsWith('actions/upload-artifact@')
-      && JSON.stringify(step).includes('${{ steps.desktop.outputs.artifact }}')
-    ))
+    const createCandidate = steps.find(step => step.name === 'Create immutable candidate descriptor')
 
     expect(workflow.permissions).toEqual({ contents: 'read' })
+    expect(dispatch).toMatchObject({
+      inputs: {
+        mode: {
+          type: 'choice',
+          default: 'quick',
+          options: ['quick', 'full'],
+        },
+      },
+    })
+    expect(Object.keys(workflow.jobs).sort()).toEqual([
+      'build-candidate',
+      'installer-ui',
+      'lifecycle',
+      'performance',
+      'publish-candidate',
+      'visual',
+    ])
     expect(metadata).toMatchObject({ id: 'desktop', shell: 'pwsh' })
     expect(metadata?.run).toContain('apps/desktop/package.json')
     expect(metadata?.run).toContain('$env:GITHUB_OUTPUT')
     expect(metadata?.run).toContain('artifact=DeepSeek-Harness-Setup-$version-win-x64.exe')
-
-    const serialized = JSON.stringify(windows)
-    expect(serialized).not.toContain('0.2.1')
-    expect(serialized).toContain('${{ steps.desktop.outputs.artifact }}')
-    expect(upload).toMatchObject({
-      with: {
-        name: 'DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ steps.source.outputs.sha }}',
-      },
+    expect(createCandidate?.run).toContain('run candidate:descriptor create')
+    expect(createCandidate?.run).not.toContain('run candidate:descriptor -- create')
+    expect(build.outputs).toMatchObject({
+      'candidate-name': '${{ steps.candidate.outputs.name }}',
+      'mode': '${{ steps.candidate.outputs.mode }}',
+      'product-input-sha256': '${{ steps.candidate.outputs.product-input-sha256 }}',
+      'setup-basename': '${{ steps.desktop.outputs.artifact }}',
+      'source-sha': '${{ steps.source.outputs.sha }}',
     })
+    expect(lifecycle.needs).toBe('build-candidate')
+    for (const job of [installerUi, visual, performance]) {
+      expect(job.needs).toBe('build-candidate')
+      expect(job.if).toContain("needs.build-candidate.outputs.mode == 'full'")
+    }
+    expect(publish.needs).toEqual([
+      'build-candidate',
+      'lifecycle',
+      'installer-ui',
+      'visual',
+      'performance',
+    ])
+
+    const serialized = JSON.stringify(workflow)
+    const workflowSource = readFileSync(resolve(root, '.github/workflows/windows-desktop.yml'), 'utf8')
+    expect(workflowSource.match(/with: &desktop-setup/gu)).toHaveLength(1)
+    expect(serialized.match(/desktop:stage/gu)).toHaveLength(1)
+    expect(serialized.match(/exec electron-builder/gu)).toHaveLength(1)
+    expect(serialized.match(/packages\/boot\/app-boot\/tests\/profile\.spec\.ts/gu)).toHaveLength(1)
+    for (const job of [lifecycle, installerUi, visual, performance, publish]) {
+      expect(JSON.stringify(job)).not.toContain('desktop:stage')
+      expect(JSON.stringify(job)).not.toContain('electron-builder')
+    }
   })
 
   it('exposes the immutable Desktop candidate descriptor CLI from the Desktop package', () => {
@@ -116,21 +160,42 @@ describe('CI workflow', () => {
     )
   })
 
-  it('forwards staged Windows inventory arguments without a pnpm sentinel', () => {
+  it('binds every Windows consumer to externally supplied candidate and product-input hashes', () => {
     const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
-    const windows = workflowJob(workflow, 'build-install-smoke')
-    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
-    const build = windows.steps
-      .filter(isRecord)
-      .find(step => step.name === 'Build the assisted Windows Setup')
+    for (const jobName of ['lifecycle', 'installer-ui', 'visual', 'performance', 'publish-candidate']) {
+      const job = workflowJob(workflow, jobName)
+      if (!Array.isArray(job.steps)) throw new TypeError(`${jobName} must define steps`)
+      const steps = job.steps.filter(isRecord)
+      const downloadIndex = steps.findIndex(step => (
+        typeof step.uses === 'string' && step.uses.startsWith('actions/download-artifact@')
+      ))
+      const verifyIndex = steps.findIndex(step => step.name === 'Verify immutable candidate')
+      const verify = steps[verifyIndex]
+      const executionIndex = steps.findIndex(step => (
+        typeof step.run === 'string'
+        && (step.run.includes('windows-desktop-') || step.run.includes('Start-Process'))
+      ))
 
-    expect(build?.run).toContain('run inventory:package --output')
-    expect(build?.run).not.toContain('run inventory:package -- --output')
+      expect(downloadIndex, jobName).toBeGreaterThan(-1)
+      expect(steps[downloadIndex]).toMatchObject({
+        with: { name: '${{ needs.build-candidate.outputs.candidate-name }}' },
+      })
+      expect(verifyIndex, jobName).toBeGreaterThan(downloadIndex)
+      expect(verify?.run).toContain('run candidate:descriptor verify')
+      expect(verify?.run).not.toContain('run candidate:descriptor -- verify')
+      expect(verify?.run).toContain('--source ${{ needs.build-candidate.outputs.source-sha }}')
+      expect(verify?.run).toContain('--platform win-x64')
+      expect(verify?.run).toContain('--mode ${{ needs.build-candidate.outputs.mode }}')
+      expect(verify?.run).toContain('--product-input')
+      expect(verify?.run).toContain('--product-input-sha256 ${{ needs.build-candidate.outputs.product-input-sha256 }}')
+      expect(verify?.run).toContain('[System.IO.FileAttributes]::ReparsePoint')
+      if (executionIndex !== -1) expect(executionIndex, jobName).toBeGreaterThan(verifyIndex)
+    }
   })
 
   it('parses every Windows Desktop PowerShell smoke before the Setup build', () => {
     const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
-    const windows = workflowJob(workflow, 'build-install-smoke')
+    const windows = workflowJob(workflow, 'build-candidate')
     if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
     const steps = windows.steps.filter(isRecord)
     const parserIndex = steps.findIndex(step => step.name === 'Parse Windows Desktop PowerShell smokes')
@@ -153,7 +218,7 @@ describe('CI workflow', () => {
 
   it('builds Windows Desktop from the exact pull-request head revision', () => {
     const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
-    const windows = workflowJob(workflow, 'build-install-smoke')
+    const windows = workflowJob(workflow, 'build-candidate')
     if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
     const steps = windows.steps.filter(isRecord)
     const checkout = steps.find(step => (
@@ -177,19 +242,99 @@ describe('CI workflow', () => {
     expect(JSON.stringify(windows)).not.toContain('DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ github.sha }}')
   })
 
-  it('uploads only bounded Windows native visual evidence from the exact source revision', () => {
+  it('keeps failure evidence bounded and publishes the Setup only after every selected gate passes', () => {
     const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
-    const windows = workflowJob(workflow, 'build-install-smoke')
-    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
-    const serialized = JSON.stringify(windows)
+    const publish = workflowJob(workflow, 'publish-candidate')
+    const serialized = JSON.stringify(workflow)
 
-    expect(serialized).toContain('Windows-native-visual-evidence-${{ steps.source.outputs.sha }}')
+    for (const jobName of ['lifecycle', 'installer-ui', 'visual', 'performance']) {
+      const job = workflowJob(workflow, jobName)
+      if (!Array.isArray(job.steps)) throw new TypeError(`${jobName} must define steps`)
+      const evidence = job.steps.filter(isRecord).find(step => (
+        typeof step.uses === 'string' && step.uses.startsWith('actions/upload-artifact@')
+      ))
+      expect(evidence?.if, jobName).toBe('always()')
+    }
+    expect(publish.if).toContain('always()')
+    expect(publish.if).toContain("needs.build-candidate.result == 'success'")
+    expect(publish.if).toContain("needs.lifecycle.result == 'success'")
+    expect(publish.if).toContain("needs.build-candidate.outputs.mode != 'full'")
+    expect(JSON.stringify(publish)).toContain('desktop-package-staged.json')
+    expect(serialized).toContain('DeepSeek-Harness-Setup-win-x64-${{ needs.build-candidate.outputs.version }}-${{ needs.build-candidate.outputs.source-sha }}')
     expect(serialized).toContain('windows-installer-ui-evidence')
     expect(serialized).toContain('windows-native-visual-evidence')
     expect(serialized).toContain('desktop-windows-install-evidence.json')
     expect(serialized).not.toContain('lifecycle.log')
     expect(serialized).not.toContain('fixed-milestones')
     expect(serialized).not.toContain('cpuprofile')
+  })
+
+  it('reuses one pinned composite dependency setup without caching mutable product inputs', () => {
+    const action = loadWorkflow('.github/actions/desktop-node-setup/action.yml')
+    if (!isRecord(action.runs) || !Array.isArray(action.runs.steps)) {
+      throw new TypeError('Desktop Node setup action must define composite steps')
+    }
+    const serialized = JSON.stringify(action)
+    if (!isRecord(action.inputs)) throw new TypeError('Desktop Node setup action must define inputs')
+    expect(action.runs.using).toBe('composite')
+    expect(action.inputs['cache-write']).toMatchObject({ default: 'false' })
+    expect(serialized).toContain('pnpm/action-setup@v4')
+    expect(serialized).toContain('"version":"11.7.0"')
+    expect(serialized).toContain('actions/setup-node@v6')
+    expect(serialized).toContain('"node-version":"24"')
+    expect(serialized).toContain('pnpm install --frozen-lockfile')
+    expect(serialized).toContain('actions/cache/restore@v4')
+    expect(serialized).toContain('actions/cache@v4')
+    expect(serialized).toContain('pnpm-lock.yaml')
+    expect(serialized).toContain('ms-playwright')
+    expect(serialized).not.toContain('node_modules')
+    expect(serialized).not.toContain('DSH_HOME')
+    expect(serialized).not.toContain('desktop-stage')
+    expect(serialized).not.toContain('Setup')
+
+    const cacheSteps = action.runs.steps.filter(isRecord).filter(step => (
+      step.uses === 'actions/cache@v4' || step.uses === 'actions/cache/restore@v4'
+    ))
+    const install = action.runs.steps.filter(isRecord).find(step => step.name === 'Install immutable dependencies')
+    expect(cacheSteps).toHaveLength(2)
+    expect(cacheSteps[0]?.if).toBe("inputs.cache-write != 'true'")
+    expect(cacheSteps[1]?.if).toBe("inputs.cache-write == 'true'")
+    expect(cacheSteps[0]?.with).toEqual(cacheSteps[1]?.with)
+    expect(cacheSteps[0]?.with).toMatchObject({
+      key: "desktop-node-24-${{ runner.os }}-${{ hashFiles(format('{0}/pnpm-lock.yaml', inputs.working-directory)) }}",
+    })
+    expect(JSON.stringify(cacheSteps[0]?.with)).toContain('steps.cache-paths.outputs.pnpm-store')
+    expect(JSON.stringify(cacheSteps[0]?.with)).toContain('runner.temp }}/ms-playwright')
+    expect(install).toMatchObject({
+      shell: 'pwsh',
+      'working-directory': '${{ inputs.working-directory }}',
+      run: 'pnpm install --frozen-lockfile',
+    })
+    expect(install).not.toHaveProperty('if')
+
+    const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
+    if (!isRecord(workflow.jobs)) throw new TypeError('Windows workflow must define jobs')
+    const cacheWriters: string[] = []
+    const setupUsers: string[] = []
+    for (const [jobName, job] of Object.entries(workflow.jobs)) {
+      if (!isRecord(job) || !Array.isArray(job.steps)) continue
+      for (const step of job.steps.filter(isRecord)) {
+        if (step.uses !== './s/.github/actions/desktop-node-setup') continue
+        setupUsers.push(jobName)
+        if (!isRecord(step.with)) throw new TypeError(`${jobName} Desktop setup must define inputs`)
+        if (step.with['cache-write'] === 'true') cacheWriters.push(jobName)
+        else expect(step.with).not.toHaveProperty('cache-write')
+      }
+    }
+    expect(setupUsers.sort()).toEqual([
+      'build-candidate',
+      'installer-ui',
+      'lifecycle',
+      'performance',
+      'publish-candidate',
+      'visual',
+    ])
+    expect(cacheWriters).toEqual(['build-candidate'])
   })
 
   it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {
