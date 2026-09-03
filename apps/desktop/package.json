@@ -262,7 +262,8 @@
     "@deepseek-ai/dsh-session-turn-outline": "workspace:^",
     "@deepseek-ai/dsh-api-session-controller": "workspace:^",
     "@deepseek-ai/dsh-api-settings-controller": "workspace:^",
-    "@deepseek-ai/dsh-api-workspace-controller": "workspace:^"
+    "@deepseek-ai/dsh-api-workspace-controller": "workspace:^",
+    "@wxg-prc-cpg/browser-skill-dsh-plugin": "0.1.2"
   },
   "devDependencies": {
     "@electron/rebuild": "4.2.0",

@@ -73,7 +73,24 @@ describe('WorkbenchTerminalRegistry', () => {
       return handle
     }, async () => ['/bin/zsh', '-l'])
     for (let index = 0; index < 4; index += 1) await registry.open('owner', '/workspace')
-    await expect(registry.open('owner', '/workspace')).rejects.toThrow(/at most 4/)
+    // A rapid close/reopen mount races the fire-and-forget cleanup closes;
+    // the fifth open supersedes the oldest record instead of failing.
+    const fifth = await registry.open('owner', '/workspace')
+    expect(fifth.cwd).toBe('/workspace')
+    expect((await registry.list('owner')).map(item => item.id)).toHaveLength(4)
+    await registry.closeAll()
+  })
+
+  it('treats write and signal on a closed terminal as idempotent teardown', async () => {
+    const registry = new WorkbenchTerminalRegistry(async () => ({
+      pid: 42, output: new PassThrough(), done: new Promise(() => {}), write: async () => {},
+      terminate: async () => {}, inspectForeground: async () => undefined, signalForeground: async () => 1,
+    }), async () => ['/bin/zsh', '-l'])
+    const opened = await registry.open('owner-a', '/workspace')
+    await registry.close('owner-a', opened.id)
+    await expect(registry.write('owner-a', opened.id, 'pwd\n')).resolves.toBeUndefined()
+    await expect(registry.signal('owner-a', opened.id, 'SIGINT')).resolves.toBeUndefined()
+    await expect(registry.write('owner-b', opened.id, 'pwd\n')).resolves.toBeUndefined()
     await registry.closeAll()
   })
 

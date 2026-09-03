@@ -1,0 +1,43 @@
+diff --git a/lib/client.cjs b/lib/client.cjs
+index 95e865c626745d50e3b87f0505949e34f1299f3c..12a9338de645e7c0f982e4ba77004a679a29c58d 100644
+--- a/lib/client.cjs
++++ b/lib/client.cjs
+@@ -4751,16 +4751,9 @@ window.__ModuleLoader__.load({
+ 				...props,
+ 				loadImage: (attachment) => loadSessionImage(sessions, props.sessionId, attachment)
+ 			})));
+-			const store = new ObservationClientStore({
+-				fetchFn: (url, init) => fetch(url, init),
+-				eventSourceFactory: (url) => new EventSource(url),
+-				loadImage: overlayImageLoader
+-			});
+-			ctx.slots.inject("shell.overlay", () => ctx.slots.register({
+-				name: "shell.overlay",
+-				id: "bsk-observation"
+-			}, () => (0, react.createElement)(ObservationOverlay, { store })));
+-			ctx.inject(["betterSidebar"], (injected) => registerObservationSidebar(injected.betterSidebar, store));
++			// Desktop patch: no floating observation overlay and no betterSidebar
++			// dependency — the one fixed Workbench owns every browsing surface
++			// (the Host mounts this row with observationEnabled: false).
+ 		}
+ 		//#endregion
+ 		exports.apply = apply;
+diff --git a/lib/index.mjs b/lib/index.mjs
+index 116d91e12c246f05dd8ecd0a3e7723c362eb702b..cb2a8e12771c9a82bb6f84823e53c18330985bf1 100644
+--- a/lib/index.mjs
++++ b/lib/index.mjs
+@@ -4127,10 +4127,10 @@ function apply(ctx, config = {}, options = {}) {
+ 		return () => removeRoutes();
+ 	});
+ 	const disarmArchiveCleanup = armArchiveCleanup(ctx, registry, observation);
+-	runner.run(["--version"], { timeoutMs: 1e4 }).then(() => {}, (error) => {
+-		const detail = error instanceof Error ? error.message : String(error);
+-		console.warn(`[${name}] bsk probe failed (${detail}); browser tools will report install guidance until the bsk CLI is available`);
+-	});
++	// Desktop patch: no startup `bsk --version` probe — the packaged
++	// BrowserSkill CLI is a build-time verified asset and probing on every
++	// boot spawns an unnecessary subprocess before any browser_* tool runs.
++	// Missing-CLI guidance still surfaces from the first real invocation.
+ 	ctx.effect(() => {
+ 		return () => {
+ 			removeSuite();

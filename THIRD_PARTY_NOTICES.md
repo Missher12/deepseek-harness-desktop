@@ -65,6 +65,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`@tanstack/react-virtual`](https://github.com/TanStack/virtual) | MIT |
 | [`@types/mdast`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@vscode/ripgrep`](https://github.com/microsoft/vscode-ripgrep) | MIT |
+| [`@wxg-prc-cpg/browser-skill-dsh-plugin`](https://github.com/Tencent/BrowserSkill) | MIT |
 | [`@xterm/headless`](https://github.com/xtermjs/xterm.js) | MIT |
 | [`@yarnpkg/parsers`](https://github.com/yarnpkg/berry) | BSD-2-Clause |
 | [`acorn`](https://github.com/acornjs/acorn) | MIT |
@@ -126,6 +127,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 
 pnpm applies local patches to the following packages at install time, so shipped artifacts carry modified copies; each patch file is the complete record of the modification:
 
+- `@wxg-prc-cpg/browser-skill-dsh-plugin@0.1.2` — [`patches/@wxg-prc-cpg__browser-skill-dsh-plugin@0.1.2.patch`](patches/@wxg-prc-cpg__browser-skill-dsh-plugin@0.1.2.patch)
 - `dshmarket@1.10.1` — [`patches/dshmarket@1.10.1.patch`](patches/dshmarket@1.10.1.patch)
 - `node-pty@1.2.0-beta.15` — [`patches/node-pty@1.2.0-beta.15.patch`](patches/node-pty@1.2.0-beta.15.patch)
 

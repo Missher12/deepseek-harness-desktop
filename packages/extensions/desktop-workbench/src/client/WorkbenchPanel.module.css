@@ -16,6 +16,4 @@
 .close:hover { color: var(--dsw-alias-fg-l1); background: var(--dsw-alias-bg-block); }
 .body { min-width: 0; min-height: 0; overflow: auto; padding: 18px; }
 .body p { margin: 0; color: var(--dsw-alias-fg-l3); font-size: 13px; }
-/* Empty frame while the lazy page chunk resolves on first selection. */
-.bodyPending { min-width: 0; min-height: 0; }
 @media (prefers-reduced-motion: reduce) { .trigger, .tab, .close { transition: none; } }

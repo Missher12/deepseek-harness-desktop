@@ -107,6 +107,7 @@ export function installWorkbenchHttp(ctx: Context): void {
         return
       }
       try { await action(req, res) } catch (error: unknown) {
+        ctx.logger.warn(`desktop-workbench ${path} rejected: ${error instanceof Error ? error.message : String(error)}`)
         respond(res, 400, { error: error instanceof Error ? error.message : 'request failed' })
       }
     },

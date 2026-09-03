@@ -1,4 +1,4 @@
-import { Suspense, useId, useRef, type KeyboardEvent } from 'react'
+import { useId, useRef, type KeyboardEvent } from 'react'
 import type { UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/client'
 import {
   IconApiOutline14, IconChecklistOutline14, IconCloseOutline16,
@@ -70,9 +70,7 @@ export function WorkbenchPanel(props: WorkbenchPanelProps) {
         </div>
       </header>
       <div className={css.body} role="tabpanel" id={panelId(selectedDefinition.id)} aria-labelledby={tabId(selectedDefinition.id)} tabIndex={0}>
-        <Suspense fallback={<div className={css.bodyPending} />}>
-          <selectedDefinition.Component {...props} />
-        </Suspense>
+        <selectedDefinition.Component {...props} />
       </div>
     </section>
   )

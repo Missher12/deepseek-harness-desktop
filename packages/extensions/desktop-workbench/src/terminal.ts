@@ -64,8 +64,17 @@ export class WorkbenchTerminalRegistry {
    * @returns initial bounded snapshot.
    */
   async open(owner: string, cwd: string, rows = 30, cols = 100): Promise<WorkbenchTerminalSnapshot> {
-    if ([...this.records.values()].filter(record => record.owner === owner).length >= MAX_TERMINALS) {
-      throw new Error(`at most ${String(MAX_TERMINALS)} terminals may be open`)
+    const owned = [...this.records.values()].filter(record => record.owner === owner)
+    if (owned.length >= MAX_TERMINALS) {
+      // A previous mount's cleanup closes are fire-and-forget; a fresh mount
+      // that opens while they are still in flight supersedes the oldest
+      // leftover so a rapid close/reopen can never 400 on capacity.
+      const oldest = owned[0]
+      if (oldest === undefined) {
+        throw new Error(`at most ${String(MAX_TERMINALS)} terminals may be open`)
+      }
+      this.records.delete(oldest.id)
+      await oldest.handle.terminate()
     }
     const handle = await this.spawn({ argv: await this.shell(), cwd, rows: clamp(rows, 8, 120), cols: clamp(cols, 20, 240), graceMs: 1500,
       env: { TERM: 'xterm-256color', DSH_UI_TERMINAL: '1' } })
@@ -102,7 +111,8 @@ export class WorkbenchTerminalRegistry {
    * @param data - bounded UTF-8 input.
    */
   async write(owner: string, id: string, data: string): Promise<void> {
-    const record = this.owned(owner, id)
+    const record = this.ownedOrClosed(owner, id)
+    if (record === undefined) return
     if (Buffer.byteLength(data) > MAX_TERMINAL_INPUT_BYTES) throw new Error('terminal input is too large')
     await record.handle.write(data)
   }
@@ -114,7 +124,8 @@ export class WorkbenchTerminalRegistry {
    * @param signal - closed signal vocabulary member.
    */
   async signal(owner: string, id: string, signal: string): Promise<void> {
-    const record = this.owned(owner, id)
+    const record = this.ownedOrClosed(owner, id)
+    if (record === undefined) return
     if (!SIGNALS.has(signal as SubprocessTerminalSignal)) throw new Error('unsupported terminal signal')
     await record.handle.signalForeground(signal as SubprocessTerminalSignal)
   }
@@ -152,9 +163,19 @@ export class WorkbenchTerminalRegistry {
     await Promise.allSettled(records.map(record => record.handle.terminate()))
   }
 
-  private owned(owner: string, id: string): RecordState {
+  /**
+   * Resolve a record for an idempotent teardown action: a missing random id
+   * is already closed (the React cleanup and an explicit close can race),
+   * while a live record owned by someone else stays a hard authorization
+   * failure.
+   * @param owner - opaque Client-generation owner.
+   * @param id - terminal id.
+   * @returns the record, or undefined when the terminal is already gone.
+   */
+  private ownedOrClosed(owner: string, id: string): RecordState | undefined {
     const record = this.records.get(id)
-    if (record === undefined || record.owner !== owner) throw new Error('foreign terminal')
+    if (record === undefined) return undefined
+    if (record.owner !== owner) throw new Error('foreign terminal')
     return record
   }
 
