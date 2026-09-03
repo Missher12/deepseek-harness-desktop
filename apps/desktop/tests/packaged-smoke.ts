@@ -24,6 +24,10 @@ const ACTIVE_CLIPBOARD_SESSION_ID = 'desktop-smoke-active-session-id'
 const ARCHIVED_CLIPBOARD_SESSION_ID = 'desktop-smoke-archived-session-id'
 const MESSENGER_SOURCE_SESSION_ID = 'desktop-smoke-messenger-source-session-id'
 const MESSENGER_SUBAGENT_SESSION_ID = 'desktop-smoke-messenger-subagent-session-id'
+/** Turns seeded into the active session so the navigation rail can page. */
+const NAVIGATION_TURN_COUNT = 30
+/** Event seqs one complete seeded turn occupies (see completeTurn). */
+const TURN_SEQ_SPAN = 10
 const RECEIPT_TTL_MS = 24 * 60 * 60 * 1_000
 
 /** Native command used to prove the packaged workbench terminal is interactive. */
@@ -280,9 +284,9 @@ export function isUsageTokenTooltip(text: string): boolean {
   return /(?:used.*tokens?|tokens?.*used|使用了.*Token)/iu.test(text)
 }
 
-function completeTurn(createdAt: number): SessionEvent[] {
+function completeTurn(createdAt: number, turn = 1): SessionEvent[] {
   return [
-    { type: 'turn/start', seq: SessionSeq(0), time: createdAt, data: { turn: 1 } },
+    { type: 'turn/start', seq: SessionSeq(0), time: createdAt, data: { turn } },
     {
       type: 'user/message',
       seq: SessionSeq(1),
@@ -327,7 +331,7 @@ function completeTurn(createdAt: number): SessionEvent[] {
       seq: SessionSeq(4),
       time: createdAt + 4,
       data: {
-        turn: 1,
+        turn,
         step: 0,
         usage: SEEDED_SESSION_USAGE,
         message: {
@@ -343,7 +347,7 @@ function completeTurn(createdAt: number): SessionEvent[] {
       type: 'turn/end',
       seq: SessionSeq(5),
       time: createdAt + 5,
-      data: { turn: 1, reason: { kind: 'completed' } },
+      data: { turn, reason: { kind: 'completed' } },
     },
     {
       type: 'permission/preset',
@@ -436,12 +440,27 @@ export async function seedWindowsClipboardSmokeState(
     await seeder.plugin(JsonlSessionPersistence, { root: persistenceRoot })
     for (const header of headers) {
       await seeder.sessionPersistence.create(header, SessionLogOffset(0))
-      await seeder.sessionPersistence.append(header.id, completeTurn(header.createdAt))
       if (header.id === ACTIVE_CLIPBOARD_SESSION_ID) {
+        // The navigation acceptance needs a rail that must page: thirty
+        // completed turns with strictly ascending seqs and turn numbers.
+        for (let turn = 1; turn <= NAVIGATION_TURN_COUNT; turn += 1) {
+          const offset = (turn - 1) * TURN_SEQ_SPAN
+          const shifted = completeTurn(header.createdAt + offset, turn).map(event => ({
+            ...event,
+            seq: SessionSeq(event.seq + offset),
+            time: (event as { time: number }).time + offset,
+          }))
+          await seeder.sessionPersistence.append(header.id, shifted)
+        }
+      } else {
+        await seeder.sessionPersistence.append(header.id, completeTurn(header.createdAt))
+      }
+      if (header.id === ACTIVE_CLIPBOARD_SESSION_ID) {
+        const relaySeq = NAVIGATION_TURN_COUNT * TURN_SEQ_SPAN
         const relayEvent: SessionEvent<'user/message'> = {
           type: 'user/message',
-          seq: SessionSeq(10),
-          time: header.createdAt + 10,
+          seq: SessionSeq(relaySeq),
+          time: header.createdAt + relaySeq,
           data: {
             id: 'desktop-smoke-relay-message-id' as SessionEvent<'user/message'>['data']['id'],
             role: 'user',
@@ -555,7 +574,7 @@ export async function seedWindowsClipboardSmokeState(
     messengerSourceSessionId: MESSENGER_SOURCE_SESSION_ID,
     messengerSourceSessionTitle: messengerSourceTitle,
     messengerSubagentSessionId: MESSENGER_SUBAGENT_SESSION_ID,
-    expectedDailyTokens: headers.length * Object.values(SEEDED_SESSION_USAGE)
+    expectedDailyTokens: (headers.length - 1 + NAVIGATION_TURN_COUNT) * Object.values(SEEDED_SESSION_USAGE)
       .reduce<number>((total, tokens) => total + tokens, 0),
     protectedPaths: [...sessionPaths, workspacePath, messengerPath],
   }
@@ -1247,6 +1266,11 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): 
   await panel.getByRole('tab', { name: /^(?:Review|审阅)$/u }).click()
   await panel.getByText(/^(?:Changes|变更)$/u).waitFor({ state: 'visible', timeout: 15_000 })
   await expectStablePanelWidth()
+  // Exactly one tabpanel serves every selection, labelled by the selected tab.
+  expect(await panel.getByRole('tabpanel').count()).toBe(1)
+  const selectedTab = panel.getByRole('tab', { selected: true })
+  expect(await selectedTab.getAttribute('aria-controls'))
+    .toBe(await panel.getByRole('tabpanel').getAttribute('id'))
   await panel.getByRole('button', { name: /^(?:Close workbench|关闭工作台)$/u }).click()
   const reopenTrigger = page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })
   await expect.poll(() => reopenTrigger.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('false')
@@ -1255,6 +1279,46 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): 
   await expectStablePanelWidth()
   await panel.getByRole('button', { name: /^(?:Close workbench|关闭工作台)$/u }).click()
   await expect.poll(() => reopenTrigger.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('false')
+}
+
+/**
+ * Turn-navigation acceptance over the seeded thirty-turn session: the rail
+ * must page beyond the loaded window, keep one mark per turn, and clamp its
+ * hover preview inside the rail band above the composer.
+ */
+async function exerciseTurnNavigation(page: Page, seeded: WindowsClipboardSmokeState): Promise<void> {
+  const activeRow = page.locator('[class*="sessionRow"]').filter({ hasText: seeded.activeSessionTitle }).first()
+  await activeRow.waitFor({ state: 'visible', timeout: 15_000 })
+  if (await activeRow.getAttribute('aria-selected') !== 'true') {
+    await activeRow.click()
+    await expect.poll(() => activeRow.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
+  }
+
+  const frame = page.locator('nav[aria-label*="轮次导航"], nav[aria-label*="Turn navigation"]')
+  await frame.waitFor({ state: 'visible', timeout: 15_000 })
+  const marks = frame.locator('button[aria-label*="跳转"], button[aria-label*="jump to"]')
+  await expect.poll(() => marks.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(NAVIGATION_TURN_COUNT)
+
+  const frameBox = await frame.boundingBox()
+  if (frameBox === null) throw new Error('Packaged smoke: turn rail frame geometry is unavailable.')
+  const composerBox = await page.locator('[data-composer-card]').last().boundingBox()
+
+  // Hover the lower band so the preview must clamp against the composer
+  // floor; the tooltip stays inside the frame and never crosses the composer.
+  for (const fraction of [0.7, 0.85, 0.95]) {
+    await page.mouse.move(frameBox.x + frameBox.width / 2, frameBox.y + frameBox.height * fraction)
+    const tooltip = page.getByRole('tooltip')
+    await expect.poll(async () => tooltip.count(), { timeout: 5_000 }).toBe(1)
+    const tipBox = await tooltip.boundingBox()
+    if (tipBox === null) throw new Error('Packaged smoke: turn preview tooltip geometry is unavailable.')
+    expect(tipBox.y).toBeGreaterThanOrEqual(frameBox.y - 1)
+    expect(tipBox.y + tipBox.height).toBeLessThanOrEqual(frameBox.y + frameBox.height + 1)
+    if (composerBox !== null) {
+      expect(tipBox.y + tipBox.height).toBeLessThanOrEqual(composerBox.y + 1)
+    }
+    await page.mouse.move(0, 0)
+    await expect.poll(async () => tooltip.count(), { timeout: 5_000 }).toBe(0)
+  }
 }
 
 interface MarketRouteResult {
@@ -1798,6 +1862,7 @@ export async function runPackagedDesktopSmoke(
       await exerciseSessionMessenger(page, clipboardSeed, platform)
       await exerciseComposerAddMenu(page, clipboardSeed)
       await exerciseDesktopWorkbench(page, platform)
+      await exerciseTurnNavigation(page, clipboardSeed)
       await exerciseReasoningEffort(page, harnessHome, platform)
     } catch (error) {
       throw new Error(
