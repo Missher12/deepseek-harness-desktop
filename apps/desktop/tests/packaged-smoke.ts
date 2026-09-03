@@ -1211,7 +1211,7 @@ async function exerciseSessionMessenger(
   await relay.waitFor({ state: 'visible', timeout: 30_000 })
   const relayText = await relay.innerText()
   expect(relayText).toContain(seeded.messengerSourceSessionTitle)
-  expect(relayText).toMatch(/(?:Sent by .* from another chat|由 .* 从另一个聊天发来)/u)
+  expect(relayText).toMatch(/(?:Sent from another chat by .*|由 .* 从另一个聊天发来)/u)
   expect(await activeRow.getAttribute('aria-selected')).toBe('true')
   expect(await waitForStableProtectedFileSnapshot(seeded.protectedPaths)).toEqual(beforeFiles)
   await page.screenshot({
