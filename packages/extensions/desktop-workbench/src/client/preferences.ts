@@ -1,12 +1,11 @@
 import type { ObservableSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ILayout, UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/client'
+import { WORKBENCH_MODE_ORDER } from './modes.ts'
 
 /** Local preference key for the utility width. */
 export const WIDTH_KEY = 'dsh.desktop-workbench.width.v1'
 /** Versioned local preference key for the last selected utility mode. */
 export const MODE_KEY = 'dsh.desktop-workbench.mode.v1'
-/** Stable presentation order for the docked Workbench launcher. */
-export const WORKBENCH_MODE_ORDER = ['review', 'terminal', 'browser', 'files'] as const satisfies readonly UtilityMode[]
 /** Minimal readable storage contract. */
 export interface StorageReader { getItem(key: string): string | null }
 /** Minimal writable storage contract. */

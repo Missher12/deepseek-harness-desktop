@@ -1,17 +1,14 @@
-import { useId, useRef, type KeyboardEvent } from 'react'
+import { Suspense, useId, useRef, type KeyboardEvent } from 'react'
 import type { UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/client'
 import {
   IconApiOutline14, IconChecklistOutline14, IconCloseOutline16,
   IconFolderOpenOutline16, IconGlobeOutline14,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { WORKBENCH_MODE_ORDER, type WorkbenchInjected } from './preferences.ts'
+import { workbenchModeDefinitions } from './modes.ts'
+import type { WorkbenchInjected } from './preferences.ts'
 import { NS } from './locales.ts'
 import css from './WorkbenchPanel.module.css'
-import { FilesMode } from './FilesMode.tsx'
-import { ReviewMode } from './ReviewMode.tsx'
-import { TerminalMode } from './TerminalMode.tsx'
-import { BrowserMode } from './BrowserMode.tsx'
 
 export type WorkbenchPanelProps = PropsRuntime<'layout.utility'> & PropsLocale<typeof NS> & InjectFace<WorkbenchInjected>
 
@@ -32,20 +29,23 @@ export function WorkbenchPanel(props: WorkbenchPanelProps) {
     const targetIndex = tabs.current.findIndex(tab => tab === event.target)
     if (targetIndex === -1) return
     if (event.key === 'Enter' || event.key === ' ') {
-      const selected = WORKBENCH_MODE_ORDER[targetIndex]
-      if (selected !== undefined) selectMode(selected)
+      const selected = workbenchModeDefinitions[targetIndex]
+      if (selected !== undefined) selectMode(selected.id)
       event.preventDefault()
       return
     }
     let nextIndex: number | undefined
-    if (event.key === 'ArrowDown') nextIndex = (targetIndex + 1) % WORKBENCH_MODE_ORDER.length
-    else if (event.key === 'ArrowUp') nextIndex = (targetIndex - 1 + WORKBENCH_MODE_ORDER.length) % WORKBENCH_MODE_ORDER.length
+    if (event.key === 'ArrowDown') nextIndex = (targetIndex + 1) % workbenchModeDefinitions.length
+    else if (event.key === 'ArrowUp') nextIndex = (targetIndex - 1 + workbenchModeDefinitions.length) % workbenchModeDefinitions.length
     else if (event.key === 'Home') nextIndex = 0
-    else if (event.key === 'End') nextIndex = WORKBENCH_MODE_ORDER.length - 1
+    else if (event.key === 'End') nextIndex = workbenchModeDefinitions.length - 1
     if (nextIndex === undefined) return
     tabs.current[nextIndex]?.focus()
     event.preventDefault()
   }
+  const selectedDefinition = workbenchModeDefinitions.find(definition => definition.id === mode)
+    ?? workbenchModeDefinitions[0]
+  if (selectedDefinition === undefined) return null
   return (
     <section className={css.panel} aria-label={t('workbench')} data-desktop-workbench-panel
       onKeyDown={(event) => { if (event.key === 'Escape') close() }}>
@@ -58,22 +58,21 @@ export function WorkbenchPanel(props: WorkbenchPanelProps) {
         </div>
         <div className={css.tabs} role="tablist" aria-label={t('modes')} aria-orientation="vertical"
           onKeyDown={onTabsKeyDown}>
-          {WORKBENCH_MODE_ORDER.map((item, index) => (
-            <button key={item} ref={(node) => { tabs.current[index] = node }} type="button" role="tab"
-              id={tabId(item)} aria-controls={panelId(item)} aria-selected={item === mode}
-              tabIndex={item === mode ? 0 : -1} className={css.tab} data-active={item === mode || undefined}
-              onClick={() => { selectMode(item) }}>
-              <span className={css.tabIcon} aria-hidden="true"><ModeIcon mode={item} /></span>
-              <span className={css.tabLabel}>{t(item)}</span>
+          {workbenchModeDefinitions.map((definition, index) => (
+            <button key={definition.id} ref={(node) => { tabs.current[index] = node }} type="button" role="tab"
+              id={tabId(definition.id)} aria-controls={panelId(definition.id)} aria-selected={definition.id === mode}
+              tabIndex={definition.id === mode ? 0 : -1} className={css.tab} data-active={definition.id === mode || undefined}
+              onClick={() => { selectMode(definition.id) }}>
+              <span className={css.tabIcon} aria-hidden="true"><ModeIcon mode={definition.id} /></span>
+              <span className={css.tabLabel}>{t(definition.id)}</span>
             </button>
           ))}
         </div>
       </header>
-      <div className={css.body} role="tabpanel" id={panelId(mode)} aria-labelledby={tabId(mode)} tabIndex={0}>
-        {mode === 'terminal' ? <TerminalMode {...props} />
-          : mode === 'browser' ? <BrowserMode {...props} />
-            : mode === 'files' ? <FilesMode {...props} />
-              : <ReviewMode {...props} />}
+      <div className={css.body} role="tabpanel" id={panelId(selectedDefinition.id)} aria-labelledby={tabId(selectedDefinition.id)} tabIndex={0}>
+        <Suspense fallback={<div className={css.bodyPending} />}>
+          <selectedDefinition.Component {...props} />
+        </Suspense>
       </div>
     </section>
   )

@@ -4,6 +4,7 @@ import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { UtilityMode } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HeaderButton, type HeaderButtonProps } from '../src/client/HeaderButton.tsx'
+import { workbenchModeDefinitions } from '../src/client/modes.ts'
 import { WorkbenchPanel, type WorkbenchPanelProps } from '../src/client/WorkbenchPanel.tsx'
 import { MODE_KEY, WorkbenchController, loadMode, loadWidth } from '../src/client/preferences.ts'
 
@@ -13,7 +14,7 @@ const sessionId = 'session-a' as never
 const WORKBENCH_MODE_FIXTURE: readonly UtilityMode[] = ['review', 'terminal', 'browser', 'files']
 const labels = {
   open: '打开工作台', close: '关闭工作台', terminal: '终端', browser: '浏览器',
-  files: '文件', review: '审阅', workbench: '工作台', modes: '工作台模式',
+  files: '文件', review: '审阅', workbench: '工作台', modes: '工作台模式', clearView: '清屏', changes: '变更',
 } as const
 const t = (key: keyof typeof labels) => labels[key]
 
@@ -32,6 +33,45 @@ function setup() {
   }
   return { controller, layout, common }
 }
+
+describe('desktop workbench mode registry', () => {
+  it('exposes one frozen, uniquely keyed, order-stable tab definition list', () => {
+    expect(Object.isFrozen(workbenchModeDefinitions)).toBe(true)
+    expect(workbenchModeDefinitions.map(definition => definition.id)).toEqual([
+      'review', 'terminal', 'browser', 'files',
+    ])
+    expect(workbenchModeDefinitions.map(definition => definition.order)).toEqual([0, 1, 2, 3])
+    expect(new Set(workbenchModeDefinitions.map(definition => definition.id)).size).toBe(4)
+  })
+
+  it('keeps every page behind a lazy loader', () => {
+    const lazyType = Symbol.for('react.lazy')
+    for (const definition of workbenchModeDefinitions) {
+      expect((definition.Component as { $$typeof?: symbol }).$$typeof).toBe(lazyType)
+    }
+  })
+
+  it('renders only the selected page and loads a page on first selection', async () => {
+    const { controller, common } = setup()
+    controller.open(sessionId, 'review')
+    const panelProps = common as unknown as WorkbenchPanelProps
+    const view = render(<WorkbenchPanel {...panelProps} mode="review" />)
+
+    expect(await screen.findByText('变更')).toBeTruthy()
+    expect(screen.queryByText('清屏')).toBeNull()
+    expect(screen.queryByText('原生浏览器仅在桌面版可用')).toBeNull()
+    expect(screen.queryByPlaceholderText('筛选文件')).toBeNull()
+
+    fireEvent.click(screen.getByRole('tab', { name: '终端' }))
+    view.rerender(<WorkbenchPanel {...panelProps} mode={controller.getSnapshot().mode} />)
+    expect(await screen.findByText('清屏')).toBeTruthy()
+    expect(screen.queryByText('变更')).toBeNull()
+  })
+
+  it('falls back to terminal for unknown persisted modes', () => {
+    expect(loadMode({ getItem: key => key === MODE_KEY ? 'agent-browser' : null })).toBe('terminal')
+  })
+})
 
 describe('desktop workbench shell', () => {
   it('keeps one reusable fixture for every existing workbench mode', () => {
