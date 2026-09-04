@@ -929,7 +929,7 @@ async function exerciseComposerAddMenu(page: Page, seeded: WindowsClipboardSmoke
       && bounds.bottom <= window.innerHeight
   })).toBe(true)
   await expect.poll(() => menu.locator('[data-add-section="true"]').allTextContents()).toEqual(
-    expect.arrayContaining([expect.stringMatching(/^(?:Add|添加)$/u), expect.stringMatching(/^(?:Commands|命令)$/u)]),
+    expect.arrayContaining([expect.stringMatching(/^(?:Add|添加)$/u), expect.stringMatching(/^(?:Plugins|插件)$/u)]),
   )
   const options = menu.getByRole('option')
   await expect.poll(() => options.count()).toBeGreaterThanOrEqual(5)
@@ -937,12 +937,17 @@ async function exerciseComposerAddMenu(page: Page, seeded: WindowsClipboardSmoke
   await menu.getByRole('option', { name: /^goal/iu }).waitFor({ state: 'visible' })
   await menu.getByRole('option', { name: /^plan/iu }).waitFor({ state: 'visible' })
   const commandRows = menu.locator('button[id^="dsh-slash-option-command-"]')
-  expect(await commandRows.count()).toBeGreaterThanOrEqual(2)
+  expect(await commandRows.count()).toBe(2)
+  expect(await commandRows.allTextContents()).toEqual([
+    expect.stringMatching(/^goal\b/iu),
+    expect.stringMatching(/^plan\b/iu),
+  ])
   const skillRows = menu.locator('button[id^="dsh-slash-option-skill-"]')
   if (await skillRows.count() > 0) {
     expect(await menu.locator('[data-add-section="true"]').allTextContents()).toContainEqual(
       expect.stringMatching(/^(?:Plugins|插件)$/u),
     )
+    await menu.getByRole('option', { name: /^browser-skill\b/iu }).waitFor({ state: 'visible' })
   }
 
   // Files delegates into the existing @ reference pipeline.
@@ -984,6 +989,25 @@ async function exerciseComposerAddMenu(page: Page, seeded: WindowsClipboardSmoke
   await removeDocument.waitFor({ state: 'visible', timeout: 15_000 })
   await removeDocument.click()
   await expect.poll(() => removeDocument.count()).toBe(0)
+
+  // Bare @ is the product-wide discovery surface: actions and the installed
+  // BrowserSkill precede file/session references, and a skill pick lands the
+  // canonical slash invocation instead of inventing an @ reference kind.
+  await input.fill('@')
+  const mentionMenu = composer.locator('[data-trigger-menu]:not([data-composer-add-menu])')
+  await mentionMenu.waitFor({ state: 'visible', timeout: 15_000 })
+  const browserSkill = mentionMenu.getByRole('option', { name: /^browser-skill\b/iu })
+  await browserSkill.waitFor({ state: 'visible', timeout: 15_000 })
+  const sourceOrder = await mentionMenu.getByRole('option').evaluateAll(rows => rows.map(row => (
+    row.id.match(/^dsh-slash-option-([^-]+)/u)?.[1] ?? ''
+  )))
+  expect(sourceOrder.indexOf('command')).toBeGreaterThanOrEqual(0)
+  expect(sourceOrder.indexOf('skill')).toBeGreaterThan(sourceOrder.indexOf('command'))
+  const referenceIndex = sourceOrder.indexOf('reference')
+  if (referenceIndex >= 0) expect(sourceOrder.indexOf('skill')).toBeLessThan(referenceIndex)
+  await browserSkill.click()
+  await expect.poll(() => input.textContent()).toBe('/browser-skill ')
+  await input.fill('')
 }
 
 async function exerciseWindowsClipboard(

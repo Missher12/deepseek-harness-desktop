@@ -374,7 +374,6 @@ export function apply(ctx: Context): void {
             const snapshot = shell.snapshot
             inputTriggers.toggleSources('composer-add', composerAddLauncherSources({
               addSection: t('add.section'),
-              commandsSection: t('add.commandsSection'),
               pluginsSection: t('add.pluginsSection'),
             }), {
               trigger: '/',

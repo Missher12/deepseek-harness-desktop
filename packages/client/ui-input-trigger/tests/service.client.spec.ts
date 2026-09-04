@@ -95,6 +95,20 @@ async function serviceBench() {
 }
 
 describe('registerSource', () => {
+  it('orders bare @ discovery as actions, skills, Cordis plugins, then references', async () => {
+    const { inputTriggers, mint } = await serviceBench()
+    for (const [name, order] of [['reference', 0], ['cordis', -1], ['skill', -2], ['command', -3]] as const) {
+      inputTriggers.registerSource({ ...readySource('@', name, [{ name }]).source, order })
+    }
+    const controller = inputTriggers.sessionOf(mint('ordered').actx)
+    controller.track('@', 1, { tier: 'plain' }, 1)
+    await tick()
+
+    expect(controller.menu.getSnapshot().groups.map(group => group.source)).toEqual([
+      'command', 'skill', 'cordis', 'reference',
+    ])
+  })
+
   it('throws on a duplicate (trigger, name); same name across triggers is fine', async () => {
     const { inputTriggers } = await serviceBench()
     inputTriggers.registerSource(readySource('/', 'command', []).source)

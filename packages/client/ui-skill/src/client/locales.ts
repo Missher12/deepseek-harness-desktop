@@ -12,6 +12,7 @@ export const zh = {
   'row.instructions': '说明',
   'row.inspect': '查看',
   'menu.userOnly': '仅用户',
+  'menu.section': '插件',
 } satisfies Record<string, string>
 
 /** The skill namespace key union. */
@@ -26,4 +27,5 @@ export const en = {
   'row.instructions': 'Instructions',
   'row.inspect': 'Inspect',
   'menu.userOnly': 'user-only',
+  'menu.section': 'Plugins',
 } satisfies Record<SkillKey, string>

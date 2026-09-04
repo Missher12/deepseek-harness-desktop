@@ -10,6 +10,7 @@ export const zh = {
   'overlay.aria': '/{command} 选项',
   'listbox.aria': '/{command} 匹配项',
   'notice.imagesUnsupported': '/{command} 不接受图片附件，请先移除图片',
+  'mention.section': '添加',
 } satisfies Record<string, string>
 
 /** The command namespace key union. */
@@ -25,4 +26,5 @@ export const en = {
   'overlay.aria': '/{command} options',
   'listbox.aria': '/{command} matches',
   'notice.imagesUnsupported': '/{command} does not accept image attachments; remove them first',
+  'mention.section': 'Add',
 } satisfies Record<CommandKey, string>

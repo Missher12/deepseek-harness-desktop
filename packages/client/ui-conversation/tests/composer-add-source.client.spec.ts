@@ -103,9 +103,9 @@ describe('composer add source', () => {
     disposeCurrent()
   })
 
-  it('promotes Goal and Plan without dropping, duplicating, or mutating any original command and sections skills as plugins', () => {
+  it('keeps only Goal and Plan, leaves ordinary commands to slash, and features BrowserSkill first', () => {
     const sources = composerAddLauncherSources({
-      addSection: '添加', commandsSection: '命令', pluginsSection: '插件',
+      addSection: '添加', pluginsSection: '插件',
     })
     const command = sources.find(source => source.name === 'command')!
     const skill = sources.find(source => source.name === 'skill')!
@@ -117,10 +117,8 @@ describe('composer add source', () => {
     ]
 
     expect(command.project?.(commands)).toEqual([
-      { name: 'goal', value: 'goal', section: '添加' },
-      { name: 'plan', value: 'plan', section: '添加' },
-      { name: 'status', value: 'status', section: '命令' },
-      { name: 'compact', value: 'compact', section: '命令' },
+      { name: 'goal', value: 'goal', icon: 'goal', section: '添加' },
+      { name: 'plan', value: 'plan', icon: 'plan', section: '添加' },
     ])
     expect(commands).toEqual([
       { name: 'status', value: 'status' },
@@ -128,8 +126,12 @@ describe('composer add source', () => {
       { name: 'goal', value: 'goal' },
       { name: 'compact', value: 'compact' },
     ])
-    expect(skill.project?.([{ name: 'github', value: 'github' }])).toEqual([
-      { name: 'github', value: 'github', section: '插件' },
+    expect(skill.project?.([
+      { name: 'github', value: 'github' },
+      { name: 'browser-skill', value: 'browser-skill' },
+    ])).toEqual([
+      { name: 'browser-skill', value: 'browser-skill', icon: 'skill', section: '插件' },
+      { name: 'github', value: 'github', icon: 'skill', section: '插件' },
     ])
   })
 })

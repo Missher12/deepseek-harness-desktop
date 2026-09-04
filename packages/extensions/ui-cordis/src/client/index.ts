@@ -42,6 +42,7 @@ export const inject = [
 /** Mount every Cordis browser surface over the shared Host inventory. */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-cordis: dictionaries')
+  const t = ctx.locale.bind(NS)
 
   const port: CordisDynamicPort = {
     stop: async (sessionId, pluginId) => {
@@ -150,7 +151,7 @@ export function apply(ctx: ClientContext): void {
   const source: InputTriggerSource = {
     trigger: '@',
     name: 'cordis',
-    order: 1,
+    order: -1,
     candidates(session, { query }) {
       const rows = rowsOf(session.sessionId, query)
       return Promise.resolve(rows.map((row) => {
@@ -159,6 +160,8 @@ export function apply(ctx: ClientContext): void {
         return {
           name: String(row.pluginId),
           ...pkg === undefined ? {} : { description: pkg.purpose },
+          icon: 'plugin' as const,
+          section: t('menu.section'),
         }
       }))
     },

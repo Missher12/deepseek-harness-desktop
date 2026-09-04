@@ -15,7 +15,6 @@ export interface ComposerAddCopy {
 /** Localized section labels projected over existing launcher candidates. */
 export interface ComposerAddLaunchCopy {
   readonly addSection: string
-  readonly commandsSection: string
   readonly pluginsSection: string
 }
 
@@ -94,28 +93,28 @@ export function createComposerAddSource(copy: ComposerAddCopy) {
 /**
  * Launcher composition whose promotion and sectioning remain presentation-only.
  * @param copy - Localized names for the projected sections.
- * @returns Existing sources in the fixed Add, Commands, Plugins order.
+ * @returns Existing sources in the fixed Add and Plugins order; ordinary commands stay under `/`.
  */
 export function composerAddLauncherSources(copy: ComposerAddLaunchCopy): readonly InputTriggerLauncherSource[] {
   const featured = ['goal', 'plan'] as const
-  const featuredName = (name: string): name is typeof featured[number] =>
-    featured.includes(name as typeof featured[number])
   return [
     { name: 'composer-add' },
     {
       name: 'command',
       project: (items: readonly InputTriggerLauncherCandidate[]) => {
         const promoted = featured.flatMap(name => items.filter(item => item.name === name))
-        const remaining = items.filter(item => !featuredName(item.name))
-        return [...promoted, ...remaining].map(item => ({
+        return promoted.map(item => ({
           ...item,
-          section: featuredName(item.name) ? copy.addSection : copy.commandsSection,
+          icon: item.name === 'goal' ? 'goal' as const : 'plan' as const,
+          section: copy.addSection,
         }))
       },
     },
     {
       name: 'skill',
-      project: items => items.map(item => ({ ...item, section: copy.pluginsSection })),
+      project: items => [...items]
+        .sort((left, right) => Number(right.name === 'browser-skill') - Number(left.name === 'browser-skill'))
+        .map(item => ({ ...item, icon: 'skill', section: copy.pluginsSection })),
     },
   ]
 }

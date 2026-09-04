@@ -54,7 +54,10 @@ function providePresentation(ctx: Context): PresentationCapture {
       return () => { capture.localeDisposed = true }
     },
     // Minimal bound-translate fake: zh dictionary lookup, key passthrough on miss.
-    bind: () => (key: string) => key === 'menu.userOnly' ? '仅用户' : key,
+    bind: () => (key: string) => ({
+      'menu.userOnly': '仅用户',
+      'menu.section': '插件',
+    })[key] ?? key,
   })
   return capture
 }
@@ -136,6 +139,7 @@ describe('apply', () => {
           'row.instructions': '说明',
           'row.inspect': '查看',
           'menu.userOnly': '仅用户',
+          'menu.section': '插件',
         },
         en: {
           'row.title': 'Skill',
@@ -145,6 +149,7 @@ describe('apply', () => {
           'row.instructions': 'Instructions',
           'row.inspect': 'Inspect',
           'menu.userOnly': 'user-only',
+          'menu.section': 'Plugins',
         },
       },
     }])
@@ -369,8 +374,9 @@ describe('pick lands plain text', () => {
 
   it('the @ menu exposes the live catalog and resolves a pick to the canonical /name token', async () => {
     const { mentionSource } = await bench(listOk(CATALOG))
+    expect(mentionSource.order).toBe(-2)
     await expect(mentionSource.candidates(proj('s1'), req('code'))).resolves.toEqual([
-      { name: 'code-review', description: 'review flow' },
+      { name: 'code-review', description: 'review flow', icon: 'skill', section: '插件' },
     ])
     expect(mentionSource.onPick({
       candidate: { name: 'code-review', description: 'review flow' },
@@ -380,6 +386,20 @@ describe('pick lands plain text', () => {
       action: 'pick',
       span: { start: 8, end: 13, draftRev: 9 },
     })).toEqual({ text: '/code-review ' })
+  })
+
+  it('features the installed browser-skill in the first @ viewport row', async () => {
+    const { mentionSource } = await bench(listOk([
+      { name: 'github', description: 'GitHub workflows', modelInvocable: true },
+      { name: 'browser-skill', description: 'Browser control', modelInvocable: true },
+      { name: 'figma', description: 'Design workflows', modelInvocable: true },
+    ]))
+
+    await expect(mentionSource.candidates(proj('s1'), req(''))).resolves.toEqual([
+      { name: 'browser-skill', description: 'Browser control', icon: 'skill', section: '插件' },
+      { name: 'github', description: 'GitHub workflows', icon: 'skill', section: '插件' },
+      { name: 'figma', description: 'Design workflows', icon: 'skill', section: '插件' },
+    ])
   })
 
   it('keeps the legacy reference codec removed and stays out of adjudication', async () => {

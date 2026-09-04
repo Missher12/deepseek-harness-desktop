@@ -186,6 +186,7 @@ describe('registration', () => {
     expect(typeof source.warm).toBe('function')
     expect(mentionSource).not.toHaveProperty('matchSpace')
     expect(mentionSource).not.toHaveProperty('matchEnter')
+    expect(mentionSource.order).toBe(-3)
     expect([...registered.keys()]).toEqual(['/ command', '@ command'])
     await fiber.dispose()
     expect(registered.size).toBe(0)
@@ -206,11 +207,11 @@ describe('candidates', () => {
   it('the @ source exposes only goal and plan in stable product order', async () => {
     const { mentionSource } = await bench()
     await expect(mentionSource.candidates(proj('s1'), req('', 'inline'))).resolves.toEqual([
-      { name: 'goal', description: 'leadingInput kind', hint: 'goal text' },
-      { name: 'plan', description: 'bare kind' },
+      { name: 'goal', description: 'leadingInput kind', hint: 'goal text', icon: 'goal', section: 'command:mention.section' },
+      { name: 'plan', description: 'bare kind', icon: 'plan', section: 'command:mention.section' },
     ])
     await expect(mentionSource.candidates(proj('s1'), req('go'))).resolves.toEqual([
-      { name: 'goal', description: 'leadingInput kind', hint: 'goal text' },
+      { name: 'goal', description: 'leadingInput kind', hint: 'goal text', icon: 'goal', section: 'command:mention.section' },
     ])
   })
 

@@ -157,6 +157,12 @@ export function apply(ctx: ClientContext): void {
     // execution protocol while making installed skills discoverable from @.
     return { text: `/${candidate.name} ` }
   }
+  const mentionCandidates: InputTriggerSource['candidates'] = async (session, request) => {
+    const rows = await candidates(session, request)
+    return [...rows]
+      .sort((left, right) => Number(right.name === 'browser-skill') - Number(left.name === 'browser-skill'))
+      .map(candidate => ({ ...candidate, icon: 'skill', section: t('menu.section') }))
+  }
 
   const slashSource: InputTriggerSource = {
     trigger: '/',
@@ -185,8 +191,8 @@ export function apply(ctx: ClientContext): void {
   const mentionSource: InputTriggerSource = {
     trigger: '@',
     name: 'skill',
-    order: 2,
-    candidates,
+    order: -2,
+    candidates: mentionCandidates,
     warm,
     onPick,
   }

@@ -13,7 +13,7 @@
 import { Fragment, useEffect, useRef, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
 import {
-  IconChevronRightOutline14, IconCodeOutline16, IconGoalOutline16, IconImageOutline16,
+  IconChevronRightOutline14, IconCordisPluginOutline14, IconGoalOutline16, IconImageOutline16,
   IconPaperclipOutline16, IconSkillOutline16, IconThinkOutline16, ReferenceIcon,
   useAnchoredMaxHeight,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -21,6 +21,7 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './MenuView.module.css'
 import type { MenuViewInjected } from './slots.ts'
 import type { MenuKey } from './locales.ts'
+import type { InputTriggerCandidateIcon } from '../types.ts'
 
 /** Full menu props: injected face + the locale seat. */
 export type MenuViewProps = MenuViewInjected & PropsLocale<'slash.menu'>
@@ -42,6 +43,20 @@ function optionId(source: string, index: number): string {
  */
 function optionKey(source: string, index: number, name: string, value?: string): string {
   return JSON.stringify([source, index, name, value])
+}
+
+/** Map the closed candidate vocabulary to one consistent menu glyph. */
+function candidateIcon(icon: InputTriggerCandidateIcon | undefined) {
+  switch (icon) {
+    case 'goal': return <IconGoalOutline16 />
+    case 'plan': return <IconThinkOutline16 />
+    case 'skill': return <IconSkillOutline16 />
+    case 'plugin': return <IconCordisPluginOutline14 size={16} />
+    case 'file':
+    case 'folder':
+    case 'session': return <ReferenceIcon kind={icon} size={16} />
+    case undefined: return undefined
+  }
 }
 
 /**
@@ -155,17 +170,9 @@ export function MenuView({ menu, launcher, headers, onPick, onCrumb, onHover, on
                     ? item.section !== previousSection
                     : item.section !== group.items[index - 1]?.section)
                   if (composerAdd && item.section !== undefined) previousSection = item.section
-                  const icon = composerAdd
-                    ? group.source === 'composer-add'
-                      ? item.value === 'image' ? <IconImageOutline16 /> : <IconPaperclipOutline16 />
-                      : group.source === 'skill'
-                        ? <IconSkillOutline16 />
-                        : item.name === 'goal'
-                          ? <IconGoalOutline16 />
-                          : item.name === 'plan'
-                            ? <IconThinkOutline16 />
-                            : <IconCodeOutline16 />
-                    : item.icon === undefined ? undefined : <ReferenceIcon kind={item.icon} size={16} />
+                  const icon = composerAdd && group.source === 'composer-add'
+                    ? item.value === 'image' ? <IconImageOutline16 /> : <IconPaperclipOutline16 />
+                    : candidateIcon(item.icon)
                   return (
                     <Fragment key={optionKey(group.source, index, item.name, item.value)}>
                       {showSection

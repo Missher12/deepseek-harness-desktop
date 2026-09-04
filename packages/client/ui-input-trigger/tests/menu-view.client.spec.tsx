@@ -176,7 +176,39 @@ describe('MenuView', () => {
     expect(onPick).toHaveBeenCalledWith('reference', 2)
   })
 
-  it('renders the composer Add launcher as one compact sectioned list with SVG icons and no duplicate section title', () => {
+  it('renders distinct action, skill, and dynamic-plugin glyphs in the ordinary @ menu', () => {
+    const { view } = mount(openState({
+      groups: [
+        {
+          source: 'command',
+          status: 'ready',
+          items: [
+            { name: 'goal', icon: 'goal', section: '添加' },
+            { name: 'plan', icon: 'plan', section: '添加' },
+          ],
+        },
+        {
+          source: 'skill',
+          status: 'ready',
+          items: [{ name: 'browser-skill', icon: 'skill', section: '插件' }],
+        },
+        {
+          source: 'cordis',
+          status: 'ready',
+          items: [{ name: 'dynamic-plugin', icon: 'plugin', section: 'Cordis 插件' }],
+        },
+      ],
+      highlight: { source: 'command', index: 0 },
+    }))
+
+    expect([...view.container.querySelectorAll('[class*="sectionTitle"]')].map(node => node.textContent)).toEqual([
+      '添加', '插件', 'Cordis 插件',
+    ])
+    expect(screen.getAllByRole('option')).toHaveLength(4)
+    expect(screen.getAllByRole('option').every(option => option.querySelector('svg') !== null)).toBe(true)
+  })
+
+  it('renders the composer Add launcher as one curated Add and Plugins list with SVG icons', () => {
     const { view, onPick } = mount(openState({
       groups: [
         {
@@ -192,15 +224,14 @@ describe('MenuView', () => {
           source: 'command',
           status: 'ready',
           items: [
-            { name: 'goal', description: '设置目标', section: '添加' },
-            { name: 'plan', description: '进入计划模式', section: '添加' },
-            { name: 'compact', description: '压缩上下文', section: '命令' },
+            { name: 'goal', description: '设置目标', icon: 'goal', section: '添加' },
+            { name: 'plan', description: '进入计划模式', icon: 'plan', section: '添加' },
           ],
         },
         {
           source: 'skill',
           status: 'ready',
-          items: [{ name: 'github', description: '处理 GitHub 工作流', section: '插件' }],
+          items: [{ name: 'github', description: '处理 GitHub 工作流', icon: 'skill', section: '插件' }],
         },
       ],
       highlight: { source: 'composer-add', index: 0 },
@@ -208,7 +239,7 @@ describe('MenuView', () => {
 
     expect(view.container.querySelector('[data-composer-add-menu]')).not.toBeNull()
     expect([...view.container.querySelectorAll('[data-add-section]')].map(node => node.textContent)).toEqual([
-      '添加', '命令', '插件',
+      '添加', '插件',
     ])
     const options = screen.getAllByRole('option')
     expect(options.map(option => option.textContent)).toEqual([
@@ -216,7 +247,6 @@ describe('MenuView', () => {
       '添加图片PNG、JPG、WebP 或 GIF',
       'goal设置目标',
       'plan进入计划模式',
-      'compact压缩上下文',
       'github处理 GitHub 工作流',
     ])
     expect(options.every(option => option.querySelector('svg') !== null)).toBe(true)

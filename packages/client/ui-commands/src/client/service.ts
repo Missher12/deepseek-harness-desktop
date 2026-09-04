@@ -159,7 +159,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     const mentionSource = {
       trigger: '@',
       name: 'command',
-      order: 1,
+      order: -3,
       candidates: (session, req) => this.mentionCandidates(session, req),
       onPick: pick => this.dispatch(pick),
     } satisfies InputTriggerSource
@@ -301,6 +301,11 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     return ['goal', 'plan']
       .map(name => byName.get(name))
       .filter((candidate): candidate is InputTriggerCandidate => candidate !== undefined)
+      .map(candidate => ({
+        ...candidate,
+        icon: candidate.name === 'goal' ? 'goal' as const : 'plan' as const,
+        section: this.t('mention.section'),
+      }))
   }
 
   /** Decision table, menu column: contribution/decorated-host → popup; host input → claim; host bare → detached execute. */
