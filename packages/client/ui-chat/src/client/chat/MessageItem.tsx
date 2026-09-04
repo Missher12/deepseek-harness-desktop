@@ -202,7 +202,11 @@ function UserStyleBubble({
       data-submission-echo={echo || undefined}
     >
       <div className={css.userStack}>
-        {renderMessageImages({ images, attachments, align: 'end' })}
+        {renderMessageImages({
+          images,
+          ...(previewImages === undefined ? { attachments } : {}),
+          align: 'end',
+        })}
         {showBubble && <div className={css.bubble}>
           {projectUserText(text, referenceLabels)}
           {rest.map((block, i) => <JsonBlock key={i} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />)}

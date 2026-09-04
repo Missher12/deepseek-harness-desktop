@@ -1590,7 +1590,7 @@ async function exercisePersonalization(
 
   let section = settingsDialog.locator('[data-personalization-section]')
   await section.waitFor({ state: 'visible', timeout: 15_000 })
-  const instructions = `desktop-0.5.2-personalization-${platform}`
+  const instructions = `desktop-0.5.3-personalization-${platform}`
   const editor = section.locator('#dsh-personalization-instructions')
   await expect.poll(() => editor.isEnabled(), { timeout: 15_000 }).toBe(true)
   await editor.fill(instructions)
@@ -1891,7 +1891,7 @@ export async function runPackagedDesktopSmoke(
             const bounds = element.getBoundingClientRect()
             return {
               tag: element.tagName,
-              cls: String(element.className).slice(0, 200),
+              cls: element.className.slice(0, 200),
               visible: bounds.width > 0 && bounds.height > 0,
               text: (element.textContent ?? '').slice(0, 90),
             }

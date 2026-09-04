@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { BrowserSkillHealth, BrowserSkillStatus } from '../protocol.ts'
 import { workbenchTransport } from './transport.ts'
-import { NS } from './locales.ts'
+import { NS, type DesktopWorkbenchKey } from './locales.ts'
 import css from './BrowserSkillMode.module.css'
 
 type Props = PropsRuntime<'layout.utility'> & PropsLocale<typeof NS>
@@ -10,14 +10,13 @@ type Props = PropsRuntime<'layout.utility'> & PropsLocale<typeof NS>
 /** Only official HTTPS destinations are reachable from this page. */
 export const BROWSER_SKILL_OFFICIAL_URL = 'https://github.com/Tencent/BrowserSkill#readme'
 
-function stateLabel(state: BrowserSkillHealth): Parameters<Props['t']>[0] {
-  switch (state) {
-    case 'bundled-ready': return 'browserSkillBundled'
-    case 'missing': return 'browserSkillMissing'
-    case 'incompatible': return 'browserSkillIncompatible'
-    case 'unhealthy': return 'browserSkillUnhealthy'
-  }
-}
+/** Locale-owned status labels, exhaustively keyed by the Host health state. */
+const STATE_LABEL_KEYS = {
+  'bundled-ready': 'browserSkillBundled',
+  missing: 'browserSkillMissing',
+  incompatible: 'browserSkillIncompatible',
+  unhealthy: 'browserSkillUnhealthy',
+} as const satisfies Record<BrowserSkillHealth, DesktopWorkbenchKey>
 
 /**
  * Explicit-only BrowserSkill status page. The probe runs when the user
@@ -59,7 +58,7 @@ export function BrowserSkillMode({ sessionId, t }: Props) {
           <dl className={css.facts}>
             <div className={css.fact}>
               <dt>{t('browserSkill')}</dt>
-              <dd data-browser-skill-state={status.state}>{t(stateLabel(status.state))}</dd>
+              <dd data-browser-skill-state={status.state}>{t(STATE_LABEL_KEYS[status.state])}</dd>
             </div>
             {status.cliVersion !== undefined && <div className={css.fact}>
               <dt>{t('browserSkillCliFact')}</dt>

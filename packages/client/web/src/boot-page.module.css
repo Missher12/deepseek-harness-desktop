@@ -144,6 +144,7 @@
   margin-top: 27px;
   overflow: hidden;
   border-radius: 999px;
+  corner-shape: round;
   background: #e4e8f2;
 }
 

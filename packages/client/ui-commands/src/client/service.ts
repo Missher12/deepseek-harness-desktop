@@ -1,5 +1,6 @@
 /**
- * CommandUiRuntime (`ctx.commandUi`): the '/' command source over the
+ * CommandUiRuntime (`ctx.commandUi`): the '/' command source and focused '@'
+ * action source over the
  * session-keyed directory, the client-contribution registry, and the
  * per-session popupSelect controllers. Candidate synthesis merges the host
  * catalog with contributions by availability, then fuzzy query/position
@@ -19,6 +20,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {
   CandidateRequest, ClientSessionContext, CommandClaim, PickOutcome, InputTriggerCandidate, InputTriggerPick,
+  InputTriggerSource,
   SubmitEnvelope, SubmitImageAttachment, SubmitOutcome,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { CommandContribution, CommandDecoration, CommandUiContract } from './contract.ts'
@@ -119,7 +121,7 @@ function fuzzyCandidates(candidates: readonly InputTriggerCandidate[], rawQuery:
   return ranked.map(match => match.candidate)
 }
 
-/** Command surface: session-keyed directory + '/' source + contribution registry + per-session popups. */
+/** Command surface: session-keyed directory + '/'/'@' sources + contribution registry + per-session popups. */
 export class CommandUiRuntime extends Service implements CommandUiContract {
   static inject = ['inputTriggers', 'sessions', 'remote', 'remote.commands']
 
@@ -145,7 +147,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     })
     const inputTriggers = ctx.get('inputTriggers')
     if (inputTriggers === undefined) throw new Error('ui-commands: slash service unavailable')
-    ctx.effect(() => inputTriggers.registerSource({
+    const slashSource = {
       trigger: '/',
       name: 'command',
       candidates: (session, req) => this.candidates(session, req),
@@ -153,7 +155,27 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
       matchSpace: (session, token) => this.matchSpace(session, token),
       matchEnter: (session, line, signal, envelope) => this.matchEnter(session, line, signal, envelope),
       warm: (session) => { this.directory.warm(session.sessionId) },
-    }), 'command: slash source')
+    } satisfies InputTriggerSource
+    const mentionSource = {
+      trigger: '@',
+      name: 'command',
+      order: 1,
+      candidates: (session, req) => this.mentionCandidates(session, req),
+      onPick: pick => this.dispatch(pick),
+    } satisfies InputTriggerSource
+    ctx.effect(() => {
+      const unregisterSlash = inputTriggers.registerSource(slashSource)
+      try {
+        const unregisterMention = inputTriggers.registerSource(mentionSource)
+        return () => {
+          unregisterMention()
+          unregisterSlash()
+        }
+      } catch (error) {
+        unregisterSlash()
+        throw error
+      }
+    }, 'command: input sources')
     ctx.remote.$on('commands/change', () => { this.directory.invalidateAll() })
     // A preset switch changes which commands one session's agent resolves and
     // registers nothing globally. Drop that key's old composition before
@@ -266,6 +288,19 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
       rows.filter(c => req.position === 'leading' || c.hint === undefined),
       req.query,
     )
+  }
+
+  /** Focused @ launcher: only the product actions requested beside references and skills. */
+  private async mentionCandidates(
+    session: ClientSessionContext,
+    req: CandidateRequest,
+  ): Promise<readonly InputTriggerCandidate[]> {
+    // @ can be opened inline; command input-position rules must not hide goal.
+    const candidates = await this.candidates(session, { ...req, position: 'leading' })
+    const byName = new Map(candidates.map(candidate => [candidate.name, candidate]))
+    return ['goal', 'plan']
+      .map(name => byName.get(name))
+      .filter((candidate): candidate is InputTriggerCandidate => candidate !== undefined)
   }
 
   /** Decision table, menu column: contribution/decorated-host → popup; host input → claim; host bare → detached execute. */

@@ -62,8 +62,14 @@ function providePresentation(ctx: Context): PresentationCapture {
 /** Boot the plugin over fake slash/connection faces; returns the captured source and its ctx. */
 async function bench(list: ListFn, addressed?: SessionId) {
   const ctx = new Context()
-  let captured: InputTriggerSource | undefined
-  ctx.provide('inputTriggers', { registerSource: (src: InputTriggerSource) => { captured = src; return () => {} } })
+  const captured = new Map<string, InputTriggerSource>()
+  ctx.provide('inputTriggers', {
+    registerSource: (src: InputTriggerSource) => {
+      const key = `${src.trigger} ${src.name}`
+      captured.set(key, src)
+      return () => { captured.delete(key) }
+    },
+  })
   ctx.provide('sessions', {
     subagentAddress: (id: SessionId) => id === addressed
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
@@ -72,7 +78,11 @@ async function bench(list: ListFn, addressed?: SessionId) {
   const remote = new TestRemote(ctx, { skills: { list } })
   providePresentation(ctx)
   await ctx.plugin({ inject: [...inject], apply }).await()
-  return { ctx, source: captured!, remote }
+  const source = captured.get('/ skill')
+  const mentionSource = captured.get('@ skill')
+  if (source === undefined) throw new Error('slash skill source not registered')
+  if (mentionSource === undefined) throw new Error('@ skill source not registered')
+  return { ctx, source, mentionSource, remote }
 }
 
 const CATALOG: SkillRow[] = [
@@ -140,7 +150,7 @@ describe('apply', () => {
     }])
   })
 
-  it('registers the "/" skill source; disposal frees the name (HMR safety)', async () => {
+  it('registers the "/" and "@" skill sources; disposal frees both names (HMR safety)', async () => {
     const ctx = new Context()
     // InputTriggerService itself injects 'sessions'; the stub unblocks its fiber.
     ctx.provide('sessions', {})
@@ -156,11 +166,14 @@ describe('apply', () => {
       candidates: () => Promise.resolve([]),
       onPick: () => undefined,
     }
+    const mentionRival = { ...rival, trigger: '@' as const }
     // Live registration holds the (trigger, name) seat…
     expect(() => inputTriggers.registerSource(rival)).toThrow(/already registered/)
+    expect(() => inputTriggers.registerSource(mentionRival)).toThrow(/already registered/)
     // …and fiber teardown releases it.
     await fiber.dispose()
     expect(() => inputTriggers.registerSource(rival)).not.toThrow()
+    expect(() => inputTriggers.registerSource(mentionRival)).not.toThrow()
     expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(0)
     expect(presentation.localeDisposed).toBe(true)
   })
@@ -352,6 +365,21 @@ describe('pick lands plain text', () => {
       span: { start: 0, end: 4, draftRev: 7 },
     })
     expect(outcome).toEqual({ text: '/commit-helper ' })
+  })
+
+  it('the @ menu exposes the live catalog and resolves a pick to the canonical /name token', async () => {
+    const { mentionSource } = await bench(listOk(CATALOG))
+    await expect(mentionSource.candidates(proj('s1'), req('code'))).resolves.toEqual([
+      { name: 'code-review', description: 'review flow' },
+    ])
+    expect(mentionSource.onPick({
+      candidate: { name: 'code-review', description: 'review flow' },
+      session: proj('s1'),
+      position: 'inline',
+      via: 'menu',
+      action: 'pick',
+      span: { start: 8, end: 13, draftRev: 9 },
+    })).toEqual({ text: '/code-review ' })
   })
 
   it('keeps the legacy reference codec removed and stays out of adjudication', async () => {

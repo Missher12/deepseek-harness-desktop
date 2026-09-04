@@ -68,7 +68,7 @@
 .utilityCol {
   min-width: 0;
   overflow: hidden;
-  border-left: 1px solid var(--dsw-alias-border-l2);
+  border-left: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
 }
 
@@ -78,7 +78,7 @@
   z-index: 12;
   max-width: 100%;
   overflow: hidden;
-  border-left: 1px solid var(--dsw-alias-border-l2);
+  border-left: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
   box-shadow: -16px 0 40px rgb(0 0 0 / 12%);
 }

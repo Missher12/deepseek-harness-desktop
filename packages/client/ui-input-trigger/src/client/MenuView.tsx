@@ -34,6 +34,17 @@ function optionId(source: string, index: number): string {
 }
 
 /**
+ * React identity for one rendered candidate. The DOM id remains positional for
+ * aria-activedescendant, but a stale-while-revalidate row must be replaced when
+ * a new query settles a different candidate into the same position. Otherwise
+ * an already-resolved pointer locator can click the new positional handler
+ * while still carrying the old row's accessible name.
+ */
+function optionKey(source: string, index: number, name: string, value?: string): string {
+  return JSON.stringify([source, index, name, value])
+}
+
+/**
  * Render the candidate menu overlay entry.
  * @param props - injected face (the menu store and the pick route); `t` rides the standard locale seat.
  * @returns the dropdown while open; null while closed.
@@ -156,7 +167,7 @@ export function MenuView({ menu, launcher, headers, onPick, onCrumb, onHover, on
                             : <IconCodeOutline16 />
                     : item.icon === undefined ? undefined : <ReferenceIcon kind={item.icon} size={16} />
                   return (
-                    <Fragment key={optionId(group.source, index)}>
+                    <Fragment key={optionKey(group.source, index, item.name, item.value)}>
                       {showSection
                         ? <div className={css.sectionTitle} role="presentation" data-add-section={composerAdd || undefined}>{item.section}</div>
                         : null}

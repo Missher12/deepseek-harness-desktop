@@ -1,5 +1,5 @@
 /**
- * Skill reference plugin, browser half: registers the '/' skill source —
+ * Skill reference plugin, browser half: registers the '/' and '@' skill sources —
  * candidates from the `skills/list` Remote addressed by the per-call session
  * projection's sessionId (sessions are always agent-backed; the host
  * resolves cwd from the session header). A pick lands the literal `/name `
@@ -61,7 +61,7 @@ interface CatalogFetch {
 export const inject = ['inputTriggers', 'sessions', 'slots', 'locale', 'remote', 'remote.skills']
 
 /**
- * Client plugin body: register the '/' source, dictionaries, and keyed tool row.
+ * Client plugin body: register the '/' and '@' sources, dictionaries, and keyed tool row.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -134,28 +134,36 @@ export function apply(ctx: ClientContext): void {
   // locale service's own fallback ladder; candidate-time reads stay plain text.
   const t = ctx.locale.bind(NS)
 
-  const source: InputTriggerSource = {
+  const candidates: InputTriggerSource['candidates'] = async (session, { query, signal }) => {
+    const skills = await fetchCatalog(session.sessionId)
+    // Superseded keystroke: the shared fetch stays warm, this caller yields.
+    if (signal.aborted) return []
+    return skills
+      .filter(skill => skill.name.startsWith(query))
+      .map(skill => ({
+        name: skill.name,
+        // The user-only marker rides the description (the menu's only
+        // secondary text); `hint` is the claim-state ghost text, not a badge.
+        description: skill.modelInvocable ? skill.description : `${t('menu.userOnly')} · ${skill.description}`,
+      }))
+  }
+  const warm: NonNullable<InputTriggerSource['warm']> = (session) => {
+    // Fire-and-forget scope-birth prewarm; the shared fetch reports
+    // through candidates.
+    fetchCatalog(session.sessionId).catch(() => {})
+  }
+  const onPick: InputTriggerSource['onPick'] = ({ candidate }) => {
+    // Both menus land the canonical slash invocation. This keeps one Host
+    // execution protocol while making installed skills discoverable from @.
+    return { text: `/${candidate.name} ` }
+  }
+
+  const slashSource: InputTriggerSource = {
     trigger: '/',
     name: 'skill',
     order: 2,
-    async candidates(session, { query, signal }) {
-      const skills = await fetchCatalog(session.sessionId)
-      // Superseded keystroke: the shared fetch stays warm, this caller yields.
-      if (signal.aborted) return []
-      return skills
-        .filter(skill => skill.name.startsWith(query))
-        .map(skill => ({
-          name: skill.name,
-          // The user-only marker rides the description (the menu's only
-          // secondary text); `hint` is the claim-state ghost text, not a badge.
-          description: skill.modelInvocable ? skill.description : `${t('menu.userOnly')} · ${skill.description}`,
-        }))
-    },
-    warm(session) {
-      // Fire-and-forget scope-birth prewarm; the shared fetch reports
-      // through candidates.
-      fetchCatalog(session.sessionId).catch(() => {})
-    },
+    candidates,
+    warm,
     lexicon(session) {
       return fetches.get(session.sessionId)?.settled?.map(skill => skill.name)
     },
@@ -169,16 +177,18 @@ export function apply(ctx: ClientContext): void {
         if (listeners.size === 0) lexiconListeners.delete(key)
       }
     },
-    onPick({ candidate }) {
-      // Plain-text-reference decision (web-input-machine note): the pick
-      // lands plain text and the prompt ships the same
-      // literal. Determinism lives host-side — the host's
-      // pre-step boundary (dsh-tool-skill) recognizes the leading /name and
-      // injects the rendered body for every entry point. A name shared with a
-      // host command still resolves to the command: adjudication claims the
-      // line client-side before it ever becomes a prompt.
-      return { text: `/${candidate.name} ` }
-    },
+    onPick,
+  }
+  // Discovery-only alias: @ opens the same live catalog, then converts the
+  // chosen item to its canonical /skill invocation. Deliberately omit the
+  // lexicon and match hooks so manually typed @names stay ordinary references.
+  const mentionSource: InputTriggerSource = {
+    trigger: '@',
+    name: 'skill',
+    order: 2,
+    candidates,
+    warm,
+    onPick,
   }
   const inputTriggers = ctx.get('inputTriggers') as InputTriggerServiceContract
   // A preset decides which skill providers an agent reads, so a switched
@@ -186,10 +196,17 @@ export function apply(ctx: ClientContext): void {
   ctx.remote.$on('agent-preset/selected', invalidate)
   ctx.on('connection/reset', clearAll)
   ctx.effect(() => {
-    const unregister = inputTriggers.registerSource(source)
-    return () => {
-      unregister()
-      clearAll()
+    const unregisterSlash = inputTriggers.registerSource(slashSource)
+    try {
+      const unregisterMention = inputTriggers.registerSource(mentionSource)
+      return () => {
+        unregisterMention()
+        unregisterSlash()
+        clearAll()
+      }
+    } catch (error) {
+      unregisterSlash()
+      throw error
     }
-  }, 'ui-skill: source')
+  }, 'ui-skill: sources')
 }

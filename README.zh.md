@@ -14,7 +14,7 @@ DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的�
 
 请从本仓库的 [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases) 下载 DMG 或 Setup 安装程序。当前成品未签名；首次启动时，macOS 可能要求在 Finder 右键菜单中选择“打开”，Windows 可能显示 SmartScreen 提示。
 
-Desktop 0.5.2 从同一份经过测试的 Harness `0.1.1-rc.2` 源码提交构建 Intel macOS DMG 与 Windows x64 Setup。它恢复 v0.4.11 的 PromptRail，为现有“项目／会话”树提供更清晰的 ChatGPT 式层次节奏，把“审查、终端、浏览器、文件”固定在可调整宽度的工作台中，并为现有“完全访问”预设增加经过风险确认的**本会话不再询问**操作。启动阶段会在不跳过校验的前提下精确测量；Windows 成品只裁剪目标平台不可达的资源，并使用专门的任务栏、托盘和安装程序图标。旧版 0.4.x 回退代理的精确迁移、有界本地文档附件与“记忆与学习”均保持不变。Windows 目前仍通过安装程序更新；应用内更新暂只支持 Intel macOS。
+Desktop 0.5.3 从同一份经过测试的 Harness `0.1.2-alpha.5` 源码提交构建 Intel macOS DMG 与 Windows x64 Setup。它采用官方完整历史发言导航，保留现有“项目／会话”树以及可调整宽度的“审查、终端、浏览器、文件”工作台，并把输入框的 `@` 启动器扩展为文件／会话引用、目标／计划操作和当前会话实时技能目录。腾讯 BrowserSkill `0.1.2` 及其锁定版本 CLI 会作为工作台集成随包提供，但只有用户明确打开时才工作；浏览器控制仍要求用户安装兼容扩展，应用不会静默启动它。旧版 0.4.x 回退代理的精确迁移、有界本地文档附件、“记忆与学习”、会话级授权、启动阶段测量及 Windows 平台专属资产均保持不变。Windows 目前仍通过安装程序更新；应用内更新暂只支持 Intel macOS。
 
 ## 开发者预览
 

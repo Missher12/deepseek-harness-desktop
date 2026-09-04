@@ -33,7 +33,7 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   overflow: hidden;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-3);
 }
@@ -47,7 +47,7 @@
 }
 
 .skeletonMetric + .skeletonMetric {
-  border-left: 1px solid var(--dsw-alias-border-l2);
+  border-left: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .skeletonBlock,
@@ -140,7 +140,7 @@
   grid-template-columns: repeat(5, minmax(0, 1fr));
   margin: 0;
   overflow: hidden;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-3);
 }
@@ -152,7 +152,7 @@
 }
 
 .metric + .metric {
-  border-left: 1px solid var(--dsw-alias-border-l2);
+  border-left: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .metric dt,
@@ -205,7 +205,7 @@
 }
 
 .failure button {
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   padding: 4px 10px;
   background: transparent;
@@ -220,7 +220,7 @@
   justify-content: space-between;
   gap: 12px;
   margin-top: 12px;
-  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 22%, var(--dsw-alias-border-l2));
+  border: 0.5px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 22%, var(--dsw-alias-border-l2));
   border-radius: 8px;
   padding: 7px 9px;
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 6%, transparent);
@@ -305,7 +305,7 @@
   max-width: calc(100% - 8px);
   overflow: hidden;
   transform: translateX(-50%);
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0;
   border-radius: 8px;
   padding: 5px 9px;
   background: var(--dsw-alias-bg-layer-3);
@@ -493,19 +493,19 @@
   }
 
   .metric:nth-child(even) {
-    border-left: 1px solid var(--dsw-alias-border-l2);
+    border-left: 0.5px solid var(--dsw-alias-border-l2);
   }
 
   .skeletonMetric:nth-child(even) {
-    border-left: 1px solid var(--dsw-alias-border-l2);
+    border-left: 0.5px solid var(--dsw-alias-border-l2);
   }
 
   .metric:nth-child(n + 3) {
-    border-top: 1px solid var(--dsw-alias-border-l2);
+    border-top: 0.5px solid var(--dsw-alias-border-l2);
   }
 
   .skeletonMetric:nth-child(n + 3) {
-    border-top: 1px solid var(--dsw-alias-border-l2);
+    border-top: 0.5px solid var(--dsw-alias-border-l2);
   }
 
   .detailsGrid,

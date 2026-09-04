@@ -1,7 +1,6 @@
 /** Browser plugin for durable workflow-run Conversation Nodes. */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -30,7 +29,10 @@ export function apply(ctx: ClientContext): void {
     key: 'workflow-run',
     locale: NS,
     inject: (): WorkflowRunInjected => ({
-      openSession: (id: SessionId) => { ctx.sessions.open(id) },
+      openSubagent: async (address) => {
+        await ctx.sessions.refreshSubagents(address.parentSessionId)
+        ctx.sessions.openSubagent(address)
+      },
     }),
   }, WorkflowRunPanel))
 }

@@ -1159,8 +1159,15 @@ describe('ChatView', () => {
     const baseRenderSlot = h.props.renderSlot
     const renderSlot = ((key: string, owner: object, opts?: { fallback?: React.ReactNode }) => {
       if (key !== 'conversation.message.images') return baseRenderSlot(key as never, owner as never, opts as never)
-      const images = (owner as { images: readonly unknown[] }).images
-      return <div data-testid="echo-images" data-count={images.length} data-first={JSON.stringify(images[0])} />
+      const message = owner as { images: readonly unknown[]; attachments?: readonly unknown[] }
+      return (
+        <div
+          data-testid="echo-images"
+          data-count={message.images.length}
+          data-first={JSON.stringify(message.images[0])}
+          data-attachments={message.attachments === undefined ? 'omitted' : String(message.attachments.length)}
+        />
+      )
     }) as unknown as ChatViewSlotProps['renderSlot']
     const view = render(<h.ChatView {...{ ...h.props, renderSlot }} />)
     const gallery = view.getByTestId('echo-images')
@@ -1168,6 +1175,7 @@ describe('ChatView', () => {
     expect(JSON.parse(gallery.getAttribute('data-first') ?? '{}')).toEqual({
       preview: { url: 'blob:echo-a', name: 'a.png', width: 4, height: 3 },
     })
+    expect(gallery.getAttribute('data-attachments')).toBe('omitted')
   })
 
   it('animates only the latest unresolved model retry', () => {

@@ -54,7 +54,7 @@ describe('web e2e: Full access confirmation', () => {
 
     await access.click()
     await page.getByRole('menuitem', { name: '完全权限' }).click()
-    const dialog = page.getByRole('dialog', { name: '确认启用完全权限？' })
+    const dialog = page.getByRole('dialog', { name: '确认启用 Full access？' })
     await dialog.waitFor({ timeout: 10_000 })
     const enable = dialog.getByRole('button', { name: '启用完全权限' })
     expect(await enable.isDisabled()).toBe(true)

@@ -131,6 +131,8 @@ async function bench(opts: BenchOptions = {}) {
   const command = ctx.get('commandUi') as CommandUiRuntime
   const source = registered.get('/ command')
   if (source === undefined) throw new Error('command source not registered')
+  const mentionSource = registered.get('@ command')
+  if (mentionSource === undefined) throw new Error('@ command source not registered')
   const mint = (key: string) => {
     const handle = createScope(ctx, sid(key))
     scopes.set(sid(key), handle)
@@ -140,7 +142,10 @@ async function bench(opts: BenchOptions = {}) {
   const warm = async (session: ClientSessionContext) => {
     await source.candidates(session, { query: '', position: 'leading', drilled: false, signal: new AbortController().signal })
   }
-  return { ctx, fiber, command, source, mint, warm, listCalls, executeCalls, executions, registered, notices, remote }
+  return {
+    ctx, fiber, command, source, mentionSource, mint, warm, listCalls, executeCalls,
+    executions, registered, notices, remote,
+  }
 }
 
 function menuPick(source: InputTriggerSource, name: string, session: ClientSessionContext, end?: number) {
@@ -174,12 +179,14 @@ const req = (query: string, position: 'leading' | 'inline' = 'leading') =>
   ({ query, position, drilled: false, signal: new AbortController().signal })
 
 describe('registration', () => {
-  it('registers the "/" source with matchSpace/matchEnter/warm hooks and removes it on fiber disposal', async () => {
-    const { registered, source, fiber } = await bench()
+  it('registers the full "/" source and focused "@" action source, then removes both on disposal', async () => {
+    const { registered, source, mentionSource, fiber } = await bench()
     expect(typeof source.matchSpace).toBe('function')
     expect(typeof source.matchEnter).toBe('function')
     expect(typeof source.warm).toBe('function')
-    expect([...registered.keys()]).toEqual(['/ command'])
+    expect(mentionSource).not.toHaveProperty('matchSpace')
+    expect(mentionSource).not.toHaveProperty('matchEnter')
+    expect([...registered.keys()]).toEqual(['/ command', '@ command'])
     await fiber.dispose()
     expect(registered.size).toBe(0)
   })
@@ -196,6 +203,17 @@ describe('registration', () => {
 })
 
 describe('candidates', () => {
+  it('the @ source exposes only goal and plan in stable product order', async () => {
+    const { mentionSource } = await bench()
+    await expect(mentionSource.candidates(proj('s1'), req('', 'inline'))).resolves.toEqual([
+      { name: 'goal', description: 'leadingInput kind', hint: 'goal text' },
+      { name: 'plan', description: 'bare kind' },
+    ])
+    await expect(mentionSource.candidates(proj('s1'), req('go'))).resolves.toEqual([
+      { name: 'goal', description: 'leadingInput kind', hint: 'goal text' },
+    ])
+  })
+
   it('does not fetch Agent-bound commands for an addressed child', async () => {
     const b = await bench({ addressed: sid('child') })
     await expect(b.warm(proj('child'))).resolves.toBeUndefined()

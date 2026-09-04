@@ -66,7 +66,7 @@ describe('apply', () => {
     const contract: CommandUiContract = command as CommandUiRuntime
     expect(typeof contract.register).toBe('function')
     expect(typeof contract.popupFor).toBe('function')
-    expect([...sources.keys()]).toEqual(['/ command'])
+    expect([...sources.keys()]).toEqual(['/ command', '@ command'])
     expect(slots.entries('conversation.input.overlay').map(entry => entry.options.id)).toEqual(['command-popup'])
     await fiber.dispose()
     expect(sources.size).toBe(0)
