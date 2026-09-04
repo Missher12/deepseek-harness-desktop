@@ -11,8 +11,8 @@
  */
 
 import { randomBytes } from 'node:crypto'
-import { lstat, mkdir, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { lstat, mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname } from 'node:path'
 
 const WINDOWS_TRANSIENT_RENAME_ERRORS: ReadonlySet<string> = new Set(['EACCES', 'EBUSY', 'EPERM'])
 const WINDOWS_RENAME_RETRY_INITIAL_MS = 20
@@ -100,9 +100,19 @@ async function isLockContention(error: unknown, lockPath: string): Promise<boole
   try {
     await lstat(lockPath)
     return true
-  } catch {
-    // Keep the original EPERM authoritative when lock existence is unproven.
-    return false
+  } catch (probeError) {
+    // Windows can transiently deny metadata access to the same fresh lock that
+    // made exclusive create fail. A parent listing still proves the exact
+    // directory entry exists without treating an unrelated permission failure
+    // as contention.
+    if (process.platform !== 'win32'
+      || (probeError as NodeJS.ErrnoException | null)?.code !== 'EPERM') return false
+    try {
+      return (await readdir(dirname(lockPath))).includes(basename(lockPath))
+    } catch {
+      // Keep the original EPERM authoritative when lock existence is unproven.
+      return false
+    }
   }
 }
 
@@ -143,12 +153,13 @@ export interface FileLockOptions {
  * lock is a `wx`-created sibling (`<filename>.lock`); paired with the
  * rename-based commit of {@link writeFileAtomic}, readers stay lock-free and
  * only writers contend. `EEXIST` is contention directly; an `EPERM` is
- * contention only when a fresh `lstat` confirms the lock path exists, covering
- * Windows exclusive-create behavior without hiding an unrelated permission
- * failure. Contention backs off exponentially and fails with a timed-out error
- * after the deadline. The contender never removes an existing lock because
- * file age cannot prove that its owner stopped; orphan recovery is an operator
- * action. The parent directory must exist.
+ * contention only when a fresh `lstat` confirms the lock path exists, or when
+ * Windows transiently denies that probe and the parent listing proves the exact
+ * lock entry exists. This covers Windows exclusive-create behavior without
+ * hiding an unrelated permission failure. Contention backs off exponentially
+ * and fails with a timed-out error after the deadline. The contender never
+ * removes an existing lock because file age cannot prove that its owner stopped;
+ * orphan recovery is an operator action. The parent directory must exist.
  * @param filename - the file whose writers this lock serializes.
  * @param operation - the read-render-commit cycle to run while holding the lock.
  * @param options - acquisition options; omitted waits {@link DEFAULT_LOCK_WAIT_MS}.
