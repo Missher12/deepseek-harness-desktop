@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-runtime",
   "description": "Desktop compatibility exports over the alpha.5 client services",
-  "version": "0.1.2-alpha.5",
+  "version": "0.1.2-rc.1",
   "publishConfig": {
     "access": "public"
   },
