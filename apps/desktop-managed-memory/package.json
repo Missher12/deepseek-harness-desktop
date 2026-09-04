@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-desktop-managed-memory",
   "description": "Desktop-owned dual-face entrypoint for Missher project memory",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "private": true,
   "repository": {
     "type": "git",

@@ -69,19 +69,26 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
-- Desktop 0.5.3 is implemented on the public 0.5.2 parent
-  `7384b863e88b005b3309e49a0aebb7a2ea91d4c3` and synced to the exact official
-  `dsh-v0.1.2-alpha.5` commit `db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5`.
-  The official complete-history TurnNavigator owns the left rail, the existing
-  Desktop Workbench remains the sole right utility column, and BrowserSkill
-  pins the public DSH plugin 0.1.2 plus CLI 0.1.11 while remaining idle until
-  explicitly opened. The composer `@` launcher now aggregates existing
-  file/Session references, focused Goal/Plan actions, and the current Session's
-  live skill catalog; skill picks reuse the canonical slash invocation path.
-  Desktop package and update metadata are 0.5.3. Earlier native evidence at
-  `ab66b08391` predates these final corrections, so a new exact-SHA Mac/Windows
-  native rerun is required before tag or Release. Live BrowserSkill control is
-  still unverified because no real extension session was used.
+- Desktop 0.5.4 is being finalized on the public 0.5.3 parent
+  `0da8093092c9a29f5cebdfc094d0b58d97b56219` and preserves ancestry to the exact
+  official `dsh-v0.1.2-rc.1` commit
+  `a66e4702047846cdaa10c66c9d3df3951f5ea70d`. The complete-history turn rail is
+  anchored in the transcript's left gutter, away from the composer and right
+  Workbench. The responsive Workbench remains the sole Review, Terminal,
+  Browser, and Files utility column, while its Plugins page reports the packaged
+  BrowserSkill and the independently installed `open-design` Harness profile.
+  Open Design is not baked into the Desktop graph: its official runtime remains
+  owned by that separate profile and is detected only when the Plugins page is
+  opened. The composer `@` and Add menus put live skills ahead of file/Session
+  references and Goal/Plan actions without changing the canonical skill
+  invocation path. Desktop package and update metadata are 0.5.4/core rc.1.
+  Startup evidence now records six fixed path-free Loader details and requires
+  exactly ten samples; local isolation points to import/root activation as the
+  bottleneck, but no feature-disabling or compile-cache shortcut met the safety
+  and improvement threshold. A single exact final SHA still requires native
+  Mac/Windows package, lifecycle, UI, size, and ten-sample startup acceptance
+  before tag or Release. Live BrowserSkill control still requires a compatible
+  user-authorized extension session and is not started silently.
 - Desktop 0.5.2 starts from the released `desktop-v0.5.1` commit
   `b8595d75a9f94fb332689e28aef70cf5b7d72d4f`. Its integrated UI restores the
   v0.4.11 PromptRail against the current `PromptAnchor` data flow, adds

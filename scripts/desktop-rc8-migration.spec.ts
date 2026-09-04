@@ -11,7 +11,7 @@ const readUpdateMetadata = (): { desktopVersion?: unknown; harnessVersion?: unkn
   }
 
 describe('official core Desktop migration', () => {
-  it('aligns the official rc.1 core and Desktop-owned first-party packages before the Desktop version bump', () => {
+  it('aligns the official rc.1 core and the Desktop 0.5.4 release manifests', () => {
     expect(readManifest('package.json').version).toBe('0.1.2-rc.1')
     for (const manifest of [
       'packages/brain/missher-brain/package.json',
@@ -33,10 +33,10 @@ describe('official core Desktop migration', () => {
       'apps/desktop-managed-memory/package.json',
       'apps/desktop-managed-evolution/package.json',
     ]) {
-      expect(readManifest(manifest).version, manifest).toBe('0.5.3')
+      expect(readManifest(manifest).version, manifest).toBe('0.5.4')
     }
     expect(readUpdateMetadata()).toMatchObject({
-      desktopVersion: '0.5.3',
+      desktopVersion: '0.5.4',
       harnessVersion: '0.1.2-rc.1',
     })
   })
