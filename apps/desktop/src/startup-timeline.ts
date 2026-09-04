@@ -14,6 +14,12 @@ export const HARNESS_STARTUP_TIMING_PHASES = [
   'loader-mount',
   'loader-settle',
   'activation-audit',
+  'loader-build-duration',
+  'root-include-duration',
+  'first-party-import-duration',
+  'root-activation-duration',
+  'settle-duration',
+  'audit-duration',
 ] as const
 
 /** One fixed child-process timing phase. */

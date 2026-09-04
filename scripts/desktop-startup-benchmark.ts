@@ -21,12 +21,23 @@ export const PROFILE_BOOT_PHASES = [
   'activation-audit',
 ] as const
 
+/** Detailed operation durations added after the legacy cumulative checkpoints. */
+export const PROFILE_BOOT_DETAIL_PHASES = [
+  'loader-build-duration',
+  'root-include-duration',
+  'first-party-import-duration',
+  'root-activation-duration',
+  'settle-duration',
+  'audit-duration',
+] as const
+
 /** One successful Desktop launch represented only by fixed elapsed times. */
 type DesktopStartupMilestone = typeof DESKTOP_STARTUP_MILESTONES[number]
 type ProfileBootPhase = typeof PROFILE_BOOT_PHASES[number]
+type ProfileBootDetailPhase = typeof PROFILE_BOOT_DETAIL_PHASES[number]
 
 export type DesktopStartupSample = Record<DesktopStartupMilestone, number> & {
-  runtime?: Record<ProfileBootPhase, number>
+  runtime?: Record<ProfileBootPhase, number> & Partial<Record<ProfileBootDetailPhase, number>>
 }
 
 interface DurationSummary {
@@ -49,10 +60,11 @@ export interface DesktopStartupSummary {
     loaderMountToSettle: DurationSummary
     loaderSettleToActivationAudit: DurationSummary
   }
+  profileBootDetails?: Record<ProfileBootDetailPhase, DurationSummary>
 }
 
 const MILESTONE_SET = new Set<string>(DESKTOP_STARTUP_MILESTONES)
-const PROFILE_BOOT_PHASE_SET = new Set<string>(PROFILE_BOOT_PHASES)
+const PROFILE_BOOT_PHASE_SET = new Set<string>([...PROFILE_BOOT_PHASES, ...PROFILE_BOOT_DETAIL_PHASES])
 const CAUSAL_CHAINS: readonly (readonly DesktopStartupMilestone[])[] = [
   ['app-ready', 'window-prerequisites', 'loading-visible', 'desktop-running'],
   ['app-ready', 'fallback-ready', 'url-reported', 'harness-ready', 'desktop-running'],
@@ -126,6 +138,10 @@ export function parseDesktopStartupSample(content: string): DesktopStartupSample
       if (previous === undefined || current === undefined) continue
       if (runtime[current] < runtime[previous]) fail(`runtime phase ${current} precedes ${previous}`)
     }
+    const detailCount = PROFILE_BOOT_DETAIL_PHASES.filter(phase => runtimeValues.has(phase)).length
+    if (detailCount !== 0 && detailCount !== PROFILE_BOOT_DETAIL_PHASES.length) {
+      fail('detailed runtime phases must be complete or absent')
+    }
     sample.runtime = runtime
   }
   return sample
@@ -165,6 +181,17 @@ export function summarizeDesktopStartupSamples(
     loaderSettleToActivationAudit: summarizeDurations(samples.map(sample =>
       (sample.runtime?.['activation-audit'] ?? 0) - (sample.runtime?.['loader-settle'] ?? 0))),
   }
+  const detailSampleCount = samples.filter(sample =>
+    PROFILE_BOOT_DETAIL_PHASES.every(phase => sample.runtime?.[phase] !== undefined)).length
+  if (detailSampleCount !== 0 && detailSampleCount !== samples.length) {
+    fail('detailed runtime phases must be present in every sample or none')
+  }
+  const profileBootDetails = detailSampleCount === 0 ? undefined : Object.fromEntries(
+    PROFILE_BOOT_DETAIL_PHASES.map(phase => [
+      phase,
+      summarizeDurations(samples.map(sample => sample.runtime?.[phase] ?? 0)),
+    ]),
+  ) as Record<ProfileBootDetailPhase, DurationSummary>
   return {
     schemaVersion: 1,
     sampleCount: 5,
@@ -174,6 +201,7 @@ export function summarizeDesktopStartupSamples(
     harnessReadyToDesktop: summarizeDurations(samples.map(sample => sample['desktop-running'] - sample['harness-ready'])),
     milestones: milestoneSummaries,
     ...profileBoot === undefined ? {} : { profileBoot },
+    ...profileBootDetails === undefined ? {} : { profileBootDetails },
   }
 }
 

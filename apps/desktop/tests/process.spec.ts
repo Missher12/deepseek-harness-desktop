@@ -119,12 +119,13 @@ describe('HarnessProcess', () => {
 
     const pending = owned.start('/workspace')
     child.stdout.write('dsh desktop-startup profile-compose: 12ms\ndsh desktop-startup loader-')
-    child.stdout.write('mount: 28ms\ndsh web: http://127.0.0.1:45678\n')
+    child.stdout.write('mount: 28ms\ndsh desktop-startup loader-build-duration: 7ms\ndsh web: http://127.0.0.1:45678\n')
     await pending
 
     expect(onStartupTiming.mock.calls).toEqual([
       ['profile-compose', 12],
       ['loader-mount', 28],
+      ['loader-build-duration', 7],
     ])
   })
 

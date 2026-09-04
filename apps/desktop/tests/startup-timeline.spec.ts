@@ -26,6 +26,10 @@ describe('DesktopStartupTimeline', () => {
       phase: 'loader-mount',
       milliseconds: 42,
     })
+    expect(parseHarnessStartupTimingLine('dsh desktop-startup first-party-import-duration: 17ms')).toEqual({
+      phase: 'first-party-import-duration',
+      milliseconds: 17,
+    })
     expect(parseHarnessStartupTimingLine('ordinary harness output')).toBeUndefined()
     expect(() => parseHarnessStartupTimingLine('dsh desktop-startup profile-path: 42ms')).toThrow(/timing/i)
     expect(() => parseHarnessStartupTimingLine('dsh desktop-startup loader-mount: C:\\secret')).toThrow(/timing/i)

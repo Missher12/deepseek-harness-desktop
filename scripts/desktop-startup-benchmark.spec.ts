@@ -84,4 +84,39 @@ describe('desktop startup benchmark', () => {
       `${startupLog([5, 12, 35, 20, 90, 105, 120])}\n2026-09-02T15:00:00.000Z runtime profile-path: 1ms`,
     )).toThrow(/startup benchmark/i)
   })
+
+  it('summarizes the complete detailed duration set while keeping legacy evidence readable', () => {
+    const legacy = [
+      'runtime profile-compose: 20ms',
+      'runtime loader-mount: 70ms',
+      'runtime loader-settle: 95ms',
+      'runtime activation-audit: 105ms',
+    ]
+    const details = [
+      'runtime loader-build-duration: 6ms',
+      'runtime root-include-duration: 3ms',
+      'runtime first-party-import-duration: 40ms',
+      'runtime root-activation-duration: 48ms',
+      'runtime settle-duration: 25ms',
+      'runtime audit-duration: 10ms',
+    ]
+    const lines = [...legacy, ...details]
+      .map(line => `2026-09-02T15:00:00.000Z ${line}`)
+      .join('\n')
+    const sample = parseDesktopStartupSample(`${startupLog([5, 12, 35, 20, 90, 105, 120])}\n${lines}`)
+
+    expect(summarizeDesktopStartupSamples([sample, sample, sample, sample, sample])).toMatchObject({
+      profileBootDetails: {
+        'loader-build-duration': { medianMs: 6, p95Ms: 6 },
+        'root-include-duration': { medianMs: 3, p95Ms: 3 },
+        'first-party-import-duration': { medianMs: 40, p95Ms: 40 },
+        'root-activation-duration': { medianMs: 48, p95Ms: 48 },
+        'settle-duration': { medianMs: 25, p95Ms: 25 },
+        'audit-duration': { medianMs: 10, p95Ms: 10 },
+      },
+    })
+    expect(() => parseDesktopStartupSample(
+      `${startupLog([5, 12, 35, 20, 90, 105, 120])}\n${[...legacy, ...details.slice(1)].join('\n')}`,
+    )).toThrow(/startup benchmark/i)
+  })
 })

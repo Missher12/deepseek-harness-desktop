@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import { parseEnv } from 'node:util'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
-import { Context, type FiberState } from '@deepseek-ai/cordis'
+import { Context, Service, type FiberState } from '@deepseek-ai/cordis'
 import Loader, { type Entry, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Group from '@deepseek-ai/cordis-plugin-group'
@@ -207,6 +207,33 @@ export function loadLayeredEnv(
 }
 
 const bootstrapIncludes = new WeakMap<Context, Entry>()
+
+/** Fixed path-free operation durations emitted only for Desktop diagnostics. */
+export const APP_BOOT_TIMING_METRICS = [
+  'loader-build-duration',
+  'root-include-duration',
+  'first-party-import-duration',
+  'root-activation-duration',
+  'settle-duration',
+  'audit-duration',
+] as const
+
+/** One fixed app-boot duration metric. */
+export type AppBootTimingMetric = typeof APP_BOOT_TIMING_METRICS[number]
+
+/** Optional Desktop-only recorder for app-boot operation durations. */
+export interface AppBootTimingRecorder {
+  record(phase: AppBootTimingMetric, milliseconds: number): void
+  /** Monotonic clock seam used by deterministic tests. */
+  now?: () => number
+}
+
+/** Convert one monotonic interval into a bounded integer duration. */
+function boundedDuration(startedAt: number, completedAt: number): number {
+  const elapsed = completedAt - startedAt
+  if (!Number.isFinite(elapsed) || elapsed <= 0) return 0
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.round(elapsed))
+}
 
 // The include's YAML dialect (`!!js` scalars become expression nodes the
 // Loader interpolates against each entry's injection-ready context), imported
@@ -500,6 +527,7 @@ function groupedDump(
  * @param patches - initial app and user patches, applied in order.
  * @param bareModuleBaseUrl - optional installed-host base for bare package
  * names; relative names continue to resolve beside the configuration file.
+ * @param timing - optional fixed path-free duration recorder used only by Desktop.
  * @returns the created root Include entry, or `undefined` when a surface
  * disposed the whole tree (taking the Loader service with it) while the
  * transactional create was still settling entry lifecycle.
@@ -509,8 +537,10 @@ export async function mountRootInclude(
   absoluteConfigPath: string,
   patches: readonly PatchOptions[] = [],
   bareModuleBaseUrl?: string,
+  timing?: AppBootTimingRecorder,
 ): Promise<Entry | undefined> {
-  ctx.loader.builtins.include = bareModuleBaseUrl === undefined
+  const now = timing?.now ?? (() => performance.now())
+  const RootInclude = bareModuleBaseUrl === undefined
     ? Include
     : class HostResolvedRootInclude extends Include {
       override import(name: string, getOuterStack?: () => string[]): unknown {
@@ -523,6 +553,59 @@ export async function mountRootInclude(
         return internal.import(specifier, bareModuleBaseUrl, {})
       }
     }
+  if (timing === undefined) {
+    ctx.loader.builtins.include = RootInclude
+  } else {
+    const recorder = timing
+    ctx.loader.builtins.include = class TimedRootInclude extends RootInclude {
+      private firstPartyImportStartedAt: number | undefined
+      private firstPartyImportCompletedAt: number | undefined
+
+      override import(name: string, getOuterStack?: () => string[]): unknown {
+        const startedAt = name.startsWith('@deepseek-ai/') ? now() : undefined
+        const imported: unknown = super.import(name, getOuterStack)
+        if (startedAt === undefined) return imported
+        this.firstPartyImportStartedAt = this.firstPartyImportStartedAt === undefined
+          ? startedAt
+          : Math.min(this.firstPartyImportStartedAt, startedAt)
+        return Promise.resolve(imported).finally(() => {
+          const completedAt = now()
+          this.firstPartyImportCompletedAt = this.firstPartyImportCompletedAt === undefined
+            ? completedAt
+            : Math.max(this.firstPartyImportCompletedAt, completedAt)
+        })
+      }
+
+      override async *[Service.init]() {
+        const init = super[Service.init]()
+        let completed = false
+        try {
+          const includeStartedAt = now()
+          const initial = await init.next()
+          recorder.record('root-include-duration', boundedDuration(includeStartedAt, now()))
+          if (initial.done) {
+            completed = true
+            return
+          }
+          yield initial.value
+          const activationStartedAt = now()
+          const activated = await init.next()
+          if (!activated.done) throw new Error('root Include yielded more than one lifecycle disposer')
+          const activationCompletedAt = now()
+          recorder.record(
+            'first-party-import-duration',
+            this.firstPartyImportStartedAt === undefined || this.firstPartyImportCompletedAt === undefined
+              ? 0
+              : boundedDuration(this.firstPartyImportStartedAt, this.firstPartyImportCompletedAt),
+          )
+          recorder.record('root-activation-duration', boundedDuration(activationStartedAt, activationCompletedAt))
+          completed = true
+        } finally {
+          if (!completed) await init.return(undefined)
+        }
+      }
+    }
+  }
   // `cordis:group` alongside it: a group row is how a composition gives one
   // `isolate` realm to a provider and its consumers together, and an agent
   // preset living outside this workspace cannot resolve `@deepseek-ai/cordis-plugin-group`
@@ -770,6 +853,7 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
  * names; use it when the host, rather than the configuration project, owns the
  * complete plugin set.
  * @param markTiming - optional fixed-phase observer for Desktop diagnostics.
+ * @param timing - optional fixed path-free operation-duration recorder for Desktop diagnostics.
  * @returns the root context once every entry has started, or as soon as a
  * surface disposed the tree while startup was still in flight.
  * @throws a labelled error after disposing the partial context — `host
@@ -783,18 +867,22 @@ export async function boot(
   prepare?: (ctx: Context) => Promise<void> | void,
   bareModuleBaseUrl?: string,
   markTiming?: (phase: AppBootTimingPhase) => void,
+  timing?: AppBootTimingRecorder,
 ): Promise<Context> {
   const ctx = new Context()
+  const now = timing?.now ?? (() => performance.now())
   // Two failure labels: `prepare` runs before any config-tree entry mounts,
   // so its failure is host setup, not the plugin tree.
   let stage = 'host preparation failed'
   try {
     ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
     ctx.provide('dshHomePath', dshHomePath)
+    const loaderBuildStartedAt = timing === undefined ? 0 : now()
     await ctx.plugin(Loader)
+    if (timing !== undefined) timing.record('loader-build-duration', boundedDuration(loaderBuildStartedAt, now()))
     await prepare?.(ctx)
     stage = 'plugin tree failed to load'
-    await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl)
+    await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl, timing)
     markTiming?.('loader-mount')
     // A surface can finish and dispose the whole tree while startup is still
     // in flight, before the last entry settles. The Loader service goes with
@@ -803,10 +891,14 @@ export async function boot(
     // as asked. Transactional group updates settle
     // lifecycle inside the mount, so the teardown can land before it returns;
     // re-check after every await.
+    const settleStartedAt = timing === undefined ? 0 : now()
     await ctx.get('loader')?.await()
     if (ctx.get('loader') === undefined) return ctx
+    if (timing !== undefined) timing.record('settle-duration', boundedDuration(settleStartedAt, now()))
     markTiming?.('loader-settle')
+    const auditStartedAt = timing === undefined ? 0 : now()
     await assertEntriesActivated(ctx, binName)
+    if (timing !== undefined) timing.record('audit-duration', boundedDuration(auditStartedAt, now()))
     markTiming?.('activation-audit')
     return ctx
   } catch (cause) {

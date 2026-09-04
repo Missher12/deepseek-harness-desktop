@@ -28,6 +28,7 @@ import {
   PROFILE_PATCH_FILENAME,
   watchUserPatches,
   type AppBootTimingPhase,
+  type AppBootTimingMetric,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -193,6 +194,7 @@ export type ProfileBootTimingPhase = 'profile-compose' | AppBootTimingPhase
 /** Desktop-only fixed-phase timing recorder. */
 export interface ProfileBootTiming {
   mark(phase: ProfileBootTimingPhase): void
+  record(phase: AppBootTimingMetric, milliseconds: number): void
 }
 
 /**
@@ -210,11 +212,18 @@ export function createDesktopProfileBootTiming(
 ): ProfileBootTiming | undefined {
   if (enabled !== '1') return undefined
   const startedAt = now()
+  const emit = (phase: ProfileBootTimingPhase | AppBootTimingMetric, value: number): void => {
+    const milliseconds = Number.isFinite(value)
+      ? Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.round(value)))
+      : 0
+    write(`dsh desktop-startup ${phase}: ${String(milliseconds)}ms\n`)
+  }
   return {
     mark(phase) {
-      const elapsed = now() - startedAt
-      const milliseconds = Number.isFinite(elapsed) ? Math.max(0, Math.round(elapsed)) : 0
-      write(`dsh desktop-startup ${phase}: ${String(milliseconds)}ms\n`)
+      emit(phase, now() - startedAt)
+    },
+    record(phase, milliseconds) {
+      emit(phase, milliseconds)
     },
   }
 }
@@ -296,7 +305,9 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       exit: code => void shutdown.shutdown(code),
       ready: appReady.service,
     })
-  }, undefined, (phase) => { options.startupTiming?.mark(phase) })
+  }, undefined, (phase) => { options.startupTiming?.mark(phase) }, options.startupTiming === undefined
+    ? undefined
+    : { record: (phase, milliseconds) => { options.startupTiming?.record(phase, milliseconds) } })
   app.current = ctx
   // A live-reload profile can dispose the whole tree while post-boot watcher
   // setup is in flight — a signal or appExit. Loader presence and fiber state

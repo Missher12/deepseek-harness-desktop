@@ -551,6 +551,7 @@ describe('boot', () => {
     writeFileSync(join(dir, 'noop.mjs'), 'export const name = "noop"\nexport function apply() {}\n')
     writeFileSync(join(dir, 'cordis.yml'), '- id: noop\n  name: ./noop.mjs\n')
     const phases: string[] = []
+    const durations: Array<[string, number]> = []
     const ctx = await boot(
       NAME,
       join(dir, 'cordis.yml'),
@@ -558,9 +559,19 @@ describe('boot', () => {
       undefined,
       undefined,
       (phase) => { phases.push(phase) },
+      { record: (phase, milliseconds) => { durations.push([phase, milliseconds]) } },
     )
     try {
       expect(phases).toEqual(['loader-mount', 'loader-settle', 'activation-audit'])
+      expect(durations.map(([phase]) => phase)).toEqual([
+        'loader-build-duration',
+        'root-include-duration',
+        'first-party-import-duration',
+        'root-activation-duration',
+        'settle-duration',
+        'audit-duration',
+      ])
+      expect(durations.every(([, milliseconds]) => Number.isSafeInteger(milliseconds) && milliseconds >= 0)).toBe(true)
     } finally {
       await ctx.fiber.dispose()
     }

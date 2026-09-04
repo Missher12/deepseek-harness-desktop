@@ -29,4 +29,25 @@ describe('Desktop profile boot timing', () => {
       'dsh desktop-startup activation-audit: 51ms\n',
     ])
   })
+
+  it('records only bounded path-free duration metrics supplied by app boot', () => {
+    const write = vi.fn<(line: string) => void>()
+    const timing = createDesktopProfileBootTiming('1', write, () => 100)
+
+    timing?.record('loader-build-duration', 12.4)
+    timing?.record('root-include-duration', Number.POSITIVE_INFINITY)
+    timing?.record('first-party-import-duration', -5)
+    timing?.record('root-activation-duration', 37.8)
+    timing?.record('settle-duration', 4)
+    timing?.record('audit-duration', 2)
+
+    expect(write.mock.calls.map(([line]) => line)).toEqual([
+      'dsh desktop-startup loader-build-duration: 12ms\n',
+      'dsh desktop-startup root-include-duration: 0ms\n',
+      'dsh desktop-startup first-party-import-duration: 0ms\n',
+      'dsh desktop-startup root-activation-duration: 38ms\n',
+      'dsh desktop-startup settle-duration: 4ms\n',
+      'dsh desktop-startup audit-duration: 2ms\n',
+    ])
+  })
 })
