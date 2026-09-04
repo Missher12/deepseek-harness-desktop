@@ -37,8 +37,7 @@ describe('official core Desktop migration', () => {
     }
     expect(readUpdateMetadata()).toMatchObject({
       desktopVersion: '0.5.3',
-      // Release metadata is intentionally frozen only with Desktop 0.5.4.
-      harnessVersion: '0.1.2-alpha.5',
+      harnessVersion: '0.1.2-rc.1',
     })
   })
 

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "desktopVersion": "0.5.3",
-  "harnessVersion": "0.1.2-alpha.5",
+  "harnessVersion": "0.1.2-rc.1",
   "platform": "darwin",
   "arch": "x64",
   "channel": "release"
