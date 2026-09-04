@@ -76,6 +76,11 @@ interface WorkspaceNavigation {
   connectNoProject(): Promise<SessionId>
 }
 
+/** Optional late-bound trigger face without introducing a circular package reference. */
+interface InputTriggerSourceRegistry {
+  registerSource(source: ReturnType<typeof createComposerAddSource>): () => void
+}
+
 /** Resolve the session-scoped Conversation action face, failing loud. */
 function scopedConversation(sessions: ISessions, id: SessionId): IConversation {
   const scoped = sessions.scope(id)
@@ -116,7 +121,7 @@ export function apply(ctx: Context): void {
   const t = ctx.locale.bind(NS)
 
   ctx.inject(['inputTriggers'], (scope: Context) => {
-    const inputTriggers = scope.get('inputTriggers')
+    const inputTriggers = scope.get('inputTriggers') as InputTriggerSourceRegistry | undefined
     if (inputTriggers === undefined) return
     scope.effect(() => inputTriggers.registerSource(createComposerAddSource({
       files: t('add.files'),
