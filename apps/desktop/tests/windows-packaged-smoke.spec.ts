@@ -116,6 +116,18 @@ async function exerciseWindows150PercentSurface(
     await activeRow.waitFor({ state: 'visible', timeout: 15_000 })
     await activeRow.click()
     await expect.poll(() => activeRow.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
+
+    // The product intentionally hides Turn navigation while the center column
+    // is narrower than 680px. Selecting the fixture requires temporarily
+    // expanding the sidebar at 150%; restore the normal wide reading surface
+    // before asserting the rail itself.
+    const closeSidebar = page.getByRole('button', { name: /^(?:Close sidebar|关闭侧边栏)$/u })
+    await closeSidebar.click()
+    await expect.poll(
+      () => page.locator('[class*="frame"][data-sidebar-collapsed]').count(),
+      { timeout: 15_000 },
+    ).toBe(1)
+
     const turnRail = page.locator('nav[aria-label*="轮次导航"], nav[aria-label*="Turn navigation"]')
     await turnRail.waitFor({ state: 'attached', timeout: 30_000 })
     const turnRailTrack = turnRail.locator('[data-turn-navigation-track]')
@@ -134,12 +146,6 @@ async function exerciseWindows150PercentSurface(
     await currentTurn.focus()
     await page.getByRole('tooltip').waitFor({ state: 'visible', timeout: 15_000 })
 
-    const closeSidebar = page.getByRole('button', { name: /^(?:Close sidebar|关闭侧边栏)$/u })
-    await closeSidebar.click()
-    await expect.poll(
-      () => page.locator('[class*="frame"][data-sidebar-collapsed]').count(),
-      { timeout: 15_000 },
-    ).toBe(1)
     const workbenchTrigger = page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })
     await workbenchTrigger.waitFor({ state: 'visible', timeout: 30_000 })
     await workbenchTrigger.click()

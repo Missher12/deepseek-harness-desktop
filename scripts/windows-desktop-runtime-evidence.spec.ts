@@ -173,6 +173,11 @@ describe('Windows Desktop runtime evidence wiring', () => {
       + "      .waitFor({ state: 'visible', timeout: 30_000 })",
     )
     const selectedTarget = packaged.indexOf("activeRow.getAttribute('aria-selected')")
+    const closeSidebar = packaged.indexOf('const closeSidebar = page.getByRole')
+    const collapsedAfterSelection = packaged.indexOf(
+      "() => page.locator('[class*=\"frame\"][data-sidebar-collapsed]').count()",
+      closeSidebar,
+    )
     const promptRail = packaged.indexOf('const turnRail = page.locator')
     const attachedRail = packaged.indexOf("await turnRail.waitFor({ state: 'attached'")
     const track = packaged.indexOf("turnRail.locator('[data-turn-navigation-track]')")
@@ -182,7 +187,9 @@ describe('Windows Desktop runtime evidence wiring', () => {
     const openTooltip = packaged.indexOf("page.getByRole('tooltip').waitFor({ state: 'visible'")
     const workbench = packaged.indexOf('Open workbench|打开工作台')
     expect(selectedTarget).toBeGreaterThan(-1)
-    expect(promptRail).toBeGreaterThan(selectedTarget)
+    expect(closeSidebar).toBeGreaterThan(selectedTarget)
+    expect(collapsedAfterSelection).toBeGreaterThan(closeSidebar)
+    expect(promptRail).toBeGreaterThan(collapsedAfterSelection)
     expect(attachedRail).toBeGreaterThan(promptRail)
     expect(track).toBeGreaterThan(attachedRail)
     expect(visibleTrack).toBeGreaterThan(track)
