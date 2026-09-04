@@ -20,11 +20,42 @@ describe('desktop surface bridge', () => {
     const onCommand = vi.fn()
 
     // The alpha.5 auth flow lands on the bare root: no surface query remains.
-    const dispose = installDesktopSurface(new URL('http://127.0.0.1:65000/'), { onCommand })
+    const dispose = installDesktopSurface(new URL('http://127.0.0.1:65000/'), {
+      onCommand,
+      presentation: { titlebar: 'hidden-inset' },
+    })
 
     expect(document.body.dataset.dshSurface).toBe('desktop')
+    expect(document.body.dataset.dshTitlebar).toBe('hidden-inset')
     dispose()
     expect(document.body.dataset.dshSurface).toBeUndefined()
+    expect(document.body.dataset.dshTitlebar).toBeUndefined()
+  })
+
+  it('lets the trusted native presentation override a stale URL marker', () => {
+    const dispose = installDesktopSurface(new URL(
+      'http://127.0.0.1:65000/?surface=desktop&titlebar=hidden-inset',
+    ), {
+      onCommand: () => () => undefined,
+      presentation: { titlebar: 'native' },
+    })
+
+    expect(document.body.dataset.dshSurface).toBe('desktop')
+    expect(document.body.dataset.dshTitlebar).toBeUndefined()
+    dispose()
+  })
+
+  it('fails closed when a preload bridge exposes an invalid presentation', () => {
+    const dispose = installDesktopSurface(new URL(
+      'http://127.0.0.1:65000/?surface=desktop&titlebar=hidden-inset',
+    ), {
+      onCommand: () => () => undefined,
+      presentation: { titlebar: 'overlay' },
+    })
+
+    expect(document.body.dataset.dshSurface).toBe('desktop')
+    expect(document.body.dataset.dshTitlebar).toBeUndefined()
+    dispose()
   })
 
   it('maps the closed native command vocabulary onto explicit controls', () => {
@@ -43,6 +74,7 @@ describe('desktop surface bridge', () => {
     const unsubscribe = vi.fn()
 
     const dispose = installDesktopSurface(new URL('http://127.0.0.1:65000/?surface=desktop'), {
+      presentation: { titlebar: 'native' },
       onCommand: (next) => {
         listener = next
         return unsubscribe

@@ -3,7 +3,19 @@ const DESKTOP_COMMANDS = ['new-session', 'open-command-menu', 'open-settings'] a
 type DesktopCommand = typeof DESKTOP_COMMANDS[number]
 
 interface DesktopBridge {
+  readonly presentation?: unknown
   onCommand(listener: (command: unknown) => void): () => void
+}
+
+interface DesktopPresentation {
+  readonly titlebar: 'hidden-inset' | 'native'
+}
+
+function isDesktopPresentation(value: unknown): value is DesktopPresentation {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const candidate = value as Record<string, unknown>
+  return Object.keys(candidate).length === 1
+    && (candidate.titlebar === 'hidden-inset' || candidate.titlebar === 'native')
 }
 
 function isDesktopCommand(value: unknown): value is DesktopCommand {
@@ -26,7 +38,11 @@ export function installDesktopSurface(url: URL, bridge?: DesktopBridge): () => v
   if (!desktop) return () => undefined
 
   document.body.dataset.dshSurface = 'desktop'
-  if (url.searchParams.get('titlebar') === 'hidden-inset') {
+  const bridgeTitlebar = bridge === undefined
+    ? undefined
+    : isDesktopPresentation(bridge.presentation) ? bridge.presentation.titlebar : 'native'
+  const titlebar = bridgeTitlebar ?? url.searchParams.get('titlebar')
+  if (titlebar === 'hidden-inset') {
     document.body.dataset.dshTitlebar = 'hidden-inset'
   } else {
     delete document.body.dataset.dshTitlebar

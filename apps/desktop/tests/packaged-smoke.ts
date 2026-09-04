@@ -871,13 +871,29 @@ async function exerciseDesktopTitlebarGeometry(
     page.screenshot({ path: `${diagnosticBase}.png` }),
   ])
 
-  if (platform !== 'win32') return
   const contentInset = geometry.sidebarTop - geometry.frameTop
-  if (
+  if (platform === 'darwin') {
+    expect(await page.locator('body[data-dsh-titlebar="hidden-inset"]').count()).toBe(1)
+    if (
+      contentInset < 37.5
+      || geometry.framePaddingTop !== '38px'
+      || geometry.dragStripContent === 'none'
+      || geometry.dragStripHeight !== '38px'
+    ) {
+      throw new Error(
+        `Packaged macOS desktop lost its native traffic-light safe area: ${JSON.stringify({
+          ...geometry,
+          contentInset,
+        })}`,
+      )
+    }
+    return
+  }
+  if (platform === 'win32' && (
     Math.abs(contentInset) > 0.5
     || geometry.framePaddingTop !== '0px'
     || geometry.dragStripContent !== 'none'
-  ) {
+  )) {
     throw new Error(
       `Packaged Windows desktop reserves a renderer title-bar inset under the native frame: ${JSON.stringify({
         ...geometry,

@@ -10,6 +10,30 @@ const RECOVERY_ACTIONS = ['retry', 'open-logs', 'quit'] as const
 /** One validated failure recovery action. */
 export type RecoveryAction = typeof RECOVERY_ACTIONS[number]
 
+const DESKTOP_TITLEBARS = ['hidden-inset', 'native'] as const
+
+/** Closed native-window title-bar presentation vocabulary. */
+export type DesktopTitlebar = typeof DESKTOP_TITLEBARS[number]
+
+/** Immutable platform presentation facts exposed by the trusted preload. */
+export interface DesktopPresentation {
+  readonly titlebar: DesktopTitlebar
+}
+
+/** Create the frozen presentation fact for one native platform. */
+export function desktopPresentation(platform: NodeJS.Platform): Readonly<DesktopPresentation> {
+  return Object.freeze({ titlebar: platform === 'darwin' ? 'hidden-inset' : 'native' })
+}
+
+/** Validate presentation data at the isolated renderer boundary. */
+export function isDesktopPresentation(value: unknown): value is DesktopPresentation {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const candidate = value as Record<string, unknown>
+  return Object.keys(candidate).length === 1
+    && typeof candidate.titlebar === 'string'
+    && (DESKTOP_TITLEBARS as readonly string[]).includes(candidate.titlebar)
+}
+
 const UPDATE_PHASES = [
   'idle', 'checking', 'current', 'upstream-available', 'desktop-available',
   'downloading', 'verifying', 'ready', 'installing', 'error',
@@ -99,6 +123,8 @@ export function supportsDesktopUpdates(platform: NodeJS.Platform): boolean {
 
 /** Narrow API exposed through context isolation. */
 export interface DesktopApi {
+  /** Trusted native-window presentation that survives renderer redirects. */
+  readonly presentation: Readonly<DesktopPresentation>
   /** Subscribe to validated native menu commands. */
   onCommand(listener: (command: DesktopCommand) => void): () => void
   /** Request one validated recovery action. */

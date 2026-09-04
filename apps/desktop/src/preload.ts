@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import {
   type DesktopApi,
   type DesktopUpdateSnapshot,
+  desktopPresentation,
   isDesktopCommand,
   isDesktopPreferenceMutation,
   isDesktopPreferencesSnapshot,
@@ -14,6 +15,7 @@ import {
 } from './browser/contracts.ts'
 
 const api: DesktopApi = {
+  presentation: desktopPresentation(process.platform),
   onCommand(listener) {
     const handler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
       if (isDesktopCommand(value)) listener(value)

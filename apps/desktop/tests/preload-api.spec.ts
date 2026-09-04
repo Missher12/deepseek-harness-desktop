@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  desktopPresentation,
   isDesktopCommand,
+  isDesktopPresentation,
   isDesktopUpdateSnapshot,
   isDesktopPreferenceMutation,
   isDesktopPreferencesSnapshot,
@@ -9,6 +11,24 @@ import {
 } from '../src/preload-api.ts'
 
 describe('desktop preload vocabulary', () => {
+  it('exposes one frozen platform presentation fact', () => {
+    const mac = desktopPresentation('darwin')
+    const windows = desktopPresentation('win32')
+
+    expect(mac).toEqual({ titlebar: 'hidden-inset' })
+    expect(windows).toEqual({ titlebar: 'native' })
+    expect(Object.isFrozen(mac)).toBe(true)
+    expect(Object.isFrozen(windows)).toBe(true)
+  })
+
+  it('accepts only the closed Desktop presentation vocabulary', () => {
+    expect(isDesktopPresentation({ titlebar: 'hidden-inset' })).toBe(true)
+    expect(isDesktopPresentation({ titlebar: 'native' })).toBe(true)
+    expect(isDesktopPresentation({ titlebar: 'hidden-inset', command: 'shell' })).toBe(false)
+    expect(isDesktopPresentation({ titlebar: 'overlay' })).toBe(false)
+    expect(isDesktopPresentation(undefined)).toBe(false)
+  })
+
   it.each(['new-session', 'open-command-menu', 'open-settings'])('accepts command %s', (value) => {
     expect(isDesktopCommand(value)).toBe(true)
   })
