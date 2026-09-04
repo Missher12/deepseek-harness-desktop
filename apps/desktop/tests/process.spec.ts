@@ -263,6 +263,40 @@ describe('HarnessProcess', () => {
     expect(options.env?.DSH_DESKTOP_STARTUP_TIMING).toBe('1')
   })
 
+  it('enables one explicit rebuildable Node compile cache for the Harness child', async () => {
+    const child = new FakeChild()
+    const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(
+      () => child as unknown as ChildProcess,
+    )
+    const compileCacheDir = '/tmp/deepseek-harness-node-compile-cache/0.5.4-darwin-x64'
+    const owned = new HarnessProcess({
+      spawn,
+      executable: '/Electron',
+      cli: '/cli.js',
+      waitForHarness: async () => undefined,
+      platform: 'darwin',
+      terminateTree: vi.fn(),
+      compileCacheDir,
+    })
+    const pending = owned.start('/workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await pending
+
+    expect(spawn.mock.calls[0]?.[2].env?.NODE_COMPILE_CACHE).toBe(compileCacheDir)
+  })
+
+  it('rejects a relative or NUL-bearing Node compile cache directory', () => {
+    const base = {
+      cli: '/cli.js',
+      waitForHarness: async () => undefined,
+      terminateTree: vi.fn(),
+    }
+    expect(() => new HarnessProcess({ ...base, compileCacheDir: 'relative/cache' }))
+      .toThrow(/compile cache.*absolute/i)
+    expect(() => new HarnessProcess({ ...base, compileCacheDir: '/tmp/cache\0tail' }))
+      .toThrow(/compile cache.*absolute/i)
+  })
+
   it('uses the Windows PATH delimiter for the Windows harness child', async () => {
     const child = new FakeChild()
     const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(

@@ -67,6 +67,7 @@ export interface HarnessProcessOptions {
   terminateTree?: (pid: number, mode: TerminationMode, platform: NodeJS.Platform) => void
   stopTimeoutMs?: number
   browserSkillDir?: string
+  compileCacheDir?: string
   onOutput?: (source: 'stdout' | 'stderr', text: string) => void
   onExit?: (state: ExitState) => void
   markStartup?: (milestone: DesktopStartupMilestone) => void
@@ -100,7 +101,7 @@ export class HarnessProcess {
   private readonly options: Required<Pick<HarnessProcessOptions,
     'executable' | 'spawn' | 'waitForHarness' | 'platform' | 'terminateTree' | 'stopTimeoutMs'>>
     & Pick<HarnessProcessOptions,
-      'cli' | 'patch' | 'prepare' | 'browserSkillDir' | 'onOutput' | 'onExit' | 'markStartup' | 'onStartupTiming'>
+      'cli' | 'patch' | 'prepare' | 'browserSkillDir' | 'compileCacheDir' | 'onOutput' | 'onExit' | 'markStartup' | 'onStartupTiming'>
   private child: ChildProcess | undefined
   private exitPromise: Promise<ExitState> | undefined
   private detachOutput: (() => void) | undefined
@@ -112,6 +113,10 @@ export class HarnessProcess {
   constructor(options: HarnessProcessOptions) {
     if (options.patch !== undefined && (!isAbsolute(options.patch) || options.patch.includes('\0'))) {
       throw new Error('Harness Desktop patch must be an absolute path without NUL.')
+    }
+    if (options.compileCacheDir !== undefined
+      && (!isAbsolute(options.compileCacheDir) || options.compileCacheDir.includes('\0'))) {
+      throw new Error('Harness Desktop compile cache directory must be absolute without NUL.')
     }
     this.options = {
       ...options,
@@ -146,6 +151,9 @@ export class HarnessProcess {
     }
     if (this.options.browserSkillDir !== undefined) {
       env.PATH = prependPathEntry(process.env.PATH, this.options.browserSkillDir, this.options.platform)
+    }
+    if (this.options.compileCacheDir !== undefined) {
+      env.NODE_COMPILE_CACHE = this.options.compileCacheDir
     }
     const child = this.options.spawn(this.options.executable, [
       // Electron's Node mode does not expose the internal ESM resolver through

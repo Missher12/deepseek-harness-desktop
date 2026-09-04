@@ -33,6 +33,14 @@ describe('local renderer pages', () => {
     expect(main).not.toContain('loading-macos.html')
   })
 
+  it('gives the Harness child a versioned rebuildable Node compile cache', async () => {
+    const main = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8')
+    expect(main).toContain("app.getPath('temp')")
+    expect(main).toContain("'deepseek-harness-node-compile-cache'")
+    expect(main).toContain('app.getVersion()')
+    expect(main).toContain('compileCacheDir')
+  })
+
   it('keeps the shared Desktop plugin-loading surface on the same light theme', async () => {
     const css = await readFile(
       new URL('../../../packages/client/web/src/boot-page.module.css', import.meta.url),

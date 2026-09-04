@@ -164,11 +164,17 @@ const browserSkillDir = physicalBrowserSkillCliDir(process.resourcesPath, proces
 if (browserSkillDir === undefined) {
   record('BrowserSkill CLI: no physical packaged binary in resources; browser tools stay dormant.')
 }
+const compileCacheDir = join(
+  app.getPath('temp'),
+  'deepseek-harness-node-compile-cache',
+  `${app.getVersion()}-${process.platform}-${process.arch}`,
+)
 
 const runtime = new HarnessProcess({
   cli: resolveCliPath(),
   patch: desktopPatchPath,
   ...(browserSkillDir === undefined ? {} : { browserSkillDir }),
+  compileCacheDir,
   prepare: () => {
     const result = healProfilesModuleFallbackCached(desktopInstallAnchorPath, dshHome, app.getVersion())
     record(`module fallback: ${result}`)
