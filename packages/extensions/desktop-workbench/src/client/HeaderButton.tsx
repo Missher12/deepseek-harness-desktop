@@ -12,6 +12,7 @@ export function HeaderButton({ sessionId, useWorkbench, toggle, t }: HeaderButto
     <button type="button" className={css.trigger} aria-label={open ? t('close') : t('open')} aria-expanded={open}
       onClick={() => { toggle(sessionId) }}>
       <IconPanelLeftOutline16 size={14} />
+      <span className={css.triggerLabel}>{t('workbench')}</span>
     </button>
   )
 }

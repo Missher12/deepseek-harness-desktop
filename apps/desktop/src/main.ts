@@ -56,6 +56,7 @@ import { readWindowBounds, writeWindowBounds } from './window/state.ts'
 import { readDesktopWindowPrerequisites } from './window/prerequisites.ts'
 import { DesktopStartupTimeline } from './startup-timeline.ts'
 import { createNativeVisualTrayEvidenceController } from './native-visual-tray-evidence.ts'
+import { readDesktopIntegrations } from './integrations.ts'
 
 const PRODUCT_NAME = 'DeepSeek Harness'
 const require = createRequire(import.meta.url)
@@ -409,6 +410,11 @@ ipcMain.handle('desktop:preferences-get', async (event) => {
   if (!isHarnessSender(event)) throw new Error('Untrusted Desktop preferences sender.')
   await preferencesReady
   return desktopPreferences
+})
+
+ipcMain.handle('desktop:integrations-get', async (event) => {
+  if (!isHarnessSender(event)) throw new Error('Untrusted Desktop integrations sender.')
+  return await readDesktopIntegrations(dshHome)
 })
 
 ipcMain.handle('desktop:preferences-set', async (event, value: unknown) => {

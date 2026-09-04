@@ -169,11 +169,11 @@ export function AppFrame({
     detailsSession === undefined ? 0 : panels.details,
     utilityOpen ? panels.utilityWidth : 0,
   )
-  // The column solver protects the conversation floor by conceding the
-  // utility column to zero. In that state the workbench must become a drawer
-  // even when the viewport is just above the fixed narrow breakpoint;
-  // otherwise its mounted content is present but completely invisible.
-  const utilityDrawer = utilityOpen && (narrow || dockedCols.utility === 0)
+  // The solver is the source of truth for whether the utility surface fits.
+  // A narrow window may still have enough room after the sidebar collapses;
+  // keep that useful 300px+ surface docked and use the drawer only when the
+  // conversation floor would otherwise be violated.
+  const utilityDrawer = utilityOpen && dockedCols.utility === 0
   const cols = utilityDrawer
     ? computeColumns(
       viewport,

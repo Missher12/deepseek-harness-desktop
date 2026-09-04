@@ -4,6 +4,7 @@ import {
   type DesktopUpdateSnapshot,
   desktopPresentation,
   isDesktopCommand,
+  isDesktopIntegrationsSnapshot,
   isDesktopPreferenceMutation,
   isDesktopPreferencesSnapshot,
   isDesktopUpdateSnapshot,
@@ -97,6 +98,11 @@ const api: DesktopApi = {
     }
     ipcRenderer.on('desktop:preferences-state', handler)
     return () => { ipcRenderer.off('desktop:preferences-state', handler) }
+  },
+  async getDesktopIntegrations() {
+    const value: unknown = await ipcRenderer.invoke('desktop:integrations-get')
+    if (!isDesktopIntegrationsSnapshot(value)) throw new Error('Invalid Desktop integrations snapshot.')
+    return value
   },
 }
 

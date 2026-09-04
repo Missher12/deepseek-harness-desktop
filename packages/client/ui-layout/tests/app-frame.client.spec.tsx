@@ -294,7 +294,7 @@ describe('AppFrame', () => {
     const { frame, instance, queryByTestId, getByTestId, slotCalls } = mountFrame()
     expect(queryByTestId('utility-content')).toBeNull()
     act(() => { instance.actions.openUtility('files') })
-    expect(tracks(frame)).toEqual([280, 0, 420])
+    expect(tracks(frame)).toEqual([280, 0, 360])
     expect(getByTestId('utility-content')).toBeTruthy()
     expect(slotCalls.filter(c => c.key === 'layout.utility').at(-1)?.props).toEqual({ mode: 'files' })
     act(() => { instance.actions.closeUtility() })
@@ -302,7 +302,7 @@ describe('AppFrame', () => {
     expect(queryByTestId('utility-content')).toBeNull()
   })
 
-  it('renders utility as an overlay drawer below the narrow breakpoint', () => {
+  it('renders utility as an overlay drawer when a collapsed rail still cannot preserve the center floor', () => {
     frameWidth = 980
     const { frame, instance, getByTestId } = mountFrame()
     act(() => { instance.actions.openUtility('browser') })
@@ -318,11 +318,12 @@ describe('AppFrame', () => {
     expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBe('true')
   })
 
-  it('keeps every narrow utility surface in the overlay drawer even when columns barely fit', () => {
-    frameWidth = 1020
-    const { instance, getByTestId } = mountFrame()
+  it('keeps the utility docked at the 1012px desktop default when the collapsed rail leaves enough room', () => {
+    frameWidth = 1012
+    const { frame, instance, getByTestId } = mountFrame()
     act(() => { instance.actions.openUtility('terminal') })
-    expect(getByTestId('utility-content').parentElement?.getAttribute('data-utility-drawer')).toBe('true')
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0, 316])
+    expect(getByTestId('utility-content').parentElement?.hasAttribute('data-utility-drawer')).toBe(false)
   })
 
   it('closed sidebar keeps its compact rail with mounted slot content and collapsed owner props', () => {

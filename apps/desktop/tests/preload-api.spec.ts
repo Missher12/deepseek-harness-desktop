@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   desktopPresentation,
+  isDesktopIntegrationsSnapshot,
   isDesktopCommand,
   isDesktopPresentation,
   isDesktopUpdateSnapshot,
@@ -73,5 +74,20 @@ describe('desktop preload vocabulary', () => {
     expect(isDesktopPreferenceMutation({ key: 'tieredPricingEstimates', value: false })).toBe(true)
     expect(isDesktopPreferenceMutation({ key: 'closeBehavior', value: false })).toBe(false)
     expect(isDesktopPreferenceMutation({ key: 'shell', value: 'quit' })).toBe(false)
+  })
+
+  it('accepts only the path-free Desktop integration snapshot', () => {
+    expect(isDesktopIntegrationsSnapshot({
+      openDesign: { state: 'installed', profile: 'open-design' },
+    })).toBe(true)
+    expect(isDesktopIntegrationsSnapshot({
+      openDesign: { state: 'missing', profile: 'open-design' },
+    })).toBe(true)
+    expect(isDesktopIntegrationsSnapshot({
+      openDesign: { state: 'installed', profile: '/Users/example/.dsh/profiles/open-design' },
+    })).toBe(false)
+    expect(isDesktopIntegrationsSnapshot({
+      openDesign: { state: 'installed', profile: 'open-design', command: 'shell' },
+    })).toBe(false)
   })
 })

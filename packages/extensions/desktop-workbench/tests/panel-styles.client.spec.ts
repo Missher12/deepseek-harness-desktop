@@ -21,6 +21,9 @@ function declarations(selector: string): Map<string, string> | undefined {
 
 describe('WorkbenchPanel.module.css', () => {
   it('keeps the launcher and scrollable mode content inside the resizable right column', () => {
+    expect(declarations('.trigger')?.get('display')).toBe('inline-flex')
+    expect(declarations('.trigger')?.get('width')).toBeUndefined()
+    expect(declarations('.triggerLabel')?.get('white-space')).toBe('nowrap')
     expect(declarations('.panel')?.get('grid-template-columns')).toBe(
       'clamp(96px, 30%, 132px) minmax(0, 1fr)',
     )

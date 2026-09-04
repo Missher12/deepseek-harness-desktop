@@ -20,6 +20,32 @@ export interface DesktopPresentation {
   readonly titlebar: DesktopTitlebar
 }
 
+const DESKTOP_INTEGRATION_STATES = ['installed', 'missing'] as const
+
+export type DesktopIntegrationState = typeof DESKTOP_INTEGRATION_STATES[number]
+
+/** Path-free status for optional Desktop integrations. */
+export interface DesktopIntegrationsSnapshot {
+  openDesign: {
+    state: DesktopIntegrationState
+    profile: 'open-design'
+  }
+}
+
+/** Validate integration data before exposing it to renderer code. */
+export function isDesktopIntegrationsSnapshot(value: unknown): value is DesktopIntegrationsSnapshot {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const candidate = value as Record<string, unknown>
+  if (Object.keys(candidate).length !== 1) return false
+  const openDesign = candidate.openDesign
+  if (typeof openDesign !== 'object' || openDesign === null || Array.isArray(openDesign)) return false
+  const integration = openDesign as Record<string, unknown>
+  return Object.keys(integration).length === 2
+    && integration.profile === 'open-design'
+    && typeof integration.state === 'string'
+    && (DESKTOP_INTEGRATION_STATES as readonly string[]).includes(integration.state)
+}
+
 /** Create the frozen presentation fact for one native platform. */
 export function desktopPresentation(platform: NodeJS.Platform): Readonly<DesktopPresentation> {
   return Object.freeze({ titlebar: platform === 'darwin' ? 'hidden-inset' : 'native' })
@@ -146,6 +172,8 @@ export interface DesktopApi {
   getDesktopPreferences(): Promise<DesktopPreferencesSnapshot>
   setDesktopPreference(mutation: DesktopPreferenceMutation): Promise<DesktopPreferencesSnapshot>
   onDesktopPreferences(listener: (snapshot: DesktopPreferencesSnapshot) => void): () => void
+  /** Read optional plugin status on explicit Workbench demand. */
+  getDesktopIntegrations(): Promise<DesktopIntegrationsSnapshot>
 }
 
 declare global {

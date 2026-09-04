@@ -1,5 +1,6 @@
-.trigger { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 8px; color: var(--dsw-alias-fg-l2); background: transparent; cursor: pointer; }
+.trigger { display: inline-flex; min-width: 28px; height: 28px; align-items: center; justify-content: center; gap: 6px; padding: 0 9px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 8px; color: var(--dsw-alias-fg-l2); background: transparent; cursor: pointer; font: inherit; }
 .trigger:hover, .trigger[aria-expanded='true'] { color: var(--dsw-alias-fg-l1); background: var(--dsw-alias-bg-block); }
+.triggerLabel { font-size: 12px; line-height: 1; white-space: nowrap; }
 .panel { display: grid; grid-template-columns: clamp(96px, 30%, 132px) minmax(0, 1fr); min-width: 0; height: 100%; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-fg-l1); }
 .launcher { display: flex; min-width: 0; min-height: 0; flex-direction: column; border-right: 0.5px solid var(--dsw-alias-border-l2); }
 .launcherTop { display: flex; min-width: 0; min-height: 45px; align-items: center; gap: 6px; padding: 0 8px 0 10px; border-bottom: 0.5px solid var(--dsw-alias-border-l2); }

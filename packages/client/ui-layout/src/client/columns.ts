@@ -38,11 +38,11 @@ export const DETAILS_MAX = 520
 /** Details width before any user drag. */
 export const DETAILS_DEFAULT = 360
 /** Utility workbench drag clamp floor. */
-export const UTILITY_MIN = 320
+export const UTILITY_MIN = 300
 /** Utility workbench drag clamp ceiling. */
 export const UTILITY_MAX = 720
 /** Utility workbench width before any user drag. */
-export const UTILITY_DEFAULT = 420
+export const UTILITY_DEFAULT = 360
 
 /**
  * Clamp a panel width into its contract range.

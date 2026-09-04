@@ -287,6 +287,23 @@ async function seedLegacyExternalBrainProfile(harnessHome: string): Promise<void
   }
 }
 
+/** Seed only the path-free status manifest consumed on demand by the Plugins page. */
+async function seedOpenDesignPluginStatus(harnessHome: string): Promise<void> {
+  const profile = join(harnessHome, 'profiles', 'open-design')
+  await mkdir(profile, { recursive: true })
+  await writeFile(join(profile, 'package.json'), `${JSON.stringify({
+    name: 'dsh-profile-open-design',
+    dependencies: {
+      '@open-design/dsh-runtime': 'file:.open-design/8412c8a48eb69e7e71aa02cfd6058f3b2d64a51b30097cfc30f553c43962226a.tgz',
+    },
+    dsh: {
+      profile: {
+        bundles: ['@deepseek-ai/dsh-base', '@open-design/dsh-runtime'],
+      },
+    },
+  }, null, 2)}\n`, 'utf8')
+}
+
 /** Isolated on-disk state used by the native system-clipboard smoke. */
 export interface WindowsClipboardSmokeState {
   activeSessionId: string
@@ -1261,11 +1278,15 @@ async function exerciseSessionMessenger(
   })
 }
 
-async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): Promise<void> {
+async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform, harnessHome: string): Promise<void> {
   // Keep this part of the native smoke in the resizable column layout rather
   // than the narrow-window utility drawer, which intentionally has no drag
   // handle.
-  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.setViewportSize({ width: 1012, height: 760 })
+  await expect.poll(
+    () => page.locator('[class*="frame"][data-sidebar-collapsed]').count(),
+    { timeout: 15_000 },
+  ).toBe(1)
   const trigger = page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })
   await trigger.waitFor({ state: 'visible', timeout: 15_000 })
   const triggerBounds = await trigger.boundingBox()
@@ -1275,16 +1296,25 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): 
   // The trigger belongs to the details column: right of the expanded sidebar
   // and inside the viewport.
   expect(triggerBounds.x).toBeGreaterThan(200)
-  expect(triggerBounds.x + triggerBounds.width).toBeLessThanOrEqual(1600)
+  expect(triggerBounds.x + triggerBounds.width).toBeLessThanOrEqual(1012)
 
   await trigger.click()
   const panel = page.locator('[data-desktop-workbench-panel]:visible')
   await panel.waitFor({ state: 'visible', timeout: 15_000 })
+  expect(await panel.locator('xpath=..').getAttribute('data-utility-drawer')).toBeNull()
+  const defaultPanelBounds = await panel.boundingBox()
+  const defaultCenterBounds = await page.locator('[class*="centerCol"]').boundingBox()
+  if (defaultPanelBounds === null || defaultCenterBounds === null) {
+    throw new Error('Packaged smoke: default docked Workbench geometry is unavailable.')
+  }
+  expect(defaultPanelBounds.width).toBeGreaterThanOrEqual(300)
+  expect(defaultCenterBounds.width).toBeGreaterThanOrEqual(640)
+  await page.setViewportSize({ width: 1600, height: 1000 })
   const tabs = panel.getByRole('tablist').getByRole('tab')
   await expect.poll(() => tabs.count(), { timeout: 15_000 }).toBe(5)
   expect([
-    ['审阅', '终端', '浏览器', '文件', '浏览器技能'],
-    ['Review', 'Terminal', 'Browser', 'Files', 'BrowserSkill'],
+    ['审阅', '终端', '浏览器', '文件', '插件'],
+    ['Review', 'Terminal', 'Browser', 'Files', 'Plugins'],
   ]).toContainEqual(await tabs.allTextContents())
   const originalPanelBounds = await panel.boundingBox()
   const utilityHandle = page.locator('[data-side="utility"]')
@@ -1341,6 +1371,16 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): 
   const selectedTab = panel.getByRole('tab', { selected: true })
   expect(await selectedTab.getAttribute('aria-controls'))
     .toBe(await panel.getByRole('tabpanel').getAttribute('id'))
+  await seedOpenDesignPluginStatus(harnessHome)
+  await panel.getByRole('tab', { name: /^(?:Plugins|插件)$/u }).click()
+  await panel.locator('[data-plugin-card="browser-skill"]').waitFor({ state: 'visible', timeout: 15_000 })
+  await panel.locator('[data-plugin-card="open-design"]').waitFor({ state: 'visible', timeout: 15_000 })
+  await expect.poll(
+    () => panel.locator('[data-open-design-state="installed"]').count(),
+    { timeout: 15_000 },
+  ).toBe(1)
+  expect(await panel.locator('[data-browser-skill-idle]').count()).toBe(1)
+  await expectStablePanelWidth()
   await panel.getByRole('button', { name: /^(?:Close workbench|关闭工作台)$/u }).click()
   const reopenTrigger = page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })
   await expect.poll(() => reopenTrigger.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('false')
@@ -2011,7 +2051,7 @@ export async function runPackagedDesktopSmoke(
       }
       await exerciseSessionMessenger(page, clipboardSeed, platform)
       await exerciseComposerAddMenu(page, clipboardSeed)
-      await exerciseDesktopWorkbench(page, platform)
+      await exerciseDesktopWorkbench(page, platform, harnessHome)
       await exerciseTurnNavigation(page, clipboardSeed)
       await exerciseReasoningEffort(page, harnessHome, platform)
     } catch (error) {

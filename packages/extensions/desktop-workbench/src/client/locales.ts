@@ -3,7 +3,7 @@ export const NS = 'desktopWorkbench'
 /** Simplified-Chinese workbench copy. */
 export const zh = {
   open: '打开工作台', close: '关闭工作台', workbench: '工作台', modes: '工作台模式', terminal: '终端', browser: '浏览器', files: '文件',
-  review: '审阅', browserSkill: '浏览器技能',
+  review: '审阅', browserSkill: '插件', browserSkillTitle: 'BrowserSkill',
   'placeholder.terminal': '终端正在准备', 'placeholder.browser': '浏览器正在准备',
   'placeholder.files': '文件正在准备', 'placeholder.review': '审阅正在准备', 'placeholder.browserSkill': '浏览器技能正在准备',
   filterFiles: '筛选文件', selectFile: '选择文件以预览', binaryFile: '二进制文件不提供文本预览', truncated: '内容过长，已截断', mention: '加入输入框',
@@ -17,11 +17,14 @@ export const zh = {
   browserSkillVersion: '版本 {version}', browserSkillCliFact: '浏览器技能 CLI', browserSkillExtensionConnected: '扩展已连接', browserSkillExtensionNotConnected: '扩展未连接',
   browserSkillInstallExtension: '安装官方扩展', browserSkillSessions: '会话：自有 {owned} · 借用 {borrowed}',
   browserSkillSessionFact: '浏览器会话', browserSkillFailed: '状态检测失败：{message}',
+  openDesignTitle: 'Open Design', openDesignInstalled: '已通过官方插件配置安装',
+  openDesignMissing: '未在 open-design 配置中安装', openDesignLoading: '正在读取插件状态…',
+  openDesignFailed: '无法读取插件状态', openDesignOfficial: '查看官方项目',
 } as const
 /** English workbench copy. */
 export const en: Record<keyof typeof zh, string> = {
   open: 'Open workbench', close: 'Close workbench', workbench: 'Workbench', modes: 'Workbench modes', terminal: 'Terminal', browser: 'Browser', files: 'Files',
-  review: 'Review', browserSkill: 'BrowserSkill',
+  review: 'Review', browserSkill: 'Plugins', browserSkillTitle: 'BrowserSkill',
   'placeholder.terminal': 'Terminal is getting ready', 'placeholder.browser': 'Browser is getting ready',
   'placeholder.files': 'Files are getting ready', 'placeholder.review': 'Review is getting ready', 'placeholder.browserSkill': 'BrowserSkill is getting ready',
   filterFiles: 'Filter files', selectFile: 'Select a file to preview', binaryFile: 'Binary preview is unavailable', truncated: 'Content truncated', mention: 'Add to composer',
@@ -35,6 +38,9 @@ export const en: Record<keyof typeof zh, string> = {
   browserSkillVersion: 'Version {version}', browserSkillCliFact: 'BrowserSkill CLI', browserSkillExtensionConnected: 'Extension connected', browserSkillExtensionNotConnected: 'Extension not connected',
   browserSkillInstallExtension: 'Install official extension', browserSkillSessions: 'Sessions: {owned} owned · {borrowed} borrowed',
   browserSkillSessionFact: 'Browser sessions', browserSkillFailed: 'Status check failed: {message}',
+  openDesignTitle: 'Open Design', openDesignInstalled: 'Installed through the official plugin profile',
+  openDesignMissing: 'Not installed in the open-design profile', openDesignLoading: 'Reading plugin status…',
+  openDesignFailed: 'Plugin status is unavailable', openDesignOfficial: 'View official project',
 }
 /** Closed workbench locale key set. */
 export type DesktopWorkbenchKey = keyof typeof zh

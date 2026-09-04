@@ -96,6 +96,8 @@ describe('computeColumns — degenerate viewports', () => {
   })
 
   it('solves the utility panel as the active right column', () => {
+    expect(UTILITY_MIN).toBe(300)
+    expect(UTILITY_DEFAULT).toBe(360)
     expect(computeColumns(1920, SIDEBAR_DEFAULT, 0, UTILITY_DEFAULT)).toEqual({
       sidebar: SIDEBAR_DEFAULT,
       center: 1920 - SIDEBAR_DEFAULT - UTILITY_DEFAULT,
@@ -107,6 +109,15 @@ describe('computeColumns — degenerate viewports', () => {
       center: UTILITY_MIN + CENTER_MIN - 1,
       details: 0,
       utility: 0,
+    })
+  })
+
+  it('keeps a 300px-or-wider utility dock beside the collapsed rail at the 1012px desktop default', () => {
+    expect(computeColumns(1012, 0, 0, UTILITY_DEFAULT)).toEqual({
+      sidebar: SIDEBAR_COLLAPSED,
+      center: CENTER_MIN,
+      details: 0,
+      utility: 1012 - SIDEBAR_COLLAPSED - CENTER_MIN,
     })
   })
 })

@@ -10,20 +10,24 @@ import { WorkbenchPanel, type WorkbenchPanelProps } from '../src/client/Workbenc
 import { MODE_KEY, WorkbenchController, loadMode, loadWidth } from '../src/client/preferences.ts'
 import { workbenchTransport } from '../src/client/transport.ts'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  delete (window as unknown as { dshDesktop?: unknown }).dshDesktop
+})
 
 const sessionId = 'session-a' as never
 const WORKBENCH_MODE_FIXTURE: readonly UtilityMode[] = ['review', 'terminal', 'browser', 'files', 'browserSkill']
 const labels = {
   open: '打开工作台', close: '关闭工作台', terminal: '终端', browser: '浏览器',
   files: '文件', review: '审阅', workbench: '工作台', modes: '工作台模式', clearView: '清屏', changes: '变更',
-  browserSkill: '浏览器技能', browserSkillIdle: '点击“检测”运行内置 CLI 与浏览器扩展状态检查。',
+  browserSkill: '插件', browserSkillTitle: 'BrowserSkill', browserSkillIdle: '点击“检测”运行内置 CLI 与浏览器扩展状态检查。',
   browserSkillCheck: '检测', browserSkillChecking: '正在检测…', browserSkillBundled: 'CLI 已内置',
   browserSkillMissing: 'CLI 缺失', browserSkillIncompatible: 'CLI 版本不匹配', browserSkillUnhealthy: 'CLI 状态异常',
   browserSkillVersion: '版本 {version}', browserSkillExtensionConnected: '扩展已连接',
   browserSkillExtensionNotConnected: '扩展未连接', browserSkillInstallExtension: '安装官方扩展',
   browserSkillSessions: '会话：自有 {owned} · 借用 {borrowed}', browserSkillSessionFact: '浏览器会话',
-  browserSkillFailed: '状态检测失败：{message}',
+  browserSkillFailed: '状态检测失败：{message}', openDesignTitle: 'Open Design', openDesignInstalled: '已通过官方插件配置安装',
+  openDesignMissing: '未在 open-design 配置中安装', openDesignLoading: '正在读取插件状态…', openDesignFailed: '无法读取插件状态',
 } as const
 const t = (key: keyof typeof labels) => labels[key]
 
@@ -115,10 +119,10 @@ describe('desktop workbench shell', () => {
   })
 
   it('clamps the persisted width', () => {
-    expect(loadWidth({ getItem: () => null })).toBe(420)
+    expect(loadWidth({ getItem: () => null })).toBe(360)
     expect(loadWidth({ getItem: () => '9999' })).toBe(720)
-    expect(loadWidth({ getItem: () => '100' })).toBe(320)
-    expect(loadWidth({ getItem: () => 'nope' })).toBe(420)
+    expect(loadWidth({ getItem: () => '100' })).toBe(300)
+    expect(loadWidth({ getItem: () => 'nope' })).toBe(360)
   })
 
   it('opens one docked panel with vertically ordered modes and no duplicate side-chat surface', () => {
@@ -141,7 +145,8 @@ describe('desktop workbench shell', () => {
     expect(panel).not.toBeNull()
     const tablist = screen.getByRole('tablist', { name: '工作台模式' })
     expect(tablist.getAttribute('aria-orientation')).toBe('vertical')
-    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['审阅', '终端', '浏览器', '文件', '浏览器技能'])
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['审阅', '终端', '浏览器', '文件', '插件'])
+    expect(button.textContent).toContain('工作台')
     expect(screen.queryByRole('tab', { name: '侧边聊天' })).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(screen.queryByRole('menu')).toBeNull()
@@ -164,7 +169,7 @@ describe('desktop workbench shell', () => {
     const terminal = screen.getByRole('tab', { name: '终端' })
     const browser = screen.getByRole('tab', { name: '浏览器' })
     const files = screen.getByRole('tab', { name: '文件' })
-    const browserSkill = screen.getByRole('tab', { name: '浏览器技能' })
+    const browserSkill = screen.getByRole('tab', { name: '插件' })
 
     terminal.focus()
     fireEvent.keyDown(terminal, { key: 'ArrowDown' })
@@ -231,6 +236,26 @@ describe('desktop workbench shell', () => {
 })
 
 describe('BrowserSkill status page', () => {
+  it('reads the official Open Design plugin profile only when the Plugins page mounts', async () => {
+    const getDesktopIntegrations = vi.fn().mockResolvedValue({
+      openDesign: { state: 'installed', profile: 'open-design' },
+    })
+    ;(window as unknown as { dshDesktop?: unknown }).dshDesktop = { getDesktopIntegrations }
+    const browserProbe = vi.spyOn(workbenchTransport, 'browserSkillStatus')
+    const { common } = setup()
+    const props = common as unknown as Parameters<typeof BrowserSkillMode>[0]
+
+    expect(getDesktopIntegrations).not.toHaveBeenCalled()
+    render(<BrowserSkillMode {...props} />)
+
+    expect(await screen.findByText('已通过官方插件配置安装')).toBeTruthy()
+    expect(screen.getByText('Open Design')).toBeTruthy()
+    expect(screen.getByText('BrowserSkill')).toBeTruthy()
+    expect(getDesktopIntegrations).toHaveBeenCalledOnce()
+    expect(browserProbe).not.toHaveBeenCalled()
+    browserProbe.mockRestore()
+  })
+
   it('stays idle on mount and probes only on the explicit check', async () => {
     const spy = vi.spyOn(workbenchTransport, 'browserSkillStatus').mockResolvedValue({
       state: 'bundled-ready', cliVersion: '0.1.11', extension: 'not-connected', ownedSessions: 1, borrowedSessions: 2,
