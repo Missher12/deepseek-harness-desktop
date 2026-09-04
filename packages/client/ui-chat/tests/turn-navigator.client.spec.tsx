@@ -44,8 +44,9 @@ afterEach(cleanup)
 describe('TurnNavigator', () => {
   it('renders exactly one mark per turn across loaded and unloaded entries', () => {
     const items = [loadedItem(1), unloadedItem(2, 8), loadedItem(3), unloadedItem(4, 16)]
-    renderNavigator(items, 2)
+    const { view } = renderNavigator(items, 2)
 
+    expect(view.container.querySelector('[data-turn-navigation-track]')).not.toBeNull()
     const marks = screen.getAllByRole('button', { name: /(?:跳转到|加载并跳转到)第/u })
     expect(marks).toHaveLength(4)
     expect(screen.getByRole('button', { name: '跳转到第 1 轮' })).toBeDefined()

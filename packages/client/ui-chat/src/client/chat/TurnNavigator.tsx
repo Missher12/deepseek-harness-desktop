@@ -159,6 +159,7 @@ function TurnNavigatorRail({ items, activeTurn, busyTurn, onNavigate, t }: TurnN
         <div
           ref={scrollerRef}
           className={fadeClasses.join(' ')}
+          data-turn-navigation-track
           onScroll={() => { syncScrollState() }}
         >
           <div className={css.marks}>
