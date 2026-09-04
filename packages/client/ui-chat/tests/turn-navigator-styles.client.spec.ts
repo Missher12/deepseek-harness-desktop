@@ -35,6 +35,25 @@ describe('TurnNavigator geometry', () => {
     expect(css).toContain('calc(100% - var(--turn-preview-height))')
   })
 
+  it('anchors the rail in the start gutter and opens its preview toward the transcript', async () => {
+    const css = await readFile(cssPath, 'utf8')
+
+    expect(css).toMatch(/\.frame\s*\{[\s\S]*?inset-inline-start:\s*calc\(/u)
+    expect(css).not.toMatch(/\.frame\s*\{[\s\S]*?right:\s*calc\(/u)
+    expect(css).toMatch(/\.mark\s*\{[\s\S]*?inset-inline-start:\s*0/u)
+    expect(css).toMatch(/\.mark::before\s*\{[\s\S]*?inset-inline-start:\s*0/u)
+    expect(css).toMatch(/\.preview\s*\{[\s\S]*?inset-inline-start:\s*calc\(100% \+ 10px\)/u)
+    expect(css).toMatch(/from \{ opacity: 0; transform: translateX\(-4px\); \}/u)
+  })
+
+  it('hides the zero-height rail only when the center column is truly narrow', async () => {
+    const css = await readFile(cssPath, 'utf8')
+
+    expect(css).toContain('@container (max-width: 680px)')
+    expect(css).not.toContain('@container (max-width: 900px)')
+    expect(css).toMatch(/\.slot\s*\{[\s\S]*?height:\s*0/u)
+  })
+
   it('renders one prompt line and three response lines with mark-tick states', async () => {
     const css = await readFile(cssPath, 'utf8')
     expect(css).toContain('-webkit-line-clamp: 1')

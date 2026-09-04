@@ -1333,6 +1333,18 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform): 
  * hover preview inside the rail band above the composer.
  */
 async function exerciseTurnNavigation(page: Page, seeded: WindowsClipboardSmokeState): Promise<void> {
+  // The installed default-size contract is 1012px: the rail remains available
+  // in the transcript's start gutter instead of disappearing at the old 900px
+  // center-column threshold.
+  await page.setViewportSize({ width: 1012, height: 760 })
+  const openSidebar = page.getByRole('button', { name: /^(?:Open sidebar|打开侧边栏)$/u })
+  if (await openSidebar.count() === 1) {
+    await openSidebar.click()
+    await expect.poll(
+      () => page.locator('[class*="frame"][data-sidebar-collapsed]').count(),
+      { timeout: 15_000 },
+    ).toBe(0)
+  }
   const activeRow = page.locator('[class*="sessionRow"]').filter({ hasText: seeded.activeSessionTitle }).first()
   await activeRow.waitFor({ state: 'visible', timeout: 15_000 })
   if (await activeRow.getAttribute('aria-selected') !== 'true') {
@@ -1352,6 +1364,9 @@ async function exerciseTurnNavigation(page: Page, seeded: WindowsClipboardSmokeS
 
   const frameBox = await frame.boundingBox()
   if (frameBox === null) throw new Error('Packaged smoke: turn rail frame geometry is unavailable.')
+  const transcriptBox = await page.locator('[data-chat-flow]').boundingBox()
+  if (transcriptBox === null) throw new Error('Packaged smoke: transcript geometry is unavailable.')
+  expect(frameBox.x + frameBox.width).toBeLessThanOrEqual(transcriptBox.x)
   const composerBox = await page.locator('[data-composer-card]').last().boundingBox()
 
   // Hover the lower band so the preview must clamp against the composer
