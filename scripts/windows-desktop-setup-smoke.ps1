@@ -309,7 +309,7 @@ function Invoke-DesktopStartupSample {
     Wait-IsolatedInstalledProcessesStopped -ExecutablePath $ExecutablePath
 
     $startupPattern = '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z startup (app-ready|window-prerequisites|loading-visible|fallback-ready|url-reported|harness-ready|desktop-running): [0-9]+ms$'
-    $runtimePattern = '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z runtime (profile-compose|loader-mount|loader-settle|activation-audit): [0-9]+ms$'
+    $runtimePattern = '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z runtime (profile-compose|loader-mount|loader-settle|activation-audit|loader-build-duration|root-include-duration|first-party-import-duration|root-activation-duration|settle-duration|audit-duration): [0-9]+ms$'
     $startupLines = @(Get-Content -LiteralPath $lifecyclePath | Where-Object {
       $_ -match $startupPattern -or $_ -match $runtimePattern
     })
@@ -350,7 +350,7 @@ function Write-DesktopRuntimeEvidence {
   Invoke-DesktopStartupSample -ExecutablePath $ExecutablePath -HarnessHome $warmHome -UserData $warmUserData -EvidenceRoot $evidenceRoot -SampleKind 'warm-prime' -SampleIndex 0 | Out-Null
   $logs = @{ cold = [System.Collections.Generic.List[string]]::new(); warm = [System.Collections.Generic.List[string]]::new() }
   foreach ($sampleKind in @('cold', 'warm')) {
-    for ($sampleIndex = 1; $sampleIndex -le 5; $sampleIndex += 1) {
+    for ($sampleIndex = 1; $sampleIndex -le 10; $sampleIndex += 1) {
       if ($sampleKind -eq 'cold') {
         $sampleRoot = Join-Path $benchmarkRoot "cold-$sampleIndex"
         $sampleHome = Join-Path $sampleRoot 'dsh-home'
@@ -543,7 +543,7 @@ try {
   }
 
   if ($RuntimeEvidenceOnly) {
-    Write-Host 'Windows desktop runtime evidence passed: install, five cold and warm launches, process cleanup, uninstall, and data preservation.'
+    Write-Host 'Windows desktop runtime evidence passed: install, ten cold and warm launches, process cleanup, uninstall, and data preservation.'
   }
   else {
     Write-Host 'Windows desktop Setup smoke passed: install, shortcuts, legacy fallback recovery, launch, close, process cleanup, uninstall, and data preservation.'

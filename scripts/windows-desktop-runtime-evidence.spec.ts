@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 describe('Windows Desktop runtime evidence wiring', () => {
-  it('measures five isolated cold launches and five same-home warm launches before uninstall', () => {
+  it('measures ten isolated cold launches and ten same-home warm launches before uninstall', () => {
     const smoke = readFileSync(
       new URL('./windows-desktop-setup-smoke.ps1', import.meta.url),
       'utf8',
@@ -12,10 +12,13 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(smoke).toContain('[string]$PackageInventoryPath')
     expect(smoke).toContain('function Invoke-DesktopStartupSample')
     expect(smoke).toContain("foreach ($sampleKind in @('cold', 'warm'))")
-    expect(smoke).toContain('for ($sampleIndex = 1; $sampleIndex -le 5; $sampleIndex += 1)')
+    expect(smoke).toContain('for ($sampleIndex = 1; $sampleIndex -le 10; $sampleIndex += 1)')
+    expect(smoke).not.toContain('for ($sampleIndex = 1; $sampleIndex -le 5; $sampleIndex += 1)')
     expect(smoke).toContain("-SampleKind 'warm-prime'")
     expect(smoke).toContain('startup (app-ready|window-prerequisites|loading-visible|fallback-ready|url-reported|harness-ready|desktop-running)')
-    expect(smoke).toContain('runtime (profile-compose|loader-mount|loader-settle|activation-audit)')
+    expect(smoke).toContain(
+      'runtime (profile-compose|loader-mount|loader-settle|activation-audit|loader-build-duration|root-include-duration|first-party-import-duration|root-activation-duration|settle-duration|audit-duration)',
+    )
     expect(smoke).toContain('$process.CloseMainWindow()')
     expect(smoke).toContain('Get-IsolatedInstalledProcesses -ExecutablePath $ExecutablePath')
     expect(smoke).toContain('run benchmark:startup --output')
@@ -171,25 +174,44 @@ describe('Windows Desktop runtime evidence wiring', () => {
     )
     const selectedTarget = packaged.indexOf("activeRow.getAttribute('aria-selected')")
     const promptRail = packaged.indexOf('const turnRail = page.locator')
-    const attachedRail = packaged.indexOf("await turnRail.waitFor({ state: 'attached'")
+    const visibleRail = packaged.indexOf("await turnRail.waitFor({ state: 'visible'")
     const populatedRail = packaged.indexOf("turnRail.locator('button[aria-label*=\"\u8df3\u8f6c\"], button[aria-label*=\"jump to\"]')")
     const currentRail = packaged.indexOf("turnRail.locator('button[aria-current=\"true\"]')")
+    const openTooltip = packaged.indexOf("page.getByRole('tooltip').waitFor({ state: 'visible'")
     const workbench = packaged.indexOf('Open workbench|打开工作台')
     expect(selectedTarget).toBeGreaterThan(-1)
     expect(promptRail).toBeGreaterThan(selectedTarget)
-    expect(attachedRail).toBeGreaterThan(promptRail)
-    expect(populatedRail).toBeGreaterThan(attachedRail)
+    expect(visibleRail).toBeGreaterThan(promptRail)
+    expect(populatedRail).toBeGreaterThan(visibleRail)
     expect(currentRail).toBeGreaterThan(populatedRail)
-    expect(workbench).toBeGreaterThan(currentRail)
+    expect(openTooltip).toBeGreaterThan(currentRail)
+    expect(workbench).toBeGreaterThan(openTooltip)
     expect(packaged).toContain('Turn navigation')
+    expect(packaged).toContain("await turnRail.waitFor({ state: 'visible'")
+    expect(packaged).toContain('.toBeGreaterThanOrEqual(2)')
+    expect(packaged).toContain('data-desktop-workbench-panel]:visible')
+    expect(packaged).toContain("getAttribute('data-utility-drawer')")
+    expect(packaged).toContain('data-plugin-card="browser-skill"')
+    expect(packaged).toContain('data-plugin-card="open-design"')
+    expect(packaged).toContain('data-open-design-state="installed"')
+    expect(packaged).toContain('data-browser-skill-idle')
     expect(packaged).toContain('Open workbench|打开工作台')
     expect(packaged).toContain('waitForWindowsProcessesStopped')
+    const sharedPackaged = readFileSync(
+      new URL('../apps/desktop/tests/packaged-smoke.ts', import.meta.url),
+      'utf8',
+    )
+    expect(sharedPackaged).toContain('exerciseComposerAddMenu(page, clipboardSeed)')
+    expect(sharedPackaged).toContain('exerciseTurnNavigation(page, clipboardSeed)')
+    expect(sharedPackaged).toContain('exerciseDesktopWorkbench(page, platform, harnessHome)')
+    expect(sharedPackaged).toContain('seedOpenDesignPluginStatus(harnessHome)')
+    expect(sharedPackaged).toContain("join(harnessHome, 'profiles', 'open-design')")
     expect(workflow).toContain('Windows-native-visual-evidence-${{ steps.source.outputs.sha }}')
     expect(workflow).not.toContain('fixed-milestones/')
     expect(workflow).not.toContain('lifecycle.log')
   })
 
-  it('benchmarks the pinned 0.5.1 parent Setup on the same runner before the candidate', () => {
+  it('benchmarks the pinned public 0.5.3 Setup on the same runner before the candidate', () => {
     const smoke = readFileSync(
       new URL('./windows-desktop-setup-smoke.ps1', import.meta.url),
       'utf8',
@@ -201,13 +223,14 @@ describe('Windows Desktop runtime evidence wiring', () => {
 
     expect(smoke).toContain('[switch]$RuntimeEvidenceOnly')
     expect(smoke).toContain('if (-not $RuntimeEvidenceOnly)')
-    expect(workflow).toContain('DeepSeek-Harness-Setup-0.5.1-win-x64.exe')
-    expect(workflow).toContain('154116788')
-    expect(workflow).toContain('f4d661c6ff5fad93a50a6de2801da207efb54c021434c745b4c46c0982e57318')
+    expect(workflow).toContain('DeepSeek-Harness-Setup-0.5.3-win-x64.exe')
+    expect(workflow).toContain('152982782')
+    expect(workflow).toContain('adb72bcbdc40ee87b37b7eb5867b75f66110cbb50ad91ad55e6f1a910191ca87')
+    expect(workflow).not.toContain('DeepSeek-Harness-Setup-0.5.1-win-x64.exe')
     expect(workflow).toContain('-RuntimeEvidenceOnly')
-    expect(workflow).toContain('desktop-startup-baseline-0.5.1.json')
-    expect(workflow).toContain('desktop-package-installed-baseline-0.5.1.json')
-    expect(workflow).toContain('desktop-package-setup-baseline-0.5.1.json')
+    expect(workflow).toContain('desktop-startup-baseline-0.5.3.json')
+    expect(workflow).toContain('desktop-package-installed-baseline-0.5.3.json')
+    expect(workflow).toContain('desktop-package-setup-baseline-0.5.3.json')
     expect(workflow).toContain('-PackagePolicy windows-x64')
   })
 })

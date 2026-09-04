@@ -137,21 +137,21 @@ jobs:
             [System.Text.UTF8Encoding]::new($false)
           )
 
-      - name: Measure the pinned 0.5.1 parent on this runner
+      - name: Measure the pinned public 0.5.3 baseline on this runner
         shell: pwsh
         run: |
-          $baselineName = 'DeepSeek-Harness-Setup-0.5.1-win-x64.exe'
+          $baselineName = 'DeepSeek-Harness-Setup-0.5.3-win-x64.exe'
           $baselinePath = Join-Path $env:RUNNER_TEMP $baselineName
-          $baselineUrl = "https://github.com/Missher12/deepseek-harness-desktop/releases/download/desktop-v0.5.1/$baselineName"
+          $baselineUrl = "https://github.com/Missher12/deepseek-harness-desktop/releases/download/desktop-v0.5.3/$baselineName"
           Invoke-WebRequest -Uri $baselineUrl -OutFile $baselinePath
           $baseline = Get-Item -LiteralPath $baselinePath
-          if ($baseline.Length -ne 154116788) {
-            throw "0.5.1 Setup size mismatch: expected 154116788, got $($baseline.Length)."
+          if ($baseline.Length -ne 152982782) {
+            throw "0.5.3 Setup size mismatch: expected 152982782, got $($baseline.Length)."
           }
           $baselineHash = (Get-FileHash -LiteralPath $baselinePath -Algorithm SHA256).Hash.ToLowerInvariant()
-          $expectedHash = 'f4d661c6ff5fad93a50a6de2801da207efb54c021434c745b4c46c0982e57318'
+          $expectedHash = 'adb72bcbdc40ee87b37b7eb5867b75f66110cbb50ad91ad55e6f1a910191ca87'
           if ($baselineHash -ne $expectedHash) {
-            throw "0.5.1 Setup SHA-256 mismatch: expected $expectedHash, got $baselineHash."
+            throw "0.5.3 Setup SHA-256 mismatch: expected $expectedHash, got $baselineHash."
           }
           $baselineSetupEvidence = [ordered]@{
             schemaVersion = 1
@@ -160,15 +160,15 @@ jobs:
             sha256 = $baselineHash
           }
           [System.IO.File]::WriteAllText(
-            'apps/desktop/release/desktop-package-setup-baseline-0.5.1.json',
+            'apps/desktop/release/desktop-package-setup-baseline-0.5.3.json',
             (($baselineSetupEvidence | ConvertTo-Json) + "`n"),
             [System.Text.UTF8Encoding]::new($false)
           )
           ./scripts/windows-desktop-setup-smoke.ps1 `
             -SetupPath $baselinePath `
-            -StartupSummaryPath apps/desktop/release/desktop-startup-baseline-0.5.1.json `
-            -PackageInventoryPath apps/desktop/release/desktop-package-installed-baseline-0.5.1.json `
-            -InstallationEvidencePath apps/desktop/release/desktop-windows-install-evidence-baseline-0.5.1.json `
+            -StartupSummaryPath apps/desktop/release/desktop-startup-baseline-0.5.3.json `
+            -PackageInventoryPath apps/desktop/release/desktop-package-installed-baseline-0.5.3.json `
+            -InstallationEvidencePath apps/desktop/release/desktop-windows-install-evidence-baseline-0.5.3.json `
             -RuntimeEvidenceOnly
           Remove-Item -LiteralPath $baselinePath -Force
 
@@ -201,10 +201,10 @@ jobs:
             s/apps/desktop/release/desktop-windows-install-evidence.json
             s/apps/desktop/release/desktop-package-staged.json
             s/apps/desktop/release/desktop-package-setup.json
-            s/apps/desktop/release/desktop-startup-baseline-0.5.1.json
-            s/apps/desktop/release/desktop-package-installed-baseline-0.5.1.json
-            s/apps/desktop/release/desktop-windows-install-evidence-baseline-0.5.1.json
-            s/apps/desktop/release/desktop-package-setup-baseline-0.5.1.json
+            s/apps/desktop/release/desktop-startup-baseline-0.5.3.json
+            s/apps/desktop/release/desktop-package-installed-baseline-0.5.3.json
+            s/apps/desktop/release/desktop-windows-install-evidence-baseline-0.5.3.json
+            s/apps/desktop/release/desktop-package-setup-baseline-0.5.3.json
           if-no-files-found: error
           retention-days: 14
 

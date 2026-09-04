@@ -117,14 +117,44 @@ async function exerciseWindows150PercentSurface(
     await activeRow.click()
     await expect.poll(() => activeRow.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
     const turnRail = page.locator('nav[aria-label*="轮次导航"], nav[aria-label*="Turn navigation"]')
-    // The 150% surface keeps the navigation column collapsed, so the rail
-    // stays attached but hidden — assert attachment and mark population.
-    await turnRail.waitFor({ state: 'attached', timeout: 30_000 })
-    expect(await turnRail.locator('button[aria-label*="跳转"], button[aria-label*="jump to"]').count())
-      .toBeGreaterThanOrEqual(1)
-    expect(await turnRail.locator('button[aria-current="true"]').count()).toBe(1)
-    await page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })
-      .waitFor({ state: 'visible', timeout: 30_000 })
+    await turnRail.waitFor({ state: 'visible', timeout: 30_000 })
+    const turnMarks = turnRail.locator('button[aria-label*="跳转"], button[aria-label*="jump to"]')
+    await expect.poll(() => turnMarks.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(2)
+    const currentTurn = turnRail.locator('button[aria-current="true"]')
+    expect(await currentTurn.count()).toBe(1)
+    const turnRailBounds = await turnRail.boundingBox()
+    const transcriptBounds = await page.locator('[data-chat-flow]').boundingBox()
+    if (turnRailBounds === null || transcriptBounds === null) {
+      throw new Error('Windows 150 percent smoke could not measure the left Turn rail.')
+    }
+    expect(turnRailBounds.x + turnRailBounds.width).toBeLessThanOrEqual(transcriptBounds.x)
+    await currentTurn.focus()
+    await page.getByRole('tooltip').waitFor({ state: 'visible', timeout: 15_000 })
+
+    const closeSidebar = page.getByRole('button', { name: /^(?:Close sidebar|关闭侧边栏)$/u })
+    await closeSidebar.click()
+    await expect.poll(
+      () => page.locator('[class*="frame"][data-sidebar-collapsed]').count(),
+      { timeout: 15_000 },
+    ).toBe(1)
+    const workbenchTrigger = page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })
+    await workbenchTrigger.waitFor({ state: 'visible', timeout: 30_000 })
+    await workbenchTrigger.click()
+    const workbench = page.locator('[data-desktop-workbench-panel]:visible')
+    await workbench.waitFor({ state: 'visible', timeout: 15_000 })
+    expect(await workbench.locator('xpath=..').getAttribute('data-utility-drawer')).toBeNull()
+    const workbenchBounds = await workbench.boundingBox()
+    const centerBounds = await page.locator('[class*="centerCol"]').boundingBox()
+    if (workbenchBounds === null || centerBounds === null) {
+      throw new Error('Windows 150 percent smoke could not measure the docked Workbench.')
+    }
+    expect(workbenchBounds.width).toBeGreaterThanOrEqual(300)
+    expect(centerBounds.width).toBeGreaterThanOrEqual(640)
+    await workbench.getByRole('tab', { name: /^(?:Plugins|插件)$/u }).click()
+    await workbench.locator('[data-plugin-card="browser-skill"]').waitFor({ state: 'visible', timeout: 15_000 })
+    await workbench.locator('[data-plugin-card="open-design"]').waitFor({ state: 'visible', timeout: 15_000 })
+    expect(await workbench.locator('[data-browser-skill-idle]').count()).toBe(1)
+    expect(await workbench.locator('[data-open-design-state="installed"]').count()).toBe(1)
 
     const evidence = {
       schemaVersion: 1,
