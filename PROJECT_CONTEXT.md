@@ -69,28 +69,37 @@ The repository is based on the pinned official source and adds the desktop appli
 
 ## Current Progress
 
-- Desktop 0.5.4 is being finalized on the public 0.5.3 parent
-  `0da8093092c9a29f5cebdfc094d0b58d97b56219` and preserves ancestry to the exact
-  official `dsh-v0.1.2-rc.1` commit
+- Desktop 0.5.4 was released from exact commit
+  `5575ad3a7b17e79ef83abebe07643e82aaec3326` by Desktop Release run
+  `33883487169`. The public `desktop-v0.5.4` tag resolves to that commit, whose
+  public 0.5.3 parent is `0da8093092c9a29f5cebdfc094d0b58d97b56219`
+  and whose history contains the exact official `dsh-v0.1.2-rc.1` commit
   `a66e4702047846cdaa10c66c9d3df3951f5ea70d`. The complete-history turn rail is
   anchored in the transcript's left gutter, away from the composer and right
   Workbench. The responsive Workbench remains the sole Review, Terminal,
   Browser, and Files utility column, while its Plugins page reports the packaged
   BrowserSkill 0.2.0 and the independently installed `open-design` Harness
   profile. The BrowserSkill CLI cache is version-scoped so a pinned upgrade
-  cannot collide with an older verified binary.
-  Open Design is not baked into the Desktop graph: its official runtime remains
-  owned by that separate profile and is detected only when the Plugins page is
-  opened. The composer `@` and Add menus put live skills ahead of file/Session
-  references and Goal/Plan actions without changing the canonical skill
-  invocation path. Desktop package and update metadata are 0.5.4/core rc.1.
-  Startup evidence now records six fixed path-free Loader details and requires
-  exactly ten samples; local isolation points to import/root activation as the
-  bottleneck, but no feature-disabling or compile-cache shortcut met the safety
-  and improvement threshold. A single exact final SHA still requires native
-  Mac/Windows package, lifecycle, UI, size, and ten-sample startup acceptance
-  before tag or Release. Live BrowserSkill control still requires a compatible
-  user-authorized extension session and is not started silently.
+  cannot collide with an older verified binary. Open Design is not baked into
+  the Desktop graph: its official runtime remains owned by that separate profile
+  and is detected only when the Plugins page is opened. The composer `@` and Add
+  menus put live skills ahead of file/Session references and Goal/Plan actions
+  without changing the canonical skill invocation path. Desktop package and
+  update metadata are 0.5.4/core rc.1. Startup evidence records six fixed
+  path-free Loader details and requires exactly ten samples; local isolation
+  points to import/root activation as the bottleneck, but no feature-disabling
+  or compile-cache shortcut met the safety and improvement threshold. The
+  release run passed native Intel Mac and Windows package, install, lifecycle,
+  100/150 percent UI, ten-sample startup, process cleanup, and checksum gates.
+  The public Mac DMG is 189153743 bytes with SHA-256
+  `a113c509e0b2fbc6b485040ab52f5a185f100736779ddd2e8764413c0330b4ff`;
+  the public Windows Setup is 153191816 bytes with SHA-256
+  `43d555d5b52f12b062e52a94a4752c0a2fd83ea0f38811f12c3fd4c057d951ef`.
+  Both were anonymously downloaded and checked against their public checksum
+  files. The verified Intel DMG replaced this machine's 0.5.3 app only after a
+  recoverable backup; the independent Open Design profile remained byte-stable
+  and its protocol probe passed. Live BrowserSkill control still requires a
+  compatible user-authorized extension session and is not started silently.
 - Desktop 0.5.2 starts from the released `desktop-v0.5.1` commit
   `b8595d75a9f94fb332689e28aef70cf5b7d72d4f`. Its integrated UI restores the
   v0.4.11 PromptRail against the current `PromptAnchor` data flow, adds
