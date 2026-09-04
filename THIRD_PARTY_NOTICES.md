@@ -127,7 +127,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 
 pnpm applies local patches to the following packages at install time, so shipped artifacts carry modified copies; each patch file is the complete record of the modification:
 
-- `@wxg-prc-cpg/browser-skill-dsh-plugin@0.1.2` — [`patches/@wxg-prc-cpg__browser-skill-dsh-plugin@0.1.2.patch`](patches/@wxg-prc-cpg__browser-skill-dsh-plugin@0.1.2.patch)
+- `@wxg-prc-cpg/browser-skill-dsh-plugin@0.2.0` — [`patches/@wxg-prc-cpg__browser-skill-dsh-plugin@0.2.0.patch`](patches/@wxg-prc-cpg__browser-skill-dsh-plugin@0.2.0.patch)
 - `dshmarket@1.10.1` — [`patches/dshmarket@1.10.1.patch`](patches/dshmarket@1.10.1.patch)
 - `node-pty@1.2.0-beta.15` — [`patches/node-pty@1.2.0-beta.15.patch`](patches/node-pty@1.2.0-beta.15.patch)
 

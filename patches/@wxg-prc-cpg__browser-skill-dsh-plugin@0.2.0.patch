@@ -1,8 +1,8 @@
 diff --git a/lib/client.cjs b/lib/client.cjs
-index 95e865c626745d50e3b87f0505949e34f1299f3c..12a9338de645e7c0f982e4ba77004a679a29c58d 100644
+index f5bb2fbb0b9d5815b39333cf34e41c775544ffbd..083779f872f769427d060cc4b16b1f9752706bbe 100644
 --- a/lib/client.cjs
 +++ b/lib/client.cjs
-@@ -4751,16 +4751,9 @@ window.__ModuleLoader__.load({
+@@ -4770,16 +4770,9 @@ window.__ModuleLoader__.load({
  				...props,
  				loadImage: (attachment) => loadSessionImage(sessions, props.sessionId, attachment)
  			})));
@@ -23,7 +23,7 @@ index 95e865c626745d50e3b87f0505949e34f1299f3c..12a9338de645e7c0f982e4ba77004a67
  		//#endregion
  		exports.apply = apply;
 diff --git a/lib/index.mjs b/lib/index.mjs
-index 116d91e12c246f05dd8ecd0a3e7723c362eb702b..cb2a8e12771c9a82bb6f84823e53c18330985bf1 100644
+index 6458000efa09534b3f8f60f1f981b14251b6606c..2e161d43bc0e0555e333d20233ad63337332f15e 100644
 --- a/lib/index.mjs
 +++ b/lib/index.mjs
 @@ -4127,10 +4127,10 @@ function apply(ctx, config = {}, options = {}) {

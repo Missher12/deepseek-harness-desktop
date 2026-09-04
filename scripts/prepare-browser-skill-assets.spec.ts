@@ -78,11 +78,15 @@ function sha256Hex(content: Buffer): string {
   return createHash('sha256').update(content).digest('hex')
 }
 
+function toArrayBuffer(content: Buffer): ArrayBuffer {
+  return Uint8Array.from(content).buffer
+}
+
 describe('prepare-browser-skill-assets', () => {
-  it('rejects non-HTTPS URLs and unknown platforms at manifest load', () => {
+  it('rejects non-HTTPS URLs and unknown platforms at manifest load', async () => {
     expect(readAssetManifest().assets['darwin-x64']?.url.startsWith('https://')).toBe(true)
     expect(readAssetManifest().assets['win32-x64']?.url.startsWith('https://')).toBe(true)
-    expect(() => prepareBrowserSkillAssets('linux-x64' as BrowserSkillPlatform, { root: fixtureRoot() }))
+    await expect(prepareBrowserSkillAssets('linux-x64' as BrowserSkillPlatform, { root: fixtureRoot() }))
       .rejects.toThrow(/unknown platform/)
   })
 
@@ -112,9 +116,7 @@ describe('prepare-browser-skill-assets', () => {
       },
     }))
     const fetchImpl = vi.fn(async () => ({
-      ok: true, status: 200, arrayBuffer: async () => archive.buffer.slice(
-        archive.byteOffset, archive.byteOffset + archive.byteLength,
-      ) as ArrayBuffer,
+      ok: true, status: 200, arrayBuffer: async () => toArrayBuffer(archive),
     }))
     const binPath = await prepareBrowserSkillAssets('darwin-x64', {
       fetch: fetchImpl,
@@ -125,6 +127,41 @@ describe('prepare-browser-skill-assets', () => {
     expect(fetchImpl).toHaveBeenCalledWith(url)
   })
 
+  it('isolates cached binaries by pinned version so an upgrade cannot collide', async () => {
+    const root = fixtureRoot()
+    const prepare = async (version: string, content: string) => {
+      const payload = Buffer.from(`#!/bin/sh\necho ${content}\n`)
+      const archive = gzTar('bsk', payload)
+      const manifestPath = join(root, `${version}.json`)
+      writeFileSync(manifestPath, JSON.stringify({
+        version,
+        assets: {
+          'darwin-x64': {
+            url: `https://example.invalid/${version}.tar.gz`,
+            sha256: sha256Hex(archive),
+            archiveBytes: archive.byteLength,
+            member: 'bsk',
+            executable: true,
+          },
+        },
+      }))
+      const fetchImpl = vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => toArrayBuffer(archive),
+      }))
+      const path = await prepareBrowserSkillAssets('darwin-x64', { fetch: fetchImpl, root, manifestPath })
+      return { path, payload }
+    }
+
+    const old = await prepare('v0.1.11', 'old')
+    const current = await prepare('v0.2.0', 'current')
+
+    expect(old.path).not.toBe(current.path)
+    expect(readFileSync(old.path)).toEqual(old.payload)
+    expect(readFileSync(current.path)).toEqual(current.payload)
+  })
+
   it('rejects a digest mismatch before any extraction', async () => {
     const root = fixtureRoot()
     const asset = readAssetManifest().assets['darwin-x64']
@@ -132,9 +169,7 @@ describe('prepare-browser-skill-assets', () => {
     const small = gzTar('bsk', Buffer.from('wrong'))
     const archive = Buffer.concat([small, Buffer.alloc(asset.archiveBytes - small.byteLength)])
     const fetchImpl = vi.fn(async () => ({
-      ok: true, status: 200, arrayBuffer: async () => archive.buffer.slice(
-        archive.byteOffset, archive.byteOffset + archive.byteLength,
-      ) as ArrayBuffer,
+      ok: true, status: 200, arrayBuffer: async () => toArrayBuffer(archive),
     }))
     await expect(prepareBrowserSkillAssets('darwin-x64', { fetch: fetchImpl, root }))
       .rejects.toThrow(/sha256 mismatch/)
@@ -172,9 +207,7 @@ describe('prepare-browser-skill-assets', () => {
     const payload = Buffer.from('x'.repeat(1024))
     const archive = gzTar('bsk', payload)
     const fetchImpl = vi.fn(async () => ({
-      ok: true, status: 200, arrayBuffer: async () => archive.buffer.slice(
-        archive.byteOffset, archive.byteOffset + archive.byteLength,
-      ) as ArrayBuffer,
+      ok: true, status: 200, arrayBuffer: async () => toArrayBuffer(archive),
     }))
     await expect(prepareBrowserSkillAssets('darwin-x64', { fetch: fetchImpl, root }))
       .rejects.toThrow(/bytes/)

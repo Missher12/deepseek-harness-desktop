@@ -76,7 +76,9 @@ The repository is based on the pinned official source and adds the desktop appli
   anchored in the transcript's left gutter, away from the composer and right
   Workbench. The responsive Workbench remains the sole Review, Terminal,
   Browser, and Files utility column, while its Plugins page reports the packaged
-  BrowserSkill and the independently installed `open-design` Harness profile.
+  BrowserSkill 0.2.0 and the independently installed `open-design` Harness
+  profile. The BrowserSkill CLI cache is version-scoped so a pinned upgrade
+  cannot collide with an older verified binary.
   Open Design is not baked into the Desktop graph: its official runtime remains
   owned by that separate profile and is detected only when the Plugins page is
   opened. The composer `@` and Add menus put live skills ahead of file/Session

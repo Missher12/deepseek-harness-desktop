@@ -24,7 +24,7 @@ import {
 /** Exact route for explicit BrowserSkill status refreshes. */
 export const BROWSER_SKILL_STATUS_PATH = '/plugins/dsh-desktop-workbench/browser-skill/status'
 /** CLI version pinned by scripts/browser-skill-assets.json. */
-export const EXPECTED_BSK_VERSION = '0.1.11'
+export const EXPECTED_BSK_VERSION = '0.2.0'
 
 export interface BrowserSkillProbeOptions {
   /** Verified physical CLI path; the probe reports `missing` when absent. */
@@ -156,7 +156,7 @@ export class BrowserSkillProbe {
       if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         throw new Error('status is not an object')
       }
-      parsed = value as DaemonStatusShape
+      parsed = value
     } catch {
       return { state: 'unhealthy', cliVersion: version, ...notConnected() }
     }

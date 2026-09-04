@@ -15,14 +15,14 @@ import { describe, expect, it } from 'vitest'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
 const PLUGIN_NAME = '@wxg-prc-cpg/browser-skill-dsh-plugin'
-const PLUGIN_VERSION = '0.1.2'
-const PLUGIN_INTEGRITY = 'sha512-k6BeAN0SpuaBj0M62wQhcKjCN7Fk6K6NTzGc/5c6LnOW2EvfQxdBssdnKhn7lLyTN3qHktCTpTeJsHdQUcnnTg=='
+const PLUGIN_VERSION = '0.2.0'
+const PLUGIN_INTEGRITY = 'sha512-CwzoviH02P0mwKM7/7NDyurO0r243m4AuM2smgk8nIT6LEBXvt52pbU0RLM71jjHjldFwsJZQoQvJibiVVK51w=='
 const AUDITED_COMMIT = '945bf1523dc969ba6c359368c56c01047ccdeeea'
-const MAC_ARCHIVE = 'bsk-v0.1.11-x86_64-apple-darwin.tar.gz'
-const MAC_SHA256 = 'f1e0749fc2fac11f81d931862efa331bb9fcba30d1a5cce83b2a10626bb02bf6'
-const WINDOWS_ARCHIVE = 'bsk-v0.1.11-x86_64-pc-windows-msvc.zip'
-const WINDOWS_SHA256 = '041785147342a704fd576470e63307880043a15ad52e0553f12e6dcf360ccf74'
-const PATCH_PATH = 'patches/@wxg-prc-cpg__browser-skill-dsh-plugin@0.1.2.patch'
+const MAC_ARCHIVE = 'bsk-v0.2.0-x86_64-apple-darwin.tar.gz'
+const MAC_SHA256 = '9700ebd84b306acf83c641e0a23db0fe6003fba1d728e640fae4f6abc3e821bc'
+const WINDOWS_ARCHIVE = 'bsk-v0.2.0-x86_64-pc-windows-msvc.zip'
+const WINDOWS_SHA256 = '57c0459711125c4a5c7f5759ef15b5e45c942e69afa43aaf22bfa06f7fec4590'
+const PATCH_PATH = 'patches/@wxg-prc-cpg__browser-skill-dsh-plugin@0.2.0.patch'
 
 function read(relative: string): string {
   return readFileSync(resolve(repositoryRoot, relative), 'utf8')

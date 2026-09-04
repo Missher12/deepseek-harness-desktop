@@ -258,7 +258,7 @@ describe('BrowserSkill status page', () => {
 
   it('stays idle on mount and probes only on the explicit check', async () => {
     const spy = vi.spyOn(workbenchTransport, 'browserSkillStatus').mockResolvedValue({
-      state: 'bundled-ready', cliVersion: '0.1.11', extension: 'not-connected', ownedSessions: 1, borrowedSessions: 2,
+      state: 'bundled-ready', cliVersion: '0.2.0', extension: 'not-connected', ownedSessions: 1, borrowedSessions: 2,
     })
     const { common } = setup()
     const props = common as unknown as Parameters<typeof BrowserSkillMode>[0]

@@ -12,7 +12,7 @@ afterEach(async () => {
 })
 
 const FULL_STATUS_JSON = JSON.stringify({
-  daemon_version: '0.1.11',
+  daemon_version: '0.2.0',
   protocol_version: '1.1',
   pid: 4321,
   uptime_secs: 9,
@@ -28,7 +28,7 @@ const FULL_STATUS_JSON = JSON.stringify({
 })
 
 interface ScriptedProbe {
-  run(command: string, args: readonly string[], timeoutMs: number): Promise<{ stdout: string }>
+  run: (command: string, args: readonly string[], timeoutMs: number) => Promise<{ stdout: string }>
   calls: Array<[string, readonly string[], number]>
 }
 
@@ -48,14 +48,14 @@ function scriptedRun(outputs: Array<{ stdout: string } | Error>): ScriptedProbe 
 
 describe('BrowserSkill probe', () => {
   it('runs the version then bounded status calls and returns only sanitized fields', async () => {
-    const scripted = scriptedRun([{ stdout: 'bsk 0.1.11\n' }, { stdout: FULL_STATUS_JSON }])
+    const scripted = scriptedRun([{ stdout: 'bsk 0.2.0\n' }, { stdout: FULL_STATUS_JSON }])
     const probe = new BrowserSkillProbe({ cliPath: '/bsk', run: scripted.run })
 
     const status = await probe.status()
 
     expect(status).toEqual({
       state: 'bundled-ready',
-      cliVersion: '0.1.11',
+      cliVersion: '0.2.0',
       extension: 'connected',
       ownedSessions: 2,
       borrowedSessions: 1,
@@ -79,19 +79,19 @@ describe('BrowserSkill probe', () => {
   })
 
   it('reports incompatible when the bundled CLI version differs from the pin', async () => {
-    const scripted = scriptedRun([{ stdout: 'bsk 0.2.0\n' }])
+    const scripted = scriptedRun([{ stdout: 'bsk 0.1.11\n' }])
     const probe = new BrowserSkillProbe({ cliPath: '/bsk', run: scripted.run })
 
     expect(await probe.status()).toEqual({
-      state: 'incompatible', cliVersion: '0.2.0', extension: 'not-connected', ownedSessions: 0, borrowedSessions: 0,
+      state: 'incompatible', cliVersion: '0.1.11', extension: 'not-connected', ownedSessions: 0, borrowedSessions: 0,
     })
     expect(scripted.calls).toHaveLength(1)
   })
 
   it('reports incompatible when the daemon version skews from the CLI', async () => {
     const scripted = scriptedRun([
-      { stdout: 'bsk 0.1.11\n' },
-      { stdout: JSON.stringify({ daemon_version: '0.2.0', browsers: [], sessions: [] }) },
+      { stdout: 'bsk 0.2.0\n' },
+      { stdout: JSON.stringify({ daemon_version: '0.1.11', browsers: [], sessions: [] }) },
     ])
     const probe = new BrowserSkillProbe({ cliPath: '/bsk', run: scripted.run })
 
@@ -100,17 +100,17 @@ describe('BrowserSkill probe', () => {
 
   it('reports unhealthy when the status call fails or is not a JSON object', async () => {
     for (const output of [new Error('spawn failed'), { stdout: 'not json' }, { stdout: '[1,2]' }]) {
-      const scripted = scriptedRun([{ stdout: 'bsk 0.1.11\n' }, output])
+      const scripted = scriptedRun([{ stdout: 'bsk 0.2.0\n' }, output])
       const probe = new BrowserSkillProbe({ cliPath: '/bsk', run: scripted.run })
 
       expect(await probe.status()).toEqual({
-        state: 'unhealthy', cliVersion: '0.1.11', extension: 'not-connected', ownedSessions: 0, borrowedSessions: 0,
+        state: 'unhealthy', cliVersion: '0.2.0', extension: 'not-connected', ownedSessions: 0, borrowedSessions: 0,
       })
     }
   })
 
   it('passes a configurable per-command timeout to the runner', async () => {
-    const scripted = scriptedRun([{ stdout: 'bsk 0.1.11\n' }, { stdout: '{}' }])
+    const scripted = scriptedRun([{ stdout: 'bsk 0.2.0\n' }, { stdout: '{}' }])
     const probe = new BrowserSkillProbe({ cliPath: '/bsk', run: scripted.run, timeoutMs: 4000 })
 
     await probe.status()

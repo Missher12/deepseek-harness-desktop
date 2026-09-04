@@ -82,6 +82,6 @@ minimumReleaseAgeExclude:
   - '@openai/codex@0.149.1||0.149.1-darwin-arm64||0.149.1-darwin-x64||0.149.1-linux-arm64||0.149.1-linux-x64||0.149.1-win32-arm64||0.149.1-win32-x64'
 
 patchedDependencies:
-  '@wxg-prc-cpg/browser-skill-dsh-plugin@0.1.2': patches/@wxg-prc-cpg__browser-skill-dsh-plugin@0.1.2.patch
+  '@wxg-prc-cpg/browser-skill-dsh-plugin@0.2.0': patches/@wxg-prc-cpg__browser-skill-dsh-plugin@0.2.0.patch
   dshmarket@1.10.1: patches/dshmarket@1.10.1.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch

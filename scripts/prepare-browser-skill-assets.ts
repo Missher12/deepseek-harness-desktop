@@ -43,8 +43,10 @@ export function readAssetManifest(path = ASSET_MANIFEST_PATH): BrowserSkillAsset
   const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown
   if (typeof parsed !== 'object' || parsed === null) throw new Error('browser-skill-assets: manifest must be an object')
   const manifest = parsed as { version?: unknown; assets?: unknown }
-  if (typeof manifest.version !== 'string' || manifest.version.length === 0) {
-    throw new Error('browser-skill-assets: manifest version must be a non-empty string')
+  if (typeof manifest.version !== 'string' || manifest.version.length === 0
+    || manifest.version === '.' || manifest.version === '..'
+    || manifest.version.includes('/') || manifest.version.includes('\\') || manifest.version.includes('\0')) {
+    throw new Error('browser-skill-assets: manifest version must be one safe path segment')
   }
   if (typeof manifest.assets !== 'object' || manifest.assets === null) {
     throw new Error('browser-skill-assets: manifest assets must be an object')
@@ -183,7 +185,8 @@ export async function prepareBrowserSkillAssets(
   const manifest = readAssetManifest(options.manifestPath)
   const asset = manifest.assets[platform]
   if (asset === undefined) throw new Error(`browser-skill-assets: unknown platform ${platform}`)
-  const root = options.root ?? process.env.DSH_BROWSER_SKILL_ASSET_ROOT ?? DEFAULT_ASSET_ROOT
+  const assetRoot = options.root ?? process.env.DSH_BROWSER_SKILL_ASSET_ROOT ?? DEFAULT_ASSET_ROOT
+  const root = join(assetRoot, manifest.version)
   const archivePath = join(root, `${platform}.archive`)
   const binPath = join(root, asset.member)
   const expected = Buffer.from(asset.sha256, 'hex')

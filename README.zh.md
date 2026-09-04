@@ -14,7 +14,7 @@ DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的�
 
 请从本仓库的 [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases) 下载 DMG 或 Setup 安装程序。当前成品未签名；首次启动时，macOS 可能要求在 Finder 右键菜单中选择“打开”，Windows 可能显示 SmartScreen 提示。
 
-Desktop 0.5.4 从同一份经过测试的 Harness `0.1.2-rc.1` 源码提交构建 Intel macOS DMG 与 Windows x64 Setup。它保留“项目／会话”树，把完整历史发言刻度移到正文左侧留白，并把“审查、终端、浏览器、文件”、BrowserSkill 与配套插件状态统一放进一个响应式工作台。输入框的 `@` 与“添加”菜单会优先展示当前会话实时技能，同时保留文件／会话引用和目标／计划操作。腾讯 BrowserSkill `0.1.2` 及其锁定 CLI 仍只在用户明确打开后工作；Open Design 通过独立 `open-design` Harness Profile 被识别，不会硬编码进应用。旧版 0.4.x 回退代理的精确迁移、有界本地文档附件、“记忆与学习”、会话级授权、十样本细分启动证据、macOS 标题栏安全区及 Windows 平台专属资产均保持不变。Windows 目前仍通过安装程序更新；应用内更新暂只支持 Intel macOS。
+Desktop 0.5.4 从同一份经过测试的 Harness `0.1.2-rc.1` 源码提交构建 Intel macOS DMG 与 Windows x64 Setup。它保留“项目／会话”树，把完整历史发言刻度移到正文左侧留白，并把“审查、终端、浏览器、文件”、BrowserSkill 与配套插件状态统一放进一个响应式工作台。输入框的 `@` 与“添加”菜单会优先展示当前会话实时技能，同时保留文件／会话引用和目标／计划操作。腾讯 BrowserSkill `0.2.0` 及其锁定 CLI 仍只在用户明确打开后工作；Open Design 通过独立 `open-design` Harness Profile 被识别，不会硬编码进应用。旧版 0.4.x 回退代理的精确迁移、有界本地文档附件、“记忆与学习”、会话级授权、十样本细分启动证据、macOS 标题栏安全区及 Windows 平台专属资产均保持不变。Windows 目前仍通过安装程序更新；应用内更新暂只支持 Intel macOS。
 
 ## 开发者预览
 

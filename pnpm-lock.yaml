@@ -9,7 +9,7 @@ overrides:
   '@deepseek-ai/schemastery': link:vendor/schemastery
 
 patchedDependencies:
-  '@wxg-prc-cpg/browser-skill-dsh-plugin@0.1.2': f94ac6f333070753abdb036837b1ee31dc9d1be071515dc68380b7ca9c0a5d9d
+  '@wxg-prc-cpg/browser-skill-dsh-plugin@0.2.0': b5049cd3d9692aebc176297b3527469a439e4a9d491538d5ca8304e28ea8b893
   dshmarket@1.10.1: ebf1c45fd656e5f84bc322c890d881bacf020c7332a55d9684024ce8ac15fb3f
   node-pty@1.2.0-beta.15: 88fd1642f61a07e1f2f750e566e801b5f6870ad8bb7012ff86e6803db01a5739
 
@@ -1168,8 +1168,8 @@ importers:
         specifier: link:../../vendor/schemastery
         version: link:../../vendor/schemastery
       '@wxg-prc-cpg/browser-skill-dsh-plugin':
-        specifier: 0.1.2
-        version: 0.1.2(patch_hash=f94ac6f333070753abdb036837b1ee31dc9d1be071515dc68380b7ca9c0a5d9d)(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-attachment@packages+attachment+attachment)(@deepseek-ai/dsh-client-runtime@packages+client+runtime)(@deepseek-ai/dsh-client-ui-attachment@packages+client+ui-attachment)(@deepseek-ai/dsh-client-ui-primitives@packages+client+ui-primitives)(@deepseek-ai/dsh-client-ui-tool@packages+client+ui-tool)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-tools@packages+core+tools)(@deepseek-ai/schemastery@vendor+schemastery)(react@18.3.1)
+        specifier: 0.2.0
+        version: 0.2.0(patch_hash=b5049cd3d9692aebc176297b3527469a439e4a9d491538d5ca8304e28ea8b893)(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-attachment@packages+attachment+attachment)(@deepseek-ai/dsh-client-runtime@packages+client+runtime)(@deepseek-ai/dsh-client-ui-attachment@packages+client+ui-attachment)(@deepseek-ai/dsh-client-ui-primitives@packages+client+ui-primitives)(@deepseek-ai/dsh-client-ui-tool@packages+client+ui-tool)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-tools@packages+core+tools)(@deepseek-ai/schemastery@vendor+schemastery)(react@18.3.1)
       dsh-missher-evolution:
         specifier: https://github.com/Missher12/dsh-missher-evolution/releases/download/v0.1.1/dsh-missher-evolution-0.1.1.tgz
         version: https://github.com/Missher12/dsh-missher-evolution/releases/download/v0.1.1/dsh-missher-evolution-0.1.1.tgz(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-agent-loop@packages+core+agent-loop)(@deepseek-ai/dsh-agent@packages+core+agent)(@deepseek-ai/dsh-api-remotes@packages+api+remotes)(@deepseek-ai/dsh-client-locale@packages+client+locale)(@deepseek-ai/dsh-client-runtime@packages+client+runtime)(@deepseek-ai/dsh-client-ui-settings@packages+client+ui-settings)(@deepseek-ai/dsh-client-ui-slots@packages+client+ui-slots)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-session@packages+core+session)(@deepseek-ai/dsh-tools@packages+core+tools)(@deepseek-ai/dsh-typert-protocol@packages+typert+protocol)(@deepseek-ai/schemastery@vendor+schemastery)(react@18.3.1)(zod@4.4.3)
@@ -14426,8 +14426,8 @@ packages:
   '@vueuse/shared@12.8.2':
     resolution: {integrity: sha512-dznP38YzxZoNloI0qpEfpkms8knDtaoQ6Y/sfS0L7Yki4zh40LFHEhur0odJC6xTHG5dxWVPiUWBXn+wCG2s5w==}
 
-  '@wxg-prc-cpg/browser-skill-dsh-plugin@0.1.2':
-    resolution: {integrity: sha512-k6BeAN0SpuaBj0M62wQhcKjCN7Fk6K6NTzGc/5c6LnOW2EvfQxdBssdnKhn7lLyTN3qHktCTpTeJsHdQUcnnTg==}
+  '@wxg-prc-cpg/browser-skill-dsh-plugin@0.2.0':
+    resolution: {integrity: sha512-CwzoviH02P0mwKM7/7NDyurO0r243m4AuM2smgk8nIT6LEBXvt52pbU0RLM71jjHjldFwsJZQoQvJibiVVK51w==}
     peerDependencies:
       '@deepseek-ai/cordis': ^4.0.1
       '@deepseek-ai/dsh-attachment': ^0.1.0-rc.6
@@ -20809,7 +20809,7 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@wxg-prc-cpg/browser-skill-dsh-plugin@0.1.2(patch_hash=f94ac6f333070753abdb036837b1ee31dc9d1be071515dc68380b7ca9c0a5d9d)(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-attachment@packages+attachment+attachment)(@deepseek-ai/dsh-client-runtime@packages+client+runtime)(@deepseek-ai/dsh-client-ui-attachment@packages+client+ui-attachment)(@deepseek-ai/dsh-client-ui-primitives@packages+client+ui-primitives)(@deepseek-ai/dsh-client-ui-tool@packages+client+ui-tool)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-tools@packages+core+tools)(@deepseek-ai/schemastery@vendor+schemastery)(react@18.3.1)':
+  '@wxg-prc-cpg/browser-skill-dsh-plugin@0.2.0(patch_hash=b5049cd3d9692aebc176297b3527469a439e4a9d491538d5ca8304e28ea8b893)(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-attachment@packages+attachment+attachment)(@deepseek-ai/dsh-client-runtime@packages+client+runtime)(@deepseek-ai/dsh-client-ui-attachment@packages+client+ui-attachment)(@deepseek-ai/dsh-client-ui-primitives@packages+client+ui-primitives)(@deepseek-ai/dsh-client-ui-tool@packages+client+ui-tool)(@deepseek-ai/dsh-llm@packages+llm+llm)(@deepseek-ai/dsh-tools@packages+core+tools)(@deepseek-ai/schemastery@vendor+schemastery)(react@18.3.1)':
     dependencies:
       '@deepseek-ai/cordis': link:vendor/cordis
       '@deepseek-ai/dsh-tools': link:packages/core/tools
