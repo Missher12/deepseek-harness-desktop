@@ -40,17 +40,17 @@ describe('desktop startup benchmark', () => {
     expect(() => parseDesktopStartupSample(content)).toThrow(/startup benchmark/i)
   })
 
-  it('computes deterministic median and nearest-rank P95 values from exactly five samples', () => {
-    const samples = [120, 80, 110, 100, 90].map(total => parseDesktopStartupSample(
+  it('computes deterministic median and nearest-rank P95 values from exactly ten samples', () => {
+    const samples = [120, 80, 110, 100, 90, 130, 70, 140, 60, 150].map(total => parseDesktopStartupSample(
       startupLog([5, 12, 35, 20, total - 30, total - 15, total]),
     ))
 
     expect(summarizeDesktopStartupSamples(samples)).toMatchObject({
-      sampleCount: 5,
-      total: { medianMs: 100, p95Ms: 120 },
-      fallbackToUrl: { medianMs: 50, p95Ms: 70 },
+      sampleCount: 10,
+      total: { medianMs: 105, p95Ms: 150 },
+      fallbackToUrl: { medianMs: 55, p95Ms: 100 },
     })
-    expect(() => summarizeDesktopStartupSamples(samples.slice(0, 4))).toThrow(/exactly five/i)
+    expect(() => summarizeDesktopStartupSamples(samples.slice(0, 9))).toThrow(/exactly ten/i)
   })
 
   it('includes complete fixed child phases but rejects partial or arbitrary diagnostics', () => {
@@ -68,7 +68,7 @@ describe('desktop startup benchmark', () => {
       'loader-settle': 95,
       'activation-audit': 105,
     })
-    expect(summarizeDesktopStartupSamples([sample, sample, sample, sample, sample])).toMatchObject({
+    expect(summarizeDesktopStartupSamples(Array.from({ length: 10 }, () => sample))).toMatchObject({
       total: { medianMs: 120, p95Ms: 120 },
       profileBoot: {
         profileCompose: { medianMs: 20, p95Ms: 20 },
@@ -105,7 +105,7 @@ describe('desktop startup benchmark', () => {
       .join('\n')
     const sample = parseDesktopStartupSample(`${startupLog([5, 12, 35, 20, 90, 105, 120])}\n${lines}`)
 
-    expect(summarizeDesktopStartupSamples([sample, sample, sample, sample, sample])).toMatchObject({
+    expect(summarizeDesktopStartupSamples(Array.from({ length: 10 }, () => sample))).toMatchObject({
       profileBootDetails: {
         'loader-build-duration': { medianMs: 6, p95Ms: 6 },
         'root-include-duration': { medianMs: 3, p95Ms: 3 },
