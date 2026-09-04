@@ -102,6 +102,13 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(visual).toContain('--force-device-scale-factor=')
     expect(visual).toContain('function Save-NativeScreenCapture')
     expect(visual).toContain('function Open-DeepSeekHarnessTrayMenu')
+    expect(visual).toContain('$maxTrayMenuAttempts = 3')
+    expect(visual).toContain(
+      'for ($attempt = 1; $attempt -le $maxTrayMenuAttempts; $attempt += 1)',
+    )
+    expect(visual).toContain('$overflowOpenedAt = [DateTimeOffset]::UtcNow')
+    expect(visual).toContain('if ($attempt -eq $maxTrayMenuAttempts)')
+    expect(visual).toContain("throw 'Windows did not expose the DeepSeek Harness tray menu after 3 attempts.'")
     expect(visual).toContain('Show DeepSeek Harness')
     expect(visual).toContain("-NamePattern '^Quit$'")
     expect(visual).not.toContain("-NamePattern '^Quit DeepSeek Harness$'")

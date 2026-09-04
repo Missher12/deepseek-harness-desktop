@@ -277,34 +277,50 @@ function Open-DeepSeekHarnessTrayMenu {
     [int]$DpiPercent
   )
 
-  $hiddenIcons = Wait-AutomationElement `
-    -NamePattern '^(?:Show hidden icons|显示隐藏的图标)$' `
-    -ControlType ([System.Windows.Automation.ControlType]::Button)
-  $hiddenBounds = $hiddenIcons.Current.BoundingRectangle
-  if ($hiddenBounds.Width -le 0 -or $hiddenBounds.Height -le 0) {
-    throw 'Show hidden icons has no visible Windows bounds.'
-  }
-  [NativeVisualInput]::LeftClick(
-    [int][Math]::Round($hiddenBounds.Left + ($hiddenBounds.Width / 2)),
-    [int][Math]::Round($hiddenBounds.Top + ($hiddenBounds.Height / 2))
-  )
-  $overflowOpenedAt = [DateTimeOffset]::UtcNow
-  $trayEvidence = Wait-NativeVisualTrayEvidence `
-    -Path $TrayEvidencePath `
-    -OverflowOpenedAt $overflowOpenedAt `
-    -ExpectedIconSize $ExpectedIconSize
-  Save-NativeScreenCapture -Path (Join-Path $EvidenceRoot "tray-overflow-$DpiPercent.png")
-  [NativeVisualInput]::RightClick(
-    [int]($trayEvidence.clickX),
-    [int]($trayEvidence.clickY)
-  )
+  $maxTrayMenuAttempts = 3
+  for ($attempt = 1; $attempt -le $maxTrayMenuAttempts; $attempt += 1) {
+    try {
+      [NativeVisualInput]::PressEscape()
+      Start-Sleep -Milliseconds 250
+      $hiddenIcons = Wait-AutomationElement `
+        -NamePattern '^(?:Show hidden icons|显示隐藏的图标)$' `
+        -ControlType ([System.Windows.Automation.ControlType]::Button) `
+        -TimeoutSeconds 10
+      $hiddenBounds = $hiddenIcons.Current.BoundingRectangle
+      if ($hiddenBounds.Width -le 0 -or $hiddenBounds.Height -le 0) {
+        throw 'Show hidden icons has no visible Windows bounds.'
+      }
+      [NativeVisualInput]::LeftClick(
+        [int][Math]::Round($hiddenBounds.Left + ($hiddenBounds.Width / 2)),
+        [int][Math]::Round($hiddenBounds.Top + ($hiddenBounds.Height / 2))
+      )
+      $overflowOpenedAt = [DateTimeOffset]::UtcNow
+      $trayEvidence = Wait-NativeVisualTrayEvidence `
+        -Path $TrayEvidencePath `
+        -OverflowOpenedAt $overflowOpenedAt `
+        -ExpectedIconSize $ExpectedIconSize
+      Save-NativeScreenCapture -Path (Join-Path $EvidenceRoot "tray-overflow-$DpiPercent.png")
+      [NativeVisualInput]::RightClick(
+        [int]($trayEvidence.clickX),
+        [int]($trayEvidence.clickY)
+      )
 
-  [void](Wait-AutomationElement `
-    -NamePattern '^Show DeepSeek Harness$' `
-    -ControlType ([System.Windows.Automation.ControlType]::MenuItem))
-  return Wait-AutomationElement `
-    -NamePattern '^Quit$' `
-    -ControlType ([System.Windows.Automation.ControlType]::MenuItem)
+      [void](Wait-AutomationElement `
+        -NamePattern '^Show DeepSeek Harness$' `
+        -ControlType ([System.Windows.Automation.ControlType]::MenuItem) `
+        -TimeoutSeconds 5)
+      return Wait-AutomationElement `
+        -NamePattern '^Quit$' `
+        -ControlType ([System.Windows.Automation.ControlType]::MenuItem) `
+        -TimeoutSeconds 5
+    }
+    catch {
+      [NativeVisualInput]::PressEscape()
+      if ($attempt -eq $maxTrayMenuAttempts) {
+        throw 'Windows did not expose the DeepSeek Harness tray menu after 3 attempts.'
+      }
+    }
+  }
 }
 
 function Assert-ShortcutVisible {
