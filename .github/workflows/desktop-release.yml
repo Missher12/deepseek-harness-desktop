@@ -41,6 +41,22 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Download and verify the public Desktop 0.5.3 Mac baseline
+        id: mac-baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          baseline='${{ runner.temp }}/desktop-v0.5.3'
+          artifact='DeepSeek-Harness-0.5.3-mac-x64.dmg'
+          mkdir -p "$baseline"
+          gh release download desktop-v0.5.3 \
+            --pattern "$artifact" \
+            --pattern "$artifact.sha256" \
+            --dir "$baseline"
+          (cd "$baseline" && shasum -a 256 -c "$artifact.sha256")
+          echo "dmg=$baseline/$artifact" >> "$GITHUB_OUTPUT"
+
       - name: Resolve Desktop release metadata
         id: desktop
         run: |
@@ -84,6 +100,28 @@ jobs:
           cd apps/desktop/release
           shasum -a 256 "$artifact" > "$artifact.sha256"
 
+      - name: Compare public and candidate Mac startup evidence
+        run: >-
+          pnpm exec tsx scripts/macos-desktop-runtime-evidence.ts
+          --baseline-dmg '${{ steps.mac-baseline.outputs.dmg }}'
+          --candidate-dmg 'apps/desktop/release/${{ steps.desktop.outputs.artifact }}'
+          --candidate-revision '${{ github.sha }}'
+          --output '${{ runner.temp }}/macos-runtime-evidence/macos-startup-summary.json'
+
+      - name: Exercise mounted Mac visuals at 100 and 150 percent
+        run: |
+          artifact='apps/desktop/release/${{ steps.desktop.outputs.artifact }}'
+          mountpoint='${{ runner.temp }}/dsh-macos-candidate-mount'
+          mkdir -p "$mountpoint"
+          hdiutil attach -readonly -nobrowse -noautoopen -mountpoint "$mountpoint" "$artifact"
+          cleanup_mount() { hdiutil detach "$mountpoint" >/dev/null; }
+          trap cleanup_mount EXIT
+          DSH_MACOS_DESKTOP_EXECUTABLE="$mountpoint/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
+          DSH_MACOS_VISUAL_EVIDENCE_ROOT='${{ runner.temp }}/macos-runtime-evidence/native-visual' \
+            pnpm exec vitest run apps/desktop/tests/macos-native-visual-smoke.spec.ts --config vitest.config.ts
+          cleanup_mount
+          trap - EXIT
+
       - name: Generate verified Desktop update manifest
         run: >-
           pnpm exec tsx scripts/create-desktop-update-manifest.ts
@@ -100,6 +138,16 @@ jobs:
             apps/desktop/release/${{ steps.desktop.outputs.artifact }}
             apps/desktop/release/${{ steps.desktop.outputs.artifact }}.sha256
             apps/desktop/release/deepseek-harness-desktop-update.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-native-visual-evidence-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/macos-runtime-evidence/macos-startup-summary.json
+            ${{ runner.temp }}/macos-runtime-evidence/native-visual/*.json
+            ${{ runner.temp }}/macos-runtime-evidence/native-visual/*.png
           if-no-files-found: error
           retention-days: 1
 
