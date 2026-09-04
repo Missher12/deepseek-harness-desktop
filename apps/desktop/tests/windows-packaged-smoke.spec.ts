@@ -121,7 +121,7 @@ async function exerciseWindows150PercentSurface(
     // is narrower than 680px. Selecting the fixture requires temporarily
     // expanding the sidebar at 150%; restore the normal wide reading surface
     // before asserting the rail itself.
-    const closeSidebar = page.getByRole('button', { name: /^(?:Close sidebar|关闭侧边栏)$/u })
+    const closeSidebar = page.getByRole('button', { name: /^(?:Collapse sidebar|收起侧边栏)$/u })
     await closeSidebar.click()
     await expect.poll(
       () => page.locator('[class*="frame"][data-sidebar-collapsed]').count(),

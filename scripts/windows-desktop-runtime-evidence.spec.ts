@@ -172,6 +172,8 @@ describe('Windows Desktop runtime evidence wiring', () => {
       "page.getByRole('navigation', { name: /^(?:Previous prompts|过往发言)$/u })\n"
       + "      .waitFor({ state: 'visible', timeout: 30_000 })",
     )
+    expect(packaged).toContain('Collapse sidebar|收起侧边栏')
+    expect(packaged).not.toContain('Close sidebar|关闭侧边栏')
     const selectedTarget = packaged.indexOf("activeRow.getAttribute('aria-selected')")
     const closeSidebar = packaged.indexOf('const closeSidebar = page.getByRole')
     const collapsedAfterSelection = packaged.indexOf(
