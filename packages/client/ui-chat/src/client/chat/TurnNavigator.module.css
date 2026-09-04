@@ -22,10 +22,10 @@
 
   position: absolute;
   top: calc(var(--turn-rail-band) / 2);
-  /* Flush with the scrollport start edge: the slot sits inside the transcript's
-     side padding, so the rail gives that inset back and keeps 12px of its own. */
-  inset-inline-start: calc(12px - (var(--dsh-composer-side-clearance) + 16px));
-  width: 28px;
+  /* Use the full 32px start gutter without entering the text column: the
+     longest 20px tick then leaves 12px before transcript content. */
+  inset-inline-start: calc(0px - (var(--dsh-composer-side-clearance) + 16px));
+  width: 20px;
   /* Fixed-pitch marks never compress: a ladder taller than the band scrolls
      inside this frame instead of pushing marks under the composer or above
      the scrollport. */

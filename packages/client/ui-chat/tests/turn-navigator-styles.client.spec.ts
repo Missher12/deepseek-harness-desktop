@@ -39,6 +39,8 @@ describe('TurnNavigator geometry', () => {
     const css = await readFile(cssPath, 'utf8')
 
     expect(css).toMatch(/\.frame\s*\{[\s\S]*?inset-inline-start:\s*calc\(/u)
+    expect(css).toMatch(/\.frame\s*\{[\s\S]*?inset-inline-start:\s*calc\(0px -/u)
+    expect(css).toMatch(/\.frame\s*\{[\s\S]*?width:\s*20px/u)
     expect(css).not.toMatch(/\.frame\s*\{[\s\S]*?right:\s*calc\(/u)
     expect(css).toMatch(/\.mark\s*\{[\s\S]*?inset-inline-start:\s*0/u)
     expect(css).toMatch(/\.mark::before\s*\{[\s\S]*?inset-inline-start:\s*0/u)
