@@ -5,7 +5,10 @@ import { existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, extname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { runPackagedDesktopSmoke } from './packaged-smoke.ts'
+import {
+  runPackagedDesktopSmoke,
+  type PackagedDesktopSmokeResult,
+} from './packaged-smoke.ts'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
 const releaseRoot = join(repositoryRoot, 'apps', 'desktop', 'release')
@@ -47,7 +50,10 @@ function pngDimensions(content: Buffer): { width: number; height: number } {
   return { width: content.readUInt32BE(16), height: content.readUInt32BE(20) }
 }
 
-async function retainBoundedVisualEvidence(scalePercent: number): Promise<void> {
+async function retainBoundedVisualEvidence(
+  scalePercent: number,
+  runtime: PackagedDesktopSmokeResult,
+): Promise<void> {
   if (evidenceRoot === undefined) throw new Error('Mac visual smoke evidence root is missing')
   await mkdir(evidenceRoot, { recursive: true })
   const names = (await readdir(releaseRoot)).filter(name => (
@@ -62,16 +68,21 @@ async function retainBoundedVisualEvidence(scalePercent: number): Promise<void> 
   const titlebar = join(releaseRoot, 'desktop-smoke-titlebar-darwin.png')
   const dimensions = pngDimensions(await readFile(titlebar))
   const scaleFactor = scalePercent / 100
+  expect(runtime.primaryDisplayScaleFactor).toBeCloseTo(scaleFactor, 4)
+  // Playwright's explicit viewport is a CSS-pixel capture contract on macOS;
+  // native scaling is proved above from Electron's primary Display instead.
   expect(dimensions).toEqual({
-    width: Math.round(1_600 * scaleFactor),
-    height: Math.round(1_000 * scaleFactor),
+    width: 1_600,
+    height: 1_000,
   })
   await writeFile(join(evidenceRoot, `native-visual-${String(scalePercent)}.json`), `${JSON.stringify({
     schemaVersion: 1,
     platform: 'darwin-x64',
     scalePercent,
     scaleMode: 'electron-force-device-scale-factor',
-    titlebarPixels: dimensions,
+    primaryDisplayScaleFactor: runtime.primaryDisplayScaleFactor,
+    rendererDevicePixelRatio: runtime.rendererDevicePixelRatio,
+    titlebarCssPixels: dimensions,
     sharedFeatureSmoke: 'passed',
     processTreeRemaining: 0,
     openDesignProfile: 'isolated-fixture-detected',
@@ -104,8 +115,8 @@ describe.skipIf(
       process.env.DSH_DESKTOP_SMOKE_DSH_HOME = join(temporaryRoot, 'smoke', 'dsh-home')
       process.env.DSH_DESKTOP_SMOKE_USER_DATA = join(temporaryRoot, 'smoke', 'electron-data')
       try {
-        await runPackagedDesktopSmoke(wrapper, 'darwin')
-        await retainBoundedVisualEvidence(scalePercent)
+        const runtime = await runPackagedDesktopSmoke(wrapper, 'darwin')
+        await retainBoundedVisualEvidence(scalePercent, runtime)
       } finally {
         if (previousRoot === undefined) delete process.env.DSH_DESKTOP_SMOKE_ROOT
         else process.env.DSH_DESKTOP_SMOKE_ROOT = previousRoot

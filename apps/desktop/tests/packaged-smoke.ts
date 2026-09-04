@@ -317,6 +317,12 @@ export interface WindowsClipboardSmokeState {
   protectedPaths: readonly string[]
 }
 
+/** Native scale values observed from the exact packaged process under smoke. */
+export interface PackagedDesktopSmokeResult extends WindowsClipboardSmokeState {
+  readonly primaryDisplayScaleFactor: number
+  readonly rendererDevicePixelRatio: number
+}
+
 const SEEDED_SESSION_USAGE = {
   inputTokens: 1_200,
   outputTokens: 300,
@@ -1918,7 +1924,7 @@ async function exerciseDesktopPreferences(
 export async function runPackagedDesktopSmoke(
   executable: string,
   platform: NodeJS.Platform,
-): Promise<WindowsClipboardSmokeState> {
+): Promise<PackagedDesktopSmokeResult> {
   const temporaryRoot = process.env.DSH_DESKTOP_SMOKE_ROOT
     ?? await mkdtemp(join(tmpdir(), 'dsh-desktop-smoke-'))
   const harnessHome = process.env.DSH_DESKTOP_SMOKE_DSH_HOME ?? join(temporaryRoot, 'dsh-home')
@@ -1937,6 +1943,8 @@ export async function runPackagedDesktopSmoke(
 
   let nativeApp: ElectronApplication | undefined
   let quitCompleted = false
+  let primaryDisplayScaleFactor: number | undefined
+  let rendererDevicePixelRatio: number | undefined
   try {
     nativeApp = await electron.launch({
       executablePath: executable,
@@ -1959,6 +1967,12 @@ export async function runPackagedDesktopSmoke(
     // hides the workspace rows this smoke drives. Pin the page metrics before
     // the first interaction (the workbench exercise relies on the same seam).
     await page.setViewportSize({ width: 1600, height: 1000 })
+    ;[primaryDisplayScaleFactor, rendererDevicePixelRatio] = await Promise.all([
+      nativeApp.evaluate(({ screen }) => screen.getPrimaryDisplay().scaleFactor),
+      page.evaluate(() => window.devicePixelRatio),
+    ])
+    expect(Number.isFinite(primaryDisplayScaleFactor) && primaryDisplayScaleFactor > 0).toBe(true)
+    expect(Number.isFinite(rendererDevicePixelRatio) && rendererDevicePixelRatio > 0).toBe(true)
     const consoleErrors: string[] = []
     page.on('console', (message) => {
       if (message.type() === 'error') {
@@ -2117,5 +2131,12 @@ export async function runPackagedDesktopSmoke(
     if (!quitCompleted && nativeApp !== undefined) await quitAfterSmokeFailure(nativeApp)
     await providerTripwire.close()
   }
-  return clipboardSeed
+  if (primaryDisplayScaleFactor === undefined || rendererDevicePixelRatio === undefined) {
+    throw new Error('Packaged smoke: native scale evidence was not recorded.')
+  }
+  return {
+    ...clipboardSeed,
+    primaryDisplayScaleFactor,
+    rendererDevicePixelRatio,
+  }
 }
