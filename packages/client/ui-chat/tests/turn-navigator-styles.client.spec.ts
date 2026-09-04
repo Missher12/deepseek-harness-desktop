@@ -49,7 +49,10 @@ describe('TurnNavigator geometry', () => {
   it('hides the zero-height rail only when the center column is truly narrow', async () => {
     const css = await readFile(cssPath, 'utf8')
 
-    expect(css).toContain('@container (max-width: 680px)')
+    // The query container is ChatView's content box, after 32px padding on
+    // each side. A 616px content box therefore represents the 680px center
+    // column cutoff promised by the Desktop layout contract.
+    expect(css).toContain('@container (max-width: 616px)')
     expect(css).not.toContain('@container (max-width: 900px)')
     expect(css).toMatch(/\.slot\s*\{[\s\S]*?height:\s*0/u)
   })

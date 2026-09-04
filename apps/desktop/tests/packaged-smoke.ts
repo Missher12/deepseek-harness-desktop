@@ -955,10 +955,8 @@ async function exerciseComposerAddMenu(page: Page, seeded: WindowsClipboardSmoke
   await menu.getByRole('option', { name: /^plan/iu }).waitFor({ state: 'visible' })
   const commandRows = menu.locator('button[id^="dsh-slash-option-command-"]')
   expect(await commandRows.count()).toBe(2)
-  expect(await commandRows.allTextContents()).toEqual([
-    expect.stringMatching(/^goal\b/iu),
-    expect.stringMatching(/^plan\b/iu),
-  ])
+  await commandRows.nth(0).getByText(/^goal$/iu).waitFor({ state: 'visible' })
+  await commandRows.nth(1).getByText(/^plan$/iu).waitFor({ state: 'visible' })
   const skillRows = menu.locator('button[id^="dsh-slash-option-skill-"]')
   if (await skillRows.count() > 0) {
     expect(await menu.locator('[data-add-section="true"]').allTextContents()).toContainEqual(
@@ -1302,6 +1300,16 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform, h
   const panel = page.locator('[data-desktop-workbench-panel]:visible')
   await panel.waitFor({ state: 'visible', timeout: 15_000 })
   expect(await panel.locator('xpath=..').getAttribute('data-utility-drawer')).toBeNull()
+  await expect.poll(async () => {
+    const [panelBounds, centerBounds] = await Promise.all([
+      panel.boundingBox(),
+      page.locator('[class*="centerCol"]').boundingBox(),
+    ])
+    return panelBounds !== null
+      && centerBounds !== null
+      && panelBounds.width >= 300
+      && centerBounds.width >= 640
+  }, { timeout: 15_000 }).toBe(true)
   const defaultPanelBounds = await panel.boundingBox()
   const defaultCenterBounds = await page.locator('[class*="centerCol"]').boundingBox()
   if (defaultPanelBounds === null || defaultCenterBounds === null) {
@@ -1316,6 +1324,13 @@ async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform, h
     ['审阅', '终端', '浏览器', '文件', '插件'],
     ['Review', 'Terminal', 'Browser', 'Files', 'Plugins'],
   ]).toContainEqual(await tabs.allTextContents())
+  // Widening the window animates both the grid track and its drag handle.
+  // Wait for the default 360px utility track to settle before starting a
+  // real pointer gesture; otherwise the pointer can land on the handle's
+  // former painted position while its logical hit box has already moved.
+  await expect.poll(async () => (await panel.boundingBox())?.width ?? 0, {
+    timeout: 15_000,
+  }).toBeGreaterThanOrEqual(359)
   const originalPanelBounds = await panel.boundingBox()
   const utilityHandle = page.locator('[data-side="utility"]')
   const utilityHandleBounds = await utilityHandle.boundingBox()

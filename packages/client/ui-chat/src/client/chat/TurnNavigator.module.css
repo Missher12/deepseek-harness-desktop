@@ -215,7 +215,10 @@
   50% { opacity: 0.35; }
 }
 
-@container (max-width: 680px) {
+/* This anonymous container is ChatView's content box, 64px narrower than the
+   center column because the transcript keeps 32px padding on each side.
+   616px therefore implements the product's 680px center-column cutoff. */
+@container (max-width: 616px) {
   .slot {
     display: none;
   }
