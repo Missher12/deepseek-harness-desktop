@@ -26,6 +26,13 @@ const prepared = {
   envelope: { body: 'hello' },
 } as const
 
+async function readRepositoryVersion(): Promise<string> {
+  const manifest = JSON.parse(
+    await readFile(new URL('../../../../package.json', import.meta.url), 'utf8'),
+  ) as { version: string }
+  return manifest.version
+}
+
 describe('session messenger receipt boundary', () => {
   it('scaffolds one public dual-face Web package', async () => {
     const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
@@ -36,7 +43,7 @@ describe('session messenger receipt boundary', () => {
       files: string[]
     }
     expect(manifest.name).toBe('@deepseek-ai/dsh-session-messenger')
-    expect(manifest.version).toBe('0.1.2-alpha.5')
+    expect(manifest.version).toBe(await readRepositoryVersion())
     expect(Object.keys(manifest.exports)).toEqual(expect.arrayContaining([
       '.', './client', './cordis.patch.yml', './package.json',
     ]))
