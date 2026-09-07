@@ -28,7 +28,7 @@ The browser entry re-exports `createSnapshotStore`, `defineStore` and `shallowEq
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-Both Cordis `apply` entries perform no registration. The [browser entry](src/client/index.ts) forwards imports to their owning packages, so mounting this package creates no duplicate Session, Workspace or store service. No configuration or invariant companion is published because this package owns no mutable runtime relationships.
+Both Cordis `apply` entries perform no registration. The [browser entry](src/client/index.ts) forwards imports to their owning packages, so mounting this package creates no duplicate Session, Workspace or store service. No runtime invariant companion is published because this package owns no mutable runtime relationships. It also exposes no configuration companion.
 
 </details>
 

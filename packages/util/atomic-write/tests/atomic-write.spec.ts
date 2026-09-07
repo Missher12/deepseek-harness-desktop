@@ -7,6 +7,7 @@ import { withFileLock, writeFileAtomic } from '../src/index.ts'
 const state = vi.hoisted(() => ({
   failLockCreateWithEPERM: false,
   failLockProbeWithEPERM: false,
+  failLockParentRead: false,
   renameAttempts: 0,
   renameFailures: [] as string[],
 }))
@@ -15,6 +16,13 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...actual,
+    readdir: (async (...args: Parameters<typeof actual.readdir>) => {
+      if (state.failLockParentRead) {
+        state.failLockParentRead = false
+        throw Object.assign(new Error('EACCES: injected parent read failure'), { code: 'EACCES' })
+      }
+      return actual.readdir(...args)
+    }) as typeof actual.readdir,
     rename: (async (...args: Parameters<typeof actual.rename>) => {
       state.renameAttempts += 1
       const code = state.renameFailures.shift()
@@ -48,6 +56,7 @@ afterEach(async () => {
   vi.restoreAllMocks()
   state.failLockCreateWithEPERM = false
   state.failLockProbeWithEPERM = false
+  state.failLockParentRead = false
   state.renameAttempts = 0
   state.renameFailures.length = 0
   await Promise.all(scratchDirs.splice(0).map(dir => rm(dir, {
@@ -213,6 +222,20 @@ describe('withFileLock', () => {
 
     await expect(withFileLock(join(dir, 'document'), operation)).rejects.toMatchObject({ code: 'EPERM' })
     expect(operation).not.toHaveBeenCalled()
+  })
+
+  it('preserves the original lock refusal when its parent directory cannot be inspected', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const dir = await scratch()
+    const target = join(dir, 'document')
+    await writeFile(`${target}.lock`, 'owned elsewhere')
+    state.failLockCreateWithEPERM = true
+    state.failLockProbeWithEPERM = true
+    state.failLockParentRead = true
+    const operation = vi.fn(async () => {})
+    await expect(withFileLock(target, operation)).rejects.toMatchObject({ code: 'EPERM' })
+    expect(operation).not.toHaveBeenCalled()
+    expect(await readFile(`${target}.lock`, 'utf8')).toBe('owned elsewhere')
   })
 
   it('preserves EPERM when no lock path exists', async () => {

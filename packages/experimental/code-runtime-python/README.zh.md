@@ -61,6 +61,8 @@ kind: "package-reference"
 
 完成值与 binding 实参以精确 JSON 跨越：值无递归序列化，因此低于字节预算的深层载荷存活，而不会死在 `JSON.stringify` 的栈上限；超出安全范围的整型 double 以精确数字跨越，而不是被静默取整的 token；`src/protocol.ts` 中的计量器在任何其他代码读取载荷之前强制字节预算与数字无损性。
 
+Python 编码器直接写出精确的 null、布尔值和整数标量，避免对宽值进行计量与序列化时为每个成员重新创建 JSON 编码器；线上表示、字节上限以及按深度限制辅助空间的遍历方式保持一致。
+
 ### 镜像对齐
 
 `tests/protocol-mirror.e2e.ts` 启动真实 `python3`，对照 `src/protocol.ts` 断言 `PROTOCOL_FD`／截断标记文本以及 `py/protocol.py` 中每个 `TypedDict` 的必填／可选 wire 字段集，因此字段改名、删除或一侧把另一侧必填的字段变成可选都会使测试失败。字段*类型*不跨语言边界比较；该残留由评审加后端的真实子进程套件（`tests/runtime.spec.ts`）负责。

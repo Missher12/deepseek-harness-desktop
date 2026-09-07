@@ -197,7 +197,7 @@ export class ApiSessionAgentController {
     const handle = this.handles.get(sessionId)
     if (handle?.agent !== live) return false
     await handle.dispose()
-    if (this.handles.get(sessionId) === handle) this.handles.delete(sessionId)
+    // The awaited agent/disposed notification removes this exact handle.
     return true
   }
 

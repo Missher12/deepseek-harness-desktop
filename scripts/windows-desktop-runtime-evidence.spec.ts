@@ -2,6 +2,19 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 describe('Windows Desktop runtime evidence wiring', () => {
+  it('restricts historical inventory to the pinned baseline and keeps ordinary runtime evidence strict', () => {
+    const smoke = readFileSync(new URL('./windows-desktop-setup-smoke.ps1', import.meta.url), 'utf8')
+    const workflow = readFileSync(new URL('../.github/workflows/windows-desktop.yml', import.meta.url), 'utf8')
+    expect(smoke).toContain('[switch]$HistoricalBaselineInventory')
+    expect(smoke).toContain('HistoricalBaselineInventory requires RuntimeEvidenceOnly without a candidate policy or manifest.')
+    expect(smoke).toContain("$inventoryArguments += '--historical-baseline'")
+    expect(smoke).toContain('-HistoricalBaselineInventory:$HistoricalBaselineInventory')
+    expect(workflow.match(/-HistoricalBaselineInventory/g)).toHaveLength(1)
+    expect(workflow).toContain('-RuntimeEvidenceOnly `\n            -HistoricalBaselineInventory')
+    expect(workflow.indexOf('adb72bcbdc40ee87b37b7eb5867b75f66110cbb50ad91ad55e6f1a910191ca87'))
+      .toBeLessThan(workflow.indexOf('-HistoricalBaselineInventory'))
+  })
+
   it('measures ten isolated cold launches and ten same-home warm launches before uninstall', () => {
     const smoke = readFileSync(
       new URL('./windows-desktop-setup-smoke.ps1', import.meta.url),

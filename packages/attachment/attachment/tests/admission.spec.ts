@@ -247,6 +247,29 @@ describe('admitEncodedDocuments', () => {
 })
 
 describe('admitPromptContent', () => {
+  it.each([false, true])('keeps mixed document ordering with images=%s', async (withImage) => {
+    const { store, mocks } = storeOf()
+    const document: DocumentAttachmentRef = {
+      attachmentId: 'sha256:source' as DocumentAttachmentRef['attachmentId'],
+      extractedTextId: 'sha256:text' as DocumentAttachmentRef['extractedTextId'],
+      mediaType: 'text/plain', name: 'note.txt', bytes: 3, extractedBytes: 3, truncated: false,
+    }
+    const saveDocuments = vi.fn(async () => [document])
+    Object.assign(store, { documentLimits: DOCUMENT_LIMITS, saveDocuments })
+    const content = [
+      { type: 'document' as const, mediaType: 'text/plain' as const, name: 'note.txt', data: PNG },
+      { type: 'text' as const, text: 'between' },
+      ...(withImage ? [{ type: 'image' as const, mediaType: 'image/png' as const, data: 'AQ==' }] : []),
+    ]
+    const admitted = await admitPromptContent(store, content)
+    expect(admitted.slice(0, 2)).toEqual([
+      { type: 'document', attachment: document }, { type: 'text', text: 'between' },
+    ])
+    expect(saveDocuments).toHaveBeenCalledOnce()
+    expect(mocks.saveImages).toHaveBeenCalledTimes(withImage ? 1 : 0)
+    if (withImage) expect(admitted[2]).toMatchObject({ type: 'image', attachment: { bytes: 1 } })
+  })
+
   it('converts text-only prompts without touching the attachment store', async () => {
     const store = { saveImages: () => { throw new Error('text-only prompts must not reach the store') } }
     await expect(admitPromptContent(store as unknown as AttachmentStore, [

@@ -268,14 +268,17 @@ export function assertWindowsX64PE(bytes: Buffer): void {
 }
 
 async function main(args: readonly string[]): Promise<void> {
-  const usage = 'Desktop package inventory usage: --output <inventory.json> [--policy windows-x64 --manifest <package.json>] <package root>'
+  const usage = 'Desktop package inventory usage: --output <inventory.json> [--historical-baseline | --policy windows-x64 --manifest <package.json>] <package root>'
   let output: string | undefined
   let policy: DesktopPackagePolicy | undefined
   let manifestPath: string | undefined
+  let historicalBaseline = false
   const roots: string[] = []
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
-    if (argument === '--output' || argument === '--policy' || argument === '--manifest') {
+    if (argument === '--historical-baseline') {
+      historicalBaseline = true
+    } else if (argument === '--output' || argument === '--policy' || argument === '--manifest') {
       const value = args[index + 1]
       if (value === undefined) throw new Error(usage)
       if (argument === '--output') output = value
@@ -292,6 +295,7 @@ async function main(args: readonly string[]): Promise<void> {
   const packageRoot = roots[0]
   if (output === undefined || packageRoot === undefined || roots.length !== 1) throw new Error(usage)
   if ((policy === undefined) !== (manifestPath === undefined)) throw new Error(usage)
+  if (historicalBaseline && (policy !== undefined || manifestPath !== undefined)) throw new Error(usage)
   const inventory = await createDesktopPackageInventory(packageRoot)
   if (policy !== undefined && manifestPath !== undefined) {
     assertDesktopPackageInventoryPolicy(inventory, policy)
@@ -306,7 +310,7 @@ async function main(args: readonly string[]): Promise<void> {
     assertManagedPackageRootsArePhysical(inventory, managedPackages)
 
   }
-  assertRemovedDesktopFeaturesAbsent(inventory)
+  if (!historicalBaseline) assertRemovedDesktopFeaturesAbsent(inventory)
   await mkdir(dirname(output), { recursive: true })
   await writeFile(output, `${JSON.stringify(inventory, null, 2)}\n`, 'utf8')
   process.stdout.write(`desktop package inventory: recorded ${String(inventory.files.length)} files\n`)

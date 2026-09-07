@@ -183,35 +183,34 @@ function queueItems(
       : messages
   }
   return [
-    ...project('next-turn').map(message => ({
-      id: message.id,
-      placement: 'queued' as const,
-      ...promptRpcId(message),
-      message: {
-        id: message.id,
-        content: rendererValue(
-          message.content,
-          agent.id,
-          `message:${String(message.id)}`,
-          ['content'],
-        ) as unknown as SessionQueuedItem['message']['content'],
-      },
-    })),
-    ...project('next-step').map(message => ({
-      id: message.id,
-      placement: message.source.kind === 'user' ? 'steering' as const : 'context' as const,
-      ...promptRpcId(message),
-      message: {
-        id: message.id,
-        content: rendererValue(
-          message.content,
-          agent.id,
-          `message:${String(message.id)}`,
-          ['content'],
-        ) as unknown as SessionQueuedItem['message']['content'],
-      },
-    })),
+    ...project('next-turn').map(message => queueItem(agent.id, message, 'queued')),
+    ...project('next-step').map(message => queueItem(
+      agent.id,
+      message,
+      message.source.kind === 'user' ? 'steering' : 'context',
+    )),
   ]
+}
+
+function queueItem(
+  sessionId: SessionId,
+  message: UserMessage,
+  placement: SessionQueuedItem['placement'],
+): SessionQueuedItem {
+  return {
+    id: message.id,
+    placement,
+    ...promptRpcId(message),
+    message: {
+      id: message.id,
+      content: rendererValue(
+        message.content,
+        sessionId,
+        `message:${String(message.id)}`,
+        ['content'],
+      ) as unknown as SessionQueuedItem['message']['content'],
+    },
+  }
 }
 
 /** Prompt-RPC identity carried by a browser-submitted message's user source. */

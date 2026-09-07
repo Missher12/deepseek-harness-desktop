@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { Context, Service } from '@deepseek-ai/cordis'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ConversationNodeAssembler, UiConversation,
@@ -854,6 +854,21 @@ describe('WorkflowRunPanel', () => {
       childSessionId: CHILD_ID,
       mode: 'one-shot',
     })
+  })
+
+  it('contains a rejected child navigation without an unhandled rejection', async () => {
+    const failure = new Error('Session is no longer available')
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const data: WorkflowRunChatData = { name: 'audit', status: 'running', phases: [phase()] }
+      render(<WorkflowRunPanel {...panelProps(data, listState(), vi.fn().mockRejectedValue(failure))} />)
+      fireEvent.click(screen.getByRole('button', { name: '打开 worker' }))
+      await waitFor(() => {
+        expect(report).toHaveBeenCalledWith('[ui-workflow-run] child navigation failed:', failure)
+      })
+    } finally {
+      report.mockRestore()
+    }
   })
 
   it('promotes a running member when its ordinary Session row arrives', () => {

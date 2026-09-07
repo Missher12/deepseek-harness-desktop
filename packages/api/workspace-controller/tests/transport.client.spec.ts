@@ -470,6 +470,8 @@ describe('WorkspaceController', () => {
       sessionIds: ['session'],
     })
     await expect(controller.archiveSession(sid('session'))).resolves.toBeUndefined()
+    await expect(controller.restoreSession(sid('session'))).resolves.toBeUndefined()
+    expect(remote.restoreSession).toHaveBeenCalledWith({ sessionId: 'session' })
     await expect(controller.delete(wid('one'))).resolves.toBeUndefined()
   })
 
@@ -478,6 +480,9 @@ describe('WorkspaceController', () => {
     const controller = new WorkspaceController(new Context(), new ClientWorkspaceModel(remote))
     const missingWorkspace = new RemoteError('workspace/not-found', 'gone', { workspaceId: wid('missing') })
     const missingSession = new RemoteError('session/not-found', 'missing session', { sessionId: sid('session') })
+    remote.restoreSession.mockResolvedValueOnce(remoteFailure(missingSession))
+    await expect(controller.restoreSession(sid('session')))
+      .rejects.toThrow('workspace session restore failed: session/not-found: missing session')
 
     remote.create.mockResolvedValueOnce(remoteFailure(new RemoteError('workspace/invalid-path', 'missing path', { path: '/missing' })))
     const create = controller.create({ path: '/missing' })

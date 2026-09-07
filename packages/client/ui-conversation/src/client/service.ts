@@ -9,7 +9,7 @@
  */
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
-import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
+import { bytesToBase64, randomUUID } from '@deepseek-ai/dsh-util-crypto'
 // Type-only imports: a plugin-to-plugin value import is a bundle purity
 // error, so scope resolution goes through the sessions service (scopeOf
 // method) instead of the standalone helper.
@@ -634,16 +634,6 @@ class ComposerAttachmentPayloadError extends Error {
     super('Combined image and document payload exceeds the request carrier limit.')
     this.name = 'ComposerAttachmentPayloadError'
   }
-}
-
-/** Canonical browser base64 encoded in bounded chunks. */
-function bytesToBase64(data: Uint8Array): string {
-  let binary = ''
-  const chunk = 0x8000
-  for (let offset = 0; offset < data.length; offset += chunk) {
-    binary += String.fromCharCode(...data.subarray(offset, offset + chunk))
-  }
-  return btoa(binary)
 }
 
 function revokePreview(url: string): void {

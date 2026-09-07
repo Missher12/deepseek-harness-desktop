@@ -84,6 +84,7 @@ async function expectHeadlessStream(normalized: string, expectedPath: string): P
 /** Serve one deterministic DeepSeek-compatible response while retaining its request body. */
 async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
   const requests: JsonObject[] = []
+  const responses: ServerResponse[] = []
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     let body = ''
     request.setEncoding('utf8')
@@ -91,15 +92,19 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
     request.on('end', () => {
       requests.push(JSON.parse(body) as JsonObject)
       response.writeHead(200, { 'content-type': 'text/event-stream' })
-      response.end([
-        ': keep-alive',
-        ': keep-alive',
-        ': keep-alive',
+      response.write(': keep-alive\n\n')
+      responses.push(response)
+      // A one-shot process may cancel its auxiliary title during shutdown.
+      // Hold the final answer until both real requests have crossed the wire,
+      // so this adapter-default assertion does not race that lifecycle.
+      if (responses.length !== 2) return
+      const reply = [
         'data: {"choices":[{"delta":{"content":"DEFAULTS_OK"}}]}',
         'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
         'data: [DONE]',
         '',
-      ].join('\n\n'))
+      ].join('\n\n')
+      for (const pending of responses) pending.end(reply)
     })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -108,7 +113,10 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
   return {
     url: `http://127.0.0.1:${address.port}`,
     requests,
-    close: () => new Promise(resolve => server.close(() => { resolve() })),
+    close: () => new Promise((resolve) => {
+      server.closeAllConnections()
+      server.close(() => { resolve() })
+    }),
   }
 }
 

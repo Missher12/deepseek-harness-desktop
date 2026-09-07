@@ -30,7 +30,7 @@ Desktop 扩展可以通过 `/client` 入口导入共享 store 辅助函数与客
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-两个 Cordis `apply` 入口都不执行注册。[浏览器入口](src/client/index.ts) 将导入转发给相应的所有者包，因此挂载本包不会重复创建 Session、Workspace 或 store 服务。本包不拥有可变运行时关系，所以不发布配置或不变式伴生入口。
+两个 Cordis `apply` 入口都不执行注册。[浏览器入口](src/client/index.ts) 将导入转发给相应的所有者包，因此挂载本包不会重复创建 Session、Workspace 或 store 服务。本包不拥有可变运行时关系，所以不发布运行时不变式伴生入口，也不提供配置伴生入口。
 
 </details>
 

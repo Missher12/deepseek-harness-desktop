@@ -63,6 +63,72 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm run desktop:dmg
 
+      - name: Restore host Node ABI without changing packaged bytes
+        env:
+          ARTIFACT: ${{ steps.desktop.outputs.artifact }}
+        run: |
+          env -u NODE_PATH -u NODE_OPTIONS node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { createHash } from 'node:crypto'
+          import { spawnSync } from 'node:child_process'
+          import { createReadStream } from 'node:fs'
+          import { readdir, realpath } from 'node:fs/promises'
+          import { createRequire } from 'node:module'
+          import { dirname, join, resolve, sep } from 'node:path'
+
+          const resources = 'apps/desktop/release/mac/DeepSeek Harness.app/Contents/Resources'
+          const unpacked = join(resources, 'app.asar.unpacked')
+          async function fingerprint() {
+            const native = (await readdir(unpacked, { recursive: true }))
+              .filter(name => name.endsWith('.node')).sort()
+            assert(native.length > 0, 'Packaged native binaries are missing')
+            const files = [
+              join('apps/desktop/release', process.env.ARTIFACT),
+              join(resources, 'app.asar'),
+              ...native.map(name => join(unpacked, name)),
+            ]
+            return Promise.all(files.map(async file => {
+              const hash = createHash('sha256')
+              for await (const chunk of createReadStream(file)) hash.update(chunk)
+              return [file, hash.digest('hex')]
+            }))
+          }
+
+          const fixtureRequire = createRequire(resolve('packages/session/session-persistence-jsonl/package.json'))
+          const manifest = await realpath(fixtureRequire.resolve('fs-ext/package.json'))
+          const fsExtDir = dirname(manifest)
+          const nodeGyp = await realpath(createRequire(manifest).resolve('node-gyp/bin/node-gyp.js'))
+          const rootModules = resolve('node_modules') + sep
+          assert(fsExtDir.startsWith(rootModules), 'fs-ext is outside root node_modules')
+          assert(nodeGyp.startsWith(rootModules), 'node-gyp is outside root node_modules')
+          assert.equal(process.versions.electron, undefined, 'Host rebuild requires plain Node')
+
+          const env = { ...process.env }
+          const hostOverrides = new Set([
+            'target', 'runtime', 'disturl', 'dist-url', 'nodedir', 'devdir',
+            'debug', 'arch', 'target-arch', 'target-platform', 'directory', 'tarball',
+          ])
+          for (const key of Object.keys(env)) {
+            const prefix = /^(?:npm_config_|npm_package_config_node_gyp_)/i
+            if (prefix.test(key) && hostOverrides.has(
+              key.replace(prefix, '').replaceAll('_', '-').toLowerCase(),
+            )) delete env[key]
+          }
+          delete env.NODE_OPTIONS
+          delete env.NODE_PATH
+
+          const before = await fingerprint()
+          const rebuilt = spawnSync(process.execPath, [
+            nodeGyp, 'rebuild', '--release',
+            '--target=' + process.versions.node, '--arch=' + process.arch,
+          ], { cwd: fsExtDir, env, stdio: 'inherit' })
+          if (rebuilt.error) throw rebuilt.error
+          assert.equal(rebuilt.status, 0, 'Host fs-ext rebuild failed')
+          assert.deepEqual(await fingerprint(), before, 'Packaged bytes changed during host rebuild')
+          fixtureRequire('fs-ext')
+          console.log('Host fs-ext loaded; ABI=' + process.versions.modules + '; packaged bytes unchanged')
+          NODE
+
       - name: Exercise the packaged application
         run: |
           test -x 'apps/desktop/release/mac/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness'

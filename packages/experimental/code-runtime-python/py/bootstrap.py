@@ -1631,8 +1631,15 @@ def _dump_scalar(value: Any) -> str:
         return _dump_float(value)
     if type(value) is str:
         return _dump_string(value)
-    if value is None or type(value) is bool or type(value) is int:
-        return json.dumps(value, ensure_ascii=False, allow_nan=False)
+    # These exact scalar types need no escaping or encoder state. Wide values
+    # visit each member during both metering and encoding; constructing a JSON
+    # encoder for every integer makes that bounded walk needlessly expensive.
+    if value is None:
+        return "null"
+    if type(value) is bool:
+        return "true" if value else "false"
+    if type(value) is int:
+        return str(value)
     raise TypeError(f"unsupported type ({type(value).__name__})")
 
 

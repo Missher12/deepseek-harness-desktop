@@ -43,6 +43,24 @@ const assistant = (turn: number, step: number, usage: {
 })
 
 describe('foldSessionUsage', () => {
+  it('counts retry attempts separately and ignores non-usage stream chunks', () => {
+    const events: SessionEvent[] = [assistant(1, 0, { inputTokens: 7, outputTokens: 3 })]
+    for (const retry of [1, 2]) {
+      events.push(event(retry * 2 - 1, '2026-03-01T12:00:00.000Z', 'llm/retry-started', {
+        retryId: `retry-${retry}` as never, turn: 1, step: 0, retry,
+      }))
+      events.push({ ...assistant(1, 0, { inputTokens: 7, outputTokens: 3 }), seq: SessionSeq(retry * 2) })
+    }
+    events.push(event(5, '2026-03-01T12:00:00.000Z', 'assistant/attempt', {
+      turn: 2, step: 0,
+      stream: [{ type: 'chunk', time: 0, chunk: { type: 'text-delta', index: 0, text: 'unfinished' } }],
+    }))
+    const row = foldSessionUsage(header(), events, 'UTC')
+    expect(row.totalTokens).toBe(30)
+    expect(row.validUsageSamples).toBe(3)
+    expect(row.incompleteUsageSamples).toBe(0)
+  })
+
   it('replaces repeated usage for one turn and step without double-counting reasoning', () => {
     const chunk = event(1, '2026-03-01T11:59:59.000Z', 'assistant/attempt', {
       turn: 1,

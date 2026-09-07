@@ -61,6 +61,8 @@ The frames are `boot` / `run` (host → child) and `boot-ack` / `call` / `log` /
 
 Completion values and binding arguments cross as exact JSON: values serialize without recursion, so a deep payload below the byte budget survives instead of dying on `JSON.stringify`'s stack limit, and integral doubles beyond the safe range cross as exact digits rather than silently rounded tokens; the meters in `src/protocol.ts` enforce byte budgets and number losslessness before anything else reads the payload.
 
+The Python encoder writes exact null, boolean, and integer scalars directly. This avoids constructing a JSON encoder for every member during both metering and serialization of a wide value; the wire spelling, byte limits, and depth-bounded traversal stay the same.
+
 ### Mirror alignment
 
 `tests/protocol-mirror.e2e.ts` spawns a real `python3` and asserts, against `src/protocol.ts`, both `PROTOCOL_FD` / the truncation-marker text and each `TypedDict`'s required/optional wire field set in `py/protocol.py`, so a renamed or dropped field — or one side making a field optional the other requires — fails the test. Field *types* are not compared across the language boundary; that residue stays with review plus the backend's real-subprocess suite (`tests/runtime.spec.ts`).

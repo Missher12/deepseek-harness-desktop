@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -10,7 +10,17 @@ import { zh } from '../src/client/locale.ts'
 const t: AssistantMarkdownProps['t'] = makeTranslate(zh, commonZh)
 const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
 
-afterEach(cleanup)
+beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class {
+    observe = vi.fn()
+    disconnect = vi.fn()
+  })
+})
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 describe('tails', () => {
   it('AssistantMarkdown renders reasoning as a Think row and unknown blocks as JSON fallback', () => {
@@ -27,7 +37,7 @@ describe('tails', () => {
       />,
     )
     expect(view.getByText('思考')).toBeTruthy()
-    expect(view.getByText('thinking hard')).toBeTruthy()
+    expect(view.getByRole('region', { name: '思考内容' }).textContent).toBe('thinking hard\nsecond line')
     expect(view.getByText(/未知内容块/)).toBeTruthy()
     const stopped = render(
       <AssistantMarkdown

@@ -114,6 +114,15 @@ async function harness(
 }
 
 describe('UsageInsightsGateway', () => {
+  it('keeps an already opened snapshot coherent if the catalog entry disappears during the read', async () => {
+    const entry = stored('removed-after-open', 'r1', [userEvent(0, '2026-08-17T12:00:00.000Z')])
+    const { gateway, logs, persistence } = await harness([entry])
+    entry.onInspect = () => { logs.delete(String(entry.header.id)) }
+    await expect(gateway.snapshot()).resolves.toMatchObject({ sessionCount: 1, omittedSessions: 0 })
+    expect(persistence.stat).toHaveBeenCalledWith(entry.header.id, expect.anything())
+    await expect(gateway.snapshot()).resolves.toMatchObject({ sessionCount: 0 })
+  })
+
   it('shares refresh work and reuses unchanged durable revisions', async () => {
     vi.setSystemTime(new Date('2026-08-18T12:00:00.000Z'))
     const { gateway, persistence } = await harness([

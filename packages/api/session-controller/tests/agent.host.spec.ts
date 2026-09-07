@@ -139,6 +139,22 @@ describe('ApiSession identity failures', () => {
 })
 
 describe('ApiSession Agent lookup and recovery', () => {
+  it('disposes only the exact Agent handle this controller owns', async () => {
+    const { ctx, agents } = await harness()
+    await expect(agents.disposeOwned(SessionId('absent'))).resolves.toBe(true)
+    const live = agent(ctx, header('owned'))
+    const unregister = ctx.agents.register(live)
+    await expect(agents.disposeOwned(live.id)).resolves.toBe(false)
+    const dispose = vi.fn(async () => { unregister() })
+    const create = vi.spyOn(ctx.agents, 'create').mockResolvedValue({ agent: live, dispose })
+    await agents.createOwned({ sessionId: live.id })
+    create.mockResolvedValueOnce({ agent: unpublishedAgent(ctx, header('owned')), dispose: async () => {} })
+    await expect(agents.createOwned({ sessionId: live.id })).rejects.toThrow('conflicting owned Agent handle')
+    await expect(agents.disposeOwned(live.id)).resolves.toBe(true)
+    expect(dispose).toHaveBeenCalledOnce()
+    expect(ctx.agents.get(live.id)).toBeUndefined()
+  })
+
   it('resumes directly from a retained observation and rejects an invalid observed header', async () => {
     const { ctx, agents } = await harness()
     const meta = header('observed-resume')

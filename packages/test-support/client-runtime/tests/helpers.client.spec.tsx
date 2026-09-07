@@ -76,6 +76,18 @@ describe('fixture helpers', () => {
 })
 
 describe('Session fixture lifecycle', () => {
+  it('deletes through the service facade and disposes the selected Session scope', async () => {
+    const runtime = await SlotTestRuntime.create()
+    try {
+      await runtime.sessions.add({ id: 'archived' })
+      await runtime.sessions.delete('archived' as SessionId)
+      expect(runtime.sessions.list.getSnapshot().ids).toEqual([])
+      expect(runtime.sessions.calls).toContainEqual({ method: 'delete', args: ['archived'] })
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
   it('initializes and drives complete event windows through replace, prepend, and append', async () => {
     const runtime = await SlotTestRuntime.create()
     const first = entry(1)

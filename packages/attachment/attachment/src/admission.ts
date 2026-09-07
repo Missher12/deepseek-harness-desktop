@@ -189,13 +189,10 @@ export async function admitPromptContent(
 }
 
 /** Decode one upload payload while rejecting non-canonical base64 forms. */
-function decodeCanonicalBase64(data: string, empty: 'reject' | 'accept', code: 'INVALID_IMAGE_BASE64' | 'INVALID_FILE_BASE64'): Uint8Array {
+function decodeFileBase64(data: string): Uint8Array {
   const decoded = Buffer.from(data, 'base64')
-  if ((data.length === 0 && empty === 'reject') || decoded.toString('base64') !== data) {
-    throw new AttachmentError(
-      code === 'INVALID_IMAGE_BASE64' ? 'Image upload is not canonical base64.' : 'File upload is not canonical base64.',
-      code,
-    )
+  if (decoded.toString('base64') !== data) {
+    throw new AttachmentError('File upload is not canonical base64.', 'INVALID_FILE_BASE64')
   }
   return new Uint8Array(decoded)
 }
@@ -215,7 +212,7 @@ export async function admitEncodedFile(
   file: EncodedFileAttachment,
 ): Promise<FileAttachmentRef> {
   return attachments.saveFile({
-    data: decodeCanonicalBase64(file.data, 'accept', 'INVALID_FILE_BASE64'),
+    data: decodeFileBase64(file.data),
     ...file.name === undefined ? {} : { name: file.name },
   })
 }

@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterAll, describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
+import Include from '@deepseek-ai/cordis-plugin-include'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import {
   addHarnessSourceSection, assertEntriesActivated, assertEntriesLoaded, boot,
@@ -632,6 +633,76 @@ describe('loadOverlayPatches', () => {
 })
 
 describe('boot', () => {
+  it('measures first-party imports through the real installation resolver', async () => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'package.json'), '{"type":"module"}')
+    for (const name of ['timing-a', 'timing-b']) {
+      const target = join(dir, 'node_modules', '@deepseek-ai', name)
+      mkdirSync(target, { recursive: true })
+      writeFileSync(join(target, 'package.json'), JSON.stringify({ name: `@deepseek-ai/${name}`, type: 'module', exports: './index.mjs' }))
+      writeFileSync(join(target, 'index.mjs'), `export const name = '${name}'; export function apply() {}\n`)
+    }
+    writeFileSync(join(dir, 'cordis.yml'), '- id: a\n  name: "@deepseek-ai/timing-a"\n- id: b\n  name: "@deepseek-ai/timing-b"\n')
+    const durations = new Map<string, number>()
+    let clock = 0
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'), undefined, undefined,
+      pathToFileURL(join(dir, 'package.json')).href, undefined, {
+        now: () => ++clock,
+        record: (phase, duration) => { durations.set(phase, duration) },
+      })
+    try {
+      expect(durations.get('first-party-import-duration')).toBeGreaterThan(0)
+      expect(durations.get('root-activation-duration')).toBeGreaterThan(0)
+      expect(durations.size).toBe(6)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each([0, Number.NaN])('bounds a non-advancing or invalid timing clock: %s', async (value) => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+    const durations: number[] = []
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'), undefined, undefined, undefined, undefined, {
+      now: () => value,
+      record: (_phase, duration) => { durations.push(duration) },
+    })
+    try {
+      expect(durations).toHaveLength(6)
+      expect(durations.every(duration => duration === 0)).toBe(true)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each(['early', 'extra', 'throw'] as const)('contains an abnormal timed Include lifecycle: %s', async (mode) => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'cordis.yml'), '[]\n')
+    const finalized = vi.fn()
+    const lifecycle = vi.spyOn(Include.prototype, Service.init).mockImplementation(async function* () {
+      try {
+        if (mode === 'early') return
+        yield async () => {}
+        if (mode === 'extra') yield async () => {}
+        else throw new Error('fixture activation failed')
+      } finally {
+        finalized()
+      }
+    })
+    try {
+      const result = boot(NAME, join(dir, 'cordis.yml'), undefined, undefined, undefined, undefined, { record: () => {} })
+      if (mode === 'early') {
+        const ctx = await result
+        await ctx.fiber.dispose()
+      } else {
+        await expect(result).rejects.toThrow(mode === 'extra' ? 'root Include yielded more than one lifecycle disposer' : 'fixture activation failed')
+      }
+      expect(finalized).toHaveBeenCalledOnce()
+    } finally {
+      lifecycle.mockRestore()
+    }
+  })
+
   it('reports the fixed loader lifecycle checkpoints in causal order', async () => {
     const dir = tmp()
     writeFileSync(join(dir, 'noop.mjs'), 'export const name = "noop"\nexport function apply() {}\n')

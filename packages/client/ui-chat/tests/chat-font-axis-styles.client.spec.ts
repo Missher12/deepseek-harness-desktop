@@ -21,12 +21,17 @@ function declarationsFrom(source: string, selector: string): string[] {
 describe('chat flow font-size axis', () => {
   it('think text reads the secondary tier (one step under the body size)', () => {
     const css = read('ReasoningRow.module.css')
-    for (const selector of ['.summary', '.thinkBody']) {
+    for (const selector of ['.heading', '.thinkBody']) {
       expect(declarationsFrom(css, selector)).toEqual(expect.arrayContaining([
         'font-size: var(--dsh-content-font-size-secondary, 13px)',
-        'line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px))',
       ]))
     }
+    expect(declarationsFrom(css, '.thinkBody')).toContain(
+      'line-height: calc(21px + var(--dsh-content-font-delta-secondary, 0px))',
+    )
+    expect(declarationsFrom(css, '.viewport')).toContain(
+      'max-height: calc(84px + var(--dsh-content-font-delta-secondary, 0px) * 4)',
+    )
   })
 
   it('command and context summaries read the secondary tier on the shared row line', () => {
@@ -74,12 +79,10 @@ describe('chat flow font-size axis', () => {
     ]))
   })
 
-  it('expanded bodies indent by 22px + delta so content stays under the shifted title start', () => {
+  it('expanded disclosure bodies indent by 22px + delta under the shifted title start', () => {
     // The DisclosureRow title starts at leading (16 + delta) + gap 6; a fixed
     // 22px indent would misalign at every non-default size.
     const indent = 'calc(22px + var(--dsh-content-font-delta, 0px))'
-    expect(declarationsFrom(read('ReasoningRow.module.css'), '.thinkBody'))
-      .toEqual(expect.arrayContaining([`padding: 4px 0 4px ${indent}`]))
     expect(declarationsFrom(read('MessageItem.module.css'), '.compactionBody'))
       .toEqual(expect.arrayContaining([`padding: 4px 0 4px ${indent}`]))
     expect(declarationsFrom(read('ContextInjectionRow.module.css'), '.body'))

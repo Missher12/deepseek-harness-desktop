@@ -150,6 +150,15 @@ function latestModel(latest: LatestTurnBillingProjection | null | undefined): st
     : undefined
 }
 
+function StatsGroups({ groups }: { readonly groups: readonly string[] }) {
+  return groups.map((group, i) => (
+    <Fragment key={group}>
+      {i > 0 && <>{' '}<span className={css.sep} aria-hidden>|</span>{' '}</>}
+      <span>{group}</span>
+    </Fragment>
+  ))
+}
+
 /** Render and measure one non-empty statistics line. */
 const StatsLineContent = memo(function StatsLineContent({
   groups,
@@ -177,12 +186,7 @@ const StatsLineContent = memo(function StatsLineContent({
   return (
     <Tooltip label={line} side="top" delayMs={500} disabled={!truncated}>
       <div ref={rootRef} className={css.root}>
-        {groups.map((group, i) => (
-          <Fragment key={group}>
-            {i > 0 && <>{' '}<span className={css.sep} aria-hidden>|</span>{' '}</>}
-            <span>{group}</span>
-          </Fragment>
-        ))}
+        <StatsGroups groups={groups} />
       </div>
     </Tooltip>
   )
@@ -317,12 +321,7 @@ export const StatsLine = memo(function StatsLine({ useChat, useProjection, t }: 
     <>
       {groups.length > 0 && <StatsLineContent groups={groups} line={line} />}
       {financialGroups.length > 0 && <div className={`${css.root} ${css.finance}`}>
-        {financialGroups.map((group, i) => (
-          <Fragment key={group}>
-            {i > 0 && <>{' '}<span className={css.sep} aria-hidden>|</span>{' '}</>}
-            <span>{group}</span>
-          </Fragment>
-        ))}
+        <StatsGroups groups={financialGroups} />
       </div>}
     </>
   )

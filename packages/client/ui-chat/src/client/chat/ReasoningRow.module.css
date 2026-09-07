@@ -1,6 +1,6 @@
 .root {
   min-width: 0;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   background: color-mix(in srgb, var(--dsw-alias-interactive-bg-hover-solid) 48%, transparent);
   overflow: hidden;

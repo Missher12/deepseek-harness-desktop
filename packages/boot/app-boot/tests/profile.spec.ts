@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import {
   composeEntries,
   healProfilesModuleFallback,
@@ -27,6 +27,39 @@ import {
   writeProfileManifest,
   type Profile,
 } from '../src/index.ts'
+
+const recoveryFault = vi.hoisted(() => ({
+  mkdirPath: '', renamePath: '', race: false,
+}))
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    mkdirSync: (...args: Parameters<typeof actual.mkdirSync>) => {
+      if (String(args[0]) === recoveryFault.mkdirPath) {
+        throw Object.assign(new Error('recovery directory refused'), { code: 'EACCES' })
+      }
+      return actual.mkdirSync(...args)
+    },
+    renameSync: (...args: Parameters<typeof actual.renameSync>) => {
+      if (String(args[0]) === recoveryFault.renamePath) {
+        if (recoveryFault.race) {
+          actual.renameSync(args[0], String(args[1]) + '.winner')
+          throw Object.assign(new Error('another healer already moved the proxy'), { code: 'ENOENT' })
+        }
+        throw Object.assign(new Error('recovery rename refused'), { code: 'EACCES' })
+      }
+      actual.renameSync(...args)
+    },
+  }
+})
+
+afterEach(() => {
+  recoveryFault.mkdirPath = ''
+  recoveryFault.renamePath = ''
+  recoveryFault.race = false
+})
 
 const tempRoots: string[] = []
 afterAll(() => {
@@ -1023,6 +1056,85 @@ describe('healProfilesModuleFallback', () => {
 })
 
 describe('Desktop legacy module-fallback compatibility', () => {
+  it.each(['mkdir', 'rename', 'race'] as const)('preserves the exact legacy bytes across recovery %s', (mode) => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const link = join(home, 'profiles', 'node_modules', 'dsh-app')
+    writeLegacyModuleProxy(link, 'dsh-app', { '.': legacyPackagedTarget() })
+    const before = snapshotFlatDirectory(link)
+    if (mode === 'mkdir') recoveryFault.mkdirPath = join(home, 'recovery')
+    else recoveryFault.renamePath = link
+    recoveryFault.race = mode === 'race'
+    if (mode === 'race') {
+      healProfilesModuleFallback(anchor, home)
+      expect(lstatSync(link).isSymbolicLink()).toBe(true)
+      const recovery = join(home, 'recovery', 'legacy-module-fallback')
+      const saved = readdirSync(recovery)
+      expect(saved).toHaveLength(1)
+      expect(snapshotFlatDirectory(join(recovery, saved[0]!))).toEqual(before)
+    } else {
+      expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow(/refused/)
+      expect(snapshotFlatDirectory(link)).toEqual(before)
+    }
+  })
+
+  it.each(['not-relative', './package.json', './trailing/', './*', './a//b', './../escape'])('refuses an unsafe legacy subpath %s', (subpath) => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const link = join(home, 'profiles', 'node_modules', 'dsh-app')
+    writeLegacyModuleProxy(link, 'dsh-app', { [subpath]: legacyPackagedTarget() })
+    const before = snapshotFlatDirectory(link)
+    expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow('is not a symlink')
+    expect(snapshotFlatDirectory(link)).toEqual(before)
+  })
+
+  it.each([
+    '', 'https://example.invalid/app.asar/index.js',
+    'file://foreign-host/app.asar/index.js',
+    legacyPackagedTarget() + '?query',
+    legacyPackagedTarget().replace('Contents', '%43ontents'),
+    legacyPackagedTarget().replace('Contents', 'Contents%00'),
+  ])('refuses a noncanonical legacy target %s', (target) => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const link = join(home, 'profiles', 'node_modules', 'dsh-app')
+    writeLegacyModuleProxy(link, 'dsh-app', { '.': target })
+    const before = snapshotFlatDirectory(link)
+    expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow('is not a symlink')
+    expect(snapshotFlatDirectory(link)).toEqual(before)
+  })
+
+  it.each(['oversized', 'reformatted'] as const)('refuses a %s legacy manifest without rewriting it', (mode) => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const link = join(home, 'profiles', 'node_modules', 'dsh-app')
+    writeLegacyModuleProxy(link, 'dsh-app', { '.': legacyPackagedTarget() })
+    const path = join(link, 'package.json')
+    writeFileSync(path, mode === 'oversized' ? ' '.repeat(1024 * 1024 + 1) : JSON.stringify(JSON.parse(readFileSync(path, 'utf8'))))
+    const before = snapshotFlatDirectory(link)
+    expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow('is not a symlink')
+    expect(snapshotFlatDirectory(link)).toEqual(before)
+  })
+
+  it('caches packaged proxies and refuses an ordinary file occupying their path', () => {
+    const anchor = stageInstallation({})
+    const original = Object.getOwnPropertyDescriptor(process, 'pkg')
+    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    try {
+      const home = tmp()
+      expect(healProfilesModuleFallbackCached(anchor, home, '0.5.5')).toBe('rebuilt')
+      const blockedHome = tmp()
+      const link = join(blockedHome, 'profiles', 'node_modules', 'dsh-app')
+      mkdirSync(dirname(link), { recursive: true })
+      writeFileSync(link, 'user-owned file')
+      expect(() => { healProfilesModuleFallback(anchor, blockedHome) }).toThrow('is not a dsh-managed module proxy')
+      expect(readFileSync(link, 'utf8')).toBe('user-owned file')
+    } finally {
+      if (original === undefined) delete (process as NodeJS.Process & { pkg?: unknown }).pkg
+      else Object.defineProperty(process, 'pkg', original)
+    }
+  })
+
   it('links packaged dependencies to their physical asar-unpacked copies', () => {
     const root = tmp()
     const archive = join(root, 'DeepSeek Harness.app', 'Contents', 'Resources', 'app.asar')

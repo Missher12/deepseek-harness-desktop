@@ -11,10 +11,10 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import type { ProjectionDefinition, ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
+import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import Storage from '@deepseek-ai/dsh-storage'
 import {
   apply as storageJsonApply, Config as storageJsonConfig, inject as storageJsonInject, name as storageJsonName,
@@ -118,14 +118,12 @@ function headerFor(id: SessionId, identity: FixtureRecord['identity']): SessionH
   }
 }
 
-/** Invoke both the rc.2 one-argument and alpha.5 three-argument read faces. */
+/** Read legacy titles through the version-bound predecessor listing hint. */
 function cachedTitle(cache: SessionProjectionCache, header: SessionHeader): unknown {
-  const read = cache.cachedSnapshot.bind(cache) as unknown as (
-    meta: SessionHeader,
-    inheritedEventCount: number,
-    keys: readonly string[],
-  ) => ProjectionSnapshot | undefined
-  return read(header, 0, ['title'])?.values.title
+  expect(cache.cachedSnapshot(header, SessionLogOffset(0), ['title'])).toBeUndefined()
+  const hint = cache.cachedPredecessorTitle(header, SessionLogOffset(0))
+  expect(hint?.asOfSeq).toBe(-1)
+  return hint?.values.title
 }
 
 async function stageSourceLog(

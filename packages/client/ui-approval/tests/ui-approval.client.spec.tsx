@@ -121,6 +121,13 @@ afterEach(() => {
 })
 
 describe('PendingApproval', () => {
+  it('cannot enable permissions without an installed Session command', async () => {
+    const pending = new PendingApproval(id('s1'), { toolName: 'bash' })
+    await expect(pending.enableSessionFullAccess()).resolves.toBe(false)
+    await pending.answer('rejected')
+    await expect(pending.result).resolves.toBe('rejected')
+  })
+
   it('resolves once, removes its abort listener, and ignores later abort cleanup', async () => {
     const controller = new AbortController()
     const remove = vi.spyOn(controller.signal, 'removeEventListener')
@@ -316,6 +323,19 @@ describe('approval Remote Event consumer', () => {
     await scope.fiber.dispose()
   })
 
+  it('does not enable permissions for a Session without a binding', async () => {
+    const bench = setupPlugin()
+    const scope = createScope(bench.ctx, id('s2'))
+    await scope.fiber.await()
+    const result = bench.listener.call(scope.ctx, { toolName: 'write' }, () => Promise.resolve('unavailable'))
+    const pending = bench.pending.getSnapshot()[0]!
+    await expect(pending.enableSessionFullAccess()).resolves.toBe(false)
+    expect(bench.command).not.toHaveBeenCalled()
+    await pending.answer('rejected')
+    await expect(result).resolves.toBe('rejected')
+    await bench.ctx.fiber.dispose()
+  })
+
   it('removes stable registrations with the plugin lifetime', async () => {
     const bench = setupPlugin()
     await bench.ctx.fiber.dispose()
@@ -421,6 +441,22 @@ describe('ApprovalPanel', () => {
     expect(order).toEqual(['permission', 'answer'])
   })
 
+  it('cancels confirmation without permission changes and resets acknowledgement on reopen', async () => {
+    const enable = vi.fn(async () => true)
+    const pending = new PendingApproval(id('s1'), { toolName: 'bash' }, enable)
+    render(<ApprovalPanel {...panelProps(pending)} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Allow for this session' }))
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Cancel' })[0]!)
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(enable).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Allow for this session' }))
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Enable Full access' }).disabled).toBe(true)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Cancel' })[0]!)
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+    await expect(pending.result).resolves.toBe('rejected')
+  })
+
   it('disables all three card actions while Session permission is pending', async () => {
     const permission = Promise.withResolvers<boolean>()
     const enable = vi.fn(() => permission.promise)
@@ -470,6 +506,7 @@ describe('ApprovalPanel', () => {
     const pending = new PendingApproval(id('s1'), { toolName: 'bash' }, enable)
     const answer = vi.spyOn(pending, 'answer')
       .mockRejectedValueOnce(new Error('private response detail'))
+      .mockRejectedValueOnce(new Error('retry transport failed'))
       .mockResolvedValueOnce()
     render(<ApprovalPanel {...panelProps(pending)} />)
     fireEvent.click(screen.getByRole('button', { name: 'Allow for this session' }))
@@ -483,9 +520,15 @@ describe('ApprovalPanel', () => {
     expect(screen.queryByText('private response detail')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Retry current approval' }))
 
+    await waitFor(() => {
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Retry current approval' }).disabled).toBe(false)
+    })
+    expect(screen.getByRole('status').textContent).toBe('Full access is enabled. Retry this approval.')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry current approval' }))
+
     await act(async () => {})
     expect(enable).toHaveBeenCalledOnce()
-    expect(answer).toHaveBeenCalledTimes(2)
+    expect(answer).toHaveBeenCalledTimes(3)
   })
 })
 

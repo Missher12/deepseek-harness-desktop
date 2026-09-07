@@ -7,10 +7,12 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject, NS } from '../src/client/index.ts'
+import { apply as hostApply } from '../src/index.ts'
 import { UsageInsightsSection } from '../src/client/UsageInsightsSection.tsx'
 import type { UsageInsightsSectionInjected } from '../src/client/UsageInsightsSection.tsx'
 
 usePinnedBrowserLanguages('zh-CN')
+hostApply()
 afterEach(cleanup)
 
 const EMPTY = {

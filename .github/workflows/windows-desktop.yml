@@ -169,7 +169,8 @@ jobs:
             -StartupSummaryPath apps/desktop/release/desktop-startup-baseline-0.5.3.json `
             -PackageInventoryPath apps/desktop/release/desktop-package-installed-baseline-0.5.3.json `
             -InstallationEvidencePath apps/desktop/release/desktop-windows-install-evidence-baseline-0.5.3.json `
-            -RuntimeEvidenceOnly
+            -RuntimeEvidenceOnly `
+            -HistoricalBaselineInventory
           Remove-Item -LiteralPath $baselinePath -Force
 
       - name: Exercise the visible installer pages

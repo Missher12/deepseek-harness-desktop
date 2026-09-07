@@ -259,12 +259,15 @@ describe('CI workflow', () => {
       expect(job['runs-on'], `${jobName} runs-on must not use the Linux failover switch`).not.toContain('DSH_CI_FAILOVER_LINUX')
       expect(job['runs-on']).toContain('self-hosted')
       expect(job['runs-on']).toContain('dsh-win-ci')
-      expect(job['runs-on']).toContain('dsh-windows-2025-16core')
+      expect(job['runs-on']).toContain("|| 'windows-2025'")
+      expect(job['runs-on']).not.toContain('dsh-windows-2025-16core')
       expect(job.if).toBe("github.event_name == 'pull_request'")
     }
 
     // windows-build runs the blocking build/site pair.
     expect(windowsBuild.name).toBe('windows node 24 / build')
+    expect(windowsBuild.env).toMatchObject({ DSH_GATE_CONCURRENCY: '1', DSH_GATE_FAIL_FAST: '1' })
+    expect(windowsBuild['timeout-minutes']).toBe(60)
     const buildSteps = windowsBuild.steps as unknown[]
     const buildCommands = buildSteps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -283,6 +286,9 @@ describe('CI workflow', () => {
         isRecord(step) && step.name === 'Install (immutable)' && typeof step.run === 'string'
       ))
       expect(install, `${jobName} must define the filesystem-branched install`).toBeDefined()
+      expect(install!.run).toContain('Split-Path -Qualifier $env:GITHUB_WORKSPACE')
+      expect(install!.run).toContain('Get-Volume -DriveLetter $drive')
+      expect(install!.run).not.toMatch(/\b[A-Za-z]:[\\/]/u)
       expect(install!.run).toContain("$fs -eq 'ReFS'")
       expect(install!.run).toContain('--package-import-method=clone')
       expect(install!.run).toContain('corepack pnpm install')
@@ -300,9 +306,16 @@ describe('CI workflow', () => {
       expect(install!.run).not.toContain('$cloneFlag')
     }
 
-    // windows-coverage uses the lower 4-partition profile.
+    // Standard hosted Windows runs two complete partitions before the heavy gate.
     expect(windowsCoverage.name).toBe('windows node 24 / coverage')
-    expect(windowsCoverage.env).toMatchObject({ DSH_COVERAGE_PARTITIONS: '4' })
+    expect(windowsCoverage.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: '2',
+      DSH_COVERAGE_PARTITIONS: '2',
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '90000',
+      DSH_GATE_CONCURRENCY: '1',
+      DSH_GATE_FAIL_FAST: '1',
+    })
+    expect(windowsCoverage['timeout-minutes']).toBe(120)
     const coverageSteps = windowsCoverage.steps as unknown[]
     const coverageCommands = coverageSteps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -319,6 +332,7 @@ describe('CI workflow', () => {
 
     // windows-native-tests runs the Windows-specific specs.
     expect(windowsNativeTests.name).toBe('windows node 24 / native tests')
+    expect(windowsNativeTests['timeout-minutes']).toBe(60)
     const nativeTestSteps = windowsNativeTests.steps as unknown[]
     const nativeTestCommands = nativeTestSteps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -328,10 +342,14 @@ describe('CI workflow', () => {
     expect(nativeTestCommand).toContain('--testTimeout 90000')
     expect(nativeTestCommand).toContain('tool-pwsh/tests/loader.spec.ts')
     expect(nativeTestCommand).toContain('workflow-worker-thread.spec.ts')
+    expect(nativeTestCommand).toContain('tool-ralph/tests/integration.spec.ts')
+    expect(nativeTestCommand).toContain('subprocess-local/tests/process-exit.spec.ts')
 
     // windows-observational is non-blocking.
     expect(windowsObservational.name).toBe('windows node 24 / observational')
     expect(windowsObservational['continue-on-error']).toBe(true)
+    expect(windowsObservational.env).toMatchObject({ DSH_GATE_CONCURRENCY: '1', DSH_PUBLINT_CONCURRENCY: '2' })
+    expect(windowsObservational['timeout-minutes']).toBe(120)
 
     // wine-apt-cache: master-only, seeds the Wine apt cache, lives in ci-master.
     expect(wineAptCache.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
@@ -391,7 +409,7 @@ describe('CI workflow', () => {
       expect(job['runs-on']).toContain("|| 'ubuntu-24.04'")
     }
     if (!isRecord(node24Consumers.env)) throw new TypeError('node-24-consumers must define resource budgets')
-    expect(node24Consumers.env.DSH_GATE_CONCURRENCY).toContain("&& '8' || '3'")
+    expect(node24Consumers.env.DSH_GATE_CONCURRENCY).toContain("&& '8' || '1'")
     expect(node24Consumers.env.DSH_WEB_SNAPSHOT_WORKERS).toContain("&& '6' || '2'")
     expect(node24Consumers.env.DSH_SNAPSHOT_MAX_CONCURRENCY).toContain("&& '12' || '2'")
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')

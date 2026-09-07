@@ -8,11 +8,20 @@ param(
   [ValidateSet('windows-x64')]
   [string]$PackagePolicy,
   [string]$PackageManifestPath,
-  [switch]$RuntimeEvidenceOnly
+  [switch]$RuntimeEvidenceOnly,
+  [switch]$HistoricalBaselineInventory
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ($HistoricalBaselineInventory -and (
+  -not $RuntimeEvidenceOnly -or
+  -not [string]::IsNullOrEmpty($PackagePolicy) -or
+  -not [string]::IsNullOrEmpty($PackageManifestPath)
+)) {
+  throw 'HistoricalBaselineInventory requires RuntimeEvidenceOnly without a candidate policy or manifest.'
+}
 
 function Invoke-CheckedProcess {
   param(
@@ -336,7 +345,8 @@ function Write-DesktopRuntimeEvidence {
     [Parameter(Mandatory = $true)]
     [string]$InventoryPath,
     [string]$PackagePolicy,
-    [string]$PackageManifestPath
+    [string]$PackageManifestPath,
+    [switch]$HistoricalBaselineInventory
   )
 
   $summary = [System.IO.Path]::GetFullPath($SummaryPath)
@@ -383,6 +393,9 @@ function Write-DesktopRuntimeEvidence {
   )
 
   $inventoryArguments = @('--output', $inventory)
+  if ($HistoricalBaselineInventory) {
+    $inventoryArguments += '--historical-baseline'
+  }
   if (-not [string]::IsNullOrEmpty($PackagePolicy)) {
     if ([string]::IsNullOrEmpty($PackageManifestPath)) {
       throw 'PackageManifestPath is required when PackagePolicy is set.'
@@ -474,7 +487,8 @@ try {
     -SummaryPath $StartupSummaryPath `
     -InventoryPath $PackageInventoryPath `
     -PackagePolicy $PackagePolicy `
-    -PackageManifestPath $PackageManifestPath
+    -PackageManifestPath $PackageManifestPath `
+    -HistoricalBaselineInventory:$HistoricalBaselineInventory
 
   $shortcutEvidence = @(
     Get-InstalledShortcutEvidence -ShortcutPath $desktopShortcut -ExecutablePath $executable -Location 'desktop'

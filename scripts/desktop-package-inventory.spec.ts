@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,6 +25,40 @@ async function write(root: string, relativePath: string, content: string): Promi
 }
 
 describe('desktop package inventory', () => {
+  it('keeps candidate checks strict while measuring historical packages without changing their bytes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-inventory-cli-'))
+    roots.push(root)
+    const packageRoot = join(root, 'app')
+    const retired = 'resources/app.asar.unpacked/node_modules/@deepseek-ai/dsh-client-ui-settings-brain/package.json'
+    await write(packageRoot, retired, '{"name":"legacy-brain"}')
+    const output = join(root, 'inventory.json')
+    const invoke = (args: readonly string[]) => spawnSync(process.execPath, [
+      '--import', 'tsx', 'scripts/desktop-package-inventory.ts',
+      '--output', output, ...args, packageRoot,
+    ], { encoding: 'utf8', timeout: 15_000 })
+    const candidate = invoke([])
+    expect(candidate.error).toBeUndefined()
+    expect(candidate.signal).toBeNull()
+    expect(candidate.status).toBe(1)
+    expect(candidate.stderr).toContain('dsh-client-ui-settings-brain')
+    const historical = invoke(['--historical-baseline'])
+    expect(historical.error).toBeUndefined()
+    expect(historical.signal).toBeNull()
+    expect(historical.status, historical.stderr).toBe(0)
+    const inventory = JSON.parse(await readFile(output, 'utf8')) as { files: Array<{ path: string; bytes: number; sha256: string }> }
+    expect(inventory.files).toEqual([expect.objectContaining({
+      path: retired,
+      bytes: Buffer.byteLength('{"name":"legacy-brain"}'),
+      sha256: createHash('sha256').update('{"name":"legacy-brain"}').digest('hex'),
+    })])
+    expect(await readFile(join(packageRoot, retired), 'utf8')).toBe('{"name":"legacy-brain"}')
+    const mixed = invoke(['--historical-baseline', '--policy', 'windows-x64', '--manifest', 'missing.json'])
+    expect(mixed.error).toBeUndefined()
+    expect(mixed.signal).toBeNull()
+    expect(mixed.status).toBe(1)
+    expect(mixed.stderr).toContain('Desktop package inventory usage')
+  }, 60_000)
+
   it('records portable file evidence and classifies the staged or installed tree', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-package-inventory-'))
     roots.push(root)

@@ -167,10 +167,10 @@ jobs:
           || 'ubuntu-24.04' }}
     name: node 24 / snapshots and artifacts
     env:
-      # Standard hosted runners expose four cores. Keep their nested Vitest,
-      # browser, and artifact gates below that budget; the 64-core failover VM
-      # retains the release pipeline's established high-throughput settings.
-      DSH_GATE_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '8' || '3' }}
+      # Standard hosted runners execute one consumer gate at a time because
+      # each gate already owns multiple child processes. The 64-core failover
+      # VM retains its established parallel budget.
+      DSH_GATE_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '8' || '1' }}
       DSH_NODE_COMPAT_SKIP_TYPECHECK: '1'
       DSH_OXLINT_THREADS: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '8' || '2' }}
       DSH_PUBLINT_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '8' || '4' }}
@@ -439,11 +439,12 @@ jobs:
       ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
-          || 'dsh-windows-2025-16core' }}
+          || 'windows-2025' }}
     name: windows node 24 / build
     timeout-minutes: 60
     env:
-      # A failing build or site aborts the sibling gate on the same runner.
+      # Keep build and site from competing on the standard 4-vCPU runner.
+      DSH_GATE_CONCURRENCY: '1'
       DSH_GATE_FAIL_FAST: '1'
     steps:
       - uses: actions/checkout@v6
@@ -483,16 +484,16 @@ jobs:
       ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
-          || 'dsh-windows-2025-16core' }}
+          || 'windows-2025' }}
     name: windows node 24 / coverage
     timeout-minutes: 120
     env:
-      DSH_COVERAGE_MAX_WORKERS: '6'
-      DSH_COVERAGE_PARTITIONS: '4'
+      # Run the full inventory in two partitions, then the exempt-heavy gate.
+      DSH_COVERAGE_MAX_WORKERS: '2'
+      DSH_COVERAGE_PARTITIONS: '2'
       DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
-      DSH_GATE_CONCURRENCY: '3'
-      # A gate failure aborts the sibling gate instead of waiting out its
-      # multi-minute instrumented run.
+      DSH_GATE_CONCURRENCY: '1'
+      # Stop after a blocking gate fails; retain both complete coverage gates.
       DSH_GATE_FAIL_FAST: '1'
     steps:
       - uses: actions/checkout@v6
@@ -559,7 +560,7 @@ jobs:
       ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
-          || 'dsh-windows-2025-16core' }}
+          || 'windows-2025' }}
     name: windows node 24 / native tests
     timeout-minutes: 60
     steps:
@@ -608,11 +609,13 @@ jobs:
       ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
-          || 'dsh-windows-2025-16core' }}
+          || 'windows-2025' }}
     name: windows node 24 / observational
-    timeout-minutes: 60
+    timeout-minutes: 120
     env:
-      DSH_PUBLINT_CONCURRENCY: '8'
+      # Serialize memory-heavy gates while keeping bounded package checks.
+      DSH_GATE_CONCURRENCY: '1'
+      DSH_PUBLINT_CONCURRENCY: '2'
     steps:
       - uses: actions/checkout@v6
         with:

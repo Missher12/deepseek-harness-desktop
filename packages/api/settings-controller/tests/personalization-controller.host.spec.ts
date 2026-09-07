@@ -19,6 +19,17 @@ afterEach(async () => {
 })
 
 describe('settings personalization Remote', () => {
+  it('bounds unexpected read failures without exposing the Host path', async () => {
+    const path = await target()
+    await writeFile(path, 'ordinary file')
+    const controller = new SettingsController(new Context(), {}, { personalizationPath: join(path, 'child.md') })
+    const failure = await controller.personalizationRead().catch((error: unknown) => error)
+    expect(remoteErrorOf(failure)).toMatchObject({
+      code: 'settings/rejected', message: 'personalization document read failed', details: { ns: 'personalization' },
+    })
+    expect(JSON.stringify(remoteErrorOf(failure))).not.toContain(path)
+  })
+
   it('reads and revision-checks the fixed Host-owned document', async () => {
     const path = await target()
     const controller = new SettingsController(new Context(), {}, { personalizationPath: path })

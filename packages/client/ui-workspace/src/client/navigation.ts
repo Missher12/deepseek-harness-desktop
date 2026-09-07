@@ -133,7 +133,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     if (this.connectingNoProject !== undefined) return this.connectingNoProject
     const attempt = this.sessions.create({})
       .finally(() => {
-        if (this.connectingNoProject === attempt) this.connectingNoProject = undefined
+        this.connectingNoProject = undefined
       })
     this.connectingNoProject = attempt
     return attempt

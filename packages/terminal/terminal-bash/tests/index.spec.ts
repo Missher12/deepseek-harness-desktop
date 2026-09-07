@@ -433,26 +433,24 @@ describe('BashTerminalBackend startup rollback', () => {
   it('does not mistake the submitted pwsh setup echo for a controlled prompt', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     const sends: TerminalSendRequest[] = []
-    let controlledPrompt = false
     const session = {
       motd: '',
       startSend: (request: TerminalSendRequest) => {
         sends.push(request)
         const first = sends.length === 1
-        if (!first) controlledPrompt = true
         return {
           done: Promise.resolve({
             viewport: first ? `setup echo: ${PWSH_PROMPT_SETUP}` : 'dsh> ',
-            waitReason: 'stdin_read' as const,
+            waitReason: first ? 'inferred_idle' as const : 'stdin_read' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
           readOutput: () => ({ delta: '', truncated: false }),
           cancel: () => false,
         }
       },
-      hasControlledPrompt: () => controlledPrompt,
       read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
     } as unknown as LocalPtySession
     const backend = new BashTerminalBackend(

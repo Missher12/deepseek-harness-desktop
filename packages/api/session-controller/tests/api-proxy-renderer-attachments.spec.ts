@@ -14,6 +14,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { SessionControlController } from '../src/control.ts'
+import { rendererValue } from '../src/renderer-projection.ts'
 import { SessionHistoryController } from '../src/history.ts'
 import type {
   SessionControlFrame,
@@ -116,6 +117,17 @@ async function nextControl(
 }
 
 describe('Session Controller renderer attachment projection', () => {
+  it('leaves unrelated document carriers intact and bounds malformed display names', () => {
+    const sessionId = SessionId('renderer-names')
+    expect(rendererValue({ type: 'document', attachment: null }, sessionId, 'fixture'))
+      .toEqual({ type: 'document', attachment: null })
+    for (const name of [null, '\u0000  ', '界'.repeat(100)]) {
+      const projected = rendererDocument(rendererValue(documentBlock({ name }), sessionId, 'fixture'))
+      expect(projected['name']).toBe(typeof name === 'string' && name.startsWith('界') ? '界'.repeat(85) : 'document')
+      expect(JSON.stringify(projected)).not.toContain('attachmentId')
+    }
+  })
+
   it('projects history documents to stable bounded metadata', async () => {
     const { ctx, session, history } = await harness()
     const event = session.append('user/message', documentMessage(), { surfaceOp: 'append' })

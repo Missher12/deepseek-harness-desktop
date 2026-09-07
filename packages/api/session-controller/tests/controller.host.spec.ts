@@ -16,6 +16,20 @@ const defaults = {
 }
 
 describe('SessionController facade', () => {
+  it('requires archiving through the public delete endpoint', async () => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SessionStore)
+      await ctx.plugin(AgentRegistry)
+      ctx.provide('workspaceRegistry', { archivedSessionIds: [] } as never)
+      const controller = createSessionTestController(ctx, defaults)
+      await expect(controller.delete({ sessionId: SessionId('not-archived') }))
+        .rejects.toMatchObject({ code: 'session/not-archived' })
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('does not require the Tools service', () => {
     expect(SessionController.inject).not.toContain('tools')
   })

@@ -41,6 +41,13 @@ function props(
 }
 
 describe('SystemUpdateSection', () => {
+  it('shows a stable localized failure when an operation rejects without an Error', async () => {
+    render(createElement(SystemUpdateSection, props(IDLE, { check: vi.fn().mockRejectedValue(null) })))
+    fireEvent.click(screen.getByRole('button', { name: en.check }))
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain(en.operationFailed) })
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.check }).disabled).toBe(false)
+  })
+
   it('renders sanitized versions and invokes the fixed check operation', () => {
     const check = vi.fn(async () => {})
     render(createElement(SystemUpdateSection, props(IDLE, { check })))

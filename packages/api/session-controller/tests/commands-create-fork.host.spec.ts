@@ -184,7 +184,7 @@ describe('archived Session deletion', () => {
       purgeSession,
     } as never)
     const remove = vi.fn(() => Promise.resolve(true))
-    ctx.provide('sessionPersistence', testSessionPersistence(ctx, {
+    const disposePersistence = ctx.provide('sessionPersistence', testSessionPersistence(ctx, {
       list: () => Promise.resolve(options.header === undefined ? [] : [options.header]),
       inspect: (id: SessionId) => options.header?.id === id
         ? Promise.resolve({ meta: options.header, inheritedEventCount: SessionLogOffset(0), events: [] })
@@ -202,6 +202,8 @@ describe('archived Session deletion', () => {
       disposeOwned,
       purgeSession,
       remove,
+      archivedSessionIds,
+      disposePersistence,
     }
   }
 
@@ -270,6 +272,73 @@ describe('archived Session deletion', () => {
     expect(b.remove).toHaveBeenCalledWith(sessionId)
     expect(b.purgeSession).toHaveBeenCalledWith(sessionId)
     await b.ctx.fiber.dispose()
+  })
+
+  it.each(['running', 'attached', 'subagent'] as const)('preserves an archived %s Session', async (state) => {
+    const sessionId = SessionId(`retained-${state}`)
+    const b = await deletionHarness(sessionId)
+    try {
+      const session = b.ctx.sessions.create(sessionId, { meta: {
+        cwd: '/workspace',
+        ...(state === 'subagent' ? { parentSession: SessionId('parent'), origin: 'subagent' as const } : {}),
+      } })
+      if (state !== 'attached') {
+        b.ctx.agents.register({ id: sessionId, session, status: state === 'running' ? 'running' : 'idle', ctx: b.ctx } as Agent)
+      }
+      await expectFailure(b.controller.delete({ sessionId }), 'session/agent-busy')
+      expect(b.remove).not.toHaveBeenCalled()
+      expect(b.purgeSession).not.toHaveBeenCalled()
+    } finally {
+      await b.ctx.fiber.dispose()
+    }
+  })
+
+  it('rechecks archive state after waiting for the owned Agent to stop', async () => {
+    const sessionId = SessionId('restored-during-stop')
+    const b = await deletionHarness(sessionId)
+    try {
+      const session = b.ctx.sessions.create(sessionId, { meta: { cwd: '/workspace' } })
+      b.ctx.agents.register({ id: sessionId, session, status: 'idle', ctx: b.ctx } as Agent)
+      b.disposeOwned.mockImplementation(async () => {
+        b.archivedSessionIds.splice(0)
+        return true
+      })
+      await expectFailure(b.controller.delete({ sessionId }), 'session/not-archived')
+      expect(b.remove).not.toHaveBeenCalled()
+    } finally {
+      await b.ctx.fiber.dispose()
+    }
+  })
+
+  it('preserves accounting if persistence unloads while an owned Agent stops', async () => {
+    const sessionId = SessionId('persistence-unloaded')
+    const b = await deletionHarness(sessionId)
+    try {
+      const session = b.ctx.sessions.create(sessionId, { meta: { cwd: '/workspace' } })
+      b.ctx.agents.register({ id: sessionId, session, status: 'idle', ctx: b.ctx } as Agent)
+      b.disposeOwned.mockImplementation(async () => { b.disposePersistence(); return true })
+      await expectFailure(b.controller.delete({ sessionId }), 'gateway/internal')
+      expect(b.remove).not.toHaveBeenCalled()
+      expect(b.purgeSession).not.toHaveBeenCalled()
+    } finally {
+      await b.ctx.fiber.dispose()
+    }
+  })
+
+  it.each([
+    new Error('disk refused deletion'),
+    new RemoteError('session/agent-busy', 'still owned', { reason: 'unowned-session' }),
+  ])('keeps archive accounting when durable deletion fails: %s', async (error) => {
+    const sessionId = SessionId('delete-failed')
+    const b = await deletionHarness(sessionId)
+    try {
+      b.remove.mockRejectedValueOnce(error)
+      await expectFailure(b.controller.delete({ sessionId }), error instanceof RemoteError ? 'session/agent-busy' : 'gateway/internal')
+      expect(b.purgeSession).not.toHaveBeenCalled()
+      expect(b.archivedSessionIds).toEqual([sessionId])
+    } finally {
+      await b.ctx.fiber.dispose()
+    }
   })
 })
 

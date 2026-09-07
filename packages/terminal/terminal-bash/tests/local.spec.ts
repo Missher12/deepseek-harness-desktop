@@ -328,7 +328,16 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
         timeoutMs: 8_000,
       }, 'pwsh')
       const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
-      expect(created.motd).toContain('dsh> ')
+      // A kernel stdin wait may settle before the prompt reaches this send's
+      // viewport. Prove the installed prompt with actual output, not setup echo.
+      const promptCheck = ctx.terminals.startSend(agent, created.sessionId, {
+        text: "'DSH_PROMPT=' + (prompt)",
+        submit: true,
+      })
+      expectReadyForNextSend((await promptCheck.done).waitReason)
+      await expect.poll(() => {
+        return ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 40 }).text
+      }, { timeout: 8_000 }).toContain('DSH_PROMPT=dsh> ')
 
       const first = ctx.terminals.startSend(agent, created.sessionId, {
         text: '$env:KEEP = "ok"; Set-Location /',

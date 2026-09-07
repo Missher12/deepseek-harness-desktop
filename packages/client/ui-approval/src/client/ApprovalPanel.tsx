@@ -45,12 +45,11 @@ function ApprovalFlow({ pending, detail, t }: {
     setConfirmationOpen(true)
   }
   const closeFullAccessConfirmation = (): void => {
-    if (busy) return
     setAcknowledged(false)
     setConfirmationOpen(false)
   }
   const enableFullAccess = (): void => {
-    if (busy || !acknowledged) return
+    // RiskConfirmation owns the disabled and acknowledgement gate.
     setConfirmationOpen(false)
     setAcknowledged(false)
     setBusy(true)
