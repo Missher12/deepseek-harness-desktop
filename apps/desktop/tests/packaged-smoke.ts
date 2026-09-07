@@ -782,11 +782,21 @@ async function exerciseComposerAddMenu(page: Page, seeded: WindowsClipboardSmoke
       && bounds.right <= window.innerWidth
       && bounds.bottom <= window.innerHeight
   })).toBe(true)
-  await expect.poll(() => menu.locator('[data-add-section="true"]').allTextContents()).toEqual(
-    expect.arrayContaining([expect.stringMatching(/^(?:Add|添加)$/u), expect.stringMatching(/^(?:Plugins|插件)$/u)]),
-  )
+  await expect.poll(() => menu.evaluate((element) => {
+    const sections = [...element.querySelectorAll('[data-add-section="true"]')]
+      .map(section => section.textContent ?? '')
+    const rows = element.querySelectorAll('button[role="option"]')
+    const skillCount = element.querySelectorAll('button[id^="dsh-slash-option-skill-"]').length
+    return {
+      settled: element.querySelector('[role="status"]') === null,
+      baseOptionCount: rows.length - skillCount,
+      sectionsMatchSkills: /^(?:Add|添加)$/u.test(sections[0] ?? '')
+        && (skillCount === 0
+          ? sections.length === 1
+          : sections.length === 2 && /^(?:Plugins|插件)$/u.test(sections[1] ?? '')),
+    }
+  })).toEqual({ settled: true, baseOptionCount: 4, sectionsMatchSkills: true })
   const options = menu.getByRole('option')
-  await expect.poll(() => options.count()).toBeGreaterThanOrEqual(5)
   expect(await options.evaluateAll(rows => rows.every(row => row.querySelector('svg') !== null))).toBe(true)
   await menu.getByRole('option', { name: /^goal/iu }).waitFor({ state: 'visible' })
   await menu.getByRole('option', { name: /^plan/iu }).waitFor({ state: 'visible' })

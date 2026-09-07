@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi, type MockInstance } from 'vitest'
 import {
   cliGateOptions,
+  collectDescendants,
   defaultConcurrency,
   formatGateResultReason,
   gatesForMode,
@@ -911,6 +912,30 @@ describe('process-table parsing', () => {
 
   it('drops blank and malformed lines', () => {
     expect(parsePidPpidLines('  123   1\n\ncommand not found\n999 abc\n')).toEqual([[123, 1]])
+  })
+})
+
+describe('process-table descendants', () => {
+  it('terminates a walk whose parent chain cycles back to the root', () => {
+    expect(collectDescendants(100, [[200, 100], [100, 200], [300, 200]]))
+      .toEqual([200, 300])
+  })
+
+  it('visits each reachable process once and ignores disconnected cycles', () => {
+    expect(collectDescendants(100, [
+      [100, 100], [200, 100], [200, 100], [300, 100],
+      [400, 200], [200, 400], [500, 300], [500, 400],
+      [600, 600], [700, 800], [800, 700],
+    ])).toEqual([200, 300, 400, 500])
+    expect(collectDescendants(900, [[100, 100]])).toEqual([])
+  })
+
+  it('walks a wide process tree without spreading children into call arguments', () => {
+    const children: Array<[number, number]> = Array.from({ length: 150000 }, (_, index) => [index + 3, 2])
+    const descendants = collectDescendants(1, [[2, 1], ...children])
+    expect(descendants).toHaveLength(children.length + 1)
+    expect(descendants[0]).toBe(2)
+    expect(descendants.at(-1)).toBe(150002)
   })
 })
 

@@ -353,11 +353,14 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
         submit: true,
       })
       const result = await second.done
-      expect(result.viewport).toContain('keep=ok')
-      expect(result.viewport).toContain('secret=')
-      expect(result.viewport).not.toContain('must-not-leak')
-
-      expect(ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 40 }).text).toContain('keep=ok')
+      expectReadyForNextSend(result.waitReason)
+      // A readiness settlement does not drain the PTY output transport.
+      // Observe the evaluated command in retained output before inspecting it.
+      await expect.poll(() => {
+        return ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 40 }).text
+      }, { timeout: 8_000 }).toMatch(/(?:^|\n)keep=ok secret=\n/u)
+      const output = ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 40 }).text
+      expect(output).not.toContain('must-not-leak')
       expect(await ctx.terminals.kill(agent, created.sessionId)).toBe(true)
       expect(ctx.terminals.list(agent)).toEqual([])
     } finally {

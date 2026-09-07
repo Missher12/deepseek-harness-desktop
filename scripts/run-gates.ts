@@ -1509,23 +1509,30 @@ export function taskkillArgs(rootPid: number, descendants: number[]): string[][]
   return [rootPid, ...descendants].map(pid => ['/PID', String(pid), '/T', '/F'])
 }
 
-/** Breadth-first walk of the pid/ppid rows starting at `root`. */
-function collectDescendants(root: number, rows: Array<[number, number]>): number[] {
+/**
+ * Enumerate reachable descendants once, even when a process-table snapshot
+ * contains repeated rows or parent cycles caused by process ID reuse.
+ * @param root - the process whose descendants are wanted; excluded from the result.
+ * @param rows - observed process ID and parent process ID pairs.
+ * @returns descendant process IDs in breadth-first order.
+ */
+export function collectDescendants(root: number, rows: Array<[number, number]>): number[] {
   const byParent = new Map<number, number[]>()
   for (const [pid, ppid] of rows) {
     const children = byParent.get(ppid) ?? []
     children.push(pid)
     byParent.set(ppid, children)
   }
-  const result: number[] = []
-  const queue = byParent.get(root) ?? []
-  for (let index = 0; index < queue.length; index += 1) {
-    const pid = queue[index]
-    if (pid === undefined) continue
-    result.push(pid)
-    queue.push(...(byParent.get(pid) ?? []))
+  const seen = new Set([root])
+  const queue = [root]
+  for (const parent of queue) {
+    for (const pid of byParent.get(parent) ?? []) {
+      if (seen.has(pid)) continue
+      seen.add(pid)
+      queue.push(pid)
+    }
   }
-  return result
+  return queue.slice(1)
 }
 
 /**

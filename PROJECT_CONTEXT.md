@@ -1,5 +1,11 @@
 # DeepSeek Harness Desktop — Project Context
 
+## Validation follow-up — 2026-09-07
+
+Validation branch `codex/desktop-0.5.5-commander` and PR 34 published candidate `e3da9b6989f0c5fb49eacfe25470f25334401c07`. Its Mac job passes host ABI recovery but rejects the valid empty-skill Add menu; its Windows job reaches candidate startup sampling but cannot import the packaged smoke after Electron rebuild changes the workspace fs-ext ABI. The dedicated platform tasks own these diagnoses and supply text patches; the commander remains the only integration writer. Neither run is completed native acceptance, and no public 0.5.5 Release exists.
+
+The integrated follow-up checks Add groups against actual installed skills and restores the Windows host ABI while fingerprinting both Setup copies, app.asar and packaged native binaries. General CI repairs bound process-table traversal under duplicate/cyclic rows, resolve Brain's type export directly from source in a clean checkout, and synchronize the PowerShell persistence test with observed output. The two PowerShell snapshots track current profile context and schemas while retaining the recorded model content and stream timing. Repository live-API jobs still require the unconfigured `DEEPSEEK_API_KEY_EXTERNAL` secret. Every source change requires fresh Mac and Windows native acceptance on one new full SHA before main, tag or Release publication.
+
 ## Built-in reading presentation and release preparation — 2026-09-07
 
 The user confirmed that reasoning cards, live streaming, successful-completion process folding and a prominent final answer belong in native Chat. Desktop remains **0.5.5**, with Harness **0.1.3-alpha.1**. The sole shared-code owner is the commander checkout at `/Users/missher/Documents/ChatGPT/deepseek-harness-desktop-055`, branch `codex/desktop-0.5.5-commander`, starting from `ad673a8b816e866b4a3fc3bc743fedbf209f872f`. The official core target remains `d347e703908d0406b7a7ef80e3a0e594d86b2215`. The installed application described below predates the new reading presentation.

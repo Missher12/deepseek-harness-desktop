@@ -117,6 +117,50 @@ describe('CI workflow', () => {
     expect(build?.run).not.toContain('run inventory:package -- --output')
   })
 
+  it('restores the Windows fixture ABI without changing the packaged candidate', () => {
+    const windows = workflowJob(loadWorkflow('.github/workflows/windows-desktop.yml'), 'build-install-smoke')
+    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
+    const steps = windows.steps.filter(isRecord)
+    const name = 'Restore host Node ABI without changing packaged bytes'
+    expect(steps.filter(step => step.name === name)).toHaveLength(1)
+    const restoreIndex = steps.findIndex(step => step.name === name)
+    const buildIndex = steps.findIndex(step => step.name === 'Build the assisted Windows Setup')
+    const baselineIndex = steps.findIndex(step => step.name === 'Measure the pinned public 0.5.3 baseline on this runner')
+    expect(restoreIndex).toBeGreaterThan(buildIndex)
+    expect(restoreIndex).toBeLessThan(baselineIndex)
+    const restore = steps[restoreIndex]
+    expect(restore).toMatchObject({
+      shell: 'pwsh',
+      env: { ARTIFACT: '${{ steps.desktop.outputs.artifact }}', NODE_OPTIONS: '', NODE_PATH: '' },
+    })
+    if (typeof restore?.run !== 'string') throw new TypeError('Host ABI recovery must define a command')
+    const run = restore.run
+    expect(run).toContain("'@ | node --input-type=module")
+    expect(run).toContain('if ($LASTEXITCODE -ne 0)')
+    expect(run).toContain("createRequire(resolve('packages/session/session-persistence-jsonl/package.json'))")
+    expect(run).toContain("fixtureRequire.resolve('fs-ext/package.json')")
+    expect(run).toContain("resolve('node-gyp/bin/node-gyp.js')")
+    expect(run).toContain('assert.equal(process.versions.electron, undefined')
+    expect(run).toContain('fsExtDir.startsWith(rootModules)')
+    expect(run).toContain('nodeGyp.startsWith(rootModules)')
+    expect(run).toContain("join(process.env.RUNNER_TEMP, 'release')")
+    expect(run).toContain("join(release, 'win-unpacked', 'resources')")
+    expect(run).toContain("join('apps/desktop/release', process.env.ARTIFACT)")
+    expect(run).toContain('join(release, process.env.ARTIFACT)')
+    expect(run).toContain("join(resources, 'app.asar')")
+    expect(run).toContain("name.endsWith('.node')")
+    expect(run).toContain("'Packaged native binaries are missing'")
+    expect(run).toContain("'--target=' + process.versions.node, '--arch=' + process.arch")
+    expect(run).toContain('cwd: fsExtDir')
+    expect(run).toContain('delete env.NODE_OPTIONS')
+    expect(run).toContain('delete env.NODE_PATH')
+    expect(run.indexOf('const before = await fingerprint()')).toBeLessThan(run.indexOf('spawnSync(process.execPath'))
+    expect(run).toContain("assert.equal(rebuilt.status, 0, 'Host fs-ext rebuild failed')")
+    expect(run).toContain("assert.deepEqual(await fingerprint(), before, 'Packaged bytes changed during host rebuild')")
+    expect(run.indexOf('assert.deepEqual(await fingerprint(), before')).toBeLessThan(run.indexOf("fixtureRequire('fs-ext')"))
+    expect(run).not.toMatch(/(?:pnpm|npm) (?:install|rebuild)|electron-builder install-app-deps/u)
+  })
+
   it('parses every Windows Desktop PowerShell smoke before the Setup build', () => {
     const workflow = loadWorkflow('.github/workflows/windows-desktop.yml')
     const windows = workflowJob(workflow, 'build-install-smoke')

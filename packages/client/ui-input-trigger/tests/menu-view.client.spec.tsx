@@ -208,7 +208,7 @@ describe('MenuView', () => {
     expect(screen.getAllByRole('option').every(option => option.querySelector('svg') !== null)).toBe(true)
   })
 
-  it('renders the composer Add launcher as one curated Add and Plugins list with SVG icons', () => {
+  it.each([false, true])('renders composer Add with optional installed skills (%s)', (hasSkills) => {
     const { view, onPick } = mount(openState({
       groups: [
         {
@@ -231,7 +231,9 @@ describe('MenuView', () => {
         {
           source: 'skill',
           status: 'ready',
-          items: [{ name: 'github', description: '处理 GitHub 工作流', icon: 'skill', section: '插件' }],
+          items: hasSkills
+            ? [{ name: 'github', description: '处理 GitHub 工作流', icon: 'skill', section: '插件' }]
+            : [],
         },
       ],
       highlight: { source: 'composer-add', index: 0 },
@@ -239,7 +241,7 @@ describe('MenuView', () => {
 
     expect(view.container.querySelector('[data-composer-add-menu]')).not.toBeNull()
     expect([...view.container.querySelectorAll('[data-add-section]')].map(node => node.textContent)).toEqual([
-      '添加', '插件',
+      '添加', ...(hasSkills ? ['插件'] : []),
     ])
     const options = screen.getAllByRole('option')
     expect(options.map(option => option.textContent)).toEqual([
@@ -247,7 +249,7 @@ describe('MenuView', () => {
       '添加图片PNG、JPG、WebP 或 GIF',
       'goal设置目标',
       'plan进入计划模式',
-      'github处理 GitHub 工作流',
+      ...(hasSkills ? ['github处理 GitHub 工作流'] : []),
     ])
     expect(options.every(option => option.querySelector('svg') !== null)).toBe(true)
     fireEvent.mouseDown(options[3]!)

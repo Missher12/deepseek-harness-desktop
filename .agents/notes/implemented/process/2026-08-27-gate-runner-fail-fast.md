@@ -24,6 +24,8 @@ The `windows-observational` lane stays complete: it is `continue-on-error` by de
 
 ## Consequences
 
+Process-table traversal visits each reachable PID once and excludes the root from the descendant list. Repeated rows and cycles, including parent IDs reused after exit, cannot expand the queue indefinitely. Enqueuing one child at a time also avoids the JavaScript argument limit on wide trees; traversal retains every reachable descendant without a depth cap.
+
 A red pull-request run ends sooner. The largest saving is in `ci-coverage`: a failing exempt-heavy gate aborts the multi-minute instrumented coverage gate instead of letting it run out.
 
 The trade-off is diagnostic: one push returns only the first blocking failure instead of the full failure set, so resolving several independent failures may take more push-fix rounds. Killed gates are recorded as `skipped` with the fail-fast error, so the summary line `N passed, M failed, K skipped` remains truthful about what produced evidence and what did not. A gate that ignores `SIGTERM` is force-killed after the 5-second grace. A tree that survives both signals holds the aggregate only while its direct child's stdio stays open; once `close` fires, the group-liveness poll gives up after 8 seconds and the run settles with a loud `gate tree not quiescent` warning instead of reporting a clean tree.
