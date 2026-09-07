@@ -11,14 +11,26 @@ export const NATIVE_READER_APPEND = '\nNative append: 中文 👨‍👩‍👧�
 /** Native Markdown fixture emitted before the explicit completion barrier. */
 export const NATIVE_READER_ANSWER = '# Native reader verified\n\nThe final answer remains visible.\n\n```ts\nconst nativeReader = true\n```\n\n| Check | Result |\n| --- | --- |\n| Native Markdown | Preserved |'
 
-/** One owned provider fixture; every request outside its armed Turn fails loud. */
+/** One bounded auxiliary title for the same native reader Turn. */
+export const NATIVE_READER_TITLE = 'Native reader presentation'
+const TITLE_FRAME_PREFIX = 'Generate the session title from this JSON array of human messages:\n'
+const TITLE_SYSTEM = [
+  'Create a concise title for an AI coding-assistant session from the supplied human messages.',
+  'Return only the title on one line, **in plain text of natural language**, with no quotes, prefix, explanation, Markdown, XML, or terminal control codes. No code is allowed.',
+  'Use the language of the messages.',
+  'Aim for about 5 words in non-CJK languages or 10 CJK characters.',
+].join('\n')
+
+/** One reader Turn and its exact auxiliary title; every other request fails loud. */
 export interface ReaderSmokeProvider {
   /** Loopback OpenAI-compatible base URL, including `/v1`. */
   readonly url: string
   /** Unexpected method/path pairs; request bodies and headers are never retained. */
   readonly requests: readonly string[]
-  /** Number of accepted fixture requests; exactly one is permitted. */
+  /** Number of accepted main reader requests; exactly one is permitted. */
   readonly acceptedRequests: number
+  /** Accepted automatic title requests for this fixture; at most one is permitted. */
+  readonly acceptedTitleRequests: number
   /** Observable barrier state for deterministic UI and transport assertions. */
   readonly phase: 'idle' | 'armed' | 'thinking' | 'appended' | 'answering' | 'completed'
   /** Permit the exact fixture request once, after unrelated native tests finish. */
@@ -33,21 +45,43 @@ export interface ReaderSmokeProvider {
   close(): Promise<void>
 }
 
-function isReaderRequest(value: unknown): boolean {
-  if (typeof value !== 'object' || value === null) return false
-  const body = value as { model?: unknown; stream?: unknown; messages?: unknown }
-  return body.model === 'native-thinker' && body.stream === true && Array.isArray(body.messages)
-    && body.messages.some((entry: unknown) => {
-      if (typeof entry !== 'object' || entry === null) return false
-      const message = entry as { role?: unknown; content?: unknown }
-      if (message.role !== 'user') return false
-      if (typeof message.content === 'string') return message.content.includes(NATIVE_READER_PROMPT)
-      return Array.isArray(message.content) && message.content.some((part: unknown) => {
-        if (typeof part !== 'object' || part === null) return false
-        const block = part as { type?: unknown; text?: unknown }
-        return block.type === 'text' && typeof block.text === 'string' && block.text.includes(NATIVE_READER_PROMPT)
-      })
-    })
+function messageText(content: unknown): string | undefined {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content) || content.length !== 1) return undefined
+  const part: unknown = content[0]
+  if (typeof part !== 'object' || part === null) return undefined
+  const block = part as { type?: unknown; text?: unknown }
+  return block.type === 'text' && typeof block.text === 'string' ? block.text : undefined
+}
+
+function requestKind(value: unknown): 'reader' | 'title' | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const body = value as Record<string, unknown>
+  if (body.model !== 'native-thinker' || body.stream !== true || !Array.isArray(body.messages)
+    || body.messages.some((entry: unknown) => typeof entry !== 'object' || entry === null)) return undefined
+  const messages = body.messages as Array<{ role?: unknown; content?: unknown }>
+  const titleSystem = messages.some(message => (message.role === 'system' || message.role === 'developer')
+    && messageText(message.content) === TITLE_SYSTEM)
+  if (!titleSystem && messages.some(message => message.role === 'user' && messageText(message.content) === NATIVE_READER_PROMPT)) {
+    return 'reader'
+  }
+  const [system, user] = messages
+  if (messages.length !== 2 || (system?.role !== 'system' && system?.role !== 'developer')
+    || messageText(system.content) !== TITLE_SYSTEM || user?.role !== 'user'
+    || body.tools !== undefined
+    || !((body.max_tokens === 64 && body.max_completion_tokens === undefined)
+      || (body.max_completion_tokens === 64 && body.max_tokens === undefined))) return undefined
+  const text = messageText(user.content)
+  if (text === undefined || !text.startsWith(TITLE_FRAME_PREFIX)) return undefined
+  let framed: unknown
+  try { framed = JSON.parse(text.slice(TITLE_FRAME_PREFIX.length)) } catch { return undefined }
+  if (!Array.isArray(framed) || framed.length !== 1) return undefined
+  const item: unknown = framed[0]
+  if (typeof item !== 'object' || item === null) return undefined
+  const record = item as Record<string, unknown>
+  return Object.keys(record).length === 2 && record.text === NATIVE_READER_PROMPT
+    && typeof record.seq === 'number' && Number.isSafeInteger(record.seq) && record.seq >= 0
+    ? 'title' : undefined
 }
 
 /**
@@ -57,6 +91,7 @@ function isReaderRequest(value: unknown): boolean {
 export async function startReaderSmokeProvider(): Promise<ReaderSmokeProvider> {
   const requests: string[] = []
   let acceptedRequests = 0
+  let acceptedTitleRequests = 0
   let phase: ReaderSmokeProvider['phase'] = 'idle'
   let active: ServerResponse | undefined
   let closing: Promise<void> | undefined
@@ -81,8 +116,20 @@ export async function startReaderSmokeProvider(): Promise<ReaderSmokeProvider> {
       if (bytes <= 1_048_576) {
         try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { /* Rejected below. */ }
       }
-      if (phase !== 'armed' || request.method !== 'POST' || request.url !== '/v1/chat/completions'
-        || !isReaderRequest(body)) {
+      const kind = requestKind(body)
+      const endpointMatches = request.method === 'POST' && request.url === '/v1/chat/completions'
+      if (closing === undefined && phase !== 'idle' && endpointMatches
+        && kind === 'title' && acceptedTitleRequests === 0) {
+        acceptedTitleRequests += 1
+        response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
+        response.end([
+          `data: ${JSON.stringify({ choices: [{ index: 0, delta: { role: 'assistant', content: NATIVE_READER_TITLE }, finish_reason: null }] })}`,
+          `data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 3, completion_tokens: 2 } })}`,
+          'data: [DONE]', '',
+        ].join('\n\n'))
+        return
+      }
+      if (closing !== undefined || phase !== 'armed' || !endpointMatches || kind !== 'reader') {
         requests.push(`${request.method ?? 'UNKNOWN'} ${request.url ?? '/'}`)
         response.writeHead(500, { 'content-type': 'application/json' })
         response.end('{"error":{"message":"packaged smoke provider tripwire"}}')
@@ -112,6 +159,7 @@ export async function startReaderSmokeProvider(): Promise<ReaderSmokeProvider> {
     url: `http://127.0.0.1:${address.port}/v1`,
     requests,
     get acceptedRequests() { return acceptedRequests },
+    get acceptedTitleRequests() { return acceptedTitleRequests },
     get phase() { return phase },
     arm() { requirePhase('idle'); phase = 'armed' },
     append() { requirePhase('thinking'); write({ reasoning_content: NATIVE_READER_APPEND }); phase = 'appended' },

@@ -157,9 +157,12 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     await page.getByRole('button', { name: 'Stop generating' }).click()
     await settled
     expect(sessionEvents.filter(e => e.type === 'turn/end').map(e => e.data.reason.kind)).toEqual(['aborted'])
-    await page.locator('[data-turn-process]').waitFor({ timeout: 10_000 })
     await expect.poll(() => copyButtons.count(), { timeout: 10_000 }).toBe(2)
     await expect.poll(() => page.locator('[data-streaming="true"]').count(), { timeout: 10_000 }).toBe(0)
+    // An aborted Turn keeps its process visible instead of folding it behind
+    // the successful-completion disclosure.
+    expect(await page.locator('[data-turn-process]').count()).toBe(0)
+    expect(await page.getByRole('region', { name: 'Reasoning content' }).first().isVisible()).toBe(true)
     await copyButtons.last().focus()
     const settledAria = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(SETTLED_EXPECTED, settledAria, MODE)

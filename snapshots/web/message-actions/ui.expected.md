@@ -18,10 +18,11 @@
 - button "Copy":
   - img
 - tooltip "Copy"
-- button "Think The user wants me to read a.txt and b.txt, then reply with \"DONE\". Let me do both reads in parallel.":
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: Think The user wants me to read a.txt and b.txt, then reply with "DONE". Let me do both reads in parallel.
+- region "Reasoning content": The user wants me to read a.txt and b.txt, then reply with "DONE". Let me do both reads in parallel.
 - paragraph: I will read both files before answering.
 - button "Copy":
   - img
@@ -46,10 +47,11 @@
   - img
   - text: Read
   - button "b.txt"
-- button "Think This path was interrupted.":
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: Think This path was interrupted.
+- region "Reasoning content": This path was interrupted.
 - text: Stopped Now give the final answer. 7/25 {{clock}}
 - button "Copy":
   - img

@@ -7,9 +7,6 @@
     - button "Personalization":
       - img
       - text: Personalization
-    - button "Memory & Learning":
-      - img
-      - text: Memory & Learning
     - button "Models":
       - img
       - text: Models

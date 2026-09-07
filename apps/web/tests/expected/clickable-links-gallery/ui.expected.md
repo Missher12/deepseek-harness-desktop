@@ -192,7 +192,7 @@
 - button "Back to bottom":
   - img
 - textbox "Message or run a task... / commands, @ files or sessions"
-- button "Commands":
+- button "Add":
   - img
 - button "Add attachment":
   - img

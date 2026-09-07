@@ -1,4 +1,7 @@
 - listbox "Trigger suggestions":
+  - text: Add
+  - option "goal set or view the goal for a long-running task" [selected]
+  - option "plan Enter or leave plan mode"
   - text: Files & folders
   - option "folderx/ Browse folder":
     - text: folderx/
@@ -8,6 +11,3 @@
   - text: Sessions
   - option "reference-order-target-session {{cwd}} · {{age}}"
   - option "reference-source-session {{cwd}} · {{age}}"
-  - text: Commands
-  - option "goal set or view the goal for a long-running task" [selected]
-  - option "plan Enter or leave plan mode"

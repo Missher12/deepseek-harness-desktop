@@ -32,10 +32,12 @@
   - img
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
-- 'button "Think The user''s goal is: \"做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的\" — which translates to: \"Do two turns, each turn output the file structure of a random package. Note that after you finish one turn, directly output the content and stop; our system will help you open another turn, and you just do something similar.\""':
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: "Think The user's goal is: \"做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的\" — which translates to: \"Do two turns, each turn output the file structure of a random package. Note that after you finish one turn, directly output the content and stop; our system will help you open another turn, and you just do something similar.\""
+- region "Reasoning content": "The user's goal is: \"做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的\" — which translates to: \"Do two turns, each turn output the file structure of a random package. Note that after you finish one turn, directly output the content and stop; our system will help you open another turn, and you just do something similar.\" So this is round 1 of 2. I need to output the file structure of a random package. Let me check the workspace to see if there's anything relevant — maybe there are packages installed or a specific context. Let me first check the current working directory and see what's there. The instruction says: after finishing a turn, output the content directly and stop. So for this round, I should pick a random package and output its file structure. The system will open another turn for the second one. Let me look at the workspace to understand the environment."
+- text: Original reasoning · scroll to read
 - button "Bash List package directories deterministically":
   - img
   - img
@@ -44,41 +46,48 @@
   - img
   - img
   - text: "Tool call get_goal · {}"
-- 'button "Think There''s a `packages` directory. Let me look inside to see what packages are available."':
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: "Think There's a `packages` directory. Let me look inside to see what packages are available."
+- region "Reasoning content": "There's a `packages` directory. Let me look inside to see what packages are available."
 - button "Bash List packages directory contents":
   - img
   - img
   - text: Bash List packages directory contents
-- button "Think There are 4 packages:":
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: "Think There are 4 packages:"
+- region "Reasoning content": "There are 4 packages: - client/ui-conversation - context/session-reference - llm/token-meter - skill/skill-filesystem For this turn (turn 1 of 2), I should randomly pick one package and output its file structure. Let me pick randomly — I'll use $RANDOM or just pick one. Let me use a quick random selection."
+- text: Original reasoning · scroll to read
 - button "Failed Bash Randomly pick one package directory":
   - img
   - text: Failed Bash Randomly pick one package directory
-- 'button "Think shuf is not available on macOS. I''ll use a different approach for random selection. Let me use $RANDOM in bash or use `sort -R` or Python."':
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: "Think shuf is not available on macOS. I'll use a different approach for random selection. Let me use $RANDOM in bash or use `sort -R` or Python."
+- region "Reasoning content": "shuf is not available on macOS. I'll use a different approach for random selection. Let me use $RANDOM in bash or use `sort -R` or Python."
 - button "Bash Randomly select one package with Python":
   - img
   - img
   - text: Bash Randomly select one package with Python
-- 'button "Think The random pick for turn 1 is `packages/context/session-reference`. Now I''ll output its file structure. Let me get the file tree."':
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: "Think The random pick for turn 1 is `packages/context/session-reference`. Now I'll output its file structure. Let me get the file tree."
+- region "Reasoning content": "The random pick for turn 1 is `packages/context/session-reference`. Now I'll output its file structure. Let me get the file tree."
 - button "Bash List all files in session-reference package":
   - img
   - img
   - text: Bash List all files in session-reference package
-- 'button "Think Turn 1 is done. Per the objective: \"你做完一个turn之后，直接输出内容，停止\" — after finishing a turn, directly output the content and stop. The system will open another turn."':
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: "Think Turn 1 is done. Per the objective: \"你做完一个turn之后，直接输出内容，停止\" — after finishing a turn, directly output the content and stop. The system will open another turn."
+- region "Reasoning content": "Turn 1 is done. Per the objective: \"你做完一个turn之后，直接输出内容，停止\" — after finishing a turn, directly output the content and stop. The system will open another turn. So I should just output the file structure of this randomly picked package (packages/context/session-reference) and stop. I should NOT mark the goal complete since there are 2 turns and this is only turn 1. The objective says the system will open another turn — so I should leave the goal active for the next round. Let me output the file structure in a nice tree format."
+- text: Original reasoning · scroll to read
 - paragraph:
   - strong: Turn 1 / 2
   - text: — 随机选中的包：
@@ -112,18 +121,20 @@
   - img
   - img
   - text: Context injection goal
-- 'button "Think This is turn 2 of 2. I need to randomly pick another package and output its file structure. In the first turn I picked `packages/context/session-reference`. Let me pick a different one randomly this time."':
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: "Think This is turn 2 of 2. I need to randomly pick another package and output its file structure. In the first turn I picked `packages/context/session-reference`. Let me pick a different one randomly this time."
+- region "Reasoning content": "This is turn 2 of 2. I need to randomly pick another package and output its file structure. In the first turn I picked `packages/context/session-reference`. Let me pick a different one randomly this time."
 - button "Bash Randomly select another package with Python":
   - img
   - img
   - text: Bash Randomly select another package with Python
-- 'button "Think The random pick returned the same package as turn 1. Since turn 1 already covered `session-reference`, it would be better to pick a different one for variety. Let me re-roll, excluding the already-covered package."':
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: "Think The random pick returned the same package as turn 1. Since turn 1 already covered `session-reference`, it would be better to pick a different one for variety. Let me re-roll, excluding the already-covered package."
+- region "Reasoning content": "The random pick returned the same package as turn 1. Since turn 1 already covered `session-reference`, it would be better to pick a different one for variety. Let me re-roll, excluding the already-covered package."
 - button "Bash Re-roll excluding the package from turn 1":
   - img
   - img
@@ -132,10 +143,11 @@
   - img
   - img
   - text: Bash List all files in token-meter package
-- 'button "Think This is turn 2 of 2. I''ve output the file structure for `packages/llm/token-meter`. Both turns are done. I should output the content, stop, and then mark the goal as complete since both turns are finished."':
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: "Think This is turn 2 of 2. I've output the file structure for `packages/llm/token-meter`. Both turns are done. I should output the content, stop, and then mark the goal as complete since both turns are finished."
+- region "Reasoning content": "This is turn 2 of 2. I've output the file structure for `packages/llm/token-meter`. Both turns are done. I should output the content, stop, and then mark the goal as complete since both turns are finished."
 - paragraph:
   - strong: Turn 2 / 2
   - text: — 随机选中的包：

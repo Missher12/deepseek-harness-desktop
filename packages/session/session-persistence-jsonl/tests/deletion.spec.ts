@@ -1,17 +1,35 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { SessionAlreadyOwnedError } from '@deepseek-ai/dsh-session-persistence'
 import JsonlSessionPersistence from '../src/index.ts'
 import { generationLogPath, logPath } from '../src/format.ts'
+import { SessionWriteLease } from '../src/lease.ts'
 import { meta } from '../../session-persistence/tests/contract.ts'
 
 // Exercise the Windows branch on POSIX with only the foreign kernel boundary
 // replaced. Native Windows runs retain the real semaphore implementation.
 const windowsLock = vi.hoisted(() => ({ simulated: false, acquired: 0, released: 0 }))
+const parentSync = vi.hoisted(() => ({ path: undefined as string | undefined, calls: 0 }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    open: async (...args: Parameters<typeof actual.open>) => {
+      const handle = await actual.open(...args)
+      if (args[0] === parentSync.path && args[1] === 'r') {
+        vi.spyOn(handle, 'sync').mockImplementation(async () => {
+          parentSync.calls += 1
+          throw new Error('parent directory sync failed')
+        })
+      }
+      return handle
+    },
+  }
+})
 vi.mock('../src/win32.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/win32.ts')>()
   return {
@@ -35,6 +53,8 @@ afterEach(async () => {
   windowsLock.simulated = false
   windowsLock.acquired = 0
   windowsLock.released = 0
+  parentSync.path = undefined
+  parentSync.calls = 0
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
@@ -52,6 +72,33 @@ async function setup() {
 }
 
 describe('permanent session deletion', () => {
+  it('releases its write claim when POSIX parent-directory durability fails after removal', async () => {
+    const { root, first } = await setup()
+    const header = meta('sync-failure', '/workspace')
+    const writer = await first.create(header)
+    await writer.flush()
+    await writer.close()
+    const directory = dirname(logPath(root, header.cwd, header.id, 'none'))
+    // Acquire the real host's kernel lease before exercising the foreign
+    // durability branch. Only the selected parent directory's fsync is replaced.
+    const lease = await SessionWriteLease.acquire(directory, header.id)
+    try {
+      const release = vi.spyOn(lease, 'release')
+      vi.spyOn(SessionWriteLease, 'acquire').mockResolvedValue(lease)
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+      parentSync.path = dirname(directory)
+      await expect(first.delete(header.id)).rejects.toThrow('parent directory sync failed')
+      expect(parentSync.calls).toBe(1)
+      expect(release).toHaveBeenCalledOnce()
+      await expect(first.stat(header.id)).resolves.toBeUndefined()
+      await expect(first.delete(header.id)).resolves.toBe(false)
+    } finally {
+      vi.restoreAllMocks()
+      parentSync.path = undefined
+      await lease.release()
+    }
+  })
+
   it('leaves a selected directory intact when its header no longer identifies a Session', async () => {
     const { root, first } = await setup()
     const header = meta('empty-header', '/workspace')

@@ -174,9 +174,9 @@ it('accepts a whole-page drop under the limits-labeled overlay and refuses an ov
   const dataTransfer = { types: ['Files'], files: [image], dropEffect: 'none' }
   fireEvent.dragEnter(document.body, { dataTransfer })
   const overlay = await screen.findByRole('status')
-  expect(overlay.textContent).toContain('Drag files or images here to add them')
+  expect(overlay.textContent).toContain('Drop images or files here')
   await waitFor(() => {
-    expect(overlay.textContent).toContain('Image limit: up to 20 images, 5MB each')
+    expect(overlay.textContent).toContain('Up to 20 images (5MB each) and 5 documents (20MB each)')
   })
 
   // Dropping on the transcript area (not the composer card) lands in the rail.

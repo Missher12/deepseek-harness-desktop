@@ -1791,6 +1791,7 @@ export async function runPackagedDesktopSmoke(
       },
     })
     expect(providerTripwire.acceptedRequests).toBe(1)
+    await expect.poll(() => providerTripwire.acceptedTitleRequests, { timeout: 5_000 }).toBe(1)
     expect(providerTripwire.requests).toEqual([])
 
     const mainPid = nativeApp.process().pid

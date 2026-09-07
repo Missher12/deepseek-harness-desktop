@@ -206,10 +206,12 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     // follow-stream-fed state). Runs after the golden capture so the committed
     // aria surface stays the untouched settled state.
     await expandTurnProcesses(page)
-    const think = page.getByRole('button', { name: /^Think/ }).first()
+    const think = page.locator('[data-variant="think"] button[aria-expanded]').first()
+    expect(await think.getAttribute('aria-label')).toBe('Expand reasoning')
     expect(await think.getAttribute('aria-expanded')).toBe('false')
     await think.click()
     await expect.poll(() => think.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('true')
+    expect(await think.getAttribute('aria-label')).toBe('Collapse reasoning')
     await think.click()
     await expect.poll(() => think.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('false')
   })

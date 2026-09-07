@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile, chmod } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
+import { mkdir, mkdtemp, rm, writeFile, chmod } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -145,7 +146,7 @@ describe('BrowserSkill probe', () => {
     await writeFile(join(resources, 'browser-skill', 'bin', 'bsk'), 'binary')
 
     expect(resolveBundledBrowserSkillCli(resources, 'darwin')).toBe(
-      join(await realpath(resources), 'browser-skill', 'bin', 'bsk'),
+      realpathSync(join(resources, 'browser-skill', 'bin', 'bsk')),
     )
     expect(resolveBundledBrowserSkillCli(resources, 'win32')).toBeUndefined()
     expect(resolveBundledBrowserSkillCli(join(resources, 'missing'), 'darwin')).toBeUndefined()

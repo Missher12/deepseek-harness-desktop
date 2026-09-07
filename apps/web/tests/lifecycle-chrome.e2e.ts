@@ -78,7 +78,13 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     await menu.waitFor({ timeout: 10_000 })
     const snapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(COMMAND_MENU_EXPECTED, snapshot, MODE)
-    expect(snapshot).toContain('text: Commands')
+    expect(await menu.getByRole('option').allTextContents()).toEqual([
+      'Files and foldersReference workspace files, folders, or sessions',
+      'Attach fileImages, PDF, Word, Excel, text, or code',
+      'goalset or view the goal for a long-running task',
+      'planEnter or leave plan mode',
+    ])
+    expect(snapshot).toContain('text: Add')
     expect(snapshot).not.toContain('text: Skills')
     expect(snapshot).not.toContain('text: Subagents')
     const launchedBox = await menuShell.boundingBox()
@@ -188,15 +194,15 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       try {
         await input.press('Enter')
         if (MODE !== 'record') {
-          const liveTail = page.locator('[data-variant="think"][data-state="running"] [data-follow-end]')
+          const reasoning = page.locator('[data-variant="think"][data-state="running"]')
+            .getByRole('region', { name: 'Reasoning content' })
           await expect.poll(async () => {
-            if (await liveTail.count() !== 1) return false
-            return await liveTail.evaluate((element) => {
-              const text = element.firstElementChild
-              if (!(text instanceof HTMLElement)) return false
-              const viewport = element.getBoundingClientRect()
-              const content = text.getBoundingClientRect()
-              return content.width > viewport.width && Math.abs(content.right - viewport.right) <= 1
+            if (await reasoning.count() !== 1) return false
+            return await reasoning.evaluate((element) => {
+              // The card wraps live text inside its narrow viewport. Following
+              // longer content is exercised by the shared reading scenario.
+              return element.textContent !== '' && element.clientHeight > 0
+                && element.scrollWidth <= element.clientWidth + 1
             })
           }, { timeout: 10_000, interval: 10 }).toBe(true)
         }

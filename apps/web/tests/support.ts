@@ -19,6 +19,8 @@ export const ZH_BROWSER_LOCALE = 'zh-CN'
 
 /**
  * Open the standard browser-test page advertising English before client boot.
+ * Pin the browser time zone to the recorded Session corpus as well, so the
+ * persisted user-message source does not depend on the runner's system zone.
  * This keeps role locators and goldens deterministic while leaving the Host
  * settings document free to override the provisional browser-derived locale;
  * scenarios asserting the Chinese surface advertise
@@ -28,7 +30,11 @@ export const ZH_BROWSER_LOCALE = 'zh-CN'
  * @returns the initialized page.
  */
 export async function newEnglishPage(browser: Browser, height = 1000): Promise<Page> {
-  return await browser.newPage({ viewport: { width: 1680, height }, locale: 'en-US' })
+  return await browser.newPage({
+    viewport: { width: 1680, height },
+    locale: 'en-US',
+    timezoneId: 'Asia/Shanghai',
+  })
 }
 
 /**

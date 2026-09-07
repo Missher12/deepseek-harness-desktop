@@ -13,7 +13,7 @@
   - img
   - img
   - text: System prompt
-- text: poem.txt TXT 16B
+- text: poem.bin BIN 16B
 - button "reference-1.png, click to view original":
   - img "reference-1.png"
 - text: Read the attached file with the read tool, reply with exactly the single word it contains, and stop. {{clock}}
@@ -39,7 +39,7 @@
   - text: Ran for {{duration}}
 - text: {{clock}}
 - textbox "Message or run a task... / commands, @ files or sessions"
-- button "Commands":
+- button "Add":
   - img
 - button "Add attachment":
   - img
@@ -49,4 +49,4 @@
   - img
 - button "1% of context used"
 - button "Send message" [disabled]
-- text: 1 turns · 2 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 51% Input 17.2K tok · Output 155 tok
+- text: 1 turns · 2 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 51% Input 17.2K tok · Output 155 tok Turn est. ¥{{price}} Session est. ¥{{price}} {{pricing tier}}

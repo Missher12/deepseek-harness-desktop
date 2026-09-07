@@ -21,8 +21,8 @@ afterEach(async () => {
 describe('settings personalization Remote', () => {
   it('bounds unexpected read failures without exposing the Host path', async () => {
     const path = await target()
-    await writeFile(path, 'ordinary file')
-    const controller = new SettingsController(new Context(), {}, { personalizationPath: join(path, 'child.md') })
+    // NUL rejects consistently; file/child is ENOTDIR on POSIX but ENOENT on Windows.
+    const controller = new SettingsController(new Context(), {}, { personalizationPath: `${path}\0` })
     const failure = await controller.personalizationRead().catch((error: unknown) => error)
     expect(remoteErrorOf(failure)).toMatchObject({
       code: 'settings/rejected', message: 'personalization document read failed', details: { ns: 'personalization' },

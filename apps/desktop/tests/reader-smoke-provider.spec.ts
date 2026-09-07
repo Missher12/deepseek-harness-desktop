@@ -2,8 +2,12 @@ import { expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import SessionTitleService from '@deepseek-ai/dsh-session-title'
+import * as FirstPromptTitle from '@deepseek-ai/dsh-session-title-first-prompt-llm'
 import {
-  NATIVE_READER_ANSWER, NATIVE_READER_APPEND, NATIVE_READER_PROMPT, NATIVE_READER_REASONING,
+  NATIVE_READER_ANSWER, NATIVE_READER_APPEND, NATIVE_READER_PROMPT, NATIVE_READER_REASONING, NATIVE_READER_TITLE,
   startReaderSmokeProvider,
 } from './reader-smoke-provider.ts'
 
@@ -72,7 +76,7 @@ it('owns independent loopback servers and closes an unfinished response on teard
   } finally { await Promise.all([first.close(), second?.close()]) }
 })
 
-it('translates the held HTTP response through the actual Desktop model adapter', async () => {
+it('keeps the reader stream separate from the actual automatic title request', async () => {
   const provider = await startReaderSmokeProvider()
   const ctx = new Context()
   const controller = new AbortController()
@@ -84,19 +88,35 @@ it('translates the held HTTP response through the actual Desktop model adapter',
       apiKeyEnv: 'DSH_READER_PROTOCOL_TEST_KEY', api: 'openai-completions', baseURL: provider.url,
       models: [{ id: 'native-thinker', contextWindow: 65_536, maxTokens: 4_096, reasoningEfforts: { high: 'high' } }],
     } } })
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(SessionTitleService, { fallbackMaxWords: 5, fallbackMaxBytes: 40, maxTitleBytes: 80 })
+    await ctx.plugin(FirstPromptTitle, {
+      targetWords: 5, targetCjkCharacters: 10, maxInputBytes: 4096, maxOutputTokens: 64, timeoutMs: 5000,
+    })
+    const session = ctx.sessions.create(SessionId('native-reader-title'))
+    const human = createUserMessage({
+      content: [{ type: 'text', text: NATIVE_READER_PROMPT }], source: { kind: 'user' },
+    })
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', human, { surfaceOp: 'append' })
     provider.arm()
     completed = (async () => {
       const assembler = new BlockAssembler()
       for await (const chunk of ctx.llm.stream({
         provider: 'desktop-smoke', model: 'native-thinker', signal: controller.signal,
-        messages: [createUserMessage({
-          content: [{ type: 'text', text: NATIVE_READER_PROMPT }], source: { kind: 'plugin', plugin: 'native-reader-test' },
-        })],
+        messages: [human],
       })) assembler.push(chunk)
       return assembler
     })()
     void completed.catch(() => {})
     await expect.poll(() => provider.phase, { timeout: 5_000 }).toBe('thinking')
+    session.append('request/header', {
+      header: { config: { provider: 'desktop-smoke', model: 'native-thinker' } }, reason: 'initial',
+    })
+    await expect.poll(() => ctx.sessionTitle.get(session)?.source.kind, { timeout: 5_000 }).toBe('provider')
+    expect(ctx.sessionTitle.get(session)?.title).toBe(NATIVE_READER_TITLE)
+    expect(provider.acceptedTitleRequests).toBe(1)
     provider.append()
     provider.answer()
     provider.finish()
@@ -113,4 +133,78 @@ it('translates the held HTTP response through the actual Desktop model adapter',
     try { await provider.close(); await completed?.catch(() => {}) }
     finally { try { await ctx.fiber.dispose() } finally { vi.unstubAllEnvs() } }
   }
+}, 15_000)
+
+const titleRequest = {
+  model: 'native-thinker', stream: true, max_tokens: 64,
+  messages: [
+    { role: 'developer', content: [
+      'Create a concise title for an AI coding-assistant session from the supplied human messages.',
+      'Return only the title on one line, **in plain text of natural language**, with no quotes, prefix, explanation, Markdown, XML, or terminal control codes. No code is allowed.',
+      'Use the language of the messages.',
+      'Aim for about 5 words in non-CJK languages or 10 CJK characters.',
+    ].join('\n') },
+    { role: 'user', content: 'Generate the session title from this JSON array of human messages:\n'
+      + JSON.stringify([{ seq: 2, text: NATIVE_READER_PROMPT }]) },
+  ],
+}
+
+it.each(['before-reader', 'during-reader', 'after-reader'] as const)(
+  'accepts one exact title %s without consuming or advancing the reader stream',
+  async (order) => {
+    const provider = await startReaderSmokeProvider()
+    const send = (body: unknown) => fetch(`${provider.url}/chat/completions`, {
+      method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(5_000),
+    })
+    const title = async () => {
+      const response = await send(titleRequest)
+      expect(response.status).toBe(200)
+      expect(await response.text()).toContain(NATIVE_READER_TITLE)
+    }
+    try {
+      expect((await send(titleRequest)).status).toBe(500)
+      provider.arm()
+      if (order === 'before-reader') {
+        await title()
+        expect(provider.phase).toBe('armed')
+      }
+      const response = await send(JSON.parse(requestBody))
+      const reading = response.text().then(value => value, () => 'closed')
+      expect(response.status).toBe(200)
+      if (order === 'during-reader') await title()
+      expect(provider.phase).toBe('thinking')
+      provider.append(); provider.answer(); provider.finish()
+      await reading
+      if (order === 'after-reader') await title()
+      expect(provider.phase).toBe('completed')
+      expect((await send(titleRequest)).status).toBe(500)
+      expect((await send(JSON.parse(requestBody))).status).toBe(500)
+      expect(provider.acceptedRequests).toBe(1)
+      expect(provider.acceptedTitleRequests).toBe(1)
+      expect(provider.requests).toHaveLength(3)
+    } finally { await provider.close() }
+  },
+)
+
+it.each([
+  { ...titleRequest, model: 'other' },
+  { ...titleRequest, stream: false },
+  { ...titleRequest, max_tokens: 65 },
+  { ...titleRequest, tools: [] },
+  { ...titleRequest, messages: [...titleRequest.messages, { role: 'assistant', content: 'unrelated' }] },
+  { ...titleRequest, messages: [titleRequest.messages[0], { role: 'user', content: NATIVE_READER_PROMPT }] },
+  { ...titleRequest, messages: [titleRequest.messages[0], { role: 'user', content: 'Generate the session title from this JSON array of human messages:\n[{"seq":2,"text":"other task"}]' }] },
+  { ...titleRequest, messages: [titleRequest.messages[0], { role: 'user', content: 'prefix ' + NATIVE_READER_PROMPT }] },
+])('rejects malformed or unrelated title requests without consuming either slot: %#', async (body) => {
+  const provider = await startReaderSmokeProvider()
+  try {
+    provider.arm()
+    const response = await fetch(`${provider.url}/chat/completions`, {
+      method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(5_000),
+    })
+    expect(response.status).toBe(500)
+    expect(provider.acceptedRequests).toBe(0)
+    expect(provider.acceptedTitleRequests).toBe(0)
+    expect(provider.phase).toBe('armed')
+  } finally { await provider.close() }
 })

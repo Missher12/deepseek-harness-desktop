@@ -25,3 +25,5 @@ A second conversation projection would duplicate native Tool and Markdown behavi
 ## Consequences
 
 Display preferences and local reading gestures stay outside the Session log. Unit tests cover terminal outcomes, selection, following, reduced motion and disposal. The assembled browser scenario drives a held model stream through the real composer and records final Markdown output; platform packaging and native acceptance remain separate requirements.
+
+Browser replay fixes its time zone to the recorded corpus and checks the reasoning card's accessible disclosure and wrapped live text. Aborted Turns have one visible process state, so their obsolete expanded-only golden is removed. The native provider fixture distinguishes one exact reader request from its single bounded automatic title request; unrelated and duplicate requests still fail the tripwire. An adapter test exercises the real title service and PiAI translation, while HTTP cases cover the title arriving before, during or after the reader stream.

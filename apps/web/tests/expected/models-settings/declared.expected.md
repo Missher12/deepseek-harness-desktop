@@ -7,9 +7,6 @@
     - button "个性化":
       - img
       - text: 个性化
-    - button "记忆与学习":
-      - img
-      - text: 记忆与学习
     - button "模型":
       - img
       - text: 模型

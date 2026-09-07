@@ -370,6 +370,13 @@ describe('experimental Inspector real Worker', () => {
     await Promise.all([cdp.call('Runtime.enable'), secondCdp.call('Runtime.enable')])
     const firstContext = await clientContext(cdp)
     const secondContext = await clientContext(secondCdp)
+    // Context announcements confirm Worker state. A round trip over the Client
+    // socket drains both queued Console enables before the fixture's independent
+    // parentPort channel emits the log; those transports have no shared ordering.
+    expect((await cdp.call('Runtime.evaluate', {
+      expression: 'void 0',
+      contextId: firstContext,
+    })).error).toBeUndefined()
     const value = { owner: 'client-console' }
     const marker = 'client-console-event'
     await client.log(value, marker)

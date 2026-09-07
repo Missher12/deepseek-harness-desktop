@@ -20,10 +20,11 @@
 - button "2 tool calls" [expanded]:
   - text: 2 tool calls
   - img
-- button "Think The user wants me to read a.txt and b.txt, then reply with \"DONE\". Let me do both reads in parallel.":
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: Think The user wants me to read a.txt and b.txt, then reply with "DONE". Let me do both reads in parallel.
+- region "Reasoning content": The user wants me to read a.txt and b.txt, then reply with "DONE". Let me do both reads in parallel.
 - button "Read a.txt":
   - img
   - img
@@ -34,10 +35,11 @@
   - img
   - text: Read
   - button "b.txt"
-- button "Think Both files have been read. a.txt contains \"alpha\" and b.txt contains \"beta\". I'll now reply with DONE as instructed.":
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: Think Both files have been read. a.txt contains "alpha" and b.txt contains "beta". I'll now reply with DONE as instructed.
+- region "Reasoning content": Both files have been read. a.txt contains "alpha" and b.txt contains "beta". I'll now reply with DONE as instructed.
 - paragraph: DONE
 - button "Copy":
   - img

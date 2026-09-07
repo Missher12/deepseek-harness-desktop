@@ -31,7 +31,8 @@ const IMAGE_FIXTURE = fileURLToPath(new URL('../../../snapshots/session/read-ima
 const MODE = webSnapshotMode()
 
 /** The uploaded fixture file: constant bytes so record and replay share one content digest. */
-const FILE_NAME = 'poem.txt'
+// Text extensions enter document extraction; this scenario owns generic files.
+const FILE_NAME = 'poem.bin'
 const FILE_TEXT = 'UPLOAD_ROUND_OK\n'
 const PROMPT = 'Read the attached file with the read tool, reply with exactly the single word it contains, and stop.'
 const IMAGE_NAMES = Array.from({ length: 10 }, (_unused, index) => `reference-${String(index + 1)}.png`)
@@ -138,7 +139,7 @@ describe('web e2e: generic file upload through the real assembly', () => {
     // Pick through the composer's hidden file input: the upload RPC runs
     // immediately and the pending card appears before any prompt is typed.
     await page.locator('input[type="file"]').setInputFiles([
-      { name: FILE_NAME, mimeType: 'text/plain', buffer: Buffer.from(FILE_TEXT) },
+      { name: FILE_NAME, mimeType: 'application/octet-stream', buffer: Buffer.from(FILE_TEXT) },
       ...IMAGE_NAMES.map(name => ({ name, mimeType: 'image/png', buffer: imageBytes })),
     ])
     await page.getByTitle(FILE_NAME).waitFor({ timeout: 10_000 })
@@ -149,7 +150,7 @@ describe('web e2e: generic file upload through the real assembly', () => {
       const cards = [...element.children] as HTMLElement[]
       const boxes = cards.map(card => card.getBoundingClientRect())
       const imageWidth = boxes[cards.findIndex(card => card.querySelector('img') !== null)]?.width ?? 0
-      const fileWidth = boxes[cards.findIndex(card => card.querySelector('[title="poem.txt"]') !== null)]?.width ?? 0
+      const fileWidth = boxes[cards.findIndex(card => card.querySelector('[title="poem.bin"]') !== null)]?.width ?? 0
       return {
         order: cards.map(card => card.querySelector('img')?.getAttribute('alt')
           ?? card.querySelector<HTMLElement>('[title]')?.title ?? ''),
@@ -244,7 +245,7 @@ describe('web e2e: generic file upload through the real assembly', () => {
       })
       const boxes = renderedCards.map(card => card.getBoundingClientRect())
       const imageIndex = cards.findIndex(card => card.querySelector('img') !== null)
-      const fileIndex = cards.findIndex(card => card.getAttribute('title') === 'poem.txt')
+      const fileIndex = cards.findIndex(card => card.getAttribute('title') === 'poem.bin')
       const imageBox = boxes[imageIndex]
       const fileBox = boxes[fileIndex]
       return {

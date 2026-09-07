@@ -23,20 +23,22 @@
   - img
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
-- button "Think The user wants me to use the ask_user_question tool with specific parameters. Let me do exactly that.":
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: Think The user wants me to use the ask_user_question tool with specific parameters. Let me do exactly that.
+- region "Reasoning content": The user wants me to use the ask_user_question tool with specific parameters. Let me do exactly that.
 - button "Ask question 1/1 answered" [expanded]:
   - img
   - text: Ask question 1/1 answered
 - term: Which color do you prefer?
 - definition: Blue Include accessibility notes
 - button "Inspect"
-- button "Think The user answered \"Blue\". I should now reply with the single word DONE and stop.":
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: Think The user answered "Blue". I should now reply with the single word DONE and stop.
+- region "Reasoning content": The user answered "Blue". I should now reply with the single word DONE and stop.
 - paragraph: DONE
 - button "Copy":
   - img

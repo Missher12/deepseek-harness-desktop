@@ -23,10 +23,12 @@
   - img
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
-- 'button "Think The user wants me to write a single `run_code` program that:"':
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: "Think The user wants me to write a single `run_code` program that:"
+- region "Reasoning content": "The user wants me to write a single `run_code` program that: 1. Runs bash to echo \"CODE_ROUND_OK\" 2. Tries to read a file \"missing.txt\" and catches the error 3. Returns an object with both outcomes 4. They also want me to reply \"DONE\" and stop after Let me write this program."
+- text: Original reasoning · scroll to read
 - button "Code Run bash echo and catch missing file read":
   - img
   - img
@@ -36,10 +38,11 @@
 - 'button "Read Error: cannot read \"{{cwd}}/workspace/missing.txt\": not found"':
   - img
   - text: "Read Error: cannot read \"{{cwd}}/workspace/missing.txt\": not found"
-- button "Think The program ran successfully. Let me now reply DONE as instructed.":
+- button "Expand reasoning":
   - img
+  - text: Think
   - img
-  - text: Think The program ran successfully. Let me now reply DONE as instructed.
+- region "Reasoning content": The program ran successfully. Let me now reply DONE as instructed.
 - paragraph: DONE
 - button "Copy":
   - img
