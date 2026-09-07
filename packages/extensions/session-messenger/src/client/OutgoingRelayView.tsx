@@ -1,5 +1,5 @@
 import { memo, useState, useSyncExternalStore } from 'react'
-import { IconSendOutline16, MessageText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconSendOutline16, projectUserText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { OutgoingRelayChatData } from './outgoing-definition.ts'
 import type { ISessionMessengerClient } from './index.tsx'
@@ -40,7 +40,7 @@ export const OutgoingRelayView = memo(function OutgoingRelayView({ node, t, mess
               }}
             >{stopping ? t('stopping') : t('stop')}</button>}
         </div>
-        <div className={css.bubble}><MessageText text={data.body} /></div>
+        <div className={css.bubble}>{projectUserText(data.body, [])}</div>
         {data.status === 'delivery-recovery-pending' && <small>{t('recoveryPending')}</small>}
         {failed && <small>{t('stopFailed')}</small>}
       </div>

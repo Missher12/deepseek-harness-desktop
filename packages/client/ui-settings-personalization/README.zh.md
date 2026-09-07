@@ -1,6 +1,14 @@
+---
+description: "在个性化设置中编辑全局指令。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-settings-personalization
 
 [English](README.md) | 中文
+
+<a id="summary"></a>
+## 概述
 
 Web 与桌面端设置中的全局**个性化**分区。浏览器插件以顺序 5 注册本地化的 `personalization` 分区，并调用有类型约束的 Host 设置 API；浏览器既拿不到文件路径，也不会保留本地副本。
 
@@ -8,6 +16,21 @@ Web 与桌面端设置中的全局**个性化**分区。浏览器插件以顺序
 
 分区会先绘制稳定的禁用控件，再展示有长度上限的自定义指令编辑器、UTF-8 字节计数、明确的保存操作、回复风格选择和无障碍状态消息。已有手写全局指令以及更具体的项目 `AGENTS.md` 规则不会被管理区块取代。
 
+<a id="table-of-contents"></a>
+## 目录
+
+- [模型体验](#model-experience)
+- [Invariant ownership](#invariant-ownership)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="invariant-ownership"></a>
+## Invariant ownership
+
+不发布不变式伴生入口，因为组件在呈现前校验每个 Remote 状态。
+
+
+<a id="model-experience"></a>
 ## 模型体验
 
 通过已有 agent-instructions 加载器间接生效；保存内容从下一次请求起提供给模型，本浏览器包不会增加第二个指令来源。
@@ -16,12 +39,14 @@ Web 与桌面端设置中的全局**个性化**分区。浏览器插件以顺序
 
 修改全局指令会改变后续请求的提示词前缀，因此可能使该前缀原有的提供方缓存失效。仅打开本设置页不会影响模型或缓存。
 
-### Invariant ownership
-
-不发布不变式伴生入口，因为组件在呈现前校验每个 Remote 状态。
-
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **仅保存于当前设备** —— 个性化写入当前 Harness home，不进行云同步。
 - **不会强制接管文件** —— 目标格式异常或由外部管理时保持只读，不会破坏性重写。
 - **不会重写现有会话** —— 更改从下一次请求起生效，不修改已经落盘的对话事件。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

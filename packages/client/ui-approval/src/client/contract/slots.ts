@@ -68,7 +68,7 @@ let nextApprovalKey = 0
 /** One answerable Client presentation of a pending Host waterfall. */
 export class PendingApproval {
   /** Domain discriminator used by Session pending-interaction consumers. */
-  readonly kind = 'approval' as const
+  readonly kind: 'approval'
   /** Opaque render identity and one-shot remount axis. */
   readonly key: string
   /** Tool requesting the decision. */
@@ -96,6 +96,7 @@ export class PendingApproval {
     request: ApprovalPresentationRequest,
     readonly enableSessionFullAccess: () => Promise<boolean> = () => Promise.resolve(false),
   ) {
+    this.kind = 'approval'
     nextApprovalKey += 1
     this.key = `approval:${String(nextApprovalKey)}`
     this.toolName = request.toolName

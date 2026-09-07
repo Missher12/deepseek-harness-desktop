@@ -2,6 +2,8 @@
 
 English | [中文](2026-09-02-desktop-file-attachments-and-memory-learning.zh.md)
 
+This page retains historical task steps. File pointers name their current implementation owners, not pending work; see [Project Context](../../../PROJECT_CONTEXT.md) for current delivery status.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship provider-neutral document attachments, a clear Memory & Learning settings experience, and release guards that keep Browser/Computer Control out of DeepSeek Harness Desktop on Intel macOS and Windows x64.
@@ -89,7 +91,7 @@ Expected: focused tests and package typecheck pass.
 - Create: `packages/attachment/attachment-local/tests/pdf-isolate.spec.ts`
 - Create: `packages/attachment/attachment-local/tests/pdf-isolate.built.e2e.ts`
 - Modify: `packages/attachment/attachment-local/src/index.ts`
-- Modify: `packages/attachment/attachment-local/src/invariant.ts`
+- No separate invariant companion is published; validation ownership is documented in [attachment-local](../../../packages/attachment/attachment-local/README.md).
 - Modify: `packages/attachment/attachment-local/README.md`
 - Modify: `packages/attachment/attachment-local/README.zh.md`
 
@@ -121,7 +123,7 @@ Expected: all local attachment tests pass and changed extraction files have comp
 - Modify: `packages/host/apiproxy/src/api-proxy.ts`
 - Modify: `packages/host/apiproxy/tests/client-handler.spec.ts`
 - Create: `packages/host/apiproxy/tests/api-proxy-renderer-attachments.spec.ts`
-- Modify: `packages/client/runtime/src/client/contract/session.ts`
+- Modify: `packages/api/session-controller/src/client/contract/session.ts`
 - Modify: `packages/client/connection/src/client/fixture.ts`
 
 - [ ] **Step 1: Write prompt-wire RED tests**
@@ -177,9 +179,9 @@ Expected: both adapters expose identical document text and preserve image behavi
 ### Task 6: Generalize the composer and conversation UI
 
 **Files:**
-- Modify: `packages/client/ui-conversation/src/client/input/contract.ts`
+- Modify: `packages/client/ui-conversation/src/client/contract/input.ts`
 - Modify: `packages/client/ui-conversation/src/client/input/machine.ts`
-- Modify: `packages/client/runtime/src/client/sessions/conversation.ts`
+- Modify: `packages/client/ui-chat/src/client/contract/snapshot.ts`
 - Modify: `packages/client/ui-conversation/src/client/skeleton/InputBar.tsx`
 - Modify: `packages/client/ui-conversation/src/client/contract/slots.ts`
 - Modify: `packages/client/ui-attachment/src/client/ComposerAttachments.tsx`

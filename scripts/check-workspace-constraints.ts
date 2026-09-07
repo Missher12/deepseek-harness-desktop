@@ -54,7 +54,7 @@ const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
 const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
 /** Directories whose packages this repository publishes: one release member each. */
 const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/[^/]+|vendor\/[^/]+)$/
-/** Native installers are released as signed platform artifacts, never as npm packages. */
+/** Desktop artifacts and their private entrypoints have a separate release family. */
 const privateApplicationDirectories = new Set([
   'apps/desktop',
   'apps/desktop-managed-memory',
@@ -275,6 +275,28 @@ export function checkExperimentalManifest({ dir, manifest }: WorkspaceManifest):
 }
 
 /**
+ * Require a dsh-family manifest to carry the workspace version.
+ *
+ * The dsh release sequence publishes packages/ and apps/ members and every
+ * private dsh package on one shared version, written by `release:dsh` and
+ * shared with the workspace root. This name test is that boundary: it covers
+ * the family wherever the manifest lives, so apps/ members cannot drift with
+ * only the release lane noticing.
+ * @param manifest - the workspace package manifest.
+ * @param expected - the version every dsh-family manifest must carry (the root's).
+ * @returns one violation naming the manifest and the expected version, or
+ * undefined when the manifest is compliant or not in the family.
+ */
+export function checkDshFamilyVersion(manifest: PackageManifest, expected: string | undefined): string | undefined {
+  const name = manifest.name
+  if (name !== '@deepseek-ai/dsh' && name?.startsWith('@deepseek-ai/dsh-') !== true) return undefined
+  if (manifest.version !== expected) {
+    return `${name}: package.json version must match root version ${expected ?? '(missing)'}`
+  }
+  return undefined
+}
+
+/**
  * Check one workspace manifest against publication and dsh-package policy.
  * @param workspace - package directory and parsed manifest.
  * @returns path-qualified policy violations.
@@ -282,6 +304,10 @@ export function checkExperimentalManifest({ dir, manifest }: WorkspaceManifest):
 export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): string[] {
   const errors = checkExperimentalManifest({ dir, manifest })
   const label = manifest.name ?? dir
+  const familyVersionError = privateApplicationDirectories.has(dir) && manifest.private === true
+    ? undefined
+    : checkDshFamilyVersion(manifest, repositoryVersion)
+  if (familyVersionError !== undefined) errors.push(familyVersionError)
   const isLandlockPackageDir = dir.startsWith('native/landlock-run/packages/')
   const isPublicLandlockPackage = isLandlockPackageDir
     && manifest.name !== undefined
@@ -367,9 +393,6 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
     if (!dev) errors.push(`${label}: @deepseek-ai/cordis must also be a devDependency`)
     if (peer && dev && peer !== dev) {
       errors.push(`${label}: @deepseek-ai/cordis peer (${peer}) and dev (${dev}) ranges must match`)
-    }
-    if (manifest.version !== repositoryVersion) {
-      errors.push(`${label}: package.json version must match root version ${repositoryVersion ?? '(missing)'}`)
     }
     if (manifest.type !== 'module') {
       errors.push(`${label}: package.json must set "type": "module"`)

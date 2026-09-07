@@ -2,6 +2,8 @@
 
 [English](2026-09-02-desktop-file-attachments-and-memory-learning.md) | 中文
 
+此页保留历史任务步骤；文件指针已对齐当前实现所有者，不代表这些步骤仍待执行。当前交付状态见 [项目上下文](../../../PROJECT_CONTEXT.md)。
+
 > **面向 agentic worker：** 必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能逐项实施本计划。步骤使用 checkbox（`- [ ]`）跟踪。
 
 **目标：** 为 DeepSeek Harness Desktop 交付 Provider 中立的文档附件、清晰的“记忆与学习”设置体验，并用发行门禁确保 Browser／Computer Control 不进入 Intel macOS 与 Windows x64 成品。
@@ -89,7 +91,7 @@
 - 新建：`packages/attachment/attachment-local/tests/pdf-isolate.spec.ts`
 - 新建：`packages/attachment/attachment-local/tests/pdf-isolate.built.e2e.ts`
 - 修改：`packages/attachment/attachment-local/src/index.ts`
-- 修改：`packages/attachment/attachment-local/src/invariant.ts`
+- 不发布独立 invariant companion；校验职责见 [attachment-local](../../../packages/attachment/attachment-local/README.zh.md)。
 - 修改：`packages/attachment/attachment-local/README.md`
 - 修改：`packages/attachment/attachment-local/README.zh.md`
 
@@ -121,7 +123,7 @@ Fixture 覆盖 UTF-8 文本／代码、小型 PDF、DOCX 文本、XLSX shared st
 - 修改：`packages/host/apiproxy/src/api-proxy.ts`
 - 修改：`packages/host/apiproxy/tests/client-handler.spec.ts`
 - 新建：`packages/host/apiproxy/tests/api-proxy-renderer-attachments.spec.ts`
-- 修改：`packages/client/runtime/src/client/contract/session.ts`
+- 修改：`packages/api/session-controller/src/client/contract/session.ts`
 - 修改：`packages/client/connection/src/client/fixture.ts`
 
 - [ ] **步骤 1：编写 prompt wire RED 测试**
@@ -177,9 +179,9 @@ Fixture 覆盖 UTF-8 文本／代码、小型 PDF、DOCX 文本、XLSX shared st
 ### 任务 6：泛化输入框与会话 UI
 
 **文件：**
-- 修改：`packages/client/ui-conversation/src/client/input/contract.ts`
+- 修改：`packages/client/ui-conversation/src/client/contract/input.ts`
 - 修改：`packages/client/ui-conversation/src/client/input/machine.ts`
-- 修改：`packages/client/runtime/src/client/sessions/conversation.ts`
+- 修改：`packages/client/ui-chat/src/client/contract/snapshot.ts`
 - 修改：`packages/client/ui-conversation/src/client/skeleton/InputBar.tsx`
 - 修改：`packages/client/ui-conversation/src/client/contract/slots.ts`
 - 修改：`packages/client/ui-attachment/src/client/ComposerAttachments.tsx`

@@ -2,6 +2,8 @@
 
 [English](desktop-0.5.3-core-sync-compatibility.md) | 中文
 
+已迁移文件的链接固定指向上文 Task 2 的历史 Desktop 提交，用于读取当时的清单；它们不声明文件仍位于当前工作树。
+
 ## 精确坐标
 
 - 已发布的 Desktop 产品树：`7384b863e88b005b3309e49a0aebb7a2ea91d4c3`。
@@ -98,16 +100,16 @@ post-alpha.5-index 模拟中的每条冲突消息在下面都有一行。文件�
 | `knip.json` | `modify/delete` | `reimplement-on-alpha5-seam` |
 | `package.json` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/api/remotes/package.json` | `content` | `reimplement-on-alpha5-seam` |
-| `packages/api/remotes/src/agent-lookup.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/api/remotes/src/agent-lookup.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
 | `packages/api/remotes/src/client/index.ts` | `content` | `reimplement-on-alpha5-seam` |
-| `packages/api/remotes/tests/agent-lookup.spec.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/api/remotes/tests/agent-lookup.spec.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
 | `packages/api/session-controller/src/client/sessions/queue-mirror.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/api/session-controller/src/client/sessions/service.ts` | `content` | `reimplement-on-alpha5-seam` |
-| `packages/host/apiproxy/tests/api-proxy-history.spec.ts -> packages/api/session-controller/tests/api-proxy-history.spec.ts` | `file location` | `reimplement-on-alpha5-seam` |
+| `packages/host/apiproxy/tests/api-proxy-history.spec.ts -> https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/host/apiproxy/tests/api-proxy-history.spec.ts` | `file location` | `reimplement-on-alpha5-seam` |
 | `packages/host/apiproxy/tests/api-proxy-renderer-attachments.spec.ts -> packages/api/session-controller/tests/api-proxy-renderer-attachments.spec.ts` | `file location` | `reimplement-on-alpha5-seam` |
 | `packages/api/session-controller/tests/manager.client.spec.ts` | `content` | `reimplement-on-alpha5-seam` |
-| `packages/host/apiproxy/tests/personalization-document-atomic.spec.ts -> packages/api/session-controller/tests/personalization-document-atomic.spec.ts` | `file location` | `reimplement-on-alpha5-seam` |
-| `packages/host/apiproxy/tests/personalization-document.spec.ts -> packages/api/session-controller/tests/personalization-document.spec.ts` | `file location` | `reimplement-on-alpha5-seam` |
+| `packages/host/apiproxy/tests/personalization-document-atomic.spec.ts -> https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/host/apiproxy/tests/personalization-document-atomic.spec.ts` | `file location` | `reimplement-on-alpha5-seam` |
+| `packages/host/apiproxy/tests/personalization-document.spec.ts -> https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/host/apiproxy/tests/personalization-document.spec.ts` | `file location` | `reimplement-on-alpha5-seam` |
 | `packages/api/session-controller/tests/queue-store.client.spec.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/api/session-controller/tests/session-models.host.spec.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/attachment/attachment-local/README.i18n.yaml` | `content` | `generated-after-import` |
@@ -115,7 +117,7 @@ post-alpha.5-index 模拟中的每条冲突消息在下面都有一行。文件�
 | `packages/attachment/attachment-local/README.zh.md` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/attachment/attachment-local/package.json` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/attachment/attachment-local/src/index.ts` | `content` | `reimplement-on-alpha5-seam` |
-| `packages/attachment/attachment-local/src/invariant.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/attachment/attachment-local/src/invariant.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
 | `packages/attachment/attachment-local/src/store.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/attachment/attachment/src/admission.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/attachment/attachment/src/index.ts` | `content` | `reimplement-on-alpha5-seam` |
@@ -136,22 +138,22 @@ post-alpha.5-index 模拟中的每条冲突消息在下面都有一行。文件�
 | `packages/client/connection/src/client/fixture.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/connection/src/client/index.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/connection/src/index.ts` | `content` | `reimplement-on-alpha5-seam` |
-| `packages/client/connection/tests/fake-api.client.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/connection/tests/fake-api.client.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
 | `packages/client/connection/tests/fixture.client.spec.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/connection/tests/node-half.host.spec.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/runtime/README.md` | `modify/delete` | `reimplement-on-alpha5-seam` |
 | `packages/client/runtime/README.zh.md` | `modify/delete` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/contract/session.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/contract/sessions-port.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/contract/workspaces.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/contract/session.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/contract/sessions-port.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/contract/workspaces.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
 | `packages/client/runtime/src/client/index.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/sessions/assistant-timing.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/sessions/session.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/workspaces/manager.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/workspaces/service.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/tests/fake-api.client.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/tests/session.client.spec.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/tests/workspaces-service.client.spec.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/sessions/assistant-timing.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/sessions/session.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/workspaces/manager.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/workspaces/service.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/tests/fake-api.client.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/tests/session.client.spec.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/tests/workspaces-service.client.spec.ts` | `modify/delete` | `reimplement-on-alpha5-seam` |
 | `packages/client/tsdown.client.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-agent-preset/README.i18n.yaml` | `content` | `generated-after-import` |
 | `packages/client/ui-agent-preset/README.md` | `content` | `reimplement-on-alpha5-seam` |
@@ -162,13 +164,13 @@ post-alpha.5-index 模拟中的每条冲突消息在下面都有一行。文件�
 | `packages/client/ui-chat/README.i18n.yaml` | `content` | `generated-after-import` |
 | `packages/client/ui-chat/src/client/chat/ChatView.module.css` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-chat/src/client/chat/MessageItem.tsx` | `content` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/chat/PromptRail.tsx -> packages/client/ui-chat/src/client/chat/PromptRail.tsx` | `file location` | `take-upstream` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/PromptRail.tsx -> https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/PromptRail.tsx` | `file location` | `take-upstream` |
 | `packages/client/ui-chat/src/client/chat/ReasoningRow.module.css` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-chat/src/client/chat/ReasoningRow.tsx` | `content` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/chat/RelayNodeView.module.css -> packages/client/ui-chat/src/client/chat/RelayNodeView.module.css` | `file location` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/chat/RelayNodeView.tsx -> packages/client/ui-chat/src/client/chat/RelayNodeView.tsx` | `file location` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/RelayNodeView.module.css -> packages/client/ui-chat/src/client/chat/RelayNodeView.module.css` | `file location` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/RelayNodeView.tsx -> packages/client/ui-chat/src/client/chat/RelayNodeView.tsx` | `file location` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-chat/src/client/chat/StatsLine.tsx` | `content` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/chat/usage-money.ts -> packages/client/ui-chat/src/client/chat/usage-money.ts` | `file location` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/usage-money.ts -> packages/client/ui-chat/src/client/chat/usage-money.ts` | `file location` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-chat/src/client/conversation-nodes/message.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-chat/src/client/conversation-nodes/tool.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-chat/src/client/model/tool-call-tree.ts` | `content` | `reimplement-on-alpha5-seam` |
@@ -180,21 +182,21 @@ post-alpha.5-index 模拟中的每条冲突消息在下面都有一行。文件�
 | `packages/client/ui-conversation/README.zh.md` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/package.json` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/apply.ts` | `content` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/chat/ChatNodeSeat.tsx` | `modify/delete` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/chat/ChatView.tsx` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/ChatNodeSeat.tsx` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/ChatView.tsx` | `modify/delete` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/contract/records.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/contract/slots.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/index.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/locales.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/service.ts` | `content` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/skeleton/ApprovalPanel.module.css` | `modify/delete` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/skeleton/ApprovalPanel.tsx` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/skeleton/ApprovalPanel.module.css` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/skeleton/ApprovalPanel.tsx` | `modify/delete` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/skeleton/ConversationRoot.tsx` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/skeleton/EmptyHero.tsx` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/skeleton/InputBar.tsx` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/tests/apply-inject.client.spec.tsx` | `content` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/tests/chat-apply.client.spec.tsx` | `modify/delete` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/tests/chat-view.client.spec.tsx` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/tests/chat-apply.client.spec.tsx` | `modify/delete` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/tests/chat-view.client.spec.tsx` | `modify/delete` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/tests/input-bar.client.spec.tsx` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/tests/input-matrix.client.spec.tsx` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/tests/service-orchestration.client.spec.ts` | `content` | `reimplement-on-alpha5-seam` |
@@ -293,7 +295,7 @@ post-alpha.5-index 模拟中的每条冲突消息在下面都有一行。文件�
 | `packages/session/session-persistence/README.i18n.yaml` | `content` | `generated-after-import` |
 | `packages/session/session-persistence/README.md` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/session/session-persistence/README.zh.md` | `content` | `reimplement-on-alpha5-seam` |
-| `packages/session/session-persistence/tests/persistence.spec.ts` | `content` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/session/session-persistence/tests/persistence.spec.ts` | `content` | `reimplement-on-alpha5-seam` |
 | `packages/shell/tool-pwsh-persistent/tests/loader-composition.spec.ts` | `content` | `take-upstream` |
 | `packages/terminal/terminal-bash/src/index.ts` | `content` | `take-upstream` |
 | `packages/terminal/terminal-bash/src/session.ts` | `content` | `take-upstream` |
@@ -541,16 +543,16 @@ post-alpha.5-index 模拟中的每条冲突消息在下面都有一行。文件�
 | `knip.json` | `reimplement-on-alpha5-seam` |
 | `package.json` | `reimplement-on-alpha5-seam` |
 | `packages/api/remotes/package.json` | `reimplement-on-alpha5-seam` |
-| `packages/api/remotes/src/agent-lookup.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/api/remotes/src/agent-lookup.ts` | `reimplement-on-alpha5-seam` |
 | `packages/api/remotes/src/client/index.ts` | `reimplement-on-alpha5-seam` |
-| `packages/api/remotes/tests/agent-lookup.spec.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/api/remotes/tests/agent-lookup.spec.ts` | `reimplement-on-alpha5-seam` |
 | `packages/api/remotes/tsconfig.client.json` | `reimplement-on-alpha5-seam` |
 | `packages/attachment/attachment-local/README.i18n.yaml` | `generated-after-import` |
 | `packages/attachment/attachment-local/README.md` | `reimplement-on-alpha5-seam` |
 | `packages/attachment/attachment-local/README.zh.md` | `reimplement-on-alpha5-seam` |
 | `packages/attachment/attachment-local/package.json` | `reimplement-on-alpha5-seam` |
 | `packages/attachment/attachment-local/src/index.ts` | `reimplement-on-alpha5-seam` |
-| `packages/attachment/attachment-local/src/invariant.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/attachment/attachment-local/src/invariant.ts` | `reimplement-on-alpha5-seam` |
 | `packages/attachment/attachment-local/src/store.ts` | `reimplement-on-alpha5-seam` |
 | `packages/attachment/attachment-local/tests/index.spec.ts` | `reimplement-on-alpha5-seam` |
 | `packages/attachment/attachment-local/tests/store.spec.ts` | `reimplement-on-alpha5-seam` |
@@ -578,32 +580,32 @@ post-alpha.5-index 模拟中的每条冲突消息在下面都有一行。文件�
 | `packages/client/connection/src/client/index.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/connection/src/http-bridge.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/connection/src/index.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/connection/tests/fake-api.client.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/connection/tests/fake-api.client.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/connection/tests/fixture.client.spec.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/connection/tests/node-half.host.spec.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/runtime/README.i18n.yaml` | `generated-after-import` |
 | `packages/client/runtime/README.md` | `reimplement-on-alpha5-seam` |
 | `packages/client/runtime/README.zh.md` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/contract/session.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/contract/sessions-port.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/contract/sessions.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/contract/workspaces.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/contract/session.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/contract/sessions-port.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/contract/sessions.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/contract/workspaces.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/runtime/src/client/index.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/sessions/assistant-timing.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/sessions/conversation.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/sessions/manager.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/sessions/queue-mirror.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/sessions/service.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/sessions/session.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/sessions/tool-call-tree.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/workspaces/manager.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/src/client/workspaces/service.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/tests/fake-api.client.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/tests/manager.client.spec.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/tests/queue-store.client.spec.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/tests/session.client.spec.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/tests/sessions-service.client.spec.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/runtime/tests/workspaces-service.client.spec.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/sessions/assistant-timing.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/sessions/conversation.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/sessions/manager.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/sessions/queue-mirror.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/sessions/service.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/sessions/session.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/sessions/tool-call-tree.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/workspaces/manager.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/src/client/workspaces/service.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/tests/fake-api.client.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/tests/manager.client.spec.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/tests/queue-store.client.spec.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/tests/session.client.spec.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/tests/sessions-service.client.spec.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/runtime/tests/workspaces-service.client.spec.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/tsdown.client.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-agent-preset/README.i18n.yaml` | `generated-after-import` |
 | `packages/client/ui-agent-preset/README.md` | `reimplement-on-alpha5-seam` |
@@ -620,36 +622,36 @@ post-alpha.5-index 模拟中的每条冲突消息在下面都有一行。文件�
 | `packages/client/ui-conversation/README.zh.md` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/package.json` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/apply.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/chat/ChatNodeSeat.tsx` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/chat/ChatView.module.css` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/chat/ChatView.tsx` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/chat/MessageItem.tsx` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/chat/ReasoningRow.module.css` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/chat/ReasoningRow.tsx` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/chat/StatsLine.module.css` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/chat/StatsLine.tsx` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/ChatNodeSeat.tsx` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/ChatView.module.css` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/ChatView.tsx` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/MessageItem.tsx` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/ReasoningRow.module.css` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/ReasoningRow.tsx` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/StatsLine.module.css` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/chat/StatsLine.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/contract/slots.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/conversation-nodes/message.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/conversation-nodes/tool.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/conversation-nodes/message.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/conversation-nodes/tool.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/image-labels.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/index.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/locales.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/service.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/skeleton/ApprovalPanel.module.css` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/src/client/skeleton/ApprovalPanel.tsx` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/skeleton/ApprovalPanel.module.css` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/src/client/skeleton/ApprovalPanel.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/skeleton/ConversationRoot.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/skeleton/EmptyHero.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/skeleton/InputBar.module.css` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/src/client/skeleton/InputBar.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/tests/apply-inject.client.spec.tsx` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/tests/chat-apply.client.spec.tsx` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/tests/chat-branch-tails.client.spec.tsx` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/tests/chat-stats.client.spec.tsx` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/tests/chat-view.client.spec.tsx` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/tests/chat-apply.client.spec.tsx` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/tests/chat-branch-tails.client.spec.tsx` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/tests/chat-stats.client.spec.tsx` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/tests/chat-view.client.spec.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/tests/input-bar.client.spec.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/tests/input-matrix.client.spec.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/tests/input-scenarios.client.spec.tsx` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/tests/service-orchestration.client.spec.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-conversation/tests/skeleton.client.spec.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-input-trigger/README.i18n.yaml` | `generated-after-import` |
@@ -674,8 +676,8 @@ post-alpha.5-index 模拟中的每条冲突消息在下面都有一行。文件�
 | `packages/client/ui-primitives/src/icons/index.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-primitives/tests/code-block.client.spec.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-primitives/tests/icons.client.spec.tsx` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-renderer/src/client/DocumentTitle.tsx` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-renderer/tests/document-title.client.spec.tsx` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-renderer/src/client/DocumentTitle.tsx` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-renderer/tests/document-title.client.spec.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-settings-general/src/client/SettingsRoot.module.css` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-settings-general/src/client/SettingsRoot.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-settings-general/tests/settings-root.client.spec.tsx` | `reimplement-on-alpha5-seam` |
@@ -699,8 +701,8 @@ post-alpha.5-index 模拟中的每条冲突消息在下面都有一行。文件�
 | `packages/client/ui-trajectory/package.json` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-trajectory/src/client/trajectory-message-definitions.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-trajectory/src/client/trajectory-tool-definition.ts` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-workspace/src/client/WorkspaceBrowser.module.css` | `reimplement-on-alpha5-seam` |
-| `packages/client/ui-workspace/src/client/WorkspaceBrowser.tsx` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-workspace/src/client/WorkspaceBrowser.module.css` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/client/ui-workspace/src/client/WorkspaceBrowser.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-workspace/src/client/WorkspacePicker.tsx` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-workspace/src/client/contract/slots.ts` | `reimplement-on-alpha5-seam` |
 | `packages/client/ui-workspace/src/client/index.ts` | `reimplement-on-alpha5-seam` |
@@ -791,12 +793,12 @@ post-alpha.5-index 模拟中的每条冲突消息在下面都有一行。文件�
 | `packages/session/session-persistence/README.i18n.yaml` | `generated-after-import` |
 | `packages/session/session-persistence/README.md` | `reimplement-on-alpha5-seam` |
 | `packages/session/session-persistence/README.zh.md` | `reimplement-on-alpha5-seam` |
-| `packages/session/session-persistence/src/coordinator.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/session/session-persistence/src/coordinator.ts` | `reimplement-on-alpha5-seam` |
 | `packages/session/session-persistence/src/index.ts` | `reimplement-on-alpha5-seam` |
-| `packages/session/session-persistence/src/preparations.ts` | `reimplement-on-alpha5-seam` |
-| `packages/session/session-persistence/tests/coordinator-contract.ts` | `reimplement-on-alpha5-seam` |
-| `packages/session/session-persistence/tests/persistence.spec.ts` | `reimplement-on-alpha5-seam` |
-| `packages/session/session-persistence/tests/preparations.spec.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/session/session-persistence/src/preparations.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/session/session-persistence/tests/coordinator-contract.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/session/session-persistence/tests/persistence.spec.ts` | `reimplement-on-alpha5-seam` |
+| `https://github.com/Missher12/deepseek-harness-desktop/blob/f6944b1ad34c0ed2132584ae1b623950c18813a6/packages/session/session-persistence/tests/preparations.spec.ts` | `reimplement-on-alpha5-seam` |
 | `packages/shell/tool-pwsh-persistent/tests/loader-composition.spec.ts` | `take-upstream` |
 | `packages/shell/tool-pwsh-persistent/tests/tools.spec.ts` | `take-upstream` |
 | `packages/subagent/subagent-claude-code/tests/real-product.spec.ts` | `take-upstream` |

@@ -1,6 +1,14 @@
+---
+description: "在设置中查看本地索引的用量、活动和功能统计。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-settings-usage
 
 [English](README.md) | 中文
+
+<a id="summary"></a>
+## 概述
 
 Web 与桌面端设置中的只读**使用统计**分区。浏览器插件以顺序 12 注册本地化的 `usage` 分区，并在分区挂载时懒调用 `ctx.remote.usageInsights.snapshot()`。
 
@@ -8,6 +16,21 @@ Web 与桌面端设置中的只读**使用统计**分区。浏览器插件以顺
 
 加载、重试、空结果和部分数据状态都留在本分区内。首次加载若 15 秒后仍未结束，会退出占位图并显示可重试错误；已保留的汇总会继续显示，并标记刷新已过期。后续成功仍可替换任一状态。缺失指标显示破折号，不伪装成零。 布局沿用现有设置宽度和语义主题 Token，支持键盘切换标签；窄宽度会收拢 KPI 布局，且 不会引入页面横向滚动。
 
+<a id="table-of-contents"></a>
+## 目录
+
+- [模型体验](#model-experience)
+- [Invariant ownership](#invariant-ownership)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="invariant-ownership"></a>
+## Invariant ownership
+
+不发布不变式伴生入口，因为组件在呈现前校验每个 Remote 状态。
+
+
+<a id="model-experience"></a>
 ## 模型体验
 
 无，因为本包只在浏览器设置中展示 Host 拥有的使用快照，不注册任何模型接口。
@@ -16,12 +39,14 @@ Web 与桌面端设置中的只读**使用统计**分区。浏览器插件以顺
 
 无；缓存命中率只是提供方计量的只读可视化，本包既不组装也不发送提供方请求。
 
-### Invariant ownership
-
-不发布不变式伴生入口，因为组件在呈现前校验每个 Remote 状态。
-
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - **快照需要显式刷新** —— 分区在挂载和重试时读取，不会在对话框保持打开期间订阅 每一个实时用量事件。
 - **图表密度遵循紧凑设置面板** —— 三种口径都保留 371 个颗粒，并提供无障碍摘要和 悬停总数，但紧凑界面有意不提供按提供方或工作区下钻。
 - **没有插件排行榜** —— 列表标为“最常用的功能”，因为 Host 无法如实恢复每次历史 工具调用的插件归属。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

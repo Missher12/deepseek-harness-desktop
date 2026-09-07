@@ -9,12 +9,10 @@ import type { DocumentMediaType, ImageMediaType } from '@deepseek-ai/dsh-attachm
 export type ComposerFileClassification =
   | { readonly kind: 'image'; readonly mediaType: ImageMediaType }
   | { readonly kind: 'document'; readonly mediaType: DocumentMediaType }
+  | { readonly kind: 'file' }
 
-/** Native file-picker accept list derived from the same closed filename contract as Host extraction. */
-export const COMPOSER_ATTACHMENT_ACCEPT = Object.freeze([
-  'image/png', 'image/jpeg', 'image/webp', 'image/gif',
-  ...Object.keys(DOCUMENT_EXTENSION_MEDIA_TYPES).map(extension => `.${extension}`),
-]).join(',')
+/** An unrestricted picker: unsupported extraction formats use the generic file upload path. */
+export const COMPOSER_ATTACHMENT_ACCEPT = ''
 
 /** Unsupported browser-declared image type, localized by the UI boundary. */
 export class UnsupportedImageMediaTypeError extends Error {
@@ -54,7 +52,9 @@ export class UnsupportedDocumentMediaTypeError extends Error {
  * @returns the closed draft kind and declared media type.
  */
 export function classifyComposerFile(file: File): ComposerFileClassification {
-  if (file.type.startsWith('image/')) return { kind: 'image', mediaType: imageMediaType(file.type) }
+  if (['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
+    return { kind: 'image', mediaType: imageMediaType(file.type) }
+  }
   const normalizedName = file.name.trim().toLowerCase()
   const dot = normalizedName.lastIndexOf('.')
   const extension = dot < 0 ? '' : normalizedName.slice(dot + 1)
@@ -64,7 +64,7 @@ export function classifyComposerFile(file: File): ComposerFileClassification {
   if (dot < 0 && DOCUMENT_EXTENSIONLESS_TEXT_NAMES.some(name => name === normalizedName)) {
     return { kind: 'document', mediaType: 'text/plain' }
   }
-  throw new UnsupportedDocumentMediaTypeError(file.name, file.type)
+  return { kind: 'file' }
 }
 
 /**

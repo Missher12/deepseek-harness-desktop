@@ -2,6 +2,8 @@
 
 [English](2026-08-20-desktop-session-usage-boot-plugin-fixes.md) | 中文
 
+此页保留历史任务步骤；文件指针已对齐当前实现所有者，不代表这些步骤仍待执行。当前交付状态见 [项目上下文](../../../PROJECT_CONTEXT.md)。
+
 > **供智能体执行者使用：** 必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子 skill，逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
 **目标：** 修复恢复后的归档会话无法永久删除的问题，增加真正的无项目会话，使 Usage Insights 即时显示且几何稳定，恢复 macOS 冷启动进度条，并让打包应用安装插件时不依赖系统 Node 二进制文件。
@@ -15,13 +17,13 @@
 ### 任务 1：删除恢复后的归档会话
 
 **文件：**
-- 修改：`packages/api/remotes/src/agent-lookup.ts`
-- 修改：`packages/api/remotes/tests/agent-lookup.spec.ts`
+- 修改：`packages/api/session-controller/src/agent.ts`
+- 修改：`packages/api/session-controller/tests/session-cold.host.spec.ts`
 - 修改：`packages/host/apiproxy/src/api-proxy.ts`
 - 修改：`packages/host/apiproxy/tests/api-proxy-workspace.spec.ts`
 
 - [ ] 添加失败的 API Remote 测试，证明 cold resume 会把准确的 `AgentHandle` 暴露给所属 Host 回调。
-- [ ] 运行 `pnpm exec vitest run packages/api/remotes/tests/agent-lookup.spec.ts`，确认所有权断言因为 handle 当前被丢弃而失败。
+- [ ] 运行 `pnpm exec vitest run packages/api/session-controller/tests/session-cold.host.spec.ts`，确认所有权断言因为 handle 当前被丢弃而失败。
 - [ ] 向 `ApiRemoteAgentOptions` 添加范围最小的 `retainHandle` 选项，在 `ctx.agents.resume()` 后恰好调用一次，并返回对应 Agent。
 - [ ] 添加 Host 回归测试，恢复、归档并永久删除同一个普通会话。
 - [ ] 运行两个聚焦测试套件，确认恢复后的会话被 dispose、detach、持久删除，并从 Workspace 状态清除。
@@ -29,9 +31,9 @@
 ### 任务 2：创建并选择无项目会话
 
 **文件：**
-- 修改：`packages/client/runtime/src/client/contract/workspaces.ts`
-- 修改：`packages/client/runtime/src/client/workspaces/service.ts`
-- 修改：`packages/client/runtime/tests/workspaces-service.client.spec.ts`
+- 修改：`packages/api/workspace-controller/src/client/model.ts`
+- 修改：`packages/api/workspace-controller/src/client/service.ts`
+- 修改：`packages/client/ui-workspace/tests/workspaces-service.client.spec.ts`
 - 修改：`packages/client/ui-conversation/src/client/contract/slots.ts`
 - 修改：`packages/client/ui-conversation/src/client/apply.ts`
 - 修改：`packages/client/ui-conversation/src/client/skeleton/ConversationRoot.tsx`

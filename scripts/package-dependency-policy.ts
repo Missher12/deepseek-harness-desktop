@@ -44,9 +44,10 @@ const SAFE_HOST_DEPENDENCY_EXPORTS = {
   '@deepseek-ai/dsh-attachment/types': ['MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS', 'promptAttachmentBase64CodeUnits'],
   '@deepseek-ai/dsh-credentials': ['credentialKey'],
   '@deepseek-ai/dsh-deque': ['Deque'],
-  '@deepseek-ai/dsh-llm': ['MessageId', 'callConfigEquals', 'freezeMessage'],
+  '@deepseek-ai/dsh-llm': ['BlockAssembler', 'MessageId', 'callConfigEquals', 'expandAssistantStream', 'freezeMessage'],
   '@deepseek-ai/dsh-session': ['SessionId'],
   '@deepseek-ai/dsh-storage-domain': ['defineDomain', 'domainTable'],
+  '@deepseek-ai/dsh-session-format': ['sessionFormatLogFilename'],
   '@deepseek-ai/dsh-timeout': ['MAX_TIMER_DELAY_MS'],
   '@deepseek-ai/dsh-tools': ['defineTool'],
   '@deepseek-ai/schemastery': ['default'],
@@ -55,6 +56,8 @@ const SAFE_HOST_DEPENDENCY_EXPORTS = {
 /** Runtime exports that require every consumer to resolve the provider's shared peer instance. */
 const PEER_REQUIRED_HOST_EXPORTS = {
   '@deepseek-ai/dsh-scope': ['carrierKeyOf', 'scopeOf', 'scopeTarget'],
+  '@deepseek-ai/dsh-session': ['SESSION_FORMAT_VERSION'],
+  '@deepseek-ai/dsh-session-persistence': ['SessionPersistenceNotFoundError'],
 } as const satisfies HostDependencyExports
 
 /** Exact import specifier to reviewed runtime exports. */

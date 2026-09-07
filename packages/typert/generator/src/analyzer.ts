@@ -2505,7 +2505,7 @@ class FaceAnalyzer {
       .map(candidate => this.sourceFiles.get(candidate))
       .find((candidate): candidate is ts.SourceFile => candidate !== undefined)
     if (sourceFile === undefined) return undefined
-    const moduleSymbol = this.checker.getSymbolAtLocation(sourceFile) as ts.Symbol
+    const moduleSymbol = this.checker.getSymbolAtLocation(sourceFile)
     if (moduleSymbol === undefined) return undefined
     const exported = this.checker.getExportsOfModule(moduleSymbol)
       .find(candidate => candidate.name === requestedName && this.resolveSymbol(candidate) === symbol)

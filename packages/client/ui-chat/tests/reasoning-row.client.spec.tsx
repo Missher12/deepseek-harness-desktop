@@ -6,136 +6,153 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import { zh } from '../src/client/locale.ts'
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
 
-let nextAnimationFrameId = 1
-let animationFrames = new Map<number, FrameRequestCallback>()
-
-function flushAnimationFrames(count: number): void {
-  act(() => {
-    for (let index = 0; index < count; index += 1) {
-      const callbacks = [...animationFrames.values()]
-      animationFrames.clear()
-      for (const callback of callbacks) callback(index)
-    }
-  })
-}
+const t = makeTranslate(zh, commonZh)
+const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
+let resize: ResizeObserverCallback
+let disconnect: ReturnType<typeof vi.fn>
+let reducedMotion = false
+let motionChange: (() => void) | undefined
 
 beforeEach(() => {
-  nextAnimationFrameId = 1
-  animationFrames = new Map()
-  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-    const id = nextAnimationFrameId
-    nextAnimationFrameId += 1
-    animationFrames.set(id, callback)
-    return id
+  vi.useFakeTimers()
+  disconnect = vi.fn()
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: ResizeObserverCallback) { resize = callback }
+    observe = vi.fn()
+    disconnect = disconnect
   })
-  vi.stubGlobal('cancelAnimationFrame', (id: number) => {
-    animationFrames.delete(id)
-  })
+  reducedMotion = false
+  vi.stubGlobal('matchMedia', vi.fn(() => ({
+    get matches() { return reducedMotion },
+    addEventListener: (_name: string, callback: () => void) => { motionChange = callback },
+    removeEventListener: vi.fn(),
+  })))
 })
 
 afterEach(() => {
   cleanup()
-  animationFrames.clear()
+  document.getSelection()?.removeAllRanges()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
+  motionChange = undefined
 })
 
-const t = makeTranslate(zh, commonZh)
-const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
+function message(text: string, streaming = true) {
+  return <AssistantMarkdown t={t} blocks={[{ kind: 'reasoning', text }]} streaming={streaming}
+    renderMessageImages={renderMessageImages} />
+}
+
+function overflow(view: ReturnType<typeof render>) {
+  const port = view.getByRole('region', { name: '思考内容' })
+  Object.defineProperties(port, {
+    scrollHeight: { configurable: true, value: 500 },
+    clientHeight: { configurable: true, value: 100 },
+  })
+  const text = port.firstElementChild as HTMLElement
+  text.style.lineHeight = '20px'
+  const scrollTo = vi.fn((options?: ScrollToOptions | number, y?: number) => {
+    port.scrollTop = typeof options === 'number' ? y ?? 0 : options?.top ?? 0
+  })
+  port.scrollTo = scrollTo
+  act(() => { resize([], {} as ResizeObserver) })
+  return { port, text, scrollTo }
+}
 
 describe('ReasoningRow', () => {
-  it('follows the latest streaming line, then restores the settled first line', () => {
-    const view = render(
-      <AssistantMarkdown
-        t={t}
-        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens' }]}
-        streaming
-        renderMessageImages={renderMessageImages}
-      />,
-    )
+  it('keeps one literal transcript while new lines arrive and the turn settles', () => {
+    const original = 'Inspect the session\n  保留空白 👨‍👩‍👧‍👦 é'
+    const view = render(message(original))
+    const port = view.getByRole('region', { name: '思考内容' })
+    const text = port.firstElementChild
+    expect(text?.textContent).toBe(original)
     expect(view.getByText('运行中')).toBeTruthy()
-    const summary = view.container.querySelector('[class*="summary"]') as HTMLSpanElement
-    expect(summary.textContent).not.toBe('Newest reasoning tokens')
-    flushAnimationFrames(16)
-    expect(summary.textContent).toBe('Newest reasoning tokens')
-    Object.defineProperties(summary, {
-      scrollWidth: { configurable: true, value: 300 },
-      clientWidth: { configurable: true, value: 100 },
-    })
-    expect(view.getByText('Newest reasoning tokens').parentElement?.getAttribute('data-follow-end'))
-      .toBe('true')
-
-    view.rerender(
-      <AssistantMarkdown
-        t={t}
-        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving' }]}
-        streaming
-        renderMessageImages={renderMessageImages}
-      />,
-    )
-    flushAnimationFrames(16)
-    expect(view.getByText('Newest reasoning tokens keep arriving').parentElement
-      ?.getAttribute('data-follow-end')).toBe('true')
-
-    view.rerender(
-      <AssistantMarkdown
-        t={t}
-        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving\n' }]}
-        streaming={false}
-        renderMessageImages={renderMessageImages}
-      />,
-    )
-    const settledSummary = view.getByText('Inspect the session')
+    view.rerender(message(original + '\nNext step'))
+    expect(port.firstElementChild).toBe(text)
+    expect(text?.textContent).toBe(original + '\nNext step')
+    view.rerender(message(original + '\nNext step', false))
+    expect(text?.textContent).toBe(original + '\nNext step')
     expect(view.queryByText('运行中')).toBeNull()
-    expect(summary.scrollLeft).toBe(0)
-    expect(summary.hasAttribute('data-follow-end')).toBe(false)
-    expect(animationFrames.size).toBe(0)
-    expect(settledSummary.parentElement?.hasAttribute('data-follow-end')).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('flushes immediately for reduced motion and cancels work on unmount', () => {
-    vi.stubGlobal('matchMedia', vi.fn(() => ({
-      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
-    })))
-    const view = render(
-      <AssistantMarkdown t={t} blocks={[{ kind: 'reasoning', text: 'Quiet reasoning' }]} streaming renderMessageImages={renderMessageImages} />,
-    )
-    expect(view.getByText('Quiet reasoning')).toBeTruthy()
-    view.unmount()
-    expect(animationFrames.size).toBe(0)
+  it('follows at most two real lines per tick, pauses for manual reading, and resumes explicitly', () => {
+    const view = render(message('One\nTwo\nThree'))
+    const { port, scrollTo } = overflow(view)
+    act(() => { vi.advanceTimersByTime(800) })
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 40, behavior: 'smooth' })
+    fireEvent.wheel(port)
+    const paused = port.scrollTop
+    act(() => { vi.advanceTimersByTime(2400) })
+    expect(port.scrollTop).toBe(paused)
+    fireEvent.click(view.getByRole('button', { name: '跟随最新' }))
+    act(() => { vi.advanceTimersByTime(800) })
+    expect(port.scrollTop).toBe(paused + 40)
+    fireEvent.focus(port)
+    act(() => { vi.advanceTimersByTime(800) })
+    expect(port.scrollTop).toBe(paused + 40)
   })
 
-  it('expands from either Think or the reasoning summary', () => {
-    const view = render(
-      <AssistantMarkdown
-        t={t}
-        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nCheck persistence' }]}
-        streaming={false}
-        renderMessageImages={renderMessageImages}
-      />,
-    )
-    const row = view.getByRole('button')
-
-    fireEvent.click(view.getByText('Inspect the session'))
-    expect(row.getAttribute('aria-expanded')).toBe('true')
-    expect(view.getByText(/Check persistence/)).toBeTruthy()
-
-    fireEvent.click(view.getByText('思考'))
-    expect(row.getAttribute('aria-expanded')).toBe('false')
+  it('preserves position and the same text node when expanding and collapsing', () => {
+    const view = render(message('One\nTwo\nThree'))
+    const { port, text } = overflow(view)
+    port.scrollTop = 60
+    fireEvent.click(view.getByRole('button', { name: '展开思考' }))
+    expect(view.getByRole('button', { name: '收起思考' }).getAttribute('aria-expanded')).toBe('true')
+    expect(port.firstElementChild).toBe(text)
+    expect(port.scrollTop).toBe(60)
+    fireEvent.click(view.getByRole('button', { name: '收起思考' }))
+    expect(port.firstElementChild).toBe(text)
+    expect(port.scrollTop).toBe(60)
   })
 
-  it('expanded Think drops the inline summary and renders plain prose, no IN card', () => {
-    const view = render(
-      <AssistantMarkdown
-        t={t}
-        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nCheck persistence' }]}
-        streaming={false}
-        renderMessageImages={renderMessageImages}
-      />,
-    )
-    fireEvent.click(view.getByText('思考'))
-    expect(view.getAllByText(/Inspect the session/)).toHaveLength(1)
-    expect(view.queryByText('IN')).toBeNull()
-    expect(view.container.querySelector('[class*="ioCard"]')).toBeNull()
-    expect(view.container.querySelector('[class*="thinkBody"]')).not.toBeNull()
+  it('keeps selected text still and requires clearing the selection before following', () => {
+    const view = render(message('Read this carefully'))
+    const { port, text } = overflow(view)
+    const range = document.createRange()
+    range.setStart(text.firstChild!, 0)
+    range.setEnd(text.firstChild!, 'Read this carefully'.length)
+    document.getSelection()?.addRange(range)
+    fireEvent(document, new Event('selectionchange'))
+    act(() => { vi.advanceTimersByTime(1600) })
+    expect(port.scrollTop).toBe(0)
+    const follow = view.getByRole('button', { name: '跟随最新' }) as HTMLButtonElement
+    expect(follow.disabled).toBe(true)
+    view.rerender(message('Read this carefully and retain the selection'))
+    expect(document.getSelection()?.toString()).toBe('Read this carefully')
+    document.getSelection()?.removeAllRanges()
+    fireEvent(document, new Event('selectionchange'))
+    expect(follow.disabled).toBe(false)
+    act(() => { vi.advanceTimersByTime(800) })
+    expect(port.scrollTop).toBe(0)
+    fireEvent.click(follow)
+    act(() => { vi.advanceTimersByTime(800) })
+    expect(port.scrollTop).toBe(40)
+  })
+
+  it('stops motion in reduced-motion and background views, and disposes all work', () => {
+    const view = render(message('Quiet reasoning'))
+    const { port } = overflow(view)
+    act(() => { reducedMotion = true; motionChange?.() })
+    act(() => { vi.advanceTimersByTime(1600) })
+    expect(port.scrollTop).toBe(0)
+    act(() => { reducedMotion = false; motionChange?.() })
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    try {
+      fireEvent(document, new Event('visibilitychange'))
+      act(() => { vi.advanceTimersByTime(1600) })
+      expect(port.scrollTop).toBe(0)
+      view.unmount()
+      expect(vi.getTimerCount()).toBe(0)
+      expect(disconnect).toHaveBeenCalled()
+    } finally { hidden.mockRestore() }
+  })
+
+  it('does not animate or auto-scroll historical reasoning', () => {
+    const view = render(message('Historical reasoning', false))
+    const { port, scrollTo } = overflow(view)
+    act(() => { vi.advanceTimersByTime(2400) })
+    expect(scrollTo).not.toHaveBeenCalled()
+    expect(port.scrollTop).toBe(0)
+    expect(view.queryByRole('button', { name: '暂停跟随' })).toBeNull()
   })
 })

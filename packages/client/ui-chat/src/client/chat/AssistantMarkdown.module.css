@@ -20,6 +20,21 @@
   gap: 16px;
 }
 
+/* Native streaming keeps existing Markdown nodes stable. Only newly mounted
+   blocks enter; received text is never queued behind a simulated typewriter. */
+.root[data-streaming] [data-assistant-text] > div > * {
+  animation: assistant-block-enter 180ms ease-out;
+}
+
+@keyframes assistant-block-enter {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root[data-streaming] [data-assistant-text] > div > * { animation: none; }
+}
+
 /* Wide markdown tables (the renderer's ≥4-column md-table-wide hook) span
    the whole transcript width instead of clipping at the 748px message
    column, while the table content keeps starting at its normal x (the lead

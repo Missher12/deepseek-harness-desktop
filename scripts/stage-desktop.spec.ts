@@ -1,11 +1,9 @@
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_ASSET_ROOT } from './prepare-browser-skill-assets.ts'
 import {
-  assertCanonicalBrowserSkillRow,
+  validateDesktopProductPatch,
   assertNoDesktopControlArtifacts,
   desktopStagePnpmInvocation,
-  resolveBrowserSkillPlatform,
   stageDesktop,
   validateReasoningEffortPatch,
   type StageDesktopDependencies,
@@ -23,12 +21,6 @@ const VALID_DESKTOP_PATCH = `
       name: 'dshmarket'
     - id: desktop-system-update
       name: '@deepseek-ai/dsh-client-ui-settings-system-update'
-    - id: browser-skill
-      name: '@wxg-prc-cpg/browser-skill-dsh-plugin'
-      config:
-        bskPath: bsk
-        lazyTools: true
-        observationEnabled: false
 `
 const REPO_ROOT = resolve('/repo')
 const DEFAULT_STAGE = join(REPO_ROOT, 'apps/desktop/.stage')
@@ -78,9 +70,7 @@ function fakeDependencies(
     copy: async (source, target) => { copies.push([source, target]) },
     isFile: async (path) => {
       validated.push(path)
-      // The staged BrowserSkill CLI is written by the prepare seam, not by the
-      // deployment under test; keep it present even when the deploy is absent.
-      return path.replaceAll('\\', '/').includes('resources/browser-skill/') || filesPresent
+      return filesPresent
     },
     readText: async (path) => {
       read.push(path)
@@ -96,11 +86,7 @@ function fakeDependencies(
     findPackageDirectories: async () => marketPackageDirectories,
     findNativeBinaries: async () => nativeBinaries,
     findForbiddenControlArtifacts: async () => [],
-    prepareBrowserSkillAssets: async (platform, root) => {
-      events.push(`prepare-browser-skill:${platform}@${root}`)
-      return join('/browser-skill-cache', platform === 'win32-x64' ? 'bsk.exe' : 'bsk')
-    },
-    hashFile: async () => 'pinned-browser-skill-digest',
+
   }
 }
 
@@ -149,9 +135,7 @@ describe('stageDesktop', () => {
   it('deploys production dependencies and validates the complete app closure', async () => {
     const dependencies = fakeDependencies()
 
-    const result = await stageDesktop(REPO_ROOT, dependencies, undefined, {
-      DSH_DESKTOP_TARGET_PLATFORM: 'darwin-x64',
-    })
+    const result = await stageDesktop(REPO_ROOT, dependencies)
 
     expect(dependencies.commands).toEqual([
       ['pnpm', ['--filter', '@deepseek-ai/dsh-desktop', 'deploy', '--legacy', DEFAULT_STAGE]],
@@ -165,12 +149,7 @@ describe('stageDesktop', () => {
       [join(REPO_ROOT, 'apps/desktop/desktop.cordis.patch.yml'), join(DEFAULT_STAGE, 'desktop.cordis.patch.yml')],
       [join(REPO_ROOT, 'apps/desktop/update-metadata.json'), join(DEFAULT_STAGE, 'update-metadata.json')],
       [join(REPO_ROOT, 'THIRD_PARTY_NOTICES.md'), join(DEFAULT_STAGE, 'THIRD_PARTY_NOTICES.md')],
-      [join('/browser-skill-cache', 'bsk'), join(DEFAULT_STAGE, 'resources/browser-skill/bin/bsk')],
     ])
-    expect(dependencies.events).toContain(
-      `prepare-browser-skill:darwin-x64@${DEFAULT_ASSET_ROOT}`,
-    )
-    expect(result.validatedFiles).toContain('resources/browser-skill/bin/bsk')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh/lib/bin.js')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html')
     expect(result.validatedFiles).toContain('desktop.cordis.patch.yml')
@@ -196,12 +175,6 @@ describe('stageDesktop', () => {
     expect(result.validatedFiles).toContain('node_modules/pnpm/bin/pnpm.mjs')
     expect(result.validatedFiles).toContain('lib/preload.cjs')
     expect(result.validatedFiles).toContain('lib/update-helper.js')
-    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-desktop-managed-memory/package.json')
-    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-desktop-managed-memory/lib/index.js')
-    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-desktop-managed-memory/lib/client.js')
-    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-desktop-managed-evolution/package.json')
-    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-desktop-managed-evolution/lib/index.js')
-    expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-desktop-managed-evolution/lib/client.js')
     expect(result.validatedFiles).toContain('update-metadata.json')
     expect(result.validatedFiles).toContain('node_modules/@deepseek-ai/dsh-client-ui-settings-system-update/lib/client.js')
     expect(result.validatedFiles).not.toContain('lib/preload.js')
@@ -265,48 +238,11 @@ describe('stageDesktop', () => {
     expect(dependencies.commands).toEqual([])
   })
 
-  it('preflights exactly one dormant browser-skill row before deleting or deploying', async () => {
-    expect(() => assertCanonicalBrowserSkillRow(VALID_DESKTOP_PATCH)).not.toThrow()
-
-    for (const [label, patch] of [
-      [
-        'eager tools',
-        VALID_DESKTOP_PATCH.replace('lazyTools: true', 'lazyTools: false'),
-      ],
-      [
-        'missing CLI path',
-        VALID_DESKTOP_PATCH.replace('        bskPath: bsk\n', ''),
-      ],
-      [
-        'enabled observation overlay',
-        VALID_DESKTOP_PATCH.replace('observationEnabled: false', 'observationEnabled: true'),
-      ],
-      [
-        'duplicate rows',
-        `${VALID_DESKTOP_PATCH}
-- insert:
-    - id: browser-skill-extra
-      name: '@wxg-prc-cpg/browser-skill-dsh-plugin'
-      config:
-        bskPath: bsk
-        lazyTools: true
-        observationEnabled: false
-`,
-      ],
-      [
-        'no row',
-        VALID_DESKTOP_PATCH.replace(
-          "    - id: browser-skill\n      name: '@wxg-prc-cpg/browser-skill-dsh-plugin'\n      config:\n        bskPath: bsk\n        lazyTools: true\n        observationEnabled: false\n",
-          '',
-        ),
-      ],
-    ] as const) {
-      expect(() => assertCanonicalBrowserSkillRow(patch), label).toThrow(/canonical dormant browser-skill row/i)
-    }
-
-    const dependencies = fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {}, DEFAULT_MARKET_PACKAGE_DIRECTORIES,
-      VALID_DESKTOP_PATCH.replace('lazyTools: true', 'lazyTools: false'))
-    await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(/canonical dormant browser-skill row/i)
+  it.each(['@deepseek-ai/dsh-desktop-workbench', '@wxg-prc-cpg/browser-skill-dsh-plugin', '@deepseek-ai/dsh-missher-brain', 'dsh-missher-memory', 'dsh-missher-evolution'])('rejects a removed plugin %s before mutation', async (name) => {
+    const patch = `${VALID_DESKTOP_PATCH}    - id: retired-feature\n      name: '${name}'\n`
+    expect(() => { validateDesktopProductPatch(patch) }).toThrow(/forbidden/)
+    const dependencies = fakeDependencies(true, DEFAULT_NATIVE_BINARIES, {}, DEFAULT_MARKET_PACKAGE_DIRECTORIES, patch)
+    await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(/forbidden/)
     expect(dependencies.removed).toEqual([])
     expect(dependencies.commands).toEqual([])
   })
@@ -397,45 +333,4 @@ describe('stageDesktop', () => {
     await expect(stageDesktop(REPO_ROOT, fakeDependencies(), resolve('/runner-temp/other'))).rejects.toThrow(/unexpected deletion target/i)
   })
 
-  it('resolves the BrowserSkill target platform explicitly or from the build host', () => {
-    expect(resolveBrowserSkillPlatform('darwin-x64')).toBe('darwin-x64')
-    expect(resolveBrowserSkillPlatform('win32-x64')).toBe('win32-x64')
-    expect(resolveBrowserSkillPlatform(undefined)).toBe(process.platform === 'win32' ? 'win32-x64' : 'darwin-x64')
-    expect(resolveBrowserSkillPlatform('')).toBe(process.platform === 'win32' ? 'win32-x64' : 'darwin-x64')
-    expect(() => resolveBrowserSkillPlatform('linux-x64')).toThrow(/DSH_DESKTOP_TARGET_PLATFORM/u)
-  })
-
-  it('stages the declared Windows CLI under an explicit asset root', async () => {
-    const dependencies = fakeDependencies()
-
-    const result = await stageDesktop(REPO_ROOT, dependencies, undefined, {
-      DSH_DESKTOP_TARGET_PLATFORM: 'win32-x64',
-      DSH_BROWSER_SKILL_ASSET_ROOT: '/cache/browser-skill',
-    })
-
-    expect(dependencies.events).toContain('prepare-browser-skill:win32-x64@/cache/browser-skill')
-    expect(dependencies.copies).toContainEqual([
-      join('/browser-skill-cache', 'bsk.exe'),
-      join(DEFAULT_STAGE, 'resources/browser-skill/bin/bsk.exe'),
-    ])
-    expect(result.validatedFiles).toContain('resources/browser-skill/bin/bsk.exe')
-  })
-
-  it('fails closed when the staged CLI digest diverges from the verified source', async () => {
-    const dependencies = fakeDependencies()
-    dependencies.hashFile = async path => path.includes('resources') ? 'tampered' : 'verified'
-
-    await expect(stageDesktop(REPO_ROOT, dependencies, undefined, {
-      DSH_DESKTOP_TARGET_PLATFORM: 'darwin-x64',
-    })).rejects.toThrow(/digest changed during copy/u)
-  })
-
-  it('fails closed when the staged CLI copy does not materialize', async () => {
-    const dependencies = fakeDependencies()
-    dependencies.isFile = async path => !path.replaceAll('\\', '/').includes('resources/browser-skill/')
-
-    await expect(stageDesktop(REPO_ROOT, dependencies, undefined, {
-      DSH_DESKTOP_TARGET_PLATFORM: 'darwin-x64',
-    })).rejects.toThrow(/could not stage the BrowserSkill CLI/u)
-  })
 })

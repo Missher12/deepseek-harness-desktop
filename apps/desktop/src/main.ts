@@ -23,7 +23,7 @@ import {
   type DesktopWindow,
   type FailureReason,
 } from './application.ts'
-import { HarnessProcess, physicalBrowserSkillCliDir } from './harness/process.ts'
+import { HarnessProcess } from './harness/process.ts'
 import { findConflictingHarness } from './harness/ownership.ts'
 import { createLifecycleLogger } from './logging.ts'
 import {
@@ -40,8 +40,6 @@ import {
   type DesktopPreferencesSnapshot,
 } from './preferences.ts'
 import { DesktopUpdateService } from './update/service.ts'
-import { WorkbenchBrowserController } from './browser/controller.ts'
-import { isDesktopBrowserBounds, isDesktopBrowserRequest } from './browser/contracts.ts'
 import { launchDesktopInstaller } from './update/installer.ts'
 import { allowRendererPermission, classifyNavigation } from './window/navigation.ts'
 import { createMenuTemplate } from './window/menu.ts'
@@ -56,7 +54,6 @@ import { readWindowBounds, writeWindowBounds } from './window/state.ts'
 import { readDesktopWindowPrerequisites } from './window/prerequisites.ts'
 import { DesktopStartupTimeline } from './startup-timeline.ts'
 import { createNativeVisualTrayEvidenceController } from './native-visual-tray-evidence.ts'
-import { readDesktopIntegrations } from './integrations.ts'
 
 const PRODUCT_NAME = 'DeepSeek Harness'
 const require = createRequire(import.meta.url)
@@ -137,7 +134,6 @@ const appFacade: AppFacade = {
 
 let nativeWindow: BrowserWindow | undefined
 let tray: Tray | undefined
-let workbenchBrowser: WorkbenchBrowserController | undefined
 let activeHarnessRoot: string | undefined
 const lifecycle: { controller?: DesktopApplication } = {}
 let desktopPreferences: DesktopPreferencesSnapshot = defaultDesktopPreferences(process.platform)
@@ -156,19 +152,9 @@ const updateService = new DesktopUpdateService({
 })
 const startupTimeline = new DesktopStartupTimeline(record)
 
-// The packaged BrowserSkill CLI is a physical extraResource next to
-// app.asar. It enters only the harness child's PATH; when missing (e.g. an
-// unpacked dev launch), the dormant plugin still mounts and the first real
-// browser tool call reports the missing CLI.
-const browserSkillDir = physicalBrowserSkillCliDir(process.resourcesPath, process.platform)
-if (browserSkillDir === undefined) {
-  record('BrowserSkill CLI: no physical packaged binary in resources; browser tools stay dormant.')
-}
-
 const runtime = new HarnessProcess({
   cli: resolveCliPath(),
   patch: desktopPatchPath,
-  ...(browserSkillDir === undefined ? {} : { browserSkillDir }),
   prepare: () => {
     const result = healProfilesModuleFallbackCached(desktopInstallAnchorPath, dshHome, app.getVersion())
     record(`module fallback: ${result}`)
@@ -322,9 +308,6 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
     process.platform === 'win32' ? windowsIconPath : undefined,
   ))
   nativeWindow = window
-  workbenchBrowser = new WorkbenchBrowserController(window, (snapshot) => {
-    if (!window.isDestroyed()) window.webContents.send('desktop:workbench-browser-state', snapshot)
-  })
   let ownedRoot: string | undefined
   installNavigationPolicy(window, () => ownedRoot)
   const persistState = createStateWriter(window)
@@ -332,7 +315,6 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
   window.on('close', (event) => {
     event.preventDefault()
     persistState()
-    void workbenchBrowser?.hide()
     if (desktopPreferences.closeBehavior === 'keep-running') {
       window.hide()
       syncWindowsTray()
@@ -345,7 +327,6 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
 
   const desktopWindow: DesktopWindow = {
     async loadLoading() {
-      await workbenchBrowser?.hide()
       ownedRoot = undefined
       activeHarnessRoot = undefined
       await window.loadFile(loadingPath)
@@ -356,7 +337,6 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
       await window.loadURL(desktopRendererUrl(url, process.platform))
     },
     async loadFailure(reason: FailureReason) {
-      await workbenchBrowser?.hide()
       ownedRoot = undefined
       activeHarnessRoot = undefined
       await window.loadFile(failurePath, { query: { reason } })
@@ -410,11 +390,6 @@ ipcMain.handle('desktop:preferences-get', async (event) => {
   if (!isHarnessSender(event)) throw new Error('Untrusted Desktop preferences sender.')
   await preferencesReady
   return desktopPreferences
-})
-
-ipcMain.handle('desktop:integrations-get', async (event) => {
-  if (!isHarnessSender(event)) throw new Error('Untrusted Desktop integrations sender.')
-  return await readDesktopIntegrations(dshHome)
 })
 
 ipcMain.handle('desktop:preferences-set', async (event, value: unknown) => {
@@ -471,32 +446,11 @@ if (desktopUpdatesEnabled) {
   })
 }
 
-ipcMain.handle('desktop:workbench-browser-show', async (event, value: unknown) => {
-  if (!isHarnessSender(event) || !isDesktopBrowserBounds(value) || workbenchBrowser === undefined) {
-    throw new Error('Untrusted workbench Browser request.')
-  }
-  return await workbenchBrowser.show(value)
-})
-
-ipcMain.handle('desktop:workbench-browser-hide', async (event) => {
-  if (!isHarnessSender(event) || workbenchBrowser === undefined) throw new Error('Untrusted workbench Browser request.')
-  await workbenchBrowser.hide()
-})
-
-ipcMain.handle('desktop:workbench-browser-control', async (event, value: unknown) => {
-  if (!isHarnessSender(event) || !isDesktopBrowserRequest(value) || workbenchBrowser === undefined) {
-    throw new Error('Untrusted workbench Browser request.')
-  }
-  return await workbenchBrowser.control(value)
-})
-
-
 app.on('before-quit', () => {
   nativeVisualTrayEvidence.stop()
   updateService.dispose()
   tray?.destroy()
   tray = undefined
-  void workbenchBrowser?.hide()
 })
 
 Menu.setApplicationMenu(Menu.buildFromTemplate(

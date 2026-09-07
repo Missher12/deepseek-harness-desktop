@@ -78,6 +78,8 @@ function runBody(
 ): Record<string, unknown> {
   const exports: Record<string, unknown> = {}
   const module = { exports }
+  // Execute trusted compiler fixtures through the real loader wrapper.
+  // oxlint-disable-next-line typescript/no-implied-eval
   const factory = new Function(...WRAPPER_PARAMS, code) as (...args: unknown[]) => void
   factory(exports, require, module, '/vfs/probe.js', '/vfs', { url: 'file:///vfs/probe.js' }, als)
   return exports
@@ -105,6 +107,8 @@ check(
   'every wrapper parameter is a usable identifier',
   (() => {
     try {
+      // Validate the actual Function parameter grammar used by the loader.
+      // oxlint-disable-next-line typescript/no-implied-eval
       new Function(...WRAPPER_PARAMS, 'return 0')
       return true
     } catch {

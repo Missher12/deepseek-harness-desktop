@@ -87,7 +87,7 @@ interface FakeContextHarness {
       resume: ReturnType<typeof vi.fn>
     }
     sessions: { get: ReturnType<typeof vi.fn> }
-    sessionPersistence: { inspect: ReturnType<typeof vi.fn>; list: ReturnType<typeof vi.fn> }
+    sessionPersistence: { open: ReturnType<typeof vi.fn>; list: ReturnType<typeof vi.fn> }
     on: ReturnType<typeof vi.fn>
     effect: ReturnType<typeof vi.fn>
     logger: {
@@ -98,15 +98,15 @@ interface FakeContextHarness {
   }
   byId: Map<ReturnType<typeof SessionId>, ReturnType<typeof fakeAgent>>
   listeners: Map<string, Array<(...args: never[]) => unknown>>
-  inspect: ReturnType<typeof vi.fn>
+  open: ReturnType<typeof vi.fn>
   list: ReturnType<typeof vi.fn>
 }
 
 export function fakeContext(targets: ReturnType<typeof fakeAgent>[]): FakeContextHarness {
   const byId = new Map(targets.map(target => [target.id, target]))
   const listeners = new Map<string, Array<(...args: never[]) => unknown>>()
-  const inspect = vi.fn(async () => { throw new Error('not found') })
-  const list = vi.fn(async () => targets.map(target => target.session.header))
+  const open = vi.fn(async () => { throw new Error('not found') })
+  const list = vi.fn(async () => targets.map(target => ({ header: target.session.header, revision: 'test' })))
   const ctx = {
     workspaceRegistry: { archivedSessionIds: [] as ReturnType<typeof SessionId>[] },
     typert: {
@@ -122,7 +122,7 @@ export function fakeContext(targets: ReturnType<typeof fakeAgent>[]): FakeContex
       resume: vi.fn(),
     },
     sessions: { get: vi.fn() },
-    sessionPersistence: { inspect, list },
+    sessionPersistence: { open, list },
     on: vi.fn((event: string, listener: (...args: never[]) => unknown) => {
       const entries = listeners.get(event) ?? []
       entries.push(listener)
@@ -132,5 +132,5 @@ export function fakeContext(targets: ReturnType<typeof fakeAgent>[]): FakeContex
     effect: vi.fn((setup: () => unknown) => setup()),
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
   }
-  return { ctx, byId, listeners, inspect, list }
+  return { ctx, byId, listeners, open, list }
 }

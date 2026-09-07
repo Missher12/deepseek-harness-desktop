@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-08-18-session-messenger-and-market-refinement.md
-2026-08-18-session-messenger-and-market-refinement.md: 8eb97bf03b88591342ab4af356a721a8a7fd135b
-2026-08-18-session-messenger-and-market-refinement.zh.md: 935299f08c42f8ac8876a6e023dd511f3e2b29e8
+2026-08-18-session-messenger-and-market-refinement.md: 1d1cf447b4fbb90eabcca479d061f25f3aae49be
+2026-08-18-session-messenger-and-market-refinement.zh.md: 0d5c922fb6c38329ad03bc4c68790c6c00f5a4b1

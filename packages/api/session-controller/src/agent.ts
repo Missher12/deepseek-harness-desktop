@@ -487,6 +487,8 @@ export class ApiSessionAgentController {
         const storedPreset = this.presetForObservation(observation)
         this.assertPresetUnchanged(sessionId, presetId, storedPreset)
         const composition = await this.composeAgent(storedPreset)
+        // Resume failures belong to the returned operation, outside the query-not-found fallback.
+        // oxlint-disable-next-line typescript/return-await
         return this.resumeOwned({
           resumeSessionId: sessionId,
           agentOptions: this.agentOptions(),

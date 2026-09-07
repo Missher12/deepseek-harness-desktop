@@ -1,10 +1,11 @@
 /** Target-neutral Conversation slot declarations and composed component props. */
 import type { ReactNode, RefObject } from 'react'
 import type {
-  DocumentAttachmentDisplayId, DocumentMediaType, ImageAttachmentRef, RendererDocumentAttachment,
+  FileAttachmentRef, DocumentAttachmentDisplayId, DocumentMediaType, ImageAttachmentRef, RendererDocumentAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {
   MaybeSnapshotSelectorHook, ObservableSnapshot, SnapshotSelectorHook,
@@ -25,7 +26,10 @@ import type { ComposerSubmitGesture, InputSubmitMode } from './composer-submissi
 import type { ConversationSnapshot } from './snapshot.ts'
 import type { ViewTab } from './views.ts'
 
-/** Browser-owned image that has not crossed the durable Host boundary. */
+/** Browser-owned draft attachment that has not crossed the durable Host boundary. */
+export type ComposerAttachment = ComposerImageAttachment | ComposerDocumentAttachment | ComposerFileAttachment
+
+/** Browser-owned image, base64-encoded into the prompt at send time. */
 export interface ComposerImageAttachment {
   kind: 'image'
   id: DraftAttachmentId
@@ -45,8 +49,21 @@ export interface ComposerDocumentAttachment {
   mediaType: DocumentMediaType
 }
 
-/** Ordered browser-owned attachment draft. */
-export type ComposerAttachment = ComposerImageAttachment | ComposerDocumentAttachment
+/** Browser-owned generic file whose bytes upload to the Host as soon as it is picked. */
+export interface ComposerFileAttachment {
+  kind: 'file'
+  id: DraftAttachmentId
+  file: File
+}
+
+/** Upload lifecycle of one picked file draft (files upload on pick, not on send). */
+export type DraftFileUpload =
+  | { readonly status: 'uploading'; readonly loaded: number; readonly total?: number }
+  | { readonly status: 'ready'; readonly receiptId: FileUploadReceiptId; readonly file: FileAttachmentRef }
+  | { readonly status: 'error'; readonly message: string }
+
+/** Per-draft upload states keyed by draft attachment id. */
+export type DraftFileUploads = Readonly<Record<string, DraftFileUpload>>
 
 /** Input state handed to the optional attachment presentation plugin. */
 export interface ComposerAttachmentsOwnerProps {
@@ -55,9 +72,13 @@ export interface ComposerAttachmentsOwnerProps {
   /** Whether a document-level file drop may add attachments now. */
   canAcceptDrop: boolean
   /** Add one dropped batch through the composer's validation path. */
-  onAddImages: (files: readonly File[]) => void
-  /** Remove one draft attachment through the conversation service. */
-  onRemoveImage: (id: DraftAttachmentId) => void
+  onAddFiles: (files: readonly File[]) => void
+  /** Remove one draft attachment through the Conversation service. */
+  onRemoveAttachment: (id: DraftAttachmentId) => void
+  /** Current per-draft upload states for file-kind attachments. */
+  uploads: DraftFileUploads
+  /** Restart one failed file upload. */
+  onRetryFile: (id: DraftAttachmentId) => void
   /** Display-ready limits for the drop invitation. */
   dropLimits?: {
     readonly images?: { readonly count: number; readonly size: string }
@@ -117,6 +138,8 @@ export interface MessageImagesOwnerProps {
   loadImage: MessageImageLoader
   /** Horizontal placement inside the owning record. */
   align: 'start' | 'end'
+  /** Force every image into the compact message-attachment tile size. */
+  compact?: boolean
 }
 
 /** Slot-backed renderer used by Conversation targets without importing an attachment implementation. */
@@ -173,7 +196,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.input.right': { kind: 'list'; scope: 'session' }
     /** Resident composer body, including the no-Session inert state. */
     'conversation.composer.bar': { kind: 'single'; scope: 'session-maybe'; owner: ComposerBarOwnerProps }
-    /** Optional draft-image rail and drop target. */
+    /** Optional draft-attachment rail and drop target. */
     'conversation.input.attachments': {
       kind: 'single'
       scope: 'session-maybe'
@@ -300,9 +323,11 @@ export interface ComposerBarOwnerProps {
 /** Package-private operations injected into the resident composer bar. */
 export interface ComposerBarInjected {
   keyboard: ComposerKeyboard | undefined
-  addImages: ((files: readonly File[]) => string | null) | undefined
-  removeImage: ((id: DraftAttachmentId) => void) | undefined
-  draftImages: ((ids: readonly DraftAttachmentId[]) => readonly ComposerAttachment[]) | undefined
+  addFiles: ((files: readonly File[]) => string | null) | undefined
+  removeAttachment: ((id: DraftAttachmentId) => void) | undefined
+  resolveDraftAttachments: ((ids: readonly DraftAttachmentId[]) => readonly ComposerAttachment[]) | undefined
+  /** Restart one failed file upload; absent without a session. */
+  retryFileUpload: ((id: DraftAttachmentId) => void) | undefined
   resolveSubmitMode: (
     running: boolean,
     gesture: ComposerSubmitGesture,
@@ -316,6 +341,8 @@ export interface ComposerBarInjected {
   stop: (() => void) | undefined
   command: ((line: string) => Promise<boolean>) | undefined
   hooks: {
+    /** Live per-draft upload states for file-kind drafts. */
+    fileUploads: ObservableSnapshot<DraftFileUploads>
     notices: ObservableSnapshot<InputNotice | null>
     lexicon: ObservableSnapshot<ReadonlyMap<'/' | '@', readonly string[]>>
     menuLauncher: ObservableSnapshot<string | null>
@@ -393,7 +420,8 @@ export type ConversationSessionHeaderSlotProps =
   & PropsStore<ConversationStore>
   & InjectFace<ConversationSessionHeaderInjected>
   & PropsLocale<'conversation'>
-/** Full props of the draft-image attachment renderer. */
+
+/** Full props of the draft-attachment renderer. */
 export type ComposerAttachmentsProps =
   PropsRuntime<'conversation.input.attachments'> & PropsLocale<'conversation'>
 

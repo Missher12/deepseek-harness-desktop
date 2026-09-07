@@ -66,7 +66,7 @@ async function harness(): Promise<{
     session,
     agent,
     inbox,
-    history: new SessionHistoryController(ctx, observation => observation[Symbol.dispose]()),
+    history: new SessionHistoryController(ctx, (observation) =>{  observation[Symbol.dispose]() }),
     control: new SessionControlController(ctx),
   }
 }

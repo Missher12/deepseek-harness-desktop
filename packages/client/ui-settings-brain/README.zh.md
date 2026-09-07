@@ -1,11 +1,34 @@
+---
+description: "在设置中查看本地记忆与学习状态。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-settings-brain
 
 [English](README.md) | 中文
+
+<a id="summary"></a>
+## 概述
 
 Web 与桌面端设置中的统一**记忆与学习**概览。浏览器插件以顺序 9 注册本地化分区，并读取一份有界且不含路径的 Host 快照。它不会读取记忆数据库、项目路径或 Provider 错误。
 
 页面会在首个响应之前先绘制两个稳定来源行：经过审核的项目记忆，以及验证通过后才会复用的工作流程；随后再用 Provider 状态和有界条目数替换占位内容。辅助说明会解释旧记忆库只读兼容、唯一召回路径、最多六条与 4 KB 的上限、150 ms 超时放行边界，以及可恢复的精确重复项自动压缩。
 
+<a id="table-of-contents"></a>
+## 目录
+
+- [模型体验](#model-experience)
+- [Invariant ownership](#invariant-ownership)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="invariant-ownership"></a>
+## Invariant ownership
+
+不发布不变式伴生入口，因为组件在呈现前校验每个 Remote 状态。
+
+
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 记忆与学习设置概览
@@ -22,11 +45,13 @@ Web 与桌面端设置中的统一**记忆与学习**概览。浏览器插件以
 
 打开本页面不会影响提示词或缓存。记忆库保存在本机；符合条件的模型请求可携带最多六条、合计 4 KB 的选中片段，因此会改变该轮上下文。
 
-### Invariant ownership
-
-不发布不变式伴生入口，因为组件在呈现前校验每个 Remote 状态。
-
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - 各 Provider 的审核、删除与启用控件仍保留在其所属设置分区。
 - Provider 异常或错过状态截止时间时只显示为不可用，不暴露内部错误。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

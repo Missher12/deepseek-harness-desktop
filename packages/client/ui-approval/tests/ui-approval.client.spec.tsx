@@ -405,7 +405,7 @@ describe('ApprovalPanel', () => {
     const order: string[] = []
     const enable = vi.fn(async () => { order.push('permission'); return true })
     const pending = new PendingApproval(id('s1'), { toolName: 'bash' }, enable)
-    vi.spyOn(pending, 'answer').mockImplementation(async () => { order.push('answer') })
+    const answer = vi.spyOn(pending, 'answer').mockImplementation(async () => { order.push('answer') })
     render(<ApprovalPanel {...panelProps(pending)} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Allow for this session' }))
@@ -416,7 +416,7 @@ describe('ApprovalPanel', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'I understand the risks' }))
     fireEvent.click(confirm)
 
-    await waitFor(() => { expect(pending.answer).toHaveBeenCalledWith('allowed-once') })
+    await waitFor(() => { expect(answer).toHaveBeenCalledWith('allowed-once') })
     expect(enable).toHaveBeenCalledOnce()
     expect(order).toEqual(['permission', 'answer'])
   })
@@ -468,7 +468,7 @@ describe('ApprovalPanel', () => {
   it('retries only the current approval after permission succeeds but answering fails', async () => {
     const enable = vi.fn(() => Promise.resolve(true))
     const pending = new PendingApproval(id('s1'), { toolName: 'bash' }, enable)
-    vi.spyOn(pending, 'answer')
+    const answer = vi.spyOn(pending, 'answer')
       .mockRejectedValueOnce(new Error('private response detail'))
       .mockResolvedValueOnce()
     render(<ApprovalPanel {...panelProps(pending)} />)
@@ -485,7 +485,7 @@ describe('ApprovalPanel', () => {
 
     await act(async () => {})
     expect(enable).toHaveBeenCalledOnce()
-    expect(pending.answer).toHaveBeenCalledTimes(2)
+    expect(answer).toHaveBeenCalledTimes(2)
   })
 })
 

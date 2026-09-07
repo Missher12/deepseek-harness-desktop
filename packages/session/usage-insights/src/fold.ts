@@ -2,7 +2,7 @@
 
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session/types'
 import type { SessionUsageRow, UsageDay, UsageTokenBuckets } from './types.ts'
-import { usageDateKey } from './calendar.ts'
+import { createUsageDateFormatter } from './calendar.ts'
 
 interface UsageSample {
   readonly buckets: UsageTokenBuckets
@@ -67,13 +67,18 @@ function dayOf(days: Map<string, DayAccumulator>, date: string): DayAccumulator 
   return day
 }
 
-/** Extract a usage sample from a chunk or finalized assistant event. */
+/** Read the final usage sample without expanding compact text and reasoning runs. */
 function usageOf(event: SessionEvent): { turn: number; step: number; usage: unknown } | undefined {
-  if (event.type === 'assistant/chunk' && event.data.chunk.type === 'usage') {
-    return { turn: event.data.turn, step: event.data.step, usage: event.data.chunk.usage }
-  }
+  if (event.type !== 'assistant/message' && event.type !== 'assistant/attempt') return undefined
+  const { turn, step } = event.data
   if (event.type === 'assistant/message' && event.data.usage !== undefined) {
-    return { turn: event.data.turn, step: event.data.step, usage: event.data.usage }
+    return { turn, step, usage: event.data.usage }
+  }
+  for (let index = event.data.stream.length - 1; index >= 0; index -= 1) {
+    const record = event.data.stream[index]
+    if (record?.type === 'chunk' && record.chunk.type === 'usage') {
+      return { turn, step, usage: record.chunk.usage }
+    }
   }
   return undefined
 }
@@ -111,7 +116,8 @@ export function foldSessionUsage(
   inheritedEventCount = 0,
 ): SessionUsageRow {
   // Constructing the formatter validates the time zone even for an empty log.
-  void usageDateKey(header.createdAt, timeZone)
+  const dateKey = createUsageDateFormatter(timeZone)
+  void dateKey(header.createdAt)
   const days = new Map<string, DayAccumulator>()
   const models = new Map<string, number>()
   const reasoningEfforts = new Map<string, number>()
@@ -119,6 +125,7 @@ export function foldSessionUsage(
   const tools = new Map<string, number>()
   const samples = new Map<string, UsageSample>()
   const routes = new Map<string, Pick<UsageSample, 'model' | 'reasoningEffort'>>()
+  const attempts = new Map<string, number>()
   const openTurns = new Map<number, number>()
   let currentModel: string | undefined
   let currentReasoningEffort: string | undefined
@@ -130,11 +137,10 @@ export function foldSessionUsage(
     if (item.seq < inheritedEventCount) continue
     const type = item.type as string
     const data = item.data as unknown as Record<string, unknown>
-    const date = usageDateKey(item.time, timeZone)
 
     if (item.type === 'user/message') {
       const source = item.data.source as { kind?: string; name?: string }
-      if (source.kind === 'user') dayOf(days, date).humanMessages += 1
+      if (source.kind === 'user') dayOf(days, dateKey(item.time)).humanMessages += 1
       if (source.kind === 'skill-invocation' && typeof source.name === 'string') increment(skills, source.name)
     } else if (item.type === 'request/header') {
       const config = item.data.header.config
@@ -158,7 +164,7 @@ export function foldSessionUsage(
       const name = data.name
       if (typeof name === 'string' && name.length > 0) {
         increment(tools, name)
-        dayOf(days, date).toolCalls += 1
+        dayOf(days, dateKey(item.time)).toolCalls += 1
         if (type === 'tool/call' && name === 'skill' && typeof data.arguments === 'string') {
           const skillName = skillNameFromArguments(data.arguments)
           if (skillName !== undefined) increment(skills, skillName)
@@ -166,16 +172,18 @@ export function foldSessionUsage(
       }
     }
 
+    const stepKey = `${String(data['turn'])}:${String(data['step'])}`
+    if (type === 'llm/retry-started') attempts.set(stepKey, (attempts.get(stepKey) ?? 0) + 1)
     const observed = usageOf(item)
     if (observed !== undefined) {
       const buckets = tokenBuckets(observed.usage)
       if (buckets === undefined) {
         incompleteUsageSamples += 1
       } else {
-        const key = `${observed.turn}:${observed.step}`
+        const key = `${observed.turn}:${observed.step}:${attempts.get(stepKey) ?? 0}`
         samples.set(key, {
           buckets,
-          date,
+          date: dateKey(item.time),
           ...currentModel === undefined ? {} : { model: currentModel },
           ...currentReasoningEffort === undefined ? {} : { reasoningEffort: currentReasoningEffort },
         })
@@ -185,7 +193,7 @@ export function foldSessionUsage(
         })
       }
     } else if (item.type === 'assistant/message') {
-      const key = `${item.data.turn}:${item.data.step}`
+      const key = `${item.data.turn}:${item.data.step}:${attempts.get(stepKey) ?? 0}`
       routes.set(key, {
         ...currentModel === undefined ? {} : { model: currentModel },
         ...currentReasoningEffort === undefined ? {} : { reasoningEffort: currentReasoningEffort },

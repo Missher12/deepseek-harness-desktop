@@ -67,7 +67,6 @@ describe('usage insights through a real Loader composition', () => {
       '  config:',
       `    root: ${JSON.stringify(join(root, 'sessions'))}`,
       '    compression: none',
-      '    writeBatchMaxDelayMs: 1',
       "- name: '@deepseek-ai/dsh-storage'",
       "- name: '@deepseek-ai/dsh-storage-json'",
       '  config:',
@@ -87,6 +86,7 @@ describe('usage insights through a real Loader composition', () => {
       { method: 'snapshot', invocation: { kind: 'direct' } },
     ])
     const session = ctx.sessions.create(SessionId('loader-usage'))
+    const handle = await ctx.sessionPersistence.create(session.header)
     session.append('user/message', {
       id: 'loader-user',
       role: 'user',
@@ -94,6 +94,7 @@ describe('usage insights through a real Loader composition', () => {
       content: [],
     } as never, { surfaceOp: 'append' })
     await ctx.sessions.flush(session)
+    await handle.close()
 
     const snapshot = await ctx.usageInsights.snapshot()
 

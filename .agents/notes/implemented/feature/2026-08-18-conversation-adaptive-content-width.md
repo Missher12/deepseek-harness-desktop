@@ -10,6 +10,8 @@ The conversation column's shared width axis (`--dsh-chat-content-width`) was the
 
 ## Decision
 
+**Partial supersession.** [Desktop alpha integration](2026-09-07-desktop-local-alpha-integration.md) removes manual width dragging and stored-width overrides. The adaptive clamp, shared axis and ResizeObserver rationale below remain authoritative; the handle and persistence sections retain historical decision context.
+
 **The axis becomes a user override over an adaptive clamp.** `ConversationRoot.module.css` declares `--dsh-chat-content-width: var(--dsh-chat-user-width, clamp(680px, calc(var(--dsh-conversation-column-width, 0px) * 0.64), 920px))`. The floor is 680px — one step under the figma 748px, after full-width reading felt wide on every screen — wider columns take 64% of the column, and 920px caps line length for readability (~113 characters at the base font). A dragged preference replaces the adaptive term wholesale.
 
 **The column width is published by a ResizeObserver, not container queries.** The component publishes the root's `offsetWidth` as `--dsh-conversation-column-width` in px (the same callback-ref pattern as the existing composer seat height observer). `container-type: inline-size` was rejected: the conversation subtree contains portal-free `position: fixed` descendants (Tooltip, Menu, JsonTree copy anchors) whose viewport anchoring a size container would capture — the same class of trap the `.composerHero` comment records for transforms. A bare `%` in the variable was rejected because custom-property percentages resolve per consumer against different containing blocks, breaking the input-card = W + 32px invariant; `vw` was rejected because the column is not the viewport (sidebar fold changes the column only).

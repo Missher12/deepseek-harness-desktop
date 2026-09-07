@@ -1,0 +1,181 @@
+name: macOS Desktop DMG
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-desktop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  build-native-smoke:
+    name: Intel build and native lifecycle
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact source and Intel runner
+        id: source
+        run: |
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
+          [[ "$(uname -m)" == "x86_64" ]]
+          echo "sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.7.0'
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Resolve candidate metadata
+        id: desktop
+        run: |
+          version=$(node -p "require('./apps/desktop/package.json').version")
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "artifact=DeepSeek-Harness-$version-mac-x64.dmg" >> "$GITHUB_OUTPUT"
+
+      - name: Install immutable dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the Intel macOS DMG
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm run desktop:dmg
+
+      - name: Exercise the packaged application
+        run: |
+          test -x 'apps/desktop/release/mac/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness'
+          env -u NODE_PATH -u NODE_OPTIONS node node_modules/vitest/vitest.mjs run \
+            apps/desktop/tests/packaged-smoke.spec.ts --config vitest.config.ts
+
+      - name: Verify the disk image and record SHA-256
+        env:
+          ARTIFACT: ${{ steps.desktop.outputs.artifact }}
+        run: |
+          hdiutil verify "apps/desktop/release/$ARTIFACT"
+          cd apps/desktop/release
+          shasum -a 256 "$ARTIFACT" > "$ARTIFACT.sha256"
+          shasum -a 256 -c "$ARTIFACT.sha256"
+
+      - name: Exercise mounted visuals at 100 and 150 percent
+        env:
+          ARTIFACT: ${{ steps.desktop.outputs.artifact }}
+          EXPECTED_VERSION: ${{ steps.desktop.outputs.version }}
+        run: |
+          mountpoint="$RUNNER_TEMP/dsh-macos-candidate-mount"
+          mkdir -p "$mountpoint"
+          hdiutil attach -readonly -nobrowse -noautoopen \
+            -mountpoint "$mountpoint" "apps/desktop/release/$ARTIFACT"
+          cleanup_mount() { hdiutil detach "$mountpoint" >/dev/null; }
+          trap cleanup_mount EXIT
+          app="$mountpoint/DeepSeek Harness.app"
+          executable="$app/Contents/MacOS/DeepSeek Harness"
+          test -x "$executable"
+          [[ "$(lipo -archs "$executable")" == "x86_64" ]]
+          [[ "$(plutil -extract CFBundleShortVersionString raw -o - "$app/Contents/Info.plist")" == "$EXPECTED_VERSION" ]]
+          [[ "$(plutil -extract CFBundleIdentifier raw -o - "$app/Contents/Info.plist")" == "ai.deepseek.harness.desktop" ]]
+          cmp "$app/Contents/Resources/app.asar" \
+            'apps/desktop/release/mac/DeepSeek Harness.app/Contents/Resources/app.asar'
+          DSH_MACOS_DESKTOP_EXECUTABLE="$executable" \
+          DSH_MACOS_VISUAL_EVIDENCE_ROOT="$RUNNER_TEMP/macos-native-evidence/visual" \
+            env -u NODE_PATH -u NODE_OPTIONS node node_modules/vitest/vitest.mjs run \
+              apps/desktop/tests/macos-native-visual-smoke.spec.ts --config vitest.config.ts
+          cleanup_mount
+          trap - EXIT
+
+      - name: Bind bounded native evidence to source and artifact
+        env:
+          ARTIFACT: ${{ steps.desktop.outputs.artifact }}
+        run: |
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
+          git diff --quiet HEAD --
+          node --import tsx --input-type=module <<'NODE'
+          import { createReadStream } from 'node:fs'
+          import { lstat, readFile, readdir, writeFile } from 'node:fs/promises'
+          import { createHash } from 'node:crypto'
+          import { join } from 'node:path'
+          import { assertPortableMacEvidence } from './scripts/macos-desktop-runtime-evidence.ts'
+          const root = join(process.env.RUNNER_TEMP, 'macos-native-evidence')
+          const visual = join(root, 'visual')
+          const digest = async (file) => {
+            const hash = createHash('sha256')
+            for await (const chunk of createReadStream(file)) hash.update(chunk)
+            return hash.digest('hex')
+          }
+          for (const scale of [100, 150]) {
+            const summary = JSON.parse(await readFile(join(visual, 'native-visual-' + scale + '.json'), 'utf8'))
+            if (summary.scalePercent !== scale || summary.sharedFeatureSmoke !== 'passed'
+              || summary.processTreeRemaining !== 0) throw new Error('Native visual acceptance is incomplete')
+          }
+          const names = (await readdir(visual)).sort()
+          if (names.length > 64) throw new Error('Native evidence file count exceeds its bound')
+          const files = []
+          let totalBytes = 0
+          for (const name of names) {
+            if (!/^(?:native-visual-(?:100|150)\.json|desktop-smoke-[a-z0-9-]+-darwin-(?:100|150)\.(?:json|png))$/u.test(name)) {
+              throw new Error('Unexpected native evidence file')
+            }
+            const file = join(visual, name)
+            const info = await lstat(file)
+            totalBytes += info.size
+            if (!info.isFile() || info.size > 8 * 1024 * 1024 || totalBytes > 64 * 1024 * 1024) {
+              throw new Error('Native evidence size or file type is invalid')
+            }
+            if (name.endsWith('.json')) assertPortableMacEvidence(JSON.parse(await readFile(file, 'utf8')))
+            files.push({ name, bytes: info.size, sha256: await digest(file) })
+          }
+          const artifact = join('apps/desktop/release', process.env.ARTIFACT)
+          const metadata = JSON.parse(await readFile('apps/desktop/update-metadata.json', 'utf8'))
+          const evidence = {
+            schemaVersion: 1,
+            candidateRevision: process.env.CANDIDATE_SHA,
+            platform: 'darwin-x64',
+            desktopVersion: metadata.desktopVersion,
+            harnessVersion: metadata.harnessVersion,
+            artifact: { name: process.env.ARTIFACT, bytes: (await lstat(artifact)).size, sha256: await digest(artifact) },
+            appAsarSha256: await digest('apps/desktop/release/mac/DeepSeek Harness.app/Contents/Resources/app.asar'),
+            visuals: files,
+          }
+          assertPortableMacEvidence(evidence)
+          await writeFile(join(root, 'candidate-evidence.json'), JSON.stringify(evidence, null, 2) + '\n')
+          NODE
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DeepSeek-Harness-mac-x64-${{ steps.desktop.outputs.version }}-${{ steps.source.outputs.sha }}
+          path: |
+            apps/desktop/release/${{ steps.desktop.outputs.artifact }}
+            apps/desktop/release/${{ steps.desktop.outputs.artifact }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macOS-native-evidence-${{ steps.source.outputs.sha }}
+          path: |
+            ${{ runner.temp }}/macos-native-evidence/candidate-evidence.json
+            ${{ runner.temp }}/macos-native-evidence/visual/*.json
+            ${{ runner.temp }}/macos-native-evidence/visual/*.png
+          if-no-files-found: error
+          retention-days: 14

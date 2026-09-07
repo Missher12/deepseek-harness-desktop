@@ -1,9 +1,27 @@
+---
+description: "提供可选的 Desktop 审查、文件与终端面板。"
+kind: "package-bundle"
+---
+
 # @deepseek-ai/dsh-desktop-workbench
 
 [English](README.md) | 中文
 
+<a id="summary"></a>
+## 概述
+
 DeepSeek Harness Desktop 专用的 Codex 风格实用工作台。`Session log` 旁边的“工作台”入口会打开可调宽的右侧面板，其纵向入口会把审阅、终端、浏览器、文件和插件保留在同一个固定栏面内。该包只由 `apps/desktop/desktop.cordis.patch.yml` 挂载；普通 Web profile 不会加载它。
 
+<a id="table-of-contents"></a>
+## 目录
+
+- [边界](#boundaries)
+- [模型体验](#model-experience)
+- [Invariant ownership](#invariant-ownership)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="boundaries"></a>
 ## 边界
 
 - 终端由用户单独持有，绝不会进入 Agent 终端注册表。Windows 打开系统内置 PowerShell；POSIX 平台打开首个可用的 zsh 或 bash 登录 shell。一个 Client 最多打开四个 shell；输入限制为 16 KiB，保留输出限制为 1 MiB，切换关闭或插件卸载时会终止全部 shell。
@@ -14,6 +32,13 @@ DeepSeek Harness Desktop 专用的 Codex 风格实用工作台。`Session log` �
 
 Host HTTP bridge 只绑定当前随机 loopback origin，并要求注入可信 Desktop 文档的 generation capability。它不会向其他 origin 暴露文件系统、Git 或终端操作。
 
+<a id="invariant-ownership"></a>
+## Invariant ownership
+
+不发布不变式伴生入口，因为有界终端/浏览器/文件/审查行为在每个 Host 边界强制。
+
+
+<a id="model-experience"></a>
 ## 模型体验
 
 无，因为这个浏览器侧 Desktop 实用界面不注册任何面向模型的内容；文件、审阅、浏览器和用户持有的终端都不会自动进入模型上下文。
@@ -22,10 +47,7 @@ Host HTTP bridge 只绑定当前随机 loopback origin，并要求注入可信 D
 
 打开工作台、调整宽度或切换模式都不会改变提供方请求前缀；只有用户显式把内容复制到普通输入框后，它才会进入上下文。
 
-### Invariant ownership
-
-不发布不变式伴生入口，因为有界终端/浏览器/文件/审查行为在每个 Host 边界强制。
-
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - 内置浏览器刻意与 Harness 登录状态隔离，不提供扩展、下载、弹窗、权限提示或非 HTTP(S) 协议。
@@ -33,3 +55,8 @@ Host HTTP bridge 只绑定当前随机 loopback origin，并要求注入可信 D
 - 终端标签页只存在于当前渲染器生命周期，应用重启后不会恢复。
 - 由于产品没有四个 Mode 的全局快捷键，入口不会显示快捷键胶囊；没有对应处理器和测试的按键不会被宣传。
 - 工作台属于 Intel macOS 与 Windows x64 原生 Desktop 组合；普通 Web 不会挂载它。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

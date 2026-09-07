@@ -220,7 +220,7 @@ describe('archived Session deletion', () => {
     const sessionId = SessionId('cold-ordinary')
     const b = await deletionHarness(sessionId, {
       header: {
-        version: 0, id: sessionId, createdAt: 1, cwd: '/workspace', isSeeded: false,
+        version: 2, id: sessionId, createdAt: 1, cwd: '/workspace', isSeeded: false,
       },
     })
 
@@ -235,7 +235,7 @@ describe('archived Session deletion', () => {
     const childId = SessionId('cold-child')
     const child = await deletionHarness(childId, {
       header: {
-        version: 0,
+        version: 2,
         id: childId,
         createdAt: 1,
         cwd: '/workspace',

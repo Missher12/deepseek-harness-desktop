@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs'
 import { lstat, mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { assertNoDesktopControlArtifacts } from './stage-desktop.ts'
 
 /** Stable categories used to compare Desktop package trees. */
 export const DESKTOP_PACKAGE_CATEGORIES = [
@@ -122,31 +123,12 @@ export function assertDesktopPackageInventoryPolicy(
   if (missing.length > 0) {
     throw new Error(`${policyLabel[policy]} package policy is missing preserved runtime assets: ${missing.join(', ')}`)
   }
-  assertBrowserSkillBinary(inventory, 'win32-x64')
+  assertRemovedDesktopFeaturesAbsent(inventory)
 }
 
-/** Target whose pinned BrowserSkill CLI the package must ship. */
-export type BrowserSkillBinaryPlatform = 'darwin-x64' | 'win32-x64'
-
-/**
- * Fail closed unless the package ships exactly the one declared BrowserSkill
- * CLI member under resources/browser-skill/bin: missing binaries, the other
- * platform's member, and stray extra files all reject the package.
- */
-export function assertBrowserSkillBinary(
-  inventory: DesktopPackagePathInventory,
-  platform: BrowserSkillBinaryPlatform,
-): void {
-  const member = platform === 'win32-x64' ? 'bsk.exe' : 'bsk'
-  const expected = `resources/browser-skill/bin/${member}`
-  const paths = inventory.files.map(file => file.path.replaceAll('\\', '/'))
-  if (!paths.includes(expected)) {
-    throw new Error(`Desktop package is missing the ${platform} BrowserSkill CLI at ${expected}.`)
-  }
-  const strays = paths.filter(path => path.startsWith('resources/browser-skill/') && path !== expected)
-  if (strays.length > 0) {
-    throw new Error(`Desktop package carries unexpected browser-skill files: ${strays.join(', ')}`)
-  }
+/** Reject every retired product package and BrowserSkill resource in a finished app. */
+export function assertRemovedDesktopFeaturesAbsent(inventory: DesktopPackagePathInventory): void {
+  assertNoDesktopControlArtifacts(inventory.files.map(file => file.path))
 }
 
 /** Ensure managed packages are linkable physical directories outside app.asar. */
@@ -322,11 +304,9 @@ async function main(args: readonly string[]): Promise<void> {
       ...manifest.optionalDependencies,
     }).sort((left, right) => left.localeCompare(right, 'en'))
     assertManagedPackageRootsArePhysical(inventory, managedPackages)
-    if (policy === 'windows-x64') {
-      const bsk = await readFile(resolve(packageRoot, 'resources/browser-skill/bin/bsk.exe'))
-      assertWindowsX64PE(bsk)
-    }
+
   }
+  assertRemovedDesktopFeaturesAbsent(inventory)
   await mkdir(dirname(output), { recursive: true })
   await writeFile(output, `${JSON.stringify(inventory, null, 2)}\n`, 'utf8')
   process.stdout.write(`desktop package inventory: recorded ${String(inventory.files.length)} files\n`)

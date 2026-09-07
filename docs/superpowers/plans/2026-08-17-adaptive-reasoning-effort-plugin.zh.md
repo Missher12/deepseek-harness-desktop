@@ -2,6 +2,8 @@
 
 [English](2026-08-17-adaptive-reasoning-effort-plugin.md) | 中文
 
+此页保留历史任务步骤；文件指针已对齐当前实现所有者，不代表这些步骤仍待执行。当前交付状态见 [项目上下文](../../../PROJECT_CONTEXT.md)。
+
 > **供 agent 工作者使用：** 必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。步骤使用 checkbox（`- [ ]`）语法跟踪。
 
 **目标：** 交付一个可独立移除、符合 Harness 风格的模型选择器，保留 HanaAyane 的 Canvas 推理强度特效，弹层默认向下，并把可选人物偏好保存在当前 profile。
@@ -19,7 +21,7 @@
 - 新建：`packages/extensions/reasoning-effort/tsconfig.json`
 - 新建：`packages/extensions/reasoning-effort/tsdown.config.ts`
 - 新建：`packages/extensions/reasoning-effort/cordis.patch.yml`
-- 新建：`packages/extensions/reasoning-effort/src/invariant.ts`
+- 不发布独立 invariant companion；校验职责见 [reasoning-effort](../../../packages/extensions/reasoning-effort/README.zh.md)。
 - 新建：`packages/extensions/reasoning-effort/LICENSE`
 - 新建：`packages/extensions/reasoning-effort/THIRD_PARTY_NOTICES.md`
 - 复制：`packages/extensions/reasoning-effort/assets/chibi-runner-strip.png`

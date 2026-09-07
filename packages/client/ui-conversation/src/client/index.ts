@@ -1,5 +1,6 @@
 /** Browser Conversation assemble core, React adapter, shell, and input plugin. */
-export { apply, inject } from './apply.ts'
+export { apply, Config, inject } from './apply.ts'
+export type { Config as ConversationConfig } from './apply.ts'
 export { UiConversation } from './conversation/assembly.ts'
 export type { ConversationBinding } from './conversation/assembly.ts'
 export { ConversationController } from './service.ts'
@@ -50,6 +51,7 @@ export type { ConversationKey } from './locales.ts'
 export type {
   ComposerAttachment, ComposerAttachmentsOwnerProps, ComposerAttachmentsProps, ComposerDocumentAttachment,
   ComposerImageAttachment,
+  ComposerFileAttachment, DraftFileUpload, DraftFileUploads,
   ComposerBarInjected, ComposerBarOwnerProps, ComposerBarProps, ComposerChainProps,
   ConversationHeaderActionOwnerProps, ConversationHeaderLineageOwnerProps,
   ConversationInjected, ConversationSessionHeaderInjected, ConversationSessionHeaderSlotProps,
@@ -63,7 +65,7 @@ export type {
 export type {
   ArbitrateKey, ArbitrateOutcome, BeginCommandRequest, CommandClaim, ConsumeTokenRequest,
   DraftAttachmentId, InputActions, InputState, InsertReferenceRequest, InsertTextRequest,
-  PickOutcome, ReferenceInsert, SessionInput, SessionInputResolver, SubmitImageAttachment,
+  PickOutcome, ReferenceInsert, SessionInput, SessionInputResolver, SubmitAttachment,
   SubmitOutcome, TokenSpan,
 } from './contract/input.ts'
 export type { ComposerBlock, ComposerBlocks } from './contract/composer-blocks.ts'

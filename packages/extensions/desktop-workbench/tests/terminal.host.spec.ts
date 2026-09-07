@@ -77,7 +77,7 @@ describe('WorkbenchTerminalRegistry', () => {
     // the fifth open supersedes the oldest record instead of failing.
     const fifth = await registry.open('owner', '/workspace')
     expect(fifth.cwd).toBe('/workspace')
-    expect((await registry.list('owner')).map(item => item.id)).toHaveLength(4)
+    expect(registry.list('owner').map(item => item.id)).toHaveLength(4)
     await registry.closeAll()
   })
 
@@ -132,7 +132,7 @@ describe('WorkbenchTerminalRegistry', () => {
     }), async () => ['/bin/zsh', '-l'])
     for (let index = 0; index < 4; index += 1) await registry.open('owner', '/workspace')
     await expect(registry.open('owner', '/workspace')).resolves.toMatchObject({ cwd: '/workspace' })
-    expect((await registry.list('owner')).map(item => item.id)).toHaveLength(4)
+    expect(registry.list('owner').map(item => item.id)).toHaveLength(4)
     expect(terminate).toHaveBeenCalledOnce()
     await registry.closeAll()
   })

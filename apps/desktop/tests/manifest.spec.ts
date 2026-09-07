@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 
@@ -99,7 +98,7 @@ describe('desktop package manifest', () => {
 
     expect(manifest).toMatchObject({
       name: '@deepseek-ai/dsh-desktop',
-      version: '0.5.4',
+      version: '0.5.5',
       packageManager: 'pnpm@11.7.0',
       private: true,
       main: 'lib/main.js',
@@ -123,7 +122,7 @@ describe('desktop package manifest', () => {
     )
   })
 
-  it('builds Mac desktop artifacts with the official client brand profile', () => {
+  it('builds both desktop platforms with the official client brand profile', () => {
     const rootManifest = JSON.parse(
       readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
     ) as Pick<DesktopManifest, 'scripts'>
@@ -133,6 +132,9 @@ describe('desktop package manifest', () => {
     )
     expect(rootManifest.scripts['desktop:pack']).toContain('desktop:stage')
     expect(rootManifest.scripts['desktop:dmg']).toContain('desktop:stage')
+    expect(rootManifest.scripts['desktop:setup']).toBe(
+      'pnpm run build:official && pnpm run desktop:setup:built',
+    )
   })
 
   it('keeps one authoritative turn navigator and rejects the rc.2 PromptRail', () => {
@@ -195,38 +197,19 @@ describe('desktop package manifest', () => {
     }])
   })
 
-  it('mounts exactly one dormant BrowserSkill row with the packaged CLI on PATH', () => {
-    const patch = yaml.load(
-      readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8'),
-    ) as Array<{ insert?: Array<{ id?: string; name?: string; config?: Record<string, unknown> }> }>
-    const rows = patch.flatMap(operation => operation.insert ?? [])
-      .filter(row => row.id === 'browser-skill'
-        || row.name === '@wxg-prc-cpg/browser-skill-dsh-plugin')
-
-    expect(rows).toEqual([{
-      id: 'browser-skill',
-      name: '@wxg-prc-cpg/browser-skill-dsh-plugin',
-      config: { bskPath: 'bsk', lazyTools: true, observationEnabled: false },
-    }])
-  })
-
-  it('exposes exactly the six phase-one BrowserSkill tools with no evaluate, record, or CDP surface', () => {
-    const require = createRequire(import.meta.url)
-    const entry = require.resolve('@wxg-prc-cpg/browser-skill-dsh-plugin')
-    const source = readFileSync(entry, 'utf8')
-    const names = [...source.matchAll(/name:\s*"(browser_[a-z_]+)"/gu)].map(match => match[1]!)
-
-    expect([...new Set(names)].sort()).toEqual([
-      'browser_assist',
-      'browser_inspect',
-      'browser_interact',
-      'browser_page',
-      'browser_session',
-      'browser_tabs',
-    ])
-    for (const name of names) {
-      expect(name, name).not.toMatch(/evaluate|record|cdp/u)
+  it('excludes the workbench, BrowserSkill, Open Design and the removed builtins from the product', () => {
+    const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as DesktopManifest
+    const patch = readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8')
+    const builder = readFileSync(new URL('../electron-builder.yml', import.meta.url), 'utf8')
+    const preload = readFileSync(new URL('../src/preload.ts', import.meta.url), 'utf8')
+    const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
+    for (const name of ['desktop-workbench', 'browser-skill', 'open-design', 'missher-brain', 'missher-memory', 'missher-evolution', 'desktop-managed-memory', 'desktop-managed-evolution', 'ui-settings-brain']) {
+      expect(Object.keys(manifest.dependencies).join('\n'), name).not.toContain(name)
+      expect(patch, name).not.toContain(name)
+      expect(builder, name).not.toContain(name)
     }
+    expect(preload).not.toMatch(/WorkbenchBrowser|DesktopIntegrations/)
+    expect(main).not.toMatch(/workbench-browser|integrations-get|BrowserSkill/)
   })
 
   it('keeps module, missing-service, and apply failures outside the activated Web UI', () => {
@@ -268,82 +251,6 @@ describe('desktop package manifest', () => {
       id: 'dsh-market',
       name: 'dshmarket',
     })
-  })
-
-  it('ships one ordered default-on external-brain stack from immutable release archives', () => {
-    const manifest = JSON.parse(
-      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
-    ) as DesktopManifest
-    const patches = yaml.load(
-      readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8'),
-    ) as DesktopPatch[]
-    const rows = patches.flatMap(patch => patch.insert ?? [])
-
-    expect(manifest.dependencies['dsh-missher-memory']).toBe(
-      'https://github.com/Missher12/dsh-missher-memory/releases/download/v0.2.0/dsh-missher-memory-0.2.0.tgz',
-    )
-    expect(manifest.dependencies['dsh-missher-evolution']).toBe(
-      'https://github.com/Missher12/dsh-missher-evolution/releases/download/v0.1.1/dsh-missher-evolution-0.1.1.tgz',
-    )
-    expect(manifest.dependencies['@deepseek-ai/dsh-missher-brain']).toBe('workspace:^')
-    expect(rows.findIndex(row => row.id === 'missher-brain')).toBeLessThan(rows.findIndex(row => row.id === 'desktop-missher-memory'))
-    expect(rows.findIndex(row => row.id === 'desktop-missher-memory')).toBeLessThan(rows.findIndex(row => row.id === 'desktop-missher-evolution'))
-    expect(rows.filter(row => row.id === 'missher-brain')).toEqual([{
-      id: 'missher-brain', name: '@deepseek-ai/dsh-missher-brain',
-    }])
-    expect(rows.filter(row => row.id === 'desktop-missher-memory')).toEqual([{
-      id: 'desktop-missher-memory',
-      name: '@deepseek-ai/dsh-desktop-managed-memory',
-      config: {
-        enabled: true,
-        captureEnabled: true,
-        recallEnabled: true,
-        consolidationEnabled: true,
-      },
-    }])
-    expect(rows.filter(row => row.id === 'desktop-missher-evolution')).toEqual([{
-      id: 'desktop-missher-evolution',
-      name: '@deepseek-ai/dsh-desktop-managed-evolution',
-      config: { enabled: true, maintenanceIntervalHours: 24, maxInjectedRules: 4 },
-    }])
-
-    expect(rows.find(row => row.id === 'dsh-market')).toEqual({
-      id: 'dsh-market',
-      name: 'dshmarket',
-      config: {
-        builtins: [
-          expect.objectContaining({ name: '@deepseek-ai/dsh-missher-brain', spec: 'builtin:0.1.1-rc.2', category: 'memory' }),
-          expect.objectContaining({
-            name: 'dsh-missher-memory',
-            spec: 'builtin:0.2.0',
-            runtimeNames: ['@deepseek-ai/dsh-desktop-managed-memory'],
-            category: 'memory',
-          }),
-          expect.objectContaining({
-            name: 'dsh-missher-evolution',
-            spec: 'builtin:0.1.1',
-            runtimeNames: ['@deepseek-ai/dsh-desktop-managed-evolution'],
-            category: 'agent',
-          }),
-        ],
-      },
-    })
-
-    const marketPatch = readFileSync(
-      new URL('../../../patches/dshmarket@1.10.1.patch', import.meta.url),
-      'utf8',
-    )
-    expect(marketPatch).toContain('builtins?: BuiltinPlugin[]')
-    expect(marketPatch).toContain('protected: [...protectedPackageNames]')
-    expect(marketPatch).toContain('data-dshmarket-protected-package')
-  })
-
-  it('describes the memory coordinator without the obsolete External Brain product name', () => {
-    const desktopPatch = readFileSync(new URL('../desktop.cordis.patch.yml', import.meta.url), 'utf8')
-    expect(desktopPatch).not.toContain('外置大脑')
-    expect(desktopPatch).not.toContain('External-brain')
-    expect(desktopPatch).toContain('记忆与学习协调器')
-    expect(desktopPatch).toContain('Memory & Learning coordinator')
   })
 
   it('builds one visible per-user Windows x64 Setup with progress, shortcuts, and launch-after-install', () => {
@@ -450,8 +357,6 @@ describe('desktop package manifest', () => {
     expect(smoke).toContain('data-dshmarket-plugin-row')
     expect(smoke).toContain('data-dshmarket-primary-action')
     expect(smoke).toContain('data-dshmarket-overflow-menu')
-    expect(smoke).toContain('button[data-package="dsh-missher-memory"]')
-    expect(smoke).toContain('data-dshmarket-protected-package')
     expect(smoke).toContain("'/dsh-market/update'")
     expect(smoke).toContain("'/dsh-market/uninstall'")
     expect(smoke).toContain("code: 'self-protected'")
@@ -481,21 +386,12 @@ describe('desktop package manifest', () => {
     expect(smoke).toContain('desktop-smoke-visible-message')
     expect(smoke).not.toContain('desktop-smoke-visible-reply')
     expect(smoke).toContain('desktop-smoke-messenger-${platform}.png')
-    expect(smoke).toContain('desktop-smoke-workbench-${platform}.png')
-    expect(smoke).toContain("getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })")
-    expect(smoke).toContain('data-plugin-card="open-design"')
-    expect(smoke).toContain('data-open-design-state="installed"')
-    expect(smoke).toContain('defaultPanelBounds.width).toBeGreaterThanOrEqual(300)')
-    const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
-    expect(main).toContain("ipcMain.handle('desktop:integrations-get'")
-    expect(main).toContain('return await readDesktopIntegrations(dshHome)')
     expect(smoke).not.toContain("platform === 'win32'\n    ? await seedWindowsClipboardSmokeState")
     expect(smoke).toContain("new File(['packaged document drop'], 'desktop-dropped-notes.md'")
     expect(smoke).toContain("new DragEvent('drop'")
     expect(smoke).toContain('desktop-dropped-notes\\.md')
     expect(smoke).toContain('Attach file|添加附件')
     expect(smoke).not.toContain('Add image|添加图片')
-    expect(smoke).toContain('Memory & Learning|记忆与学习')
     expect(smoke).not.toContain('Project Memory|项目记忆')
   })
 

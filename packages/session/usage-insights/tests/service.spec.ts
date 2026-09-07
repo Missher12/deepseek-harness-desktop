@@ -14,7 +14,10 @@ interface StoredLog {
   events: SessionEvent[]
   revision: string
   error?: Error
+  readError?: Error
   onInspect?: () => void
+  onRead?: () => void
+  onClose?: () => void
   waitForAbort?: boolean
 }
 
@@ -40,7 +43,7 @@ const userEvent = (seq: number, date: string): SessionEvent => ({
 function stored(id: string, revision: string, events: SessionEvent[]): StoredLog {
   return {
     header: {
-      version: 0,
+      version: 2,
       id: id as SessionId,
       createdAt: Date.parse('2026-01-01T00:00:00.000Z'),
       isSeeded: false,
@@ -59,11 +62,16 @@ async function harness(
 ) {
   const logs = new Map(initial.map(log => [String(log.header.id), log]))
   const persistence = {
-    listSnapshots: vi.fn(async (_signal?: AbortSignal) => [...logs.values()].map(log => ({
+    stat: vi.fn(async (id: SessionId) => {
+      const log = logs.get(String(id))
+      return log === undefined ? undefined : { header: log.header, revision: SessionPersistenceRevision(log.revision) }
+    }),
+    list: vi.fn(async (_options?: { signal?: AbortSignal }) => [...logs.values()].map(log => ({
       header: structuredClone(log.header),
       revision: SessionPersistenceRevision(log.revision),
     }))),
-    inspect: vi.fn(async (id: SessionId, signal?: AbortSignal) => {
+    open: vi.fn(async (id: SessionId, _access: 'read', options?: { signal?: AbortSignal }) => {
+      const signal = options?.signal
       const log = logs.get(String(id))
       if (log === undefined) throw new Error(`missing ${id}`)
       if (log.error !== undefined) throw log.error
@@ -78,9 +86,14 @@ async function harness(
       }
       log.onInspect?.()
       return {
-        meta: structuredClone(log.header),
+        header: structuredClone(log.header),
         inheritedEventCount: log.inheritedEventCount,
-        events: structuredClone(log.events),
+        read: async () => {
+          log.onRead?.()
+          if (log.readError !== undefined) throw log.readError
+          return structuredClone(log.events)
+        },
+        close: vi.fn(async () => { log.onClose?.() }),
       }
     }),
   }
@@ -110,12 +123,46 @@ describe('UsageInsightsGateway', () => {
     const [first, joined] = await Promise.all([gateway.snapshot(), gateway.snapshot()])
 
     expect(first).toEqual(joined)
-    expect(persistence.listSnapshots).toHaveBeenCalledTimes(1)
-    expect(persistence.inspect).toHaveBeenCalledTimes(1)
+    expect(persistence.list).toHaveBeenCalledTimes(1)
+    expect(persistence.open).toHaveBeenCalledTimes(1)
 
     await gateway.snapshot()
-    expect(persistence.listSnapshots).toHaveBeenCalledTimes(2)
-    expect(persistence.inspect).toHaveBeenCalledTimes(1)
+    expect(persistence.list).toHaveBeenCalledTimes(2)
+    expect(persistence.open).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses the generation published during open and survives a gateway restart', async () => {
+    const migrated = stored('migrated', 'v0', [userEvent(0, '2026-08-17T12:00:00.000Z')])
+    migrated.onInspect = () => { migrated.revision = 'v2' }
+    const { gateway, persistence, pool } = await harness([migrated])
+    await gateway.snapshot()
+    await gateway.snapshot()
+    expect(persistence.open).toHaveBeenCalledTimes(1)
+    const restarted = await harness([migrated], pool)
+    expect((await restarted.gateway.snapshot()).sessionCount).toBe(1)
+    expect(restarted.persistence.open).not.toHaveBeenCalled()
+  })
+
+  it('invalidates a read raced by a foreign append after the revision observation', async () => {
+    const changed = stored('changed', 'r1', [userEvent(0, '2026-08-17T12:00:00.000Z')])
+    changed.onRead = () => { changed.revision = 'r2' }
+    const { gateway, persistence } = await harness([changed])
+    await gateway.snapshot()
+    await gateway.snapshot()
+    expect(persistence.open).toHaveBeenCalledTimes(2)
+  })
+
+  it('closes the read handle when decoding fails and retries after repair', async () => {
+    const bad = stored('bad-read', 'r1', [])
+    const close = vi.fn()
+    bad.onClose = close
+    bad.readError = new Error('corrupt body')
+    const { gateway, persistence } = await harness([bad])
+    expect((await gateway.snapshot()).omittedSessions).toBe(1)
+    expect(close).toHaveBeenCalledTimes(1)
+    delete bad.readError
+    expect((await gateway.snapshot()).omittedSessions).toBe(0)
+    expect(persistence.open).toHaveBeenCalledTimes(2)
   })
 
   it('memoizes a live Session only in process memory and invalidates it on the next event', async () => {
@@ -132,7 +179,7 @@ describe('UsageInsightsGateway', () => {
     await gateway.snapshot()
     await gateway.snapshot()
 
-    expect(persistence.inspect).toHaveBeenCalledTimes(1)
+    expect(persistence.open).toHaveBeenCalledTimes(1)
     expect([...pool.media.get('usage_insights')?.tables.get('sessions')?.keys() ?? []]).toEqual([])
 
     active.events.push(userEvent(1, '2026-08-18T12:00:00.000Z'))
@@ -140,7 +187,7 @@ describe('UsageInsightsGateway', () => {
 
     expect((await gateway.snapshot()).summary.currentStreakDays).toBe(2)
     await gateway.snapshot()
-    expect(persistence.inspect).toHaveBeenCalledTimes(2)
+    expect(persistence.open).toHaveBeenCalledTimes(2)
 
     liveIds.delete('active')
     logs.delete('active')
@@ -162,7 +209,7 @@ describe('UsageInsightsGateway', () => {
     ctx.emit('session/disposed', { id: active.header.id } as Session)
     await gateway.snapshot()
 
-    expect(persistence.inspect).toHaveBeenCalledTimes(2)
+    expect(persistence.open).toHaveBeenCalledTimes(2)
     expect([...pool.media.get('usage_insights')?.tables.get('sessions')?.keys() ?? []]).toEqual(['disposed'])
   })
 
@@ -181,7 +228,7 @@ describe('UsageInsightsGateway', () => {
     await gateway.snapshot()
     await gateway.snapshot()
 
-    expect(persistence.inspect).toHaveBeenCalledTimes(1)
+    expect(persistence.open).toHaveBeenCalledTimes(1)
     expect([...pool.media.get('usage_insights')?.tables.get('sessions')?.keys() ?? []]).toEqual([])
   })
 
@@ -197,7 +244,7 @@ describe('UsageInsightsGateway', () => {
     expect([...fixture.pool.media.get('usage_insights')?.tables.get('sessions')?.keys() ?? []]).toEqual([])
 
     await fixture.gateway.snapshot()
-    expect(fixture.persistence.inspect).toHaveBeenCalledTimes(2)
+    expect(fixture.persistence.open).toHaveBeenCalledTimes(2)
     expect([...fixture.pool.media.get('usage_insights')?.tables.get('sessions')?.keys() ?? []]).toEqual(['racing'])
   })
 
@@ -219,7 +266,7 @@ describe('UsageInsightsGateway', () => {
 
     expect(snapshot.sessionCount).toBe(1)
     expect(snapshot.summary.currentStreakDays).toBe(2)
-    expect(persistence.inspect).toHaveBeenCalledTimes(3)
+    expect(persistence.open).toHaveBeenCalledTimes(3)
     const storedRows = pool.media.get('usage_insights')?.tables.get('sessions')
     expect([...storedRows?.keys() ?? []]).toEqual(['one'])
   })
@@ -253,12 +300,12 @@ describe('UsageInsightsGateway', () => {
     const first = gateway.snapshot()
     await vi.advanceTimersByTimeAsync(25)
     await expect(first).resolves.toMatchObject({ sessionCount: 1, omittedSessions: 1 })
-    expect(persistence.listSnapshots.mock.calls[0]?.[0]).toBeInstanceOf(AbortSignal)
-    expect(persistence.inspect.mock.calls.find(call => String(call[0]) === 'stuck')?.[1]).toBeInstanceOf(AbortSignal)
+    expect(persistence.list.mock.calls[0]?.[0]?.signal).toBeInstanceOf(AbortSignal)
+    expect(persistence.open.mock.calls.find(call => String(call[0]) === 'stuck')?.[2]?.signal).toBeInstanceOf(AbortSignal)
 
     stuck.waitForAbort = false
     await expect(gateway.snapshot()).resolves.toMatchObject({ sessionCount: 2, omittedSessions: 0 })
-    expect(persistence.listSnapshots).toHaveBeenCalledTimes(2)
+    expect(persistence.list).toHaveBeenCalledTimes(2)
   })
 
   it.each([9, 10.5, 60_001])('rejects an unsafe refresh timeout of %s milliseconds', async (refreshTimeoutMs) => {
@@ -281,7 +328,7 @@ describe('UsageInsightsGateway', () => {
     const snapshot = await gateway.snapshot()
 
     expect(snapshot.sessionCount).toBe(1)
-    expect(persistence.inspect).toHaveBeenCalledTimes(1)
+    expect(persistence.open).toHaveBeenCalledTimes(1)
     const rebuilt = pool.media.get('usage_insights')?.tables.get('sessions')?.get('one')
     expect(rebuilt).not.toHaveProperty('secretPrompt')
   })
@@ -294,7 +341,7 @@ describe('UsageInsightsGateway', () => {
     const invalid = await harness([], new MemoryMediaPool(), { timeZone: 'Not/A-Time-Zone' })
     await expect(invalid.gateway.snapshot()).rejects.toThrow()
     await expect(invalid.gateway.snapshot()).rejects.toThrow()
-    expect(invalid.persistence.listSnapshots).not.toHaveBeenCalled()
+    expect(invalid.persistence.list).not.toHaveBeenCalled()
   })
 
   it('keeps snapshots available when cache writes and stale deletes fail', async () => {

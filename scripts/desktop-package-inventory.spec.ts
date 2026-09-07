@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  assertBrowserSkillBinary,
+  assertRemovedDesktopFeaturesAbsent,
   assertDesktopPackageInventoryPolicy,
   assertManagedPackageRootsArePhysical,
   assertWindowsX64PE,
@@ -108,7 +108,6 @@ describe('desktop package inventory', () => {
       'resources/app.asar.unpacked/node_modules/pdfjs-dist/standard_fonts/FoxitSerif.pfb',
       'resources/app.asar.unpacked/node_modules/pdfjs-dist/wasm/openjpeg.wasm',
       'resources/app.asar.unpacked/node_modules/pkg/lib/worker.js',
-      'resources/browser-skill/bin/bsk.exe',
     ]
 
     expect(() => {
@@ -124,7 +123,7 @@ describe('desktop package inventory', () => {
       'resources/app.asar.unpacked/node_modules/pdfjs-dist/standard_fonts/FoxitSerif.pfb',
       'resources/app.asar.unpacked/node_modules/pdfjs-dist/wasm/openjpeg.wasm',
     ]
-    const required = [...preserved, 'resources/browser-skill/bin/bsk.exe']
+    const required = preserved
     for (const removed of preserved) {
       expect(() => {
         assertDesktopPackageInventoryPolicy({
@@ -132,35 +131,11 @@ describe('desktop package inventory', () => {
         }, 'windows-x64')
       }, removed).toThrow(/missing preserved runtime assets/u)
     }
-    expect(() => {
-      assertDesktopPackageInventoryPolicy({
-        files: required.filter(path => path !== 'resources/browser-skill/bin/bsk.exe').map(path => ({ path })),
-      }, 'windows-x64')
-    }).toThrow(/missing the win32-x64 BrowserSkill CLI/u)
   })
 
-  it('requires exactly one declared BrowserSkill CLI and rejects stray or foreign members', () => {
-    const withExe = { files: [{ path: 'resources/app.asar' }, { path: 'resources/browser-skill/bin/bsk.exe' }] }
-    expect(() => assertBrowserSkillBinary(withExe, 'win32-x64')).not.toThrow()
-    expect(() => assertBrowserSkillBinary(withExe, 'darwin-x64')).toThrow(/missing the darwin-x64 BrowserSkill CLI/u)
-
-    const withBs = { files: [{ path: 'resources/app.asar' }, { path: 'resources/browser-skill/bin/bsk' }] }
-    expect(() => assertBrowserSkillBinary(withBs, 'darwin-x64')).not.toThrow()
-    expect(() => assertBrowserSkillBinary(withBs, 'win32-x64')).toThrow(/missing the win32-x64 BrowserSkill CLI/u)
-
-    expect(() => assertBrowserSkillBinary({ files: [] }, 'darwin-x64')).toThrow(/missing the darwin-x64 BrowserSkill CLI/u)
-    expect(() => assertBrowserSkillBinary({
-      files: [
-        { path: 'resources/browser-skill/bin/bsk.exe' },
-        { path: 'resources/browser-skill/bin/bsk' },
-      ],
-    }, 'win32-x64')).toThrow(/unexpected browser-skill files.*bsk$/u)
-    expect(() => assertBrowserSkillBinary({
-      files: [
-        { path: 'resources/browser-skill/bin/bsk.exe' },
-        { path: 'resources/browser-skill/bin/shim.dll' },
-      ],
-    }, 'win32-x64')).toThrow(/unexpected browser-skill files.*shim\.dll$/u)
+  it.each(['resources/browser-skill/bin/bsk', 'resources/browser-skill/bin/bsk.exe', 'resources/app.asar.unpacked/node_modules/@deepseek-ai/dsh-desktop-workbench/package.json', 'resources/app.asar.unpacked/node_modules/dsh-missher-memory/package.json'])('rejects the removed product artifact %s', (path) => {
+    expect(() => { assertRemovedDesktopFeaturesAbsent({ files: [{ path }] }) }).toThrow(/forbidden/)
+    expect(() => { assertRemovedDesktopFeaturesAbsent({ files: [{ path: 'resources/app.asar' }] }) }).not.toThrow()
   })
 
   it('requires every managed package root to remain physical under app.asar.unpacked', () => {
@@ -178,7 +153,7 @@ describe('desktop package inventory', () => {
     }).toThrow(/missing-runtime.*app\.asar\.unpacked/u)
   })
 
-  it('accepts only an x64 PE image for the bundled BrowserSkill CLI', () => {
+  it('accepts only an x64 native PE image', () => {
     const pe = (machine: number) => {
       const bytes = Buffer.alloc(0x200)
       bytes.writeUInt16LE(0x5a4d, 0)
@@ -187,10 +162,10 @@ describe('desktop package inventory', () => {
       bytes.writeUInt16LE(machine, 0x84)
       return bytes
     }
-    expect(() => assertWindowsX64PE(pe(0x8664))).not.toThrow()
-    expect(() => assertWindowsX64PE(pe(0x014c))).toThrow(/expected x64/u)
-    expect(() => assertWindowsX64PE(Buffer.from('not a pe'))).toThrow(/MZ header/u)
-    expect(() => assertWindowsX64PE(Buffer.alloc(0x10))).toThrow(/MZ header/u)
-    expect(() => assertWindowsX64PE(pe(0x8664).subarray(0, 0x85))).toThrow(/signature missing/u)
+    expect(() => { assertWindowsX64PE(pe(0x8664)) }).not.toThrow()
+    expect(() => { assertWindowsX64PE(pe(0x014c)) }).toThrow(/expected x64/u)
+    expect(() => { assertWindowsX64PE(Buffer.from('not a pe')) }).toThrow(/MZ header/u)
+    expect(() => { assertWindowsX64PE(Buffer.alloc(0x10)) }).toThrow(/MZ header/u)
+    expect(() => { assertWindowsX64PE(pe(0x8664).subarray(0, 0x85)) }).toThrow(/signature missing/u)
   })
 })

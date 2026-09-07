@@ -17,7 +17,7 @@ import type {
   ConversationLocationDataStore, ConversationTurnDataMap,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionId, TurnEndReason } from '@deepseek-ai/dsh-session/types'
 import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { KeyedSnapshotSelectorHook, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -51,10 +51,35 @@ afterEach(() => {
 // so one harness's selection cannot rehydrate into the next.
 beforeEach(() => {
   localStorage.clear()
+  vi.stubGlobal('ResizeObserver', class {
+    observe() {}
+    disconnect() {}
+  })
 })
 
 const SID = 's1' as SessionId
 type RoutedChatNodeOwner = ChatNodeOwnerProps & { readonly node: ChatNode }
+
+it('renders a session relay body and sender without exposing its transport envelope', () => {
+  const relay: ContextMessageNode = {
+    ...context(1, ''),
+    content: [
+      { type: 'text', text: 'private transport envelope' },
+      { type: 'text', text: 'The requested review is ready.' },
+    ],
+    source: {
+      kind: 'plugin', plugin: 'dsh-session-messenger', form: 'relay',
+      senderSessionId: 'review-session', deliveryId: 'private-delivery-id',
+      mode: 'followup', bodyBlockIndex: 1,
+    },
+  }
+  const h = makeHarness({ nodes: [relay] })
+  const view = render(<ChatView {...h.props} />)
+  expect(view.getByText('The requested review is ready.')).not.toBeNull()
+  expect(view.getByText(/review-session/u)).not.toBeNull()
+  expect(view.container.textContent).not.toContain('private transport envelope')
+  expect(view.container.textContent).not.toContain('private-delivery-id')
+})
 
 function sessionSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
   return {
@@ -97,6 +122,7 @@ function makeSessionSource(init: Partial<SessionSnapshot> = {}) {
 }
 
 type ChatSlice = Partial<LegacyConversationSlice> & {
+  readonly turnEndReasons?: ReadonlyMap<number, TurnEndReason>
   readonly turnUsages?: NonNullable<Parameters<typeof chatSnapshotFixture>[0]>['turnUsages']
 }
 type HarnessUpdate = ChatSlice & Partial<SessionSnapshot> & { readonly chat?: ChatSnapshot }
@@ -226,7 +252,7 @@ function makeHarness(
   chatSnapshot?: ChatSnapshot,
 ) {
   const {
-    chat: initialChat, nodes, partial, runningCalls, turnTimings, turnEnds, turnUsages,
+    chat: initialChat, nodes, partial, runningCalls, turnTimings, turnEnds, turnEndReasons, turnUsages,
     ...sessionInit
   } = init
   const chatSlice: ChatSlice = {
@@ -235,6 +261,7 @@ function makeHarness(
     ...(runningCalls === undefined ? {} : { runningCalls }),
     ...(turnTimings === undefined ? {} : { turnTimings }),
     ...(turnEnds === undefined ? {} : { turnEnds }),
+    ...(turnEndReasons === undefined ? {} : { turnEndReasons }),
     ...(turnUsages === undefined ? {} : { turnUsages }),
   }
   const session = makeSessionSource({ ...sessionInit, ...sessionOverrides })
@@ -379,9 +406,9 @@ function makeHarness(
     useInput: (() => { throw new Error('unused') }),
     inputActions: {
       setDraft: () => {},
-      addImages: () => true,
-      removeImage: () => {},
-      pruneImages: () => {},
+      addAttachments: () => true,
+      removeAttachment: () => {},
+      pruneAttachments: () => {},
       submit: () => {},
     },
     useStore: bindSnapshotSelector(chat),
@@ -405,18 +432,19 @@ function makeHarness(
   }
   const set = (next: HarnessUpdate): void => {
     const {
-      chat: explicitChat, nodes, partial, runningCalls, turnTimings, turnEnds,
+      chat: explicitChat, nodes, partial, runningCalls, turnTimings, turnEnds, turnEndReasons,
       ...sessionUpdate
     } = next
     if (explicitChat !== undefined) chatSource.replace(explicitChat)
     else if (nodes !== undefined || partial !== undefined || runningCalls !== undefined
-      || turnTimings !== undefined || turnEnds !== undefined) {
+      || turnTimings !== undefined || turnEnds !== undefined || turnEndReasons !== undefined) {
       chatSource.set({
         ...(nodes === undefined ? {} : { nodes }),
         ...(partial === undefined ? {} : { partial }),
         ...(runningCalls === undefined ? {} : { runningCalls }),
         ...(turnTimings === undefined ? {} : { turnTimings }),
         ...(turnEnds === undefined ? {} : { turnEnds }),
+        ...(turnEndReasons === undefined ? {} : { turnEndReasons }),
       })
     }
     session.set(sessionUpdate)
@@ -1041,7 +1069,7 @@ describe('ChatView', () => {
         pendingSubmissions: [
           {
             requestId: 'req-1' as never, placement: 'transcript',
-            time: 5_000, text: '即发即显', images: [],
+            time: 5_000, text: '即发即显', attachments: [],
           },
         ],
       },
@@ -1081,7 +1109,9 @@ describe('ChatView', () => {
           placement: 'steering',
           time: 5_500,
           text: '带图纠偏',
-          images: [{ previewUrl: 'blob:steer-preview', name: 'steer.png' }],
+          attachments: [{
+            type: 'image', value: { previewUrl: 'blob:steer-preview', name: 'steer.png' },
+          }],
         }],
       },
     )
@@ -1115,7 +1145,7 @@ describe('ChatView', () => {
         pendingSubmissions: [
           {
             requestId: 'req-q' as never, placement: 'queued',
-            time: 6_000, text: '排队中', images: [],
+            time: 6_000, text: '排队中', attachments: [],
           },
         ],
       },
@@ -1149,9 +1179,11 @@ describe('ChatView', () => {
           placement: 'transcript',
           time: 7_000,
           text: '',
-          images: [
-            { previewUrl: 'blob:echo-a', name: 'a.png', width: 4, height: 3 },
-            { previewUrl: 'blob:echo-b' },
+          attachments: [
+            {
+              type: 'image', value: { previewUrl: 'blob:echo-a', name: 'a.png', width: 4, height: 3 },
+            },
+            { type: 'image', value: { previewUrl: 'blob:echo-b' } },
           ],
         }],
       },
@@ -1159,23 +1191,72 @@ describe('ChatView', () => {
     const baseRenderSlot = h.props.renderSlot
     const renderSlot = ((key: string, owner: object, opts?: { fallback?: React.ReactNode }) => {
       if (key !== 'conversation.message.images') return baseRenderSlot(key as never, owner as never, opts as never)
-      const message = owner as { images: readonly unknown[]; attachments?: readonly unknown[] }
+      const { images, compact } = owner as { images: readonly unknown[]; compact?: boolean }
       return (
         <div
-          data-testid="echo-images"
-          data-count={message.images.length}
-          data-first={JSON.stringify(message.images[0])}
-          data-attachments={message.attachments === undefined ? 'omitted' : String(message.attachments.length)}
+          data-testid="echo-image"
+          data-count={images.length}
+          data-compact={String(compact)}
+          data-first={JSON.stringify(images[0])}
         />
       )
     }) as unknown as ChatViewSlotProps['renderSlot']
     const view = render(<h.ChatView {...{ ...h.props, renderSlot }} />)
-    const gallery = view.getByTestId('echo-images')
-    expect(gallery.getAttribute('data-count')).toBe('2')
-    expect(JSON.parse(gallery.getAttribute('data-first') ?? '{}')).toEqual({
+    const images = view.getAllByTestId('echo-image')
+    expect(images).toHaveLength(2)
+    expect(images.every(image => image.getAttribute('data-count') === '1')).toBe(true)
+    expect(images.every(image => image.getAttribute('data-compact') === 'true')).toBe(true)
+    expect(images[0]?.parentElement).toBe(images[1]?.parentElement)
+    expect(JSON.parse(images[0]?.getAttribute('data-first') ?? '{}')).toEqual({
       preview: { url: 'blob:echo-a', name: 'a.png', width: 4, height: 3 },
     })
-    expect(gallery.getAttribute('data-attachments')).toBe('omitted')
+  })
+
+  it('a mixed echo renders the Web file card between its selected images', () => {
+    const h = makeHarness(
+      { nodes: [] },
+      {
+        pendingSubmissions: [{
+          requestId: 'req-mixed' as never,
+          placement: 'transcript',
+          time: 7_500,
+          text: '',
+          attachments: [
+            { type: 'image', value: { previewUrl: 'blob:first', name: 'first.png' } },
+            {
+              type: 'file',
+              value: { attachmentId: 'file-1' as never, name: 'notes.txt', bytes: 23 },
+            },
+            { type: 'image', value: { previewUrl: 'blob:last', name: 'last.png' } },
+          ],
+        }],
+      },
+    )
+    const baseRenderSlot = h.props.renderSlot
+    const renderSlot = ((key: string, owner: object, opts?: { fallback?: React.ReactNode }) => {
+      if (key !== 'conversation.message.images') return baseRenderSlot(key as never, owner as never, opts as never)
+      const { images, compact } = owner as {
+        images: ReadonlyArray<{ preview?: { name?: string } }>
+        compact?: boolean
+      }
+      return (
+        <div
+          data-testid={`images-${images[0]?.preview?.name ?? 'unknown'}`}
+          data-compact={String(compact)}
+        />
+      )
+    }) as unknown as ChatViewSlotProps['renderSlot']
+    const view = render(<h.ChatView {...{ ...h.props, renderSlot }} />)
+    const first = view.getByTestId('images-first.png')
+    const file = view.getByTitle('notes.txt')
+    const last = view.getByTestId('images-last.png')
+    expect(first.getAttribute('data-compact')).toBe('true')
+    expect(last.getAttribute('data-compact')).toBe('true')
+    expect(first.parentElement).toBe(file.parentElement)
+    expect(file.parentElement).toBe(last.parentElement)
+    expect(first.compareDocumentPosition(file) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(file.compareDocumentPosition(last) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(view.getByText('TXT 23B')).toBeTruthy()
   })
 
   it('animates only the latest unresolved model retry', () => {
@@ -1465,6 +1546,25 @@ describe('ChatView', () => {
 
     expect(view.getByText('also mention safety')).toBeTruthy()
     expect(answer?.hasAttribute('data-turn-process-answer')).toBe(false)
+  })
+
+  it.each<TurnEndReason>([
+    { kind: 'aborted', reason: { kind: 'user' } },
+    { kind: 'error', error: { code: 'UNKNOWN', message: 'request failed' } },
+    { kind: 'blocked' },
+    { kind: 'interrupted' },
+    { kind: 'max-tokens' },
+  ])('keeps process visible after a $kind ending even when final text exists', (reason) => {
+    const h = makeHarness({
+      nodes: [user(1, 'question'), assistant(2, 'inspect', 1, 1), assistant(4, 'last text', 1, 2)],
+      turnEnds: new Map([[1, 5]]),
+      turnEndReasons: new Map([[1, reason]]),
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const processRow = view.getByText('inspect').closest('[data-chat-flow-kind="assistant-step"]')
+    expect(processRow?.getAttribute('hidden')).toBeNull()
+    expect(turnProcessControl(view.container)).toBeNull()
+    expect(view.getByText('last text')).toBeTruthy()
   })
 
   it('keeps a live Turn expanded and folds it once at turn/end', () => {
@@ -2381,33 +2481,6 @@ describe('ChatView', () => {
     expect(observe).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps follow ownership when browser anchoring scrolls during a pinned resize', () => {
-    let notify: (() => void) | undefined
-    class ResizeObserverStub {
-      constructor(callback: ResizeObserverCallback) {
-        notify = () => { callback([], this as unknown as ResizeObserver) }
-      }
-
-      observe = vi.fn()
-      disconnect = vi.fn()
-    }
-    vi.stubGlobal('ResizeObserver', ResizeObserverStub)
-    const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
-    const view = render(<h.ChatView {...h.props} />)
-    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
-    const metrics = installScrollMetrics(scroller, 1_000, 300)
-    scroller.scrollTop = 700
-
-    metrics.setHeight(1_200)
-    scroller.scrollTop = 750
-    fireEvent.scroll(scroller)
-    act(() => { notify?.() })
-    fireEvent(scroller, new Event('scrollend'))
-
-    expect(scroller.scrollTop).toBe(900)
-    expect(view.queryByLabelText('回到底部')).toBeNull()
-  })
-
   it('pinned dynamic-height updates select the latest Turn without reading row geometry', () => {
     let notify: (() => void) | undefined
     let nextFrame = 0
@@ -2705,4 +2778,31 @@ describe('ChatView', () => {
     expect(failedView.getByText('Compaction cancelled.')).toBeTruthy()
     expect(failedView.container.querySelector('[data-state="error"]')).not.toBeNull()
   })
+})
+
+it('keeps follow ownership when browser anchoring scrolls during a pinned resize', () => {
+  let notify: (() => void) | undefined
+  class ResizeObserverStub {
+    constructor(callback: ResizeObserverCallback) {
+      notify = () => { callback([], this as unknown as ResizeObserver) }
+    }
+
+    observe = vi.fn()
+    disconnect = vi.fn()
+  }
+  vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+  const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
+  const view = render(<h.ChatView {...h.props} />)
+  const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+  const metrics = installScrollMetrics(scroller, 1_000, 300)
+  scroller.scrollTop = 700
+
+  metrics.setHeight(1_200)
+  scroller.scrollTop = 750
+  fireEvent.scroll(scroller)
+  act(() => { notify?.() })
+  fireEvent(scroller, new Event('scrollend'))
+
+  expect(scroller.scrollTop).toBe(900)
+  expect(view.queryByLabelText('回到底部')).toBeNull()
 })

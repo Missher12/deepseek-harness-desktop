@@ -12,7 +12,7 @@ Status: implemented
 
 由 Host 支撑的 `ui-chat.transcriptView` 偏好提供 `normal` 与 `compact` 两种模式，默认值为 `compact`。Normal 保持所有过程行可见且不渲染轮次过程控件；Compact 应用下述 disclosure 规则。切换模式只改变 wrapper 可见性，不会重新挂接或卸载 Chat Node renderer；该偏好不写入 Session log。
 
-在 Compact 模式下，轮次打开期间始终完整展开。到 `turn/end` 时，只有当最近步骤包含面向用户的 Assistant 回复内容——非空文本、图片或未知可见块——并且不含工具调用块时，该步骤才成为最终正文边界。正文保持可见。边界之前的上下文注入、推理、较早 Assistant 内容、工具行与重试行统一进入一条过程 disclosure。系统提示词、用户消息与 steering 消息保持独立，绝不加入过程组。已完成、已取消、已中断、失败和达到最大 token 的轮次使用同一终态投影；错误、最大 token 与 turn-tail 行留在过程组外。关闭时没有最终正文的轮次会保留全部过程证据。
+在 Compact 模式下，轮次打开期间始终完整展开。到 `turn/end` 时，只有当最近步骤包含面向用户的 Assistant 回复内容——非空文本、图片或未知可见块——并且不含工具调用块时，该步骤才成为最终正文边界。正文保持可见。边界之前的上下文注入、推理、较早 Assistant 内容、工具行与重试行统一进入一条过程 disclosure。系统提示词、用户消息与 steering 消息保持独立，绝不加入过程组。只有完成原因允许自动折叠。已取消、已中断、失败、受阻、达到最大 token 和未知终态会保留可见过程；错误、最大 token 与 turn-tail 行留在过程组外。关闭时没有最终正文的轮次会保留全部过程证据。
 
 轮次作用域的 `turn-process` Definition 根据日志事件与步骤 Location data 推导首条模型或工具证据、最近步骤的已定稿正文边界、该正文之前带回复内容的持久 Assistant 消息数和工具调用计数。随产品交付的 subagent 委派名称（`subagent` 与 `subagent_*`）只增加 subagent 计数，不增加普通工具调用计数，因此两类不会重叠。上下文注入仍是过程证据但不增加摘要计数；系统提示词保持独立、持续可见，并始终位于开场 User 上方。Definition 把同一份不可变 `TurnProcessSpec` 直接发布到 Turn Location data 与稳定控制 Chat Node；持续 open stream 的更新在字段不变时复用两份值。Chat target 从首次投影起就把开场 User 或 steering 输入放在过程候选之前，再把合成控制行插入该输入与过程行之间。没有开场人工输入时，控制行从首次出现起就位于最早的过程候选之前。因此正文定稿、Retry、后续步骤、完成状态与手动展开只改变可见性，不改变既有节点的相对顺序，具体规则由[稳定的轮次过程排序](../bug-fix/2026-08-26-stable-turn-process-order.zh.md)说明。
 
@@ -20,7 +20,7 @@ Status: implemented
 
 Chat target 通过共享 settings scope 绑定持久化的 transcript 偏好，并把逐轮交互状态保存在会话作用域的 Chat store 中。`ChatView` 通过稳定的 keyed `ChatNodeSeat` 直接渲染每个业务 Node；加入过程控件不会重排既有 key，Compact 模式只改变 Seat wrapper 的 `hidden` 属性，不会重新挂接或卸载工具、Assistant、上下文或重试 renderer。Seat 通过 `ChatNodeOwnerProps` 传递同一份过程状态，因此最终 Assistant renderer 会隐藏自身步骤中的推理块，同时保留回复块；wrapper 可见性与行内推理共用一个 UI 状态真源。
 
-收起的过程成员使用 `hidden="until-found"`。在支持该能力的浏览器中，任一成员触发 `beforematch` 都会打开共享过程组。由于 hidden-until-found 成员会保留可搜索的零高度 box，Chat 列只在可见的相邻成员之间设置间距；控件分隔线横跨内容宽度，只有中间没有独立输入时，收起的过程控件才与正文相隔 8px，展开后恢复普通的 16px 行间距。收起的 Think 行通过 CSS 跟随最新流式文本行，具有随字号轴变化的单行固定高度，并启用 size 与 layout containment；展开时移除 containment，正文恢复自然高度。在 Compact 模式下，不持久化的会话 store 只保存用户手动展开的「Turn + 正文 Step」generation；没有记录即为收起，不同正文 generation 默认收起。因此，每个合格的已关闭 Turn 都使用相同默认状态，不区分实时完成、在「加载更早」后出现，或在读者离开尾部时结束。这可能在 Turn 关闭或历史变完整时让读者上方的内容重排。若自动收起会隐藏过程成员中的键盘焦点，则改为打开共享过程组并把焦点留在原处；手动收起会先把焦点移到过程控件，再隐藏成员。存在「加载更早」时，每个过程保持展开且控件隐藏；历史加载完整后，合格过程立即使用默认收起状态。页面重新加载会恢复持久化的 Normal 或 Compact 偏好；逐 Turn 手动展开只在同一页面生命周期内的 view remount 之间保留。切换到 Normal 会显示所有过程行，切回 Compact 时会在默认收起状态上重新应用当前页面生命周期内的手动展开记录。
+收起的过程成员使用 `hidden="until-found"`。在支持该能力的浏览器中，任一成员触发 `beforematch` 都会打开共享过程组。由于 hidden-until-found 成员会保留可搜索的零高度 box，Chat 列只在可见的相邻成员之间设置间距；控件分隔线横跨内容宽度，只有中间没有独立输入时，收起的过程控件才与正文相隔 8px，展开后恢复普通的 16px 行间距。思考采用[内置阅读卡片](2026-09-07-native-reading-presentation.zh.md)，保留原文、受控跟随和手动阅读位置。在 Compact 模式下，不持久化的会话 store 只保存用户手动展开的「Turn + 正文 Step」generation；没有记录即为收起，不同正文 generation 默认收起。因此，每个合格的已关闭 Turn 都使用相同默认状态，不区分实时完成、在「加载更早」后出现，或在读者离开尾部时结束。这可能在 Turn 关闭或历史变完整时让读者上方的内容重排。文本选区会把自动隐藏延迟到选区清除；若自动收起会隐藏过程成员中的键盘焦点，则改为打开共享过程组并把焦点留在原处；手动收起会先把焦点移到过程控件，再隐藏成员。存在「加载更早」时，每个过程保持展开且控件隐藏；历史加载完整后，合格过程立即使用默认收起状态。页面重新加载会恢复持久化的 Normal 或 Compact 偏好；逐 Turn 手动展开只在同一页面生命周期内的 view remount 之间保留。切换到 Normal 会显示所有过程行，切回 Compact 时会在默认收起状态上重新应用当前页面生命周期内的手动展开记录。
 
 这项展示与 [Conversation Node 组装](../architecture/2026-08-09-client-conversation-node-assembly.zh.md)共同成立：Definition 持有确定性的过程事实，Seat 持有共享交互状态，keyed renderer 保持独立。[按日志顺序投影的人工 transcript](../bug-fix/2026-07-30-web-transcript-log-ordered-projection.zh.md)保持完整，因为折叠不改变任何会话事件或模型输入。
 

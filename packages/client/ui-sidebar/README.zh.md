@@ -1,4 +1,7 @@
---- description: "dsh Web 客户端的侧边栏外壳插件：品牌行、New Session 操作、折叠控件、可感知滚动的区域席位与底部固定的 Settings 席位。" kind: "package-reference" ---
+---
+description: "dsh Web 客户端的侧边栏外壳插件：品牌行、New Session 操作、折叠控件、可感知滚动的区域席位与底部固定的 Settings 席位。"
+kind: "package-reference"
+---
 
 # @deepseek-ai/dsh-client-ui-sidebar
 

@@ -241,7 +241,7 @@ describe('Web session model selection', () => {
       extractedBytes: 5,
       truncated: false,
     }]))
-    ctx.provide('attachments', {
+    ctx.provide('attachments', Object.setPrototypeOf({
       imageLimits: { mediaTypes: ['image/png'] },
       documentLimits: {
         maxDocumentBytes: 20,
@@ -254,7 +254,7 @@ describe('Web session model selection', () => {
       },
       saveImages,
       saveDocuments,
-    } as never)
+    }, AttachmentStore.prototype) as never)
     const followup = vi.fn()
     Object.assign(agent, { followup })
     const remote = createSessionTestRemote(ctx, {
@@ -346,7 +346,7 @@ describe('Web session model selection', () => {
     const { ctx, agent, sessionId } = await harness()
     const saveImages = vi.fn()
     const saveDocuments = vi.fn()
-    ctx.provide('attachments', {
+    ctx.provide('attachments', Object.setPrototypeOf({
       imageLimits: { mediaTypes: ['image/png'] },
       documentLimits: {
         maxDocumentBytes: 20,
@@ -359,7 +359,7 @@ describe('Web session model selection', () => {
       },
       saveImages,
       saveDocuments,
-    } as never)
+    }, AttachmentStore.prototype) as never)
     const followup = vi.fn()
     Object.assign(agent, { followup })
     const remote = createSessionTestRemote(ctx, {
@@ -506,6 +506,8 @@ describe('Web session model selection', () => {
     }))
     ctx.llm.registerAdapter(['string-failure'], new class extends CatalogAdapter {
       override listModels(): Promise<readonly LlmModelInfo[]> {
+        // Verify normalization of a provider that rejects with a string.
+        // oxlint-disable-next-line typescript/prefer-promise-reject-errors
         return Promise.reject('string catalog failure')
       }
     }('String Failure', []))
@@ -764,6 +766,8 @@ describe('Web session model selection', () => {
     }('Image Capable', []))
     ctx.llm.registerAdapter(['string-error'], new class extends CatalogAdapter {
       override resolveModel(): Promise<LlmResolvedModelInfo> {
+        // Verify normalization of a provider that rejects with a string.
+        // oxlint-disable-next-line typescript/prefer-promise-reject-errors
         return Promise.reject('string selection failure')
       }
     }('String Error', []))
@@ -771,7 +775,7 @@ describe('Web session model selection', () => {
     const savedRef = {
       attachmentId: 'saved-image', mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1,
     }
-    ctx.provide('attachments', {
+    ctx.provide('attachments', Object.setPrototypeOf({
       saveImages: () => {
         if (saveMode === 'error') return Promise.reject(new Error('image store offline'))
         if (saveMode === 'remote') {
@@ -779,7 +783,7 @@ describe('Web session model selection', () => {
         }
         return Promise.resolve([savedRef])
       },
-    } as never)
+    }, AttachmentStore.prototype) as never)
     const followup = vi.fn()
     Object.assign(agent, { followup })
     const remote = createSessionTestRemote(ctx, {

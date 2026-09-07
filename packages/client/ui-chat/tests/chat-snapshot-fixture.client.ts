@@ -4,6 +4,7 @@ import type {
   ChatTurnProcessPresentation, CompactionSummaryNode, FinalAssistantChatData, LegacyConversationSlice,
   PartialAssistant, RunningToolCall, ToolCallBlock, TurnNavigationItem,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
+import { SessionSeq, type TurnEndReason } from '@deepseek-ai/dsh-session/types'
 import type {
   ConversationLocationDataSource, ConversationLocationDataStore, ConversationTurnDataMap, TurnLocation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -275,6 +276,7 @@ export function chatSnapshotFixture(input: {
   readonly runningCalls?: readonly RunningToolCall[]
   readonly turnTimings?: LegacyConversationSlice['turnTimings']
   readonly turnEnds?: LegacyConversationSlice['turnEnds']
+  readonly turnEndReasons?: ReadonlyMap<number, TurnEndReason>
   /** Per-turn usage buckets; production derives these from session events. */
   readonly turnUsages?: ReadonlyMap<number, TurnTokenUsage> | undefined
 } = {}, previous?: ChatSnapshot): ChatSnapshot {
@@ -304,9 +306,10 @@ export function chatSnapshotFixture(input: {
       start: timing === undefined ? undefined : {
         type: 'turn/start', seq: Math.max(0, (endSeq ?? 1) - 1), time: timing.startTime, turn,
       } as never,
-      end: timing?.endTime === undefined || endSeq === undefined ? undefined : {
-        type: 'turn/end', seq: endSeq, time: timing.endTime, turn, reason: 'completed',
-      } as never,
+      end: endSeq === undefined ? undefined : {
+        type: 'turn/end', seq: SessionSeq(endSeq), time: timing?.endTime ?? endSeq,
+        data: { turn, reason: input.turnEndReasons?.get(turn) ?? { kind: 'completed' } },
+      },
       status: endSeq === undefined ? 'open' : 'closed',
       steps: EMPTY,
       data,

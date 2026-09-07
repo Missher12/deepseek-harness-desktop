@@ -170,7 +170,11 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     return result
   }
 
-  /** Restore one archived Session and install the returned complete archive set. */
+  /**
+   * Restore one archived Session and install the returned complete archive set.
+   * @param sessionId - archived Session to restore.
+   * @returns Host result containing the complete archive set.
+   */
   async restoreSession(
     sessionId: WorkspaceArchiveSessionRequest['sessionId'],
   ): Promise<RemoteResult<WorkspaceArchiveValue>> {

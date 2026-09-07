@@ -2,7 +2,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-tools/types'
 import type {
   ConversationNode, RunningToolCall, ToolCallBlock, ToolResultNode,
-} from '../contract/snapshot.ts'
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { rendererContent } from '../conversation-nodes/event-projection.ts'
 
 interface ProjectedBlock {

@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+This page retains historical task steps. File pointers name their current implementation owners, not pending work; see [Project Context](../../../PROJECT_CONTEXT.md) for current delivery status.
+
 **Goal:** Ship a removable Intel Mac workbench opened by one button beside `Session log`, with Terminal, Browser, Files, Side Chat, Review, stable DeepSeek Harness branding, and bounded reasoning typewriter motion.
 
 **Architecture:** Add a generic optional utility column to `ui-layout`, then mount one Desktop-only Host/Client extension into it. Files, Review, Terminal, and Side Chat remain Host-backed and workspace/session scoped; only the isolated Browser `WebContentsView` crosses the Electron preload boundary.
@@ -15,8 +17,8 @@ English | [中文](2026-08-20-macos-codex-workbench.zh.md)
 ### Task 1: Lock the product name to DeepSeek Harness
 
 **Files:**
-- Modify: `packages/client/ui-renderer/src/client/DocumentTitle.tsx`
-- Modify: `packages/client/ui-renderer/tests/document-title.client.spec.tsx`
+- Modify: `packages/client/ui-layout/src/client/DocumentTitle.tsx`
+- Modify: `packages/client/ui-layout/tests/document-title.client.spec.tsx`
 - Modify: `packages/client/ui-sidebar/src/client/SidebarRoot.tsx`
 - Modify: `packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx`
 - Modify: `apps/web/vite.config.ts`
@@ -32,7 +34,7 @@ expect(document.title).toBe('Session title — DeepSeek Harness')
 - [ ] **Step 2: Run tests and verify RED**
 
 ```bash
-pnpm exec vitest run packages/client/ui-renderer/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx --config vitest.config.ts
+pnpm exec vitest run packages/client/ui-layout/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx --config vitest.config.ts
 ```
 
 Expected: the fallback assertions receive `DSH Local Build`.
@@ -116,7 +118,7 @@ git commit -m "feat(layout): add optional utility panel"
 - Create: `packages/extensions/desktop-workbench/tsdown.config.ts`
 - Create: `packages/extensions/desktop-workbench/cordis.patch.yml`
 - Create: `packages/extensions/desktop-workbench/src/index.ts`
-- Create: `packages/extensions/desktop-workbench/src/invariant.ts`
+- No separate invariant companion is published; validation ownership is documented in [desktop-workbench](../../../packages/extensions/desktop-workbench/README.md).
 - Create: `packages/extensions/desktop-workbench/src/client/index.tsx`
 - Create: `packages/extensions/desktop-workbench/src/client/WorkbenchPanel.tsx`
 - Create: `packages/extensions/desktop-workbench/src/client/WorkbenchPanel.module.css`
@@ -179,8 +181,8 @@ git commit -m "feat(desktop): add Codex-style workbench shell"
 - Delete: `packages/extensions/session-messenger/src/client/MessengerUiController.ts`
 - Create: a Desktop workbench Side Chat component (subsequently removed)
 - Create: its scoped style module (subsequently removed)
-- Modify: `packages/client/ui-conversation/src/client/chat/RelayNodeView.tsx`
-- Modify: `packages/client/ui-conversation/src/client/chat/RelayNodeView.module.css`
+- Modify: `packages/client/ui-chat/src/client/chat/RelayNodeView.tsx`
+- Modify: `packages/client/ui-chat/src/client/chat/RelayNodeView.module.css`
 - Modify: `packages/extensions/session-messenger/tests/coordinator.client.spec.ts`
 - Modify: `packages/extensions/session-messenger/tests/client.client.spec.tsx`
 - Modify: `packages/extensions/desktop-workbench/tests/client.client.spec.tsx`
@@ -227,7 +229,7 @@ Provide the existing messenger store/send/reply face but register no legacy head
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/extensions/session-messenger packages/extensions/desktop-workbench packages/client/ui-conversation/src/client/chat
+git add packages/extensions/session-messenger packages/extensions/desktop-workbench packages/client/ui-chat/src/client/chat
 git commit -m "feat(messenger): show cross-session conversation flow"
 ```
 
@@ -397,9 +399,9 @@ git commit -m "feat(desktop): add isolated workbench browser"
 ### Task 8: Replace reasoning shimmer with typewriter motion
 
 **Files:**
-- Modify: `packages/client/ui-conversation/src/client/chat/ReasoningRow.tsx`
-- Modify: `packages/client/ui-conversation/src/client/chat/ReasoningRow.module.css`
-- Modify: `packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx`
+- Modify: `packages/client/ui-chat/src/client/chat/ReasoningRow.tsx`
+- Modify: `packages/client/ui-chat/src/client/chat/ReasoningRow.module.css`
+- Modify: `packages/client/ui-chat/tests/reasoning-row.client.spec.tsx`
 
 - [ ] **Step 1: Write failing cadence and cleanup tests**
 
@@ -417,7 +419,7 @@ Cover expanded text, document hidden, unmount, and reduced motion.
 - [ ] **Step 2: Run the focused suite and verify RED**
 
 ```bash
-pnpm exec vitest run packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx --config vitest.config.ts
+pnpm exec vitest run packages/client/ui-chat/tests/reasoning-row.client.spec.tsx --config vitest.config.ts
 ```
 
 - [ ] **Step 3: Implement bounded grapheme reveal**
@@ -433,7 +435,7 @@ const summary = running && !expanded ? displayed : running ? latestLine(text) : 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/client/ui-conversation/src/client/chat packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx
+git add packages/client/ui-chat/src/client/chat packages/client/ui-chat/tests/reasoning-row.client.spec.tsx
 git commit -m "feat(conversation): smooth reasoning typewriter"
 ```
 
@@ -470,7 +472,7 @@ Add width persistence, narrow layout, Side Chat visible flow, Files/Review non-m
 - [ ] **Step 2: Run focused regression**
 
 ```bash
-pnpm exec vitest run packages/client/ui-renderer/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx packages/client/ui-layout/tests packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx packages/extensions/session-messenger/tests packages/extensions/desktop-workbench/tests apps/desktop/tests/preload-api.spec.ts apps/desktop/tests/navigation.spec.ts apps/desktop/tests/browser-contracts.spec.ts --config vitest.config.ts
+pnpm exec vitest run packages/client/ui-layout/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx packages/client/ui-layout/tests packages/client/ui-chat/tests/reasoning-row.client.spec.tsx packages/extensions/session-messenger/tests packages/extensions/desktop-workbench/tests apps/desktop/tests/preload-api.spec.ts apps/desktop/tests/navigation.spec.ts apps/desktop/tests/browser-contracts.spec.ts --config vitest.config.ts
 ```
 
 - [ ] **Step 3: Run production gates**

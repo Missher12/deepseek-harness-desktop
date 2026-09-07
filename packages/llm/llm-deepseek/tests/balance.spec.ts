@@ -173,19 +173,22 @@ describe('DeepSeek balance payload', () => {
 
 describe('DeepSeek balance HTTP bridge', () => {
   it('creates a URL-safe capability without requiring Buffer base64url support', () => {
-    const nativeToString = Buffer.prototype.toString
-    const toString = vi.spyOn(Buffer.prototype, 'toString').mockImplementation(function (
+    const bufferPrototype = Buffer.prototype as Buffer
+    // Called below with the original receiver through nativeToString.call.
+    // oxlint-disable-next-line typescript/unbound-method
+    const nativeToString = bufferPrototype.toString
+    const toString = vi.spyOn(bufferPrototype, 'toString').mockImplementation(function (
       this: Buffer,
-      encoding?: unknown,
-      start?: unknown,
-      end?: unknown,
+      encoding?: BufferEncoding,
+      start?: number,
+      end?: number,
     ) {
       if (encoding === 'base64url') throw new TypeError('Unknown encoding: base64url')
       return nativeToString.call(
         this,
-        encoding as BufferEncoding | undefined,
-        start as number | undefined,
-        end as number | undefined,
+        encoding,
+        start,
+        end,
       )
     })
     try {

@@ -5,7 +5,7 @@ import { messageImageLabels } from './labels.ts'
 import css from '../MessageImage.module.css'
 
 /** Historical message-attachment slot entry. */
-export function MessageImages({ images, attachments, loadImage, align, t }: MessageImagesProps) {
+export function MessageImages({ images, attachments, loadImage, align, compact = false, t }: MessageImagesProps) {
   if (attachments !== undefined) {
     if (attachments.length === 0) return null
     const labels = messageImageLabels(t)
@@ -32,5 +32,5 @@ export function MessageImages({ images, attachments, loadImage, align, t }: Mess
       </div>
     )
   }
-  return <ImageGallery images={images} load={loadImage} align={align} labels={messageImageLabels(t)} />
+  return <ImageGallery images={images} load={loadImage} align={align} compact={compact} labels={messageImageLabels(t)} />
 }

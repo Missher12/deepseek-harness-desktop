@@ -16,7 +16,7 @@ The `conversation.composer` registration injects one narrow `runSessionCommand(l
 
 While the permission command or approval response is pending, all three card actions are disabled. A failed or unmatched permission command sends no approval response and re-enables the card with fixed retry copy. If permission changed successfully but the current response failed, retry sends only `allowed-once`; it does not repeat or roll back Full access. Raw transport errors are not rendered.
 
-## Rejected alternatives
+## Alternatives considered
 
 - Add a session-wide or permanent `ApprovalOutcome`: rejected because the existing outcome cannot describe a safe durable tool-parameter scope.
 - Store a browser-side grant: rejected because local storage is presentation state, not Session permission authority.

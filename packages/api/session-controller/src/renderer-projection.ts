@@ -85,6 +85,11 @@ function rendererDocument(
 /**
  * Deep-project one already JSON-validated carrier.
  * Content-address predicates avoid rewriting unrelated plugin display objects.
+ * @param value - validated carrier to project.
+ * @param sessionId - owning Session.
+ * @param owner - stable event or projection owner key.
+ * @param path - nested location used for display identity.
+ * @returns carrier containing display metadata without document authority.
  */
 export function rendererValue(
   value: unknown,
@@ -104,10 +109,15 @@ export function rendererValue(
   return Object.fromEntries(Object.entries(record).map(([key, item]) => [
     key,
     rendererValue(item, sessionId, owner, [...path, key]),
-  ])) as JsonValue
+  ]))
 }
 
-/** Project one durable Session event to its authority-free renderer wire form. */
+/**
+ * Project one durable Session event to its authority-free renderer wire form.
+ * @param sessionId - owning Session.
+ * @param event - durable event to project.
+ * @returns authority-free event for renderer transport.
+ */
 export function rendererSessionEvent(sessionId: SessionId, event: {
   readonly type: string
   readonly seq: number

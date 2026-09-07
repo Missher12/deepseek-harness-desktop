@@ -1,4 +1,7 @@
---- description: "Agent-preset surfaces for the Web GUI: the default-preset setting, the new-session chip, the session-header label, and the preset roster management section; for users and maintainers of agent composition." kind: "package-reference" ---
+---
+description: "Agent-preset surfaces for the Web GUI: the default-preset setting, the new-session chip, the session-header label, and the preset roster management section; for users and maintainers of agent composition."
+kind: "package-reference"
+---
 
 # @deepseek-ai/dsh-client-ui-agent-preset
 

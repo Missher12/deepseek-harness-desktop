@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/brain/missher-brain/README.md
-README.md: 659815fb4a1885541ec02cc716072934f9db36aa
-README.zh.md: 922054d9d36600445df0792f35ebaa336f969257
+README.md: 3663b70233a7b1e11b628e426282aa7a7b96d828
+README.zh.md: a9c8cce30cd3895fb4f8fccdd9fc9bdf3494ffe7

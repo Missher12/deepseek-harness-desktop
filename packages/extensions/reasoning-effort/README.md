@@ -1,8 +1,26 @@
+---
+description: "Select supported model reasoning effort through a mapped six-position control."
+kind: "package-bundle"
+---
+
 # @deepseek-ai/dsh-reasoning-effort
 
 English | [中文](README.zh.md)
 
+## Summary
+
 A removable Harness-native replacement for the single model-selection seat. It keeps HanaAyane's pinned Canvas reasoning-effort effect and prefers a popup below the composer. Models, real submitted values, and current selections come from the active Host `ModelDirectory`; the stable six-stop presentation scale maps safely onto each exact model capability.
+
+## Table of Contents
+
+- [Behavior](#behavior)
+- [Installation and fallback](#installation-and-fallback)
+- [Compatibility and provenance](#compatibility-and-provenance)
+- [Preference and data boundary](#preference-and-data-boundary)
+- [Model Experience](#model-experience)
+- [Invariant ownership](#invariant-ownership)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Behavior
 
@@ -32,6 +50,11 @@ The retained Canvas implementation and `chibi-runner-strip.png` come from [`Hana
 
 The Host half owns one profile-scoped `chibiThumb` boolean plus at most 64 visual positions keyed by the exact session/provider/model route, and one exact loopback preference endpoint authenticated by a generation-scoped capability. The bounded map contains no prompt or response text. It exposes no generic settings access, enables no CORS, and accepts only the two narrow patch shapes it owns. This makes an Ultra visual choice survive control remounts, session switching, random Desktop ports, and application restarts while the real Host effort remains the mapped supported value. Disabling the plugin does not modify sessions or provider settings and does not promise to erase these inert local preferences; re-enabling may reuse them.
 
+## Invariant ownership
+
+No invariant companion is published because reasoning strength mapping is validated by pure functions.
+
+
 ## Model Experience
 
 ### Selected reasoning effort
@@ -48,12 +71,12 @@ None of its own: the control adds no prompt tokens. A provider may produce diffe
 
 The plugin does not rewrite conversation history, so it creates no cache-prefix change by itself. Whether changing request-level reasoning configuration reuses a provider cache is provider-specific and is not promised here.
 
-### Invariant ownership
-
-No invariant companion is published because reasoning strength mapping is validated by pure functions.
-
 ## Known Limitations and Deferred Work
 
 - Compatibility is verified only against the repository's `0.1.0-rc.8` contract; a Harness upgrade requires a fresh peer, service, staged-profile, and visual review.
 - The bounded profile-scoped preferences are not an uninstall scrubber; removing the plugin may leave the inert character opt-in and visual route positions for a later reinstall.
 - Native-seat fallback covers a replacement component that reached the slot and then crashed. Pre-registration failures instead keep the Web graph unactivated and require the reported module, peer, service, or `apply` problem to be fixed.
+
+### Dev Note
+
+None.

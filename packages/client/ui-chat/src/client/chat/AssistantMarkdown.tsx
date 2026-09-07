@@ -26,7 +26,7 @@ export interface AssistantMarkdownProps {
   t: ChatViewSlotProps['t']
 }
 
-/** Reasoning block as the Think variant summary row (figma 39:28304). */
+/** Native Markdown, reasoning cards and attachment seats in received order. */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
   blocks, streaming, interrupted, renderMessageImages,
   reasoningHidden = false, revealProcess, mentions, t,
@@ -49,13 +49,14 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     switch (block.kind) {
       case 'text':
         rendered.push(
-          <MarkdownText
-            key={i}
-            text={block.text}
-            streaming={streaming}
-            labels={labels}
-            fileMentions={mentions}
-          />,
+          <div key={i} data-assistant-text>
+            <MarkdownText
+              text={block.text}
+              streaming={streaming}
+              labels={labels}
+              fileMentions={mentions}
+            />
+          </div>,
         )
         break
       case 'reasoning':

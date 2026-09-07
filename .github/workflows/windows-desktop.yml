@@ -232,6 +232,7 @@ jobs:
             s/apps/desktop/release/desktop-smoke-messenger-win32.png
             s/apps/desktop/release/desktop-smoke-workbench-win32.png
             s/apps/desktop/release/desktop-smoke-reasoning-win32.png
+            s/apps/desktop/release/desktop-smoke-reader-*-win32.png
             s/apps/desktop/release/desktop-smoke-usage-win32.png
             s/apps/desktop/release/desktop-smoke-personalization-win32.png
             s/apps/desktop/release/desktop-smoke-memory-win32.png

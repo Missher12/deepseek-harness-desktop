@@ -2,6 +2,8 @@
 
 [English](2026-08-18-session-messenger-and-market-refinement.md) | 中文
 
+此页保留历史任务步骤；文件指针已对齐当前实现所有者，不代表这些步骤仍待执行。当前交付状态见 [项目上下文](../../../PROJECT_CONTEXT.md)。
+
 > **供 Agent 工作者使用：** 必须使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 按任务实施本计划。各步骤使用复选框（`- [ ]`）跟踪。
 
 **目标：** 在 Desktop 0.1.6 中交付可见的跨会话 relay 卡片、具备安全发送与回复操作的受约束可调宽通信抽屉，以及顺序稳定并支持横向滚动的插件分类轨道。
@@ -117,11 +119,11 @@ json(res, 200, result)
 ### 任务 3：渲染一个可见的 Harness relay 卡片
 
 **文件：**
-- 新建目标：`packages/client/ui-conversation/src/client/chat/<RelayMessageCard.tsx>`
-- 新建目标：`packages/client/ui-conversation/src/client/chat/<RelayMessageCard.module.css>`
-- 修改：`packages/client/ui-conversation/src/client/chat/MessageItem.tsx`
+- 新建目标：`packages/client/ui-chat/src/client/chat/<RelayMessageCard.tsx>`
+- 新建目标：`packages/client/ui-chat/src/client/chat/<RelayMessageCard.module.css>`
+- 修改：`packages/client/ui-chat/src/client/chat/MessageItem.tsx`
 - 修改：`packages/client/ui-conversation/src/client/locales.ts`
-- 测试：`packages/client/ui-conversation/tests/chat-branch-tails.client.spec.tsx`
+- 测试：`packages/client/ui-chat/tests/chat-branch-tails.client.spec.tsx`
 
 - [ ] **步骤 1：编写失败的卡片与 fallback 测试**
 
@@ -136,7 +138,7 @@ expect(onReply).toHaveBeenCalledWith(expect.objectContaining({ deliveryId: 'deli
 
 - [ ] **步骤 2：运行会话测试并确认 RED**
 
-运行：`pnpm exec vitest run packages/client/ui-conversation/tests/chat-branch-tails.client.spec.tsx`
+运行：`pnpm exec vitest run packages/client/ui-chat/tests/chat-branch-tails.client.spec.tsx`
 
 预期：FAIL，因为所有 relay 仍使用折叠 context 行。
 
@@ -152,7 +154,7 @@ return relay === null
 
 - [ ] **步骤 4：运行会话测试并提交**
 
-运行：`pnpm exec vitest run packages/client/ui-conversation/tests/chat-branch-tails.client.spec.tsx packages/client/ui-conversation/tests/chat-view.client.spec.tsx`
+运行：`pnpm exec vitest run packages/client/ui-chat/tests/chat-branch-tails.client.spec.tsx packages/client/ui-chat/tests/chat-view.client.spec.tsx`
 
 预期：PASS。
 
@@ -286,7 +288,7 @@ export function orderedCategories(categories: readonly string[]): string[] {
 
 - [ ] **步骤 2：运行聚焦与全仓验证**
 
-运行：`pnpm exec vitest run packages/extensions/session-messenger/tests packages/client/ui-conversation/tests/chat-branch-tails.client.spec.tsx scripts/dshmarket-client-layout.spec.ts scripts/dshmarket-client-artifact.spec.ts scripts/stage-desktop.spec.ts`
+运行：`pnpm exec vitest run packages/extensions/session-messenger/tests packages/client/ui-chat/tests/chat-branch-tails.client.spec.tsx scripts/dshmarket-client-layout.spec.ts scripts/dshmarket-client-artifact.spec.ts scripts/stage-desktop.spec.ts`
 
 运行：`pnpm run typecheck && pnpm run lint && pnpm run doc-sync && git diff --check`
 

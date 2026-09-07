@@ -19,7 +19,7 @@ import {
 const execFileAsync = promisify(execFile)
 const SAMPLE_COUNT = 10
 const BASELINE_VERSION = '0.5.3'
-const CANDIDATE_VERSION = '0.5.4'
+const CANDIDATE_VERSION = '0.5.5'
 const BASELINE_TAG = 'desktop-v0.5.3'
 const APP_NAME = 'DeepSeek Harness.app'
 const EXECUTABLE_NAME = 'DeepSeek Harness'

@@ -1,8 +1,23 @@
+---
+description: "Provide the optional Desktop review, file and terminal panel."
+kind: "package-bundle"
+---
+
 # @deepseek-ai/dsh-desktop-workbench
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Desktop-only Codex-style utility workbench for DeepSeek Harness. A visible Workbench control beside `Session log` opens a resizable right panel whose vertical launcher keeps Review, Terminal, Browser, Files, and Plugins inside the same docked surface. The package is mounted only by `apps/desktop/desktop.cordis.patch.yml`; ordinary Web profiles do not load it.
+
+## Table of Contents
+
+- [Boundaries](#boundaries)
+- [Model Experience](#model-experience)
+- [Invariant ownership](#invariant-ownership)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Boundaries
 
@@ -14,6 +29,11 @@ Desktop-only Codex-style utility workbench for DeepSeek Harness. A visible Workb
 
 The Host HTTP bridge is bound to the active random loopback origin and a generation-scoped capability injected into the trusted Desktop document. It does not expose filesystem, Git, or terminal operations to other origins.
 
+## Invariant ownership
+
+No invariant companion is published because bounded terminal/browser/file/review behavior is enforced at each Host boundary.
+
+
 ## Model Experience
 
 None, as this browser-side Desktop utility surface registers nothing model-facing; Files, Review, Browser, and the human-owned Terminal never enter model context automatically.
@@ -22,10 +42,6 @@ None, as this browser-side Desktop utility surface registers nothing model-facin
 
 Opening, resizing, or switching workbench modes does not change the provider request prefix; content enters context only when the user explicitly copies it into the ordinary composer.
 
-### Invariant ownership
-
-No invariant companion is published because bounded terminal/browser/file/review behavior is enforced at each Host boundary.
-
 ## Known Limitations and Deferred Work
 
 - The embedded Browser is intentionally isolated from Harness login state and does not provide extensions, downloads, popups, permission prompts, or non-HTTP(S) protocols.
@@ -33,3 +49,7 @@ No invariant companion is published because bounded terminal/browser/file/review
 - Terminal tabs are local to the current renderer lifetime and do not restore after an application restart.
 - The launcher shows no shortcut capsules because the product has no global shortcuts for its four modes; it does not advertise keys without matching handlers and tests.
 - The workbench is a native Intel macOS and Windows x64 Desktop composition feature; ordinary Web does not mount it.
+
+### Dev Note
+
+None.

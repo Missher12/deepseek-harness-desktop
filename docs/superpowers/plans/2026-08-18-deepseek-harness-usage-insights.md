@@ -2,6 +2,8 @@
 
 English | [中文](2026-08-18-deepseek-harness-usage-insights.zh.md)
 
+This page retains historical task steps. File pointers name their current implementation owners, not pending work; see [Project Context](../../../PROJECT_CONTEXT.md) for current delivery status.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Follow the active repository `AGENTS.md`; do not delegate unless the current collaboration policy permits it.
 
 **Goal:** Add a privacy-preserving, all-history usage dashboard to the macOS DeepSeek Harness Settings panel, closely matching the supplied reference while reporting only metrics that durable session logs can support accurately.
@@ -48,9 +50,9 @@ English | [中文](2026-08-18-deepseek-harness-usage-insights.zh.md)
 - Create: `packages/session/usage-insights/src/spec.ts`
 - Create: `packages/session/usage-insights/src/aggregate.ts`
 - Create: `packages/session/usage-insights/src/index.ts`
-- Create: `packages/session/usage-insights/src/invariant.ts`
+- No separate invariant companion is published; validation ownership is documented in [usage-insights](../../../packages/session/usage-insights/README.md).
 - Create: `packages/session/usage-insights/tests/service.spec.ts`
-- Create: `packages/session/usage-insights/tests/invariant.spec.ts`
+- Create: `packages/session/usage-insights/tests/service.spec.ts`
 - Create: `packages/session/usage-insights/tests/loader-composition.spec.ts`
 - Create: `packages/session/usage-insights/package.json`
 - Create: `packages/session/usage-insights/tsconfig.json`
@@ -90,7 +92,7 @@ English | [中文](2026-08-18-deepseek-harness-usage-insights.zh.md)
 - Create: `packages/client/ui-settings-usage/tests/projection.client.spec.ts`
 - Create: `packages/client/ui-settings-usage/tests/components.client.spec.tsx`
 - Create: `packages/client/ui-settings-usage/tests/browser-usage.client.spec.tsx`
-- Create: `packages/client/ui-settings-usage/tests/invariant.client.spec.ts`
+- Create: `packages/client/ui-settings-usage/tests/components.client.spec.tsx`
 
 **Steps:**
 
@@ -111,7 +113,7 @@ English | [中文](2026-08-18-deepseek-harness-usage-insights.zh.md)
 - Create: `packages/client/ui-settings-usage/src/client/locales.ts`
 - Create: `packages/client/ui-settings-usage/src/client/UsageInsightsSection.module.css`
 - Create: `packages/client/ui-settings-usage/src/index.ts`
-- Create: `packages/client/ui-settings-usage/src/invariant.ts`
+- No separate invariant companion is published; validation ownership is documented in [ui-settings-usage](../../../packages/client/ui-settings-usage/README.md).
 - Create: `packages/client/ui-settings-usage/src/css-modules.d.ts`
 - Create: `packages/client/ui-settings-usage/package.json`
 - Create: `packages/client/ui-settings-usage/tsconfig.json`

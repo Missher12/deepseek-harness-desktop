@@ -1,4 +1,7 @@
---- description: "Web GUI 的 agent preset 表面：默认 preset 设置、新建会话 chip、会话标题标签与 preset 名单管理分区；供 agent 组装的用户与维护者阅读。" kind: "package-reference" ---
+---
+description: "Web GUI 的 agent preset 表面：默认 preset 设置、新建会话 chip、会话标题标签与 preset 名单管理分区；供 agent 组装的用户与维护者阅读。"
+kind: "package-reference"
+---
 
 # @deepseek-ai/dsh-client-ui-agent-preset
 

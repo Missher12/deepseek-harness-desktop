@@ -10,6 +10,8 @@ Status: implemented
 
 ## 决策
 
+**部分替代。** [Desktop alpha 集成](2026-09-07-desktop-local-alpha-integration.zh.md) 移除了手动调宽和已保存宽度覆盖。下文的自适应 clamp、共享宽度轴及 ResizeObserver 理由仍然有效；手柄与持久化部分保留为历史决策背景。
+
 **宽度轴变为"用户覆盖 + 自适应 clamp"。** `ConversationRoot.module.css` 声明 `--dsh-chat-content-width: var(--dsh-chat-user-width, clamp(680px, calc(var(--dsh-conversation-column-width, 0px) * 0.64), 920px))`。下限 680px——比 figma 的 748px 低一档，因为满宽阅读在各种屏幕上都显宽——更宽的列取列宽的 64%，920px 封顶保证行长可读性（基准字号下约 113 字符）。拖拽偏好存在时整体替换自适应项。
 
 **列宽由 ResizeObserver 发布，不用容器查询。** 组件把根节点的 `offsetWidth` 以 px 发布为 `--dsh-conversation-column-width`（与既有 composer seat 高度 observer 相同的 callback-ref 模式）。拒绝 `container-type: inline-size`：会话子树内有不经 portal 的 `position: fixed` 后代（Tooltip、Menu、JsonTree 复制锚点），尺寸容器会捕获它们的视口定位——与 `.composerHero` 注释记录的 transform 陷阱同类。拒绝变量里的裸 `%`：自定义属性百分比在各消费点按不同包含块解析，破坏输入卡 = W + 32px 不变量；拒绝 `vw`：列不等于视口（侧栏折叠只改列宽）。

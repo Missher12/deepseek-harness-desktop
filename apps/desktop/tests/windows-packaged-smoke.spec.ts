@@ -146,24 +146,22 @@ async function exerciseWindows150PercentSurface(
     await currentTurn.focus()
     await page.getByRole('tooltip').waitFor({ state: 'visible', timeout: 15_000 })
 
-    const workbenchTrigger = page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })
-    await workbenchTrigger.waitFor({ state: 'visible', timeout: 30_000 })
-    await workbenchTrigger.click()
-    const workbench = page.locator('[data-desktop-workbench-panel]:visible')
-    await workbench.waitFor({ state: 'visible', timeout: 15_000 })
-    expect(await workbench.locator('xpath=..').getAttribute('data-utility-drawer')).toBeNull()
-    const workbenchBounds = await workbench.boundingBox()
+    expect(await page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u }).count()).toBe(0)
+    expect(await page.locator(
+      '[data-desktop-workbench-panel], [data-utility-drawer], [data-side="utility"]',
+    ).count()).toBe(0)
+    expect(await page.locator(
+      '[data-plugin-card="browser-skill"], [data-browser-skill-idle]',
+    ).count()).toBe(0)
+    expect(await page.locator(
+      '[data-plugin-card="open-design"], [data-open-design-state]',
+    ).count()).toBe(0)
+
     const centerBounds = await page.locator('[class*="centerCol"]').boundingBox()
-    if (workbenchBounds === null || centerBounds === null) {
-      throw new Error('Windows 150 percent smoke could not measure the docked Workbench.')
+    if (centerBounds === null) {
+      throw new Error('Windows 150 percent smoke could not measure the center column.')
     }
-    expect(workbenchBounds.width).toBeGreaterThanOrEqual(300)
     expect(centerBounds.width).toBeGreaterThanOrEqual(640)
-    await workbench.getByRole('tab', { name: /^(?:Plugins|插件)$/u }).click()
-    await workbench.locator('[data-plugin-card="browser-skill"]').waitFor({ state: 'visible', timeout: 15_000 })
-    await workbench.locator('[data-plugin-card="open-design"]').waitFor({ state: 'visible', timeout: 15_000 })
-    expect(await workbench.locator('[data-browser-skill-idle]').count()).toBe(1)
-    expect(await workbench.locator('[data-open-design-state="installed"]').count()).toBe(1)
 
     const evidence = {
       schemaVersion: 1,

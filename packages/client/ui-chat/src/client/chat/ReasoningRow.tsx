@@ -1,139 +1,134 @@
-/** Assistant reasoning disclosure, independent of Tool-call presentation. */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { DisclosureRow, IconThinkOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+/** Literal reasoning in a bounded reading card; manual reading owns its scroll. */
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { IconChevronDownOutline14, IconThinkOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
-import { useThrottledVisualUpdate } from './use-throttled-visual-update.ts'
-import a11yCss from './accessibility.module.css'
 import css from './ReasoningRow.module.css'
 
-function firstLine(text: string): string {
-  const newline = text.indexOf('\n')
-  return newline === -1 ? text : text.slice(0, newline)
-}
-
-function latestLine(text: string): string {
-  const visible = text.trimEnd()
-  const newline = visible.lastIndexOf('\n')
-  return newline === -1 ? visible : visible.slice(newline + 1)
-}
-
-function prefersReducedMotion(): boolean {
-  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-}
-
-function revealCount(backlog: number): number {
-  return Math.max(1, Math.ceil(backlog / (backlog > 48 ? 4 : 8)))
-}
-
-function useTypewriterSummary(target: string, animate: boolean): string {
-  const [displayed, setDisplayed] = useState(() => animate ? '' : target)
-  const displayedRef = useRef(displayed)
-  const targetRef = useRef(target)
-  const frameRef = useRef<number>()
-  const cancel = () => {
-    if (frameRef.current !== undefined) cancelAnimationFrame(frameRef.current)
-    frameRef.current = undefined
-  }
-  useEffect(() => {
-    displayedRef.current = displayed
-  }, [displayed])
-  useEffect(() => {
-    targetRef.current = target
-    const flush = () => {
-      cancel()
-      displayedRef.current = targetRef.current
-      setDisplayed(targetRef.current)
-    }
-    if (!animate || document.hidden || prefersReducedMotion()) { flush(); return cancel }
-    if (!target.startsWith(displayedRef.current)) {
-      displayedRef.current = ''
-      setDisplayed('')
-    }
-    const tick = () => {
-      frameRef.current = undefined
-      const current = displayedRef.current
-      const nextTarget = targetRef.current
-      if (current === nextTarget) return
-      const units = Array.from(nextTarget)
-      const currentLength = Array.from(current).length
-      const next = units.slice(0, currentLength + revealCount(units.length - currentLength)).join('')
-      displayedRef.current = next
-      setDisplayed(next)
-      if (next !== nextTarget) frameRef.current = requestAnimationFrame(tick)
-    }
-    if (frameRef.current === undefined) frameRef.current = requestAnimationFrame(tick)
-    const media = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : undefined
-    const onMotion = () => { if (media?.matches === true) flush() }
-    const onVisibility = () => { if (document.hidden) flush() }
-    media?.addEventListener('change', onMotion)
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => {
-      media?.removeEventListener('change', onMotion)
-      document.removeEventListener('visibilitychange', onVisibility)
-      cancel()
-    }
-  }, [animate, target])
-  return displayed
-}
+// A burst advances by the same two rendered lines as a small append.
+const FOLLOW_INTERVAL_MS = 800
+const FOLLOW_LINES = 2
 
 /**
- * Render one assistant reasoning block as the Think disclosure row.
- * @param props.text - complete or streaming reasoning text.
+ * Render original reasoning without truncating or replaying received text.
+ * Running overflow follows two lines at a time until the reader intervenes.
+ * History, hidden documents and reduced-motion views remain still.
+ * @param props.text - complete or streaming reasoning, with literal whitespace.
  * @param props.running - whether this block is the streaming tail.
- * @param props.t - conversation locale seat for the running status.
- * @returns the reasoning disclosure.
+ * @param props.t - the owning Chat locale seat.
+ * @returns the reasoning card and its local reading controls.
  */
 export function ReasoningRow({ text, running, t }: { text: string; running: boolean; t: ChatViewSlotProps['t'] }) {
+  const controls = useId()
+  const viewport = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
   const [expanded, setExpanded] = useState(false)
-  const summaryRef = useRef<HTMLSpanElement>(null)
-  const targetSummary = running ? latestLine(text) : firstLine(text)
-  const summary = useTypewriterSummary(targetSummary, running && !expanded)
-  const { schedule: scheduleSummaryScroll, cancel: cancelSummaryScroll } = useThrottledVisualUpdate(() => {
-    const element = summaryRef.current
-    if (element === null) return
-    element.scrollLeft = running ? element.scrollWidth - element.clientWidth : 0
-  })
-  useLayoutEffect(() => {
-    const element = summaryRef.current
-    if (!running && element !== null) {
-      cancelSummaryScroll()
-      element.scrollLeft = 0
-      return
+  const [following, setFollowing] = useState(true)
+  const [selected, setSelected] = useState(false)
+  const [overflow, setOverflow] = useState(false)
+  const [motionAllowed, setMotionAllowed] = useState(false)
+  const pause = useCallback(() => {
+    setFollowing(false)
+    const port = viewport.current
+    if (port !== null) port.scrollTop = port.scrollTop
+  }, [])
+
+  useEffect(() => {
+    if (!running) { setMotionAllowed(false); return }
+    const media = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-reduced-motion: reduce)')
+      : undefined
+    const update = () => {
+      const allowed = !document.hidden && media?.matches !== true
+      setMotionAllowed(allowed)
+      if (!allowed && viewport.current !== null) viewport.current.scrollTop = viewport.current.scrollTop
     }
-    scheduleSummaryScroll()
-  }, [cancelSummaryScroll, running, scheduleSummaryScroll, summary])
+    update()
+    media?.addEventListener('change', update)
+    document.addEventListener('visibilitychange', update)
+    return () => {
+      media?.removeEventListener('change', update)
+      document.removeEventListener('visibilitychange', update)
+    }
+  }, [running])
+
+  useLayoutEffect(() => {
+    const body = content.current
+    if (body === null) return
+    const current = body.firstChild
+    // Appending to the same Text node preserves a reader's Range endpoints.
+    // Replacing its entire value on every chunk would collapse that selection.
+    if (current instanceof Text && text.startsWith(current.data)) current.appendData(text.slice(current.length))
+    else body.replaceChildren(body.ownerDocument.createTextNode(text))
+  }, [text])
+
+  useLayoutEffect(() => {
+    const port = viewport.current
+    const body = content.current
+    if (port === null || body === null) return
+    const measure = () => { setOverflow(port.scrollHeight > port.clientHeight + 1) }
+    const onSelection = () => {
+      const selection = port.ownerDocument.getSelection()
+      const containsSelection = selection !== null && !selection.isCollapsed
+        && Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index))
+          .some(range => range.intersectsNode(port))
+      setSelected(containsSelection)
+      if (containsSelection) pause()
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(port)
+    observer.observe(body)
+    measure()
+    if (running) port.ownerDocument.addEventListener('selectionchange', onSelection)
+    return () => {
+      observer.disconnect()
+      port.ownerDocument.removeEventListener('selectionchange', onSelection)
+    }
+  }, [pause, running])
+
+  const activeFollow = running && following && !selected && motionAllowed
+  useEffect(() => {
+    if (!activeFollow) return
+    const timer = window.setInterval(() => {
+      const port = viewport.current
+      const body = content.current
+      if (port === null || body === null) return
+      const lineHeight = Number.parseFloat(getComputedStyle(body).lineHeight)
+      if (!Number.isFinite(lineHeight) || lineHeight <= 0) return
+      const end = Math.max(0, port.scrollHeight - port.clientHeight)
+      const next = Math.min(end, port.scrollTop + lineHeight * FOLLOW_LINES)
+      if (next > port.scrollTop) port.scrollTo({ top: next, behavior: 'smooth' })
+    }, FOLLOW_INTERVAL_MS)
+    return () => { window.clearInterval(timer) }
+  }, [activeFollow])
 
   return (
-    <div
-      className={css.root}
-      data-variant="think"
-      data-state={running ? 'running' : 'ok'}
-      data-expanded={expanded || undefined}
-    >
-      {running && <span className={a11yCss.visuallyHidden}>{t('row.running')}</span>}
-      <DisclosureRow
-        rowClassName={css.row}
-        leadingClassName={css.leading}
-        titleClassName={css.title}
-        chevronClassName={css.chevron}
-        icon={<IconThinkOutline14 size={14} />}
-        title={t('message.think')}
-        open={expanded}
-        expandable
-        expandOnRowClick
-        onToggle={() => { setExpanded(value => !value) }}
-        collapsedContent={(
-          <>
-            <span className={css.separator} aria-hidden />
-            <span ref={summaryRef} className={css.summary} data-follow-end={running || undefined}
-              data-typing={running && !expanded && summary !== targetSummary || undefined}>
-              <span className={css.summaryText}>{summary}</span>
-            </span>
-          </>
-        )}
-      >
-        <div className={css.thinkBody}>{text}</div>
-      </DisclosureRow>
+    <div className={css.root} data-variant="think" data-state={running ? 'running' : 'ok'}
+      data-expanded={expanded || undefined} data-following={activeFollow || undefined}>
+      <button type="button" className={css.heading} aria-controls={controls} aria-expanded={expanded}
+        aria-label={t(expanded ? 'message.reasoning.collapse' : 'message.reasoning.expand')}
+        onClick={() => { setExpanded(value => !value) }}>
+        <IconThinkOutline14 size={14} />
+        <span className={css.title}>{t('message.think')}</span>
+        {running && <span className={css.status}>{t('row.running')}</span>}
+        <IconChevronDownOutline14 className={css.chevron} />
+      </button>
+      <div ref={viewport} id={controls} className={css.viewport} role="region"
+        aria-label={t('message.reasoning.content')} tabIndex={overflow ? 0 : undefined}
+        data-overflow={overflow || undefined} onWheel={pause} onTouchStart={pause}
+        onPointerDown={pause} onFocus={pause}>
+        <div ref={content} className={css.thinkBody} />
+      </div>
+      {overflow && (
+        <div className={css.footer}>
+          <span>{t('message.reasoning.original')}</span>
+          {running && (
+            <button type="button" className={css.follow} aria-controls={controls} disabled={selected}
+              onClick={() => { if (following) pause(); else setFollowing(true) }}>
+              {t(following ? 'message.reasoning.pause' : 'message.reasoning.follow')}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

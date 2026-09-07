@@ -90,6 +90,17 @@ export function sessionRecallLabels(source: unknown): string[] {
 }
 
 /**
+ * Read the skill name a durable skill-invocation injection loaded.
+ * @param source - Logged `user/message` source.
+ * @returns The skill name, or null for every other source.
+ */
+export function skillInvocationName(source: unknown): string | null {
+  const record = asRecord(source)
+  if (record === null || readString(record, 'kind') !== 'skill-invocation') return null
+  return readString(record, 'name')
+}
+
+/**
  * Classify finalized Assistant content for Chat rendering.
  * @param content - Core content blocks.
  * @returns Chat blocks in source order.
@@ -117,6 +128,8 @@ export function toAssistantBlock(block: ContentBlock | RendererContentBlock): As
  * Mark content that has already crossed Session Controller's renderer projection.
  * Definitions receive the historical core event shape for merge-extensible
  * matching, while the live transport has stripped durable document authority.
+ * @param content - content received through the renderer projection.
+ * @returns the same content with its renderer contract type.
  */
 export function rendererContent(content: readonly ContentBlock[]): readonly RendererContentBlock[] {
   return content as unknown as readonly RendererContentBlock[]

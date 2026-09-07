@@ -2,6 +2,8 @@
 
 > **面向 agentic workers：** 必须使用子 skill：推荐使用 superpowers:subagent-driven-development，或使用 superpowers:executing-plans，逐项实施本计划。步骤使用复选框（`- [ ]`）跟踪。
 
+此页保留历史任务步骤；文件指针已对齐当前实现所有者，不代表这些步骤仍待执行。当前交付状态见 [项目上下文](../../../PROJECT_CONTEXT.md)。
+
 **目标：** 交付一个可移除的 Intel Mac 工作区，通过 `Session log` 旁边的单一按钮打开，包含 Terminal、Browser、Files、Side Chat、Review、稳定的 DeepSeek Harness 品牌和有界的推理打字机动效。
 
 **架构：** 先给 `ui-layout` 增加通用的可选工具栏，再把一个 Desktop 专用 Host／Client 扩展挂载进去。Files、Review、Terminal 和 Side Chat 继续由 Host 提供，并限制在工作区／会话作用域内；只有隔离的 Browser `WebContentsView` 穿过 Electron preload 边界。
@@ -15,8 +17,8 @@
 ### 任务一：把产品名锁定为 DeepSeek Harness
 
 **文件：**
-- 修改：`packages/client/ui-renderer/src/client/DocumentTitle.tsx`
-- 修改：`packages/client/ui-renderer/tests/document-title.client.spec.tsx`
+- 修改：`packages/client/ui-layout/src/client/DocumentTitle.tsx`
+- 修改：`packages/client/ui-layout/tests/document-title.client.spec.tsx`
 - 修改：`packages/client/ui-sidebar/src/client/SidebarRoot.tsx`
 - 修改：`packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx`
 - 修改：`apps/web/vite.config.ts`
@@ -32,7 +34,7 @@ expect(document.title).toBe('Session title — DeepSeek Harness')
 - [ ] **步骤二：运行测试并确认 RED**
 
 ```bash
-pnpm exec vitest run packages/client/ui-renderer/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx --config vitest.config.ts
+pnpm exec vitest run packages/client/ui-layout/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx --config vitest.config.ts
 ```
 
 预期：回退值断言实际收到 `DSH Local Build`。
@@ -116,7 +118,7 @@ git commit -m "feat(layout): add optional utility panel"
 - 创建：`packages/extensions/desktop-workbench/tsdown.config.ts`
 - 创建：`packages/extensions/desktop-workbench/cordis.patch.yml`
 - 创建：`packages/extensions/desktop-workbench/src/index.ts`
-- 创建：`packages/extensions/desktop-workbench/src/invariant.ts`
+- 不发布独立 invariant companion；校验职责见 [desktop-workbench](../../../packages/extensions/desktop-workbench/README.zh.md)。
 - 创建：`packages/extensions/desktop-workbench/src/client/index.tsx`
 - 创建：`packages/extensions/desktop-workbench/src/client/WorkbenchPanel.tsx`
 - 创建：`packages/extensions/desktop-workbench/src/client/WorkbenchPanel.module.css`
@@ -179,8 +181,8 @@ git commit -m "feat(desktop): add Codex-style workbench shell"
 - 删除：`packages/extensions/session-messenger/src/client/MessengerUiController.ts`
 - 创建：Desktop 工作台侧边聊天组件（后续已移除）
 - 创建：对应的局部样式模块（后续已移除）
-- 修改：`packages/client/ui-conversation/src/client/chat/RelayNodeView.tsx`
-- 修改：`packages/client/ui-conversation/src/client/chat/RelayNodeView.module.css`
+- 修改：`packages/client/ui-chat/src/client/chat/RelayNodeView.tsx`
+- 修改：`packages/client/ui-chat/src/client/chat/RelayNodeView.module.css`
 - 修改：`packages/extensions/session-messenger/tests/coordinator.client.spec.ts`
 - 修改：`packages/extensions/session-messenger/tests/client.client.spec.tsx`
 - 修改：`packages/extensions/desktop-workbench/tests/client.client.spec.tsx`
@@ -227,7 +229,7 @@ pnpm exec vitest run packages/extensions/session-messenger/tests packages/extens
 - [ ] **步骤六：提交**
 
 ```bash
-git add packages/extensions/session-messenger packages/extensions/desktop-workbench packages/client/ui-conversation/src/client/chat
+git add packages/extensions/session-messenger packages/extensions/desktop-workbench packages/client/ui-chat/src/client/chat
 git commit -m "feat(messenger): show cross-session conversation flow"
 ```
 
@@ -397,9 +399,9 @@ git commit -m "feat(desktop): add isolated workbench browser"
 ### 任务八：用打字机动效替换推理扫光
 
 **文件：**
-- 修改：`packages/client/ui-conversation/src/client/chat/ReasoningRow.tsx`
-- 修改：`packages/client/ui-conversation/src/client/chat/ReasoningRow.module.css`
-- 修改：`packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx`
+- 修改：`packages/client/ui-chat/src/client/chat/ReasoningRow.tsx`
+- 修改：`packages/client/ui-chat/src/client/chat/ReasoningRow.module.css`
+- 修改：`packages/client/ui-chat/tests/reasoning-row.client.spec.tsx`
 
 - [ ] **步骤一：编写失败的节奏和清理测试**
 
@@ -417,7 +419,7 @@ expect(animationFrames.size).toBe(0)
 - [ ] **步骤二：运行聚焦测试并确认 RED**
 
 ```bash
-pnpm exec vitest run packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx --config vitest.config.ts
+pnpm exec vitest run packages/client/ui-chat/tests/reasoning-row.client.spec.tsx --config vitest.config.ts
 ```
 
 - [ ] **步骤三：实现有界字素展示**
@@ -433,7 +435,7 @@ const summary = running && !expanded ? displayed : running ? latestLine(text) : 
 - [ ] **步骤五：提交**
 
 ```bash
-git add packages/client/ui-conversation/src/client/chat packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx
+git add packages/client/ui-chat/src/client/chat packages/client/ui-chat/tests/reasoning-row.client.spec.tsx
 git commit -m "feat(conversation): smooth reasoning typewriter"
 ```
 
@@ -470,7 +472,7 @@ expect(await processTreeGone(harnessPid)).toBe(true)
 - [ ] **步骤二：运行聚焦回归**
 
 ```bash
-pnpm exec vitest run packages/client/ui-renderer/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx packages/client/ui-layout/tests packages/client/ui-conversation/tests/reasoning-row.client.spec.tsx packages/extensions/session-messenger/tests packages/extensions/desktop-workbench/tests apps/desktop/tests/preload-api.spec.ts apps/desktop/tests/navigation.spec.ts apps/desktop/tests/browser-contracts.spec.ts --config vitest.config.ts
+pnpm exec vitest run packages/client/ui-layout/tests/document-title.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx packages/client/ui-layout/tests packages/client/ui-chat/tests/reasoning-row.client.spec.tsx packages/extensions/session-messenger/tests packages/extensions/desktop-workbench/tests apps/desktop/tests/preload-api.spec.ts apps/desktop/tests/navigation.spec.ts apps/desktop/tests/browser-contracts.spec.ts --config vitest.config.ts
 ```
 
 - [ ] **步骤三：运行生产门禁**

@@ -92,9 +92,10 @@ describe('write-ahead recovery', () => {
     }
     const h = fakeContext(location === 'cold-event' ? [] : [target])
     if (location === 'cold-event') {
-      h.inspect.mockResolvedValue({
-        meta: { version: 0, id: SessionId('target'), createdAt: 1 },
-        events: [persistedInsertion()],
+      h.open.mockResolvedValue({
+        header: { version: 2, id: SessionId('target'), createdAt: 1 },
+        read: async () => [persistedInsertion()],
+        close: vi.fn(async () => {}),
       })
     }
     const store = new MemoryReceiptStore()
@@ -125,7 +126,7 @@ describe('write-ahead recovery', () => {
 
   it('preserves recoverable work when cold persistence cannot prove the exact Message ID absent', async () => {
     const h = fakeContext([])
-    h.inspect.mockRejectedValue(new Error('persistence temporarily unavailable'))
+    h.open.mockRejectedValue(new Error('persistence temporarily unavailable'))
     const store = new MemoryReceiptStore()
     store.records.set(DeliveryId('delivery-1'), recoverable())
     const coordinator = new SessionMessengerCoordinator(h.ctx as never, store, options)

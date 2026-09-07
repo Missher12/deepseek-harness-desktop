@@ -1,0 +1,14 @@
+- heading "Native reader verified" [level=1]
+- paragraph: The final answer remains visible.
+- text: ts
+- button "Copy"
+- code: const nativeReader = true
+- table:
+  - rowgroup:
+    - row "Check Result":
+      - columnheader "Check"
+      - columnheader "Result"
+  - rowgroup:
+    - row "Native Markdown Preserved":
+      - cell "Native Markdown"
+      - cell "Preserved"

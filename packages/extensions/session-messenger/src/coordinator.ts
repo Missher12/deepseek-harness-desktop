@@ -579,8 +579,12 @@ export class SessionMessengerCoordinator {
       return eventsContainMessage(live.session.snapshotEvents(), receipt.messageId)
     }
     try {
-      const inspected = await this.ctx.sessionPersistence.inspect(receipt.targetSessionId)
-      return eventsContainMessage(inspected.events, receipt.messageId)
+      const handle = await this.ctx.sessionPersistence.open(receipt.targetSessionId, 'read')
+      try {
+        return eventsContainMessage(await handle.read(), receipt.messageId)
+      } finally {
+        await handle.close()
+      }
     } catch (error: unknown) {
       throw messengerError(
         'target-unavailable',

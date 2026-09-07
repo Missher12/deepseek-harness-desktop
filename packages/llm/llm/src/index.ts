@@ -33,9 +33,10 @@ import { HarnessError, INVALID_CREDENTIAL_CODE } from './error.ts'
 import { normalizeLlmFailure } from './adapter-failure.ts'
 import { normalizeApiKey } from './api-key.ts'
 import {
-  contentHasDocument, contentHasImage, documentExpansionTokenBudget,
-  projectDocumentsForRequest, projectImagesForTextModel,
+  contentHasDocument, contentHasFile, contentHasImage, documentExpansionTokenBudget, fileHandleText,
+  projectDocumentsForRequest, projectFilesToText, projectImagesForTextModel,
 } from './content.ts'
+import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 
 export * from './attribution.ts'
 export * from './brand.ts'
@@ -43,6 +44,7 @@ export * from './error.ts'
 export * from './api-key.ts'
 export * from './types.ts'
 export * from './content.ts'
+export * from './assistant-stream.ts'
 export * from './message.ts'
 export * from './retry-policy.ts'
 export { BlockAssembler } from './assembler.ts'
@@ -665,6 +667,16 @@ export class LlmRuntime extends TypertRemoteService {
     return this.adapters.get(provider)?.adapter.imageRequestPricing(provider, model)
   }
 
+  /**
+   * Resolve the exact text one durable file occurrence contributes to every
+   * provider request in the current execution environment.
+   * @param ref - durable verbatim file reference from model history.
+   * @returns the same deterministic handle text used at adapter dispatch.
+   */
+  fileRequestText(ref: FileAttachmentRef): string {
+    return fileHandleText(ref, this.fileReadPath(ref))
+  }
+
   /** Detach typed adapter-owned modality metadata. */
   private detachedModalities(modalities: readonly ModelModality[] | undefined): ModelModality[] | undefined {
     return modalities === undefined ? undefined : [...modalities]
@@ -962,6 +974,26 @@ export class LlmRuntime extends TypertRemoteService {
   }
 
   /**
+   * Resolve the current execution-world read path of one durable file
+   * reference through the mounted attachment and filesystem providers.
+   */
+  private fileReadPath(ref: FileAttachmentRef): string | undefined {
+    let hostPath: string | undefined
+    try {
+      hostPath = this.ctx.get('attachments')?.fileHostPath(ref)
+    } catch {
+      // A malformed durable reference degrades this occurrence to the no-path
+      // handle instead of failing every later request over the same log.
+      return undefined
+    }
+    if (hostPath === undefined) return undefined
+    // Structural face: dsh-llm cannot depend on the filesystem package, and
+    // only this one mapping method is consumed.
+    const fs = this.ctx.get('fs') as { processPathFromHostPath(hostPath: string): string | undefined } | undefined
+    return fs?.processPathFromHostPath(hostPath)
+  }
+
+  /**
    * Final adapter boundary. Adapter selection, dispatch, iterator construction,
    * and iteration failures become one terminal failure chunk. Middleware and
    * downstream consumer failures remain thrown plugin or consumer errors.
@@ -998,35 +1030,28 @@ export class LlmRuntime extends TypertRemoteService {
         : Object.isFrozen(options)
           ? deepFreeze({ ...options, ...resolvedConfig })
           : { ...options, ...resolvedConfig }
-      let projectedOptions = resolvedOptions
-      if (resolvedOptions.messages.some(message => contentHasDocument(message.content))) {
-        const attachments = this.ctx.get('attachments')
-        if (attachments === undefined) {
-          throw new LlmError(
-            'Document conversion requires the durable attachment service.',
-            'UNSUPPORTED_CONTENT',
-          )
-        }
-        const maxExpansionTokens = modelInfo.context === undefined
-          ? undefined
-          : documentExpansionTokenBudget(resolvedOptions, modelInfo.context.contextWindow)
-        const messages = await projectDocumentsForRequest(
-          resolvedOptions.messages,
-          attachments,
-          options.signal,
-          maxExpansionTokens === undefined ? {} : { maxExpansionTokens },
-        )
-        projectedOptions = Object.isFrozen(resolvedOptions)
-          ? deepFreeze({ ...resolvedOptions, messages: [...messages] })
-          : { ...resolvedOptions, messages: [...messages] }
+      let projectedMessages: readonly Message[] = resolvedOptions.messages
+      if (projectedMessages.some(message => contentHasFile(message.content))) {
+        projectedMessages = projectFilesToText(projectedMessages, ref => this.fileReadPath(ref))
       }
-      projectedOptions = modelInfo.inputModalities !== undefined
+      if (projectedMessages.some(message => contentHasDocument(message.content))) {
+        const attachments = this.ctx.get('attachments')
+        if (attachments === undefined) throw new LlmError('Document conversion requires the durable attachment service.', 'UNSUPPORTED_CONTENT')
+        const maxExpansionTokens = modelInfo.context === undefined ? undefined
+          : documentExpansionTokenBudget({ ...resolvedOptions, messages: [...projectedMessages] }, modelInfo.context.contextWindow)
+        projectedMessages = await projectDocumentsForRequest(projectedMessages, attachments, options.signal,
+          maxExpansionTokens === undefined ? {} : { maxExpansionTokens })
+      }
+      if (modelInfo.inputModalities !== undefined
         && !modelInfo.inputModalities.includes('image')
-        && projectedOptions.messages.some(message => contentHasImage(message.content))
-        ? Object.isFrozen(projectedOptions)
-          ? deepFreeze({ ...projectedOptions, messages: projectImagesForTextModel(projectedOptions.messages) as Message[] })
-          : { ...projectedOptions, messages: projectImagesForTextModel(projectedOptions.messages) as Message[] }
-        : projectedOptions
+        && projectedMessages.some(message => contentHasImage(message.content))) {
+        projectedMessages = projectImagesForTextModel(projectedMessages)
+      }
+      const projectedOptions = projectedMessages === resolvedOptions.messages
+        ? resolvedOptions
+        : Object.isFrozen(resolvedOptions)
+          ? deepFreeze({ ...resolvedOptions, messages: projectedMessages as Message[] })
+          : { ...resolvedOptions, messages: projectedMessages as Message[] }
       const stream = dispatch(this.forAdapter(projectedOptions, adapter))
       iterator = stream[Symbol.asyncIterator]()
     } catch (error: unknown) {

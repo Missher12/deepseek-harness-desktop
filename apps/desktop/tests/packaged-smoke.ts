@@ -1,8 +1,7 @@
 import { execFile } from 'node:child_process'
 import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
@@ -15,8 +14,11 @@ import SessionStore, {
   type SessionHeader,
 } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { logPath } from '@deepseek-ai/dsh-session-persistence-jsonl/src/format.ts'
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright'
 import { expect } from 'vitest'
+import { startReaderSmokeProvider } from './reader-smoke-provider.ts'
+import { exerciseReaderPresentation } from './reader-presentation-smoke.ts'
 
 const execFileAsync = promisify(execFile)
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
@@ -29,73 +31,6 @@ const NAVIGATION_TURN_COUNT = 30
 /** Event seqs one complete seeded turn occupies (see completeTurn). */
 const TURN_SEQ_SPAN = 10
 const RECEIPT_TTL_MS = 24 * 60 * 60 * 1_000
-
-/** Native command used to prove the packaged workbench terminal is interactive. */
-export function workbenchTerminalProbe(platform: NodeJS.Platform): string {
-  return platform === 'win32'
-    ? "Write-Output 'desktop-workbench-terminal-ok'"
-    : "printf 'desktop-workbench-terminal-ok\\n'"
-}
-
-/** Packaged location of the pinned BrowserSkill CLI shipped via extraResources. */
-export function packagedBrowserSkillBinaryPath(executable: string, platform: NodeJS.Platform): string {
-  const member = platform === 'win32' ? 'bsk.exe' : 'bsk'
-  return platform === 'win32'
-    ? join(dirname(executable), 'resources', 'browser-skill', 'bin', member)
-    : join(dirname(executable), '..', 'Resources', 'browser-skill', 'bin', member)
-}
-
-/** Fail closed when the packaged app lost the staged BrowserSkill CLI. */
-export async function assertPackagedBrowserSkillBinary(
-  executable: string,
-  platform: NodeJS.Platform,
-): Promise<void> {
-  const path = packagedBrowserSkillBinaryPath(executable, platform)
-  let details
-  try {
-    details = await lstat(path)
-  } catch (error) {
-    throw new Error(`Packaged smoke: BrowserSkill CLI is missing at ${path}.`, { cause: error })
-  }
-  if (!details.isFile()) {
-    throw new Error(`Packaged smoke: BrowserSkill CLI at ${path} is not a regular file.`)
-  }
-  if (platform !== 'win32' && (details.mode & 0o111) === 0) {
-    throw new Error(`Packaged smoke: BrowserSkill CLI at ${path} is not executable.`)
-  }
-}
-
-interface ProviderTripwire {
-  readonly url: string
-  readonly requests: string[]
-  close(): Promise<void>
-}
-
-async function startProviderTripwire(): Promise<ProviderTripwire> {
-  const requests: string[] = []
-  const server = createServer((request, response) => {
-    requests.push(`${request.method ?? 'UNKNOWN'} ${request.url ?? '/'}`)
-    request.resume()
-    response.writeHead(500, { 'content-type': 'application/json' })
-    response.end('{"error":{"message":"packaged smoke provider tripwire"}}')
-  })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      server.off('error', reject)
-      resolve()
-    })
-  })
-  const address = server.address()
-  if (address === null || typeof address === 'string') throw new Error('provider tripwire has no TCP port')
-  return {
-    url: `http://127.0.0.1:${address.port}/v1`,
-    requests,
-    close: () => new Promise((resolve, reject) => {
-      server.close((error) => { if (error === undefined) resolve(); else reject(error) })
-    }),
-  }
-}
 
 async function writeDesktopSmokeModelSettings(harnessHome: string, baseURL: string): Promise<void> {
   await writeFile(join(harnessHome, 'settings.yaml'), [
@@ -202,108 +137,6 @@ async function verifyLegacyModuleFallbackUpgrade(
   }
 }
 
-/**
- * Seed the exact old-Profile shape that previously collided with Desktop's
- * built-in providers. The profile-local modules are deliberate tripwires: a
- * successful packaged boot proves the immutable overlay disabled them and
- * resolved the managed wrappers from the application installation instead.
- */
-async function seedLegacyExternalBrainProfile(harnessHome: string): Promise<void> {
-  const profile = join(harnessHome, 'profiles', 'web')
-  const packages = [
-    ['dsh-missher-memory', '0.1.3', 'missher-memory'],
-    ['dsh-missher-evolution', '0.1.0', 'missher-evolution'],
-  ] as const
-  await mkdir(profile, { recursive: true })
-  await writeFile(join(profile, 'package.json'), `${JSON.stringify({
-    name: 'dsh-profile-web',
-    private: true,
-    dependencies: Object.fromEntries(packages.map(([name]) => [name, `file:./legacy-packages/${name}`])),
-    dsh: {
-      profile: {
-        bundles: [
-          '@deepseek-ai/dsh-base',
-          '@deepseek-ai/dsh-web-app',
-          ...packages.map(([name]) => name),
-        ],
-      },
-    },
-  }, null, 2)}\n`, 'utf8')
-  await writeFile(join(profile, 'cordis.patch.yml'), '[]\n', 'utf8')
-  await writeFile(join(profile, 'pnpm-workspace.yaml'), 'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n', 'utf8')
-  for (const [packageName, version, id] of packages) {
-    for (const packageRoot of [
-      join(profile, 'legacy-packages', packageName),
-      join(profile, 'node_modules', packageName),
-    ]) {
-      await mkdir(join(packageRoot, 'lib'), { recursive: true })
-      await writeFile(join(packageRoot, 'package.json'), `${JSON.stringify({
-        name: packageName,
-        version,
-        type: 'module',
-        exports: {
-          '.': { default: './lib/index.js' },
-          './client': { default: './lib/client.js' },
-          './package.json': './package.json',
-        },
-        dsh: {
-          bundle: { patch: './cordis.patch.yml' },
-          client: {
-            inject: [
-              '@deepseek-ai/dsh-client-runtime',
-              '@deepseek-ai/dsh-client-ui-settings',
-              '@deepseek-ai/dsh-client-locale',
-              '@deepseek-ai/dsh-api-remotes',
-            ],
-            platform: 'web',
-          },
-        },
-      }, null, 2)}\n`, 'utf8')
-      await writeFile(join(packageRoot, 'cordis.patch.yml'), [
-        '- insert:',
-        `    - id: ${id}`,
-        `      name: ${packageName}`,
-        '',
-      ].join('\n'), 'utf8')
-      await writeFile(
-        join(packageRoot, 'lib/index.js'),
-        `throw new Error(${JSON.stringify(`packaged smoke loaded legacy ${packageName}`)})\n`,
-        'utf8',
-      )
-      await writeFile(
-        join(packageRoot, 'lib/client.js'),
-        [
-          'window.__ModuleLoader__.load({',
-          `  id: ${JSON.stringify(packageName)},`,
-          '  factory: () => {',
-          `    throw new Error(${JSON.stringify(`packaged smoke loaded legacy client ${packageName}`)})`,
-          '  },',
-          '})',
-          '',
-        ].join('\n'),
-        'utf8',
-      )
-    }
-  }
-}
-
-/** Seed only the path-free status manifest consumed on demand by the Plugins page. */
-async function seedOpenDesignPluginStatus(harnessHome: string): Promise<void> {
-  const profile = join(harnessHome, 'profiles', 'open-design')
-  await mkdir(profile, { recursive: true })
-  await writeFile(join(profile, 'package.json'), `${JSON.stringify({
-    name: 'dsh-profile-open-design',
-    dependencies: {
-      '@open-design/dsh-runtime': 'file:.open-design/8412c8a48eb69e7e71aa02cfd6058f3b2d64a51b30097cfc30f553c43962226a.tgz',
-    },
-    dsh: {
-      profile: {
-        bundles: ['@deepseek-ai/dsh-base', '@open-design/dsh-runtime'],
-      },
-    },
-  }, null, 2)}\n`, 'utf8')
-}
-
 /** Isolated on-disk state used by the native system-clipboard smoke. */
 export interface WindowsClipboardSmokeState {
   activeSessionId: string
@@ -384,6 +217,7 @@ function completeTurn(createdAt: number, turn = 1): SessionEvent[] {
       data: {
         turn,
         step: 0,
+        stream: [],
         usage: SEEDED_SESSION_USAGE,
         message: {
           id: `desktop-smoke-assistant-${createdAt}` as never,
@@ -452,7 +286,7 @@ export async function seedWindowsClipboardSmokeState(
       version: SESSION_FORMAT_VERSION,
       id: SessionId(ACTIVE_CLIPBOARD_SESSION_ID),
       createdAt,
-      isSeeded: true,
+      isSeeded: false,
       delegationDepth: 0,
       cwd: activeSessionCwd,
     },
@@ -460,7 +294,7 @@ export async function seedWindowsClipboardSmokeState(
       version: SESSION_FORMAT_VERSION,
       id: SessionId(ARCHIVED_CLIPBOARD_SESSION_ID),
       createdAt: createdAt + 1,
-      isSeeded: true,
+      isSeeded: false,
       delegationDepth: 0,
       cwd: archivedSessionCwd,
     },
@@ -468,7 +302,7 @@ export async function seedWindowsClipboardSmokeState(
       version: SESSION_FORMAT_VERSION,
       id: SessionId(MESSENGER_SOURCE_SESSION_ID),
       createdAt: createdAt + 2,
-      isSeeded: true,
+      isSeeded: false,
       delegationDepth: 0,
       cwd: messengerSourceCwd,
     },
@@ -476,7 +310,7 @@ export async function seedWindowsClipboardSmokeState(
       version: SESSION_FORMAT_VERSION,
       id: SessionId(MESSENGER_SUBAGENT_SESSION_ID),
       createdAt: createdAt + 3,
-      isSeeded: true,
+      isSeeded: false,
       delegationDepth: 1,
       cwd: messengerSubagentCwd,
       parentSession: SessionId(ACTIVE_CLIPBOARD_SESSION_ID),
@@ -490,7 +324,7 @@ export async function seedWindowsClipboardSmokeState(
     await seeder.plugin(SessionStore)
     await seeder.plugin(JsonlSessionPersistence, { root: persistenceRoot })
     for (const header of headers) {
-      await seeder.sessionPersistence.create(header, SessionLogOffset(0))
+      const handle = await seeder.sessionPersistence.create(header, { inheritedEventCount: SessionLogOffset(0) })
       if (header.id === ACTIVE_CLIPBOARD_SESSION_ID) {
         // The navigation acceptance needs a rail that must page: thirty
         // completed turns with strictly ascending seqs and turn numbers.
@@ -501,10 +335,10 @@ export async function seedWindowsClipboardSmokeState(
             seq: SessionSeq(event.seq + offset),
             time: (event as { time: number }).time + offset,
           }))
-          await seeder.sessionPersistence.append(header.id, shifted)
+          await handle.append(shifted)
         }
       } else {
-        await seeder.sessionPersistence.append(header.id, completeTurn(header.createdAt))
+        await handle.append(completeTurn(header.createdAt))
       }
       if (header.id === ACTIVE_CLIPBOARD_SESSION_ID) {
         const relaySeq = NAVIGATION_TURN_COUNT * TURN_SEQ_SPAN
@@ -531,13 +365,10 @@ export async function seedWindowsClipboardSmokeState(
           },
           surfaceOp: 'append',
         }
-        await seeder.sessionPersistence.append(header.id, [relayEvent])
+        await handle.append( [relayEvent])
       }
-      const location = seeder.sessionPersistence.locate(header)
-      if (location === undefined || location.kind !== 'jsonl') {
-        throw new Error(`Packaged smoke: seeded Session ${header.id} has no JSONL location.`)
-      }
-      sessionPaths.push(location.path)
+      await handle.close()
+      sessionPaths.push(logPath(persistenceRoot, header.cwd, header.id, 'zstd'))
     }
   } finally {
     await seeder.fiber.dispose()
@@ -968,7 +799,7 @@ async function exerciseComposerAddMenu(page: Page, seeded: WindowsClipboardSmoke
     expect(await menu.locator('[data-add-section="true"]').allTextContents()).toContainEqual(
       expect.stringMatching(/^(?:Plugins|插件)$/u),
     )
-    await menu.getByRole('option', { name: /^browser-skill\b/iu }).waitFor({ state: 'visible' })
+    expect(await menu.getByRole('option', { name: /^browser-skill\b/iu }).count()).toBe(0)
   }
 
   // Files delegates into the existing @ reference pipeline.
@@ -976,7 +807,7 @@ async function exerciseComposerAddMenu(page: Page, seeded: WindowsClipboardSmoke
   await expect.poll(() => input.textContent()).toBe('@')
   await input.fill('')
 
-  // The attachment picker accepts the same closed image/document roster as drag-and-drop.
+  // The attachment picker and drag-and-drop share the same file intake.
   await trigger.click()
   await menu.waitFor({ state: 'visible', timeout: 15_000 })
   const chooser = page.waitForEvent('filechooser')
@@ -987,12 +818,12 @@ async function exerciseComposerAddMenu(page: Page, seeded: WindowsClipboardSmoke
     mimeType: 'image/png',
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
   })
-  const remove = page.getByRole('button', { name: /^(?:Remove attachment|移除附件).*desktop-add-menu\.png/iu })
+  const remove = page.getByRole('button', { name: /^(?:Remove image|移除图片).*desktop-add-menu\.png/iu })
   await remove.waitFor({ state: 'visible', timeout: 15_000 })
   await remove.click()
   await expect.poll(() => remove.count()).toBe(0)
 
-  // A native document drop enters the same closed attachment rail without
+  // A native document drop enters the same attachment rail without
   // becoming an @ workspace reference or allocating an image object URL.
   await page.evaluate(() => {
     const transfer = new DataTransfer()
@@ -1011,23 +842,11 @@ async function exerciseComposerAddMenu(page: Page, seeded: WindowsClipboardSmoke
   await removeDocument.click()
   await expect.poll(() => removeDocument.count()).toBe(0)
 
-  // Bare @ is the product-wide discovery surface: actions and the installed
-  // BrowserSkill precede file/session references, and a skill pick lands the
-  // canonical slash invocation instead of inventing an @ reference kind.
+  // The reference menu stays usable without bundled BrowserSkill.
   await input.fill('@')
   const mentionMenu = composer.locator('[data-trigger-menu]:not([data-composer-add-menu])')
   await mentionMenu.waitFor({ state: 'visible', timeout: 15_000 })
-  const browserSkill = mentionMenu.getByRole('option', { name: /^browser-skill\b/iu })
-  await browserSkill.waitFor({ state: 'visible', timeout: 15_000 })
-  const sourceOrder = await mentionMenu.getByRole('option').evaluateAll(rows => rows.map(row => (
-    row.id.match(/^dsh-slash-option-([^-]+)/u)?.[1] ?? ''
-  )))
-  expect(sourceOrder.indexOf('command')).toBeGreaterThanOrEqual(0)
-  expect(sourceOrder.indexOf('skill')).toBeGreaterThan(sourceOrder.indexOf('command'))
-  const referenceIndex = sourceOrder.indexOf('reference')
-  if (referenceIndex >= 0) expect(sourceOrder.indexOf('skill')).toBeLessThan(referenceIndex)
-  await browserSkill.click()
-  await expect.poll(() => input.textContent()).toBe('/browser-skill ')
+  expect(await mentionMenu.getByRole('option', { name: /^browser-skill\b/iu }).count()).toBe(0)
   await input.fill('')
 }
 
@@ -1282,136 +1101,6 @@ async function exerciseSessionMessenger(
   })
 }
 
-async function exerciseDesktopWorkbench(page: Page, platform: NodeJS.Platform, harnessHome: string): Promise<void> {
-  // Keep this part of the native smoke in the resizable column layout rather
-  // than the narrow-window utility drawer, which intentionally has no drag
-  // handle.
-  await page.setViewportSize({ width: 1012, height: 760 })
-  await expect.poll(
-    () => page.locator('[class*="frame"][data-sidebar-collapsed]').count(),
-    { timeout: 15_000 },
-  ).toBe(1)
-  const trigger = page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })
-  await trigger.waitFor({ state: 'visible', timeout: 15_000 })
-  const triggerBounds = await trigger.boundingBox()
-  if (triggerBounds === null) {
-    throw new Error('Packaged smoke: workbench trigger geometry is unavailable.')
-  }
-  // The trigger belongs to the details column: right of the expanded sidebar
-  // and inside the viewport.
-  expect(triggerBounds.x).toBeGreaterThan(200)
-  expect(triggerBounds.x + triggerBounds.width).toBeLessThanOrEqual(1012)
-
-  await trigger.click()
-  const panel = page.locator('[data-desktop-workbench-panel]:visible')
-  await panel.waitFor({ state: 'visible', timeout: 15_000 })
-  expect(await panel.locator('xpath=..').getAttribute('data-utility-drawer')).toBeNull()
-  await expect.poll(async () => {
-    const [panelBounds, centerBounds] = await Promise.all([
-      panel.boundingBox(),
-      page.locator('[class*="centerCol"]').boundingBox(),
-    ])
-    return panelBounds !== null
-      && centerBounds !== null
-      && panelBounds.width >= 300
-      && centerBounds.width >= 640
-  }, { timeout: 15_000 }).toBe(true)
-  const defaultPanelBounds = await panel.boundingBox()
-  const defaultCenterBounds = await page.locator('[class*="centerCol"]').boundingBox()
-  if (defaultPanelBounds === null || defaultCenterBounds === null) {
-    throw new Error('Packaged smoke: default docked Workbench geometry is unavailable.')
-  }
-  expect(defaultPanelBounds.width).toBeGreaterThanOrEqual(300)
-  expect(defaultCenterBounds.width).toBeGreaterThanOrEqual(640)
-  await page.setViewportSize({ width: 1600, height: 1000 })
-  const tabs = panel.getByRole('tablist').getByRole('tab')
-  await expect.poll(() => tabs.count(), { timeout: 15_000 }).toBe(5)
-  expect([
-    ['审阅', '终端', '浏览器', '文件', '插件'],
-    ['Review', 'Terminal', 'Browser', 'Files', 'Plugins'],
-  ]).toContainEqual(await tabs.allTextContents())
-  // Widening the window animates both the grid track and its drag handle.
-  // Wait for the default 360px utility track to settle before starting a
-  // real pointer gesture; otherwise the pointer can land on the handle's
-  // former painted position while its logical hit box has already moved.
-  await expect.poll(async () => (await panel.boundingBox())?.width ?? 0, {
-    timeout: 15_000,
-  }).toBeGreaterThanOrEqual(359)
-  const originalPanelBounds = await panel.boundingBox()
-  const utilityHandle = page.locator('[data-side="utility"]')
-  const utilityHandleBounds = await utilityHandle.boundingBox()
-  if (originalPanelBounds === null || utilityHandleBounds === null) {
-    throw new Error('Packaged smoke: workbench resize geometry is unavailable.')
-  }
-  await page.mouse.move(
-    utilityHandleBounds.x + utilityHandleBounds.width / 2,
-    utilityHandleBounds.y + utilityHandleBounds.height / 2,
-  )
-  await page.mouse.down()
-  await page.mouse.move(utilityHandleBounds.x - 96, utilityHandleBounds.y + utilityHandleBounds.height / 2, { steps: 6 })
-  await page.mouse.up()
-  await expect.poll(async () => (await panel.boundingBox())?.width ?? 0, {
-    timeout: 15_000,
-  }).toBeGreaterThan(originalPanelBounds.width + 64)
-  const stablePanelWidth = (await panel.boundingBox())?.width ?? 0
-  expect(stablePanelWidth).toBeGreaterThan(originalPanelBounds.width + 64)
-  const expectStablePanelWidth = async (): Promise<void> => {
-    await expect.poll(async () => Math.abs(((await panel.boundingBox())?.width ?? 0) - stablePanelWidth), {
-      timeout: 15_000,
-    }).toBeLessThanOrEqual(1)
-  }
-  const terminalInput = panel.getByPlaceholder(/^(?:Type a command and press Return|输入命令并按回车)$/u)
-  await terminalInput.waitFor({ state: 'visible', timeout: 15_000 })
-  await terminalInput.fill(workbenchTerminalProbe(platform))
-  await terminalInput.press('Enter')
-  await expect.poll(() => panel.innerText(), { timeout: 15_000 }).toContain('desktop-workbench-terminal-ok')
-  expect(await panel.innerText()).not.toContain('posix_spawn failed')
-  await page.screenshot({
-    path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-workbench-${platform}.png`),
-  })
-
-  await panel.getByRole('tab', { name: /^(?:Browser|浏览器)$/u }).click()
-  await panel.locator('[data-native-browser-host]').waitFor({ state: 'visible', timeout: 15_000 })
-  await expectStablePanelWidth()
-  // Leaving Terminal asynchronously tears down its PTY. Keep that teardown
-  // fenced from the parent Harness process: the workbench must not take its
-  // own Host offline when a user changes tools.
-  await page.waitForTimeout(2_000)
-  await expect.poll(async () => await page.evaluate(async () => {
-    try { return (await fetch('/', { cache: 'no-store' })).status } catch { return 0 }
-  }), { timeout: 10_000 }).toBe(200)
-  await panel.getByRole('tab', { name: /^(?:Files|文件)$/u }).click()
-  await panel.getByPlaceholder(/^(?:Filter files|筛选文件)$/u).waitFor({ state: 'visible', timeout: 15_000 })
-  await expectStablePanelWidth()
-  expect(await panel.getByRole('tab', { name: /^(?:Side chat|侧边聊天)$/u }).count()).toBe(0)
-  await panel.getByRole('tab', { name: /^(?:Review|审阅)$/u }).click()
-  await panel.getByText(/^(?:Changes|变更)$/u).waitFor({ state: 'visible', timeout: 15_000 })
-  await expectStablePanelWidth()
-  // Exactly one tabpanel serves every selection, labelled by the selected tab.
-  expect(await panel.getByRole('tabpanel').count()).toBe(1)
-  const selectedTab = panel.getByRole('tab', { selected: true })
-  expect(await selectedTab.getAttribute('aria-controls'))
-    .toBe(await panel.getByRole('tabpanel').getAttribute('id'))
-  await seedOpenDesignPluginStatus(harnessHome)
-  await panel.getByRole('tab', { name: /^(?:Plugins|插件)$/u }).click()
-  await panel.locator('[data-plugin-card="browser-skill"]').waitFor({ state: 'visible', timeout: 15_000 })
-  await panel.locator('[data-plugin-card="open-design"]').waitFor({ state: 'visible', timeout: 15_000 })
-  await expect.poll(
-    () => panel.locator('[data-open-design-state="installed"]').count(),
-    { timeout: 15_000 },
-  ).toBe(1)
-  expect(await panel.locator('[data-browser-skill-idle]').count()).toBe(1)
-  await expectStablePanelWidth()
-  await panel.getByRole('button', { name: /^(?:Close workbench|关闭工作台)$/u }).click()
-  const reopenTrigger = page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u })
-  await expect.poll(() => reopenTrigger.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('false')
-  await reopenTrigger.click()
-  await panel.waitFor({ state: 'visible', timeout: 15_000 })
-  await expectStablePanelWidth()
-  await panel.getByRole('button', { name: /^(?:Close workbench|关闭工作台)$/u }).click()
-  await expect.poll(() => reopenTrigger.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('false')
-}
-
 /**
  * Turn-navigation acceptance over the seeded thirty-turn session: the rail
  * must page beyond the loaded window, keep one mark per turn, and clamp its
@@ -1447,11 +1136,41 @@ async function exerciseTurnNavigation(page: Page, seeded: WindowsClipboardSmokeS
   // the cross-platform helpers spec at the data layer.
   await expect.poll(() => marks.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(10)
 
-  const frameBox = await frame.boundingBox()
-  if (frameBox === null) throw new Error('Packaged smoke: turn rail frame geometry is unavailable.')
-  const transcriptBox = await page.locator('[data-chat-flow]').boundingBox()
-  if (transcriptBox === null) throw new Error('Packaged smoke: transcript geometry is unavailable.')
+  await page.evaluate(async () => {
+    const transitions = document.getAnimations().filter(animation =>
+      animation.playState === 'running' && Number.isFinite(animation.effect?.getComputedTiming().endTime))
+    await Promise.all(transitions.map(animation => animation.finished.catch(() => undefined)))
+  })
+  // Read all related boxes in one browser frame; sidebar transitions otherwise
+  // move the origin between separate Playwright geometry requests.
+  const { frameBox, transcriptBox, centerBox } = await frame.evaluate((rail) => {
+    const center = rail.closest('[class*="centerCol"]')
+    const transcript = center?.querySelector('[data-chat-flow]')
+    if (center === null || transcript === null || transcript === undefined) {
+      throw new Error('Packaged smoke: transcript geometry is unavailable.')
+    }
+    return {
+      frameBox: rail.getBoundingClientRect().toJSON() as { x: number; y: number; width: number; height: number },
+      transcriptBox: transcript.getBoundingClientRect().toJSON() as { x: number },
+      centerBox: center.getBoundingClientRect().toJSON() as { x: number },
+    }
+  })
+  expect(await page.locator('[data-width-handle]').count()).toBe(0)
+  const flow = page.locator('[data-chat-flow]').first()
+  const initialFlow = await flow.boundingBox()
+  if (initialFlow === null) throw new Error('Packaged smoke: transcript geometry is unavailable.')
+  for (const x of [initialFlow.x - 38, initialFlow.x + initialFlow.width + 38]) {
+    const y = frameBox.y + frameBox.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 45, y, { steps: 5 })
+    await page.mouse.up()
+    const after = await flow.boundingBox()
+    expect(after?.width).toBe(initialFlow.width)
+  }
   expect(frameBox.x + frameBox.width).toBeLessThanOrEqual(transcriptBox.x)
+  expect(frameBox.x - centerBox.x).toBeGreaterThanOrEqual(15)
+  expect(transcriptBox.x - frameBox.x - frameBox.width).toBeGreaterThanOrEqual(11)
   const composerBox = await page.locator('[data-composer-card]').last().boundingBox()
 
   // Hover the lower band so the preview must clamp against the composer
@@ -1558,23 +1277,9 @@ async function exercisePluginMarket(
   for (const control of [search, installedRail, publicMode, personalMode, management]) {
     await control.waitFor({ state: 'visible', timeout: 30_000 })
   }
-  const builtinMemory = installedRail.locator('button[data-package="dsh-missher-memory"]')
-  const builtinBrain = installedRail.locator('button[data-package="@deepseek-ai/dsh-missher-brain"]')
-  const builtinEvolution = installedRail.locator('button[data-package="dsh-missher-evolution"]')
-  await builtinBrain.waitFor({ state: 'visible', timeout: 30_000 })
-  await builtinMemory.waitFor({ state: 'visible', timeout: 30_000 })
-  await builtinEvolution.waitFor({ state: 'visible', timeout: 30_000 })
-  const builtinActivation = await page.evaluate(async () => {
-    const response = await fetch('/dsh-market/installed', { cache: 'no-store' })
-    if (!response.ok) throw new Error(`market installed status failed: ${response.status}`)
-    const body = await response.json() as {
-      activation?: Record<string, { state?: string; hot?: boolean; reasons?: string[] }>
-    }
-    return body.activation ?? {}
-  })
-  expect(builtinActivation['@deepseek-ai/dsh-missher-brain']).toMatchObject({ state: 'live', hot: true })
-  expect(builtinActivation['dsh-missher-memory']).toMatchObject({ state: 'live', hot: true })
-  expect(builtinActivation['dsh-missher-evolution']).toMatchObject({ state: 'live', hot: true })
+  for (const name of ['@deepseek-ai/dsh-missher-brain', 'dsh-missher-memory', 'dsh-missher-evolution', 'dsh-media-missher']) {
+    expect(await installedRail.locator(`button[data-package="${name}"]`).count()).toBe(0)
+  }
   expect(await installedRail.evaluate(element => getComputedStyle(element).overflowX)).toBe('auto')
   // The shell and its controls mount before the same-origin registry request
   // resolves. Wait for the categorized content, not merely the outer shell.
@@ -1588,12 +1293,6 @@ async function exercisePluginMarket(
   await personalMode.click()
   await expect.poll(() => market.locator('[data-dshmarket-personal] [data-package]').count(), { timeout: 15_000 }).toBeGreaterThan(0)
   expect(await market.locator(`[data-dshmarket-personal] [data-package="${fixtureName}"]`).isVisible()).toBe(true)
-  await publicMode.click()
-
-  await builtinMemory.click()
-  await market.locator('[data-dshmarket-protected-package]').waitFor({ state: 'visible', timeout: 15_000 })
-  expect(await market.locator('[data-dshmarket-protected-package]').innerText())
-    .toMatch(/(?:Managed by DeepSeek Harness Desktop|由 DeepSeek Harness Desktop 管理)/u)
   await publicMode.click()
 
   await management.click()
@@ -1635,11 +1334,6 @@ async function exercisePluginMarket(
   consoleErrors.length = 0
   const protectedUpdate = await postMarket(page, '/dsh-market/update', { name: 'dshmarket' })
   expect(protectedUpdate).toEqual({ status: 409, body: { ok: false, code: 'self-protected' } })
-  const protectedMemoryUpdate = await postMarket(page, '/dsh-market/update', { name: 'dsh-missher-memory' })
-  expect(protectedMemoryUpdate).toEqual({ status: 409, body: { ok: false, code: 'self-protected' } })
-  const protectedMemoryUninstall = await postMarket(page, '/dsh-market/uninstall', { name: 'dsh-missher-memory' })
-  expect(protectedMemoryUninstall).toEqual({ status: 409, body: { ok: false, code: 'self-protected' } })
-
   const ordinaryUninstall = await postMarket(page, '/dsh-market/uninstall', { name: fixtureName })
   expect(ordinaryUninstall.status, JSON.stringify(ordinaryUninstall.body)).toBe(200)
   expect(ordinaryUninstall.body).toMatchObject({ ok: true, exitCode: 0 })
@@ -1739,36 +1433,6 @@ async function exercisePersonalization(
   await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
 }
 
-async function exerciseMemorySettings(
-  page: Page,
-  harnessHome: string,
-  platform: NodeJS.Platform,
-): Promise<void> {
-  const stateFile = join(harnessHome, 'missher-memory', 'state.db')
-  const stateExists = async (): Promise<boolean> => readFile(stateFile).then(() => true, () => false)
-  expect(await stateExists()).toBe(false)
-
-  const settingsTrigger = page.locator('[data-dsh-desktop-command="open-settings"]')
-  if (await settingsTrigger.getAttribute('aria-expanded') !== 'true') await settingsTrigger.click()
-  const settingsDialog = page.getByRole('dialog').last()
-  await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
-  await settingsDialog.getByRole('button', { name: /^(?:Memory & Learning|记忆与学习)$/u }).click()
-  const heading = settingsDialog.getByRole('heading', { name: /^(?:Memory & Learning|记忆与学习)$/u })
-  await heading.waitFor({ state: 'visible', timeout: 30_000 })
-  const section = heading.locator('xpath=ancestor::section[1]')
-  await expect.poll(() => section.innerText(), { timeout: 15_000 }).toSatisfy((text: string) => (
-    /(?:Project memory|项目记忆)/u.test(text)
-    && /(?:Learned workflows|学到的工作流程)/u.test(text)
-    && /(?:Memory stores stay on this device|记忆库保存在本机)/u.test(text)
-  ))
-  expect(await stateExists()).toBe(false)
-  await page.screenshot({
-    path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-memory-${platform}.png`),
-  })
-  await page.keyboard.press('Escape')
-  await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
-}
-
 async function exerciseSystemUpdate(page: Page, platform: NodeJS.Platform): Promise<void> {
   const bridgeShape = await page.evaluate(() => ({
     getUpdateStatus: typeof window.dshDesktop?.getUpdateStatus,
@@ -1812,7 +1476,7 @@ async function exerciseSystemUpdate(page: Page, platform: NodeJS.Platform): Prom
 
   const section = settingsDialog.locator('[data-system-update-section]')
   await section.waitFor({ state: 'visible', timeout: 15_000 })
-  expect(await section.locator(':scope > [class*="rows"] > [class*="row"]').count()).toBe(2)
+  expect(await section.locator('[data-update-version]').count()).toBe(2)
   const desktopManifest = JSON.parse(
     await readFile(join(repositoryRoot, 'apps/desktop/package.json'), 'utf8'),
   ) as { version?: unknown }
@@ -1930,15 +1594,13 @@ export async function runPackagedDesktopSmoke(
   const harnessHome = process.env.DSH_DESKTOP_SMOKE_DSH_HOME ?? join(temporaryRoot, 'dsh-home')
   const userData = process.env.DSH_DESKTOP_SMOKE_USER_DATA ?? join(temporaryRoot, 'electron-data')
   await Promise.all([mkdir(harnessHome, { recursive: true }), mkdir(userData, { recursive: true })])
-  await assertPackagedBrowserSkillBinary(executable, platform)
   const legacyFallbackSeed = await seedLegacyModuleFallbackUpgradeState(harnessHome, platform)
-  await seedLegacyExternalBrainProfile(harnessHome)
   const clipboardSeed = await seedWindowsClipboardSmokeState(harnessHome)
   const archivedSessionPath = clipboardSeed.protectedPaths[1]
   if (archivedSessionPath === undefined) throw new Error('Packaged smoke: archived Session fixture is missing.')
   const upgradeProtectedPaths = [...legacyFallbackSeed.protectedPaths, archivedSessionPath]
   const upgradeProtectedBefore = await protectedFileSnapshot(upgradeProtectedPaths)
-  const providerTripwire = await startProviderTripwire()
+  const providerTripwire = await startReaderSmokeProvider()
   await writeDesktopSmokeModelSettings(harnessHome, providerTripwire.url)
 
   let nativeApp: ElectronApplication | undefined
@@ -2080,7 +1742,7 @@ export async function runPackagedDesktopSmoke(
       }
       await exerciseSessionMessenger(page, clipboardSeed, platform)
       await exerciseComposerAddMenu(page, clipboardSeed)
-      await exerciseDesktopWorkbench(page, platform, harnessHome)
+      await assertWorkbenchRemoved(page)
       await exerciseTurnNavigation(page, clipboardSeed)
       await exerciseReasoningEffort(page, harnessHome, platform)
     } catch (error) {
@@ -2106,10 +1768,19 @@ export async function runPackagedDesktopSmoke(
 
     await exerciseUsageInsights(page, platform, clipboardSeed.expectedDailyTokens)
     await exercisePersonalization(page, harnessHome, platform)
-    await exerciseMemorySettings(page, harnessHome, platform)
     await exerciseSystemUpdate(page, platform)
     await exercisePluginMarket(page, harnessHome, platform, consoleErrors)
     expect(consoleErrors.filter(message => !isBenignConsoleError(message))).toEqual([])
+    expect(providerTripwire.requests).toEqual([])
+    await page.locator('[data-dsh-desktop-command="new-session"]').click()
+    await exerciseReaderPresentation(page, {
+      driver: providerTripwire,
+      evidence: {
+        directory: join(repositoryRoot, 'apps/desktop/release'),
+        prefix: 'desktop-smoke-reader', suffix: `-${platform}`,
+      },
+    })
+    expect(providerTripwire.acceptedRequests).toBe(1)
     expect(providerTripwire.requests).toEqual([])
 
     const mainPid = nativeApp.process().pid
@@ -2139,4 +1810,12 @@ export async function runPackagedDesktopSmoke(
     primaryDisplayScaleFactor,
     rendererDevicePixelRatio,
   }
+}
+
+/** Verify that layout state and preload cannot reopen the retired workbench. */
+async function assertWorkbenchRemoved(page: Page): Promise<void> {
+  expect(await page.locator('[data-desktop-workbench-panel], [data-utility-drawer], [data-side="utility"]').count()).toBe(0)
+  expect(await page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u }).count()).toBe(0)
+  const api = await page.evaluate(() => Object.keys(window.dshDesktop ?? {}))
+  expect(api.some(key => /WorkbenchBrowser|DesktopIntegrations/.test(key))).toBe(false)
 }

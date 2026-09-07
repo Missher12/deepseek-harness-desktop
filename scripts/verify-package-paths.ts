@@ -7,6 +7,7 @@
 
 import { existsSync, globSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { ROOT_PACKAGE_REFERENCE } from './package-path-reference.ts'
 import {
   findReferenceViolations,
   isArchivedAgentNotePath,
@@ -55,7 +56,7 @@ const packageNames = realPackageNames()
  * those are patterns, not real paths. A trailing `.`/`/` (e.g. a sentence-ending
  * period) is trimmed before the existence check.
  */
-const PKG_REF = /\bpackages\/[A-Za-z0-9._/-]+/g
+const PKG_REF = ROOT_PACKAGE_REFERENCE
 
 function isDriftedPackageReference(ref: string): boolean {
   if (existsSync(resolve(root, ref))) return false

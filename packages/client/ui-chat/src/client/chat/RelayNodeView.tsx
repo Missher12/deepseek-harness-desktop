@@ -6,7 +6,7 @@ import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/c
 import type { ContextMessageNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import { IconSendOutline16, MessageText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconSendOutline16, projectUserText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import css from './RelayNodeView.module.css'
 
@@ -89,7 +89,7 @@ export const RelayNodeView = memo(function RelayNodeView({
       </div>
       {body !== '' && (
         <p className={css.body}>
-          <MessageText text={body} />
+          {projectUserText(body, [])}
         </p>
       )}
     </div>

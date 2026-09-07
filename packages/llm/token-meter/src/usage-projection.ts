@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod'
-import type { TokenUsage } from '@deepseek-ai/dsh-llm'
+import { expandAssistantStream, type TokenUsage } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-llm-retry/types'
 import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -80,13 +80,15 @@ const pressureSchema: z.ZodType<ContextPressureProjection> = z.object({
 const pressureFrom = (usage: TokenUsage): number =>
   usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
 
-/** The usage a chunk or finalized message reports for its step, if any. */
-const usageOf = (event: SessionEvent): TokenUsage | undefined =>
-  event.type === 'assistant/chunk' && event.data.chunk.type === 'usage'
-    ? event.data.chunk.usage
-    : event.type === 'assistant/message'
-      ? event.data.usage
-      : undefined
+/** The usage one durable Assistant settlement reports for its attempt, if any. */
+function usageOf(event: SessionEvent): TokenUsage | undefined {
+  if (event.type === 'assistant/message' && event.data.usage !== undefined) return event.data.usage
+  if (event.type !== 'assistant/message' && event.type !== 'assistant/attempt') return undefined
+  for (const member of expandAssistantStream(event.data.stream).toReversed()) {
+    if (member.chunk.type === 'usage') return member.chunk.usage
+  }
+  return undefined
+}
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
@@ -115,12 +117,9 @@ type ContextPressureState = z.infer<typeof contextPressureStateSchema>
 /**
  * Token-meter's session projection unit.
  *
- * Usage chunks provide an early sample that survives a later request failure;
- * an assistant message provides the final sample for the same attempt. A
- * repeated sample replaces that attempt's earlier value instead of double
- * counting it, while `llm/retry-started` closes the replacement slot so the
- * retried attempt adds to the total. The single `last` slot relies on the
- * session-log invariant that usage reports for one attempt are adjacent.
+ * Each v2 Assistant settlement contributes the last usage sample embedded in
+ * its stream. `llm/retry-started` closes the replacement slot so the retried
+ * attempt adds to the total.
  */
 export const tokenUsageProjectionDefinition = {
   key: 'tokenUsage',
@@ -133,17 +132,13 @@ export const tokenUsageProjectionDefinition = {
         ? { ...state, last: null }
         : state
     }
-    let turn: number
-    let step: number
-    let usage: TokenUsage
-    if (event.type === 'assistant/chunk' && event.data.chunk.type === 'usage') {
-      ;({ turn, step } = event.data)
-      usage = event.data.chunk.usage
-    } else if (event.type === 'assistant/message' && event.data.usage !== undefined) {
-      ;({ turn, step, usage } = event.data)
-    } else {
+    if (event.type !== 'assistant/message' && event.type !== 'assistant/attempt') {
       return state
     }
+    const sample = usageOf(event)
+    if (sample === undefined) return state
+    const { turn, step } = event.data
+    const usage: TokenUsage = sample
 
     const buckets = bucketsFrom(usage)
     const previous = state.last !== null
@@ -230,7 +225,7 @@ type LatestTurnBillingState = z.infer<typeof latestTurnBillingStateSchema>
 /** Latest billed turn, deliberately hidden from the wire until `turn/end`. */
 export const latestTurnBillingProjectionDefinition = {
   key: 'latestTurnBilling',
-  stateVersion: 1,
+  stateVersion: 2,
   stateSchema: latestTurnBillingStateSchema,
   init: () => ({ settled: null }),
   apply: (state, event) => {
@@ -252,21 +247,18 @@ export const latestTurnBillingProjectionDefinition = {
       }
     }
 
-    let turn: number
-    let step: number
-    let usage: TokenUsage
-    let route: BillingRoute | undefined
-    if (event.type === 'assistant/chunk' && event.data.chunk.type === 'usage') {
-      ;({ turn, step } = event.data)
-      usage = event.data.chunk.usage
-      route = state.current
-    } else if (event.type === 'assistant/message' && event.data.usage !== undefined) {
-      ;({ turn, step, usage } = event.data)
-      const source = event.data.message.source
-      route = { provider: source.provider, model: source.model }
-    } else {
-      return state
+    if (event.type === 'llm/retry-started' && state.draft?.turn === event.data.turn
+      && state.draft.last?.step === event.data.step) {
+      const { last: _last, ...draft } = state.draft
+      return { ...state, draft }
     }
+    if (event.type !== 'assistant/message' && event.type !== 'assistant/attempt') return state
+    const usage = usageOf(event)
+    if (usage === undefined) return state
+    const { turn, step } = event.data
+    const route = event.type === 'assistant/message'
+      ? { provider: event.data.message.source.provider, model: event.data.message.source.model }
+      : state.current
 
     const draft = state.draft?.turn === turn
       ? state.draft
@@ -294,7 +286,7 @@ export const latestTurnBillingProjectionDefinition = {
  */
 export const tokenBillingModelProjectionDefinition = {
   key: 'tokenBillingModel',
-  stateVersion: 1,
+  stateVersion: 2,
   stateSchema: billingModelStateSchema,
   init: () => ({ billing: { kind: 'none' } }),
   apply: (state, event) => {
@@ -304,19 +296,17 @@ export const tokenBillingModelProjectionDefinition = {
       return { ...state, current: { provider: next.provider, model: next.model } }
     }
 
-    let turn: number
-    let step: number
-    let route: BillingRoute | undefined
-    if (event.type === 'assistant/chunk' && event.data.chunk.type === 'usage') {
-      ;({ turn, step } = event.data)
-      route = state.current
-    } else if (event.type === 'assistant/message' && event.data.usage !== undefined) {
-      ;({ turn, step } = event.data)
-      const source = event.data.message.source
-      route = { provider: source.provider, model: source.model }
-    } else {
-      return state
+    if (event.type === 'llm/retry-started' && state.last?.turn === event.data.turn
+      && state.last.step === event.data.step) {
+      const { last: _last, ...next } = state
+      return next
     }
+    if (event.type !== 'assistant/message' && event.type !== 'assistant/attempt') return state
+    if (usageOf(event) === undefined) return state
+    const { turn, step } = event.data
+    const route = event.type === 'assistant/message'
+      ? { provider: event.data.message.source.provider, model: event.data.message.source.model }
+      : state.current
 
     const sameStep = state.last !== undefined
       && state.last.turn === turn

@@ -46,7 +46,9 @@ describe('SystemUpdateSection', () => {
     render(createElement(SystemUpdateSection, props(IDLE, { check })))
 
     expect(screen.getByText('v0.2.1')).toBeTruthy()
-    expect(screen.getByText('Included 0.1.0-rc.8')).toBeTruthy()
+    expect(screen.getByText('v0.1.0-rc.8')).toBeTruthy()
+    expect(screen.queryByText(en.current)).toBeNull()
+    expect(screen.getByText(en.prerelease)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.check }))
     expect(check).toHaveBeenCalledOnce()
   })
@@ -70,7 +72,7 @@ describe('SystemUpdateSection', () => {
   })
 
   it.each([
-    ['idle', en.current],
+    ['idle', en.idle],
     ['current', en.current],
     ['checking', en.checking],
     ['upstream-available', en.upstream],
@@ -79,7 +81,7 @@ describe('SystemUpdateSection', () => {
     ['verifying', en.verifying],
     ['ready', en.ready],
     ['installing', en.installing],
-    ['error', '—'],
+    ['error', en.error],
   ] as const)('renders the %s status without inventing update facts', (phase, expected) => {
     render(createElement(SystemUpdateSection, props({ ...IDLE, phase })))
 
@@ -95,9 +97,9 @@ describe('SystemUpdateSection', () => {
       lastCheckedAt: 1_700_000_000_000,
     })))
 
-    expect(screen.getByText('Latest 0.1.1')).toBeTruthy()
+    expect(screen.getByText('Official latest · v0.1.1')).toBeTruthy()
     expect(screen.getByText('Downloading 43%')).toBeTruthy()
-    expect(document.querySelector('[style="width: 43%;"]')).toBeTruthy()
+    expect(screen.getByRole('progressbar').getAttribute('value')).toBe('43')
     expect(screen.getByText(/^Last checked:/u)).toBeTruthy()
   })
 
@@ -115,6 +117,23 @@ describe('SystemUpdateSection', () => {
     fireEvent.click(button)
     expect((button as HTMLButtonElement).disabled).toBe(true)
     await waitFor(() => { expect((button as HTMLButtonElement).disabled).toBe(false) })
+    expect(screen.getByRole('alert').textContent).toContain(en.operationFailed)
+    expect(screen.getByText('offline')).toBeTruthy()
+  })
+
+  it('shows the Desktop target before allowing its download', () => {
+    render(createElement(SystemUpdateSection, props({
+      ...IDLE, phase: 'desktop-available', latestDesktop: '0.5.6',
+    })))
+    expect(screen.getByText('Available update · v0.5.6')).toBeTruthy()
+    expect(screen.getByRole('link', { name: en.desktopRelease }).getAttribute('href'))
+      .toBe('https://github.com/Missher12/deepseek-harness-desktop/releases')
+  })
+
+  it('shows verification as indeterminate progress and cannot install early', () => {
+    render(createElement(SystemUpdateSection, props({ ...IDLE, phase: 'verifying', downloadProgress: 1 })))
+    expect(screen.getByRole('progressbar').hasAttribute('value')).toBe(false)
+    expect(screen.queryByRole('button', { name: en.install })).toBeNull()
   })
 
   it.each(['checking', 'downloading', 'verifying', 'installing'] as const)(

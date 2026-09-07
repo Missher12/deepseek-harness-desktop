@@ -16,7 +16,7 @@ Status: implemented
 
 权限命令或审批响应未完成时，卡片的三个动作全部禁用。权限命令失败或未匹配时，不发送审批响应，卡片以固定文案重新开放重试。权限已经成功改变但当前响应失败时，重试只发送 `allowed-once`，不会重复执行或回滚 Full access。原始传输错误不会渲染。
 
-## 拒绝的替代方案
+## 备选方案
 
 - 新增 Session 级或永久 `ApprovalOutcome`：拒绝，因为既有 outcome 无法描述安全的持久工具参数范围。
 - 保存浏览器侧 grant：拒绝，因为 local storage 是呈现状态，不是 Session 权限 authority。

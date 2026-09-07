@@ -1,7 +1,7 @@
 import {
-  chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile,
+  chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile,
 } from 'node:fs/promises'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, extname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -15,6 +15,24 @@ const releaseRoot = join(repositoryRoot, 'apps', 'desktop', 'release')
 const realExecutable = process.env.DSH_MACOS_DESKTOP_EXECUTABLE
 const evidenceRoot = process.env.DSH_MACOS_VISUAL_EVIDENCE_ROOT
 const SCALE_PERCENTAGES = [100, 150] as const
+const RETIRED_RESOURCE_PATHS = [
+  'browser-skill',
+  'app.asar.unpacked/node_modules/@deepseek-ai/dsh-desktop-workbench',
+  'app.asar.unpacked/node_modules/@wxg-prc-cpg/browser-skill-dsh-plugin',
+  'app.asar.unpacked/node_modules/@open-design/dsh-runtime',
+] as const
+
+/** Check physical package entries in the real app, not the scale wrapper. */
+async function assertRetiredMacResourcesAbsent(): Promise<void> {
+  if (realExecutable === undefined) throw new Error('Mac visual smoke executable is missing')
+  const resources = resolve(dirname(realExecutable), '..', 'Resources')
+  expect((await lstat(join(resources, 'app.asar'))).isFile()).toBe(true)
+  expect((await lstat(join(resources, 'app.asar.unpacked', 'node_modules'))).isDirectory()).toBe(true)
+  for (const relativePath of RETIRED_RESOURCE_PATHS) {
+    // Permission and I/O errors must fail; dangling entries must also fail.
+    await expect(lstat(join(resources, relativePath))).rejects.toMatchObject({ code: 'ENOENT' })
+  }
+}
 
 function shellQuote(value: string): string {
   const quote = String.fromCodePoint(39)
@@ -69,6 +87,8 @@ async function retainBoundedVisualEvidence(
   const dimensions = pngDimensions(await readFile(titlebar))
   const scaleFactor = scalePercent / 100
   expect(runtime.primaryDisplayScaleFactor).toBeCloseTo(scaleFactor, 4)
+  expect(Number.isFinite(runtime.rendererDevicePixelRatio)).toBe(true)
+  expect(runtime.rendererDevicePixelRatio).toBeGreaterThan(0)
   // Playwright's explicit viewport is a CSS-pixel capture contract on macOS;
   // native scaling is proved above from Electron's primary Display instead.
   expect(dimensions).toEqual({
@@ -76,7 +96,7 @@ async function retainBoundedVisualEvidence(
     height: 1_000,
   })
   await writeFile(join(evidenceRoot, `native-visual-${String(scalePercent)}.json`), `${JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     platform: 'darwin-x64',
     scalePercent,
     scaleMode: 'electron-force-device-scale-factor',
@@ -85,7 +105,7 @@ async function retainBoundedVisualEvidence(
     titlebarCssPixels: dimensions,
     sharedFeatureSmoke: 'passed',
     processTreeRemaining: 0,
-    openDesignProfile: 'isolated-fixture-detected',
+    retiredResourcePathsAbsent: RETIRED_RESOURCE_PATHS,
   }, null, 2)}\n`, 'utf8')
 }
 
@@ -97,14 +117,11 @@ describe.skipIf(
 )('packaged DeepSeek Harness native macOS visuals', () => {
   for (const scalePercent of SCALE_PERCENTAGES) {
     it(`runs the complete packaged feature smoke at ${String(scalePercent)} percent`, async () => {
-      // The shared smoke is the one product contract for titlebar, Turn rail,
-      // @/+, Workbench, BrowserSkill, Memory & Learning, close/Quit, upgrade
-      // recovery, data preservation, and zero remaining process/listener state.
-      // Keep Open Design independent: that helper seeds only an isolated
-      // profile marker and requires data-open-design-state="installed".
-      const sharedSmoke = readFileSync(new URL('./packaged-smoke.ts', import.meta.url), 'utf8')
-      expect(sharedSmoke).toContain('data-open-design-state="installed"')
-      expect(sharedSmoke).toContain('data-browser-skill-idle')
+      // Keep the complete shared smoke at both scales: titlebar, Turn rail,
+      // @/+, retired workbench absence, history, close/Quit, upgrade recovery,
+      // protected data and zero remaining processes/listeners.
+      // Package-entry absence is separate from the shared live UI assertions.
+      await assertRetiredMacResourcesAbsent()
 
       const temporaryRoot = await mkdtemp(join(tmpdir(), `dsh-macos-visual-${String(scalePercent)}-`))
       const wrapper = await createScaledExecutable(temporaryRoot, scalePercent)

@@ -92,7 +92,7 @@ export function createContextTargetAvailabilityPolicy(ctx: Context): TargetAvail
         // Both registries may change while the persistence read is pending.
         if (archivedSessionIds().includes(targetSessionId)) return 'unavailable'
         if (ctx.agents.get(targetSessionId) !== undefined) return 'available'
-        return headers.some(header => header.id === targetSessionId) ? 'available' : 'unavailable'
+        return headers.some(snapshot => snapshot.header.id === targetSessionId) ? 'available' : 'unavailable'
       } catch {
         return 'unknown'
       }

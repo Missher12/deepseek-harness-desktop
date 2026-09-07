@@ -1,17 +1,10 @@
 import { spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { cp, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import * as yaml from 'js-yaml'
-import {
-  DEFAULT_ASSET_ROOT,
-  prepareBrowserSkillAssets,
-  type BrowserSkillPlatform,
-} from './prepare-browser-skill-assets.ts'
-
 const DESKTOP_PACKAGE = '@deepseek-ai/dsh-desktop'
 const SESSION_MESSENGER_PACKAGE = '@deepseek-ai/dsh-session-messenger'
 const SESSION_MESSENGER_ROW_ID = 'session-messenger'
@@ -27,8 +20,6 @@ export interface StageDesktopDependencies {
   findPackageDirectories(root: string, packageDirectoryName: string): Promise<readonly string[]>
   findNativeBinaries(root: string): Promise<readonly string[]>
   findForbiddenControlArtifacts(root: string): Promise<readonly string[]>
-  prepareBrowserSkillAssets(platform: BrowserSkillPlatform, root: string): Promise<string>
-  hashFile(path: string): Promise<string>
 }
 
 /** Auditable result returned by one staging operation. */
@@ -103,6 +94,17 @@ const FORBIDDEN_DESKTOP_CONTROL_SEGMENTS = new Set([
   'dsh-control-runtime',
   'control-runtime',
   'computer-use-helper',
+  'dsh-desktop-workbench',
+  'browser-skill',
+  'browser-skill-dsh-plugin',
+  'dsh-missher-brain',
+  'dsh-missher-memory',
+  'dsh-missher-evolution',
+  'dsh-desktop-managed-memory',
+  'dsh-desktop-managed-evolution',
+  'dsh-client-ui-settings-brain',
+  'dsh-media-missher',
+  '@open-design',
 ])
 
 function isDesktopControlArtifact(path: string): boolean {
@@ -160,21 +162,6 @@ const realDependencies: StageDesktopDependencies = {
   findPackageDirectories,
   findNativeBinaries,
   findForbiddenControlArtifacts,
-  prepareBrowserSkillAssets: async (platform, root) => await prepareBrowserSkillAssets(platform, { root }),
-  hashFile: async path => createHash('sha256').update(await readFile(path)).digest('hex'),
-}
-
-/**
- * Resolve the BrowserSkill CLI target. An explicit env override wins; without
- * one the native build host selects its own platform (macOS and Linux hosts
- * default to darwin-x64, Windows hosts to win32-x64).
- */
-export function resolveBrowserSkillPlatform(envValue: string | undefined): BrowserSkillPlatform {
-  if (envValue === 'darwin-x64' || envValue === 'win32-x64') return envValue
-  if (envValue === undefined || envValue === '') {
-    return process.platform === 'win32' ? 'win32-x64' : 'darwin-x64'
-  }
-  throw new Error(`Desktop staging: unknown DSH_DESKTOP_TARGET_PLATFORM ${envValue}.`)
 }
 
 const REASONING_EFFORT_PACKAGE = '@deepseek-ai/dsh-reasoning-effort'
@@ -273,49 +260,18 @@ function assertCanonicalSessionMessengerRow(content: string): void {
   }
 }
 
-const BROWSER_SKILL_PACKAGE = '@wxg-prc-cpg/browser-skill-dsh-plugin'
-const BROWSER_SKILL_ROW_ID = 'browser-skill'
-const BROWSER_SKILL_CANONICAL_CONFIG = JSON.stringify({
-  bskPath: 'bsk',
-  lazyTools: true,
-  observationEnabled: false,
-})
-
-/**
- * Fail closed unless the immutable Desktop patch carries exactly one dormant
- * BrowserSkill row: tools stay lazy (no schema in the prompt before the skill
- * is invoked) and the observation overlay stays off.
- */
-export function assertCanonicalBrowserSkillRow(content: string): void {
-  let parsed: unknown
-  try {
-    parsed = yaml.load(content)
-  } catch (cause) {
-    throw new Error('Desktop staging requires exactly one canonical browser-skill row.', { cause })
-  }
-  const rows: Array<Record<string, unknown>> = []
+/** Reject retired product plugins before any stage directory is changed. */
+export function validateDesktopProductPatch(content: string): void {
+  const names: string[] = []
   const visit = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item)
-      return
-    }
+    if (Array.isArray(value)) { value.forEach(visit); return }
     if (value === null || typeof value !== 'object') return
     const row = value as Record<string, unknown>
-    const id = typeof row.id === 'string' ? row.id : undefined
-    const name = typeof row.name === 'string' ? row.name : undefined
-    if (id === BROWSER_SKILL_ROW_ID || name === BROWSER_SKILL_PACKAGE) rows.push(row)
-    for (const child of Object.values(row)) visit(child)
+    if (typeof row.name === 'string') names.push(row.name)
+    Object.values(row).forEach(visit)
   }
-  visit(parsed)
-  const candidate = rows[0]
-  if (rows.length !== 1
-    || candidate === undefined
-    || candidate.id !== BROWSER_SKILL_ROW_ID
-    || candidate.name !== BROWSER_SKILL_PACKAGE
-    || Object.keys(candidate).sort().join(',') !== 'config,id,name'
-    || JSON.stringify(candidate.config) !== BROWSER_SKILL_CANONICAL_CONFIG) {
-    throw new Error('Desktop staging requires exactly one canonical dormant browser-skill row.')
-  }
+  visit(yaml.load(content))
+  assertNoDesktopControlArtifacts(names)
 }
 
 /**
@@ -323,14 +279,12 @@ export function assertCanonicalBrowserSkillRow(content: string): void {
  * @param repositoryRoot - Exact DeepSeek Harness repository root.
  * @param dependencies - Injectable filesystem and command seams.
  * @param requestedStageDir - Optional validated stage directory override.
- * @param environment - Optional env override (target platform, asset root).
  * @returns Validated stage directory and repository-portable file list.
  */
 export async function stageDesktop(
   repositoryRoot: string,
   dependencies: StageDesktopDependencies = realDependencies,
   requestedStageDir?: string,
-  environment: Readonly<Record<string, string | undefined>> = process.env,
 ): Promise<DesktopStageResult> {
   const root = resolve(repositoryRoot)
   const desktopDir = resolve(root, 'apps', 'desktop')
@@ -345,7 +299,7 @@ export async function stageDesktop(
   const desktopPatch = await dependencies.readText(join(desktopDir, 'desktop.cordis.patch.yml'))
   validateReasoningEffortPatch(desktopPatch)
   assertCanonicalSessionMessengerRow(desktopPatch)
-  assertCanonicalBrowserSkillRow(desktopPatch)
+  validateDesktopProductPatch(desktopPatch)
   await dependencies.remove(stageDir)
   // pnpm 11's legacy deploy writes its dependency mode into the root workspace
   // state. Passing --prod there corrupts later root commands into production-
@@ -368,25 +322,6 @@ export async function stageDesktop(
     await dependencies.copy(join(desktopDir, entry), join(stageDir, entry))
   }
   await dependencies.copy(join(root, 'THIRD_PARTY_NOTICES.md'), join(stageDir, 'THIRD_PARTY_NOTICES.md'))
-
-  // The pinned BrowserSkill CLI: download and verify in a rebuildable ignored
-  // cache, then copy into the stage and re-hash so the shipped binary provably
-  // matches what the verified fetcher produced.
-  const browserSkillPlatform = resolveBrowserSkillPlatform(environment.DSH_DESKTOP_TARGET_PLATFORM)
-  const browserSkillRoot = environment.DSH_BROWSER_SKILL_ASSET_ROOT ?? DEFAULT_ASSET_ROOT
-  const browserSkillBin = await dependencies.prepareBrowserSkillAssets(browserSkillPlatform, browserSkillRoot)
-  const stagedBrowserSkillBin = join(stageDir, 'resources', 'browser-skill', 'bin', basename(browserSkillBin))
-  await dependencies.copy(browserSkillBin, stagedBrowserSkillBin)
-  if (!await dependencies.isFile(stagedBrowserSkillBin)) {
-    throw new Error('Desktop staging could not stage the BrowserSkill CLI binary.')
-  }
-  const [browserSkillSourceDigest, browserSkillStagedDigest] = await Promise.all([
-    dependencies.hashFile(browserSkillBin),
-    dependencies.hashFile(stagedBrowserSkillBin),
-  ])
-  if (browserSkillSourceDigest !== browserSkillStagedDigest) {
-    throw new Error('Desktop staging BrowserSkill CLI digest changed during copy.')
-  }
 
   assertNoDesktopControlArtifacts(await dependencies.findForbiddenControlArtifacts(stageDir))
 
@@ -415,12 +350,6 @@ export async function stageDesktop(
     'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
     'node_modules/@deepseek-ai/dsh-host-desktop-plugin-runtime/lib/index.js',
     'node_modules/@deepseek-ai/dsh-attachment-local/lib/pdf-worker.cjs',
-    'node_modules/@deepseek-ai/dsh-desktop-managed-memory/package.json',
-    'node_modules/@deepseek-ai/dsh-desktop-managed-memory/lib/index.js',
-    'node_modules/@deepseek-ai/dsh-desktop-managed-memory/lib/client.js',
-    'node_modules/@deepseek-ai/dsh-desktop-managed-evolution/package.json',
-    'node_modules/@deepseek-ai/dsh-desktop-managed-evolution/lib/index.js',
-    'node_modules/@deepseek-ai/dsh-desktop-managed-evolution/lib/client.js',
     'node_modules/dshmarket/package.json',
     'node_modules/@deepseek-ai/dsh-session-messenger/package.json',
     'node_modules/@deepseek-ai/dsh-session-messenger/lib/index.js',
@@ -499,7 +428,6 @@ export async function stageDesktop(
     stageDir,
     validatedFiles: [
       ...required,
-      stageRelative(stageDir, stagedBrowserSkillBin),
       ...nativeBinaries.map(path => stageRelative(stageDir, path)),
     ],
   }

@@ -1,4 +1,7 @@
---- description: "Sidebar shell plugin for the dsh web client: brand row, New Session action, collapse control, scroll-aware region seat, and bottom-pinned Settings seat." kind: "package-reference" ---
+---
+description: "Sidebar shell plugin for the dsh web client: brand row, New Session action, collapse control, scroll-aware region seat, and bottom-pinned Settings seat."
+kind: "package-reference"
+---
 
 # @deepseek-ai/dsh-client-ui-sidebar
 

@@ -2,6 +2,8 @@
 
 [English](2026-08-18-deepseek-harness-usage-insights.md) | 中文
 
+此页保留历史任务步骤；文件指针已对齐当前实现所有者，不代表这些步骤仍待执行。当前交付状态见 [项目上下文](../../../PROJECT_CONTEXT.md)。
+
 > **给智能体执行者：** 必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项执行本计划。遵守仓库当前 `AGENTS.md`；只有当前协作策略允许时才能委派。
 
 **目标：** 在 macOS DeepSeek Harness 设置面板中加入保护隐私、覆盖全部历史的使用统计页，尽量贴近用户提供的参考图，同时只展示持久会话日志能够准确支撑的指标。
@@ -48,9 +50,9 @@
 - 新建：`packages/session/usage-insights/src/spec.ts`
 - 新建：`packages/session/usage-insights/src/aggregate.ts`
 - 新建：`packages/session/usage-insights/src/index.ts`
-- 新建：`packages/session/usage-insights/src/invariant.ts`
+- 不发布独立 invariant companion；校验职责见 [usage-insights](../../../packages/session/usage-insights/README.zh.md)。
 - 新建：`packages/session/usage-insights/tests/service.spec.ts`
-- 新建：`packages/session/usage-insights/tests/invariant.spec.ts`
+- 新建：`packages/session/usage-insights/tests/service.spec.ts`
 - 新建：`packages/session/usage-insights/tests/loader-composition.spec.ts`
 - 新建：`packages/session/usage-insights/package.json`
 - 新建：`packages/session/usage-insights/tsconfig.json`
@@ -90,7 +92,7 @@
 - 新建：`packages/client/ui-settings-usage/tests/projection.client.spec.ts`
 - 新建：`packages/client/ui-settings-usage/tests/components.client.spec.tsx`
 - 新建：`packages/client/ui-settings-usage/tests/browser-usage.client.spec.tsx`
-- 新建：`packages/client/ui-settings-usage/tests/invariant.client.spec.ts`
+- 新建：`packages/client/ui-settings-usage/tests/components.client.spec.tsx`
 
 **步骤：**
 
@@ -111,7 +113,7 @@
 - 新建：`packages/client/ui-settings-usage/src/client/locales.ts`
 - 新建：`packages/client/ui-settings-usage/src/client/UsageInsightsSection.module.css`
 - 新建：`packages/client/ui-settings-usage/src/index.ts`
-- 新建：`packages/client/ui-settings-usage/src/invariant.ts`
+- 不发布独立 invariant companion；校验职责见 [ui-settings-usage](../../../packages/client/ui-settings-usage/README.zh.md)。
 - 新建：`packages/client/ui-settings-usage/src/css-modules.d.ts`
 - 新建：`packages/client/ui-settings-usage/package.json`
 - 新建：`packages/client/ui-settings-usage/tsconfig.json`

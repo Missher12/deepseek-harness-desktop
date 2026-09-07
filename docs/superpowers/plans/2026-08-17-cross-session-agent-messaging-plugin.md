@@ -2,6 +2,8 @@
 
 English | [中文](2026-08-17-cross-session-agent-messaging-plugin.zh.md)
 
+This page retains historical task steps. File pointers name their current implementation owners, not pending work; see [Project Context](../../../PROJECT_CONTEXT.md) for current delivery status.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let one ordinary Harness session send, wake, reply to, and explicitly wait on another ordinary session by Session ID, with durable receipts and a compact in-app notification entry.
@@ -19,7 +21,7 @@ English | [中文](2026-08-17-cross-session-agent-messaging-plugin.zh.md)
 - Create: `packages/extensions/session-messenger/tsconfig.json`
 - Create: `packages/extensions/session-messenger/tsdown.config.ts`
 - Create: `packages/extensions/session-messenger/cordis.patch.yml`
-- Create: `packages/extensions/session-messenger/src/invariant.ts`
+- No separate invariant companion is published; validation ownership is documented in [session-messenger](../../../packages/extensions/session-messenger/README.md).
 - Create: `packages/extensions/session-messenger/src/spec.ts`
 - Create: `packages/extensions/session-messenger/src/types.ts`
 - Create: `packages/extensions/session-messenger/tests/spec.client.spec.ts`

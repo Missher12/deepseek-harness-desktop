@@ -2,6 +2,8 @@
 
 [English](2026-08-17-cross-session-agent-messaging-plugin.md) | 中文
 
+此页保留历史任务步骤；文件指针已对齐当前实现所有者，不代表这些步骤仍待执行。当前交付状态见 [项目上下文](../../../PROJECT_CONTEXT.md)。
+
 > **供 agent 工作者使用：** 必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。步骤使用 checkbox（`- [ ]`）语法跟踪。
 
 **目标：** 让一条普通 Harness 会话可以通过 Session ID 向另一条普通会话发送消息、唤醒、回复并显式等待，同时提供持久 receipt 与紧凑的站内通知入口。
@@ -19,7 +21,7 @@
 - 新建：`packages/extensions/session-messenger/tsconfig.json`
 - 新建：`packages/extensions/session-messenger/tsdown.config.ts`
 - 新建：`packages/extensions/session-messenger/cordis.patch.yml`
-- 新建：`packages/extensions/session-messenger/src/invariant.ts`
+- 不发布独立 invariant companion；校验职责见 [session-messenger](../../../packages/extensions/session-messenger/README.zh.md)。
 - 新建：`packages/extensions/session-messenger/src/spec.ts`
 - 新建：`packages/extensions/session-messenger/src/types.ts`
 - 新建：`packages/extensions/session-messenger/tests/spec.client.spec.ts`

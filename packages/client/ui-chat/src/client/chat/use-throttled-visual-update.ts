@@ -3,6 +3,7 @@ import { useCallback, useLayoutEffect, useRef } from 'react'
 
 const DEFAULT_INTERVAL_FRAMES = 3
 
+/** Controls for one coalesced visual update. */
 export interface ThrottledVisualUpdate {
   /** Coalesce the update over the configured frame interval. */
   schedule(): void
@@ -10,7 +11,12 @@ export interface ThrottledVisualUpdate {
   cancel(): void
 }
 
-/** Return stable controls for a frame-throttled visual update. */
+/**
+ * Return stable controls for a frame-throttled visual update.
+ * @param update - visual operation to coalesce.
+ * @param intervalFrames - minimum scheduling interval in animation frames.
+ * @returns stable scheduling and cancellation controls.
+ */
 export function useThrottledVisualUpdate(
   update: () => void,
   intervalFrames = DEFAULT_INTERVAL_FRAMES,

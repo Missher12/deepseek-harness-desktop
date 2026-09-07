@@ -104,7 +104,14 @@ describe('macOS Desktop runtime evidence', () => {
     const source = readFileSync(runtimeEvidence, 'utf8')
     expect(source).toContain('const SAMPLE_COUNT = 10')
     expect(source).toContain("const BASELINE_VERSION = '0.5.3'")
-    expect(source).toContain("const CANDIDATE_VERSION = '0.5.4'")
+    expect(source).toContain("const CANDIDATE_VERSION = '0.5.5'")
+    const desktopManifest: unknown = JSON.parse(readFileSync(
+      new URL('../apps/desktop/package.json', import.meta.url), 'utf8',
+    ))
+    expect(desktopManifest).toMatchObject({
+      name: '@deepseek-ai/dsh-desktop',
+      version: '0.5.5',
+    })
     expect(source).toContain("sampleKind: 'cold' | 'warm' | 'warm-prime'")
     expect(source).toContain('PROFILE_BOOT_DETAIL_PHASES')
     expect(source).toContain('hdiutil')
@@ -158,7 +165,13 @@ describe('macOS Desktop runtime evidence', () => {
     expect(source).not.toContain('1_600 * scaleFactor')
     expect(source).toContain('DSH_DESKTOP_SMOKE_ROOT')
     expect(source).toContain('desktop-smoke-titlebar-darwin.png')
-    expect(source).toContain('data-open-design-state="installed"')
+    expect(source).toContain('assertRetiredMacResourcesAbsent')
+    expect(source).toContain('retiredResourcePathsAbsent')
+    expect(source).toContain('app.asar.unpacked/node_modules/@deepseek-ai/dsh-desktop-workbench')
+    expect(source).toContain('app.asar.unpacked/node_modules/@wxg-prc-cpg/browser-skill-dsh-plugin')
+    expect(source).toContain('app.asar.unpacked/node_modules/@open-design/dsh-runtime')
+    expect(source).not.toContain('isolated-fixture-detected')
+    expect(source).not.toContain('data-open-design-state="installed"')
     expect(source).not.toContain('/Applications/')
     expect(source).not.toContain('~/.dsh')
   })

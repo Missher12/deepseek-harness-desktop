@@ -212,13 +212,18 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(packaged).toContain("await turnRailTrack.waitFor({ state: 'visible'")
     expect(packaged).toContain('const turnRailBounds = await turnRailTrack.boundingBox()')
     expect(packaged).toContain('.toBeGreaterThanOrEqual(2)')
-    expect(packaged).toContain('data-desktop-workbench-panel]:visible')
-    expect(packaged).toContain("getAttribute('data-utility-drawer')")
-    expect(packaged).toContain('data-plugin-card="browser-skill"')
-    expect(packaged).toContain('data-plugin-card="open-design"')
-    expect(packaged).toContain('data-open-design-state="installed"')
-    expect(packaged).toContain('data-browser-skill-idle')
-    expect(packaged).toContain('Open workbench|打开工作台')
+    expect(packaged).toContain(
+      "expect(await page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u }).count()).toBe(0)",
+    )
+    for (const selector of [
+      '[data-desktop-workbench-panel], [data-utility-drawer], [data-side="utility"]',
+      '[data-plugin-card="browser-skill"], [data-browser-skill-idle]',
+      '[data-plugin-card="open-design"], [data-open-design-state]',
+    ]) {
+      expect(packaged).toContain(`'${selector}',\n    ).count()).toBe(0)`)
+    }
+    expect(packaged).not.toContain('await workbenchTrigger.click()')
+    expect(packaged).toContain('expect(centerBounds.width).toBeGreaterThanOrEqual(640)')
     expect(packaged).toContain('waitForWindowsProcessesStopped')
     const sharedPackaged = readFileSync(
       new URL('../apps/desktop/tests/packaged-smoke.ts', import.meta.url),
@@ -226,9 +231,11 @@ describe('Windows Desktop runtime evidence wiring', () => {
     )
     expect(sharedPackaged).toContain('exerciseComposerAddMenu(page, clipboardSeed)')
     expect(sharedPackaged).toContain('exerciseTurnNavigation(page, clipboardSeed)')
-    expect(sharedPackaged).toContain('exerciseDesktopWorkbench(page, platform, harnessHome)')
-    expect(sharedPackaged).toContain('seedOpenDesignPluginStatus(harnessHome)')
-    expect(sharedPackaged).toContain("join(harnessHome, 'profiles', 'open-design')")
+    expect(sharedPackaged).toContain('exerciseWindowsDirectoryPicker(page, harnessHome, userData)')
+    expect(sharedPackaged).toContain('assertWorkbenchRemoved(page)')
+    expect(sharedPackaged).not.toContain('exerciseDesktopWorkbench(')
+    expect(sharedPackaged).not.toContain('seedOpenDesignPluginStatus(')
+    expect(sharedPackaged).not.toContain("join(harnessHome, 'profiles', 'open-design')")
     expect(workflow).toContain('Windows-native-visual-evidence-${{ steps.source.outputs.sha }}')
     expect(workflow).not.toContain('fixed-milestones/')
     expect(workflow).not.toContain('lifecycle.log')

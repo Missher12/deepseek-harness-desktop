@@ -22,9 +22,8 @@
 
   position: absolute;
   top: calc(var(--turn-rail-band) / 2);
-  /* Use the full 32px start gutter without entering the text column: the
-     longest 20px tick then leaves 12px before transcript content. */
-  inset-inline-start: calc(0px - (var(--dsh-composer-side-clearance) + 16px));
+  /* Keep 16px clear of the pane edge and 12px clear of transcript content. */
+  inset-inline-start: calc(16px - (var(--dsh-composer-side-clearance) + 16px));
   width: 20px;
   /* Fixed-pitch marks never compress: a ladder taller than the band scrolls
      inside this frame instead of pushing marks under the composer or above
@@ -215,10 +214,10 @@
   50% { opacity: 0.35; }
 }
 
-/* This anonymous container is ChatView's content box, 64px narrower than the
-   center column because the transcript keeps 32px padding on each side.
-   616px therefore implements the product's 680px center-column cutoff. */
-@container (max-width: 616px) {
+/* This anonymous container is ChatView's content box, 96px narrower than the
+   center column because the transcript keeps 48px padding on each side.
+   584px therefore implements the product's 680px center-column cutoff. */
+@container (max-width: 584px) {
   .slot {
     display: none;
   }

@@ -761,6 +761,12 @@ function installationFallbackLinks(entries: readonly ModuleFallbackEntry[]): Pro
  * @returns settlement for the alpha.5 API, or current physical links for the Desktop cache overload.
  */
 export function healProfilesModuleFallback(options: ProfileModuleFallbackOptions): Promise<void>
+/**
+ * Settle the Desktop installation module fallback synchronously.
+ * @param installAnchor - physical application entry used to resolve dependencies.
+ * @param home - Harness data root.
+ * @returns current installation fallback links.
+ */
 export function healProfilesModuleFallback(
   installAnchor: string,
   home?: string,

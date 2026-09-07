@@ -4,16 +4,12 @@ import {
   type DesktopUpdateSnapshot,
   desktopPresentation,
   isDesktopCommand,
-  isDesktopIntegrationsSnapshot,
   isDesktopPreferenceMutation,
   isDesktopPreferencesSnapshot,
   isDesktopUpdateSnapshot,
   isRecoveryAction,
   supportsDesktopUpdates,
 } from './preload-api.ts'
-import {
-  isDesktopBrowserBounds, isDesktopBrowserRequest, isDesktopBrowserSnapshot,
-} from './browser/contracts.ts'
 
 const api: DesktopApi = {
   presentation: desktopPresentation(process.platform),
@@ -59,28 +55,6 @@ const api: DesktopApi = {
       return () => { ipcRenderer.off('desktop:update-state', handler) }
     },
   } : {}),
-  async showWorkbenchBrowser(bounds) {
-    if (!isDesktopBrowserBounds(bounds)) throw new Error('Invalid workbench Browser bounds.')
-    const value: unknown = await ipcRenderer.invoke('desktop:workbench-browser-show', bounds)
-    if (!isDesktopBrowserSnapshot(value)) throw new Error('Invalid workbench Browser state.')
-    return value
-  },
-  async hideWorkbenchBrowser() {
-    await ipcRenderer.invoke('desktop:workbench-browser-hide')
-  },
-  async controlWorkbenchBrowser(request) {
-    if (!isDesktopBrowserRequest(request)) throw new Error('Invalid workbench Browser request.')
-    const value: unknown = await ipcRenderer.invoke('desktop:workbench-browser-control', request)
-    if (!isDesktopBrowserSnapshot(value)) throw new Error('Invalid workbench Browser state.')
-    return value
-  },
-  onWorkbenchBrowserState(listener) {
-    const handler = (_event: Electron.IpcRendererEvent, value: unknown): void => {
-      if (isDesktopBrowserSnapshot(value)) listener(value)
-    }
-    ipcRenderer.on('desktop:workbench-browser-state', handler)
-    return () => { ipcRenderer.off('desktop:workbench-browser-state', handler) }
-  },
   async getDesktopPreferences() {
     const value: unknown = await ipcRenderer.invoke('desktop:preferences-get')
     if (!isDesktopPreferencesSnapshot(value)) throw new Error('Invalid Desktop preferences.')
@@ -99,11 +73,7 @@ const api: DesktopApi = {
     ipcRenderer.on('desktop:preferences-state', handler)
     return () => { ipcRenderer.off('desktop:preferences-state', handler) }
   },
-  async getDesktopIntegrations() {
-    const value: unknown = await ipcRenderer.invoke('desktop:integrations-get')
-    if (!isDesktopIntegrationsSnapshot(value)) throw new Error('Invalid Desktop integrations snapshot.')
-    return value
-  },
+
 }
 
 contextBridge.exposeInMainWorld('dshDesktop', api)

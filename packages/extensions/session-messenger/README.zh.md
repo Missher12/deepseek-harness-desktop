@@ -1,9 +1,30 @@
+---
+description: "在一个 Desktop 配置中的已授权 Session 之间发送有界消息。"
+kind: "package-bundle"
+---
+
 # @deepseek-ai/dsh-session-messenger
 
 [English](README.md) | 中文
 
+<a id="summary"></a>
+## 概述
+
 面向 Desktop 的 Host 与 Client 插件，用于在同一个活动 profile 内的普通 DeepSeek Harness 会话之间进行类似 Codex 的有界通信。复制会话 A 的准确 ID，粘贴到会话 B 的普通聊天框，再让 B 的 Agent 发送消息：插件会启动 A 的已有 Agent，A 可以通过可信的来源与 delivery 元数据回复 B。任意一方都能发起、继续或停止一条交流链。它注册五个模型工具，持久化 write-ahead 投递 receipt，通过 Host 所有的 Typert lookup 寻址 live 或 cold 会话，并把交流显示在普通会话历史中，不改变普通 Web 组合。
 
+<a id="table-of-contents"></a>
+## 目录
+
+- [工具约定](#tool-contracts)
+- [寻址、持久性与生命周期](#addressing-durability-and-lifecycle)
+- [Desktop 组合](#desktop-composition)
+- [Client 界面](#client-surface)
+- [模型体验](#model-experience)
+- [Invariant ownership](#invariant-ownership)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="tool-contracts"></a>
 ## 工具约定
 
 - `send_message_to_session(target_session_id, message)` 排入一条持久的 next-turn 消息并请求唤醒。空闲目标沿用其现有 driver；运行中的目标把消息排在当前工作之后，绝不会获得并行 driver。用户粘贴另一个 Session ID 并要求发送时默认使用它。
@@ -14,6 +35,7 @@
 
 调用方身份始终来自工具执行，不是模型参数。稳定的 system-prompt 段会告诉任意一方如何向准确复制的 Session ID 发送、如何用准确 delivery ID 回复，以及如何在之后通过可信 Source Session ID 继续通信。收到的文本仍是不可信内容，而不是绕过用户规则、自动回复确认消息、持续转发或启动自主 Agent loop（智能体循环）的权限依据。
 
+<a id="addressing-durability-and-lifecycle"></a>
 ## 寻址、持久性与生命周期
 
 - 目标必须是当前 profile 中的普通会话。Host 的 Typert `agent` lookup 会复用 live Agent，并用已记录的会话设置执行 cold resume；插件绝不直接调用 `agents.resume()`。
@@ -22,6 +44,7 @@
 - 未解决 receipt 在 24 小时后过期。已结算 receipt 元数据保留七天；已提交的会话消息继续遵循普通会话保留策略，并在插件停用后保留。
 - 停用插件会移除其五个工具、协同 prompt 段、六条 HTTP 路由、index bootstrap、活动等待、Client graph 行、监听器和定时器。它不会移除已提交消息或保留的 receipt 存储。
 
+<a id="desktop-composition"></a>
 ## Desktop 组合
 
 该包发布一个可独立移除的组合包 patch：
@@ -34,10 +57,18 @@
 
 DeepSeek Harness Desktop 会在 base 与 Web 层之后恰好应用一次相同的 canonical 行。仅组合 base 与 Web 时不包含 messenger 行，因此普通 `dsh web` 行为保持不变。
 
+<a id="client-surface"></a>
 ## Client 界面
 
 Client 侧维护普通会话消息行所需的受限 receipt 状态；它不注册独立标题栏入口、抽屉、侧边聊天或 overlay。用户复制准确 Session ID，粘贴到普通聊天框，再让当前 Agent 发送或回复。一次被接受的 outgoing 投递会在来源侧追加 ignorable 会话行，目标 relay 则保持普通可见 user-message 行，因此两边会话都能看到交流，同时来源文本不会重复进入模型历史。通知仍然只限站内：没有原生 macOS 通知、替代会话行、独立消息档案或自动 Agent loop。
 
+<a id="invariant-ownership"></a>
+## Invariant ownership
+
+不发布不变式伴生入口，因为 route/receipt/session 所有权由包测试覆盖。
+
+
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 五个跨会话工具
@@ -54,13 +85,15 @@ Client 侧维护普通会话消息行所需的受限 receipt 状态；它不注�
 
 只要插件与展示模式不变，五项定义与 SDK 声明就逐字节稳定，因此会保留相应工具前缀的缓存段。启用或停用插件会改变该段；已投递并领取的 relay 追加在会话尾部，而不会重写先前消息。
 
-### Invariant ownership
-
-不发布不变式伴生入口，因为 route/receipt/session 所有权由包测试覆盖。
-
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
 - 通信仅限一个活动 profile，并且只接受普通会话；尚未实现跨 profile、跨设备、subagent、广播、群组或公共网络投递。
 - 协同内容保留在来源和目标会话的普通历史中；不存在第二份消息档案或手动 relay 面板。
 - 原生系统通知暂缓实现，因为它需要本可独立停用包边界之外的 Electron 权限与窗口生命周期所有权。
 - 插件提供显式且有界的对等通信，而不是新的调度器：任意一个已有普通 Agent 都能发起、回复或停止一条协作链；回复链有上限，停止后只有用户指示的全新消息才能建立新链。它不会创建新会话、subagent、转发规则、后台循环或自主双 Agent 对话。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

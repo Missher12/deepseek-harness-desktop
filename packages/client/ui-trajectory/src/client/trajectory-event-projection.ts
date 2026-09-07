@@ -102,7 +102,11 @@ export function toAssistantBlock(block: ContentBlock): AssistantBlock {
   }
 }
 
-/** Mark content already stripped of durable document authority by Session Controller. */
+/**
+ * Mark content already stripped of durable document authority by Session Controller.
+ * @param content - content received through the renderer projection.
+ * @returns the same content with its renderer contract type.
+ */
 export function rendererContent(content: readonly ContentBlock[]): readonly RendererContentBlock[] {
   return content as unknown as readonly RendererContentBlock[]
 }

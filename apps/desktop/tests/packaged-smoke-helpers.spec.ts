@@ -13,16 +13,9 @@ const {
   isUsageTokenTooltip,
   parseWindowsProcessRows,
   seedWindowsClipboardSmokeState,
-  workbenchTerminalProbe,
 } = packagedSmoke
 
 describe('packaged desktop process inspection', () => {
-  it('uses a native workbench terminal probe on each packaged platform', () => {
-    expect(workbenchTerminalProbe('win32')).toBe("Write-Output 'desktop-workbench-terminal-ok'")
-    expect(workbenchTerminalProbe('darwin')).toBe("printf 'desktop-workbench-terminal-ok\\n'")
-    expect(workbenchTerminalProbe('linux')).toBe("printf 'desktop-workbench-terminal-ok\\n'")
-  })
-
   it('parses both PowerShell single-object and array JSON', () => {
     expect(parseWindowsProcessRows('{"ProcessId":12,"ParentProcessId":4}')).toEqual([
       { processId: 12, parentProcessId: 4 },
@@ -145,7 +138,7 @@ describe('packaged desktop process inspection', () => {
       try {
         await reader.plugin(SessionStore)
         await reader.plugin(JsonlSessionPersistence, { root: join(root, 'sessions') })
-        const headers = await reader.sessionPersistence.list()
+        const headers = (await reader.sessionPersistence.list()).map(snapshot => snapshot.header)
         expect(headers.map(header => header.id).sort()).toEqual([
           seeded.activeSessionId,
           seeded.archivedSessionId,
@@ -159,7 +152,9 @@ describe('packaged desktop process inspection', () => {
           parentSession: seeded.activeSessionId,
           delegationDepth: 1,
         })
-        const active = await reader.sessionPersistence.load(SessionId(seeded.activeSessionId))
+        const handle = await reader.sessionPersistence.open(SessionId(seeded.activeSessionId), 'read')
+        const active = { events: await handle.read() }
+        await handle.close()
         let currentTurn: number | undefined
         const projectedHumanPrompts: Array<{ seq: number; turn: number }> = []
         for (const event of active.events) {
@@ -221,8 +216,8 @@ describe('packaged desktop process inspection', () => {
       })
       const seededWorkspaces = workspace.tables.workspaces as Record<string, { path: string; sessionIds: string[] }>
       expect(Object.keys(seededWorkspaces)).toEqual(['desktop-smoke-workspace'])
+      expect(seededWorkspaces['desktop-smoke-workspace']?.path).toContain('desktop-smoke-active-workspace')
       expect(seededWorkspaces['desktop-smoke-workspace']).toMatchObject({
-        path: expect.stringContaining('desktop-smoke-active-workspace') as unknown as string,
         sessionIds: [seeded.activeSessionId, seeded.archivedSessionId],
       })
     } finally {

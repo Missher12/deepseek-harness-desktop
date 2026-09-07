@@ -4,7 +4,7 @@ import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session/types
 import { foldSessionUsage } from '../src/fold.ts'
 
 const header = (overrides: Partial<SessionHeader> = {}): SessionHeader => ({
-  version: 0,
+  version: 2,
   id: 'usage-test' as SessionHeader['id'],
   createdAt: Date.parse('2026-03-01T00:00:00.000Z'),
   isSeeded: false,
@@ -32,6 +32,7 @@ const assistant = (turn: number, step: number, usage: {
 }): SessionEvent => event(0, '2026-03-01T12:00:00.000Z', 'assistant/message', {
   turn,
   step,
+  stream: [],
   usage,
   message: {
     id: `assistant-${turn}-${step}` as never,
@@ -43,10 +44,10 @@ const assistant = (turn: number, step: number, usage: {
 
 describe('foldSessionUsage', () => {
   it('replaces repeated usage for one turn and step without double-counting reasoning', () => {
-    const chunk = event(1, '2026-03-01T11:59:59.000Z', 'assistant/chunk', {
+    const chunk = event(1, '2026-03-01T11:59:59.000Z', 'assistant/attempt', {
       turn: 1,
       step: 0,
-      chunk: {
+      stream: [{ type: 'chunk', time: 0, chunk: {
         type: 'usage',
         usage: {
           inputTokens: 100,
@@ -55,7 +56,7 @@ describe('foldSessionUsage', () => {
           cacheWriteTokens: 20,
           reasoningTokens: 30,
         },
-      },
+      } }],
     })
     const final = { ...assistant(1, 0, {
       inputTokens: 120,
@@ -276,6 +277,7 @@ describe('foldSessionUsage', () => {
       event(7, '2026-03-01T10:00:05.000Z', 'turn/start', { turn: 8 }),
       event(8, '2026-03-01T10:00:04.000Z', 'turn/end', { turn: 8, reason: { kind: 'completed' } }),
       event(9, '2026-03-01T10:00:06.000Z', 'assistant/message', {
+        stream: [],
         turn: 9,
         step: 0,
         message: {
@@ -290,6 +292,7 @@ describe('foldSessionUsage', () => {
         header: { config: { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high' } },
       } as never),
       event(11, '2026-03-01T10:00:08.000Z', 'assistant/message', {
+        stream: [],
         turn: 10,
         step: 0,
         message: {

@@ -39,7 +39,7 @@ describe('TurnNavigator geometry', () => {
     const css = await readFile(cssPath, 'utf8')
 
     expect(css).toMatch(/\.frame\s*\{[\s\S]*?inset-inline-start:\s*calc\(/u)
-    expect(css).toMatch(/\.frame\s*\{[\s\S]*?inset-inline-start:\s*calc\(0px -/u)
+    expect(css).toMatch(/\.frame\s*\{[\s\S]*?inset-inline-start:\s*calc\(16px -/u)
     expect(css).toMatch(/\.frame\s*\{[\s\S]*?width:\s*20px/u)
     expect(css).not.toMatch(/\.frame\s*\{[\s\S]*?right:\s*calc\(/u)
     expect(css).toMatch(/\.mark\s*\{[\s\S]*?inset-inline-start:\s*0/u)
@@ -52,9 +52,9 @@ describe('TurnNavigator geometry', () => {
     const css = await readFile(cssPath, 'utf8')
 
     // The query container is ChatView's content box, after 32px padding on
-    // each side. A 616px content box therefore represents the 680px center
+    // each side. A 584px content box therefore represents the 680px center
     // column cutoff promised by the Desktop layout contract.
-    expect(css).toContain('@container (max-width: 616px)')
+    expect(css).toContain('@container (max-width: 584px)')
     expect(css).not.toContain('@container (max-width: 900px)')
     expect(css).toMatch(/\.slot\s*\{[\s\S]*?height:\s*0/u)
   })

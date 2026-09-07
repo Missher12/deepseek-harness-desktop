@@ -1,9 +1,30 @@
+---
+description: "通过六档映射控件选择模型支持的推理强度。"
+kind: "package-bundle"
+---
+
 # @deepseek-ai/dsh-reasoning-effort
 
 [English](README.md) | 中文
 
+<a id="summary"></a>
+## 概述
+
 这是一个可移除、符合 Harness 风格的单席位模型选择控件。它保留 HanaAyane 锁定版本的 Canvas 思考等级特效，弹层优先显示在输入框下方；模型、真实提交值和当前选项读取活动 Host 的 `ModelDirectory`，固定六档视觉标签再安全映射到每个模型的精确能力。
 
+<a id="table-of-contents"></a>
+## 目录
+
+- [行为](#behavior)
+- [安装与回退](#installation-and-fallback)
+- [兼容性与来源](#compatibility-and-provenance)
+- [偏好与数据边界](#preference-and-data-boundary)
+- [模型体验](#model-experience)
+- [Invariant ownership](#invariant-ownership)
+- [已知限制与欠账](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="behavior"></a>
 ## 行为
 
 - 优先级为 `-100` 的条目只在本插件活动时遮蔽优先级为 `0` 的原生模型控件。
@@ -14,6 +35,7 @@
 - 键盘、指针、触摸、Escape 后焦点归还、点击外部关闭、主题切换、缩放和 Host 目录实时刷新均受支持。
 - 被寻址的 subagent 会话继续隐藏。可调模型统一显示 `Low / Medium / High / XHigh / Max / Ultra` 六档；每个视觉档位都会映射到该模型由 Host 公布的最强不超档位，超过模型上限的档位会收敛到真实上限（例如 High-only 模型的 Max／Ultra 都提交 High）。滑块与收起后的触发按钮都会保留用户选中的视觉档位，因此即使提供方实际收到 High 或 Max，选择 Ultra 后仍显示 Ultra；独立的模型上限行继续展示已公布的最强能力。只有完全没有正向推理能力的模型才隐藏滑块；若模型公布 Off，Low 端仍可到达 Off。
 
+<a id="installation-and-fallback"></a>
 ## 安装与回退
 
 DeepSeek Harness Desktop 从不可变的 Desktop patch 挂载此 workspace 包。独立 profile 可以使用包内的 `cordis.patch.yml`，但必须先停用或移除原版 `dsh-reasoning-effort`：两者会竞争 `conversation.input.model`，绝不能同时启用。Desktop staging 会拒绝同时含有这两个身份的组合。
@@ -22,16 +44,25 @@ DeepSeek Harness Desktop 从不可变的 Desktop patch 挂载此 workspace 包�
 
 模块解析、必需服务缺失和插件 `apply` 失败都发生在 React 席位存在之前。因此 Harness 会拒绝激活该 Web 图，并在加载界面报告失败或等待中的条目，而不会声称已经走原生席位回退。Desktop stage 还会在打包前分别拒绝缺少 Host、Client、许可证、声明或 sprite 成品的情况。
 
+<a id="compatibility-and-provenance"></a>
 ## 兼容性与来源
 
 本分支面向 DeepSeek Harness `0.1.0-rc.8` workspace 约定。其 `workspace:^` peer 描述的是这条已验证源码边界，并不声称兼容原版插件的 `rc.6` 依赖集合。
 
 保留的 Canvas 实现和 `chibi-runner-strip.png` 来自 [`HanaAyane/dsh-reasoning-effort`](https://github.com/HanaAyane/dsh-reasoning-effort) `v0.6.0` 的提交 `f94622b46078ac8c064f91bdc10ab27e8cf32270`。完整 MIT 文本、`Copyright (c) 2026 HanaAyane`、源码 URL、提交和 sprite 归属均保留在 `LICENSE`、包内 `THIRD_PARTY_NOTICES.md`，以及 Desktop 成品根部的 `THIRD_PARTY_NOTICES.md` 中。
 
+<a id="preference-and-data-boundary"></a>
 ## 偏好与数据边界
 
 Host 半只拥有一个按 profile 保存的 `chibiThumb` 布尔值、最多 64 条以确切会话／提供方／模型路由为键的视觉位置，以及一条由每代 capability 鉴权的精确 loopback 偏好端点。这个有界映射不包含 prompt 或回复正文；端点不开放通用设置访问、不启用 CORS，且只接受它持有的两种窄补丁形状。因此 Ultra 视觉选择可跨控件重挂载、会话切换、Desktop 随机端口和应用重启保留，而真实 Host 档位仍是映射后的受支持值。停用插件不会修改会话或 provider 设置，也不承诺删除这些惰性的本地偏好；重新启用时可能继续使用它们。
 
+<a id="invariant-ownership"></a>
+## Invariant ownership
+
+不发布不变式伴生入口，因为推理强度映射由纯函数校验。
+
+
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 已选思考等级
@@ -48,12 +79,14 @@ Host 半只拥有一个按 profile 保存的 `chibiThumb` 布尔值、最多 64 
 
 本插件不改写会话历史，因此自身不会改变缓存前缀。修改请求级推理配置能否复用 provider 缓存取决于 provider，本包不作保证。
 
-### Invariant ownership
-
-不发布不变式伴生入口，因为推理强度映射由纯函数校验。
-
+<a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与欠账
 
 - 兼容性只针对仓库的 `0.1.0-rc.8` 约定完成验证；Harness 升级后必须重新检查 peer、服务、staged profile 和视觉表现。
 - 按 profile 保存的有界偏好不是卸载清理器；移除插件后，可能保留惰性的人物 opt-in 与视觉路由位置供以后重装使用。
 - 原生席位回退覆盖已经进入槽位、随后崩溃的替换组件。注册前失败会让 Web 图保持未激活，必须修复报告中的模块、peer、服务或 `apply` 问题。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

@@ -26,6 +26,7 @@ export const BROWSER_SKILL_STATUS_PATH = '/plugins/dsh-desktop-workbench/browser
 /** CLI version pinned by scripts/browser-skill-assets.json. */
 export const EXPECTED_BSK_VERSION = '0.2.0'
 
+/** Dependencies and bounds of an explicitly requested status probe. */
 export interface BrowserSkillProbeOptions {
   /** Verified physical CLI path; the probe reports `missing` when absent. */
   cliPath?: string
@@ -42,6 +43,9 @@ export interface BrowserSkillProbeOptions {
 /**
  * Resolve the bundled BrowserSkill CLI only when it is a physical regular
  * file outside app.asar; anything else resolves to undefined.
+ * @param resourcesPath - physical application resources directory.
+ * @param platform - platform whose executable member to resolve.
+ * @returns physical CLI path when the bundled file passes validation.
  */
 export function resolveBundledBrowserSkillCli(
   resourcesPath: string,
@@ -128,7 +132,10 @@ export class BrowserSkillProbe {
     this.children.clear()
   }
 
-  /** Run the bounded, sanitized status probe exactly once. */
+  /**
+   * Run the bounded, sanitized status probe exactly once.
+   * @returns sanitized availability and connection status.
+   */
   async status(): Promise<BrowserSkillStatus> {
     if (this.disposed) throw new Error('BrowserSkill probe is disposed.')
     const cliPath = this.cliPath

@@ -2,6 +2,8 @@
 
 English | [中文](2026-08-17-adaptive-reasoning-effort-plugin.zh.md)
 
+This page retains historical task steps. File pointers name their current implementation owners, not pending work; see [Project Context](../../../PROJECT_CONTEXT.md) for current delivery status.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship a removable Harness-native model selector that preserves HanaAyane's Canvas effort effect, defaults its popup below the composer, and stores the optional character preference in the active profile.
@@ -19,7 +21,7 @@ English | [中文](2026-08-17-adaptive-reasoning-effort-plugin.zh.md)
 - Create: `packages/extensions/reasoning-effort/tsconfig.json`
 - Create: `packages/extensions/reasoning-effort/tsdown.config.ts`
 - Create: `packages/extensions/reasoning-effort/cordis.patch.yml`
-- Create: `packages/extensions/reasoning-effort/src/invariant.ts`
+- No separate invariant companion is published; validation ownership is documented in [reasoning-effort](../../../packages/extensions/reasoning-effort/README.md).
 - Create: `packages/extensions/reasoning-effort/LICENSE`
 - Create: `packages/extensions/reasoning-effort/THIRD_PARTY_NOTICES.md`
 - Copy: `packages/extensions/reasoning-effort/assets/chibi-runner-strip.png`

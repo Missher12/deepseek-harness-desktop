@@ -54,7 +54,17 @@ export function bindComposerImagePicker(sessionId: SessionId, open: () => void):
  * @param copy - Localized row and section copy.
  * @returns A launcher-only input-trigger source for the fixed actions.
  */
-export function createComposerAddSource(copy: ComposerAddCopy) {
+export function createComposerAddSource(copy: ComposerAddCopy): {
+  trigger: string
+  name: string
+  launcherOnly: boolean
+  showGroupTitle: boolean
+  candidates(
+    session: { readonly sessionId: SessionId },
+    request?: ComposerAddCandidateRequest,
+  ): Promise<InputTriggerLauncherCandidate[]>
+  onPick(pick: ComposerAddPick): { text: string; continue: boolean } | 'handled' | undefined
+} {
   return {
     trigger: '/',
     name: 'composer-add',

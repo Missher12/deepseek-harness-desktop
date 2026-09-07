@@ -75,7 +75,7 @@ const rowSchema: z.ZodType<SessionUsageRow> = z.object({
 }).strict()
 
 const cacheRecordSchema = z.object({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(3),
   revision: z.string(),
   createdAt: countSchema,
   timeZone: z.string(),
@@ -171,7 +171,7 @@ export class UsageInsightsGateway extends TypertRemoteService {
     const timeZone = this.config.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
     // Validate now so a bad override fails before any cache write.
     void new Intl.DateTimeFormat('en', { timeZone }).format()
-    const snapshots = await this.ctx.sessionPersistence.listSnapshots(signal)
+    const snapshots = await this.ctx.sessionPersistence.list({ signal })
     const table = this.requireTable()
     const listedIds = new Set(snapshots.map(snapshot => String(snapshot.header.id)))
     for (const id of this.liveRows.keys()) {
@@ -184,7 +184,7 @@ export class UsageInsightsGateway extends TypertRemoteService {
       .filter(id => !listedIds.has(String(id)))
       .map(async (id) => { await this.deleteSoft(id) }))
 
-    const results = await this.mapConcurrent(snapshots, 8, snapshot => this.rowFor(snapshot, timeZone, signal))
+    const results = await this.mapConcurrent(snapshots, 2, snapshot => this.rowFor(snapshot, timeZone, signal))
     const rows: SessionUsageRow[] = []
     let omittedSessions = 0
     for (const result of results) {
@@ -206,7 +206,6 @@ export class UsageInsightsGateway extends TypertRemoteService {
   ): Promise<RefreshResult> {
     const id = String(snapshot.header.id)
     const generation = this.eventGeneration.get(id) ?? 0
-    const revision = String(snapshot.revision)
     const sessions = this.ctx.get('sessions') as { get(id: SessionId): Session | undefined } | undefined
     const live = sessions?.get(snapshot.header.id) !== undefined
     const liveCached = this.liveRows.get(id)
@@ -221,17 +220,22 @@ export class UsageInsightsGateway extends TypertRemoteService {
       return { row: cached.data.row }
     }
     try {
-      const inspection = await this.ctx.sessionPersistence.inspect(snapshot.header.id, signal)
-      const row = foldSessionUsage(
-        inspection.meta,
-        inspection.events,
-        timeZone,
-        inspection.inheritedEventCount,
-      )
+      const handle = await this.ctx.sessionPersistence.open(snapshot.header.id, 'read', { signal })
+      let row: SessionUsageRow
+      let revision: string
+      try {
+        // Opening an old log may publish its current generation. Capture that
+        // revision before reading; a later append can only invalidate this cache.
+        const current = await this.ctx.sessionPersistence.stat(snapshot.header.id, { signal })
+        revision = String(current?.revision ?? snapshot.revision)
+        row = foldSessionUsage(handle.header, await handle.read(0, undefined, { signal }), timeZone, handle.inheritedEventCount)
+      } finally {
+        await handle.close()
+      }
       const record: CacheRecord = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         revision,
-        createdAt: inspection.meta.createdAt,
+        createdAt: handle.header.createdAt,
         timeZone,
         row,
       }

@@ -1,8 +1,8 @@
 import { Buffer } from 'node:buffer'
 import { describe, expect, it, vi } from 'vitest'
-import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import AttachmentStore from '@deepseek-ai/dsh-attachment'
 import {
-  admitEncodedDocuments,
+  admitEncodedDocuments, admitEncodedFile,
   admitEncodedImages,
   admitPromptContent,
   assertPromptAttachmentBase64CodeUnits,
@@ -10,11 +10,13 @@ import {
   promptAttachmentBase64CodeUnits,
 } from '@deepseek-ai/dsh-attachment'
 import type {
-  DocumentAttachmentRef,
+  DocumentAttachmentRef, FileAttachmentRef,
   ImageAttachmentRef,
   SaveDocumentAttachment,
   SaveImageAttachment,
 } from '@deepseek-ai/dsh-attachment/types'
+
+const FILE_REF: FileAttachmentRef = { attachmentId: 'sha256:file' as FileAttachmentRef['attachmentId'], bytes: 3, name: 'blob.bin' }
 
 const PNG = 'AAAA' // canonical base64, 3 bytes
 
@@ -73,6 +75,7 @@ function storeOf() {
       ...input.name === undefined ? {} : { name: input.name },
     })))),
   }
+  Object.setPrototypeOf(store, AttachmentStore.prototype)
   return { store: store as unknown as AttachmentStore, mocks: store }
 }
 
@@ -259,6 +262,75 @@ describe('admitPromptContent', () => {
       { type: 'image', mediaType: 'image/png', data: 'Ag==' },
     ])).resolves.toEqual([
       { type: 'image', attachment: { attachmentId: 'att-1', mediaType: 'image/png', bytes: 1, width: 1, height: 1 } },
+      { type: 'text', text: 'between' },
+      { type: 'image', attachment: { attachmentId: 'att-2', mediaType: 'image/png', bytes: 1, width: 1, height: 1 } },
+    ])
+  })
+})
+
+describe('admitEncodedFile', () => {
+  /** Delegation double: records the exact saveFile input and answers a fixed ref. */
+  function fileStoreOf() {
+    const store = {
+      saveFile: vi.fn((input: { data: Uint8Array; name?: string }) => Promise.resolve({
+        attachmentId: 'file-1' as never,
+        name: input.name ?? 'file',
+        bytes: input.data.byteLength,
+      })),
+    }
+    Object.setPrototypeOf(store, AttachmentStore.prototype)
+    return { store: store as unknown as AttachmentStore, mocks: store }
+  }
+
+  it('decodes canonical base64 and delegates verbatim commit to saveFile', async () => {
+    const { store, mocks } = fileStoreOf()
+    const ref = await admitEncodedFile(store, { data: 'AAAA', name: 'blob.bin' })
+    expect(mocks.saveFile).toHaveBeenCalledTimes(1)
+    const input = mocks.saveFile.mock.calls[0]?.[0] as { data: Uint8Array; name?: string }
+    expect([input.name, input.data.byteLength]).toEqual(['blob.bin', 3])
+    expect(ref.bytes).toBe(3)
+  })
+
+  it('accepts an empty payload as a zero-byte file and omits an absent name', async () => {
+    const { store, mocks } = fileStoreOf()
+    const ref = await admitEncodedFile(store, { data: '' })
+    const input = mocks.saveFile.mock.calls[0]?.[0] as object
+    expect('name' in input).toBe(false)
+    expect(ref.bytes).toBe(0)
+  })
+
+  it('rejects non-canonical base64 without touching the store', async () => {
+    const { store, mocks } = fileStoreOf()
+    await expect(admitEncodedFile(store, { data: 'not base64!!' }))
+      .rejects.toMatchObject({ code: 'INVALID_FILE_BASE64' })
+    expect(mocks.saveFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('AttachmentStore.admitPromptContent', () => {
+  it('passes through text and durable files without touching image storage', async () => {
+    const store = Object.setPrototypeOf({
+      saveImages: () => { throw new Error('prompts without image uploads must not reach the store') },
+    }, AttachmentStore.prototype) as AttachmentStore
+    await expect(store.admitPromptContent([
+      { type: 'text', text: 'hello' },
+      { type: 'file', attachment: FILE_REF },
+    ])).resolves.toEqual([
+      { type: 'text', text: 'hello' },
+      { type: 'file', attachment: FILE_REF },
+    ])
+  })
+
+  it('replaces images and passes through files in part order', async () => {
+    const { store } = storeOf()
+    await expect(store.admitPromptContent([
+      { type: 'image', mediaType: 'image/png', data: 'AQ==' },
+      { type: 'file', attachment: FILE_REF },
+      { type: 'text', text: 'between' },
+      { type: 'image', mediaType: 'image/png', data: 'Ag==' },
+    ])).resolves.toEqual([
+      { type: 'image', attachment: { attachmentId: 'att-1', mediaType: 'image/png', bytes: 1, width: 1, height: 1 } },
+      { type: 'file', attachment: FILE_REF },
       { type: 'text', text: 'between' },
       { type: 'image', attachment: { attachmentId: 'att-2', mediaType: 'image/png', bytes: 1, width: 1, height: 1 } },
     ])

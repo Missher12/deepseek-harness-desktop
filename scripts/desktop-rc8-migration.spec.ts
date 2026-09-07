@@ -11,33 +11,28 @@ const readUpdateMetadata = (): { desktopVersion?: unknown; harnessVersion?: unkn
   }
 
 describe('official core Desktop migration', () => {
-  it('aligns the official rc.1 core and the Desktop 0.5.4 release manifests', () => {
-    expect(readManifest('package.json').version).toBe('0.1.2-rc.1')
+  it('aligns the official alpha.1 core and the Desktop 0.5.5 release manifests', () => {
+    expect(readManifest('package.json').version).toBe('0.1.3-alpha.1')
     for (const manifest of [
-      'packages/brain/missher-brain/package.json',
       'packages/client/runtime/package.json',
-      'packages/client/ui-settings-brain/package.json',
       'packages/client/ui-settings-personalization/package.json',
       'packages/client/ui-settings-system-update/package.json',
       'packages/client/ui-settings-usage/package.json',
-      'packages/extensions/desktop-workbench/package.json',
       'packages/extensions/reasoning-effort/package.json',
       'packages/extensions/session-messenger/package.json',
       'packages/host/desktop-plugin-runtime/package.json',
       'packages/session/usage-insights/package.json',
     ]) {
-      expect(readManifest(manifest).version, manifest).toBe('0.1.2-rc.1')
+      expect(readManifest(manifest).version, manifest).toBe('0.1.3-alpha.1')
     }
     for (const manifest of [
       'apps/desktop/package.json',
-      'apps/desktop-managed-memory/package.json',
-      'apps/desktop-managed-evolution/package.json',
     ]) {
-      expect(readManifest(manifest).version, manifest).toBe('0.5.4')
+      expect(readManifest(manifest).version, manifest).toBe('0.5.5')
     }
     expect(readUpdateMetadata()).toMatchObject({
-      desktopVersion: '0.5.4',
-      harnessVersion: '0.1.2-rc.1',
+      desktopVersion: '0.5.5',
+      harnessVersion: '0.1.3-alpha.1',
     })
   })
 

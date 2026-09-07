@@ -110,12 +110,12 @@ async function harness(root: string): Promise<{ ctx: Context; cache: SessionProj
 
 function headerFor(id: SessionId, identity: FixtureRecord['identity']): SessionHeader {
   return {
-    version: 0,
+    version: 2,
     id,
     createdAt: identity.createdAt,
     isSeeded: false,
     ...identity.cwd === undefined ? {} : { cwd: identity.cwd },
-  } as SessionHeader
+  }
 }
 
 /** Invoke both the rc.2 one-argument and alpha.5 three-argument read faces. */

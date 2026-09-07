@@ -11,6 +11,7 @@ export const zh = {
   'listbox.aria': '/{command} 匹配项',
   'notice.imagesUnsupported': '/{command} 不接受图片附件，请先移除图片',
   'mention.section': '添加',
+  'notice.attachmentsUnsupported': '/{command} 不接受附件，请先移除附件',
 } satisfies Record<string, string>
 
 /** The command namespace key union. */
@@ -27,4 +28,5 @@ export const en = {
   'listbox.aria': '/{command} matches',
   'notice.imagesUnsupported': '/{command} does not accept image attachments; remove them first',
   'mention.section': 'Add',
+  'notice.attachmentsUnsupported': '/{command} does not accept attachments; remove them first',
 } satisfies Record<CommandKey, string>
