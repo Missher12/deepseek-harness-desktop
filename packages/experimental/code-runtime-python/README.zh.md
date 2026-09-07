@@ -63,6 +63,8 @@ kind: "package-reference"
 
 Python 编码器直接写出精确的 null、布尔值和整数标量，避免对宽值进行计量与序列化时为每个成员重新创建 JSON 编码器；线上表示、字节上限以及按深度限制辅助空间的遍历方式保持一致。
 
+日志和完成值计量器在字节数下界超过剩余预算后停止计算。预算内的值仍按 UTF-8 和 JSON 转义精确计费，包括未闭合日志片段、字典键和代理码元处理。
+
 ### 镜像对齐
 
 `tests/protocol-mirror.e2e.ts` 启动真实 `python3`，对照 `src/protocol.ts` 断言 `PROTOCOL_FD`／截断标记文本以及 `py/protocol.py` 中每个 `TypedDict` 的必填／可选 wire 字段集，因此字段改名、删除或一侧把另一侧必填的字段变成可选都会使测试失败。字段*类型*不跨语言边界比较；该残留由评审加后端的真实子进程套件（`tests/runtime.spec.ts`）负责。

@@ -200,11 +200,11 @@ class LogBuffer:
         # were billed on the first fragment. A standalone closed entry (no open
         # in progress) pays the full cost as before.
         if self._open_started:
-            cost = _json_string_cost(raw) - 2
+            cost = _json_string_cost(raw, self._remaining + 2) - 2
             if cost < 0:
                 cost = 0
         else:
-            cost = _json_string_cost(raw) + 1
+            cost = _json_string_cost(raw, self._remaining - 1) + 1
         if cost > self._remaining:
             self._truncated = True
             self._sink(log_truncation_marker(self._max_bytes), truncated=True)
@@ -1706,8 +1706,11 @@ for _escaped_byte, _surcharge in _JSON_ESCAPE_SURCHARGES:
     _JSON_BYTE_COST[_escaped_byte[0]] = 1 + _surcharge
 
 
-def _json_str_cost(text: str) -> int:
-    """Byte length of ``text``'s JSON string form, WITHOUT building that form.
+def _json_str_cost(text: str, max_bytes: int | None = None) -> int:
+    """Measure ``text``'s JSON bytes without building that form.
+
+    Results within ``max_bytes`` are exact; a larger result may be a lower
+    bound that already proves overflow, avoiding the remaining escape scans.
 
     The str-side twin of :func:`_json_string_cost`, for the completion-value
     meter. Measuring by materializing ``_dump_string(text).encode()`` allocates
@@ -1724,11 +1727,12 @@ def _json_str_cost(text: str) -> int:
     form), then charge six ASCII bytes for every surviving lone surrogate and
     count the rest from its encodable remainder.
     @param text: the string to measure.
-    @return: the byte length of its JSON string form, quotes included.
+    @param max_bytes: optional ceiling, including the string's quotes.
+    @return: exact byte length within the ceiling, or an overflowing lower bound.
     """
 
     try:
-        return _json_string_cost(text.encode("utf-8"))
+        return _json_string_cost(text.encode("utf-8"), max_bytes)
     except UnicodeEncodeError:
         pass
     folded = _SURROGATE_PAIR.sub(_combine_surrogate_pair, text)
@@ -1745,11 +1749,15 @@ def _json_str_cost(text: str) -> int:
     lone = len(folded) - len(without)
     # Six ASCII bytes per lone surrogate; the remainder is ordinary text whose
     # own quotes are dropped here because the outer call adds them once.
-    return _json_string_cost(without.encode("utf-8")) + lone * 6
+    remaining = None if max_bytes is None else max_bytes - lone * 6
+    return _json_string_cost(without.encode("utf-8"), remaining) + lone * 6
 
 
-def _json_string_cost(raw: bytes) -> int:
-    """UTF-8 byte length of one string's JSON form, WITHOUT building that form.
+def _json_string_cost(raw: bytes, max_bytes: int | None = None) -> int:
+    """Measure one string's JSON bytes without building that form.
+
+    Results within ``max_bytes`` are exact; once raw bytes or counted escapes
+    exceed it, the overflowing lower bound is sufficient to reject the string.
 
     Used by :class:`LogBuffer` to charge a log entry what it will actually cost
     on the wire. Building ``json.dumps(text)`` to measure it would allocate a
@@ -1764,13 +1772,18 @@ def _json_string_cost(raw: bytes) -> int:
     budget of bytes here and a per-byte Python loop over it would cost more than
     the encode being avoided.
     @param raw: the entry's UTF-8 bytes.
-    @return: the byte length of its JSON string form, quotes included.
+    @param max_bytes: optional ceiling, including the string's quotes.
+    @return: exact byte length within the ceiling, or an overflowing lower bound.
     """
 
-    extra = 0
+    cost = len(raw) + 2
+    if max_bytes is not None and cost > max_bytes:
+        return cost
     for byte, surcharge in _JSON_ESCAPE_SURCHARGES:
-        extra += raw.count(byte) * surcharge
-    return len(raw) + 2 + extra
+        cost += raw.count(byte) * surcharge
+        if max_bytes is not None and cost > max_bytes:
+            return cost
+    return cost
 
 
 def _dump_float(value: float) -> str:
@@ -1932,7 +1945,7 @@ def _check_done_value(value: Any, max_bytes: int):
                 return over_budget
             # Same counting rule as the string branch: a control-heavy KEY
             # expands just as far, and `_dump_scalar` on a str is `_dump_string`.
-            total += _json_str_cost(key) + 1
+            total += _json_str_cost(key, max_bytes - total - 1) + 1
             if total > max_bytes:
                 return over_budget
             stack.append(frame)
@@ -1955,7 +1968,7 @@ def _check_done_value(value: Any, max_bytes: int):
             # encode is ~6x the original for a control-heavy string, so measuring
             # a value the budget rejects could breach RLIMIT_AS and surface as
             # `exception` instead of the promised `output-limit`.
-            total += _json_str_cost(current)
+            total += _json_str_cost(current, max_bytes - total)
         elif type(current) is int:
             # The canonical boundary accepts every JS-double-exact value: an int
             # outside +-2**53-1 is fine IFF the double round-trip is exact.

@@ -16,6 +16,10 @@ Status: implemented
 
 unknown-binding 回复用 `JSON.stringify` 对完整的限幅 target（`global` 加 `.` 加 `name`，各最多 `maxValueBytes` 个 code unit）构造消息——在控制字符密集字段下转义形式可达输入的约 6 倍，在 `maxValueBytes` 上限附近产生数亿字节峰值，这是任何敌意对等方边界都不会放行的。预览现在从 target 的 1 KiB 前缀转义（足以辨识 binding）；`capMessage` 仍执行回复预算。
 
+### 证明溢出后停止输出计量
+
+Python 字符串计量器接收调用方剩余的序列化字节预算。原始 UTF-8 字节加引号构成下界，每次计入转义只会增大它；下界超过预算后，计量器直接返回，不再继续扫描。预算内的计量保持精确，包括未闭合日志片段和字典键的引号、分隔符调整，以及孤立代理码元的六字节费用。为已经拒绝的值计算完整转义开销，会增加与恶意输出大小成比例的工作量，并可能在输出超限判定前耗尽墙钟预算。真实子进程回归让日志和完成值对原始溢出字节的重复扫描直接失败；大型星界字符压力用例保留原有内存和时间限制。
+
 ### 合并的 open 日志条目只计费一次，按片段分摊
 
 未结束行的显式 `flush()` 发出带 `open: true` 的 `log` 帧，宿主把下一个帧追加到同一条目（`print('a', end='', flush=True); print('b')` 读回为一条 `'ab'` 条目而不是假换行）。拆分计费算术——首片段付引号加内容加分隔符、续接与闭合帧只付内容、宿主 cap `logBudget - 1`／`logBudget + 2`、低于 2 字节的 walk guard、子进程的 `_open_started` 键控——只登记一次，见 [fd-3 协议 note 的 wire-contract 段](../architecture/2026-07-31-code-runtime-python-fd3-protocol.zh.md)。

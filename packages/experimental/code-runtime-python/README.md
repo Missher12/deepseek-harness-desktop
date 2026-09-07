@@ -63,6 +63,8 @@ Completion values and binding arguments cross as exact JSON: values serialize wi
 
 The Python encoder writes exact null, boolean, and integer scalars directly. This avoids constructing a JSON encoder for every member during both metering and serialization of a wide value; the wire spelling, byte limits, and depth-bounded traversal stay the same.
 
+Log and completion meters stop once a byte-count lower bound exceeds the remaining budget. Within-budget values keep exact UTF-8 and JSON-escape accounting, including open-log fragments, dictionary keys and surrogate handling.
+
 ### Mirror alignment
 
 `tests/protocol-mirror.e2e.ts` spawns a real `python3` and asserts, against `src/protocol.ts`, both `PROTOCOL_FD` / the truncation-marker text and each `TypedDict`'s required/optional wire field set in `py/protocol.py`, so a renamed or dropped field — or one side making a field optional the other requires — fails the test. Field *types* are not compared across the language boundary; that residue stays with review plus the backend's real-subprocess suite (`tests/runtime.spec.ts`).

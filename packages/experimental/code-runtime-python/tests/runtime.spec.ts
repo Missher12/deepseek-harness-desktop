@@ -5133,6 +5133,36 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.logs.some(line => line.includes('log capture truncated'))).toBe(true)
   }, 30_000)
 
+  it.each(['logs', 'value'])('rejects raw UTF-8 %s overflow before rescanning escapes', async (target) => {
+    const { runtime } = await setup({ maxLogBytes: 64, maxValueBytes: 64, maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: [
+        'import __main__ as bootstrap, sys',
+        'original_meter = bootstrap._json_string_cost',
+        'class MeteredBytes(bytes):',
+        '    def count(self, *args):',
+        '        if len(self) > 64:',
+        '            raise RuntimeError("rescanned bytes already over the output budget")',
+        '        return super().count(*args)',
+        'def metered(raw, *args, **kwargs):',
+        '    return original_meter(MeteredBytes(raw), *args, **kwargs)',
+        'bootstrap._json_string_cost = metered',
+        ...target === 'logs'
+          ? ['sys.stdout.write("\\U0001F600" * 20)', 'return "done"']
+          : ['return "\\U0001F600" * 20'],
+      ].join('\n'),
+      bindings: [],
+    })
+    if (target === 'logs') {
+      expect(result.error).toBeUndefined()
+      expect(result.value).toBe('done')
+      expect(result.logs).toEqual([logTruncationMarker(64)])
+    } else {
+      expect(result.error?.kind).toBe('output-limit')
+      expect(result.logs).toEqual([])
+    }
+  }, 15_000)
+
   it('flushes logs before framing the value so their peaks do not add against RLIMIT_AS', async () => {
     // The load gate bounds maxLogBytes and maxValueBytes INDEPENDENTLY against the
     // address space, each at the 12x worst case. But the child framed the

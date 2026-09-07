@@ -1,5 +1,13 @@
 # DeepSeek Harness Desktop — Project Context
 
+## Ordered checkpoint and bounded metering follow-up — 2026-09-07
+
+Candidate `757d4658173489310bfdec46878cb7b2424095ce` passes the Mac and Windows native workflows (`34117961357` and `34117961464`) and the complete browser/artifact lane. General CI exposes one Linux Python output-pressure timeout and one Windows projection-cache upgrade assertion; both coverage reports otherwise measure every included source at 100%. The real-API preflights remain blocked by the unconfigured `DEEPSEEK_API_KEY_EXTERNAL` repository secret.
+
+The Python child stops counting escapes once a byte lower bound proves overflow. Exact within-budget accounting and the original large-pressure limits stay intact; 277 owning tests pass with two existing platform skips, and the keyless Python PTC profile replays successfully. A controlled Cordis/JSON regression proves that reversed log-flush completion can let a creation checkpoint overwrite a newer one. The shared cache captures state and reserves per-session order before its durability wait, drains accepted writes on disposal and allows unrelated sessions to progress. All 40 cache tests pass with 100% coverage of the changed service. The ordinary Windows upgrade fixture passes locally unchanged; the precise cause of its CI timeout remains subject to the next full Windows CI run. Both platforms must rebuild and accept the new follow-up SHA before publication; the successful 757 artifacts cannot stand in for that candidate.
+
+The Mac owner independently checks 57,821 small metering inputs and finds no budget mismatch; the Windows owner finds no blocking issue in the cache ordering and teardown review. Full lint, duplication and the Cordis inspection replay pass. Documentation checks pass 32 leaves initially; regenerating the source-derived Cordis catalog then passes the remaining leaf, with translation pairing and links rechecked. The original pressure test and immediately appended upgrade fixture keep their existing budgets and behavior.
+
 ## Validation follow-up — 2026-09-07
 
 Validation branch `codex/desktop-0.5.5-commander` and PR 34 published candidate `1c4d570c71e197b5134e3f48aa6873c8cd556933`. Mac run `34112657520` and Windows run `34112657489` pass host ABI recovery and packaged-byte protection, then fail the reader fixture's unexpected-request check. The Mac owner reproduced the automatic title request being mistaken for the main reader request through the actual title service and PiAI adapter. Windows also passes its baseline and candidate cold/warm startup samples and visible installer checks; later Quit, DPI and uninstall acceptance remains incomplete. No public 0.5.5 Release exists.

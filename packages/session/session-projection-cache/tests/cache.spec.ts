@@ -203,6 +203,141 @@ describe('SessionProjectionCache write policy', () => {
     }, { timeout: 5_000 })
   })
 
+  it('keeps a newer checkpoint when its durability flush finishes first', async () => {
+    const { ctx, root, cache } = await harness()
+    const firstFlush = Promise.withResolvers<undefined>()
+    const secondFlushStarted = Promise.withResolvers<undefined>()
+    let flushCount = 0
+    const stop = ctx.on('session/flush', () => {
+      if (++flushCount === 1) return firstFlush.promise
+      if (flushCount === 2) secondFlushStarted.resolve(undefined)
+    })
+    const flush = vi.spyOn(ctx.sessions, 'flush')
+    const write = vi.spyOn(cache, 'write')
+    try {
+      const session = ctx.sessions.create(SessionId('overlapping-checkpoints'))
+      mark(session, ['newer'])
+      const end = endTurn(session)
+      expect(write).toHaveBeenCalledTimes(2)
+      await secondFlushStarted.promise
+      expect(flush).toHaveBeenCalledTimes(2)
+      const newerFlush = flush.mock.results[1]
+      if (newerFlush?.type !== 'return') throw new Error('newer flush did not start')
+      // The cache registered its continuation before this observer: with the
+      // first flush held, the newer checkpoint can reach the storage queue first.
+      await newerFlush.value
+      firstFlush.resolve(undefined)
+      await Promise.all(write.mock.results.filter(result => result.type === 'return').map(result => result.value))
+      expect((await storedRows(root, session.id))?.['cache-test/marks'])
+        .toEqual({ ver: 1, seq: end.seq, val: { marks: ['newer'] } })
+    } finally {
+      firstFlush.resolve(undefined)
+      await Promise.allSettled(write.mock.results.filter(result => result.type === 'return').map(result => result.value))
+      stop()
+      flush.mockRestore()
+      write.mockRestore()
+    }
+  })
+
+  it('writes another session while an earlier session is waiting for durability', async () => {
+    const { ctx, root, cache } = await harness()
+    const blocked = Promise.withResolvers<undefined>()
+    const slowId = SessionId('slow-checkpoint')
+    const stop = ctx.on('session/flush', session => session.id === slowId ? blocked.promise : undefined)
+    const write = vi.spyOn(cache, 'write')
+    try {
+      ctx.sessions.create(slowId)
+      const fast = ctx.sessions.create(SessionId('fast-checkpoint'))
+      mark(fast, ['independent'])
+      endTurn(fast)
+      const fastWrites = write.mock.results.slice(1).filter(result => result.type === 'return')
+      await Promise.all(fastWrites.map(result => result.value))
+      expect((await storedRows(root, fast.id))?.['cache-test/marks']?.val).toEqual({ marks: ['independent'] })
+      expect(await storedRows(root, slowId)).toBeUndefined()
+    } finally {
+      blocked.resolve(undefined)
+      await Promise.allSettled(write.mock.results.filter(result => result.type === 'return').map(result => result.value))
+      stop()
+      write.mockRestore()
+    }
+  })
+
+  it('keeps the captured mutable state while later events arrive during the flush', async () => {
+    const { ctx, root, cache } = await harness()
+    ctx.sessionProjections.register({
+      ...secondaryMarksUnit,
+      init: () => ({ marks: [] }),
+      apply: (state, event) => {
+        if (state !== null && event.type === 'cache-test/mark') state.marks.push(...event.data.marks)
+        return state
+      },
+    })
+    const blocked = Promise.withResolvers<undefined>()
+    const stop = ctx.on('session/flush', () => blocked.promise)
+    const write = vi.spyOn(cache, 'write')
+    try {
+      const session = ctx.sessions.create(SessionId('mutable-checkpoint'))
+      mark(session, ['before'])
+      const end = endTurn(session)
+      mark(session, ['after'])
+      blocked.resolve(undefined)
+      await Promise.all(write.mock.results.filter(result => result.type === 'return').map(result => result.value))
+      expect((await storedRows(root, session.id))?.['cache-test/secondary-marks'])
+        .toEqual({ ver: 1, seq: end.seq, val: { marks: ['before'] } })
+    } finally {
+      blocked.resolve(undefined)
+      await Promise.allSettled(write.mock.results.filter(result => result.type === 'return').map(result => result.value))
+      stop()
+      write.mockRestore()
+    }
+  })
+
+  it('recovers the write chain after a log durability failure', async () => {
+    const { ctx, root, cache } = await harness()
+    const failure = new Error('log durability failed')
+    const listener = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue(undefined)
+    const stop = ctx.on('session/flush', listener)
+    const write = vi.spyOn(cache, 'write')
+    try {
+      const session = ctx.sessions.create(SessionId('failed-flush'))
+      mark(session, ['recovered'])
+      endTurn(session)
+      const results = await Promise.allSettled(
+        write.mock.results.filter(result => result.type === 'return').map(result => result.value),
+      )
+      expect(results).toEqual([{ status: 'rejected', reason: failure }, { status: 'fulfilled', value: undefined }])
+      expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['recovered'] })
+    } finally {
+      stop()
+      write.mockRestore()
+    }
+  })
+
+  it('drains accepted checkpoints before disposal and refuses later writes', async () => {
+    const { ctx, root, cache, fiber } = await harness()
+    const blocked = Promise.withResolvers<undefined>()
+    const started = Promise.withResolvers<undefined>()
+    const stop = ctx.on('session/flush', () => {
+      started.resolve(undefined)
+      return blocked.promise
+    })
+    try {
+      const session = ctx.sessions.create(SessionId('closing-checkpoint'))
+      mark(session, ['durable before close'])
+      endTurn(session)
+      await started.promise
+      const disposing = fiber.dispose()
+      blocked.resolve(undefined)
+      await disposing
+      expect((await storedRows(root, session.id))?.['cache-test/marks']?.val)
+        .toEqual({ marks: ['durable before close'] })
+      await expect(cache.write(session)).rejects.toThrow('session projection cache is closed')
+    } finally {
+      blocked.resolve(undefined)
+      stop()
+    }
+  })
+
   it('writes a checkpoint at session creation, capturing the seed-derived cut', async () => {
     const { ctx, root } = await harness()
     // A forked child seeded with its ancestor's title-like event: no

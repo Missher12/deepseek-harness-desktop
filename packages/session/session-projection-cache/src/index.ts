@@ -96,6 +96,8 @@ export class SessionProjectionCache extends Service {
 
   private table?: KvTable<SessionId, CheckpointRecord>
   private readonly dirty = new Map<Session, DirtyState>()
+  private readonly writes = new Map<SessionId, Promise<void>>()
+  private closing = false
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'sessionProjectionCache')
@@ -104,7 +106,11 @@ export class SessionProjectionCache extends Service {
   /** Open the domain and install the write-behind listeners. */
   protected async [Service.init](): Promise<void> {
     const domain = await this.ctx.storageDomain.open(projectionCacheDomainSpec)
-    this.ctx.effect(() => () => domain.close(), 'sessionProjectionCache.domainClose')
+    this.ctx.effect(() => async () => {
+      this.closing = true
+      await Promise.allSettled(this.writes.values())
+      await domain.close()
+    }, 'sessionProjectionCache.domainClose')
     this.table = domain.table('sessions')
     this.installWritePath()
   }
@@ -238,8 +244,8 @@ export class SessionProjectionCache extends Service {
    * Durably checkpoint one live session NOW (all mandatory points call
    * this; tests and carriers may too). The registry cut is snapshotted at
    * this boundary (states are live references), then the session's record is
-   * replaced on the domain's write chain. NOT fail-soft — callers on the
-   * fail-soft paths contain it.
+   * replaced in request order, after the log durability barrier. NOT
+   * fail-soft — callers on the fail-soft paths contain it.
    * @param session - the live session to checkpoint.
    * @returns resolution after durability and event emission.
    */
@@ -253,11 +259,13 @@ export class SessionProjectionCache extends Service {
     // from events no stored log contains). At detach the store entry is
     // already gone; persistence's own retirement drain covers that path and
     // any residual overreach is caught by the cold read's anchored floor.
-    if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
     await this.put(
       session.id,
       identityOf(session.header, session.inheritedEventCount),
       rows,
+      async () => {
+        if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
+      },
     )
   }
 
@@ -340,9 +348,8 @@ export class SessionProjectionCache extends Service {
 
     // With the plugin (their sessions outlive the cache): clear pending
     // timers and stop accepting new work. The domain-close effect registered
-    // in init runs after this disposer and drains already-queued writes, so
-    // a late flush can never land after disposal (it rejects `closed` into
-    // flushSoft's warning instead).
+    // in init runs after this disposer and drains accepted writes, including
+    // those still waiting for their log durability barrier.
     this.ctx.effect(() => () => {
       for (const state of this.dirty.values()) {
         if (state.timer !== undefined) clearTimeout(state.timer)
@@ -375,13 +382,31 @@ export class SessionProjectionCache extends Service {
     }
   }
 
-  /** Replace one session's stored record with its log identity and a detached snapshot of `rows`. */
-  private async put(id: SessionId, identity: CheckpointIdentity, rows: ProjectionCheckpoint): Promise<void> {
+  /** Snapshot and reserve a session's next write before starting its log barrier. */
+  private async put(
+    id: SessionId,
+    identity: CheckpointIdentity,
+    rows: ProjectionCheckpoint,
+    flush?: () => Promise<void>,
+  ): Promise<void> {
+    if (this.closing) throw new Error('session projection cache is closed')
     const detached = snapshotJsonValue(rows)
     if (detached === undefined) {
       throw new TypeError('projection checkpoint is not losslessly JSON-serializable (a unit state violates the plain-JSON contract)')
     }
-    await this.requireTable().put(id, { identity, rows: detached as CheckpointRecord['rows'] })
+    const pending = Promise.allSettled([
+      this.writes.get(id),
+      Promise.resolve().then(flush),
+    ]).then(async ([, durability]) => {
+      if (durability.status === 'rejected') throw durability.reason
+      await this.requireTable().put(id, { identity, rows: detached as CheckpointRecord['rows'] })
+    })
+    this.writes.set(id, pending)
+    try {
+      await pending
+    } finally {
+      if (this.writes.get(id) === pending) this.writes.delete(id)
+    }
   }
 
   private requireTable(): KvTable<SessionId, CheckpointRecord> {
