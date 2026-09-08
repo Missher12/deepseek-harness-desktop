@@ -14,7 +14,7 @@
  * rows the user can still fill in by hand.
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -181,6 +181,7 @@ function capacitySpelling(value: number | undefined): string {
 /** Adopt a candidate, keeping whatever capacities the provider disclosed. */
 function adopt(candidate: LlmDiscoveredModel): ModelDraft {
   return {
+    ...candidate.configuration,
     id: candidate.id,
     ...candidate.name === undefined ? {} : { name: candidate.name },
     ...candidate.contextWindow === undefined ? {} : { contextWindow: candidate.contextWindow },
@@ -196,6 +197,14 @@ function adopt(candidate: LlmDiscoveredModel): ModelDraft {
  */
 export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const { models, onChange, probe, operations, t, disabled } = props
+  const current = useRef(props)
+  current.current = props
+  const mounted = useRef(true)
+  const defaultsByRow = useRef(new WeakMap<ModelDraft, ReadonlySet<string>>())
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const [candidates, setCandidates] = useState<readonly LlmDiscoveredModel[] | undefined>(undefined)
@@ -258,10 +267,48 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       const cleared = new Set(
         Object.entries(next).filter(([, value]) => value === undefined || value === '').map(([key]) => key),
       )
-      return Object.fromEntries(
+      const owned = defaultsByRow.current.get(model) ?? new Set<string>()
+      const changedId = next['id'] !== undefined && next['id'] !== model['id']
+      if (changedId) for (const field of owned) cleared.add(field)
+      const updated = Object.fromEntries(
         Object.entries({ ...model, ...next }).filter(([key]) => !cleared.has(key)),
       )
+      defaultsByRow.current.set(updated, new Set(changedId ? [] : [...owned].filter(field => !(field in next))))
+      return updated
     }))
+  }
+
+  const fillDefaults = async (index: number): Promise<void> => {
+    const row = models[index]
+    if (disabled || row === undefined || probe.settingsNs !== 'llm-pi-ai') return
+    const id = textOf(row, 'id')
+    if (id.length === 0) return
+    try {
+      // Local lookup sends no credential and never interrogates the endpoint.
+      const answer = await operations.discoverModels(probe.settingsNs, {
+        modelId: id,
+        ...probe.provider === undefined ? {} : { provider: probe.provider },
+        ...probe.baseURL === undefined ? {} : { baseURL: probe.baseURL },
+        ...probe.api === undefined ? {} : { api: probe.api },
+      })
+      const latest = current.current
+      if (!mounted.current || latest.disabled || latest.models[index] !== row
+        || latest.probe.settingsNs !== probe.settingsNs
+        || latest.probe.provider !== probe.provider || latest.probe.api !== probe.api
+        || latest.probe.baseURL !== probe.baseURL) return
+      if (answer.kind === 'refused') return
+      const candidate = answer.models.find(model => model.id === id)
+      if (candidate === undefined) return
+      const missing = Object.entries(adopt(candidate)).filter(([key]) => row[key] === undefined)
+      if (missing.length === 0) return
+      const updated = { ...row, ...Object.fromEntries(missing) }
+      defaultsByRow.current.set(updated, new Set([
+        ...defaultsByRow.current.get(row) ?? [], ...missing.map(([key]) => key),
+      ]))
+      latest.onChange(latest.models.map((model, at) => at === index ? updated : model))
+    } catch {
+      // Optional preset lookup must leave manual entry usable if the host exits.
+    }
   }
 
   const fetchModels = async (): Promise<void> => {
@@ -385,6 +432,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
         </button>
       </div>
       {models.length === 0 ? <p className={styles['modelEmpty']}>{t('modelsEmpty')}</p> : null}
+      {models.length > 0 && probe.settingsNs === 'llm-pi-ai' ? <p className={styles['modelEmpty']}>{t('modelPresetHint')}</p> : null}
       {models.map((model, index) => (
         <div key={index} className={styles['modelEntry']}>
           <div className={styles['modelRow']}>
@@ -396,6 +444,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
               aria-label={`${t('modelId')} ${index + 1}`}
               disabled={disabled}
               onChange={(event) => { patch(index, { id: event.target.value }) }}
+              onBlur={() => { void fillDefaults(index) }}
             />
             <input
               className={styles['input']}

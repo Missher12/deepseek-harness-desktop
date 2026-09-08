@@ -352,7 +352,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     expect(server.requests[0]).toMatchObject({
       model: 'deepseek-v4-pro',
       max_tokens: 256_000,
-      reasoning_effort: 'high',
+      reasoning_effort: 'max',
       stream: true,
       stream_options: { include_usage: true },
     })
@@ -1724,10 +1724,10 @@ describe('plugin registration and config', () => {
           efforts: [
             { id: ReasoningEffortId('off'), name: 'Off', description: 'Use for simple tasks that do not need reasoning.' },
             { id: ReasoningEffortId('low'), name: 'Low', description: 'Prefer for routine or latency-sensitive tasks.' },
-            { id: ReasoningEffortId('high'), name: 'High', description: 'The default balance for most tasks.' },
-            { id: ReasoningEffortId('max'), name: 'Max', description: 'Reserve for the hardest quality-first tasks.' },
+            { id: ReasoningEffortId('high'), name: 'High', description: 'Balance reasoning quality and latency.' },
+            { id: ReasoningEffortId('max'), name: 'Max', description: 'Use maximum reasoning effort for quality-first tasks.' },
           ],
-          defaultEffort: ReasoningEffortId('high'),
+          defaultEffort: ReasoningEffortId('max'),
         },
       })
     await expect(ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-v4-flash-vision-exp'))
@@ -1741,7 +1741,7 @@ describe('plugin registration and config', () => {
       })
   })
 
-  it.each(['off', 'low', 'max'] as const)('uses the configured %s reasoning default', async (effort) => {
+  it.each(['off', 'low', 'high', 'max'] as const)('uses the configured %s reasoning default', async (effort) => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {
@@ -1754,8 +1754,8 @@ describe('plugin registration and config', () => {
           efforts: [
             { id: ReasoningEffortId('off'), name: 'Off', description: 'Use for simple tasks that do not need reasoning.' },
             { id: ReasoningEffortId('low'), name: 'Low', description: 'Prefer for routine or latency-sensitive tasks.' },
-            { id: ReasoningEffortId('high'), name: 'High', description: 'The default balance for most tasks.' },
-            { id: ReasoningEffortId('max'), name: 'Max', description: 'Reserve for the hardest quality-first tasks.' },
+            { id: ReasoningEffortId('high'), name: 'High', description: 'Balance reasoning quality and latency.' },
+            { id: ReasoningEffortId('max'), name: 'Max', description: 'Use maximum reasoning effort for quality-first tasks.' },
           ],
           defaultEffort: ReasoningEffortId(effort),
         },

@@ -13,6 +13,8 @@
  */
 
 import { builtinProviders, getBuiltinModels, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all'
+import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
+import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-llm'
 import type { BuiltinProvider } from '@earendil-works/pi-ai/providers/all'
 import type {
   AnthropicMessagesCompat,
@@ -482,6 +484,25 @@ function compatProtocols(field: string): readonly string[] {
  */
 function offeredCompatFields(api: string): readonly string[] {
   return Object.entries(compatGate(api) ?? {}).flatMap(([field, disposition]) => disposition === 'offer' ? [field] : [])
+}
+
+/**
+ * Return only editable reasoning and protocol defaults from an installed model.
+ * @param model - Installed model descriptor, including its protocol and wire mappings.
+ * @returns Detached settings accepted by the model-entry schema.
+ */
+export function catalogModelConfiguration(model: Model<Api>): NonNullable<LlmDiscoveredModel['configuration']> {
+  const reasoningEfforts = model.reasoning
+    ? Object.fromEntries(getSupportedThinkingLevels(model).map(level => [
+      level, level === 'off' ? null : model.thinkingLevelMap?.[level] ?? level,
+    ]))
+    : false
+  const source = model.compat as NonNullable<LlmDiscoveredModel['configuration']> | undefined
+  const compat = Object.fromEntries(offeredCompatFields(model.api).flatMap((field) => {
+    const value = source?.[field]
+    return value === undefined ? [] : [[field, structuredClone(value)]]
+  }))
+  return { reasoningEfforts, ...Object.keys(compat).length === 0 ? {} : { compat } }
 }
 
 /**

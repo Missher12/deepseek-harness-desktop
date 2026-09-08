@@ -258,40 +258,38 @@ export const StatsLine = memo(function StatsLine({ useChat, useProjection, t }: 
       window.clearInterval(timer)
     }
   }, [])
-  // Pipe-separated groups (figma stats strip); a group with no data drops out whole.
-  const groups: string[] = []
-  if (stats.steps > 0) {
-    groups.push(t('stats.counts', { turns: stats.turns, steps: stats.steps }))
-    const durations: string[] = []
-    if (stats.llmMs > 0) durations.push(t('stats.llm', { duration: formatDuration(stats.llmMs, t) }))
-    if (stats.toolMs > 0) durations.push(t('stats.toolCall', { duration: formatDuration(stats.toolMs, t) }))
-    if (durations.length > 0) groups.push(durations.join(' · '))
-    const speeds: string[] = []
-    if (stats.ttftSteps > 0) {
-      speeds.push(t('stats.ttftAverage', { duration: formatDuration(stats.ttftMs / stats.ttftSteps, t) }))
-    }
-    if (stats.decodeMs > 0) {
-      speeds.push(t('stats.tokensPerSecond', {
-        throughput: formatTokensPerSecond(stats.decodeTokens / (stats.decodeMs / 1_000)),
-      }))
-    }
-    if (speeds.length > 0) groups.push(speeds.join(' · '))
-  }
+  // Timings can arrive with the assistant response before its tool step closes.
+  // Keep every metric in place and display each fact independently of counts.
+  const unavailable = t('stats.unavailable')
+  const groups: string[] = [
+    t('stats.counts', { turns: stats.turns, steps: stats.steps }),
+    [
+      t('stats.llm', { duration: stats.llmMs > 0 ? formatDuration(stats.llmMs, t) : unavailable }),
+      t('stats.toolCall', { duration: stats.toolMs > 0 ? formatDuration(stats.toolMs, t) : unavailable }),
+    ].join(' · '),
+    [
+      t('stats.ttftAverage', {
+        duration: stats.ttftSteps > 0 ? formatDuration(stats.ttftMs / stats.ttftSteps, t) : unavailable,
+      }),
+      t('stats.tokensPerSecond', {
+        throughput: stats.decodeMs > 0
+          ? formatTokensPerSecond(stats.decodeTokens / (stats.decodeMs / 1_000))
+          : unavailable,
+      }),
+    ].join(' · '),
+  ]
   // Context occupancy deliberately lives on the composer's ContextMeter ring,
   // not here — one home per fact.
-  // Billing rides the durable projection, so these survive paging and
-  // compaction. Gated on actual token activity: a session whose steps all
-  // settled without billing (e.g. every request failed) shows its counts
-  // without a zero-token group.
-  if (usage !== undefined
-    && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)) {
-    const cacheHit = cacheHitPercent(usage)
-    if (cacheHit !== null) groups.push(t('stats.cacheHit', { percent: cacheHit }))
-    groups.push(t('stats.tokens', {
-      input: formatTokens(billedInputTokens(usage), t),
-      output: formatTokens(usage.outputTokens, t),
-    }))
-  }
+  // Billing rides the durable projection. Until billed activity exists, show
+  // unknown values rather than reporting a failed or pending request as free.
+  const billedUsage = usage !== undefined && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)
+    ? usage
+    : undefined
+  groups.push(t('stats.cacheHit', { percent: billedUsage === undefined ? unavailable : cacheHitPercent(billedUsage) ?? unavailable }))
+  groups.push(t('stats.tokens', {
+    input: billedUsage === undefined ? unavailable : formatTokens(billedInputTokens(billedUsage), t),
+    output: billedUsage === undefined ? unavailable : formatTokens(billedUsage.outputTokens, t),
+  }))
   const financialGroups: string[] = []
   if (tieredEstimates) {
     const turnModel = latestModel(latestBilling)
@@ -315,9 +313,6 @@ export const StatsLine = memo(function StatsLine({ useChat, useProjection, t }: 
   if (tieredEstimates && priceOfModel(model, clock) !== null) {
     financialGroups.push(t(`stats.tier.${pricingTierAt(clock)}`))
   }
-  // Keep the dock's height when the newly selected session has no statistics
-  // yet. Never cache the previous session's numbers to fill the loading gap.
-  if (groups.length === 0) groups.push(t('stats.placeholder'))
   const line = groups.join(' | ')
   return (
     <>

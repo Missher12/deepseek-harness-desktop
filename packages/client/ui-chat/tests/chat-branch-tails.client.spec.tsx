@@ -1042,7 +1042,7 @@ describe('small branch tails', () => {
     expect(view.getByText('one-liner')).toBeTruthy()
   })
 
-  it('StatsLine omits the cache-hit segment when no input accounting exists at all', () => {
+  it('StatsLine reserves an unknown cache-hit segment when no input accounting exists', () => {
     // Cache hit is null only when all three prompt buckets are zero (pure
     // output accounting) — any billed input makes it a real 0%.
     const nodes = [{
@@ -1059,7 +1059,7 @@ describe('small branch tails', () => {
           : undefined}
       />,
     )
-    expect(view.container.textContent).toBe('1 轮 · 1 步 | 输入 0 tok · 输出 10 tok')
+    expect(view.container.textContent).toBe('1 轮 · 1 步 | LLM — · 工具调用 — | 首 token 平均 — · — tok/s | 缓存命中 —% | 输入 0 tok · 输出 10 tok')
   })
 })
 

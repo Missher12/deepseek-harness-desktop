@@ -103,6 +103,14 @@ pnpm run desktop:setup
 
 Windows Setup 是当前用户范围的可见向导式 NSIS 安装器。正常双击后会依次显示欢迎、安装目录、展开的安装进度／明细与完成页面；它不需要管理员权限，也不需要 Node.js、pnpm、终端、浏览器或固定端口。安装会创建桌面和开始菜单快捷方式，并在完成页提供启动 DeepSeek Harness 的选项。卸载会删除应用和快捷方式，但保留 Harness 与 Electron 用户数据。
 
+### Ubuntu 22.04 / 24.04 x64
+
+在安装了 Clang 15 和 musl-tools 的原生 Ubuntu 22.04 x64 上运行 `pnpm run desktop:linux`。命令会构建并探测 Landlock 启动器、暂存运行时，在 `apps/desktop/release` 生成 `DeepSeek-Harness-<version>-linux-x64.deb` 和 `.AppImage`。Linux 工作流只在 22.04 构建一次，再使用完全相同的安装包字节验证两个 Ubuntu 版本。ARM64 与 Wayland 验收不在本次范围内。
+
+使用 `sudo apt install ./DeepSeek-Harness-<version>-linux-x64.deb` 安装 `.deb`。安装包会配置桌面入口、图标、依赖及应用专属 AppArmor 策略。卸载会保留 Harness 设置、会话和 Electron 用户数据。
+
+AppImage 需要 FUSE 2（22.04 为 `libfuse2`，24.04 为 `libfuse2t64`）和可执行权限。24.04 启动前，使用 `sudo bash scripts/linux-desktop-appimage-policy.sh install /absolute/path/DeepSeek-Harness-<version>-linux-x64.AppImage` 安装绑定准确路径的用户命名空间策略。辅助脚本必须来自安装包对应的源码版本；路径支持 ASCII 字母、数字、空格、斜杠、点、下划线和连字符。移动镜像或更换文件名时，需要使用 `remove` 移除旧路径策略，再为新路径安装。启动器拒绝关闭沙箱的参数；辅助脚本保持系统级用户命名空间限制开启。Linux 暂不提供应用内自更新。
+
 应用使用操作系统分配的随机回环端口，不会占用固定的 65000 端口。
 
 每个发布成品都会附带 ASCII/LF 格式的 `.sha256` 文件。成品的精确字节请以

@@ -5,6 +5,7 @@
  */
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { DocumentAttachmentRef, FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ToolCallId, ProviderRequestId, ReasoningEffortId } from './brand.ts'
 import type { Message } from './message.ts'
@@ -252,6 +253,8 @@ export interface LlmConfigurableProvider {
  * route: a provider being added has no route to name.
  */
 export interface LlmModelDiscoveryRequest {
+  /** Exact local model-preset lookup when supported by the adapter; no endpoint interrogation. */
+  modelId?: string
   /**
    * Route the draft is editing, when it edits an existing one. A route whose
    * adapter already knows its models answers from that knowledge instead of
@@ -302,6 +305,8 @@ export interface LlmDiscoveredModel {
   maxTokens?: number
   /** Explicit request modalities disclosed by the catalog or endpoint; absence stays unknown. */
   inputModalities?: readonly ModelModality[]
+  /** Adapter-owned editable model-entry defaults, detached from the installed catalog. */
+  configuration?: Readonly<Record<string, JsonValue>>
 }
 
 /** One adapter-discovered model; catalog membership is advisory, not request validation. */

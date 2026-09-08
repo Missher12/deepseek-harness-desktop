@@ -49,4 +49,4 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Stop generating"
-- text: Session statistics · —
+- text: 0 turns · 0 steps LLM — · Tool call — TTFT avg — · — tok/s Cache hit —% Input — tok · Output — tok

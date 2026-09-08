@@ -44,4 +44,4 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: 1 turns · 1 steps LLM {{duration}} TTFT avg {{duration}}
+- text: 1 turns · 1 steps LLM {{duration}} · Tool call — TTFT avg {{duration}} · — tok/s Cache hit —% Input — tok · Output — tok

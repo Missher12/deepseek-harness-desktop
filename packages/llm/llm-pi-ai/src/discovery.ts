@@ -28,6 +28,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import { catalogModels } from './catalog.ts'
+import { findModelPreset } from './model-presets.ts'
 
 /**
  * Protocols whose model listing this module can read. OpenAI protocols use
@@ -295,6 +296,10 @@ export async function discoverModels(
   request: LlmModelDiscoveryOperation,
   storedProfile?: () => StoredModelDiscoveryProfile | undefined,
 ): Promise<readonly LlmDiscoveredModel[]> {
+  if (request.modelId !== undefined) {
+    const preset = findModelPreset({ ...request, modelId: request.modelId })
+    return preset === undefined ? [] : [preset]
+  }
   // A catalog route already has its answer, and a better one: the installed
   // entries carry context windows and output caps no listing endpoint reports.
   if (request.provider !== undefined) {
@@ -306,6 +311,7 @@ export async function discoverModels(
         contextWindow: model.contextWindow,
         maxTokens: model.maxTokens,
         inputModalities: [...model.input],
+        ...findModelPreset({ ...request, modelId: model.id }),
       }))
     }
   }
@@ -384,5 +390,8 @@ export async function discoverModels(
   } catch (error: unknown) {
     throw new LlmError(`${url} did not answer with JSON`, 'DISCOVERY_FAILED', { cause: error })
   }
-  return readListing(body)
+  return readListing(body).map(model => ({
+    ...findModelPreset({ ...request, modelId: model.id, api }),
+    ...model,
+  }))
 }

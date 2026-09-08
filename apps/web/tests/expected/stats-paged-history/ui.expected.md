@@ -469,4 +469,4 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: 28 turns · 28 steps LLM {{duration}}
+- text: 28 turns · 28 steps LLM {{duration}} · Tool call — TTFT avg — · — tok/s Cache hit —% Input — tok · Output — tok

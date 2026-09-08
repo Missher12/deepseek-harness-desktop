@@ -176,12 +176,12 @@ const REASONING_EFFORTS = [
   {
     id: HIGH_REASONING_EFFORT,
     name: 'High',
-    description: 'The default balance for most tasks.',
+    description: 'Balance reasoning quality and latency.',
   },
   {
     id: MAX_REASONING_EFFORT,
     name: 'Max',
-    description: 'Reserve for the hardest quality-first tasks.',
+    description: 'Use maximum reasoning effort for quality-first tasks.',
   },
 ] as const
 const OFF_ONLY_REASONING_EFFORTS = [
@@ -421,9 +421,9 @@ export class DeepSeekAdapter extends LlmAdapter {
               ? OFF_REASONING_EFFORT
               : connection.defaults.reasoningEffort === 'low'
                 ? LOW_REASONING_EFFORT
-                : connection.defaults.reasoningEffort === 'max'
-                  ? MAX_REASONING_EFFORT
-                  : HIGH_REASONING_EFFORT,
+                : connection.defaults.reasoningEffort === 'high'
+                  ? HIGH_REASONING_EFFORT
+                  : MAX_REASONING_EFFORT,
           },
         },
     }

@@ -58,4 +58,4 @@
   - text: github-webhook-review-test/reply
   - img
 - button "Send message" [disabled]
-- text: 1 turns · 1 steps LLM {{duration}}
+- text: 1 turns · 1 steps LLM {{duration}} · Tool call — TTFT avg — · — tok/s Cache hit —% Input — tok · Output — tok

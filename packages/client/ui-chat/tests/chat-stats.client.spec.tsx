@@ -184,15 +184,15 @@ describe('StatsLine', () => {
   it('renders the grouped stats row and reserves it for a brand-new session', () => {
     const { source } = makeSource({ nodes: [assistant(1, 1)] })
     const view = render(<StatsLine {...props(source)} />)
-    // No timing on the fixture: the duration group drops out whole. Tokens come
+    // No timing on the fixture: duration and speed stay unknown. Tokens come
     // from the projection, so paging the window cannot change them.
-    expect(view.container.textContent).toBe('1 turns · 1 steps | Cache hit 90% | Input 100 tok · Output 5 tok')
+    expect(view.container.textContent).toBe('1 turns · 1 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit 90% | Input 100 tok · Output 5 tok')
     const empty = makeSource()
     const emptyView = render(<StatsLine {...props(empty.source, {
       tokenUsage: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
       contextPressure: {},
     })} />)
-    expect(emptyView.container.textContent).toBe('Session statistics · —')
+    expect(emptyView.container.textContent).toBe('0 turns · 0 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit —% | Input — tok · Output — tok')
   })
 
   it('keeps the same row when switching through an unloaded session without retaining foreign totals', () => {
@@ -208,16 +208,43 @@ describe('StatsLine', () => {
 
     view.rerender(<StatsLine {...props(selected.source, {})} />)
     expect(view.container.querySelector('[data-conversation-stats]')).toBe(row)
-    expect(row?.textContent).toBe('Session statistics · —')
+    expect(row?.textContent).toBe('0 turns · 0 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit —% | Input — tok · Output — tok')
     // A late update from the session we left cannot refill the current row.
     act(() => { previous.set({ nodes: [assistant(1, 1), assistant(2, 2)] }) })
-    expect(row?.textContent).toBe('Session statistics · —')
+    expect(row?.textContent).toBe('0 turns · 0 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit —% | Input — tok · Output — tok')
 
     view.rerender(<StatsLine {...props(selected.source, {
       sessionStats: sessionStats({ turns: 3, steps: 4 }),
     })} />)
     expect(view.container.querySelector('[data-conversation-stats]')).toBe(row)
-    expect(row?.textContent).toBe('3 turns · 4 steps')
+    expect(row?.textContent).toBe('3 turns · 4 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit —% | Input — tok · Output — tok')
+  })
+
+  it('shows known first-response timings before the first tool step closes', () => {
+    const { source } = makeSource()
+    const view = render(<StatsLine {...props(source, {
+      sessionStats: sessionStats({ llmMs: 2_000, ttftMs: 500, ttftSteps: 1, decodeMs: 1_500, decodeTokens: 30 }),
+    })} />)
+    expect(view.container.textContent).toContain('0 turns · 0 steps')
+    expect(view.container.textContent).toContain('LLM 2s')
+    expect(view.container.textContent).toContain('TTFT avg 0.5s · 20 tok/s')
+  })
+
+  it('reserves every metric before a provider reports data without inventing zero usage', () => {
+    const { source } = makeSource()
+    const view = render(<StatsLine {...props(source, {})} />)
+    expect(view.container.textContent).toBe('0 turns · 0 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit —% | Input — tok · Output — tok')
+    const row = view.container.querySelector('[data-conversation-stats]')
+    for (const steps of [1, 2]) {
+      view.rerender(<StatsLine {...props(source, {
+        tokenUsage: USAGE,
+        sessionStats: sessionStats({ turns: 1, steps, ttftSteps: 1 }),
+      })} />)
+      expect(view.container.querySelector('[data-conversation-stats]')).toBe(row)
+      expect(row?.textContent).toContain(`1 turns · ${steps} steps`)
+      expect(row?.textContent).toContain('TTFT avg 0s')
+      expect(row?.textContent).toContain('Input 100 tok · Output 5 tok')
+    }
   })
 
   it('shows an estimated official-price cost only for a single supported DeepSeek model', () => {
@@ -305,7 +332,7 @@ describe('StatsLine', () => {
       sessionStats: sessionStats({ turns: 2, steps: 281, llmMs: 46 * 60_000 + 58_000 }),
     })} />)
 
-    expect(view.container.textContent).toContain('2 turns · 281 steps | LLM 46m58s | Cache hit 90% | Input 100 tok · Output 5 tok')
+    expect(view.container.textContent).toContain('2 turns · 281 steps | LLM 46m58s · Tool call — | TTFT avg — · — tok/s | Cache hit 90% | Input 100 tok · Output 5 tok')
   })
 
   it('shows the settled latest-turn estimate and hides estimates/tier without hiding balance', async () => {
@@ -376,7 +403,7 @@ describe('StatsLine', () => {
     expect(view.container.querySelector('[role="tooltip"]')).toBeNull()
     act(() => { vi.advanceTimersByTime(1) })
     expect(view.container.querySelector('[role="tooltip"]')?.textContent)
-      .toBe('1 turns · 1 steps | Cache hit 99.95% | Input 10K tok · Output 1 tok')
+      .toBe('1 turns · 1 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit 99.95% | Input 10K tok · Output 1 tok')
   })
 
   it('suppresses the tooltip while the row fits without truncation', () => {
@@ -395,7 +422,7 @@ describe('StatsLine', () => {
     }
     const { source } = makeSource({ nodes: [timed] })
     const view = render(<StatsLine {...props(source)} />)
-    expect(view.container.textContent).toContain('LLM 3.8s | TTFT avg 0.8s · 20 tok/s')
+    expect(view.container.textContent).toContain('LLM 3.8s · Tool call — | TTFT avg 0.8s · 20 tok/s')
   })
 
   it('takes every stats label from the active locale', () => {
@@ -406,7 +433,7 @@ describe('StatsLine', () => {
     const { source } = makeSource({ nodes: [timed] })
     const view = render(<StatsLine {...props(source, { tokenUsage: tokenUsage(9_995, 5) })} t={t} />)
     expect(view.container.textContent)
-      .toBe('1 轮 · 1 步 | LLM 3.8秒 | 首 token 平均 0.8秒 · 20 tok/s | 缓存命中 99.95% | 输入 10K tok · 输出 1 tok')
+      .toBe('1 轮 · 1 步 | LLM 3.8秒 · 工具调用 — | 首 token 平均 0.8秒 · 20 tok/s | 缓存命中 99.95% | 输入 10K tok · 输出 1 tok')
   })
 
   it('renders without ResizeObserver support', () => {
@@ -423,13 +450,13 @@ describe('StatsLine', () => {
     })} />)
     // Context occupancy lives on the composer's ContextMeter ring, not here.
     expect(view.container.textContent)
-      .toBe('Cache hit 90% | Input 100 tok · Output 5 tok')
+      .toBe('0 turns · 0 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit 90% | Input 100 tok · Output 5 tok')
   })
 
-  it('drops every token group when no projection is composed', () => {
+  it('shows unknown tokens when no projection is composed', () => {
     const { source } = makeSource({ nodes: [assistant(1, 1)] })
     const view = render(<StatsLine {...props(source, {})} />)
-    expect(view.container.textContent).toBe('1 turns · 1 steps')
+    expect(view.container.textContent).toBe('1 turns · 1 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit —% | Input — tok · Output — tok')
   })
 
   it('renders whole-session counts from the sessionStats projection over the paged window', () => {
@@ -441,7 +468,7 @@ describe('StatsLine', () => {
       sessionStats: sessionStats({ turns: 10, steps: 89 }),
     })} />)
     expect(view.container.textContent)
-      .toBe('10 turns · 89 steps | Cache hit 90% | Input 100 tok · Output 5 tok')
+      .toBe('10 turns · 89 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit 90% | Input 100 tok · Output 5 tok')
   })
 
   it('treats a defined zero-count projection as empty, not as fallback', () => {
@@ -452,18 +479,18 @@ describe('StatsLine', () => {
       tokenUsage: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
       sessionStats: sessionStats({}),
     })} />)
-    expect(view.container.textContent).toBe('Session statistics · —')
+    expect(view.container.textContent).toBe('0 turns · 0 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit —% | Input — tok · Output — tok')
   })
 
-  it('hides the zero-token group when steps closed without any billed activity', () => {
+  it('shows unknown tokens when steps closed without any billed activity', () => {
     // A session whose only turn failed before billing (e.g. an auth error):
-    // the counts group renders alone, not an uninformative zero-token group.
+    // retain its counts without reporting the unbilled request as zero usage.
     const { source } = makeSource()
     const view = render(<StatsLine {...props(source, {
       tokenUsage: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
       sessionStats: sessionStats({ turns: 1, steps: 1 }),
     })} />)
-    expect(view.container.textContent).toBe('1 turns · 1 steps')
+    expect(view.container.textContent).toBe('1 turns · 1 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit —% | Input — tok · Output — tok')
   })
 
   it('keeps the counts group over an empty visible window when the projection carries totals', () => {
@@ -475,7 +502,7 @@ describe('StatsLine', () => {
       sessionStats: sessionStats({ turns: 7, steps: 44 }),
     })} />)
     expect(view.container.textContent)
-      .toBe('7 turns · 44 steps | Cache hit 90% | Input 100 tok · Output 5 tok')
+      .toBe('7 turns · 44 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit 90% | Input 100 tok · Output 5 tok')
   })
 
   it('renders whole-log wall times and speeds from the projection, not the loaded window', () => {
@@ -495,12 +522,12 @@ describe('StatsLine', () => {
     )
   })
 
-  it('omits cache hit when nothing was billed on the input side', () => {
+  it('shows an unknown cache hit when nothing was billed on the input side', () => {
     const { source } = makeSource({ nodes: [assistant(1, 1)] })
     const view = render(<StatsLine {...props(source, {
       tokenUsage: { uncachedInputTokens: 0, outputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 0 },
     })} />)
-    expect(view.container.textContent).toBe('1 turns · 1 steps | Input 0 tok · Output 7 tok')
+    expect(view.container.textContent).toBe('1 turns · 1 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit —% | Input 0 tok · Output 7 tok')
   })
 
   it('includes cache writes in billed input and the cache-hit denominator', () => {
@@ -514,7 +541,7 @@ describe('StatsLine', () => {
       },
     })} />)
     expect(view.container.textContent)
-      .toBe('1 turns · 1 steps | Cache hit 45% | Input 200 tok · Output 7 tok')
+      .toBe('1 turns · 1 steps | LLM — · Tool call — | TTFT avg — · — tok/s | Cache hit 45% | Input 200 tok · Output 7 tok')
   })
 
   it('renders ZERO times during streaming chunk frames (RFC hard acceptance)', () => {

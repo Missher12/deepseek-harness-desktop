@@ -56,6 +56,7 @@
           - text: 模型目录 已自定义模型目录
           - button "恢复默认模型"
           - button "获取可用模型"
+          - paragraph: 输入已知模型 ID 后，离开输入框会补全默认参数。保留手动修改，请按服务商实际限制调整。
           - textbox "模型 ID 1":
             - /placeholder: 模型 ID
             - text: acme-large

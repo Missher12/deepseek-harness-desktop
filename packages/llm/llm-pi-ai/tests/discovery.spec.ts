@@ -111,6 +111,63 @@ describe('catalog-route model discovery', () => {
 })
 
 describe('draft-provider model discovery', () => {
+  it('fills an exact model ID locally without credentials or a listing endpoint', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    const ctx = await harness()
+    const result = await ctx.llm.discoverModels('llm-pi-ai', { modelId: 'deepseek-v4-flash', provider: 'deepseek' })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({ id: 'deepseek-v4-flash', contextWindow: 1_000_000, configuration: { reasoningEfforts: { max: 'max' } } })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('leaves an unknown or protocol-mismatched ID untouched instead of guessing', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    expect(await discoverModels({ modelId: 'not-a-known-model', api: 'openai-completions' })).toEqual([])
+    expect(await discoverModels({ modelId: 'deepseek-v4-flash', api: 'anthropic-messages' })).toEqual([])
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('uses exact endpoint metadata before cross-provider model defaults', async () => {
+    const model = getBuiltinModels('qwen-token-plan-cn').find(entry => entry.id === 'glm-5')!
+    const result = await discoverModels({ modelId: model.id, api: model.api, baseURL: `${model.baseUrl}/` })
+    expect(result[0]).toMatchObject({ contextWindow: model.contextWindow, maxTokens: model.maxTokens, configuration: { reasoningEfforts: { max: 'max' }, compat: { thinkingFormat: 'qwen' } } })
+  })
+
+  it('prefers a recognized endpoint over a reused provider route name', async () => {
+    const model = getBuiltinModels('qwen-token-plan-cn').find(entry => entry.id === 'deepseek-v4-flash')!
+    const result = await discoverModels({ provider: 'deepseek', modelId: model.id, api: model.api, baseURL: model.baseUrl })
+    expect(result[0]?.configuration).toMatchObject({ compat: { thinkingFormat: 'qwen' } })
+  })
+
+  it('does not suggest catalog wire settings for an overridden incompatible protocol', async () => {
+    const result = await discoverModels({ provider: 'deepseek', api: 'anthropic-messages' })
+    expect(result.length).toBeGreaterThan(0)
+    expect(result.every(model => model.configuration === undefined)).toBe(true)
+  })
+
+  it('does not guess a reasoning wire format when gateways disagree about the same ID', async () => {
+    const result = await discoverModels({ modelId: 'glm-5', api: 'openai-completions' })
+    expect(result[0]).toMatchObject({ id: 'glm-5', contextWindow: 202_752, maxTokens: 16_384 })
+    expect(result[0]?.configuration).toBeUndefined()
+  })
+
+  it('returns detached preset settings so editing one draft cannot change another', async () => {
+    const request = { modelId: 'deepseek-v4-flash', provider: 'deepseek' }
+    const first = await discoverModels(request)
+    const configuration = first[0]?.configuration as Record<string, unknown>
+    configuration['reasoningEfforts'] = false
+    const second = await discoverModels(request)
+    expect(second[0]?.configuration).toMatchObject({ reasoningEfforts: { max: 'max' } })
+  })
+
+  it('keeps endpoint capacity data over an exact-ID fallback', async () => {
+    const server = await listingServer({ body: JSON.stringify({ data: [{ id: 'deepseek-v4-flash', context_length: 128_000, max_output_tokens: 8_000 }] }) })
+    const result = await discoverModels({ baseURL: server.url, api: 'openai-completions' })
+    expect(result[0]).toMatchObject({ contextWindow: 128_000, maxTokens: 8_000 })
+  })
+
   it('reads an OpenAI-compatible listing and keeps the capacities it discloses', async () => {
     const server = await listingServer({
       body: JSON.stringify({
@@ -555,8 +612,8 @@ const RECORDED_LISTINGS = [
     name: "Anthropic's documented GET /v1/models example",
     file: 'anthropic-reference-example.json',
     api: 'anthropic-messages',
-    // The reference example fills both capacities with 0, which is not a
-    // usable capacity, so the row carries the name alone.
+    // Zero capacities from the endpoint are not usable; local presets may
+    // complete them while the endpoint's reported name stays authoritative.
     models: [{ id: 'claude-opus-5', name: 'Claude Opus 5' }],
   },
 ]
@@ -567,6 +624,8 @@ describe('recorded provider listings', () => {
     const server = await listingServer({ body })
     const ctx = await harness()
 
-    await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url, api })).resolves.toEqual(models)
+    const discovered = await ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url, api })
+    expect(discovered).toHaveLength(models.length)
+    expect(discovered).toMatchObject(models)
   })
 })

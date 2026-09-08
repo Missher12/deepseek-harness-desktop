@@ -661,6 +661,8 @@ interface ToolSchema {
  * route: a provider being added has no route to name.
  */
 interface LlmModelDiscoveryRequest {
+  /** Exact local model-preset lookup when supported by the adapter; no endpoint interrogation. */
+  modelId?: string
   /**
    * Route the draft is editing, when it edits an existing one. A route whose
    * adapter already knows its models answers from that knowledge instead of
@@ -697,6 +699,8 @@ interface LlmDiscoveredModel {
   maxTokens?: number
   /** Explicit request modalities disclosed by the catalog or endpoint; absence stays unknown. */
   inputModalities?: readonly ModelModality[]
+  /** Adapter-owned editable model-entry defaults, detached from the installed catalog. */
+  configuration?: Readonly<Record<string, JsonValue>>
 }
 ```
 

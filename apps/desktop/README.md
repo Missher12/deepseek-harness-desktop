@@ -137,6 +137,14 @@ Run this command on native Windows x64. The Setup name is derived from `apps/des
 
 The Windows Setup is a visible assisted, per-user NSIS installer. A normal double-click walks through Welcome, installation directory, expanded progress/details, and Finish pages. It needs no administrator elevation, Node.js, pnpm, terminal, browser, or fixed port; it creates desktop and Start menu shortcuts and offers to launch DeepSeek Harness from the finish page. Uninstall removes the application and shortcuts while preserving Harness and Electron user data.
 
+### Ubuntu 22.04 / 24.04 x64
+
+Run `pnpm run desktop:linux` on native Ubuntu 22.04 x64 with Clang 15 and musl-tools installed. It builds and probes the Landlock launcher, stages the runtime, and produces `DeepSeek-Harness-<version>-linux-x64.deb` and `.AppImage` under `apps/desktop/release`. The Linux workflow builds once on 22.04 and tests the identical package bytes on both Ubuntu versions. ARM64 and Wayland acceptance are outside this target.
+
+Install the `.deb` with `sudo apt install ./DeepSeek-Harness-<version>-linux-x64.deb`. The package installs its desktop entry, icons, dependencies and per-application AppArmor policy. Uninstalling preserves Harness settings, Sessions and Electron user data.
+
+AppImage requires FUSE 2 (`libfuse2` on 22.04 or `libfuse2t64` on 24.04) and executable permission. On 24.04, install the exact-path user-namespace policy with `sudo bash scripts/linux-desktop-appimage-policy.sh install /absolute/path/DeepSeek-Harness-<version>-linux-x64.AppImage` before launching. Use the helper from the same source revision as the package; its path accepts ASCII letters, digits, spaces, slash, dot, underscore and hyphen. Moving or replacing the image with a different filename requires removing the old path's policy with `remove` and installing the new one. The launcher rejects sandbox-disabling flags; the helper leaves the system-wide user-namespace restriction enabled. Linux in-app self-update is not provided.
+
 The application uses an operating-system-assigned loopback port and does not reserve port 65000.
 
 Release artifacts are accompanied by ASCII/LF `.sha256` files. Treat the

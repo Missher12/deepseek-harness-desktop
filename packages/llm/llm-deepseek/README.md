@@ -53,7 +53,7 @@ A request selects the route with `provider: deepseek-official`; the model id pas
 | `apiKeyEnv` | `DEEPSEEK_API_KEY` | Credential reference resolved per request through the credentials seam, then the environment |
 | `baseURL` | `https://api.deepseek.com` | Endpoint base; `$DEEPSEEK_BASE_URL` wins when set |
 | `thinking` | `enabled` | Deployment policy; `disabled` locks every request to `off` |
-| `reasoningEffort` | `high` | Default effort: `off`, `low`, `high`, or `max` |
+| `reasoningEffort` | `max` | Default effort: `off`, `low`, `high`, or `max`; explicit choices are preserved |
 | `maxTokens` | `256,000` | Per-request output cap; a model's own cap and explicit request values win |
 | `defaultContextWindow` | `1,000,000` | Capacity fallback for models without an exact value |
 | `models` | V4 Flash + V4 Pro + V4 Flash Vision Exp | Advisory catalog shown by discovery consumers |

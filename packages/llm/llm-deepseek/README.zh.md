@@ -53,7 +53,7 @@ kind: "package-reference"
 | `apiKeyEnv` | `DEEPSEEK_API_KEY` | 按请求解析的凭据引用：先经凭据 seam，再到环境变量 |
 | `baseURL` | `https://api.deepseek.com` | 端点基址；设置了 `$DEEPSEEK_BASE_URL` 时优先 |
 | `thinking` | `enabled` | 部署策略；`disabled` 把所有请求锁定为 `off` |
-| `reasoningEffort` | `high` | 默认强度：`off`、`low`、`high` 或 `max` |
+| `reasoningEffort` | `max` | 默认强度：`off`、`low`、`high` 或 `max`；保留显式设置 |
 | `maxTokens` | `256,000` | 单次请求输出上限；模型自身上限与显式请求值优先 |
 | `defaultContextWindow` | `1,000,000` | 无精确值模型的容量回退 |
 | `models` | V4 Flash + V4 Pro + V4 Flash Vision Exp | 供发现消费方查看的建议性目录 |

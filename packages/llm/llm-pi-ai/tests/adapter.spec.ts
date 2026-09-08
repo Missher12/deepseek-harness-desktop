@@ -560,6 +560,14 @@ describe('provider profile lifecycle', () => {
       .resolves.toMatchObject({ reasoning: { defaultEffort: ReasoningEffortId('off') } })
   })
 
+  it('defaults each reasoning model to its highest supported effort without changing explicit choices', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, { providers: { deepseek: {} } })
+    await expect(ctx.llm.resolveModelInfo('deepseek', 'deepseek-v4-flash'))
+      .resolves.toMatchObject({ reasoning: { defaultEffort: ReasoningEffortId('max') } })
+  })
+
   it('serves declared reasoning efforts to selectors and honours the profile default', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)

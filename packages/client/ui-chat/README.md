@@ -32,7 +32,7 @@ Chat shows a collapsed `System prompt` row for each non-empty initial or resumed
 <a id="turn-token-usage"></a>
 ## Turn token usage
 
-The session statistics row keeps its place below the composer when a selected session has no statistics yet. It shows a localized placeholder until current-session totals arrive, never cached totals from a different session. The dock remains available while the session input is loading; whole-log projections continue to own billing and timing totals.
+The session statistics row keeps every named metric below the composer from the first step. Missing values use localized placeholders; known timing and token totals appear independently of whether the first tool step has closed. It never keeps totals from a different session. The dock remains available while the session input is loading; whole-log projections continue to own billing and timing totals.
 
 A completed Turn shows an expandable usage row only when the loaded window includes `turn/start` and every started model attempt reports safe, exact usage. The row omits unavailable optional buckets. Incomplete or contradictory accounting hides the complete disclosure instead of presenting a partial total.
 
