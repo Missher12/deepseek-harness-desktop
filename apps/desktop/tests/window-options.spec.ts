@@ -87,6 +87,26 @@ describe('createWindowOptions', () => {
     )).toThrow(/Windows.*icon/u)
   })
 
+  it('uses a PNG icon and a sandboxed native frame on Linux', () => {
+    const options = createWindowOptions(
+      { x: 80, y: 50, width: 1200, height: 760 },
+      '/app/lib/preload.cjs',
+      'linux',
+      '/app/assets/icon-source.png',
+    )
+    expect(options.icon).toBe('/app/assets/icon-source.png')
+    expect(options.titleBarStyle).toBeUndefined()
+    expect(options.webPreferences).toMatchObject({ sandbox: true, contextIsolation: true, nodeIntegration: false })
+  })
+
+  it('fails loud if a Linux BrowserWindow icon is missing', () => {
+    expect(() => createWindowOptions(
+      { x: 80, y: 50, width: 1200, height: 760 },
+      '/app/lib/preload.cjs',
+      'linux',
+    )).toThrow(/Linux.*icon/u)
+  })
+
   it.each([
     [1, 16],
     [1.25, 20],

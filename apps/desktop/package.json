@@ -23,7 +23,8 @@
     "pack:dir": "electron-builder --projectDir .stage --config electron-builder.yml --mac dir --x64",
     "pack:dmg": "electron-builder --projectDir .stage --config electron-builder.yml --mac dmg --x64",
     "pack:win-dir": "electron-builder --projectDir .stage --config electron-builder.yml --win dir --x64",
-    "pack:setup": "electron-builder --projectDir .stage --config electron-builder.yml --win nsis --x64"
+    "pack:setup": "electron-builder --projectDir .stage --config electron-builder.yml --win nsis --x64",
+    "pack:linux": "electron-builder --projectDir .stage --config electron-builder.linux.yml --linux deb AppImage --x64 --publish never"
   },
   "dependencies": {
     "@deepseek-ai/dsh-client-file-upload": "workspace:^",

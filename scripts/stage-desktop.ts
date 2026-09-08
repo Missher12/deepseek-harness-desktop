@@ -315,6 +315,7 @@ export async function stageDesktop(
     'assets',
     'build',
     'electron-builder.yml',
+    'electron-builder.linux.yml',
     'desktop.cordis.patch.yml',
     'update-metadata.json',
   ] as const
@@ -328,6 +329,7 @@ export async function stageDesktop(
   const required = [
     'package.json',
     'electron-builder.yml',
+    'electron-builder.linux.yml',
     'build/installer.nsh',
     'desktop.cordis.patch.yml',
     'THIRD_PARTY_NOTICES.md',

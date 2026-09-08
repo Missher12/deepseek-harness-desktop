@@ -60,7 +60,7 @@ const require = createRequire(import.meta.url)
 const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 const loadingPath = fileURLToPath(new URL('../renderer/loading.html', import.meta.url))
 const failurePath = fileURLToPath(new URL('../renderer/failure.html', import.meta.url))
-const macIconPath = fileURLToPath(new URL('../assets/icon-source.png', import.meta.url))
+const applicationIconPath = fileURLToPath(new URL('../assets/icon-source.png', import.meta.url))
 const windowsIconPath = fileURLToPath(new URL('../assets/icon-windows.ico', import.meta.url))
 const windowsTrayIconPaths: Record<WindowsTrayIconSize, string> = {
   16: fileURLToPath(new URL('../assets/tray-windows-16.png', import.meta.url)),
@@ -304,12 +304,15 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
     async () => await readWindowBounds(windowStatePath, displays),
   )
   startupTimeline.mark('window-prerequisites')
-  if (process.platform === 'win32') loadNativeIcon(windowsIconPath, 'Windows application')
+  const nativeIconPath = process.platform === 'win32'
+    ? windowsIconPath
+    : process.platform === 'linux' ? applicationIconPath : undefined
+  if (nativeIconPath !== undefined) loadNativeIcon(nativeIconPath, 'Application')
   const window = new BrowserWindow(createWindowOptions(
     bounds,
     preloadPath,
     process.platform,
-    process.platform === 'win32' ? windowsIconPath : undefined,
+    nativeIconPath,
   ))
   // Electron's Windows constructor repeatedly reads and rewrites native size
   // while centering and positioning, accumulating fractional-DPI rounding.
@@ -466,7 +469,7 @@ Menu.setApplicationMenu(Menu.buildFromTemplate(
 ))
 
 void controller.run().then(() => {
-  if (platformBehavior.setDockIcon) app.dock?.setIcon(macIconPath)
+  if (platformBehavior.setDockIcon) app.dock?.setIcon(applicationIconPath)
   syncWindowsTray()
   record('desktop application ready')
   if (!desktopUpdatesEnabled) return

@@ -1758,6 +1758,7 @@ export async function runPackagedDesktopSmoke(
   try {
     nativeApp = await electron.launch({
       executablePath: executable,
+      chromiumSandbox: platform === 'linux',
       args: [`--user-data-dir=${userData}`],
       cwd: temporaryRoot,
       env: {
