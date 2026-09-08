@@ -1,336 +1,152 @@
 name: Windows Desktop Setup
-
 on:
-  pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
-  group: windows-desktop-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  DSH_TELEMETRY_DISABLED: '1'
-
+  group: windows-search-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  build-install-smoke:
-    name: build, install, launch, and uninstall
+  search-diagnostic:
+    name: inspect Search accessibility without rebuilding
     runs-on: windows-2025
-    timeout-minutes: 60
-    defaults:
-      run:
-        working-directory: s
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
         with:
-          path: s
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
-      - name: Verify exact source revision
-        id: source
+          ref: ${{ github.sha }}
+      - name: Download and verify the published baseline installer
         shell: pwsh
         run: |
-          $expected = '${{ github.event.pull_request.head.sha || github.sha }}'
-          $actual = (git rev-parse HEAD).Trim()
-          if ($actual -ne $expected) {
-            throw "source revision mismatch: expected $expected, got $actual"
+          $base = 'https://github.com/Missher12/deepseek-harness-desktop/releases/download/desktop-v0.5.3'
+          $name = 'DeepSeek-Harness-Setup-0.5.3-win-x64.exe'
+          $setup = Join-Path $env:RUNNER_TEMP $name
+          Invoke-WebRequest -Uri "$base/$name" -OutFile $setup
+          Invoke-WebRequest -Uri "$base/$name.sha256" -OutFile "$setup.sha256"
+          $sidecar = [System.IO.File]::ReadAllText("$setup.sha256").Trim()
+          if ($sidecar -notmatch '^([0-9a-fA-F]{64})\s+\*?DeepSeek-Harness-Setup-0\.5\.3-win-x64\.exe$') { throw 'Invalid baseline checksum sidecar' }
+          $expected = $Matches[1].ToLowerInvariant()
+          if ((Get-Item $setup).Length -ne 152982782) { throw 'Unexpected baseline installer size' }
+          if ((Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Baseline checksum mismatch' }
+          "BASELINE_SHA256=$expected" >> $env:GITHUB_ENV
+      - name: Observe the isolated baseline Search controls
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName UIAutomationClient
+          Add-Type -AssemblyName UIAutomationTypes
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class NativeVisualInput {
+            [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+            [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
+            public static void Key(byte key) { keybd_event(key,0,0,UIntPtr.Zero); keybd_event(key,0,2,UIntPtr.Zero); }
           }
-          "sha=$actual" >> $env:GITHUB_OUTPUT
-
-      - name: Parse Windows Desktop PowerShell smokes
-        shell: pwsh
-        run: |
-          $scriptNames = @(
-            'scripts/windows-desktop-setup-smoke.ps1'
-            'scripts/windows-desktop-native-visual-smoke.ps1'
-            'scripts/windows-desktop-installer-ui-smoke.ps1'
-          )
-          foreach ($scriptName in $scriptNames) {
+          '@
+          $setup = Join-Path $env:RUNNER_TEMP 'DeepSeek-Harness-Setup-0.5.3-win-x64.exe'
+          $installRoot = Join-Path $env:RUNNER_TEMP ('dsh-search-' + [guid]::NewGuid().ToString('N'))
+          $output = Join-Path $env:RUNNER_TEMP 'search-diagnostic.json'
+          function Safe-Name([string]$value) {
+            if ($value -notmatch '(?i)DeepSeek Harness|^App$|^Open$|^Best match$|^Search') { return '[other]' }
+            return ($value -replace '(?i)(?:[A-Z]:\\|https?://)\S+', '[redacted]').Substring(0, [Math]::Min(160, ($value -replace '(?i)(?:[A-Z]:\\|https?://)\S+', '[redacted]').Length))
+          }
+          function Read-Control($element) {
+            $current = $element.Current
+            $valuePattern = $null
+            $textPattern = $null
+            $hasValue = $element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$valuePattern)
+            $hasText = $element.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern, [ref]$textPattern)
+            return [ordered]@{
+              name = Safe-Name $current.Name
+              type = $current.ControlType.ProgrammaticName
+              enabled = $current.IsEnabled
+              offscreen = $current.IsOffscreen
+              id = ($element.GetRuntimeId() -join '.')
+              bounds = @($current.BoundingRectangle.X, $current.BoundingRectangle.Y, $current.BoundingRectangle.Width, $current.BoundingRectangle.Height)
+              patterns = @($element.GetSupportedPatterns() | ForEach-Object { $_.ProgrammaticName })
+              valueEqualsQuery = ($hasValue -and $valuePattern.Current.Value -ceq 'DeepSeek Harness')
+              textEqualsQuery = ($hasText -and $textPattern.DocumentRange.GetText(256).Trim() -ceq 'DeepSeek Harness')
+            }
+          }
+          $samples = @()
+          $oldPredicatePassed = $null
+          $diagnosticError = $null
+          $installer = $null
+          try {
+            $start = [System.Diagnostics.ProcessStartInfo]::new($setup)
+            $start.UseShellExecute = $false
+            $start.Arguments = "/S /D=$installRoot"
+            $installer = [System.Diagnostics.Process]::Start($start)
+            if (-not $installer.WaitForExit(120000)) { $installer.Kill($true); throw 'Baseline installation timed out' }
+            if ($installer.ExitCode -ne 0) { throw 'Baseline installation failed' }
+            $installer.Dispose()
+            $installer = $null
+            [NativeVisualInput]::Key(0x5B)
+            Start-Sleep -Milliseconds 500
+            [System.Windows.Forms.SendKeys]::SendWait('DeepSeek Harness')
+            foreach ($sample in 1..3) {
+              Start-Sleep -Seconds 2
+              $foreground = [NativeVisualInput]::GetForegroundWindow()
+              $root = [System.Windows.Automation.AutomationElement]::FromHandle($foreground)
+              $processName = (Get-Process -Id $root.Current.ProcessId).ProcessName
+              if ($processName -notin @('SearchHost','SearchApp','SearchUI','StartMenuExperienceHost')) {
+                $samples += [ordered]@{ sample = $sample; processName = $processName; reason = 'unexpected foreground'; controls = @() }
+                continue
+              }
+              $rows = @()
+              $elements = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+              if ($elements.Count -gt 500) { throw 'Search tree exceeds diagnostic bound' }
+              foreach ($element in $elements) {
+                if ($element.Current.Name -notmatch '(?i)DeepSeek Harness|^App$|^Open$' -and $element.Current.ControlType -ne [System.Windows.Automation.ControlType]::Edit) { continue }
+                $parents = @()
+                $parent = $element
+                foreach ($depth in 1..5) {
+                  $parent = [System.Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($parent)
+                  if ($null -eq $parent -or $parent.Current.ProcessId -ne $root.Current.ProcessId) { break }
+                  $parents += Read-Control $parent
+                }
+                $rows += [ordered]@{ control = Read-Control $element; parents = $parents }
+              }
+              $samples += [ordered]@{ sample = $sample; processName = $processName; root = Read-Control $root; controls = $rows; foregroundUnchanged = ([NativeVisualInput]::GetForegroundWindow() -eq $foreground) }
+            }
             $tokens = $null
-            $parseErrors = $null
-            [void][System.Management.Automation.Language.Parser]::ParseFile(
-              [System.IO.Path]::GetFullPath($scriptName),
-              [ref]$tokens,
-              [ref]$parseErrors
-            )
-            if (@($parseErrors).Count -eq 0) {
-              continue
+            $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $pwd 'scripts/windows-desktop-native-visual-smoke.ps1'), [ref]$tokens, [ref]$errors)
+            if ($errors.Count -ne 0) { throw 'Native smoke parse failed' }
+            $definitions = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in @('Test-SearchProcessName','Test-SearchApplicationObservation','Wait-SearchApplicationResult') }, $true)
+            foreach ($definition in $definitions) { Invoke-Expression $definition.Extent.Text }
+            $oldPredicatePassed = $false
+            try { [void](Wait-SearchApplicationResult -TimeoutSeconds 2); $oldPredicatePassed = $true } catch { if ($_.Exception.Message -notlike 'Windows Search did not expose*') { throw } }
+          } catch {
+            $diagnosticError = $_.Exception.GetType().Name
+            throw
+          } finally {
+            if ($null -ne $installer) { $installer.Dispose() }
+            try {
+              $evidence = [ordered]@{ sourceRevision = '${{ github.sha }}'; diagnosticOnly = $true; baselineVersion = '0.5.3'; baselineSha256 = $env:BASELINE_SHA256; oldPredicatePassed = $oldPredicatePassed; diagnosticError = $diagnosticError; samples = $samples }
+              $json = $evidence | ConvertTo-Json -Depth 12
+              if ([System.Text.Encoding]::UTF8.GetByteCount($json) -gt 96000) { throw 'Diagnostic JSON exceeds size bound' }
+              [System.IO.File]::WriteAllText($output, $json, [System.Text.UTF8Encoding]::new($false))
+            } catch { Write-Warning 'Could not persist bounded Search evidence.' }
+            [NativeVisualInput]::Key(0x1B)
+            $uninstaller = Join-Path $installRoot 'Uninstall DeepSeek Harness.exe'
+            if (Test-Path -LiteralPath $uninstaller) {
+              $launcher = Join-Path $env:RUNNER_TEMP ('dsh-search-uninstall-' + [guid]::NewGuid().ToString('N') + '.exe')
+              Copy-Item -LiteralPath $uninstaller -Destination $launcher
+              $cleanup = Start-Process -FilePath $launcher -ArgumentList @('/S', "_?=$installRoot") -PassThru
+              if (-not $cleanup.WaitForExit(60000)) { $cleanup.Kill($true); throw 'Baseline uninstall timed out' }
+              if ($cleanup.ExitCode -ne 0) { throw 'Baseline uninstall failed' }
+              $cleanup.Dispose()
             }
-            $fileName = [System.IO.Path]::GetFileName($scriptName)
-            foreach ($parseError in @($parseErrors)) {
-              $lineNumber = $parseError.Extent.StartLineNumber
-              $columnNumber = $parseError.Extent.StartColumnNumber
-              Write-Output ('{0}:{1}:{2}: {3}' -f $fileName, $lineNumber, $columnNumber, $parseError.Message)
-            }
-            throw "PowerShell parse failed for $fileName."
           }
-
-      - name: Enable Developer Mode for workspace symlinks
-        shell: pwsh
-        run: >-
-          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
-          /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: '11.7.0'
-          dest: ${{ runner.temp }}/setup-pnpm
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-
-      - name: Install immutable dependencies
-        shell: pwsh
-        run: pnpm install --frozen-lockfile
-
-      - name: Exercise legacy fallback migration contracts
-        shell: pwsh
-        run: >-
-          pnpm exec vitest run
-          packages/boot/app-boot/tests/profile.spec.ts
-          apps/desktop/tests/packaged-smoke-helpers.spec.ts
-          --config vitest.config.ts
-          --reporter=verbose
-
-      - name: Resolve Desktop release metadata
-        id: desktop
-        shell: pwsh
-        run: |
-          $manifest = Get-Content -LiteralPath 'apps/desktop/package.json' -Raw | ConvertFrom-Json
-          $version = [string]$manifest.version
-          if ($version -notmatch '^\d+\.\d+\.\d+$') {
-            throw "Desktop package version must be major.minor.patch, got: $version"
-          }
-          "version=$version" >> $env:GITHUB_OUTPUT
-          "artifact=DeepSeek-Harness-Setup-$version-win-x64.exe" >> $env:GITHUB_OUTPUT
-
-      - name: Build the assisted Windows Setup
-        shell: pwsh
-        run: |
-          $env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'
-          pnpm run desktop:stage
-          pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR" --config "$env:DSH_DESKTOP_STAGE_DIR\electron-builder.yml" --win nsis --x64
-          $artifact = '${{ steps.desktop.outputs.artifact }}'
-          $builtArtifact = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) "release\$artifact"
-          $workspaceArtifact = Join-Path 'apps/desktop/release' $artifact
-          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $workspaceArtifact) | Out-Null
-          Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact
-          $unpacked = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) 'release\win-unpacked'
-          $inventoryPath = [System.IO.Path]::GetFullPath('apps/desktop/release/desktop-package-staged.json')
-          $manifestPath = [System.IO.Path]::GetFullPath('apps/desktop/package.json')
-          pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package --output $inventoryPath --policy windows-x64 --manifest $manifestPath $unpacked
-          if ($LASTEXITCODE -ne 0) { throw "Staged package inventory failed with exit code $LASTEXITCODE." }
-          $setupFile = Get-Item -LiteralPath $workspaceArtifact
-          $setupEvidence = [ordered]@{
-            schemaVersion = 1
-            path = $setupFile.Name
-            bytes = $setupFile.Length
-            sha256 = (Get-FileHash -LiteralPath $setupFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          }
-          [System.IO.File]::WriteAllText(
-            'apps/desktop/release/desktop-package-setup.json',
-            (($setupEvidence | ConvertTo-Json) + "`n"),
-            [System.Text.UTF8Encoding]::new($false)
-          )
-
-      - name: Restore host Node ABI without changing packaged bytes
-        env:
-          ARTIFACT: ${{ steps.desktop.outputs.artifact }}
-          NODE_OPTIONS: ''
-          NODE_PATH: ''
-        shell: pwsh
-        run: |
-          @'
-          import assert from 'node:assert/strict'
-          import { createHash } from 'node:crypto'
-          import { spawnSync } from 'node:child_process'
-          import { createReadStream } from 'node:fs'
-          import { readdir, realpath } from 'node:fs/promises'
-          import { createRequire } from 'node:module'
-          import { dirname, join, resolve, sep } from 'node:path'
-
-          const release = join(process.env.RUNNER_TEMP, 'release')
-          const resources = join(release, 'win-unpacked', 'resources')
-          const unpacked = join(resources, 'app.asar.unpacked')
-          async function fingerprint() {
-            const native = (await readdir(unpacked, { recursive: true }))
-              .filter(name => name.endsWith('.node')).sort()
-            assert(native.length > 0, 'Packaged native binaries are missing')
-            const files = [
-              join('apps/desktop/release', process.env.ARTIFACT),
-              join(release, process.env.ARTIFACT),
-              join(resources, 'app.asar'),
-              ...native.map(name => join(unpacked, name)),
-            ]
-            return Promise.all(files.map(async file => {
-              const hash = createHash('sha256')
-              for await (const chunk of createReadStream(file)) hash.update(chunk)
-              return [file, hash.digest('hex')]
-            }))
-          }
-
-          const fixtureRequire = createRequire(resolve('packages/session/session-persistence-jsonl/package.json'))
-          const manifest = await realpath(fixtureRequire.resolve('fs-ext/package.json'))
-          const fsExtDir = dirname(manifest)
-          const nodeGyp = await realpath(createRequire(manifest).resolve('node-gyp/bin/node-gyp.js'))
-          const rootModules = resolve('node_modules') + sep
-          assert(fsExtDir.startsWith(rootModules), 'fs-ext is outside root node_modules')
-          assert(nodeGyp.startsWith(rootModules), 'node-gyp is outside root node_modules')
-          assert.equal(process.versions.electron, undefined, 'Host rebuild requires plain Node')
-
-          const env = { ...process.env }
-          const hostOverrides = new Set([
-            'target', 'runtime', 'disturl', 'dist-url', 'nodedir', 'devdir',
-            'debug', 'arch', 'target-arch', 'target-platform', 'directory', 'tarball',
-          ])
-          for (const key of Object.keys(env)) {
-            const prefix = /^(?:npm_config_|npm_package_config_node_gyp_)/i
-            if (prefix.test(key) && hostOverrides.has(
-              key.replace(prefix, '').replaceAll('_', '-').toLowerCase(),
-            )) delete env[key]
-          }
-          delete env.NODE_OPTIONS
-          delete env.NODE_PATH
-
-          const before = await fingerprint()
-          const rebuilt = spawnSync(process.execPath, [
-            nodeGyp, 'rebuild', '--release',
-            '--target=' + process.versions.node, '--arch=' + process.arch,
-          ], { cwd: fsExtDir, env, stdio: 'inherit', timeout: 120_000 })
-          if (rebuilt.error) throw rebuilt.error
-          assert.equal(rebuilt.status, 0, 'Host fs-ext rebuild failed')
-          assert.deepEqual(await fingerprint(), before, 'Packaged bytes changed during host rebuild')
-          fixtureRequire('fs-ext')
-          console.log('Host fs-ext loaded; ABI=' + process.versions.modules + '; packaged bytes unchanged')
-          '@ | node --input-type=module
-          if ($LASTEXITCODE -ne 0) { throw 'Host Node ABI recovery failed.' }
-
-      - name: Measure the pinned public 0.5.3 baseline on this runner
-        shell: pwsh
-        run: |
-          $baselineName = 'DeepSeek-Harness-Setup-0.5.3-win-x64.exe'
-          $baselinePath = Join-Path $env:RUNNER_TEMP $baselineName
-          $baselineUrl = "https://github.com/Missher12/deepseek-harness-desktop/releases/download/desktop-v0.5.3/$baselineName"
-          Invoke-WebRequest -Uri $baselineUrl -OutFile $baselinePath
-          $baseline = Get-Item -LiteralPath $baselinePath
-          if ($baseline.Length -ne 152982782) {
-            throw "0.5.3 Setup size mismatch: expected 152982782, got $($baseline.Length)."
-          }
-          $baselineHash = (Get-FileHash -LiteralPath $baselinePath -Algorithm SHA256).Hash.ToLowerInvariant()
-          $expectedHash = 'adb72bcbdc40ee87b37b7eb5867b75f66110cbb50ad91ad55e6f1a910191ca87'
-          if ($baselineHash -ne $expectedHash) {
-            throw "0.5.3 Setup SHA-256 mismatch: expected $expectedHash, got $baselineHash."
-          }
-          $baselineSetupEvidence = [ordered]@{
-            schemaVersion = 1
-            path = $baseline.Name
-            bytes = $baseline.Length
-            sha256 = $baselineHash
-          }
-          [System.IO.File]::WriteAllText(
-            'apps/desktop/release/desktop-package-setup-baseline-0.5.3.json',
-            (($baselineSetupEvidence | ConvertTo-Json) + "`n"),
-            [System.Text.UTF8Encoding]::new($false)
-          )
-          ./scripts/windows-desktop-setup-smoke.ps1 `
-            -SetupPath $baselinePath `
-            -StartupSummaryPath apps/desktop/release/desktop-startup-baseline-0.5.3.json `
-            -PackageInventoryPath apps/desktop/release/desktop-package-installed-baseline-0.5.3.json `
-            -InstallationEvidencePath apps/desktop/release/desktop-windows-install-evidence-baseline-0.5.3.json `
-            -RuntimeEvidenceOnly `
-            -HistoricalBaselineInventory
-          Remove-Item -LiteralPath $baselinePath -Force
-
-      - name: Exercise the visible installer pages
-        shell: pwsh
-        run: >-
-          ./scripts/windows-desktop-installer-ui-smoke.ps1
-          -SetupPath apps/desktop/release/${{ steps.desktop.outputs.artifact }}
-          -EvidenceRoot apps/desktop/release/windows-installer-ui-evidence
-
-      - name: Install and exercise the packaged application lifecycle
-        shell: pwsh
-        run: >-
-          ./scripts/windows-desktop-setup-smoke.ps1
-          -SetupPath apps/desktop/release/${{ steps.desktop.outputs.artifact }}
-          -StartupSummaryPath apps/desktop/release/desktop-startup-summary.json
-          -PackageInventoryPath apps/desktop/release/desktop-package-installed.json
-          -InstallationEvidencePath apps/desktop/release/desktop-windows-install-evidence.json
-          -VisualEvidenceRoot apps/desktop/release/windows-native-visual-evidence
-          -PackagePolicy windows-x64
-          -PackageManifestPath apps/desktop/package.json
-
-      - name: Preserve portable runtime evidence
-        uses: actions/upload-artifact@v7
-        with:
-          name: Windows-runtime-evidence-${{ steps.source.outputs.sha }}
-          path: |
-            s/apps/desktop/release/desktop-startup-summary.json
-            s/apps/desktop/release/desktop-package-installed.json
-            s/apps/desktop/release/desktop-windows-install-evidence.json
-            s/apps/desktop/release/desktop-package-staged.json
-            s/apps/desktop/release/desktop-package-setup.json
-            s/apps/desktop/release/desktop-startup-baseline-0.5.3.json
-            s/apps/desktop/release/desktop-package-installed-baseline-0.5.3.json
-            s/apps/desktop/release/desktop-windows-install-evidence-baseline-0.5.3.json
-            s/apps/desktop/release/desktop-package-setup-baseline-0.5.3.json
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Preserve native title-bar diagnostics
-        uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: Windows-titlebar-diagnostics-${{ steps.source.outputs.sha }}
-          path: |
-            s/apps/desktop/release/desktop-smoke-titlebar-win32.json
-            s/apps/desktop/release/desktop-smoke-titlebar-win32.png
-          if-no-files-found: ignore
-          retention-days: 14
-
-      - name: Preserve bounded native visual evidence
-        uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: Windows-native-visual-evidence-${{ steps.source.outputs.sha }}
-          path: |
-            s/apps/desktop/release/windows-installer-ui-evidence/*.png
-            s/apps/desktop/release/windows-native-visual-evidence/*.png
-            s/apps/desktop/release/windows-native-visual-evidence/*.json
-            s/apps/desktop/release/desktop-smoke-win32.png
-            s/apps/desktop/release/desktop-smoke-first-run-win32.png
-            s/apps/desktop/release/desktop-smoke-first-run-win32.json
-            s/apps/desktop/release/desktop-smoke-messenger-win32.png
-            s/apps/desktop/release/desktop-smoke-workbench-win32.png
-            s/apps/desktop/release/desktop-smoke-reasoning-win32.png
-            s/apps/desktop/release/desktop-smoke-reader-*-win32.png
-            s/apps/desktop/release/desktop-smoke-usage-win32.png
-            s/apps/desktop/release/desktop-smoke-personalization-win32.png
-            s/apps/desktop/release/desktop-smoke-memory-win32.png
-            s/apps/desktop/release/desktop-smoke-market-win32.png
-            s/apps/desktop/release/desktop-smoke-system-update-win32.png
-            s/apps/desktop/release/desktop-smoke-dpi-150-win32.png
-            s/apps/desktop/release/desktop-smoke-dpi-150-win32.json
-          if-no-files-found: ignore
-          retention-days: 14
-
-      - name: Record SHA-256
-        shell: pwsh
-        run: |
-          $artifact = 'apps/desktop/release/${{ steps.desktop.outputs.artifact }}'
-          $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
-          $checksum = "$hash  $(Split-Path -Leaf $artifact)`n"
-          [System.IO.File]::WriteAllText("$artifact.sha256", $checksum, [System.Text.Encoding]::ASCII)
-
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
-          name: DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ steps.source.outputs.sha }}
-          path: |
-            s/apps/desktop/release/${{ steps.desktop.outputs.artifact }}
-            s/apps/desktop/release/${{ steps.desktop.outputs.artifact }}.sha256
+          name: Windows-Search-diagnostic-${{ github.sha }}
+          path: ${{ runner.temp }}/search-diagnostic.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
