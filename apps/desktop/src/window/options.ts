@@ -43,14 +43,14 @@ export function createWindowOptions(
   bounds: WindowBounds,
   preload: string,
   platform: NodeJS.Platform = process.platform,
-  windowsIcon?: string,
+  nativeIcon?: string,
 ): BrowserWindowConstructorOptions {
   let iconOptions: Pick<BrowserWindowConstructorOptions, 'icon'> = {}
-  if (platform === 'win32') {
-    if (windowsIcon === undefined || windowsIcon.length === 0) {
-      throw new Error('Windows BrowserWindow requires its dedicated icon.')
+  if (platform === 'win32' || platform === 'linux') {
+    if (nativeIcon === undefined || nativeIcon.length === 0) {
+      throw new Error(`${platform === 'win32' ? 'Windows' : 'Linux'} BrowserWindow requires its dedicated icon.`)
     }
-    iconOptions = { icon: windowsIcon }
+    iconOptions = { icon: nativeIcon }
   }
   // Windows expands minimum dimensions through non-client pixel conversion.
   // Release an axis at or below its normal minimum instead of pinning it to

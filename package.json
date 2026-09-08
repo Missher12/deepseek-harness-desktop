@@ -166,6 +166,7 @@
     "desktop:dmg": "pnpm run desktop:stage && pnpm --filter @deepseek-ai/dsh-desktop run pack:dmg",
     "desktop:setup:built": "pnpm run desktop:stage:built && pnpm --filter @deepseek-ai/dsh-desktop run pack:setup",
     "desktop:setup": "pnpm run build:official && pnpm run desktop:setup:built",
+    "desktop:linux": "pnpm run desktop:stage && pnpm --filter @deepseek-ai/dsh-desktop run pack:linux",
     "postinstall": "node scripts/install-lefthook.mjs"
   },
   "devDependencies": {

@@ -146,6 +146,7 @@ describe('stageDesktop', () => {
       [join(REPO_ROOT, 'apps/desktop/assets'), join(DEFAULT_STAGE, 'assets')],
       [join(REPO_ROOT, 'apps/desktop/build'), join(DEFAULT_STAGE, 'build')],
       [join(REPO_ROOT, 'apps/desktop/electron-builder.yml'), join(DEFAULT_STAGE, 'electron-builder.yml')],
+      [join(REPO_ROOT, 'apps/desktop/electron-builder.linux.yml'), join(DEFAULT_STAGE, 'electron-builder.linux.yml')],
       [join(REPO_ROOT, 'apps/desktop/desktop.cordis.patch.yml'), join(DEFAULT_STAGE, 'desktop.cordis.patch.yml')],
       [join(REPO_ROOT, 'apps/desktop/update-metadata.json'), join(DEFAULT_STAGE, 'update-metadata.json')],
       [join(REPO_ROOT, 'THIRD_PARTY_NOTICES.md'), join(DEFAULT_STAGE, 'THIRD_PARTY_NOTICES.md')],
