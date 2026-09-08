@@ -13,7 +13,7 @@ const valid: LinuxSandboxObservation = {
 
 describe('Linux native sandbox acceptance', () => {
   it('accepts a sandboxed renderer with independent kernel evidence', () => {
-    expect(() => assertLinuxSandbox(valid)).not.toThrow()
+    expect(() => { assertLinuxSandbox(valid) }).not.toThrow()
   })
   it.each([
     { mainCommand: ['app', '--no-sandbox'] },
@@ -24,7 +24,7 @@ describe('Linux native sandbox acceptance', () => {
     { rendererUserNamespace: 'user:[100]' },
     { rendererUserNamespace: '' },
   ])('rejects incomplete or bypassed isolation: %j', (change) => {
-    expect(() => assertLinuxSandbox({ ...valid, ...change })).toThrow()
+    expect(() => { assertLinuxSandbox({ ...valid, ...change }) }).toThrow()
   })
   it('ships both x64 formats without the builder default sandbox bypass', () => {
     const configuration = yaml.load(readFileSync(
