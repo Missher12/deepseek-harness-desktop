@@ -86,6 +86,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb xauth dbus-x11 openbox x11-utils desktop-file-utils libfuse2 libgtk-3-0 libnss3 libgbm1 libsecret-1-0 apparmor apparmor-utils
           test -c /dev/fuse
+      - name: Enforce Ubuntu 24.04 user namespace restrictions
+        if: matrix.ubuntu == '24.04'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
       - uses: actions/download-artifact@v8
         with:
           name: Ubuntu-packages-${{ github.sha }}
