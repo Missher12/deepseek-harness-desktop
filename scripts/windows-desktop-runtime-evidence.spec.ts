@@ -253,7 +253,7 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(packaged).toContain('seeded: WindowsClipboardSmokeState')
     expect(packaged).toContain('const seeded = await runPackagedDesktopSmoke')
     expect(packaged).toContain('exerciseWindows150PercentSurface(executable, seeded)')
-    expect(packaged).toContain('hasText: seeded.activeSessionTitle')
+    expect(packaged).toContain('activateSmokeSession(page, seeded.activeSessionTitle)')
     expect(packaged).not.toContain("expect(await page.locator('[class*=\"sidebarCol\"]').count()).toBe(1)")
     expect(packaged).not.toContain("expect(await page.locator('[class*=\"centerCol\"]').count()).toBe(1)")
     expect(packaged).not.toContain("expect(await page.locator('[class*=\"detailsCol\"]').count()).toBe(1)")
@@ -273,7 +273,8 @@ describe('Windows Desktop runtime evidence wiring', () => {
     )
     expect(packaged).toContain('Collapse sidebar|收起侧边栏')
     expect(packaged).not.toContain('Close sidebar|关闭侧边栏')
-    const selectedTarget = packaged.indexOf("activeRow.getAttribute('aria-selected')")
+    const restoredSession = packaged.indexOf('await waitForDesktopSessionReady(page)')
+    const selectedTarget = packaged.indexOf('await activateSmokeSession(page, seeded.activeSessionTitle)')
     const closeSidebar = packaged.indexOf('const closeSidebar = page.getByRole')
     const collapsedAfterSelection = packaged.indexOf(
       "() => page.locator('[class*=\"frame\"][data-sidebar-collapsed]').count()",
@@ -287,7 +288,8 @@ describe('Windows Desktop runtime evidence wiring', () => {
     const currentRail = packaged.indexOf("turnRail.locator('button[aria-current=\"true\"]')")
     const openTooltip = packaged.indexOf("page.getByRole('tooltip').waitFor({ state: 'visible'")
     const workbench = packaged.indexOf('Open workbench|打开工作台')
-    expect(selectedTarget).toBeGreaterThan(-1)
+    expect(restoredSession).toBeGreaterThan(rendererScale)
+    expect(selectedTarget).toBeGreaterThan(restoredSession)
     expect(closeSidebar).toBeGreaterThan(selectedTarget)
     expect(collapsedAfterSelection).toBeGreaterThan(closeSidebar)
     expect(promptRail).toBeGreaterThan(collapsedAfterSelection)

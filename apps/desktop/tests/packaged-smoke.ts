@@ -1014,6 +1014,17 @@ async function dismissCredentialOnboarding(page: Page, required: boolean): Promi
 }
 
 /**
+ * Wait for initial Session restoration before making sidebar toggle decisions.
+ * The shell can render before the current Workspace automatically expands.
+ * @param page - The application renderer under test.
+ * @returns When the restored Session exposes its enabled composer (including Hero Sessions).
+ */
+export async function waitForDesktopSessionReady(page: Page): Promise<void> {
+  await page.locator('[data-composer-input][contenteditable="true"]:not([aria-disabled="true"])')
+    .waitFor({ state: 'visible', timeout: 30_000 })
+}
+
+/**
  * Select a seeded Session through its actual sidebar, including the ungrouped bucket.
  * @param page - The application renderer under test.
  * @param title - Exact title of the owned seed, whose optional Workspace has the same title.

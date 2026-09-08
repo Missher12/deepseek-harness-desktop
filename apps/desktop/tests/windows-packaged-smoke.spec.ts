@@ -6,9 +6,11 @@ import { promisify } from 'node:util'
 import { _electron as electron, type ElectronApplication } from 'playwright'
 import { describe, expect, it } from 'vitest'
 import {
+  activateSmokeSession,
   descendantProcessTree,
   parseWindowsProcessRows,
   runPackagedDesktopSmoke,
+  waitForDesktopSessionReady,
   type WindowsClipboardSmokeState,
 } from './packaged-smoke.ts'
 
@@ -96,26 +98,10 @@ async function exerciseWindows150PercentSurface(
       await page.getByRole('button', { name: /^(?:Open sidebar|打开侧边栏)$/u }).click()
       await collapsedFrame.waitFor({ state: 'detached', timeout: 15_000 })
     }
-    const ungrouped = page.getByText(/^(?:Ungrouped|未分组)$/u, { exact: true }).first()
-    await ungrouped.waitFor({ state: 'visible', timeout: 30_000 })
-    const ungroupedRow = ungrouped.locator('..').locator('..')
-    if (await ungroupedRow.getAttribute('aria-expanded') !== 'true') {
-      await ungrouped.click()
-      await expect.poll(() => ungroupedRow.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('true')
-    }
-    // Session rows render under their workspace group, which the 150% layout
-    // may keep collapsed; expand it before looking for the seeded row.
-    const workspaceRow = page.locator('[class*="projectRow"]')
-      .filter({ hasText: seeded.activeSessionTitle }).first()
-    await workspaceRow.waitFor({ state: 'visible', timeout: 15_000 })
-    if (await workspaceRow.getAttribute('aria-expanded') !== 'true') {
-      await workspaceRow.click()
-      await expect.poll(() => workspaceRow.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('true')
-    }
-    const activeRow = page.locator('[class*="sessionRow"]').filter({ hasText: seeded.activeSessionTitle }).first()
-    await activeRow.waitFor({ state: 'visible', timeout: 15_000 })
-    await activeRow.click()
-    await expect.poll(() => activeRow.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
+    // Initial Session selection may automatically expand its Workspace after
+    // the shell paints. Wait before reading a group state and toggling it.
+    await waitForDesktopSessionReady(page)
+    await activateSmokeSession(page, seeded.activeSessionTitle)
 
     // The product intentionally hides Turn navigation while the center column
     // is narrower than 680px. Selecting the fixture requires temporarily
