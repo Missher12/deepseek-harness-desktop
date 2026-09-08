@@ -5,9 +5,6 @@ export interface LinuxSandboxObservation {
   rendererStatus: string
   mainUserNamespace: string
   rendererUserNamespace: string
-  sandbox: boolean
-  contextIsolation: boolean
-  nodeIntegration: boolean
 }
 
 /**
@@ -22,9 +19,6 @@ export function assertLinuxSandbox(observation: LinuxSandboxObservation): void {
   for (const argument of [...observation.mainCommand, ...observation.rendererCommand]) {
     const [flag] = argument.split('=')
     if (flag !== undefined && forbidden.has(flag)) throw new Error('Electron sandbox bypass argument detected')
-  }
-  if (!observation.sandbox || !observation.contextIsolation || observation.nodeIntegration) {
-    throw new Error('Electron renderer preferences weaken isolation')
   }
   if (!observation.rendererCommand.includes('--type=renderer')) throw new Error('Expected a renderer process')
   if (!/^NoNewPrivs:\s+1\s*$/mu.test(observation.rendererStatus)

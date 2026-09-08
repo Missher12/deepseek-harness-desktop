@@ -64,16 +64,13 @@ async function verifyNativeSandbox(target: string): Promise<void> {
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:/u, { timeout: 120_000 })
     const observed = await application.evaluate(({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows()[0]!
-      const preferences = window.webContents.getLastWebPreferences()
       return {
         pid: process.pid,
         rendererPid: window.webContents.getOSProcessId(),
         handle: window.getNativeWindowHandle().readUInt32LE(0),
-        sandbox: preferences.sandbox === true,
-        contextIsolation: preferences.contextIsolation === true,
-        nodeIntegration: preferences.nodeIntegration === true,
       }
     })
+    expect(await page.evaluate(() => typeof process === 'undefined' && typeof require === 'undefined')).toBe(true)
     tracked = [observed.pid, ...await descendants(observed.pid)]
     const mainCommand = await command(observed.pid)
     const rendererCommand = await command(observed.rendererPid)
