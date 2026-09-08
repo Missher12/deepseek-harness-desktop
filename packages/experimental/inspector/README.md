@@ -74,6 +74,8 @@ The Host plugin injects `webServer` and accepts these fields:
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-experimental-inspector) is the exhaustive source for accepted fields and their declarations.
 
+A nonzero starting port advances past `EADDRINUSE` and, on Windows, `EACCES` for exclusive or reserved TCP ports. Port `0` uses only the operating system allocation attempt. Other bind errors and exhaustion through port `65535` fail startup.
+
 The Host logs a `devtools://` URL after the Worker listens. The same Worker serves `/json`, `/json/list`, `/json/version`, the target WebSocket under `/devtools/page/<id>`, and the Client source at `/ingest`.
 
 <a id="observation-api"></a>

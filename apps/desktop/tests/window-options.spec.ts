@@ -4,6 +4,23 @@ import * as windowOptions from '../src/window/options.ts'
 const { createWindowOptions, selectWindowsTrayIconSize } = windowOptions
 
 describe('createWindowOptions', () => {
+  it.each([
+    [683, 480, 0, 0],
+    [900, 760, 0, 620],
+    [1180, 620, 900, 0],
+    [1024, 480, 900, 0],
+    [683, 760, 0, 620],
+    [1180, 760, 900, 620],
+  ])('releases only Windows minimum axes at the fitted limit (%s by %s)', (width, height, minWidth, minHeight) => {
+    const options = createWindowOptions(
+      { x: 1, y: 1, width, height },
+      'C:\\app\\lib\\preload.cjs',
+      'win32',
+      'C:\\app\\assets\\icon-windows.ico',
+    )
+    expect({ minWidth: options.minWidth, minHeight: options.minHeight }).toEqual({ minWidth, minHeight })
+  })
+
   it('does not enlarge a window beyond a small work area through its minimum size', () => {
     const options = createWindowOptions(
       { x: 0, y: 0, width: 683, height: 480 },

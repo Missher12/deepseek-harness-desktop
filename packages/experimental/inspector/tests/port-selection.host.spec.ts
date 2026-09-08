@@ -26,25 +26,14 @@ async function listen(server: Server, port: number): Promise<AddressInfo> {
   })
 }
 
-async function bindWithAvailableSuccessor(): Promise<Server> {
+async function bindOccupiedStartingPort(): Promise<Server> {
   for (let attempt = 0; attempt < 32; attempt += 1) {
     const candidate = createServer()
     const address = await listen(candidate, 0)
-    if (address.port === 65_535) {
-      await closeServer(candidate)
-      continue
-    }
-    const probe = createServer()
-    try {
-      await listen(probe, address.port + 1)
-      return candidate
-    } catch {
-      await closeServer(candidate)
-    } finally {
-      await closeServer(probe)
-    }
+    if (address.port < 65_535) return candidate
+    await closeServer(candidate)
   }
-  throw new Error('test could not reserve an occupied port with a bindable successor')
+  throw new Error('test could not reserve an occupied starting port below 65535')
 }
 
 describe('Inspector endpoint port selection', () => {
@@ -59,13 +48,17 @@ describe('Inspector endpoint port selection', () => {
   })
 
   it('advances from an occupied starting port and publishes the selected port', async () => {
-    blocker = await bindWithAvailableSuccessor()
+    blocker = await bindOccupiedStartingPort()
     const occupiedAddress = blocker.address()
     if (occupiedAddress === null || typeof occupiedAddress === 'string') {
       throw new Error('test server did not bind a TCP port')
     }
 
-    inspector = await startInspector({ port: occupiedAddress.port, captureFetch: false })
+    // Keep ownership of only the occupied port. The Worker atomically binds
+    // its successor; a probe released before startup cannot reserve it.
+    inspector = await startInspector({ port: occupiedAddress.port, captureFetch: false }).catch((cause: unknown) => {
+      throw new Error(`Inspector could not advance from occupied port ${String(occupiedAddress.port)}`, { cause })
+    })
     const selectedPort = Number(new URL(inspector.endpoint.httpUrl).port)
 
     expect(selectedPort).toBeGreaterThan(occupiedAddress.port)

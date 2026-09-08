@@ -311,6 +311,10 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
     process.platform,
     process.platform === 'win32' ? windowsIconPath : undefined,
   ))
+  // Electron's Windows constructor repeatedly reads and rewrites native size
+  // while centering and positioning, accumulating fractional-DPI rounding.
+  // Apply the original full rectangle once before observing or showing it.
+  if (process.platform === 'win32') window.setBounds(bounds)
   nativeWindow = window
   let ownedRoot: string | undefined
   installNavigationPolicy(window, () => ownedRoot)

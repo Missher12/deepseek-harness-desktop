@@ -74,6 +74,8 @@ Host 插件注入 `webServer`，接受以下字段：
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-experimental-inspector)是全部已接受字段及其声明的详尽来源。
 
+非零起始端口遇到 `EADDRINUSE` 时向上递增；Windows 的独占或保留 TCP 端口返回 `EACCES` 时也递增。端口 `0` 只尝试操作系统分配。其他绑定错误或尝试到 `65535` 后仍无可用端口会使启动失败。
+
 Worker 监听后，Host 会记录一个 `devtools://` URL。同一个 Worker 提供 `/json`、`/json/list`、`/json/version`、`/devtools/page/<id>` target WebSocket 和 `/ingest` Client source。
 
 <a id="observation-api"></a>

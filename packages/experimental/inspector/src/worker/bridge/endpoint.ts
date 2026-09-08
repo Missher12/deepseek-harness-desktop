@@ -61,7 +61,7 @@ export class InspectorEndpoint {
         return { host: this.config.host, port: address.port, targetId: this.config.targetId }
       } catch (error) {
         this.server = undefined
-        if (!isAddressInUse(error) || candidate === 0) throw error
+        if (!isUnavailableInspectorPort(error, process.platform) || candidate === 0) throw error
         if (candidate === 65_535) {
           throw new Error(`inspector: no available port from ${String(this.config.startPort)} through 65535`, {
             cause: error,
@@ -286,8 +286,18 @@ function listen(server: Server, port: number, host: string): Promise<AddressInfo
   })
 }
 
-function isAddressInUse(error: unknown): boolean {
-  return error instanceof Error && (error as NodeJS.ErrnoException).code === 'EADDRINUSE'
+/**
+ * Recognize a bind conflict for which fixed-port selection can advance.
+ * @param error - Error emitted by the TCP listener.
+ * @param platform - Operating system that supplied the socket error.
+ * @returns Whether a nonzero candidate may advance to the next port.
+ */
+export function isUnavailableInspectorPort(error: unknown, platform: NodeJS.Platform): boolean {
+  if (!(error instanceof Error)) return false
+  const { code } = error as NodeJS.ErrnoException
+  // WinSock also reports exclusive or reserved ports as access denied. Do not
+  // treat POSIX permission failures as permission to scan for another port.
+  return code === 'EADDRINUSE' || (platform === 'win32' && code === 'EACCES')
 }
 
 function rawText(data: RawData): string {

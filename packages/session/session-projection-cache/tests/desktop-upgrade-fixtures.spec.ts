@@ -157,15 +157,25 @@ async function expectCurrentRewrite(
   id: SessionId,
   title: string,
 ): Promise<void> {
-  const session = ctx.sessions.create(id)
-  session.append('desktop-upgrade/set-title', { title })
-  session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-  const path = join(root, projectionCacheDomainSpec.name, 'sessions', `${id}.json`)
-  await vi.waitFor(async () => {
+  const writes = vi.spyOn(ctx.sessionProjectionCache, 'write')
+  try {
+    const session = ctx.sessions.create(id)
+    session.append('desktop-upgrade/set-title', { title })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    // Observe the mandatory create and turn/end writes without adding another
+    // checkpoint. A disk poll can still see the creation cut under CI load.
+    expect(writes).toHaveBeenCalledTimes(2)
+    await Promise.all(writes.mock.results.map((result) => {
+      if (result.type !== 'return') throw new Error('automatic checkpoint write did not return')
+      return result.value
+    }))
+    const path = join(root, projectionCacheDomainSpec.name, 'sessions', `${id}.json`)
     const doc = JSON.parse(await readFile(path, 'utf8')) as FixtureDoc
     expect(doc.version).toBe(projectionCacheDomainSpec.version)
     expect(doc.record.rows.title?.val).toBe(title)
-  }, { timeout: 5_000 })
+  } finally {
+    writes.mockRestore()
+  }
 }
 
 afterEach(async () => {

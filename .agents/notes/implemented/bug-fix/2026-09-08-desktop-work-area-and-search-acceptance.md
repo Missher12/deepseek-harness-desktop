@@ -10,7 +10,9 @@ The first-run and invalid-state window defaults exceed small desktop work areas,
 
 ## Decision
 
-Desktop resolves default geometry against the primary work area and limits constructor minimums to the resolved dimensions. Saved geometry selects the eligible display with the largest visible intersection and moves wholly inside it. The state format is unchanged; malformed and absent files use the same fitted fallback. With no display available, the emergency size remains 1180 by 760.
+Desktop resolves default geometry against the primary work area. On Windows, each dimension at or below its normal minimum releases that minimum axis to zero; larger axes retain the normal 900 by 620 limits. This prevents non-client pixel conversion from enlarging a minimum pinned to the available area. Other platforms cap constructor minimums at the fitted dimensions. Saved geometry selects the eligible display with the largest visible intersection and moves wholly inside it. The state format is unchanged; malformed and absent files use the same fitted fallback. With no display available, the emergency size remains 1180 by 760.
+
+After creating a Windows BrowserWindow, Desktop applies the original fitted rectangle once before attaching state writers, loading content or showing the window. Electron construction repeatedly reads native size back during centering and positioning; fractional-DPI conversion can enlarge each read/write cycle. Reapplying the complete original rectangle prevents constructor drift from becoming the initial or persisted geometry.
 
 Windows displays with fractional scaling reserve one physical pixel, rounded up to device-independent pixels, inside each work-area edge. Display selection uses the original work areas; fitting uses the inward area, and the minimum-size rule accepts previously fitted small windows. This preserves secondary-display placement across restarts while containing native edge rounding. macOS and integer scaling retain their original work areas. Acceptance still compares native bounds with the actual display work area without widening the assertion.
 
