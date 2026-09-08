@@ -66,7 +66,7 @@ jobs:
           $installRoot = Join-Path $env:RUNNER_TEMP ('dsh-search-' + [guid]::NewGuid().ToString('N'))
           $output = Join-Path $env:RUNNER_TEMP 'search-diagnostic.json'
           function Safe-Name([string]$value) {
-            if ($value -notmatch '(?i)DeepSeek Harness|^App$|^Open$|^Best match$|^Search') { return '[other]' }
+            if ($value -notmatch '(?i)DeepSeek|Harness|^App$|^Open$|^Best match$|^Search') { return '[other]' }
             return ($value -replace '(?i)(?:[A-Z]:\\|https?://)\S+', '[redacted]').Substring(0, [Math]::Min(160, ($value -replace '(?i)(?:[A-Z]:\\|https?://)\S+', '[redacted]').Length))
           }
           function Read-Control($element) {
