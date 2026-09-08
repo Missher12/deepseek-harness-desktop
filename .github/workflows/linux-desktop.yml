@@ -43,12 +43,11 @@ jobs:
       - name: Build native packages
         env:
           NODE_OPTIONS: --max-old-space-size=4096
-          CC: clang
-          CXX: clang++
+          CC: clang-15
+          CXX: clang++-15
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools clang
-          clang++ --version
+          sudo apt-get install -y musl-tools clang-15
           bash scripts/linux-desktop-package.sh
       - name: Fingerprint immutable candidate bytes
         run: |
