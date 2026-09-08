@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { _electron as electron, type ElectronApplication } from 'playwright'
+import { _electron as electron, type ElectronApplication, type Page } from 'playwright'
 import { describe, expect, it } from 'vitest'
 import { assertLinuxSandbox } from '../../../scripts/linux-desktop-sandbox.ts'
 import { runPackagedDesktopSmoke } from './packaged-smoke.ts'
@@ -41,6 +41,8 @@ function alive(pid: number): boolean {
 async function verifyNativeSandbox(target: string): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-linux-sandbox-'))
   let application: ElectronApplication | undefined
+  let page: Page | undefined
+  let phase = 'electron-launch'
   let tracked: number[] = []
   try {
     application = await electron.launch({
@@ -60,7 +62,9 @@ async function verifyNativeSandbox(target: string): Promise<void> {
     const mainPid = application.process().pid
     if (mainPid === undefined) throw new Error('Linux native process PID is missing')
     tracked = [mainPid]
-    const page = await application.firstWindow()
+    phase = 'first-window'
+    page = await application.firstWindow()
+    phase = 'backend-ready'
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:/u, { timeout: 120_000 })
     const observed = await application.evaluate(({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows()[0]!
@@ -74,6 +78,7 @@ async function verifyNativeSandbox(target: string): Promise<void> {
     tracked = [observed.pid, ...await descendants(observed.pid)]
     const mainCommand = await command(observed.pid)
     const rendererCommand = await command(observed.rendererPid)
+    phase = 'kernel-sandbox'
     assertLinuxSandbox({
       ...observed, mainCommand, rendererCommand,
       rendererStatus: await readFile(`/proc/${String(observed.rendererPid)}/status`, 'utf8'),
@@ -81,7 +86,8 @@ async function verifyNativeSandbox(target: string): Promise<void> {
       rendererUserNamespace: (await execFileAsync('sudo', ['readlink', `/proc/${String(observed.rendererPid)}/ns/user`])).stdout.trim(),
     })
     const { stdout } = await execFileAsync('xprop', ['-id', String(observed.handle), 'WM_CLASS'])
-    expect(stdout).toContain('deepseek-harness')
+    phase = 'window-class'
+    expect(stdout).toContain('"deepseek-harness"')
     if (evidenceRoot === undefined) throw new Error('Linux evidence root is required')
     await mkdir(evidenceRoot, { recursive: true })
     await page.screenshot({ path: join(evidenceRoot, 'sandbox-window.png') })
@@ -90,6 +96,18 @@ async function verifyNativeSandbox(target: string): Promise<void> {
       rendererSandbox: true, rendererSeccomp: 2, rendererNoNewPrivs: 1,
       separateUserNamespace: true, desktopWindowClass: 'deepseek-harness',
     }, null, 2) + '\n')
+  } catch (error) {
+    if (evidenceRoot !== undefined) {
+      await mkdir(evidenceRoot, { recursive: true })
+      await writeFile(join(evidenceRoot, 'native-failure.json'), JSON.stringify({
+        phase, errorName: error instanceof Error ? error.name : 'UnknownError',
+      }) + '\n')
+      // The page is an isolated, keyless fixture; never retain raw backend logs.
+      if (page !== undefined && !page.isClosed()) {
+        await page.screenshot({ path: join(evidenceRoot, 'native-failure.png') }).catch(() => undefined)
+      }
+    }
+    throw error
   } finally {
     if (application !== undefined) {
       const closed = application.waitForEvent('close', { timeout: 20_000 })

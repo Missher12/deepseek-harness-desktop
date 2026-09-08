@@ -2,6 +2,7 @@ extends: ./electron-builder.yml
 afterPack: ./build/linux/after-pack.cjs
 extraMetadata:
   desktopName: deepseek-harness.desktop
+  homepage: https://github.com/Missher12/deepseek-harness-desktop
 linux:
   executableName: deepseek-harness
   syncDesktopName: true
