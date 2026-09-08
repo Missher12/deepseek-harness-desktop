@@ -593,7 +593,7 @@ async function listenerPids(port: number, platform: NodeJS.Platform): Promise<nu
   }
 
   try {
-    const { stdout } = await execFileAsync('/usr/sbin/lsof', [
+    const { stdout } = await execFileAsync(platform === 'linux' ? '/usr/bin/lsof' : '/usr/sbin/lsof', [
       '-nP', '-t', `-iTCP:${String(port)}`, '-sTCP:LISTEN',
     ])
     return parsePidLines(stdout)
