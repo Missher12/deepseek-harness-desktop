@@ -6,6 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
 version="$(node -p "require('./apps/desktop/package.json').version")"
+ubuntu_version="$(. /etc/os-release; printf '%s' "$VERSION_ID")"
 deb="$PWD/apps/desktop/release/DeepSeek-Harness-$version-linux-x64.deb"
 image="$PWD/apps/desktop/release/DeepSeek-Harness-$version-linux-x64.AppImage"
 evidence="$RUNNER_TEMP/linux-native-evidence"
@@ -35,8 +36,9 @@ if grep -E -- '--(no-sandbox|disable.*sandbox)' "$desktop"; then exit 1; fi
 dpkg-query -L deepseek-harness | grep -E '/icons/.+/apps/deepseek-harness\.png$' > "$evidence/installed-icons.txt"
 [[ -s "$evidence/installed-icons.txt" ]]
 while IFS= read -r icon; do test -s "$icon"; done < "$evidence/installed-icons.txt"
-if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+if [[ "$ubuntu_version" == 24.04 ]]; then
   cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns > "$evidence/userns-restriction.txt"
+  [[ "$(cat "$evidence/userns-restriction.txt")" == 1 ]]
   [[ -f /etc/apparmor.d/deepseek-harness ]]
 fi
 export DSH_LINUX_DESKTOP_EXECUTABLE='/opt/DeepSeek Harness/deepseek-harness'
@@ -63,7 +65,7 @@ printf '{"install":true,"reinstall":true,"purge":true,"dataRetained":true}\n' > 
 
 cp "$image" "$appimage"
 chmod 0755 "$appimage"
-if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+if [[ "$ubuntu_version" == 24.04 ]]; then
   sudo bash scripts/linux-desktop-appimage-policy.sh install "$appimage"
   policy_installed=true
 fi
