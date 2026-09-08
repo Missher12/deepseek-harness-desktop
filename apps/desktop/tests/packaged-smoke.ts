@@ -31,7 +31,7 @@ const MESSENGER_SUBAGENT_SESSION_ID = 'desktop-smoke-messenger-subagent-session-
 /** Turns seeded into the active session so the navigation rail can page. */
 const NAVIGATION_TURN_COUNT = 30
 /** Event seqs one complete seeded turn occupies (see completeTurn). */
-const TURN_SEQ_SPAN = 10
+const TURN_SEQ_SPAN = 12
 const RECEIPT_TTL_MS = 24 * 60 * 60 * 1_000
 
 async function writeDesktopSmokeModelSettings(harnessHome: string, baseURL: string): Promise<void> {
@@ -225,10 +225,11 @@ function completeTurn(createdAt: number, turn = 1): SessionEvent[] {
         },
       },
     },
+    { type: 'step/start', seq: SessionSeq(4), time: createdAt + 4, data: { turn, step: 0 } },
     {
       type: 'assistant/message',
-      seq: SessionSeq(4),
-      time: createdAt + 4,
+      seq: SessionSeq(5),
+      time: createdAt + 5,
       data: {
         turn,
         step: 0,
@@ -243,31 +244,32 @@ function completeTurn(createdAt: number, turn = 1): SessionEvent[] {
       },
       surfaceOp: 'append',
     },
+    { type: 'step/end', seq: SessionSeq(6), time: createdAt + 6, data: { turn, step: 0 } },
     {
       type: 'turn/end',
-      seq: SessionSeq(5),
-      time: createdAt + 5,
+      seq: SessionSeq(7),
+      time: createdAt + 7,
       data: { turn, reason: { kind: 'completed' } },
     },
     {
       type: 'permission/preset',
-      seq: SessionSeq(6),
-      time: createdAt + 6,
+      seq: SessionSeq(8),
+      time: createdAt + 8,
       data: { preset: 'workspace-write' },
     },
     {
       type: 'sandbox/mode',
-      seq: SessionSeq(7),
-      time: createdAt + 7,
+      seq: SessionSeq(9),
+      time: createdAt + 9,
       data: { mode: 'workspace-write' },
     },
     {
       type: 'approval/policy',
-      seq: SessionSeq(8),
-      time: createdAt + 8,
+      seq: SessionSeq(10),
+      time: createdAt + 10,
       data: { policy: 'ask' },
     },
-    { type: 'session/end-seed', seq: SessionSeq(9), time: createdAt + 9, data: {} },
+    { type: 'session/end-seed', seq: SessionSeq(11), time: createdAt + 11, data: {} },
   ]
 }
 
@@ -275,12 +277,13 @@ function completeTurn(createdAt: number, turn = 1): SessionEvent[] {
  * Seed one ordinary and one archived cold Session through the shipped JSONL
  * persistence implementation. The smoke never writes into the user's home.
  * @param harnessHome - Exact isolated DSH_HOME prepared by the installer smoke.
+ * @param persistenceRoot - Isolated session store; the browser rehearsal supplies its scaffold's root.
  * @returns Stable ids and files whose bytes must remain unchanged by copying.
  */
 export async function seedWindowsClipboardSmokeState(
   harnessHome: string,
+  persistenceRoot = join(harnessHome, 'sessions'),
 ): Promise<WindowsClipboardSmokeState> {
-  const persistenceRoot = join(harnessHome, 'sessions')
   const createdAt = Date.now() - 60_000
   const activeSessionTitle = 'desktop-smoke-active-workspace'
   const archivedSessionTitle = 'desktop-smoke-archived-workspace'
@@ -1010,15 +1013,26 @@ async function dismissCredentialOnboarding(page: Page, required: boolean): Promi
   await credentialDialog.waitFor({ state: 'detached', timeout: 30_000 })
 }
 
-/** Select a seeded workspace Session through its actual sidebar, including collapsed projects. */
-async function activateSmokeSession(page: Page, title: string): Promise<void> {
-  const project = page.locator('[class*="projectRow"]').filter({ hasText: title }).first()
-  await project.waitFor({ state: 'visible', timeout: 15_000 })
-  if (await project.getAttribute('aria-expanded') !== 'true') {
-    await project.click()
-    await expect.poll(() => project.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('true')
+/**
+ * Select a seeded Session through its actual sidebar, including the ungrouped bucket.
+ * @param page - The application renderer under test.
+ * @param title - Exact title of the owned seed, whose optional Workspace has the same title.
+ * @returns When the selected Session has a visible composer.
+ */
+export async function activateSmokeSession(page: Page, title: string): Promise<void> {
+  const row = page.locator('[class*="sessionRow"]').filter({ has: page.getByText(title, { exact: true }) }).first()
+  if (!await row.isVisible()) {
+    const projects = page.locator('[class*="projectRow"]')
+    const namedProject = projects.filter({ has: page.getByText(title, { exact: true }) }).first()
+    const group = await namedProject.isVisible()
+      ? namedProject
+      : projects.filter({ hasText: /^(?:Ungrouped|未分组)$/u }).first()
+    await group.waitFor({ state: 'visible', timeout: 15_000 })
+    if (await group.getAttribute('aria-expanded') !== 'true') {
+      await group.click()
+      await expect.poll(() => group.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('true')
+    }
   }
-  const row = page.locator('[class*="sessionRow"]').filter({ hasText: title }).first()
   await row.click()
   await expect.poll(() => row.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
   await page.locator('[data-composer-input][contenteditable="true"]')
@@ -1028,10 +1042,15 @@ async function activateSmokeSession(page: Page, title: string): Promise<void> {
 /**
  * Select only: repeatedly change an existing Session's route, leave and return,
  * then restore the reader's route before effort acceptance and reader arm.
+ * @param page - The application renderer under test.
+ * @param persistenceRoot - The isolated Session store used by that application.
+ * @param seeded - Owned Session identities used for navigation and durable assertions.
+ * @param providerTripwire - Loopback provider that must receive no requests during selection.
+ * @returns After both routes have been selected twice and the original route is restored.
  */
-async function exerciseExistingSessionModelSwitch(
+export async function exerciseExistingSessionModelSwitch(
   page: Page,
-  harnessHome: string,
+  persistenceRoot: string,
   seeded: WindowsClipboardSmokeState,
   providerTripwire: Awaited<ReturnType<typeof startReaderSmokeProvider>>,
 ): Promise<void> {
@@ -1055,7 +1074,7 @@ async function exerciseExistingSessionModelSwitch(
   const observer = new Context()
   try {
     await observer.plugin(SessionStore)
-    await observer.plugin(JsonlSessionPersistence, { root: join(harnessHome, 'sessions') })
+    await observer.plugin(JsonlSessionPersistence, { root: persistenceRoot })
     const assertRoute = async (route: typeof routes[number]): Promise<void> => {
       await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 15_000 }).toMatch(
         new RegExp(`^(?:Select model, current ${route.name}, reasoning effort High|选择模型，当前 ${route.name}，推理等级 High)$`, 'u'),
@@ -1895,7 +1914,7 @@ export async function runPackagedDesktopSmoke(
       await exerciseComposerAddMenu(page, clipboardSeed)
       await assertWorkbenchRemoved(page)
       await exerciseTurnNavigation(page, clipboardSeed)
-      await exerciseExistingSessionModelSwitch(page, harnessHome, clipboardSeed, providerTripwire)
+      await exerciseExistingSessionModelSwitch(page, join(harnessHome, 'sessions'), clipboardSeed, providerTripwire)
       await exerciseComposerContinuity(page, {
         selectSession: title => activateSmokeSession(page, title),
         primaryTitle: clipboardSeed.activeSessionTitle,

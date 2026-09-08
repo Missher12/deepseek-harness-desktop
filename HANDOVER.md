@@ -1,6 +1,6 @@
 # Desktop 0.5.6 handover
 
-Status: implementation validated locally; final native artifacts pending.
+Status: shared implementation validated; native navigation fixture corrected and rehearsed; final native artifacts pending.
 
 ## Workspace and scope
 
@@ -22,7 +22,9 @@ Documentation: 31 initial doc-sync gates passed; corrected translation-pairing a
 
 Mac task: `019ffbac-ff3a-7be0-920c-d6bffb1ffcfc`, branch `codex/desktop-0.5.6-mac`, isolated `.worktrees/desktop-056-mac`. Windows task: `019ffc50-8691-7172-a4a7-255199a58fd1`, branch `codex/desktop-0.5.6-windows`, isolated `.worktrees/desktop-056-windows`. Both acknowledged the baseline and supplied diagnosis/review. Mac native file writes from its task encountered scope restrictions; root integrated the shared smoke. Peer worktrees and the installed 0.5.5 app remain intact.
 
-Local read-only browser replay is complete. Commit the inspected diff and record one final SHA. Send that SHA to both fixed tasks; only the commander dispatches validation workflows. macOS workflow id 352101571; Windows workflow id 333831949. Native checks must bind artifacts to the exact same SHA. The user previously authorized a validation-branch push; formal merge/tag/public Release still wait for both native results. Installer-only scope remains authorized; do not reintroduce missing API-secret requirements.
+Candidate `ddea0b637ae45cdae215abacbbdd30c20ce52b1d` passed both platform builds and the first durable model switch, then both native runs failed because the smoke expected a same-named project for an Ungrouped Session. Mac run: `34223080078`; Windows run: `34223084008`. No 0.5.6 Release was created. The shared navigation helper now selects visible rows or expands the actual project/Ungrouped bucket. The seed now includes step/start and step/end so statistics reflect complete turns. A local assembled browser rehearsal uses the actual Desktop patch and the exact native helpers; grouped/ungrouped navigation, four route switches, durable readback, 30-to-1-to-30 statistics and four light/dark resting/focused captures pass. The helper unit rerun passes 21 tests with two native-only skips. Product code is unchanged by this correction.
+
+Commit the inspected correction and record one new final SHA. Send that SHA to both fixed tasks; only the commander dispatches validation workflows. macOS workflow id 352101571; Windows workflow id 333831949. Native checks must bind artifacts to the exact same SHA. The user previously authorized a validation-branch push; tag/public Release still wait for both native results. The installer-only scope does not merge main. Installer-only scope remains authorized; do not reintroduce missing API-secret requirements.
 
 The native smoke now also switches routes four times in an existing conversation, verifies durable model/selection events, leaves/returns to the session and restores native-thinker/high. A separate helper checks 30-turn and 1-turn statistics plus actual light/dark 1px resting and 2px focused outlines, restoring the theme. Neither path sends a model request; the existing tripwire remains strict.
 

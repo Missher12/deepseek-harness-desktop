@@ -171,11 +171,11 @@ describe('packaged desktop process inspection', () => {
           }
         }
         // Thirty seeded navigation turns, two user prompts each at the turn's
-        // first two sequence slots (TURN_SEQ_SPAN = 10).
+        // first two sequence slots (TURN_SEQ_SPAN = 12).
         expect(projectedHumanPrompts).toEqual(
           Array.from({ length: 30 }, (_, index) => [
-            { seq: index * 10 + 1, turn: index + 1 },
-            { seq: index * 10 + 2, turn: index + 1 },
+            { seq: index * 12 + 1, turn: index + 1 },
+            { seq: index * 12 + 2, turn: index + 1 },
           ]).flat(),
         )
         expect(active.events.slice(-5, -1).map(event => ({ type: event.type, data: event.data }))).toEqual([
