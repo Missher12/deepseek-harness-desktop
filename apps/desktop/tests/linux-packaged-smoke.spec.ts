@@ -79,12 +79,26 @@ async function verifyNativeSandbox(target: string): Promise<void> {
     const mainCommand = await command(observed.pid)
     const rendererCommand = await command(observed.rendererPid)
     phase = 'kernel-sandbox'
-    assertLinuxSandbox({
+    const sandboxObservation = {
       ...observed, mainCommand, rendererCommand,
       rendererStatus: await readFile(`/proc/${String(observed.rendererPid)}/status`, 'utf8'),
       mainUserNamespace: (await execFileAsync('sudo', ['readlink', `/proc/${String(observed.pid)}/ns/user`])).stdout.trim(),
       rendererUserNamespace: (await execFileAsync('sudo', ['readlink', `/proc/${String(observed.rendererPid)}/ns/user`])).stdout.trim(),
-    })
+    }
+    if (evidenceRoot === undefined) throw new Error('Linux evidence root is required')
+    await mkdir(evidenceRoot, { recursive: true })
+    // Persist only process shape and kernel fields, never arbitrary argument values.
+    await writeFile(join(evidenceRoot, 'kernel-observation.json'), JSON.stringify({
+      mainPid: observed.pid, rendererPid: observed.rendererPid,
+      rendererCommandSegments: rendererCommand.length,
+      rendererProcessTypeTokens: rendererCommand.flatMap(argument => argument.split(/\s+/u))
+        .filter(argument => /^--type=[a-z-]+$/u.test(argument)),
+      rendererKernelFields: sandboxObservation.rendererStatus.split('\n')
+        .filter(line => /^(?:NoNewPrivs|Seccomp|Seccomp_filters|NSpid):/u.test(line)),
+      mainUserNamespace: sandboxObservation.mainUserNamespace,
+      rendererUserNamespace: sandboxObservation.rendererUserNamespace,
+    }, null, 2) + '\n')
+    assertLinuxSandbox(sandboxObservation)
     const { stdout } = await execFileAsync('xprop', ['-id', String(observed.handle), 'WM_CLASS'])
     phase = 'window-class'
     expect(stdout).toContain('"deepseek-harness"')
