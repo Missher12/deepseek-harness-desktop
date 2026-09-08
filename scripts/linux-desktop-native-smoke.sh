@@ -43,6 +43,9 @@ if [[ "$ubuntu_version" == 24.04 ]]; then
 fi
 export DSH_LINUX_DESKTOP_EXECUTABLE='/opt/DeepSeek Harness/deepseek-harness'
 export DSH_LINUX_EVIDENCE_ROOT="$evidence/deb"
+landlock='/opt/DeepSeek Harness/resources/app.asar.unpacked/node_modules/@deepseek-ai/node-addon-landlock-run-linux-x64/bin/landlock-run'
+test -x "$landlock"
+"$landlock" --probe > "$evidence/landlock-probe.txt"
 env -u NODE_PATH -u NODE_OPTIONS node node_modules/vitest/vitest.mjs run \
   apps/desktop/tests/linux-packaged-smoke.spec.ts --config vitest.config.ts
 

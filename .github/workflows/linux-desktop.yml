@@ -43,7 +43,10 @@ jobs:
       - name: Build native packages
         env:
           NODE_OPTIONS: --max-old-space-size=4096
-        run: bash scripts/linux-desktop-package.sh
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          bash scripts/linux-desktop-package.sh
       - name: Fingerprint immutable candidate bytes
         run: |
           git diff --quiet HEAD --
