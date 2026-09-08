@@ -3,6 +3,13 @@
 set -euo pipefail
 [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]]
 cd "$(dirname "$0")/.."
+export CC="${CC:-clang-15}"
+export CXX="${CXX:-clang++-15}"
+"$CXX" --version
+probe_root="$(mktemp -d)"
+trap 'rm -rf -- "$probe_root"' EXIT
+"$CXX" -std=c++20 scripts/linux-desktop-toolchain-probe.cc -o "$probe_root/probe"
+"$probe_root/probe"
 pnpm --filter @deepseek-ai/node-addon-landlock-run-workspace run build:native
 node native/landlock-run/scripts/verify-launcher-binary.mjs packages/linux-x64
 pnpm run desktop:stage
