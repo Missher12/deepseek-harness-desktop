@@ -38,11 +38,26 @@ jobs:
           Add-Type -AssemblyName UIAutomationClient
           Add-Type -AssemblyName UIAutomationTypes
           Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
           Add-Type -TypeDefinition @'
           using System;
           using System.Runtime.InteropServices;
+          using System.Collections.Generic;
           public static class NativeVisualInput {
             [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+            private delegate bool EnumCallback(IntPtr window, IntPtr data);
+            [DllImport("user32.dll")] private static extern bool EnumWindows(EnumCallback callback, IntPtr data);
+            [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumCallback callback, IntPtr data);
+            [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+            [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+            [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr window, uint command);
+            public static IntPtr[] RelatedWindows(IntPtr foreground, uint processId) {
+              var handles = new HashSet<IntPtr>();
+              handles.Add(foreground);
+              EnumWindows((window, data) => { uint found; GetWindowThreadProcessId(window, out found); if (found == processId && IsWindowVisible(window)) handles.Add(window); return true; }, IntPtr.Zero);
+              EnumChildWindows(foreground, (window, data) => { if (IsWindowVisible(window)) handles.Add(window); return true; }, IntPtr.Zero);
+              var result = new IntPtr[handles.Count]; handles.CopyTo(result); return result;
+            }
             [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
             public static void Key(byte key) { keybd_event(key,0,0,UIntPtr.Zero); keybd_event(key,0,2,UIntPtr.Zero); }
           }
@@ -76,6 +91,7 @@ jobs:
           $oldPredicatePassed = $null
           $diagnosticError = $null
           $installer = $null
+          $nativeRoots = @()
           try {
             $start = [System.Diagnostics.ProcessStartInfo]::new($setup)
             $start.UseShellExecute = $false
@@ -113,6 +129,45 @@ jobs:
               }
               $samples += [ordered]@{ sample = $sample; processName = $processName; root = Read-Control $root; controls = $rows; foregroundUnchanged = ([NativeVisualInput]::GetForegroundWindow() -eq $foreground) }
             }
+            $foreground = [NativeVisualInput]::GetForegroundWindow()
+            $root = [System.Windows.Automation.AutomationElement]::FromHandle($foreground)
+            $searchPid = $root.Current.ProcessId
+            $searchProcess = (Get-Process -Id $searchPid).ProcessName
+            if ($searchProcess -notin @('SearchHost','SearchApp','SearchUI','StartMenuExperienceHost')) { throw 'Foreground changed before bounded capture' }
+            $related = [NativeVisualInput]::RelatedWindows($foreground, $searchPid)
+            if ($related.Count -gt 16) { throw 'Related Search HWND bound exceeded' }
+            foreach ($nativeHandle in $related) {
+              $nativeRoot = [System.Windows.Automation.AutomationElement]::FromHandle($nativeHandle)
+              $nativeRootProcess = (Get-Process -Id $nativeRoot.Current.ProcessId).ProcessName
+              $flat = @($nativeRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition))
+              $flatRows = @($flat | Select-Object -First 160 | ForEach-Object { Read-Control $_ })
+              $queue = [System.Collections.Generic.Queue[System.Windows.Automation.AutomationElement]]::new()
+              $queue.Enqueue($nativeRoot)
+              $rawRows = @()
+              $seen = [System.Collections.Generic.HashSet[string]]::new()
+              $walker = [System.Windows.Automation.TreeWalker]::RawViewWalker
+              while ($queue.Count -gt 0 -and $rawRows.Count -lt 160) {
+                $item = $queue.Dequeue()
+                if (-not $seen.Add(($item.GetRuntimeId() -join '.'))) { continue }
+                $rawRows += Read-Control $item
+                $child = $walker.GetFirstChild($item)
+                $siblings = 0
+                while ($null -ne $child -and $siblings -lt 160 -and $queue.Count -lt 320) {
+                  $queue.Enqueue($child)
+                  $child = $walker.GetNextSibling($child)
+                  $siblings++
+                }
+              }
+              $nativeRoots += [ordered]@{ handle = $nativeHandle.ToInt64(); ownerHandle = [NativeVisualInput]::GetWindow($nativeHandle, 4).ToInt64(); processName = $nativeRootProcess; root = Read-Control $nativeRoot; findAllCount = $flat.Count; findAll = $flatRows; rawView = $rawRows }
+            }
+            $bounds = $root.Current.BoundingRectangle
+            if ($bounds.Width -gt 2000 -or $bounds.Height -gt 1500 -or $bounds.Width -le 0 -or $bounds.Height -le 0) { throw 'Search capture bounds invalid' }
+            $bitmap = [System.Drawing.Bitmap]::new([int]$bounds.Width, [int]$bounds.Height)
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            try {
+              $graphics.CopyFromScreen([int]$bounds.X, [int]$bounds.Y, 0, 0, $bitmap.Size)
+              $bitmap.Save((Join-Path $env:RUNNER_TEMP 'search-diagnostic.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+            } finally { $graphics.Dispose(); $bitmap.Dispose() }
             $tokens = $null
             $errors = $null
             $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $pwd 'scripts/windows-desktop-native-visual-smoke.ps1'), [ref]$tokens, [ref]$errors)
@@ -127,9 +182,9 @@ jobs:
           } finally {
             if ($null -ne $installer) { $installer.Dispose() }
             try {
-              $evidence = [ordered]@{ sourceRevision = '${{ github.sha }}'; diagnosticOnly = $true; baselineVersion = '0.5.3'; baselineSha256 = $env:BASELINE_SHA256; oldPredicatePassed = $oldPredicatePassed; diagnosticError = $diagnosticError; samples = $samples }
+              $evidence = [ordered]@{ sourceRevision = '${{ github.sha }}'; diagnosticOnly = $true; baselineVersion = '0.5.3'; baselineSha256 = $env:BASELINE_SHA256; oldPredicatePassed = $oldPredicatePassed; diagnosticError = $diagnosticError; samples = $samples; nativeRoots = $nativeRoots }
               $json = $evidence | ConvertTo-Json -Depth 12
-              if ([System.Text.Encoding]::UTF8.GetByteCount($json) -gt 96000) { throw 'Diagnostic JSON exceeds size bound' }
+              if ([System.Text.Encoding]::UTF8.GetByteCount($json) -gt 384000) { throw 'Diagnostic JSON exceeds size bound' }
               [System.IO.File]::WriteAllText($output, $json, [System.Text.UTF8Encoding]::new($false))
             } catch { Write-Warning 'Could not persist bounded Search evidence.' }
             [NativeVisualInput]::Key(0x1B)
@@ -147,6 +202,8 @@ jobs:
         if: always()
         with:
           name: Windows-Search-diagnostic-${{ github.sha }}
-          path: ${{ runner.temp }}/search-diagnostic.json
+          path: |
+            ${{ runner.temp }}/search-diagnostic.json
+            ${{ runner.temp }}/search-diagnostic.png
           if-no-files-found: error
           retention-days: 3
