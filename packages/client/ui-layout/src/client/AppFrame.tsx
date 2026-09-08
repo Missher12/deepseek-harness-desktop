@@ -144,7 +144,8 @@ export function AppFrame({
   // (or the default when the wide preference is closed) and the center
   // absorbs the squeeze.
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
-  useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
+  // Match the toggle action to the committed button before browser input.
+  useLayoutEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
   const sidebarCollapsed = narrow ? !panels.narrowExpanded : panels.sidebar === 0
   const sidebarPreference = sidebarCollapsed
     ? 0

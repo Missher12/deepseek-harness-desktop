@@ -1,5 +1,13 @@
 # DeepSeek Harness Desktop — Project Context
 
+## Mac delivery takes priority — 2026-09-08
+
+The user now requests the Mac package first; Windows Search diagnosis is paused and does not block delivery of the accepted Mac DMG. The commander owns the two-file sidebar repair: synchronize the narrow-layout toggle state before browser input with a layout effect, and cover the first real button click immediately after the collapsed layout commits. The original effect fails the controlled Chromium case; the repair and existing delayed-ResizeObserver case both pass, including after a complete build. Mac review finds no source blocker. A fresh Intel Mac packaged run must accept this revision before the DMG is delivered.
+
+The full GUI attempt records 4213 passes, five timeouts in four unchanged files and one skip; those four files pass all 71 tests in a focused run without changing deadlines. Full web replay stops after an unchanged directory-picker fixture creates or selects a directory under the real Home location and cascades through workspace-management cases. This is not a passing full-suite report. The two owning browser regressions pass against the fresh build. Current run records and diagnostic evidence remain in `.artifacts/5cc0ce05-handover.md`.
+
+Windows at `5cc0ce05716218bad637dd1ec790edec7e158c39` passes the renderer 150-percent containment check, then fails the Shell Search observation. A separate published-0.5.3 diagnostic confirms complete query and stable foreground but does not identify the missing result provider. The diagnostic branch is not a release candidate and must not be merged. Required real-API CI still lacks the external repository secret. Main, tags, public Release and the installed application remain unchanged; this stage delivers the Mac artifact first.
+
 ## Constructor geometry and Windows CI follow-up — 2026-09-08
 
 Candidate `d70eccc82865d1bd724f647377b724a4a44940e8` passes Intel Mac native run `34187463921`; independent download verifies the DMG at 184161135 bytes and SHA-256 `1599397de4f539f1341305528f2291b184de6d277d861028fc143ba383885f5e`. The Mac owner verifies all 26 evidence files and reviews all 20 screenshots. Windows native run `34187463939` fails with bounds `(1,1,684,482)` against a `(0,0,683,480)` work area. The original requested rectangle is `(1,1,681,478)`. Exact-version Electron/Chromium source arithmetic reproduces the observed growth through constructor size, center and repeated position conversions; it is source evidence, not a native intermediate-step trace.

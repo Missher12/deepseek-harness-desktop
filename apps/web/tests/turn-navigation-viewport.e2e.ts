@@ -62,6 +62,35 @@ describe('web e2e: installed transcript viewport readiness', () => {
     try { await browser?.close() } finally { await scaffold?.close() }
   })
 
+  it('honors the first sidebar click after a narrow layout commit', async () => {
+    const immediatePage = await newEnglishPage(browser)
+    try {
+      await immediatePage.setViewportSize({ width: 1600, height: 1000 })
+      await immediatePage.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await immediatePage.getByRole('button', { name: 'Collapse sidebar', exact: true }).waitFor()
+      await immediatePage.evaluate(() => {
+        const frame = document.querySelector('[class*="frame"]')
+        if (frame === null) throw new Error('AppFrame is unavailable')
+        const observer = new MutationObserver(() => {
+          if (!frame.hasAttribute('data-sidebar-collapsed')) return
+          observer.disconnect()
+          const button = frame.querySelector<HTMLButtonElement>('button[aria-label="Open sidebar"]')
+          if (button === null) throw new Error('Sidebar toggle is unavailable')
+          frame.setAttribute('data-test-immediate-click', '1')
+          button.click()
+        })
+        observer.observe(frame, { attributes: true, attributeFilter: ['data-sidebar-collapsed'] })
+      })
+      await immediatePage.setViewportSize({ width: 1012, height: 760 })
+      await immediatePage.locator('[data-test-immediate-click="1"]').waitFor()
+      await expect.poll(() => immediatePage.locator('[class*="frame"][data-sidebar-collapsed]').count()).toBe(0)
+      await immediatePage.setViewportSize({ width: 1600, height: 1000 })
+      await immediatePage.getByRole('button', { name: 'Collapse sidebar', exact: true }).waitFor()
+    } finally {
+      await immediatePage.close()
+    }
+  })
+
   it('waits for the delayed narrow layout before taking the unchanged width baseline', async () => {
     await page.evaluate(() => {
       const barrier = (window as BarrierWindow).navigationResizeBarrier
