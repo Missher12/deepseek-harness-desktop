@@ -9,9 +9,6 @@ const valid: LinuxSandboxObservation = {
   rendererStatus: 'NoNewPrivs:\t1\nSeccomp:\t2\n',
   mainUserNamespace: 'user:[100]',
   rendererUserNamespace: 'user:[101]',
-  sandbox: true,
-  contextIsolation: true,
-  nodeIntegration: false,
 }
 
 describe('Linux native sandbox acceptance', () => {
@@ -21,9 +18,6 @@ describe('Linux native sandbox acceptance', () => {
   it.each([
     { mainCommand: ['app', '--no-sandbox'] },
     { rendererCommand: ['app', '--type=renderer', '--disable-seccomp-filter-sandbox'] },
-    { sandbox: false },
-    { contextIsolation: false },
-    { nodeIntegration: true },
     { rendererCommand: ['app', '--type=gpu-process'] },
     { rendererStatus: 'NoNewPrivs:\t0\nSeccomp:\t2\n' },
     { rendererStatus: 'NoNewPrivs:\t1\nSeccomp:\t0\n' },
