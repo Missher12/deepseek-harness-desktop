@@ -1400,6 +1400,14 @@ describe('strips and variants', () => {
     expect(view.getByTestId('ri')).toBeTruthy()
     expect(view.getByTestId('foot')).toBeTruthy()
   })
+
+  it('keeps the session footer available before its input state is ready', () => {
+    const { view, props } = bench({ footer: <span>Current session statistics</span> })
+    view.unmount()
+    const loading = render(<InputBar {...props} useInput={() => undefined} />)
+    expect(loading.getByText('Current session statistics')).toBeTruthy()
+    expect(loading.container.querySelector('[data-composer-dock]')).not.toBeNull()
+  })
 })
 
 describe('composer Add launcher chrome and control seats', () => {

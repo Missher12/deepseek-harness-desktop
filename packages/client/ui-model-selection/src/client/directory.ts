@@ -46,6 +46,8 @@ export class ModelDirectory {
   private generation = 0
   private disposed = false
   private resolved = false
+  private selecting = false
+  private selectionError: string | null = null
   private readonly unsubscribeCatalog: () => void
   private readonly unsubscribeSelection: () => void
 
@@ -88,24 +90,39 @@ export class ModelDirectory {
   async select(selection: ModelSelection): Promise<void> {
     this.assertAvailable()
     const generation = ++this.generation
-    this.store.update((s) => { s.status = 'selecting'; s.error = null })
-    const result = await this.sessions.selectModel({
-      sessionId: this.sessionId,
-      provider: selection.provider,
-      model: selection.model,
-      ...selection.reasoningEffort === undefined
-        ? {}
-        : { reasoningEffort: selection.reasoningEffort },
-    })
+    this.selecting = true
+    this.selectionError = null
+    this.syncInputs()
+    let result: Awaited<ReturnType<typeof this.sessions.selectModel>>
+    try {
+      result = await this.sessions.selectModel({
+        sessionId: this.sessionId,
+        provider: selection.provider,
+        model: selection.model,
+        ...selection.reasoningEffort === undefined
+          ? {}
+          : { reasoningEffort: selection.reasoningEffort },
+      })
+    } catch (error) {
+      // Invocation/assembly failures can reject before Gateway normalizes a
+      // carrier error. Only this operation may release its selecting state.
+      if (!this.disposed && generation === this.generation) {
+        this.selecting = false
+        this.selectionError = error instanceof Error ? error.message : String(error)
+        this.syncInputs()
+      }
+      throw error
+    }
     if (this.disposed || generation !== this.generation) {
       if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
       return
     }
+    this.selecting = false
     if (!result.ok) {
-      this.store.update((s) => { s.status = 'error'; s.error = `${result.error.code}: ${result.error.message}` })
+      this.selectionError = `${result.error.code}: ${result.error.message}`
+      this.syncInputs()
       throw new Error(`session.selectModel failed: ${result.error.code}: ${result.error.message}`)
     }
-    this.store.update((s) => { s.status = 'ready'; s.error = null })
     this.syncInputs()
   }
 
@@ -115,10 +132,8 @@ export class ModelDirectory {
   resetConnected(): void {
     if (this.disposed) return
     ++this.generation
-    this.store.update((state) => {
-      if (state.status === 'selecting') state.status = 'idle'
-      state.error = null
-    })
+    this.selecting = false
+    this.selectionError = null
     this.syncInputs()
   }
 
@@ -139,37 +154,29 @@ export class ModelDirectory {
     if (this.disposed) return
     const catalog = this.catalog.store.getSnapshot()
     const projected = modelSelectionProjection(this.projected.getSnapshot())
-    if (catalog.status !== 'ready' || catalog.value === null || projected === undefined) {
-      if (this.resolved) {
-        if (catalog.status === 'error') {
-          this.store.update((state) => {
-            state.status = 'error'
-            state.error = catalog.error
-          })
-        }
-        return
-      }
-      this.store.set({
-        current: null,
-        routable: null,
-        groups: [],
-        failures: [],
-        status: catalog.status === 'error' ? 'error' : 'loading',
-        error: catalog.error,
-      })
-      return
-    }
-    const current = projected.next ?? catalog.value.default
-    this.resolved = true
+    const previous = this.store.getSnapshot()
+    const ready = catalog.status === 'ready' && catalog.value !== null && projected !== undefined
+    if (ready) this.resolved = true
+    // The Session's accepted selection is authoritative even while advisory
+    // labels/groups refresh. A newly selected provider stays unblocked until
+    // the refreshed catalog can actually establish its routability.
+    const current = projected === undefined
+      ? previous.current
+      : projected.next ?? catalog.value?.default ?? previous.current
     this.store.set({
       current,
-      routable: catalog.value.routableProviders.includes(current.provider),
-      groups: catalog.value.groups,
-      failures: catalog.value.failures,
-      status: this.store.getSnapshot().status === 'selecting'
+      routable: ready && current !== null
+        ? catalog.value?.routableProviders.includes(current.provider) ?? null
+        : current?.provider === previous.current?.provider ? previous.routable : null,
+      groups: catalog.value?.groups ?? previous.groups,
+      failures: catalog.value?.failures ?? previous.failures,
+      // Catalog notifications cannot clear a pending selection or its failure.
+      status: this.selecting
         ? 'selecting'
-        : 'ready',
-      error: null,
+        : this.selectionError !== null || catalog.status === 'error'
+          ? 'error'
+          : this.resolved ? 'ready' : 'loading',
+      error: this.selecting ? null : this.selectionError ?? catalog.error,
     })
   }
 }

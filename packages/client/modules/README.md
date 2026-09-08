@@ -67,6 +67,8 @@ The node half scans incrementally per package — no full-rescan path. Every `in
 
 The node half snapshots each client bundle and available source map before publication. It groups resources into `/plugins/??...&rev=...` combo URLs, with one bootstrap combo for the modules row and one or more application combos for the other rows; each phase is partitioned before a URL exceeds 3 KiB. Every combo map is Indexed Source Map v3 and uses an authored section when available or an identity section for the packaged bundle. Initial per-plugin revisions use process nonces, so startup does not hash every plugin; HMR hashes only an artifact reported as changed. Advertised responses are immutable, and an unknown combination or revision returns 404.
 
+Composition reuses decoded source and relocated map sections for each artifact revision, and reuses complete responses when the ordered module ids and revisions are unchanged. The cache keeps only current graph combinations; the existing previous-generation response map owns the HMR race window. Changed code or authored maps invalidate derived artifacts through `rebuilt()`, without changing map-inclusive batch digests or synchronous graph readiness.
+
 ### Boot manifest injection
 
 The host taps the index render and injects, into `<head>`: the `window.__ModuleLoader__` queue facade, advisory preloads for every application combo, the parser-blocking bootstrap combo scripts, then the boot graph before the shell reads it. The facade's `create()` materializes the modules bundle, delegates construction to its `createClientModuleSystem` export, and leaves the same facade in live-registration mode.

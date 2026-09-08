@@ -42,3 +42,4 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Stop generating"
+- text: Session statistics · —

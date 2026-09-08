@@ -67,6 +67,8 @@ node 半侧逐包增量扫描——没有全量重扫路径。每次 `internal/p
 
 node 半侧会在发布前快照每个客户端 bundle 及其现有 source map。它把资源分组到 `/plugins/??...&rev=...` combo URL：modules row 使用一个 bootstrap combo，其余 row 使用一个或多个 application combo；每个阶段都会在 URL 超过 3 KiB 之前分区。每个 combo map 都是 Indexed Source Map v3，并在可用时使用作者提供的 section，否则为已打包 bundle 生成 identity section。初始逐插件 revision 使用进程 nonce，所以启动时不哈希每个插件；HMR 只哈希被报告为已变化的产物。已公告响应不可变；未知组合或 revision 返回 404。
 
+组合会按产物 revision 复用解码源码和重定位后的 map section，并在有序模块 id 与 revision 不变时复用完整响应。缓存只保留当前图的组合；现有的上一代响应 map 负责 HMR 竞态窗口。代码或作者提供的 map 变化通过 `rebuilt()` 使派生产物失效，不改变包含 map 的批次摘要或同步就绪的启动图。
+
 ### 启动清单注入
 
 宿主 tap 索引渲染，并向 `<head>` 注入：`window.__ModuleLoader__` queue facade、每个 application combo 的提示性 preload、阻塞 parser 的 bootstrap combo 脚本，然后才是外壳读取前的启动图。facade 的 `create()` 物化 modules bundle、把构造委托给其 `createClientModuleSystem` 导出，并让同一 facade 进入 live registration 模式。

@@ -17,6 +17,12 @@
   padding: 0 var(--dsh-composer-side-clearance);
 }
 
+.composerDock {
+  width: 100%;
+  /* Session statistics remain visible while the loading composer is hidden. */
+  visibility: visible;
+}
+
 .notice {
   width: 100%;
   max-width: var(--dsh-composer-card-max-width);
@@ -69,7 +75,7 @@
 }
 
 :global(body[data-dsh-surface='desktop']) .card:not(.cardWorkspaceTrigger) {
-  --dsw-elevation-stroke-color: var(--dsw-alias-label-tertiary);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l4);
   box-shadow: 0 0 0 1px var(--dsw-elevation-stroke-color), var(--dsw-shadow-lv1);
 }
 
@@ -80,7 +86,7 @@
 
 :global(body[data-dsh-surface='desktop']) .cardWorkspaceTrigger::after {
   border-radius: 16px;
-  background: var(--dsw-alias-label-tertiary);
+  background: var(--dsw-alias-border-l4);
 }
 
 :global(body[data-dsh-surface='desktop']) .cardWorkspaceTrigger:hover::after {

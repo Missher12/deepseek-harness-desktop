@@ -38,6 +38,8 @@ A Think row stays collapsed by default and exposes live reasoning throughput wit
 <a id="shell-and-standard-props"></a>
 ## Shell and standard props
 
+The composer's bottom dock remains visible while a selected session's input loads. Its statistics entry reserves a row with current-session data or a placeholder; the input card itself can remain hidden until its hero or docked layout is known. Desktop input outlines use a light semantic border and a separate focus ring without moving the card.
+
 Desktop composers have a visible outline, a distinct focus ring, and readable placeholder text in both themes without changing the card layout.
 
 The package registers the optional-Session `conversation` shell, strict Session header/body entries, View list, composer chain and bar, input regions, Hero regions, queue dock, draft persistence, and phase calculation. `ctx.uiSession.provide()` materializes the Conversation and input sources from the same Session binding and supplies `inputActions` as a stable standard prop.

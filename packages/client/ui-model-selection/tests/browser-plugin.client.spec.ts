@@ -264,7 +264,7 @@ describe('ui-model-selection dual entry', () => {
     })
   })
 
-  it('keeps the last complete view while a refreshed catalog catches up with projection', async () => {
+  it('publishes the accepted selection immediately while retaining the last usable catalog', async () => {
     const b = await bench()
     b.mint('s1')
     const face = b.seat().inject!(sid('s1'))
@@ -277,7 +277,8 @@ describe('ui-model-selection dual entry', () => {
       next: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
     })
     expect(face.directory.getSnapshot()).toMatchObject({
-      current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      current: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+      groups: GROUPS,
       status: 'ready',
     })
 
@@ -287,6 +288,55 @@ describe('ui-model-selection dual entry', () => {
         status: 'ready',
       })
     })
+  })
+
+  it('keeps a pending selection and its later failure independent of catalog refreshes', async () => {
+    const b = await bench()
+    b.mint('s1')
+    const face = b.seat().inject!(sid('s1'))
+    const pending = Promise.withResolvers<Awaited<ReturnType<typeof b.remote.session.selectModel>>>()
+    vi.spyOn(b.remote.session, 'selectModel').mockReturnValueOnce(pending.promise)
+    const operation = face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+    b.remote.emit('settings/document-updated', ['llm-deepseek', 1])
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(face.directory.getSnapshot().status).toBe('selecting')
+    pending.reject(new Error('selection invocation unavailable'))
+    await expect(operation).resolves.toBe(false)
+    expect(face.directory.getSnapshot()).toMatchObject({
+      status: 'error', error: 'selection invocation unavailable',
+    })
+    b.remote.emit('settings/document-updated', ['llm-deepseek', 2])
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(face.directory.getSnapshot()).toMatchObject({
+      status: 'error', error: 'selection invocation unavailable',
+    })
+    await expect(face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })).resolves.toBe(true)
+    expect(face.directory.getSnapshot()).toMatchObject({ status: 'ready', error: null })
+  })
+
+  it('does not let a stale rejection or disposed selection overwrite current directory state', async () => {
+    const b = await bench()
+    const scope = b.mint('s1')
+    const face = b.seat().inject!(sid('s1'))
+    const pending = Promise.withResolvers<Awaited<ReturnType<typeof b.remote.session.selectModel>>>()
+    vi.spyOn(b.remote.session, 'selectModel').mockReturnValueOnce(pending.promise)
+    const old = face.select({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+    pending.reject(new Error('old invocation failed'))
+    await expect(old).resolves.toBe(false)
+    expect(face.directory.getSnapshot()).toMatchObject({
+      current: { model: 'deepseek-v4-pro' }, status: 'ready', error: null,
+    })
+    const disposed = Promise.withResolvers<Awaited<ReturnType<typeof b.remote.session.selectModel>>>()
+    vi.spyOn(b.remote.session, 'selectModel').mockReturnValueOnce(disposed.promise)
+    const operation = face.select({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    await scope.fiber.dispose()
+    const snapshot = face.directory.getSnapshot()
+    disposed.reject(new Error('disposed invocation failed'))
+    await expect(operation).resolves.toBe(false)
+    expect(face.directory.getSnapshot()).toBe(snapshot)
   })
 
   it('scope disposal drops the directory; a reborn scope gets a fresh one', async () => {

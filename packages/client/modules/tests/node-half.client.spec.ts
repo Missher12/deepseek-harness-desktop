@@ -538,6 +538,39 @@ describe('client bundle activation', () => {
     expect((await routeRequest(route, third)).status).toBe(200)
   })
 
+  it('decodes unchanged artifacts once across initial combos and later recomposition', async () => {
+    const stableName = '@fixture/unchanged-combo'
+    const changingName = '@fixture/changing-combo'
+    for (const name of [MODULES_ID, stableName, changingName]) writeBuiltPackage(name, {})
+    const stablePath = join(root!, 'node_modules', stableName, 'lib/client.js')
+    const stableSource = '// stable artifact\nmodule.exports = {}\n'
+    writeFileSync(stablePath, stableSource)
+    const bufferPrototype = Buffer.prototype as Buffer
+    const originalToString = Reflect.get(bufferPrototype, 'toString')
+    let stableDecodes = 0
+    const decoding = vi.spyOn(bufferPrototype, 'toString').mockImplementation(function (this: Buffer, ...args) {
+      const result = originalToString.apply(this, args)
+      if (result === stableSource) stableDecodes += 1
+      return result
+    })
+    try {
+      const { service, route } = constructWithRoute([MODULES_ID, stableName, changingName])
+      expect(stableDecodes).toBe(1)
+      const bootstrap = service.graph().batches.find(batch => batch.phase === 'bootstrap')!
+      const before = (await routeRequest(route, bootstrap.url)).body
+      const changingPath = service.clientPath(changingName)!
+      writeFileSync(changingPath, 'module.exports = { generation: 2 }\n')
+      service.rebuilt(changingName)
+      expect(stableDecodes).toBe(1)
+      expect(service.graph().batches.find(batch => batch.phase === 'bootstrap')).toEqual(bootstrap)
+      expect((await routeRequest(route, bootstrap.url)).body).toEqual(before)
+      const current = service.graph().entries.find(entry => entry.id === changingName)!
+      expect((await routeRequest(route, current.url)).body.toString()).toContain('generation: 2')
+    } finally {
+      decoding.mockRestore()
+    }
+  })
+
   it('assigns opaque startup revisions instead of deriving them from artifact content', () => {
     const firstName = '@fixture/startup-revision-first'
     const secondName = '@fixture/startup-revision-second'

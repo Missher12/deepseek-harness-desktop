@@ -19,6 +19,7 @@ import { _electron as electron, type ElectronApplication, type Page } from 'play
 import { expect } from 'vitest'
 import { startReaderSmokeProvider } from './reader-smoke-provider.ts'
 import { exerciseReaderPresentation } from './reader-presentation-smoke.ts'
+import { exerciseComposerContinuity } from './composer-continuity-smoke.ts'
 import { prepareTurnNavigationViewport, verifyTurnNavigationClick } from './turn-navigation-viewport.ts'
 
 const execFileAsync = promisify(execFile)
@@ -50,6 +51,19 @@ async function writeDesktopSmokeModelSettings(harnessHome: string, baseURL: stri
     '      models:',
     '        - id: native-thinker',
     '          name: Native Smoke Thinker',
+    '          contextWindow: 65536',
+    '          maxTokens: 4096',
+    '          reasoningEfforts:',
+    '            high: high',
+    '    desktop-smoke-alternate:',
+    '      displayName: Desktop Smoke Alternate',
+    '      apiKeyEnv: DSH_DESKTOP_SMOKE_MODEL_KEY',
+    '      api: openai-completions',
+    `      baseURL: ${baseURL}`,
+    '      reasoning: high',
+    '      models:',
+    '        - id: native-switcher',
+    '          name: Native Smoke Switcher',
     '          contextWindow: 65536',
     '          maxTokens: 4096',
     '          reasoningEfforts:',
@@ -996,6 +1010,106 @@ async function dismissCredentialOnboarding(page: Page, required: boolean): Promi
   await credentialDialog.waitFor({ state: 'detached', timeout: 30_000 })
 }
 
+/** Select a seeded workspace Session through its actual sidebar, including collapsed projects. */
+async function activateSmokeSession(page: Page, title: string): Promise<void> {
+  const project = page.locator('[class*="projectRow"]').filter({ hasText: title }).first()
+  await project.waitFor({ state: 'visible', timeout: 15_000 })
+  if (await project.getAttribute('aria-expanded') !== 'true') {
+    await project.click()
+    await expect.poll(() => project.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('true')
+  }
+  const row = page.locator('[class*="sessionRow"]').filter({ hasText: title }).first()
+  await row.click()
+  await expect.poll(() => row.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
+  await page.locator('[data-composer-input][contenteditable="true"]')
+    .waitFor({ state: 'visible', timeout: 15_000 })
+}
+
+/**
+ * Select only: repeatedly change an existing Session's route, leave and return,
+ * then restore the reader's route before effort acceptance and reader arm.
+ */
+async function exerciseExistingSessionModelSwitch(
+  page: Page,
+  harnessHome: string,
+  seeded: WindowsClipboardSmokeState,
+  providerTripwire: Awaited<ReturnType<typeof startReaderSmokeProvider>>,
+): Promise<void> {
+  const routes = [
+    { provider: 'desktop-smoke-alternate', model: 'native-switcher', group: 'Desktop Smoke Alternate', name: 'Native Smoke Switcher' },
+    { provider: 'desktop-smoke', model: 'native-thinker', group: 'Desktop Smoke', name: 'Native Smoke Thinker' },
+  ] as const
+  const trigger = page.getByRole('button', {
+    name: /^(?:Select model, current |选择模型，当前 )/u,
+  })
+  const popup = page.getByRole('dialog', {
+    name: /^(?:Model and reasoning effort|模型与推理等级)$/u,
+  })
+  const assertNoRequest = (): void => {
+    expect(providerTripwire.phase).toBe('idle')
+    expect(providerTripwire.requests).toEqual([])
+    expect(providerTripwire.acceptedRequests).toBe(0)
+    expect(providerTripwire.acceptedTitleRequests).toBe(0)
+  }
+
+  const observer = new Context()
+  try {
+    await observer.plugin(SessionStore)
+    await observer.plugin(JsonlSessionPersistence, { root: join(harnessHome, 'sessions') })
+    const assertRoute = async (route: typeof routes[number]): Promise<void> => {
+      await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 15_000 }).toMatch(
+        new RegExp(`^(?:Select model, current ${route.name}, reasoning effort High|选择模型，当前 ${route.name}，推理等级 High)$`, 'u'),
+      )
+      await expect.poll(async () => {
+        // A read handle does not compete for the Host's write lease. Open a
+        // fresh view so this checks durable selection on the exact seeded ID.
+        const handle = await observer.sessionPersistence.open(SessionId(seeded.activeSessionId), 'read')
+        try {
+          const events = await handle.read()
+          return events.findLast(event => event.type === 'model/selection')?.data
+        } finally {
+          await handle.close()
+        }
+      }, { timeout: 15_000 }).toEqual({
+        provider: route.provider, model: route.model, reasoningEffort: 'high',
+      })
+      assertNoRequest()
+    }
+
+    assertNoRequest()
+    await activateSmokeSession(page, seeded.activeSessionTitle)
+    for (const route of [...routes, ...routes]) {
+      await trigger.click()
+      await popup.waitFor({ state: 'visible', timeout: 15_000 })
+      const option = popup.locator(`section[aria-label="${route.group}"]`)
+        .getByRole('button', { name: route.name, exact: true })
+      await expect.poll(() => option.isEnabled(), { timeout: 15_000 }).toBe(true)
+      expect(await option.getAttribute('aria-pressed')).toBe('false')
+      await option.click()
+      await popup.waitFor({ state: 'detached', timeout: 15_000 })
+      await assertRoute(route)
+
+      await activateSmokeSession(page, seeded.messengerSourceSessionTitle)
+      await activateSmokeSession(page, seeded.activeSessionTitle)
+      await assertRoute(route)
+      await trigger.click()
+      await popup.waitFor({ state: 'visible', timeout: 15_000 })
+      await expect.poll(() => option.getAttribute('aria-pressed'), { timeout: 15_000 }).toBe('true')
+      await expect.poll(() => popup.getByRole('slider', {
+        name: /^(?:Reasoning effort|推理等级)$/u,
+      }).inputValue(), { timeout: 15_000 }).toBe('2')
+      await trigger.click()
+      await popup.waitFor({ state: 'detached', timeout: 15_000 })
+      assertNoRequest()
+    }
+    // The sequence ends on the existing active Session and original high
+    // route; no composer submission, provider arm, or fixture turn is added.
+    await assertRoute(routes[1])
+  } finally {
+    await observer.fiber.dispose()
+  }
+}
+
 async function exerciseReasoningEffort(
   page: Page,
   harnessHome: string,
@@ -1781,6 +1895,15 @@ export async function runPackagedDesktopSmoke(
       await exerciseComposerAddMenu(page, clipboardSeed)
       await assertWorkbenchRemoved(page)
       await exerciseTurnNavigation(page, clipboardSeed)
+      await exerciseExistingSessionModelSwitch(page, harnessHome, clipboardSeed, providerTripwire)
+      await exerciseComposerContinuity(page, {
+        selectSession: title => activateSmokeSession(page, title),
+        primaryTitle: clipboardSeed.activeSessionTitle,
+        primaryTurns: NAVIGATION_TURN_COUNT,
+        secondaryTitle: clipboardSeed.messengerSourceSessionTitle,
+        evidenceDirectory: join(repositoryRoot, 'apps/desktop/release'),
+        platform,
+      })
       await exerciseReasoningEffort(page, harnessHome, platform)
     } catch (error) {
       throw new Error(

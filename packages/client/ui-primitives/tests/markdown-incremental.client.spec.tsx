@@ -9,6 +9,7 @@ import type { Root, RootContent } from 'mdast'
 import { MarkdownText } from './markdown-test-components.tsx'
 import { IncrementalMarkdownParser } from '../src/markdown/incremental.ts'
 import { parseGfm } from '../src/markdown/parse.ts'
+import { listFrontier } from '../src/markdown/list-frontier.ts'
 
 afterEach(cleanup)
 
@@ -173,6 +174,87 @@ describe('incremental parsing is actually in effect', () => {
     expect(parsed).toBeLessThan(text.length * 4)
     expect(result.tail.at(-1)?.node).toEqual(parseGfm(text).children[0])
   })
+
+  it('parses a growing tight list through its last item rather than every earlier item', () => {
+    const calls: number[] = []
+    const parser = new IncrementalMarkdownParser((text) => {
+      calls.push(text.length)
+      return parseGfm(text)
+    })
+    let text = ''
+    let result = parser.update(text)
+    for (let index = 1; index <= 400; index += 1) {
+      text += `${index}. 第 ${index} 项 **重点** 与普通内容\n`
+      result = parser.update(text)
+    }
+    expect(Math.max(...calls.slice(10))).toBeLessThan(100)
+    expect(calls.reduce((sum, size) => sum + size, 0)).toBeLessThan(text.length * 4)
+    expect(result.tail.at(-1)?.node).toEqual(parseGfm(text).children[0])
+  })
+
+  it('rejects a list frontier whose source no longer starts with a list marker', () => {
+    const node = parseGfm('- first').children[0]!
+    if (node.type !== 'list') throw new Error('fixture must parse as a list')
+    expect(listFrontier(node, 'ordinary paragraph', 0)).toBeNull()
+  })
+
+  it('preserves optional descendant positions when a grammar transform omits them', () => {
+    const parse = (text: string) => {
+      const root = parseGfm(text)
+      for (const node of root.children) {
+        if (node.type !== 'list') continue
+        for (const item of node.children) {
+          for (const paragraph of item.children) {
+            if (paragraph.type !== 'paragraph') continue
+            delete paragraph.position?.start.offset
+            delete paragraph.position?.end.offset
+            for (const inline of paragraph.children) delete inline.position
+          }
+        }
+      }
+      return root
+    }
+    const parser = new IncrementalMarkdownParser(parse)
+    const initial = parser.update('- first\n- second')
+    const snapshot = structuredClone(initial)
+    const text = '- first\n- second\n- third'
+    expect(parser.update(text).tail.map(block => block.node)).toEqual(parse(text).children)
+    expect(initial).toEqual(snapshot)
+  })
+
+  for (const suffix of [
+    '\n- 第三项 **重点**\n- 第四项',
+    '\n\n- loose item',
+    '\n  continuation\n- next',
+    '\n  - nested\n- next',
+    '\n\n  second paragraph\n- next',
+    '\n- [x] task item',
+    '\n- [reference][id]\n\n[id]: https://example.com',
+    '\n- <!-- comment\n- hidden -->',
+    '\n+ different marker',
+    '\n\n# heading\n\nend',
+    '\r\n- CRLF\r\n- next',
+  ]) {
+    it(`keeps every tight-list prefix equivalent when appending ${JSON.stringify(suffix)}`, () => {
+      const head = '- first **bold**\n- second'
+      const parser = new IncrementalMarkdownParser(parseGfm)
+      parser.update(head)
+      const live = render(<MarkdownText text={head} streaming />)
+      for (let end = 1; end <= suffix.length; end += 1) {
+        const text = head + suffix.slice(0, end)
+        const result = parser.update(text)
+        // Once top-level blocks freeze, positions are relative to their own
+        // parse slice by contract; the DOM oracle below still covers them.
+        if (result.frozen.length === 0) {
+          expect(result.tail.map(block => block.node)).toEqual(parseGfm(text).children)
+        }
+        live.rerender(<MarkdownText text={text} streaming />)
+        const fresh = render(<MarkdownText text={text} streaming />)
+        expect(live.container.innerHTML).toBe(fresh.container.innerHTML)
+        fresh.unmount()
+      }
+    })
+  }
 
   it('shows the documented streaming fingerprint: a definition frozen earlier no longer resolves a new reference, and settling heals it', () => {
     const doc = [

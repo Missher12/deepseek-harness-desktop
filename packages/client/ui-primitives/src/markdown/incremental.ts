@@ -12,6 +12,9 @@
  * frontier: only the last completed line and current partial line return
  * through the caller's grammar. Each source region is therefore parsed a
  * bounded number of times over the stream instead of once per chunk.
+ * Tight top-level paragraph lists similarly retain completed items and
+ * reparse the last item; loose/nested lists and document-wide references or
+ * HTML return to the complete grammar tail in the same update.
  *
  * The block freeze boundary comes from the parser's own `position` offsets.
  * The cut sits at the *end offset* of the last frozen block (not the next
@@ -29,6 +32,7 @@
  */
 
 import type { Code, Root, RootContent } from 'mdast'
+import { extendListFrontier, listFrontier, type ListFrontier } from './list-frontier.ts'
 
 /**
  * Trailing blocks kept unstable. Appended text reshapes at most the last
@@ -180,6 +184,7 @@ export class IncrementalMarkdownParser {
   private generation = 0
   private cached: IncrementalBlocks | null = null
   private openFence: OpenFenceState | null = null
+  private openList: ListFrontier | null = null
 
   /** @param parse - Grammar shared with whatever renders the blocks, so boundaries agree. */
   constructor(private readonly parse: (text: string) => Root) {}
@@ -320,9 +325,23 @@ export class IncrementalMarkdownParser {
       this.tailStart = 0
       this.frozen = []
       this.openFence = null
+      this.openList = null
       this.generation += 1
     }
     const previousText = this.prevText
+    if (this.openList !== null && this.cached !== null) {
+      const next = extendListFrontier(this.openList, text, this.parse)
+      this.openList = next
+      if (next !== null) {
+        const lastIndex = this.cached.tail.length - 1
+        this.cached = {
+          ...this.cached,
+          tail: this.cached.tail.map((block, index) => index === lastIndex ? { ...block, node: next.node } : block),
+        }
+        this.prevText = text
+        return this.cached
+      }
+    }
     if (previousText !== '' && this.openFence !== null) {
       const incremental = this.updateOpenFence(this.openFence, text, previousText)
       if (incremental !== undefined) {
@@ -355,6 +374,8 @@ export class IncrementalMarkdownParser {
     }))
     this.cached = { frozen: [...this.frozen], tail, generation: this.generation }
     this.openFence = this.openFenceState(text, base, tail, this.cached.frozen)
+    const last = tail.at(-1)?.node
+    this.openList = last?.type === 'list' ? listFrontier(last, text, base) : null
     return this.cached
   }
 }

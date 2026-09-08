@@ -110,6 +110,8 @@ The decision history lives in the [unified service decision](../../../.agents/no
 
 `observeSession` builds point observations without a listing preflight. The cold path stats the stored session first and consults an own bounded cache keyed by the persistence instance and the `stat` revision: an unchanged revision reuses the restored unpublished Session without re-reading the log; a changed revision, or a replaced persistence instance, reloads through the handle seam and replaces the entry. The cache holds `preparedSessionCacheSize` entries with least-recently-used eviction, entries pinned by active observation leases are never evicted, and a session that goes live mid-read retries the live path.
 
+Large cold observations clone events in bounded batches, yielding between batches so pending Host work and cancellation can run. Each continuation checks cancellation and a newly attached live owner. Preparation and publication still wait for the complete detached event array; yielding does not make decoding or preparation incremental.
+
 ### Reads and traces
 
 `readSession` replays the log through `Session.create` to reuse resume's validation. `readSurface`, `listEvents`, and `traceEvent` share one `foldSurface` pass that classifies events as `current`, `shadowed`, or `log-only` and validates zero-based contiguous seqs, surface-marker eligibility, and replacement or citation integrity; any violation fails with `SESSION_QUERY_INVALID_SURFACE`. Traces are one-shot: session lineage reads the corpus once and walks parents and descendant trees deterministically, and event traces follow positional replacers to the final node while keeping cited-source links non-transitive.

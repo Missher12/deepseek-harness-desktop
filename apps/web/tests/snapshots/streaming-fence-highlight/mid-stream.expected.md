@@ -34,6 +34,7 @@
   - text: streaming-fence-highlight-test/streaming-fence
   - img
 - button "Stop generating"
+- text: Session statistics · —
 
 ---
 

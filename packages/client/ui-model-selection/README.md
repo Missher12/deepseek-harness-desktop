@@ -29,6 +29,8 @@ Mount this plugin alongside `ui-conversation` and the commands package; the comp
 
 ### Model and effort
 
+An accepted session selection updates immediately while the advisory catalog refreshes, retaining the last usable model groups. Catalog notifications cannot clear a pending selection or its error. Invocation failures release the selection state and permit retry; late results from superseded operations or disposed session scopes cannot overwrite it.
+
 Models stay grouped by provider. The menu shows model and effort names only; catalog descriptions remain available to other consumers. The `/model` popup applies the selected model's default effort; the composer can then choose any advertised effort. An adapter without reasoning metadata leaves the Effort row absent; there is no arbitrary effort input.
 
 ### Unroutable sessions

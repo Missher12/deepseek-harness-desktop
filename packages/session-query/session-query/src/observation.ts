@@ -1,6 +1,7 @@
 /** Shared live/prepared observations for Session page and lifecycle consumers. */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { setImmediate as yieldToPendingWork } from 'node:timers/promises'
 import { SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId , SessionLogOffset as SessionLogOffsetType , SessionSeqCursor } from '@deepseek-ai/dsh-session'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
@@ -113,7 +114,20 @@ export class SessionObservationReader {
         if (attached !== undefined) return this.live(attached, projectionMode)
         // Ownership transfer into `prepare` freezes the seed in place, so the
         // entry keeps its own detached copies of the just-read events.
-        const seed = loaded.events.map(event => structuredClone(event))
+        const seed: SessionEvent[] = []
+        for (const event of loaded.events) {
+          seed.push(structuredClone(event))
+          // Yield between bounded batches so a long history cannot starve
+          // cancellation, navigation, or a newer live owner. Nothing is
+          // prepared or published until the complete detached seed exists.
+          if (seed.length % 256 === 0 && seed.length < loaded.events.length) {
+            await yieldToPendingWork()
+            throwIfObservationAborted(signal)
+            const attachedDuringClone = this.ctx.sessions.get(sessionId)
+            if (attachedDuringClone !== undefined) return this.live(attachedDuringClone, projectionMode)
+          }
+        }
+        throwIfObservationAborted(signal)
         let session: Session
         try {
           session = this.ctx.sessions.prepare(sessionId, {

@@ -24,3 +24,4 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
+- text: Session statistics · —

@@ -159,7 +159,7 @@ function StatsGroups({ groups }: { readonly groups: readonly string[] }) {
   ))
 }
 
-/** Render and measure one non-empty statistics line. */
+/** Keep one measured row through session loading, empty data, and settled totals. */
 const StatsLineContent = memo(function StatsLineContent({
   groups,
   line,
@@ -185,7 +185,7 @@ const StatsLineContent = memo(function StatsLineContent({
   useLayoutEffect(measure, [line, measure])
   return (
     <Tooltip label={line} side="top" delayMs={500} disabled={!truncated}>
-      <div ref={rootRef} className={css.root}>
+      <div ref={rootRef} className={css.root} data-conversation-stats="">
         <StatsGroups groups={groups} />
       </div>
     </Tooltip>
@@ -315,11 +315,13 @@ export const StatsLine = memo(function StatsLine({ useChat, useProjection, t }: 
   if (tieredEstimates && priceOfModel(model, clock) !== null) {
     financialGroups.push(t(`stats.tier.${pricingTierAt(clock)}`))
   }
+  // Keep the dock's height when the newly selected session has no statistics
+  // yet. Never cache the previous session's numbers to fill the loading gap.
+  if (groups.length === 0) groups.push(t('stats.placeholder'))
   const line = groups.join(' | ')
-  if (groups.length === 0 && financialGroups.length === 0) return null
   return (
     <>
-      {groups.length > 0 && <StatsLineContent groups={groups} line={line} />}
+      <StatsLineContent groups={groups} line={line} />
       {financialGroups.length > 0 && <div className={`${css.root} ${css.finance}`}>
         <StatsGroups groups={financialGroups} />
       </div>}

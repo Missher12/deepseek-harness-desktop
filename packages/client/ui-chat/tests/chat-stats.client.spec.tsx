@@ -162,7 +162,7 @@ describe('StatsLine', () => {
     return { uncachedInputTokens, outputTokens: 1, cacheReadTokens, cacheWriteTokens: 0 }
   }
 
-  it('mounts one size observer only while a non-empty line exists', () => {
+  it('keeps one size observer across placeholder and populated statistics', () => {
     let observers = 0
     class CountingResizeObserver {
       constructor(_callback: ResizeObserverCallback) { observers++ }
@@ -172,7 +172,7 @@ describe('StatsLine', () => {
     vi.stubGlobal('ResizeObserver', CountingResizeObserver)
     const { set, source } = makeSource()
     render(<StatsLine {...props(source, {})} />)
-    expect(observers).toBe(0)
+    expect(observers).toBe(1)
 
     act(() => { set({ nodes: [assistant(1, 1)] }) })
     expect(observers).toBe(1)
@@ -181,7 +181,7 @@ describe('StatsLine', () => {
     expect(observers).toBe(1)
   })
 
-  it('renders the grouped stats row and hides a brand-new empty session', () => {
+  it('renders the grouped stats row and reserves it for a brand-new session', () => {
     const { source } = makeSource({ nodes: [assistant(1, 1)] })
     const view = render(<StatsLine {...props(source)} />)
     // No timing on the fixture: the duration group drops out whole. Tokens come
@@ -192,7 +192,32 @@ describe('StatsLine', () => {
       tokenUsage: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
       contextPressure: {},
     })} />)
-    expect(emptyView.container.textContent).toBe('')
+    expect(emptyView.container.textContent).toBe('Session statistics · —')
+  })
+
+  it('keeps the same row when switching through an unloaded session without retaining foreign totals', () => {
+    const previous = makeSource({ nodes: [assistant(1, 1)] })
+    const selected = makeSource()
+    const view = render(<StatsLine {...props(previous.source, {
+      tokenUsage: USAGE,
+      sessionStats: sessionStats({ turns: 2, steps: 2 }),
+    })} />)
+    const row = view.container.querySelector('[data-conversation-stats]')
+    expect(row).not.toBeNull()
+    expect(row?.textContent).toContain('2 turns · 2 steps')
+
+    view.rerender(<StatsLine {...props(selected.source, {})} />)
+    expect(view.container.querySelector('[data-conversation-stats]')).toBe(row)
+    expect(row?.textContent).toBe('Session statistics · —')
+    // A late update from the session we left cannot refill the current row.
+    act(() => { previous.set({ nodes: [assistant(1, 1), assistant(2, 2)] }) })
+    expect(row?.textContent).toBe('Session statistics · —')
+
+    view.rerender(<StatsLine {...props(selected.source, {
+      sessionStats: sessionStats({ turns: 3, steps: 4 }),
+    })} />)
+    expect(view.container.querySelector('[data-conversation-stats]')).toBe(row)
+    expect(row?.textContent).toBe('3 turns · 4 steps')
   })
 
   it('shows an estimated official-price cost only for a single supported DeepSeek model', () => {
@@ -421,13 +446,13 @@ describe('StatsLine', () => {
 
   it('treats a defined zero-count projection as empty, not as fallback', () => {
     // A composed unit always serves the key; all-zero genuinely means no
-    // closed step in the whole log, so nothing renders on a brand-new session.
+    // closed step in the whole log, so the row retains its placeholder.
     const empty = makeSource()
     const view = render(<StatsLine {...props(empty.source, {
       tokenUsage: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
       sessionStats: sessionStats({}),
     })} />)
-    expect(view.container.textContent).toBe('')
+    expect(view.container.textContent).toBe('Session statistics · —')
   })
 
   it('hides the zero-token group when steps closed without any billed activity', () => {

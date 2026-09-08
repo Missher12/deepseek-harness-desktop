@@ -15,7 +15,7 @@
 
 :global(body[data-dsh-surface='desktop']) .wrap {
   border-color: transparent;
-  box-shadow: 0 0 0 1px var(--dsw-alias-label-tertiary);
+  box-shadow: 0 0 0 1px var(--dsw-alias-border-l4);
 }
 
 :global(body[data-dsh-surface='desktop']) .wrap:focus-within {

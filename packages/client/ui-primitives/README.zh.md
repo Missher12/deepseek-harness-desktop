@@ -29,7 +29,7 @@ kind: "package-library"
 
 ### 控件与图标
 
-`Input` 在桌面窗口中使用清晰描边、独立的焦点轮廓和对比度更高的占位文字。
+`Input` 在桌面窗口中使用浅色语义边框、独立的焦点轮廓和对比度更高的占位文字。描边采用主题的 `border-l4` token，聚焦时不会改变布局。
 
 `Button`、`Pill`、`Input`、`Menu`、`Modal`、`Tooltip`、`DisclosureRow`、`StateDot`、`HoverCard`、`Toast`、`ConnectionIndicator`、`RiskConfirmation` 与首次运行接管层 `OnboardingSurface` 覆盖常见的交互形态。`ic_ds_*` 图标集与 `FishLogo`/`BrandWordmark` 标记填充品牌与行内图标 slot。`LinkIcon` 为可点击产物链接绘制前置分类图形——地球、文件夹、代码、图片、文档或纸张，全部随 `currentColor`——`classifyLinkPath` 按扩展名推导文件路径的类别。`ConnectionIndicator` 可渲染警告色的断联操作、以独立于 retry 时序的 500ms 节奏推进一至三个点的连接中状态，或成功色的恢复状态。所有状态都为最长的输入 label 预留空间，并使用固定的图标列和文字列，因此文案变化不会移动控件或改变其宽度。它的 owner 提供可见性、恢复驻留时间、本地化 label 与立即重连回调；该原语不使用原生 title tooltip。`useAnchoredPosition` 与 `useAnchoredMaxHeight` 让浮动面板与底部锚定浮层始终钳制在视口内并跟随锚点。`HoverCard` 通过指针离开宽限期让采用 portal 的预览在跨过锚点间隙时仍可触及，并可通过 `copyText` prop 提供复制按钮。 `Toast` 的停留时长由使用方通过 `holdMs` 指定，因为横幅该留多久取决于有多少内容要读；同一个值同时驱动它的卸载定时器与样式表的淡出延迟，两者不可能再错位。 `rankByName` 是 `/` 菜单命令源与 skill 源共享的候选排序器：查询必须是名字的不区分大小写的有序子序列；前缀命中排最前，其次按对齐分数，再按来源顺序（[排名决策](../../../.agents/notes/implemented/feature/2026-08-04-web-slash-command-fuzzy-discovery.zh.md)）。
 
@@ -64,6 +64,8 @@ kind: "package-library"
 | [`src/useAnchoredPosition.ts`](src/useAnchoredPosition.ts) / [`src/useAnchoredMaxHeight.ts`](src/useAnchoredMaxHeight.ts) | 浮动面板与浮层几何钩子 |
 
 ### 流式 markdown
+
+顶层紧凑段落列表会保留已完成的列表项，只解析最后一项及追加内容。松散或嵌套列表、引用语法、原始 HTML 与后续块立即回到完整尾部语法解析。有序列表起始编号和源码位置在增量路径中保持不变；最终渲染仍执行启用数学语法的完整解析。
 
 回复流式输出期间，`MarkdownText` 增量解析：除末尾两个块外全部冻结为缓存的 React 元素，每个分片只重新解析其后的源文本尾部，因此每分片的工作量跟随尾部而非整个回复。末尾的顶层未闭合 fence 会保留已解析的 code node，只把最后一个已完成行与当前未完成行交给同一套 GFM grammar；闭合 fence 或有歧义的解析会回到普通尾部路径。高亮同样从保存的 Shiki grammar state 续接，并只发布新完成行与可变尾部。`CodeBlock` 把已完成行封入固定大小的 React 分组、复用更早的分组，并在代码与语言未变化时跨定稿保留整棵高亮树。定稿时的全量解析仍会解析跨过冻结边界的引用（[增量渲染器](../../../.agents/notes/implemented/architecture/2026-08-06-web-markdown-incremental-ast-renderer.zh.md)、[流式 fence 高亮](../../../.agents/notes/implemented/feature/2026-08-20-web-streaming-fence-highlight.zh.md)）。
 

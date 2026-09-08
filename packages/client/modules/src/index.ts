@@ -157,6 +157,8 @@ interface WebPluginRecord {
   baseline: ClientArtifactBaseline
   /** Optional authored source map snapshot; generated-file identity mapping is the fallback. */
   sourceMap?: { body: Buffer; parsed: Record<string, unknown> }
+  /** Derived source shared by single-module and batch responses for this exact revision. */
+  prepared?: { rev: string; source: string; lines: number; section: Record<string, unknown> }
 }
 
 /** Fields shared by every generated combo response. */
@@ -343,7 +345,7 @@ function sourceMapSnapshot(clientPath: string): WebPluginRecord['sourceMap'] {
 /** Count generated lines while assembling indexed-map section offsets. */
 function newlineCount(value: string): number {
   let count = 0
-  for (const char of value) if (char === '\n') count += 1
+  for (let index = value.indexOf('\n'); index !== -1; index = value.indexOf('\n', index + 1)) count += 1
   return count
 }
 
@@ -368,9 +370,9 @@ function comboSectionMap(record: WebPluginRecord): Record<string, unknown> {
 }
 
 /** Map each generated line to the same line in a bundled JavaScript source. */
-function identitySectionMap(source: string, sourceUrl: string): Record<string, unknown> {
-  const mappings = Array.from({ length: newlineCount(source) }, (_, index) => index === 0 ? 'AAAA' : 'AACA')
-    .join(';')
+function identitySectionMap(source: string, sourceUrl: string, lines: number): Record<string, unknown> {
+  // comboSource always terminates the source with a newline, including empty bundles.
+  const mappings = `AAAA${';AACA'.repeat(lines - 1)}`
   return {
     version: 3,
     names: [],
@@ -380,24 +382,31 @@ function identitySectionMap(source: string, sourceUrl: string): Record<string, u
   }
 }
 
+/** Reuse decoding and map relocation until rebuilt() replaces the record's artifact revision. */
+function prepareComboSource(record: WebPluginRecord): NonNullable<WebPluginRecord['prepared']> {
+  if (record.prepared?.rev === record.entry.rev) return record.prepared
+  const { source, fallbackSource } = comboSource(record)
+  const lines = newlineCount(source)
+  const section = record.sourceMap === undefined
+    ? identitySectionMap(source, fallbackSource, lines)
+    : comboSectionMap(record)
+  record.prepared = { rev: record.entry.rev, source, lines, section }
+  return record.prepared
+}
+
 /** Concatenate one or more factory registrations and compose their maps as indexed sections. */
 function buildCombo(records: readonly WebPluginRecord[], revision?: string): ComboArtifact {
   let source = ''
   const sections: { offset: { line: number; column: 0 }; map: Record<string, unknown> }[] = []
   let line = 0
   for (const record of records) {
-    const prepared = comboSource(record)
-    const section = record.sourceMap === undefined
-      ? identitySectionMap(prepared.source, prepared.fallbackSource)
-      : comboSectionMap(record)
-    sections.push({ offset: { line, column: 0 }, map: section })
-    const bundle = `${prepared.source};\n`
-    source += bundle
-    line += newlineCount(bundle)
+    const prepared = prepareComboSource(record)
+    sections.push({ offset: { line, column: 0 }, map: prepared.section })
+    source += `${prepared.source};\n`
+    line += prepared.lines + 1
   }
   const sourceMap = Buffer.from(`${JSON.stringify({ version: 3, file: 'client.js', sections })}\n`)
-  const sourceBytes = Buffer.from(source)
-  const rev = revision ?? framedHash('combo', [sourceBytes, sourceMap])
+  const rev = revision ?? framedHash('combo', [Buffer.from(source), sourceMap])
   const entries = records.map(record => record.entry.id)
   const url = comboUrl(entries, rev)
   const sourceMapUrl = comboUrl(entries, rev, true)
@@ -405,8 +414,7 @@ function buildCombo(records: readonly WebPluginRecord[], revision?: string): Com
 }
 
 /** Add initial-load scheduling metadata to a combo artifact. */
-function buildBatch(phase: WebBootBatchPhase, records: readonly WebPluginRecord[]): BatchArtifact {
-  const artifact = buildCombo(records)
+function buildBatch(phase: WebBootBatchPhase, artifact: ComboArtifact): BatchArtifact {
   return {
     ...artifact,
     descriptor: { phase, url: artifact.url, rev: artifact.rev, entries: artifact.entries },
@@ -545,6 +553,8 @@ export class ClientModuleRegistry extends Service {
   private nextInitialRevision = 0
   private responses = new Map<string, { body: Buffer; contentType: string }>()
   private batchResponses = new Map<string, { body: Buffer; contentType: string }>()
+  /** Only current-graph artifacts are retained; obsolete response lifetime stays with previousBatchResponses. */
+  private comboArtifacts = new Map<string, ComboArtifact>()
   /** One prior graph generation covers a request racing the HMR recomposition that replaced its URL. */
   private previousBatchResponses = new Map<string, { body: Buffer; contentType: string }>()
   private flushQueued = false
@@ -676,6 +686,13 @@ export class ClientModuleRegistry extends Service {
   }
 
   private compose(): WebBootGraph {
+    const comboArtifacts = new Map<string, ComboArtifact>()
+    const composeCombo = (records: readonly WebPluginRecord[], revision?: string): ComboArtifact => {
+      const key = JSON.stringify([revision, records.map(record => [record.entry.id, record.entry.rev])])
+      const artifact = this.comboArtifacts.get(key) ?? buildCombo(records, revision)
+      comboArtifacts.set(key, artifact)
+      return artifact
+    }
     const entries = orderByModuleGraph([...this.table.values()].map(record => record.entry))
     const bootstrap = PARSER_PRELOAD_IDS
       .map(id => this.table.get(id))
@@ -687,10 +704,10 @@ export class ClientModuleRegistry extends Service {
       .filter((record): record is WebPluginRecord => record !== undefined)
     const artifacts: BatchArtifact[] = []
     for (const records of partitionComboRecords(bootstrap)) {
-      artifacts.push(buildBatch('bootstrap', records))
+      artifacts.push(buildBatch('bootstrap', composeCombo(records)))
     }
     for (const records of partitionComboRecords(application)) {
-      artifacts.push(buildBatch('application', records))
+      artifacts.push(buildBatch('application', composeCombo(records)))
     }
 
     const batchResponses = new Map<string, { body: Buffer; contentType: string }>()
@@ -706,7 +723,7 @@ export class ClientModuleRegistry extends Service {
     }
     const responses = new Map(batchResponses)
     for (const record of this.table.values()) {
-      const artifact = buildCombo([record], record.entry.rev)
+      const artifact = composeCombo([record], record.entry.rev)
       responses.set(artifact.url, {
         body: artifact.script,
         contentType: 'text/javascript; charset=utf-8',
@@ -719,6 +736,7 @@ export class ClientModuleRegistry extends Service {
     this.previousBatchResponses = this.batchResponses
     this.batchResponses = batchResponses
     this.responses = responses
+    this.comboArtifacts = comboArtifacts
     const batches = artifacts.map(artifact => artifact.descriptor)
     return { rev: shortHash(JSON.stringify({ entries, batches })), entries, batches }
   }

@@ -38,6 +38,8 @@ target package 通过 declaration merge 扩展 snapshot 与 Location data map，
 <a id="shell-and-standard-props"></a>
 ## Shell 与标准 props
 
+选中会话的输入仍在加载时，composer 底部 dock 保持可见。统计条目使用当前会话数据或占位文字保留一行；输入卡片本身可以等到 hero 或底部布局确定后再显示。桌面输入描边采用浅色语义边框及独立焦点轮廓，不移动卡片。
+
 桌面编辑器在两种主题下均提供清晰描边、独立的焦点轮廓和易读的占位文字，同时保持卡片布局不变。
 
 本包注册 optional-Session `conversation` shell、strict Session header/body、View list、composer chain 与 bar、输入区域、Hero 区域、queue dock、草稿持久化和 phase 计算。`ctx.uiSession.provide()` 从同一个 Session binding 物化 Conversation 与 input source，并将 `inputActions` 作为稳定标准 prop 提供。 审批通过本包声明的链条接管编辑器：`ApprovalPanel` 注册为按选择器路由的 `'conversation.composer'` 配置项（ui-user-questions 模式），在审批等待未决期间取代 InputBar 占据编辑器（琥珀色条、理由标题、来自运行中调用参数的配对命令行，以及拒绝／允许一次／本会话不再询问三个动作）。`contract/slots.ts` 中的 `PendingApproval` 领域面在运行时 `PendingWait` 载体之上拥有 wire 编码——带审计关联的 `ApprovalResponsePayload` 值；广播的 `approval/resolved` 帧使等待落定并恢复编辑器。运行时 manager 会将所有审批或问题等待通过 `SessionSummary.pendingInteraction` 投影出来，未实例化的会话也不例外；`ui-workspace` 负责其侧边栏呈现。未决等待完全离开消息流：问题（ui-user-questions）与审批（ApprovalPanel）都经编辑器接管作答，不再保留只读占位卡。编辑器底行的 Access 席位挂载 `PermissionSelect`，由 host 计算的 `permissions` 投影经标准工具包 `useProjection` 供数（key 缺席即隐藏 chip）；chip 打开 Menu 原语下拉，其中 kebab-case 预设名渲染为 Title Case 标签。普通安全预设会立即经输入栏注入的命令面提交 `/permission <preset>`，而 `danger-full-access` 在界面中显示为 `Full access`，选择后先打开页面内的 Modal 风险确认。审批接管复用同一个当前 Session 命令面：“本会话不再询问”会打开相同的风险确认，执行 `/permission danger-full-access`，并且只有命令成功后才把当前等待回答为 `allowed-once`。权限真相仍在 Session 事件中，因此其他 Session 不受影响，切回 Workspace Write 后后续审批会恢复。命令或响应失败时卡片保持可重试且不泄露传输细节；Full access 已成功后的响应重试不会重复执行权限命令。这里没有新增 `ApprovalOutcome`、浏览器持久化、全局 grant 或跨 Session authority。用户勾选确认项前启用按钮始终不可用；取消、Escape、关闭按钮与点击遮罩都不会提交命令。

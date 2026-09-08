@@ -206,6 +206,56 @@ describe('SessionObservationReader cold path', () => {
     await ctx.fiber.dispose()
   })
 
+  it('lets pending work run while preparing a long history and preserves the complete immutable cut', async () => {
+    const ctx = await readerContext()
+    const meta = header('yielding-history')
+    const events = Array.from({ length: 800 }, (_, index) => messageEvent(index, `message ${index}`))
+    const store = new Map([[meta.id, { header: meta, events, revision: 'r1' }]])
+    let serviced = false
+    ctx.provide('sessionPersistence', stubPersistence(store, { stat: 0, open: 0, read: 0 }, {
+      onRead: () => { setImmediate(() => { serviced = true }) },
+    }))
+    using observed = await new SessionObservationReader(ctx).read(meta.id, { projectionMode: 'none' })
+    expect(serviced).toBe(true)
+    expect(observed.events).toEqual(events)
+    expect(observed.cursor).toBe(799)
+    expect(Object.isFrozen(observed.events)).toBe(true)
+    expect(observed.events[0]).not.toBe(events[0])
+    await ctx.fiber.dispose()
+  })
+
+  it('cancels during long-history cloning without publishing a partial preparation', async () => {
+    const ctx = await readerContext()
+    const meta = header('cancel-cloning')
+    const events = Array.from({ length: 800 }, (_, index) => messageEvent(index, 'stored'))
+    const controller = new AbortController()
+    ctx.provide('sessionPersistence', stubPersistence(new Map([[meta.id, {
+      header: meta, events, revision: 'r1',
+    }]]), { stat: 0, open: 0, read: 0 }, {
+      onRead: () => { setImmediate(() => { controller.abort(new Error('cancel pending read')) }) },
+    }))
+    const prepare = vi.spyOn(ctx.sessions, 'prepare')
+    await expect(new SessionObservationReader(ctx).read(meta.id, { signal: controller.signal }))
+      .rejects.toMatchObject({ code: 'SESSION_QUERY_ABORTED' })
+    expect(prepare).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('prefers a live owner attached while a long history yields', async () => {
+    const ctx = await readerContext()
+    const meta = header('attached-while-cloning')
+    const events = Array.from({ length: 800 }, (_, index) => messageEvent(index, 'stored'))
+    ctx.provide('sessionPersistence', stubPersistence(new Map([[meta.id, {
+      header: meta, events, revision: 'r1',
+    }]]), { stat: 0, open: 0, read: 0 }, {
+      onRead: () => { setImmediate(() => { ctx.sessions.create(meta.id, { meta: { createdAt: 1 } }) }) },
+    }))
+    using observed = await new SessionObservationReader(ctx).read(meta.id, { projectionMode: 'none' })
+    expect(observed.source).toBe('live')
+    expect(observed.events).toEqual([])
+    await ctx.fiber.dispose()
+  })
+
   it('reference-counts prepared leases and rejects retention after disposal', async () => {
     const ctx = await readerContext()
     const meta = header('prepared-leases')
