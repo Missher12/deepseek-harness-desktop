@@ -1,0 +1,9 @@
+abi <abi/4.0>,
+include <tunables/global>
+
+# Only the installed application may create the user namespace required by
+# Chromium. Other system applications retain Ubuntu's default restrictions.
+profile "${executable}" "/opt/${sanitizedProductName}/${executable}" flags=(unconfined) {
+  userns,
+  include if exists <local/${executable}>
+}
