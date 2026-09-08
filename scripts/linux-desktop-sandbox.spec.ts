@@ -15,10 +15,22 @@ describe('Linux native sandbox acceptance', () => {
   it('accepts a sandboxed renderer with independent kernel evidence', () => {
     expect(() => { assertLinuxSandbox(valid) }).not.toThrow()
   })
+  it('accepts the single process title written by Chromium setproctitle', () => {
+    expect(() => {
+      assertLinuxSandbox({
+        ...valid,
+        rendererCommand: ['/opt/DeepSeek Harness/deepseek-harness-bin --type=renderer --lang=en-US'],
+      })
+    }).not.toThrow()
+  })
   it.each([
     { mainCommand: ['app', '--no-sandbox'] },
     { rendererCommand: ['app', '--type=renderer', '--disable-seccomp-filter-sandbox'] },
     { rendererCommand: ['app', '--type=gpu-process'] },
+    { rendererCommand: ['app --type=renderer-extra'] },
+    { rendererCommand: ['app --type=renderer --no-sandbox'] },
+    { rendererCommand: ['app --type=renderer --disable-seccomp-filter-sandbox=true'] },
+    { mainCommand: ['app --no-sandbox=true'] },
     { rendererStatus: 'NoNewPrivs:\t0\nSeccomp:\t2\n' },
     { rendererStatus: 'NoNewPrivs:\t1\nSeccomp:\t0\n' },
     { rendererUserNamespace: 'user:[100]' },
