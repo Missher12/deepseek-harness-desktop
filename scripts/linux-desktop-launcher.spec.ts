@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { copyFile, mkdtemp, rm } from 'node:fs/promises'
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,7 +15,8 @@ describe.skipIf(process.platform === 'win32')('Linux packaged entry', () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh Linux launcher '))
     try {
       const launcher = join(root, 'deepseek-harness')
-      await copyFile('/bin/echo', launcher)
+      await writeFile(launcher, '#!/bin/sh\nprintf \'%s\\n\' "$@"\n')
+      await chmod(launcher, 0o755)
       await installLauncher({ electronPlatformName: 'linux', appOutDir: root })
       for (const flag of ['--no-sandbox', '--no-sandbox=true', '--disable-namespace-sandbox']) {
         const rejected = spawnSync(launcher, [flag], { encoding: 'utf8', timeout: 5_000 })
