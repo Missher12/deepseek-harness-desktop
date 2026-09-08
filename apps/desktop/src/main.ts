@@ -298,7 +298,7 @@ async function createDesktopWindow(): Promise<DesktopWindow> {
   const displays = [
     primaryDisplay,
     ...screen.getAllDisplays().filter(display => display.id !== primaryDisplay.id),
-  ].map(display => display.workArea)
+  ].map(display => ({ ...display.workArea, scaleFactor: display.scaleFactor }))
   const bounds = await readDesktopWindowPrerequisites(
     preferencesReady,
     async () => await readWindowBounds(windowStatePath, displays),

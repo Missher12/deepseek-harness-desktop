@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-08-desktop-work-area-and-search-acceptance.md
-2026-09-08-desktop-work-area-and-search-acceptance.md: d9dd4a441f7663508343449b36247fb3db32b5ca
-2026-09-08-desktop-work-area-and-search-acceptance.zh.md: 2fd35fc39f3eaaed7618af1ab738a2a8a99060b8
+2026-09-08-desktop-work-area-and-search-acceptance.md: 45c1a19e3a1e4d8ec1f7e6a389a6d6fcbd8fcbed
+2026-09-08-desktop-work-area-and-search-acceptance.zh.md: 8444ea5e2700859b27a05f482883f160f4131ac0

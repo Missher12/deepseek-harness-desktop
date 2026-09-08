@@ -1,5 +1,13 @@
 # DeepSeek Harness Desktop — Project Context
 
+## Fractional Windows geometry follow-up — 2026-09-08
+
+Candidate `28f3940d176ee5e6b209017dd6e5d2d12821a222` passes Intel Mac native run `34184655687`; its independently downloaded DMG matches the manifest and sidecar. Windows run `34184655733` builds Setup and passes the visible installer, then reads a 684-DIP native window against a 683-DIP work area at 150% scaling. The strict containment assertion stops later lifecycle acceptance. The native client screenshot and DIP bounds alone do not establish DWM visible-frame overflow.
+
+The commander reserves inward rounding space only for Windows fractional display scaling. Saved-window display selection uses the original work areas before fitting; minimum checks accept already-fitted small windows, preserving secondary-display placement across restarts. Constructor minimums consume the same fitted dimensions. Controlled edge-rounding and secondary-restore regressions fail before their corresponding changes; macOS, integer scaling and normal-screen centering remain covered. This is a scoped correction to the existing work-area change, with strict native assertions retained and both dedicated platform tasks reviewing the same patch. A new final source revision requires fresh same-SHA native evidence on both platforms.
+
+The separate Windows CI fork exit does not reproduce in one diagnostic rerun at the unchanged candidate: all 67 tests pass with one existing platform skip. Its cause remains unclassified; the rerun is not evidence of a source repair or runner fault. Windows coverage passes. Required real-API wheel preflights still lack the repository Actions secret; no local credentials are read or uploaded. Main, tags, public Release and the installed application remain unchanged. Current evidence and exact artifact hashes are recorded in `.artifacts/28f3940d-handover.md`.
+
 ## Work-area and native evidence follow-up — 2026-09-08
 
 Candidate `71f6769fe3a66c39e24b819f2e263e3de52f5764` passes Mac native run `34179938012`, Windows native run `34179938007`, and all ordinary CI jobs. Independently downloaded DMG and Setup hashes match their sidecars and run records. Required wheel real-API preflights remain blocked by the missing repository Actions secret `DEEPSEEK_API_KEY_EXTERNAL`; no local credentials are read or uploaded. Manual review finds the Windows 150% initial window outside the screen and incomplete Start/Search screenshots, so automated success does not constitute full visual acceptance.

@@ -2,13 +2,78 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { readWindowBounds, resolveWindowBounds, writeWindowBounds } from '../src/window/state.ts'
+import { readWindowBounds, resolveWindowBounds, resolveWindowWorkArea, writeWindowBounds } from '../src/window/state.ts'
+import { createWindowOptions } from '../src/window/options.ts'
 
 const displays = [{ x: 0, y: 0, width: 1440, height: 900 }]
 const temporaryRoots: string[] = []
 
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map(path => rm(path, { recursive: true, force: true })))
+})
+
+describe('fractional Windows display geometry', () => {
+  it.each([1.25, 1.5, 1.75])('contains outward native edge rounding at scale %s', (scaleFactor) => {
+    for (const workArea of [
+      { x: 0, y: 0, width: 683, height: 480 },
+      { x: -683, y: -480, width: 683, height: 480 },
+    ]) {
+      for (const saved of [undefined, workArea]) {
+        const bounds = resolveWindowBounds(saved, [{ ...workArea, scaleFactor }], 'win32')
+        // The Windows 150% runner returned 684 DIP for a 683 DIP request.
+        // Model the same one-DIP outward rounding on every native edge.
+        expect(bounds.x! - 1).toBeGreaterThanOrEqual(workArea.x)
+        expect(bounds.y! - 1).toBeGreaterThanOrEqual(workArea.y)
+        expect(bounds.x! + bounds.width + 1).toBeLessThanOrEqual(workArea.x + workArea.width)
+        expect(bounds.y! + bounds.height + 1).toBeLessThanOrEqual(workArea.y + workArea.height)
+        const options = createWindowOptions(bounds, 'C:\\app\\preload.cjs', 'win32', 'C:\\app\\icon.ico')
+        expect(options.minWidth).toBeLessThanOrEqual(bounds.width)
+        expect(options.minHeight).toBeLessThanOrEqual(bounds.height)
+      }
+    }
+  })
+
+  it('keeps a saved window on its secondary display after reserving rounding space', () => {
+    const secondary = { x: -1440, y: 0, width: 1440, height: 900 }
+    const areas = [...displays, secondary].map(area => ({ ...area, scaleFactor: 1.5 }))
+    const bounds = resolveWindowBounds({ x: -1440, y: 0, width: 1200, height: 760 }, areas, 'win32')
+    expect(bounds.x! - 1).toBeGreaterThanOrEqual(secondary.x)
+    expect(bounds.y! - 1).toBeGreaterThanOrEqual(secondary.y)
+    expect(bounds.x! + bounds.width + 1).toBeLessThanOrEqual(0)
+    expect(bounds.width).toBe(1200)
+    expect(bounds.height).toBe(760)
+  })
+
+  it('keeps a saved window that fills its secondary display on that display', () => {
+    const secondary = { x: -1440, y: 0, width: 1440, height: 900 }
+    const areas = [...displays, secondary].map(area => ({ ...area, scaleFactor: 1.5 }))
+    const bounds = resolveWindowBounds(secondary, areas, 'win32')
+    expect(bounds.x! + bounds.width).toBeLessThanOrEqual(0)
+    expect(bounds.x!).toBeGreaterThanOrEqual(secondary.x)
+    expect(bounds.width).toBe(1438)
+  })
+
+  it.each([
+    { x: -683, y: 0, width: 683, height: 480 },
+    { x: -900, y: 0, width: 900, height: 620 },
+  ])('restores a fitted secondary window again without moving it to the primary: %j', (secondary) => {
+    const areas = [...displays, secondary].map(area => ({ ...area, scaleFactor: 1.5 }))
+    const first = resolveWindowBounds(secondary, areas, 'win32')
+    expect(first.x! + first.width).toBeLessThanOrEqual(0)
+    expect(resolveWindowBounds(first, areas, 'win32')).toEqual(first)
+  })
+
+  it('preserves normal-screen default size and center at fractional Windows scale', () => {
+    const areas = displays.map(area => ({ ...area, scaleFactor: 1.5 }))
+    expect(resolveWindowBounds(undefined, areas, 'win32')).toEqual(resolveWindowBounds(undefined, displays))
+  })
+
+  it.each([
+    ['darwin', 1.5], ['linux', 1.5], ['win32', 1], ['win32', 2],
+  ] as const)('preserves the work area on %s at scale %s', (platform, scaleFactor) => {
+    const area = { x: -683, y: 40, width: 683, height: 480 }
+    expect(resolveWindowWorkArea(area, scaleFactor, platform)).toEqual(area)
+  })
 })
 
 describe('resolveWindowBounds', () => {
