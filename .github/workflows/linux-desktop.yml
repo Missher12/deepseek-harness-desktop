@@ -91,7 +91,8 @@ jobs:
           sudo apt-get update
           fuse_package=libfuse2
           if [[ '${{ matrix.ubuntu }}' == 24.04 ]]; then fuse_package=libfuse2t64; fi
-          sudo apt-get install -y xvfb xauth dbus-x11 openbox x11-utils desktop-file-utils "$fuse_package" libgtk-3-0 libnss3 libgbm1 libsecret-1-0 apparmor apparmor-utils
+          sudo apt-get install -y xvfb xauth dbus-x11 openbox x11-utils desktop-file-utils lsof "$fuse_package" libgtk-3-0 libnss3 libgbm1 libsecret-1-0 apparmor apparmor-utils
+          test -x /usr/bin/lsof
           test -c /dev/fuse
       - name: Enforce Ubuntu 24.04 user namespace restrictions
         if: matrix.ubuntu == '24.04'
