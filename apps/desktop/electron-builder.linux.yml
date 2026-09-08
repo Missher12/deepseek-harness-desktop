@@ -1,0 +1,47 @@
+extends: ./electron-builder.yml
+extraMetadata:
+  desktopName: deepseek-harness.desktop
+linux:
+  executableName: deepseek-harness
+  syncDesktopName: true
+  target:
+    - target: deb
+      arch: [x64]
+    - target: AppImage
+      arch: [x64]
+  category: Development
+  icon: assets/icon-source.png
+  maintainer: DeepSeek Harness Contributors <noreply@github.com>
+  vendor: DeepSeek Harness Contributors
+  synopsis: Desktop application for DeepSeek Harness
+  executableArgs: []
+  desktop:
+    entry:
+      Name: DeepSeek Harness
+      Comment: DeepSeek Harness desktop application
+      StartupWMClass: deepseek-harness
+      Terminal: false
+  files:
+    - "!node_modules/node-pty/prebuilds/darwin-*/**"
+    - "!node_modules/node-pty/prebuilds/win32-*/**"
+    - "!node_modules/node-pty/prebuilds/linux-arm64/**"
+deb:
+  artifactName: "DeepSeek-Harness-${version}-linux-x64.${ext}"
+  packageName: deepseek-harness
+  appArmorProfile: build/linux/apparmor-profile
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - libgbm1
+    - libasound2 | libasound2t64
+appImage:
+  artifactName: "DeepSeek-Harness-${version}-linux-x64.${ext}"
+  # electron-builder 26's legacy AppImage default adds --no-sandbox.
+  executableArgs: []

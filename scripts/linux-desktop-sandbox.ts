@@ -1,0 +1,39 @@
+/** Kernel observations from one Electron renderer and its main process. */
+export interface LinuxSandboxObservation {
+  mainCommand: readonly string[]
+  rendererCommand: readonly string[]
+  rendererStatus: string
+  mainUserNamespace: string
+  rendererUserNamespace: string
+  sandbox: boolean
+  contextIsolation: boolean
+  nodeIntegration: boolean
+}
+
+/**
+ * Reject weakened launch flags and verify kernel-enforced renderer isolation.
+ * @param observation - Values read from the live process and /proc.
+ */
+export function assertLinuxSandbox(observation: LinuxSandboxObservation): void {
+  const forbidden = new Set([
+    '--no-sandbox', '--disable-setuid-sandbox', '--disable-seccomp-filter-sandbox',
+    '--disable-namespace-sandbox', '--single-process', '--no-zygote',
+  ])
+  for (const argument of [...observation.mainCommand, ...observation.rendererCommand]) {
+    const [flag] = argument.split('=')
+    if (flag !== undefined && forbidden.has(flag)) throw new Error('Electron sandbox bypass argument detected')
+  }
+  if (!observation.sandbox || !observation.contextIsolation || observation.nodeIntegration) {
+    throw new Error('Electron renderer preferences weaken isolation')
+  }
+  if (!observation.rendererCommand.includes('--type=renderer')) throw new Error('Expected a renderer process')
+  if (!/^NoNewPrivs:\s+1\s*$/mu.test(observation.rendererStatus)
+    || !/^Seccomp:\s+2\s*$/mu.test(observation.rendererStatus)) {
+    throw new Error('Renderer lacks kernel NoNewPrivs or Seccomp filtering')
+  }
+  if (!/^user:\[\d+\]$/u.test(observation.mainUserNamespace)
+    || !/^user:\[\d+\]$/u.test(observation.rendererUserNamespace)
+    || observation.mainUserNamespace === observation.rendererUserNamespace) {
+    throw new Error('Renderer does not have an isolated user namespace')
+  }
+}

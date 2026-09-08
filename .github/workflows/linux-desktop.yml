@@ -1,0 +1,113 @@
+name: Ubuntu Desktop
+
+on:
+  push:
+    branches: [codex/desktop-0.5.7-ubuntu]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+  CANDIDATE_SHA: ${{ github.sha }}
+
+jobs:
+  build:
+    name: Build x64 deb and AppImage on Ubuntu 22.04
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.7.0'
+          dest: ${{ runner.temp }}/setup-pnpm
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Verify source and install immutable dependencies
+        run: |
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
+          [[ "$(uname -m)" == x86_64 ]]
+          pnpm install --frozen-lockfile
+      - name: Verify Linux sandbox guards
+        run: pnpm exec vitest run scripts/linux-desktop-sandbox.spec.ts
+      - name: Build native packages
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: bash scripts/linux-desktop-package.sh
+      - name: Fingerprint immutable candidate bytes
+        run: |
+          git diff --quiet HEAD --
+          cd apps/desktop/release
+          sha256sum ./*.deb ./*.AppImage > SHA256SUMS-linux
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Ubuntu-packages-${{ github.sha }}
+          path: |
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/SHA256SUMS-linux
+          if-no-files-found: error
+          retention-days: 14
+
+  native:
+    name: Ubuntu ${{ matrix.ubuntu }} native lifecycle
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ['22.04', '24.04']
+    runs-on: ubuntu-${{ matrix.ubuntu }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.7.0'
+          dest: ${{ runner.temp }}/setup-pnpm
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install native test dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth dbus-x11 openbox x11-utils desktop-file-utils libfuse2 libgtk-3-0 libnss3 libgbm1 libsecret-1-0 apparmor apparmor-utils
+          test -c /dev/fuse
+      - uses: actions/download-artifact@v8
+        with:
+          name: Ubuntu-packages-${{ github.sha }}
+          path: apps/desktop/release
+      - name: Check downloaded package bytes
+        working-directory: apps/desktop/release
+        run: sha256sum -c SHA256SUMS-linux
+      - name: Install, launch sandboxed, exercise model, quit, uninstall
+        run: |
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1000x24' bash -c '
+            openbox &
+            window_manager=$!
+            trap "kill $window_manager; wait $window_manager || true" EXIT
+            bash scripts/linux-desktop-native-smoke.sh
+          '
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Ubuntu-${{ matrix.ubuntu }}-native-evidence-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/linux-native-evidence/**/*.json
+            ${{ runner.temp }}/linux-native-evidence/**/*.png
+            ${{ runner.temp }}/linux-native-evidence/*.txt
+          if-no-files-found: warn
+          retention-days: 14
