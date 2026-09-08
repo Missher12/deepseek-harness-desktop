@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { readlink, writeFile } from 'node:fs/promises'
+import { mkdir, readlink, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { _electron as electron, type ElectronApplication } from 'playwright'
@@ -131,6 +131,75 @@ async function exerciseWindows150PercentSurface(
     const turnRail = page.locator('nav[aria-label*="轮次导航"], nav[aria-label*="Turn navigation"]')
     await turnRail.waitFor({ state: 'attached', timeout: 30_000 })
     const turnRailTrack = turnRail.locator('[data-turn-navigation-track]')
+    await expect.poll(() => turnRail.locator('button[aria-label*="跳转"], button[aria-label*="jump to"]').count(), {
+      timeout: 15_000,
+    }).toBeGreaterThanOrEqual(2)
+    const nativeGeometry = await application.evaluate(({ BrowserWindow, screen }) => {
+      const window = BrowserWindow.getAllWindows()[0]
+      if (window === undefined) throw new Error('Windows 150 percent smoke has no native window.')
+      const bounds = window.getBounds()
+      return { bounds, workArea: screen.getDisplayMatching(bounds).workArea }
+    })
+    await expect.poll(() => page.locator('[class*="frame"][data-sidebar-collapsed]').evaluate(frame =>
+      frame.getAnimations().every(animation => animation.playState !== 'running'
+        || !Number.isFinite(animation.effect?.getComputedTiming().endTime))), {
+      timeout: 15_000,
+    }).toBe(true)
+    const queryInlineSize = await turnRail.evaluate(async (rail) => {
+      for (let ancestor = rail.parentElement; ancestor !== null; ancestor = ancestor.parentElement) {
+        const style = getComputedStyle(ancestor)
+        if (style.containerType === 'normal') continue
+        const queryContainer = ancestor
+        return await new Promise<number>((resolve, reject) => {
+          const observer = new ResizeObserver((entries) => {
+            clearTimeout(deadline)
+            observer.disconnect()
+            const size = entries[0]?.contentBoxSize[0]?.inlineSize
+            if (size === undefined) reject(new Error('Turn rail query container has no observed inline size.'))
+            else resolve(size)
+          })
+          const deadline = setTimeout(() => {
+            observer.disconnect()
+            reject(new Error('Turn rail query container did not report its size.'))
+          }, 10_000)
+          observer.observe(queryContainer)
+        })
+      }
+      throw new Error('Windows 150 percent smoke could not find the Turn rail query container.')
+    })
+    expect(Number.isFinite(queryInlineSize) && queryInlineSize > 0).toBe(true)
+    const expectedNativeRailState = queryInlineSize <= 584 ? 'hidden' : 'visible'
+    await turnRailTrack.waitFor({ state: expectedNativeRailState, timeout: 15_000 })
+    const nativeEvidenceRoot = join(repositoryRoot, 'apps/desktop/release/windows-native-visual-evidence')
+    await mkdir(nativeEvidenceRoot, { recursive: true })
+    await writeFile(join(nativeEvidenceRoot, 'renderer-native-150.json'), `${JSON.stringify({
+      schemaVersion: 1,
+      nativeGeometry,
+      viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight, dpr: devicePixelRatio })),
+      queryInlineSize,
+      expectedNativeRailState,
+    }, null, 2)}\n`, 'utf8')
+    await page.screenshot({ path: join(nativeEvidenceRoot, 'renderer-native-150.png') })
+    const { bounds: nativeBounds, workArea } = nativeGeometry
+    expect(nativeBounds.x).toBeGreaterThanOrEqual(workArea.x)
+    expect(nativeBounds.y).toBeGreaterThanOrEqual(workArea.y)
+    expect(nativeBounds.x + nativeBounds.width).toBeLessThanOrEqual(workArea.x + workArea.width)
+    expect(nativeBounds.y + nativeBounds.height).toBeLessThanOrEqual(workArea.y + workArea.height)
+
+    // The following rail interaction uses a wide CSS viewport; native small-screen
+    // geometry and responsive hiding are recorded above before any override.
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    // Playwright's viewport setter resets the emulated DPR to 1. The app owns
+    // this CDP session until quit; keep the wide interaction at 150 percent.
+    const viewportSession = await page.context().newCDPSession(page)
+    await viewportSession.send('Emulation.setDeviceMetricsOverride', {
+      width: 1600, height: 1000, deviceScaleFactor: 1.5, mobile: false,
+    })
+    await expect.poll(async () => (await page.locator('[class*="centerCol"]').boundingBox())?.width ?? 0, {
+      timeout: 15_000,
+    }).toBeGreaterThan(680)
+    await expect.poll(() => page.evaluate(() => window.devicePixelRatio), { timeout: 15_000 })
+      .toBeCloseTo(1.5, 1)
     await turnRailTrack.waitFor({ state: 'visible', timeout: 30_000 })
     const turnMarks = turnRail.locator('button[aria-label*="跳转"], button[aria-label*="jump to"]')
     await expect.poll(() => turnMarks.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(2)
@@ -157,15 +226,10 @@ async function exerciseWindows150PercentSurface(
       '[data-plugin-card="open-design"], [data-open-design-state]',
     ).count()).toBe(0)
 
-    const centerBounds = await page.locator('[class*="centerCol"]').boundingBox()
-    if (centerBounds === null) {
-      throw new Error('Windows 150 percent smoke could not measure the center column.')
-    }
-    expect(centerBounds.width).toBeGreaterThanOrEqual(640)
-
     const evidence = {
       schemaVersion: 1,
       requestedPercent: 150,
+      viewportMode: 'explicit-wide-css-viewport',
       rendererDevicePixelRatio: await page.evaluate(() => window.devicePixelRatio),
       primaryDisplayScaleFactor: await application.evaluate(({ screen }) => screen.getPrimaryDisplay().scaleFactor),
     }

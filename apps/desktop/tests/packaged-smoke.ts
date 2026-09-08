@@ -1627,17 +1627,6 @@ export async function runPackagedDesktopSmoke(
       timeout: 120_000,
     })
     const page = await nativeApp.firstWindow({ timeout: 120_000 })
-    // The Windows CI screen is narrower than the app's default window, which
-    // folds the workspace sidebar into its auto-collapsed narrow mode and
-    // hides the workspace rows this smoke drives. Pin the page metrics before
-    // the first interaction (the workbench exercise relies on the same seam).
-    await page.setViewportSize({ width: 1600, height: 1000 })
-    ;[primaryDisplayScaleFactor, rendererDevicePixelRatio] = await Promise.all([
-      nativeApp.evaluate(({ screen }) => screen.getPrimaryDisplay().scaleFactor),
-      page.evaluate(() => window.devicePixelRatio),
-    ])
-    expect(Number.isFinite(primaryDisplayScaleFactor) && primaryDisplayScaleFactor > 0).toBe(true)
-    expect(Number.isFinite(rendererDevicePixelRatio) && rendererDevicePixelRatio > 0).toBe(true)
     const consoleErrors: string[] = []
     page.on('console', (message) => {
       if (message.type() === 'error') {
@@ -1647,8 +1636,8 @@ export async function runPackagedDesktopSmoke(
     })
     page.on('pageerror', error => consoleErrors.push(error.message))
 
-    // Alpha.5 first run: dismiss the internal testing notice, then open the
-    // seeded workspace before the three-pane surface can mount.
+    // Check first-run reachability at the actual native window size before
+    // widening the viewport for the separate workspace feature scenarios.
     const welcomeDialog = page.getByRole('dialog', {
       name: /^(?:Internal Testing Notice|内测声明)$/u,
     })
@@ -1660,8 +1649,52 @@ export async function runPackagedDesktopSmoke(
         + `\nconsole=${consoleErrors.join(' | ')}\n${String(error)}`,
       )
     }
-    await welcomeDialog.getByRole('button', { name: /^(?:Continue|继续)$/u }).click()
+    const initialWindow = await nativeApp.evaluate(({ BrowserWindow, screen }) => {
+      const window = BrowserWindow.getAllWindows()[0]
+      if (window === undefined) throw new Error('Packaged smoke: native window is missing.')
+      const bounds = window.getBounds()
+      return { bounds, workArea: screen.getDisplayMatching(bounds).workArea }
+    })
+    const continueButton = welcomeDialog.getByRole('button', { name: /^(?:Continue|继续)$/u })
+    await continueButton.scrollIntoViewIfNeeded()
+    const initialButton = await continueButton.evaluate((element) => {
+      const bounds = element.getBoundingClientRect()
+      const hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+      return {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        rendererDevicePixelRatio: window.devicePixelRatio,
+        receivesPointer: hit === element || (hit !== null && element.contains(hit)),
+      }
+    })
+    const firstRunEvidence = join(repositoryRoot, 'apps/desktop/release', `desktop-smoke-first-run-${platform}`)
+    await writeFile(`${firstRunEvidence}.json`, `${JSON.stringify({
+      schemaVersion: 1, initialWindow, initialButton,
+    }, null, 2)}\n`, 'utf8')
+    await page.screenshot({ path: `${firstRunEvidence}.png` })
+    const { bounds, workArea } = initialWindow
+    expect(bounds.x).toBeGreaterThanOrEqual(workArea.x)
+    expect(bounds.y).toBeGreaterThanOrEqual(workArea.y)
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(workArea.x + workArea.width)
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(workArea.y + workArea.height)
+    expect(initialButton.x).toBeGreaterThanOrEqual(0)
+    expect(initialButton.y).toBeGreaterThanOrEqual(0)
+    expect(initialButton.x + initialButton.width).toBeLessThanOrEqual(initialButton.viewportWidth)
+    expect(initialButton.y + initialButton.height).toBeLessThanOrEqual(initialButton.viewportHeight)
+    expect(initialButton.receivesPointer).toBe(true)
+    await continueButton.click()
     await welcomeDialog.waitFor({ state: 'detached', timeout: 30_000 })
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    ;[primaryDisplayScaleFactor, rendererDevicePixelRatio] = await Promise.all([
+      nativeApp.evaluate(({ screen }) => screen.getPrimaryDisplay().scaleFactor),
+      page.evaluate(() => window.devicePixelRatio),
+    ])
+    expect(Number.isFinite(primaryDisplayScaleFactor) && primaryDisplayScaleFactor > 0).toBe(true)
+    expect(Number.isFinite(rendererDevicePixelRatio) && rendererDevicePixelRatio > 0).toBe(true)
     // Target the workspace row itself, not the first DOM match of its title
     // text (the title also appears in breadcrumbs, hover cards, and the
     // seeded Session title, and the trailing "New session" action only

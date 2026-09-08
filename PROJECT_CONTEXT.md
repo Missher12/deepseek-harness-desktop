@@ -1,5 +1,13 @@
 # DeepSeek Harness Desktop — Project Context
 
+## Work-area and native evidence follow-up — 2026-09-08
+
+Candidate `71f6769fe3a66c39e24b819f2e263e3de52f5764` passes Mac native run `34179938012`, Windows native run `34179938007`, and all ordinary CI jobs. Independently downloaded DMG and Setup hashes match their sidecars and run records. Required wheel real-API preflights remain blocked by the missing repository Actions secret `DEEPSEEK_API_KEY_EXTERNAL`; no local credentials are read or uploaded. Manual review finds the Windows 150% initial window outside the screen and incomplete Start/Search screenshots, so automated success does not constitute full visual acceptance.
+
+The commander owns the shared work-area fix and applies the dedicated Windows task's capture recommendations in the commander tree only. Default and fallback bounds fit the primary work area; valid saved windows use the largest eligible visible intersection and move inward; constructor minimums cannot exceed the fitted size. Six targeted counterexamples fail before the fix, and a separate multi-display counterexample prevents first-match placement. First-run packaged checks precede any explicit viewport. Windows 150% acceptance records actual narrow-screen geometry and responsive rail hiding before the independent wide-view rail interaction. The shell capture checks physical visible-frame containment and a complete, uniquely actionable foreground Search result.
+
+Mac and Windows tasks ACK the shared baseline and retain clean isolated worktrees. Local focused tests, documentation and build checks are in progress before a single validation-branch push. New source changes require new same-SHA native runs and artifacts; the downloaded `71f6769f` packages remain previous candidates. Main, tags, public Release and the installed application remain unchanged. Detailed evidence is in `.artifacts/71f6769f-handover.md` and the work-area follow-up logs.
+
 ## UI readiness and Windows fixture follow-up — 2026-09-08
 
 Candidate `3803e8d3eeb88b55ddf0ca672ab75082e8cdc205` passes Linux coverage, including the original Python pressure case, and Windows' unchanged Desktop upgrade fixture. Its native workflows fail later UI assertions: Mac run `34124464738` measures a 628-to-680 transcript-width change at 150%, and Windows run `34124464755` reads the current Turn marker before its layout callback. General CI `34124465013` also reports one reference-menu breadcrumb failure, one npm temporary-directory cleanup `EPERM`, and one archived-cache rewrite poll timeout. Neither native run is accepted for publication.

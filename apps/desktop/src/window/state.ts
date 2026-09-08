@@ -27,25 +27,38 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
-function intersectsDisplay(bounds: Required<WindowBounds>, display: DisplayBounds): boolean {
+function visibleDisplayArea(bounds: Required<WindowBounds>, display: DisplayBounds): number {
   const width = Math.max(0, Math.min(bounds.x + bounds.width, display.x + display.width)
     - Math.max(bounds.x, display.x))
   const height = Math.max(0, Math.min(bounds.y + bounds.height, display.y + display.height)
     - Math.max(bounds.y, display.y))
-  return width >= MIN_VISIBLE_WIDTH && height >= MIN_VISIBLE_HEIGHT
+  return width >= MIN_VISIBLE_WIDTH && height >= MIN_VISIBLE_HEIGHT ? width * height : 0
+}
+
+function defaultWindowBounds(displays: readonly DisplayBounds[]): WindowBounds {
+  const display = displays[0]
+  if (display === undefined) return { ...DEFAULT_BOUNDS }
+  const width = Math.min(DEFAULT_BOUNDS.width, display.width)
+  const height = Math.min(DEFAULT_BOUNDS.height, display.height)
+  return {
+    x: display.x + Math.floor((display.width - width) / 2),
+    y: display.y + Math.floor((display.height - height) / 2),
+    width,
+    height,
+  }
 }
 
 /**
  * Validate saved window geometry against current displays.
  * @param candidate - Parsed persisted value.
- * @param displays - Current display work areas.
- * @returns Safe saved geometry or centered-size defaults.
+ * @param displays - Current display work areas, primary display first.
+ * @returns Saved geometry moved fully into its display, or defaults fitted to the primary work area.
  */
 export function resolveWindowBounds(
   candidate: unknown,
   displays: readonly DisplayBounds[],
 ): WindowBounds {
-  if (typeof candidate !== 'object' || candidate === null) return { ...DEFAULT_BOUNDS }
+  if (typeof candidate !== 'object' || candidate === null) return defaultWindowBounds(displays)
   const value = candidate as Record<string, unknown>
   const { x, y, width, height } = value
   if (
@@ -53,20 +66,28 @@ export function resolveWindowBounds(
     || !isFiniteNumber(y)
     || !isFiniteNumber(width)
     || !isFiniteNumber(height)
-    || width < MIN_WIDTH
-    || height < MIN_HEIGHT
-  ) return { ...DEFAULT_BOUNDS }
+  ) return defaultWindowBounds(displays)
   const bounds = { x, y, width, height }
-  const fitsOneDisplay = displays.some(display =>
-    width <= display.width && height <= display.height && intersectsDisplay(bounds, display))
-  return fitsOneDisplay ? bounds : { ...DEFAULT_BOUNDS }
+  const display = displays.filter(display =>
+    width >= Math.min(MIN_WIDTH, display.width)
+    && height >= Math.min(MIN_HEIGHT, display.height)
+    && width <= display.width
+    && height <= display.height
+    && visibleDisplayArea(bounds, display) > 0)
+    .sort((left, right) => visibleDisplayArea(bounds, right) - visibleDisplayArea(bounds, left))[0]
+  if (display === undefined) return defaultWindowBounds(displays)
+  return {
+    ...bounds,
+    x: Math.max(display.x, Math.min(x, display.x + display.width - width)),
+    y: Math.max(display.y, Math.min(y, display.y + display.height - height)),
+  }
 }
 
 /**
  * Read and validate saved window geometry.
  * @param filename - Owner-controlled state file.
- * @param displays - Current display work areas.
- * @returns Safe saved geometry or defaults when absent or malformed.
+ * @param displays - Current display work areas, primary display first.
+ * @returns Fitted saved geometry or fitted defaults when absent or malformed.
  */
 export async function readWindowBounds(
   filename: string,
@@ -76,7 +97,7 @@ export async function readWindowBounds(
     return resolveWindowBounds(JSON.parse(await readFile(filename, 'utf8')), displays)
   } catch (error) {
     if (error instanceof SyntaxError || (error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { ...DEFAULT_BOUNDS }
+      return defaultWindowBounds(displays)
     }
     throw error
   }

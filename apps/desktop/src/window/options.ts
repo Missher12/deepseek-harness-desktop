@@ -35,7 +35,7 @@ export function selectWindowsTrayIconSize(scaleFactor: number): WindowsTrayIconS
 
 /**
  * Create the hardened BrowserWindow configuration shared by dev and package builds.
- * @param bounds - Validated window geometry.
+ * @param bounds - Geometry fitted to the selected display work area; minimum sizes cannot exceed it.
  * @param preload - Absolute path to the bundled preload entry.
  * @returns Electron constructor options with no Node renderer privileges.
  */
@@ -54,8 +54,8 @@ export function createWindowOptions(
   }
   return {
     ...bounds,
-    minWidth: 900,
-    minHeight: 620,
+    minWidth: Math.min(900, bounds.width),
+    minHeight: Math.min(620, bounds.height),
     show: false,
     title: 'DeepSeek Harness',
     ...iconOptions,

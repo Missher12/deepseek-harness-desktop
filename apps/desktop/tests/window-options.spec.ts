@@ -4,6 +4,17 @@ import * as windowOptions from '../src/window/options.ts'
 const { createWindowOptions, selectWindowsTrayIconSize } = windowOptions
 
 describe('createWindowOptions', () => {
+  it('does not enlarge a window beyond a small work area through its minimum size', () => {
+    const options = createWindowOptions(
+      { x: 0, y: 0, width: 683, height: 480 },
+      'C:\\app\\lib\\preload.cjs',
+      'win32',
+      'C:\\app\\assets\\icon-windows.ico',
+    )
+    expect(options.minWidth).toBeLessThanOrEqual(683)
+    expect(options.minHeight).toBeLessThanOrEqual(480)
+  })
+
   it('enables the hardened persistent desktop renderer', () => {
     const options = createWindowOptions(
       { x: 80, y: 50, width: 1200, height: 760 },

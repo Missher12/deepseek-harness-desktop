@@ -1,7 +1,36 @@
 import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 describe('Windows Desktop runtime evidence wiring', () => {
+  it.skipIf(process.platform !== 'win32')('rejects background windows, partial queries, ambiguous results and changed foregrounds', () => {
+    const source = fileURLToPath(new URL('./windows-desktop-native-visual-smoke.ps1', import.meta.url))
+    const command = `
+      $tokens = $null; $errors = $null
+      $ast = [System.Management.Automation.Language.Parser]::ParseFile($env:DSH_VISUAL_SCRIPT, [ref]$tokens, [ref]$errors)
+      if ($errors.Count -ne 0) { throw 'Visual smoke did not parse.' }
+      $definitions = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in @('Test-SearchProcessName', 'Test-SearchApplicationObservation') }, $true)
+      foreach ($definition in $definitions) { . ([scriptblock]::Create($definition.Extent.Text)) }
+      @(
+        (Test-SearchApplicationObservation SearchHost 'DeepSeek Harness' 1 $true 'DeepSeek Harness')
+        (Test-SearchApplicationObservation 'DeepSeek Harness' 'DeepSeek Harness' 1 $true 'DeepSeek Harness')
+        (Test-SearchApplicationObservation SearchHost 'DeepSe' 1 $true 'DeepSeek Harness')
+        (Test-SearchApplicationObservation SearchHost 'DeepSeek Harness' 0 $true 'DeepSeek Harness')
+        (Test-SearchApplicationObservation SearchHost 'DeepSeek Harness' 2 $true 'DeepSeek Harness')
+        (Test-SearchApplicationObservation SearchHost 'DeepSeek Harness' 1 $false 'DeepSeek Harness')
+        (Test-SearchApplicationObservation SearchHost 'DeepSeek Harness' 1 $true 'DeepSeek Harness Setup')
+        (Test-SearchApplicationObservation SearchHost 'DeepSeek Harness' 1 $true 'DeepSeek Harness Notes.txt')
+      ) | ConvertTo-Json -Compress
+    `
+    const result = execFileSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], {
+      encoding: 'utf8',
+      env: { ...process.env, DSH_VISUAL_SCRIPT: source },
+      timeout: 30_000,
+    })
+    expect(JSON.parse(result)).toEqual([true, false, false, false, false, false, false, false])
+  })
+
   it('restricts historical inventory to the pinned baseline and keeps ordinary runtime evidence strict', () => {
     const smoke = readFileSync(new URL('./windows-desktop-setup-smoke.ps1', import.meta.url), 'utf8')
     const workflow = readFileSync(new URL('../.github/workflows/windows-desktop.yml', import.meta.url), 'utf8')
@@ -114,6 +143,16 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(smoke).toContain('./scripts/windows-desktop-native-visual-smoke.ps1')
     expect(visual).toContain('--force-device-scale-factor=')
     expect(visual).toContain('function Save-NativeScreenCapture')
+    const searchWaiter = visual.slice(visual.indexOf('function Wait-SearchApplicationResult'), visual.indexOf('function Invoke-AutomationElement'))
+    expect(searchWaiter).toContain('AutomationElement]::FromHandle($foreground)')
+    expect(searchWaiter).not.toContain('RootElement')
+    expect(searchWaiter).toContain('ValuePattern]::Pattern')
+    expect(searchWaiter).toContain('Test-SearchApplicationObservation')
+    expect(visual).toContain('[void](Wait-SearchApplicationResult)')
+    expect(visual).toContain('DwmGetWindowAttribute(window, 9')
+    expect(visual).toContain('SetThreadDpiAwarenessContext(previous)')
+    expect(visual).toContain('Contains($windowGeometry.WorkArea, $windowGeometry.VisibleFrame)')
+    expect(visual).toContain('windowGeometryPhysicalPixels = $windowGeometry')
     expect(visual).toContain('function Open-DeepSeekHarnessTrayMenu')
     expect(visual).toContain('$maxTrayMenuAttempts = 3')
     expect(visual).toContain(
@@ -204,7 +243,7 @@ describe('Windows Desktop runtime evidence wiring', () => {
     const attachedRail = packaged.indexOf("await turnRail.waitFor({ state: 'attached'")
     const track = packaged.indexOf("turnRail.locator('[data-turn-navigation-track]')")
     const visibleTrack = packaged.indexOf("await turnRailTrack.waitFor({ state: 'visible'")
-    const populatedRail = packaged.indexOf("turnRail.locator('button[aria-label*=\"\u8df3\u8f6c\"], button[aria-label*=\"jump to\"]')")
+    const populatedRail = packaged.indexOf("turnRail.locator('button[aria-label*=\"\u8df3\u8f6c\"], button[aria-label*=\"jump to\"]')", visibleTrack)
     const currentRail = packaged.indexOf("turnRail.locator('button[aria-current=\"true\"]')")
     const openTooltip = packaged.indexOf("page.getByRole('tooltip').waitFor({ state: 'visible'")
     const workbench = packaged.indexOf('Open workbench|打开工作台')
@@ -236,12 +275,22 @@ describe('Windows Desktop runtime evidence wiring', () => {
       expect(packaged).toContain(`'${selector}',\n    ).count()).toBe(0)`)
     }
     expect(packaged).not.toContain('await workbenchTrigger.click()')
-    expect(packaged).toContain('expect(centerBounds.width).toBeGreaterThanOrEqual(640)')
+    expect(packaged).toContain('.toBeGreaterThan(680)')
+    expect(packaged).toContain("queryInlineSize <= 584 ? 'hidden' : 'visible'")
+    const nativeCapture = packaged.indexOf("path: join(nativeEvidenceRoot, 'renderer-native-150.png')")
+    const wideViewport = packaged.indexOf('await page.setViewportSize({ width: 1600, height: 1000 })')
+    expect(nativeCapture).toBeGreaterThan(attachedRail)
+    expect(wideViewport).toBeGreaterThan(nativeCapture)
+    expect(visibleTrack).toBeGreaterThan(wideViewport)
     expect(packaged).toContain('waitForWindowsProcessesStopped')
     const sharedPackaged = readFileSync(
       new URL('../apps/desktop/tests/packaged-smoke.ts', import.meta.url),
       'utf8',
     )
+    expect(sharedPackaged.indexOf('await continueButton.click()'))
+      .toBeLessThan(sharedPackaged.indexOf('await page.setViewportSize('))
+    expect(sharedPackaged).toContain('expect(initialButton.receivesPointer).toBe(true)')
+    expect(workflow).toContain('desktop-smoke-first-run-win32.json')
     expect(sharedPackaged).toContain('exerciseComposerAddMenu(page, clipboardSeed)')
     expect(sharedPackaged).toContain('exerciseTurnNavigation(page, clipboardSeed)')
     expect(sharedPackaged).toContain('exerciseWindowsDirectoryPicker(page, harnessHome, userData)')

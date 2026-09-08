@@ -302,6 +302,8 @@ jobs:
             s/apps/desktop/release/windows-native-visual-evidence/*.png
             s/apps/desktop/release/windows-native-visual-evidence/*.json
             s/apps/desktop/release/desktop-smoke-win32.png
+            s/apps/desktop/release/desktop-smoke-first-run-win32.png
+            s/apps/desktop/release/desktop-smoke-first-run-win32.json
             s/apps/desktop/release/desktop-smoke-messenger-win32.png
             s/apps/desktop/release/desktop-smoke-workbench-win32.png
             s/apps/desktop/release/desktop-smoke-reasoning-win32.png

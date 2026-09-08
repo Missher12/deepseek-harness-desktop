@@ -294,7 +294,11 @@ function createStateWriter(window: BrowserWindow): () => void {
 }
 
 async function createDesktopWindow(): Promise<DesktopWindow> {
-  const displays = screen.getAllDisplays().map(display => display.workArea)
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const displays = [
+    primaryDisplay,
+    ...screen.getAllDisplays().filter(display => display.id !== primaryDisplay.id),
+  ].map(display => display.workArea)
   const bounds = await readDesktopWindowPrerequisites(
     preferencesReady,
     async () => await readWindowBounds(windowStatePath, displays),

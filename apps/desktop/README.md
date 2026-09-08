@@ -4,6 +4,8 @@ English | [中文](README.zh.md)
 
 Native desktop shell for the official DeepSeek Harness runtime. The app owns one loopback-only Harness child process on an operating-system-assigned port and renders the existing Harness Web client inside a hardened Electron window.
 
+Initial windows and invalid-state fallbacks fit the primary display work area. Restored windows fit the eligible display containing most of their visible area, and minimum dimensions shrink with smaller work areas. Packaged first-run acceptance checks window bounds and the Continue action before widening the test viewport; Windows Search evidence waits for a complete query and a unique actionable result in the foreground Shell search root.
+
 The sidebar includes a Codex-style archived-session manager. Archiving keeps
 the session log and its Workspace position; the manager can restore it in
 place. Permanent deletion is available only from the archive, requires an

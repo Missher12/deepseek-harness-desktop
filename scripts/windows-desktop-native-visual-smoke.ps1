@@ -53,6 +53,69 @@ public static class NativeVisualInput
     [DllImport("user32.dll")]
     public static extern uint GetDpiForWindow(IntPtr window);
 
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Rect { public int Left, Top, Right, Bottom; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo { public int Size; public Rect Monitor, Work; public uint Flags; }
+
+    public sealed class WindowGeometry
+    {
+        public Rect WindowRect, VisibleFrame, WorkArea, VirtualScreen;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetWindowRect(IntPtr window, out Rect rect);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
+
+    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW", SetLastError = true)]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(IntPtr window, uint attribute, out Rect rect, int size);
+
+    public static WindowGeometry ReadWindowGeometry(IntPtr window)
+    {
+        var previous = SetThreadDpiAwarenessContext(new IntPtr(-4));
+        if (previous == IntPtr.Zero) throw new System.ComponentModel.Win32Exception();
+        try
+        {
+            var geometry = new WindowGeometry();
+            if (!GetWindowRect(window, out geometry.WindowRect))
+                throw new System.ComponentModel.Win32Exception();
+            int result = DwmGetWindowAttribute(window, 9, out geometry.VisibleFrame, Marshal.SizeOf(typeof(Rect)));
+            Marshal.ThrowExceptionForHR(result);
+            var monitor = new MonitorInfo { Size = Marshal.SizeOf(typeof(MonitorInfo)) };
+            if (!GetMonitorInfo(MonitorFromWindow(window, 2), ref monitor))
+                throw new System.ComponentModel.Win32Exception();
+            geometry.WorkArea = monitor.Work;
+            int left = GetSystemMetrics(76), top = GetSystemMetrics(77);
+            geometry.VirtualScreen = new Rect {
+                Left = left, Top = top, Right = left + GetSystemMetrics(78), Bottom = top + GetSystemMetrics(79)
+            };
+            return geometry;
+        }
+        finally { SetThreadDpiAwarenessContext(previous); }
+    }
+
+    public static bool Contains(Rect outer, Rect inner)
+    {
+        return inner.Right > inner.Left && inner.Bottom > inner.Top
+            && inner.Left >= outer.Left && inner.Top >= outer.Top
+            && inner.Right <= outer.Right && inner.Bottom <= outer.Bottom;
+    }
+
     public static void RightClick(int x, int y)
     {
         SetCursorPos(x, y);
@@ -131,6 +194,93 @@ function Wait-AutomationElement {
     Start-Sleep -Milliseconds 200
   }
   throw "Timed out waiting for native Windows element: $NamePattern"
+}
+
+function Test-SearchProcessName {
+  param([string]$ProcessName)
+  return $ProcessName -in @('SearchHost', 'SearchApp', 'SearchUI', 'StartMenuExperienceHost')
+}
+
+function Test-SearchApplicationObservation {
+  param(
+    [string]$ProcessName,
+    [string]$ObservedQuery,
+    [int]$ResultCount,
+    [bool]$ForegroundUnchanged,
+    [string]$ResultName
+  )
+
+  return (
+    (Test-SearchProcessName $ProcessName) -and
+    $ObservedQuery -ceq 'DeepSeek Harness' -and
+    $ResultCount -eq 1 -and
+    $ResultName -ceq 'DeepSeek Harness' -and
+    $ForegroundUnchanged
+  )
+}
+
+function Wait-SearchApplicationResult {
+  param([int]$TimeoutSeconds = 15)
+
+  $query = 'DeepSeek Harness'
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    try {
+      $foreground = [NativeVisualInput]::GetForegroundWindow()
+      if ($foreground -eq [IntPtr]::Zero) {
+        Start-Sleep -Milliseconds 200
+        continue
+      }
+      $root = [System.Windows.Automation.AutomationElement]::FromHandle($foreground)
+      $searchProcess = Get-Process -Id $root.Current.ProcessId -ErrorAction SilentlyContinue
+      if ($null -ne $searchProcess -and (Test-SearchProcessName $searchProcess.ProcessName)) {
+        $elements = $root.FindAll(
+          [System.Windows.Automation.TreeScope]::Descendants,
+          [System.Windows.Automation.Condition]::TrueCondition
+        )
+        $queryPattern = $null
+        $results = @()
+        $rootBounds = $root.Current.BoundingRectangle
+        foreach ($element in $elements) {
+          if ($element.Current.IsOffscreen -or -not $element.Current.IsEnabled) { continue }
+          $type = $element.Current.ControlType
+          if ($type -eq [System.Windows.Automation.ControlType]::Edit) {
+            $value = $null
+            if ($element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$value) -and $value.Current.Value -ceq $query) {
+              $queryPattern = $value
+            }
+            continue
+          }
+          if ($type -in @([System.Windows.Automation.ControlType]::Window, [System.Windows.Automation.ControlType]::Text, [System.Windows.Automation.ControlType]::Pane)) { continue }
+          if ($element.Current.Name -cne $query) { continue }
+          $bounds = $element.Current.BoundingRectangle
+          if ($bounds.Width -le 0 -or $bounds.Height -le 0 -or -not $rootBounds.Contains($bounds)) { continue }
+          $action = $null
+          if (
+            $element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$action) -or
+            $element.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$action)
+          ) {
+            $results += $element
+          }
+        }
+        $observedQuery = if ($null -eq $queryPattern) { '' } else { $queryPattern.Current.Value }
+        $resultName = if ($results.Count -eq 1) { $results[0].Current.Name } else { '' }
+        if (Test-SearchApplicationObservation `
+          -ProcessName $searchProcess.ProcessName `
+          -ObservedQuery $observedQuery `
+          -ResultCount $results.Count `
+          -ResultName $resultName `
+          -ForegroundUnchanged ([NativeVisualInput]::GetForegroundWindow() -eq $foreground)) {
+          return $results[0]
+        }
+      }
+    }
+    catch [System.Windows.Automation.ElementNotAvailableException] {
+      # Search replaces its accessibility tree while accepting the query.
+    }
+    Start-Sleep -Milliseconds 200
+  }
+  throw 'Windows Search did not expose one actionable application result for the complete DeepSeek Harness query.'
 }
 
 function Invoke-AutomationElement {
@@ -396,7 +546,14 @@ try {
   $nativeDpi = [NativeVisualInput]::GetDpiForWindow($process.MainWindowHandle)
   [void][NativeVisualInput]::SetForegroundWindow($process.MainWindowHandle)
   Start-Sleep -Seconds 1
+  $windowGeometry = [NativeVisualInput]::ReadWindowGeometry($process.MainWindowHandle)
   Save-NativeScreenCapture -Path (Join-Path $resolvedEvidenceRoot "taskbar-running-$DpiPercent.png")
+  if (
+    -not [NativeVisualInput]::Contains($windowGeometry.WorkArea, $windowGeometry.VisibleFrame) -or
+    -not [NativeVisualInput]::Contains($windowGeometry.VirtualScreen, $windowGeometry.VisibleFrame)
+  ) {
+    throw "Native window is outside the physical work area: $($windowGeometry | ConvertTo-Json -Depth 3 -Compress)"
+  }
 
   [NativeVisualInput]::PressWindowsD()
   Start-Sleep -Milliseconds 750
@@ -408,7 +565,7 @@ try {
   [NativeVisualInput]::PressWindows()
   Start-Sleep -Milliseconds 500
   [System.Windows.Forms.SendKeys]::SendWait('DeepSeek Harness')
-  [void](Wait-AutomationElement -NamePattern '^DeepSeek Harness(?:\s|$)' -TimeoutSeconds 10)
+  [void](Wait-SearchApplicationResult)
   Save-NativeScreenCapture -Path (Join-Path $resolvedEvidenceRoot "start-menu-shortcut-$DpiPercent.png")
   [NativeVisualInput]::PressEscape()
   Start-Sleep -Milliseconds 300
@@ -439,6 +596,7 @@ try {
     requestedPercent = $DpiPercent
     scaleMode = 'electron-force-device-scale-factor'
     nativeWindowDpi = $nativeDpi
+    windowGeometryPhysicalPixels = $windowGeometry
     processTreeCount = $trackedProcessIds.Count
     shortcuts = @(
       [System.IO.Path]::GetFileName($DesktopShortcut),
