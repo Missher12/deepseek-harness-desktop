@@ -138,6 +138,16 @@ describe('MenuView', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
+  it('marks retained options unavailable until the refined candidates are ready', () => {
+    const groups: MenuState['groups'] = [{
+      source: 'reference', status: 'pending', items: [{ name: 'folder/', drill: true }],
+    }]
+    const { menu } = mount(openState({ groups }))
+    expect(screen.getByRole('option').getAttribute('aria-disabled')).toBe('true')
+    act(() => { menu.set(openState({ groups: [{ ...groups[0]!, status: 'ready' }] })) })
+    expect(screen.getByRole('option').hasAttribute('aria-disabled')).toBe(false)
+  })
+
   it('titles each group with the localized source name, raw name for unknown sources, none for empty ready groups', () => {
     const { view } = mount(openState({
       groups: [

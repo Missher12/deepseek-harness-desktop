@@ -19,6 +19,7 @@ import { _electron as electron, type ElectronApplication, type Page } from 'play
 import { expect } from 'vitest'
 import { startReaderSmokeProvider } from './reader-smoke-provider.ts'
 import { exerciseReaderPresentation } from './reader-presentation-smoke.ts'
+import { prepareTurnNavigationViewport } from './turn-navigation-viewport.ts'
 
 const execFileAsync = promisify(execFile)
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
@@ -1120,15 +1121,7 @@ async function exerciseTurnNavigation(page: Page, seeded: WindowsClipboardSmokeS
   // The installed default-size contract is 1012px: the rail remains available
   // in the transcript's start gutter instead of disappearing at the old 900px
   // center-column threshold.
-  await page.setViewportSize({ width: 1012, height: 760 })
-  const openSidebar = page.getByRole('button', { name: /^(?:Open sidebar|打开侧边栏)$/u })
-  if (await openSidebar.count() === 1) {
-    await openSidebar.click()
-    await expect.poll(
-      () => page.locator('[class*="frame"][data-sidebar-collapsed]').count(),
-      { timeout: 15_000 },
-    ).toBe(0)
-  }
+  await prepareTurnNavigationViewport(page)
   const activeRow = page.locator('[class*="sessionRow"]').filter({ hasText: seeded.activeSessionTitle }).first()
   await activeRow.waitFor({ state: 'visible', timeout: 15_000 })
   if (await activeRow.getAttribute('aria-selected') !== 'true') {

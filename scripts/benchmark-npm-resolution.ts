@@ -1,7 +1,8 @@
 /** Benchmark npm's dependency-tree resolution against an all-local registry. */
 
 import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { globSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { globSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -484,7 +485,7 @@ export async function resolveNpmPackageLock(
   } finally {
     server.closeAllConnections()
     await close(server)
-    rmSync(consumer, { recursive: true, force: true })
+    await rm(consumer, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }
 

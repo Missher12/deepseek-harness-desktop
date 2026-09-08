@@ -135,7 +135,7 @@ async function exerciseWindows150PercentSurface(
     const turnMarks = turnRail.locator('button[aria-label*="跳转"], button[aria-label*="jump to"]')
     await expect.poll(() => turnMarks.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(2)
     const currentTurn = turnRail.locator('button[aria-current="true"]')
-    expect(await currentTurn.count()).toBe(1)
+    await expect.poll(() => currentTurn.count(), { timeout: 15_000 }).toBe(1)
     await currentTurn.waitFor({ state: 'visible', timeout: 15_000 })
     const turnRailBounds = await turnRailTrack.boundingBox()
     const transcriptBounds = await page.locator('[data-chat-flow]').boundingBox()

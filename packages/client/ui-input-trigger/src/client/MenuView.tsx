@@ -183,6 +183,7 @@ export function MenuView({ menu, launcher, headers, onPick, onCrumb, onHover, on
                         type="button"
                         role="option"
                         aria-selected={active}
+                        aria-disabled={group.status !== 'ready' || undefined}
                         className={clsx(css.item, composerAdd && css.addItem, active && css.active)}
                         // mousedown, not click: the textarea keeps focus (combobox
                         // pattern) — preventing default stops the focus steal, and the

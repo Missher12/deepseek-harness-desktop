@@ -1,5 +1,13 @@
 # DeepSeek Harness Desktop — Project Context
 
+## UI readiness and Windows fixture follow-up — 2026-09-08
+
+Candidate `3803e8d3eeb88b55ddf0ca672ab75082e8cdc205` passes Linux coverage, including the original Python pressure case, and Windows' unchanged Desktop upgrade fixture. Its native workflows fail later UI assertions: Mac run `34124464738` measures a 628-to-680 transcript-width change at 150%, and Windows run `34124464755` reads the current Turn marker before its layout callback. General CI `34124465013` also reports one reference-menu breadcrumb failure, one npm temporary-directory cleanup `EPERM`, and one archived-cache rewrite poll timeout. Neither native run is accepted for publication.
+
+A real Chromium counterexample gates AppFrame's ResizeObserver and reproduces the same 628-to-680 change without mouse input. The shared native helper now waits for the narrow breakpoint's collapsed sidebar before re-expanding and measuring; the strict drag-width assertion remains intact. Windows waits for the current marker inside the existing visibility budget. Pending reference candidates expose `aria-disabled`, and browser interactions wait for enabled options before drilling. The two affected browser files pass all seven cases; MenuView and controller checks pass 96 cases.
+
+The npm benchmark awaits bounded asynchronous removal after child and registry closure; persistent cleanup errors still fail. The archived-cache fixture observes exactly the two automatic production writes, keeps create followed immediately by append, awaits their durability, then checks the original document contents. This replaces a disk-latency poll with the actual completion boundary and exposes write rejection directly. The ordinary Desktop upgrade fixture remains unchanged. All 18 owning benchmark/cache fixture checks pass locally; that is macOS evidence, not Windows acceptance. The same new final SHA still requires fresh Intel Mac and Windows native workflows, complete CI and the missing external-key preflights before main, tag or public Release.
+
 ## Ordered checkpoint and bounded metering follow-up — 2026-09-07
 
 Candidate `757d4658173489310bfdec46878cb7b2424095ce` passes the Mac and Windows native workflows (`34117961357` and `34117961464`) and the complete browser/artifact lane. General CI exposes one Linux Python output-pressure timeout and one Windows projection-cache upgrade assertion; both coverage reports otherwise measure every included source at 100%. The real-API preflights remain blocked by the unconfigured `DEEPSEEK_API_KEY_EXTERNAL` repository secret.

@@ -14,6 +14,8 @@ reducer 的 `hit` 分支(`core/menu.ts`)现在保留上一次查询的行和高�
 
 旧行仅用于显示。`pick()` 要求候选所在组为 `ready`,`enter` 仲裁在 pick 前检查高亮组的状态:pending 窗口内 Enter 是显式 no-op(`'consumed'`)——既不选中旧行,也不落到草稿发送。Tab 的下钻早已带有相同的 `ready` 检查。
 
+MenuView 在保留的候选项上通过 `aria-disabled` 表达这条边界，直到所在组就绪。可见的匹配标签可能来自上一次查询，因此浏览器交互应等待候选项启用后，再选中或下钻。
+
 ## Alternatives considered
 
 **每次细化都清空为骨架屏。** 拒绝;这正是闪烁的现状。线上 chat 前端的会话搜索确实是清空(每次防抖查询重置结果和活动索引),其 Enter 因此天然安全——但那个列表在独立弹窗里,而本菜单直接在光标下随每个按键重绘,闪烁正是用户所报告的问题。
@@ -24,4 +26,4 @@ reducer 的 `hit` 分支(`core/menu.ts`)现在保留上一次查询的行和高�
 
 ## Consequences
 
-细化按键不再闪烁;请求结算时列表内容原位替换。代价:pending 窗口内 Enter 失效(结算后再按即正常选中);行按 index 作为 key,结算时 DOM 节点内容原位替换——指针类测试点击前必须等待仅旧查询匹配的行消失(`reference-composer.e2e.ts` 轮询 `folderx/` 消失)。细化期间已存在的高亮闪动问题仍未解决,留待后续 PR。
+细化按键不再闪烁，请求结算时替换列表内容。pending 窗口内 Enter 和 Tab 仍被消费。行的 key 包含 source、index、name 和 value，候选变化时会得到不同的 DOM 身份。跨查询保留的候选仍需检查就绪状态；`reference-composer.e2e.ts` 等待文件夹候选启用，并在检查面包屑之前确认 Tab 已更新查询。细化期间已存在的高亮闪动问题仍未解决，留待后续 PR。

@@ -14,6 +14,8 @@ The reducer's `hit` case (`core/menu.ts`) now retains the previous query's rows 
 
 Stale rows are display-only. `pick()` requires the candidate's group to be `ready`, and the `enter` arbitration checks the highlighted group's status before picking: during the pending window Enter is an explicit no-op (`'consumed'`) — it neither picks the stale row nor falls through to submit the draft. Tab already carried the same `ready` check for drilling.
 
+MenuView exposes that fence as `aria-disabled` on retained options until their group becomes ready. A visible matching label can belong to the previous query, so browser interactions wait for the option to be enabled before picking or drilling.
+
 ## Alternatives considered
 
 **Clear to a skeleton on every refinement.** Rejected; this was the flickering status quo. The production chat frontend's conversation search does clear (results and active index reset per debounced query), which keeps its Enter trivially safe — but its list is in a dedicated dialog, whereas this menu repaints directly under the caret on every keystroke, where the flicker is what users reported.
@@ -24,4 +26,4 @@ Stale rows are display-only. `pick()` requires the candidate's group to be `read
 
 ## Consequences
 
-Refinement keystrokes no longer flicker; the list content swaps in place when the fetch settles. The costs: Enter is dead for the pending window (pressing it again after settle picks normally), and rows are index-keyed, so a settle swaps DOM node content in place — pointer tests must wait for a stale-only row to disappear before clicking (`reference-composer.e2e.ts` polls `folderx/` away). A pre-existing highlight blink during refinement remains open and is deferred to a follow-up.
+Refinement keystrokes no longer flicker; the list content swaps when the fetch settles. Enter and Tab remain consumed during the pending window. Row keys include source, index, name and value, so a changed candidate gets a distinct DOM identity. A candidate retained across queries still needs the readiness check; `reference-composer.e2e.ts` waits for enabled folder options and verifies that Tab updates the query before checking breadcrumbs. A pre-existing highlight blink during refinement remains open and is deferred to a follow-up.

@@ -123,11 +123,20 @@ async function placeDoc(root: string, id: string, name: string): Promise<Fixture
  * format stamps, lineage, and the freshly folded title.
  */
 async function assertRewrite(ctx: Context, root: string, id: SessionId): Promise<void> {
-  const session = ctx.sessions.create(id)
-  session.append('fixtures-test/set-title', { title: '重写标题' })
-  session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-  const path = join(root, projectionCacheDomainSpec.name, 'sessions', `${id}.json`)
-  await vi.waitFor(async () => {
+  const writes = vi.spyOn(ctx.sessionProjectionCache, 'write')
+  try {
+    const session = ctx.sessions.create(id)
+    session.append('fixtures-test/set-title', { title: '重写标题' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    // These are the two mandatory production writes, observed without adding
+    // a write or pausing the immediate append. Check migration after their
+    // durability promises settle, rather than racing disk load with a poll.
+    expect(writes).toHaveBeenCalledTimes(2)
+    await Promise.all(writes.mock.results.map((result) => {
+      if (result.type !== 'return') throw new Error('automatic checkpoint write did not return')
+      return result.value
+    }))
+    const path = join(root, projectionCacheDomainSpec.name, 'sessions', `${id}.json`)
     const doc = JSON.parse(await readFile(path, 'utf8')) as FixtureDoc
     expect(doc.version).toBe(projectionCacheDomainSpec.version)
     expect(doc.record.identity).toMatchObject({
@@ -136,7 +145,9 @@ async function assertRewrite(ctx: Context, root: string, id: SessionId): Promise
       inheritedEventCount: 0,
     })
     expect(doc.record.rows['title']?.val).toBe('重写标题')
-  }, { timeout: 5_000 })
+  } finally {
+    writes.mockRestore()
+  }
 }
 
 afterEach(async () => {
