@@ -93,6 +93,7 @@ jobs:
           pnpm exec vitest run
           packages/boot/app-boot/tests/profile.spec.ts
           apps/desktop/tests/packaged-smoke-helpers.spec.ts
+          scripts/windows-desktop-runtime-evidence.spec.ts
           --config vitest.config.ts
           --reporter=verbose
 

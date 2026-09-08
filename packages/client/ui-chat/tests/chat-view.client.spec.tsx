@@ -626,6 +626,31 @@ describe('ChatView', () => {
     expect(preview.textContent).toContain('first response')
   })
 
+  it('jumps to visible content when the first loaded turn has a hidden process controller', () => {
+    const h = makeHarness({
+      nodes: [
+        assistant(5, 'partially loaded answer', 1),
+        userInTurn(7, 'next prompt', 2), assistant(8, 'next answer', 2),
+      ],
+      turnEnds: new Map([[1, 6], [2, 9]]),
+    }, { hasMore: true })
+    const view = render(<h.ChatView {...h.props} />)
+    const hiddenController = view.container.querySelector('[data-chat-anchor-key="fixture:turn-process:1"]')
+    expect(hiddenController?.hasAttribute('hidden')).toBe(true)
+    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLElement
+    const metrics = installScrollMetrics(scroller, 1_000, 300)
+    metrics.setLayout(1_000, 700)
+    vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 300 } as DOMRect)
+    const row = view.container.querySelector('[data-chat-anchor-key="fixture:assistant:5"]') as HTMLElement
+    vi.spyOn(row, 'getBoundingClientRect').mockReturnValue({ top: -500, bottom: -400 } as DOMRect)
+
+    const first = view.getByRole('button', { name: '跳转到第 1 轮' })
+    fireEvent.click(first)
+
+    expect(scroller.scrollTop).toBe(176)
+    expect(first.getAttribute('aria-current')).toBe('true')
+  })
+
   it('jumps to a turn anchor and reflows stable marks after an older page arrives', () => {
     const later = [
       userInTurn(4, 'second prompt', 2), assistant(5, 'second response', 2),

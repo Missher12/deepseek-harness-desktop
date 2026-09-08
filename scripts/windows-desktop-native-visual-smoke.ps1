@@ -25,6 +25,7 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -TypeDefinition @'
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 public static class NativeVisualInput
@@ -55,6 +56,36 @@ public static class NativeVisualInput
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+
+    public static uint WindowProcessId(IntPtr window)
+    {
+        uint processId;
+        return GetWindowThreadProcessId(window, out processId) == 0 ? 0 : processId;
+    }
+
+    private delegate bool EnumCallback(IntPtr window, IntPtr data);
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumCallback callback, IntPtr data);
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(IntPtr window, uint command);
+
+    public static IntPtr[] VisibleRoots(uint processId)
+    {
+        var windows = new List<IntPtr>();
+        if (!EnumWindows((window, data) => {
+            Rect bounds;
+            if (WindowProcessId(window) == processId && IsWindowVisible(window) &&
+                GetWindow(window, 4) == IntPtr.Zero && GetWindowRect(window, out bounds) &&
+                bounds.Right > bounds.Left && bounds.Bottom > bounds.Top) windows.Add(window);
+            return true;
+        }, IntPtr.Zero)) throw new InvalidOperationException("Window enumeration failed.");
+        return windows.ToArray();
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     public struct Rect { public int Left, Top, Right, Bottom; }
@@ -149,6 +180,12 @@ public static class NativeVisualInput
         keybd_event(VirtualKeyEscape, 0, 0, UIntPtr.Zero);
         keybd_event(VirtualKeyEscape, 0, KeyUp, UIntPtr.Zero);
     }
+
+    public static void PressEnter()
+    {
+        keybd_event(0x0D, 0, 0, UIntPtr.Zero);
+        keybd_event(0x0D, 0, KeyUp, UIntPtr.Zero);
+    }
 }
 '@
 
@@ -201,86 +238,91 @@ function Test-SearchProcessName {
   return $ProcessName -in @('SearchHost', 'SearchApp', 'SearchUI', 'StartMenuExperienceHost')
 }
 
-function Test-SearchApplicationObservation {
+function Test-SearchQueryObservation {
   param(
     [string]$ProcessName,
     [string]$ObservedQuery,
-    [int]$ResultCount,
+    [int]$QueryCount,
     [bool]$ForegroundUnchanged,
-    [string]$ResultName
+    [bool]$WindowProcessMatches
   )
 
   return (
     (Test-SearchProcessName $ProcessName) -and
     $ObservedQuery -ceq 'DeepSeek Harness' -and
-    $ResultCount -eq 1 -and
-    $ResultName -ceq 'DeepSeek Harness' -and
+    $QueryCount -eq 1 -and
+    $WindowProcessMatches -and
     $ForegroundUnchanged
   )
 }
 
-function Wait-SearchApplicationResult {
+function Get-VerifiedSearchQuery {
+  $foreground = [NativeVisualInput]::GetForegroundWindow()
+  if ($foreground -eq [IntPtr]::Zero) { return $null }
+  $root = [System.Windows.Automation.AutomationElement]::FromHandle($foreground)
+  $searchProcess = Get-Process -Id $root.Current.ProcessId -ErrorAction SilentlyContinue
+  if ($null -eq $searchProcess -or -not (Test-SearchProcessName $searchProcess.ProcessName) -or
+    $root.Current.IsOffscreen -or -not $root.Current.IsEnabled) { return $null }
+  $elements = $root.FindAll(
+    [System.Windows.Automation.TreeScope]::Descendants,
+    [System.Windows.Automation.PropertyCondition]::new(
+      [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+      [System.Windows.Automation.ControlType]::Edit
+    )
+  )
+  $queryCount = 0
+  $observedQuery = ''
+  foreach ($element in $elements) {
+    if ($element.Current.IsOffscreen -or -not $element.Current.IsEnabled) { continue }
+    $bounds = $element.Current.BoundingRectangle
+    $value = $null
+    if (
+      $bounds.Width -gt 0 -and $bounds.Height -gt 0 -and $root.Current.BoundingRectangle.Contains($bounds) -and
+      $element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$value) -and
+      $value.Current.Value -ceq 'DeepSeek Harness'
+    ) {
+      $observedQuery = $value.Current.Value
+      $queryCount += 1
+    }
+  }
+  if (Test-SearchQueryObservation `
+    -ProcessName $searchProcess.ProcessName -ObservedQuery $observedQuery -QueryCount $queryCount `
+    -WindowProcessMatches ([NativeVisualInput]::WindowProcessId($foreground) -eq $searchProcess.Id) `
+    -ForegroundUnchanged ([NativeVisualInput]::GetForegroundWindow() -eq $foreground)) {
+    return $foreground
+  }
+  return $null
+}
+
+function Wait-SearchQuery {
   param([int]$TimeoutSeconds = 15)
 
-  $query = 'DeepSeek Harness'
   $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
   while ([DateTime]::UtcNow -lt $deadline) {
     try {
-      $foreground = [NativeVisualInput]::GetForegroundWindow()
-      if ($foreground -eq [IntPtr]::Zero) {
-        Start-Sleep -Milliseconds 200
-        continue
-      }
-      $root = [System.Windows.Automation.AutomationElement]::FromHandle($foreground)
-      $searchProcess = Get-Process -Id $root.Current.ProcessId -ErrorAction SilentlyContinue
-      if ($null -ne $searchProcess -and (Test-SearchProcessName $searchProcess.ProcessName)) {
-        $elements = $root.FindAll(
-          [System.Windows.Automation.TreeScope]::Descendants,
-          [System.Windows.Automation.Condition]::TrueCondition
-        )
-        $queryPattern = $null
-        $results = @()
-        $rootBounds = $root.Current.BoundingRectangle
-        foreach ($element in $elements) {
-          if ($element.Current.IsOffscreen -or -not $element.Current.IsEnabled) { continue }
-          $type = $element.Current.ControlType
-          if ($type -eq [System.Windows.Automation.ControlType]::Edit) {
-            $value = $null
-            if ($element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$value) -and $value.Current.Value -ceq $query) {
-              $queryPattern = $value
-            }
-            continue
-          }
-          if ($type -in @([System.Windows.Automation.ControlType]::Window, [System.Windows.Automation.ControlType]::Text, [System.Windows.Automation.ControlType]::Pane)) { continue }
-          if ($element.Current.Name -cne $query) { continue }
-          $bounds = $element.Current.BoundingRectangle
-          if ($bounds.Width -le 0 -or $bounds.Height -le 0 -or -not $rootBounds.Contains($bounds)) { continue }
-          $action = $null
-          if (
-            $element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$action) -or
-            $element.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$action)
-          ) {
-            $results += $element
-          }
-        }
-        $observedQuery = if ($null -eq $queryPattern) { '' } else { $queryPattern.Current.Value }
-        $resultName = if ($results.Count -eq 1) { $results[0].Current.Name } else { '' }
-        if (Test-SearchApplicationObservation `
-          -ProcessName $searchProcess.ProcessName `
-          -ObservedQuery $observedQuery `
-          -ResultCount $results.Count `
-          -ResultName $resultName `
-          -ForegroundUnchanged ([NativeVisualInput]::GetForegroundWindow() -eq $foreground)) {
-          return $results[0]
-        }
-      }
+      $foreground = Get-VerifiedSearchQuery
+      if ($null -ne $foreground) { return $foreground }
     }
     catch [System.Windows.Automation.ElementNotAvailableException] {
       # Search replaces its accessibility tree while accepting the query.
     }
     Start-Sleep -Milliseconds 200
   }
-  throw 'Windows Search did not expose one actionable application result for the complete DeepSeek Harness query.'
+  throw 'Windows Search did not expose the complete query in its foreground window.'
+}
+
+function Test-SearchLaunchObservation {
+  param(
+    [string]$ObservedExecutable, [string]$ExpectedExecutable, [bool]$SeenBefore,
+    [datetime]$CreatedAt, [datetime]$EnteredAt, [int]$ProcessId,
+    [int]$WindowProcessId, [int]$ForegroundProcessId, [bool]$DesktopRunning
+  )
+  return (
+    -not [string]::IsNullOrEmpty($ObservedExecutable) -and
+    [StringComparer]::OrdinalIgnoreCase.Equals([System.IO.Path]::GetFullPath($ObservedExecutable), $ExpectedExecutable) -and
+    -not $SeenBefore -and $CreatedAt -ge $EnteredAt -and $ProcessId -gt 0 -and
+    $WindowProcessId -eq $ProcessId -and $ForegroundProcessId -eq $ProcessId -and $DesktopRunning
+  )
 }
 
 function Invoke-AutomationElement {
@@ -473,6 +515,184 @@ function Open-DeepSeekHarnessTrayMenu {
   }
 }
 
+function Invoke-SearchApplicationLaunch {
+  param([string]$ExpectedExecutable, [string]$EvidenceRoot)
+
+  if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows') {
+    throw 'Search launch requires a disposable hosted Windows runner.'
+  }
+  # Search inherits Explorer's environment, not this script's isolated DPI profile.
+  $defaultHome = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.dsh'
+  $defaultUserData = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'DeepSeek Harness'
+  foreach ($variable in @('DSH_HOME', 'DSH_DESKTOP_USER_DATA_DIR')) {
+    foreach ($scope in @('User', 'Machine')) {
+      if (-not [string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($variable, $scope))) {
+        throw 'Search launch refuses a shell-level profile override.'
+      }
+    }
+  }
+  if ((Test-Path -LiteralPath $defaultHome) -or (Test-Path -LiteralPath $defaultUserData)) {
+    throw 'Search launch requires initially absent disposable default profiles.'
+  }
+  $lifecycle = Join-Path $defaultUserData 'logs\lifecycle.log'
+  $owned = @{}
+  $beforeIds = @{}
+  $enteredAt = $null
+  $targetProcess = $null
+  $report = [ordered]@{
+    launchMethod = 'verified-search-enter'
+    profileMode = 'fresh-disposable-runner-defaults'
+    exactQuery = $false; foregroundStableBeforeEnter = $false; enterSent = $false
+    freshProcess = $false; executablePathMatches = $false; windowProcessMatches = $false
+    desktopRunning = $false; ownedProcessesObserved = 0; ownedProcessesRemaining = $null
+    cleanupMethod = 'owned-tree-cleanup-not-tray-acceptance'
+    capture = 'start-menu-launch-100.png'
+  }
+
+  function Get-SearchProcessSnapshot {
+    return @(Get-CimInstance Win32_Process -Property Name, ProcessId, ParentProcessId, CreationDate, ExecutablePath)
+  }
+  function Test-SearchExecutable($Row) {
+    return (-not [string]::IsNullOrEmpty($Row.ExecutablePath) -and
+      [StringComparer]::OrdinalIgnoreCase.Equals([System.IO.Path]::GetFullPath([string]$Row.ExecutablePath), $ExpectedExecutable))
+  }
+  function Get-SearchCreationTicks($Row) { return ([datetime]$Row.CreationDate).ToUniversalTime().Ticks }
+  function Update-SearchOwnedProcesses($Rows) {
+    if ($null -eq $enteredAt) { return }
+    foreach ($row in $Rows) {
+      $key = [int]$row.ProcessId
+      if ((Test-SearchExecutable $row) -and -not $beforeIds.ContainsKey($key) -and (Get-SearchCreationTicks $row) -ge $enteredAt.Ticks) {
+        $owned[$key] = Get-SearchCreationTicks $row
+      }
+    }
+    do {
+      $added = $false
+      $liveParents = @{}
+      foreach ($row in $Rows) {
+        $key = [int]$row.ProcessId
+        if ($owned.ContainsKey($key) -and $owned[$key] -eq (Get-SearchCreationTicks $row)) { $liveParents[$key] = $owned[$key] }
+      }
+      foreach ($row in $Rows) {
+        $key = [int]$row.ProcessId
+        $parentKey = [int]$row.ParentProcessId
+        if (-not $owned.ContainsKey($key) -and -not $beforeIds.ContainsKey($key) -and
+          $liveParents.ContainsKey($parentKey) -and (Get-SearchCreationTicks $row) -ge $liveParents[$parentKey]) {
+          $owned[$key] = Get-SearchCreationTicks $row
+          $added = $true
+        }
+      }
+    } while ($added)
+  }
+  function Get-LiveSearchOwnedProcesses($Rows) {
+    return @($Rows | Where-Object {
+      $key = [int]$_.ProcessId
+      $owned.ContainsKey($key) -and $owned[$key] -eq (Get-SearchCreationTicks $_)
+    })
+  }
+
+  try {
+    [NativeVisualInput]::PressWindows()
+    Start-Sleep -Milliseconds 500
+    [System.Windows.Forms.SendKeys]::SendWait('DeepSeek Harness')
+    $searchWindow = Wait-SearchQuery
+    Save-NativeScreenCapture -Path (Join-Path $EvidenceRoot 'start-menu-shortcut-100.png')
+    $before = Get-SearchProcessSnapshot
+    if (@($before | Where-Object { $_.Name -ieq 'DeepSeek Harness.exe' }).Count -ne 0) {
+      throw 'Search launch cannot reuse an already-running application.'
+    }
+    foreach ($row in $before) { $beforeIds[[int]$row.ProcessId] = $true }
+    $confirmed = Get-VerifiedSearchQuery
+    if ($null -eq $confirmed -or $confirmed -ne $searchWindow) {
+      throw 'Search foreground or query changed after capture.'
+    }
+    $report.exactQuery = $true
+    $report.foregroundStableBeforeEnter = $true
+    $enteredAt = [DateTime]::UtcNow
+    $report.enterAtUtc = $enteredAt.ToString('o')
+    [NativeVisualInput]::PressEnter()
+    $report.enterSent = $true
+    $deadline = [DateTime]::UtcNow.AddSeconds(60)
+    $mainWindow = [IntPtr]::Zero
+    while ([DateTime]::UtcNow -lt $deadline) {
+      $snapshot = Get-SearchProcessSnapshot
+      Update-SearchOwnedProcesses $snapshot
+      $mainWindow = [IntPtr]::Zero
+      $running = $false
+      if (Test-Path -LiteralPath $lifecycle -PathType Leaf) {
+        $running = [bool](@(Get-Content -LiteralPath $lifecycle -Tail 100 | Where-Object { $_ -match ' startup desktop-running: [0-9]+ms$' }).Count)
+      }
+      foreach ($row in @(Get-LiveSearchOwnedProcesses $snapshot | Where-Object { Test-SearchExecutable $_ })) {
+        foreach ($window in [NativeVisualInput]::VisibleRoots([uint32]$row.ProcessId)) {
+          if (Test-SearchLaunchObservation `
+            -ObservedExecutable $row.ExecutablePath -ExpectedExecutable $ExpectedExecutable `
+            -SeenBefore ($beforeIds.ContainsKey([int]$row.ProcessId)) `
+            -CreatedAt (([datetime]$row.CreationDate).ToUniversalTime()) -EnteredAt $enteredAt `
+            -ProcessId ([int]$row.ProcessId) -WindowProcessId ([NativeVisualInput]::WindowProcessId($window)) `
+            -ForegroundProcessId ([NativeVisualInput]::WindowProcessId([NativeVisualInput]::GetForegroundWindow())) `
+            -DesktopRunning $running) {
+            $mainWindow = $window
+            $targetProcess = $row
+            break
+          }
+        }
+        if ($mainWindow -ne [IntPtr]::Zero) { break }
+      }
+      if ($mainWindow -ne [IntPtr]::Zero) { break }
+      Start-Sleep -Milliseconds 300
+    }
+    if ($mainWindow -eq [IntPtr]::Zero) { throw 'Search Enter did not launch a fresh exact-image desktop window before the deadline.' }
+    $current = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + [int]$targetProcess.ProcessId)
+    if ($null -eq $current -or -not (Test-SearchExecutable $current) -or
+      (Get-SearchCreationTicks $current) -ne (Get-SearchCreationTicks $targetProcess) -or
+      [NativeVisualInput]::WindowProcessId($mainWindow) -ne $current.ProcessId -or
+      [NativeVisualInput]::WindowProcessId([NativeVisualInput]::GetForegroundWindow()) -ne $current.ProcessId) {
+      throw 'The Search-launched process or foreground changed before capture.'
+    }
+    Save-NativeScreenCapture -Path (Join-Path $EvidenceRoot $report.capture)
+    $report.targetPid = [int]$current.ProcessId
+    $report.targetCreatedAtUtc = ([datetime]$current.CreationDate).ToUniversalTime().ToString('o')
+    $report.freshProcess = $true
+    $report.executablePathMatches = $true
+    $report.windowProcessMatches = $true
+    $report.desktopRunning = $true
+  }
+  finally {
+    # The DPI sample has already passed real Tray Quit; this only owns the separate Search launch.
+    $deadline = [DateTime]::UtcNow.AddSeconds(25)
+    do {
+      $snapshot = Get-SearchProcessSnapshot
+      Update-SearchOwnedProcesses $snapshot
+      $remaining = @(Get-LiveSearchOwnedProcesses $snapshot)
+      if ($remaining.Count -eq 0) { break }
+      foreach ($row in $remaining) {
+        $current = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + [int]$row.ProcessId) -Property ProcessId, CreationDate
+        if ($null -eq $current -or (Get-SearchCreationTicks $current) -ne $owned[[int]$row.ProcessId]) { continue }
+        $killInfo = [System.Diagnostics.ProcessStartInfo]::new('taskkill.exe')
+        $killInfo.UseShellExecute = $false
+        $killInfo.CreateNoWindow = $true
+        $killInfo.RedirectStandardOutput = $true
+        $killInfo.RedirectStandardError = $true
+        $killInfo.Arguments = '/PID ' + [int]$row.ProcessId + ' /T /F'
+        $termination = [System.Diagnostics.Process]::Start($killInfo)
+        try {
+          $stdout = $termination.StandardOutput.ReadToEndAsync()
+          $stderr = $termination.StandardError.ReadToEndAsync()
+          if (-not $termination.WaitForExit(10000)) { $termination.Kill($true); throw 'Search process cleanup timed out.' }
+          [void]$stdout.GetAwaiter().GetResult()
+          [void]$stderr.GetAwaiter().GetResult()
+        }
+        finally { $termination.Dispose() }
+      }
+      Start-Sleep -Milliseconds 200
+    } while ([DateTime]::UtcNow -lt $deadline)
+    $report.ownedProcessesObserved = $owned.Count
+    $report.ownedProcessesRemaining = @(Get-LiveSearchOwnedProcesses (Get-SearchProcessSnapshot)).Count
+    if ($report.ownedProcessesRemaining -ne 0) { throw 'Search-launched processes remain after cleanup.' }
+    [NativeVisualInput]::PressEscape()
+  }
+  return $report
+}
+
 function Assert-ShortcutVisible {
   param(
     [Parameter(Mandatory = $true)]
@@ -494,6 +714,7 @@ $trayEvidencePath = Join-Path $UserData 'native-visual-tray.json'
 $process = $null
 $trackedProcessIds = @()
 $nativeDpi = 0
+$searchLaunch = $null
 
 try {
   New-Item -ItemType Directory -Force -Path $HarnessHome, $UserData, $resolvedEvidenceRoot | Out-Null
@@ -565,7 +786,7 @@ try {
   [NativeVisualInput]::PressWindows()
   Start-Sleep -Milliseconds 500
   [System.Windows.Forms.SendKeys]::SendWait('DeepSeek Harness')
-  [void](Wait-SearchApplicationResult)
+  [void](Wait-SearchQuery)
   Save-NativeScreenCapture -Path (Join-Path $resolvedEvidenceRoot "start-menu-shortcut-$DpiPercent.png")
   [NativeVisualInput]::PressEscape()
   Start-Sleep -Milliseconds 300
@@ -590,6 +811,12 @@ try {
     throw "The $DpiPercent percent native visual sample did not exit from its tray menu."
   }
   Wait-ProcessIdsStopped -ProcessIds $trackedProcessIds
+  $process.Dispose()
+  $process = $null
+
+  if ($DpiPercent -eq 100) {
+    $searchLaunch = Invoke-SearchApplicationLaunch -ExpectedExecutable $resolvedExecutable -EvidenceRoot $resolvedEvidenceRoot
+  }
 
   $evidence = [ordered]@{
     schemaVersion = 1
@@ -598,6 +825,7 @@ try {
     nativeWindowDpi = $nativeDpi
     windowGeometryPhysicalPixels = $windowGeometry
     processTreeCount = $trackedProcessIds.Count
+    searchLaunch = $searchLaunch
     shortcuts = @(
       [System.IO.Path]::GetFileName($DesktopShortcut),
       [System.IO.Path]::GetFileName($StartMenuShortcut)

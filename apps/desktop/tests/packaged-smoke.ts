@@ -19,7 +19,7 @@ import { _electron as electron, type ElectronApplication, type Page } from 'play
 import { expect } from 'vitest'
 import { startReaderSmokeProvider } from './reader-smoke-provider.ts'
 import { exerciseReaderPresentation } from './reader-presentation-smoke.ts'
-import { prepareTurnNavigationViewport } from './turn-navigation-viewport.ts'
+import { prepareTurnNavigationViewport, verifyTurnNavigationClick } from './turn-navigation-viewport.ts'
 
 const execFileAsync = promisify(execFile)
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
@@ -1206,6 +1206,7 @@ async function exerciseTurnNavigation(page: Page, seeded: WindowsClipboardSmokeS
     await page.mouse.move(0, 0)
     await expect.poll(async () => tooltip.count(), { timeout: 5_000 }).toBe(0)
   }
+  await verifyTurnNavigationClick(page)
 }
 
 interface MarketRouteResult {

@@ -68,8 +68,23 @@
   box-shadow: var(--dsw-shadow-lv1);
 }
 
+:global(body[data-dsh-surface='desktop']) .card:not(.cardWorkspaceTrigger) {
+  --dsw-elevation-stroke-color: var(--dsw-alias-label-tertiary);
+  box-shadow: 0 0 0 1px var(--dsw-elevation-stroke-color), var(--dsw-shadow-lv1);
+}
+
+:global(body[data-dsh-surface='desktop']) .card:not(.cardWorkspaceTrigger):focus-within {
+  --dsw-elevation-stroke-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px var(--dsw-elevation-stroke-color), var(--dsw-shadow-lv1);
+}
+
 :global(body[data-dsh-surface='desktop']) .cardWorkspaceTrigger::after {
   border-radius: 16px;
+  background: var(--dsw-alias-label-tertiary);
+}
+
+:global(body[data-dsh-surface='desktop']) .cardWorkspaceTrigger:hover::after {
+  background: var(--dsw-alias-state-business-primary);
 }
 
 /* No-workspace trigger state: dashed l4 stroke marks the card as a pick-a-
@@ -201,6 +216,11 @@
   color: var(--dsw-alias-label-caption);
   pointer-events: none;
   user-select: none;
+}
+
+:global(body[data-dsh-surface='desktop']) .placeholder,
+:global(body[data-dsh-surface='desktop']) .input p:last-child::after {
+  color: var(--dsw-alias-label-secondary);
 }
 
 .inputDisabled {

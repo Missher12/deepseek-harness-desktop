@@ -1,5 +1,15 @@
 # DeepSeek Harness Desktop — Project Context
 
+## Desktop input contrast close-out — 2026-09-08
+
+The final requested UI scope is visible input outlines and readable placeholder text on both Mac and Windows. The coordinator owns the shared CSS. Desktop input cards retain their soft shadow while drawing a one-pixel theme-aware outline; focus uses a two-pixel business-color ring. The workspace-picker card keeps its dashed outline. Placeholder and ghost-hint text use the secondary label color. These strokes do not change the input layout dimensions. Shared Input primitives follow the same Desktop contrast treatment.
+
+A complete build and the existing elevation-style checks pass. A temporary probe of the actual assembled web application captures both Desktop chrome modes, light and dark themes, and idle/focus states; the Mac owner accepts the three key views. This is browser evidence and does not replace the final platform artifacts. Mac candidate `b58eef3d78d56f852248eceec864f54b9b623988` has been installed and starts successfully with the old bundle preserved; the contrast repair requires the next candidate. Local receipts and current run details are in `.artifacts/20260908-install-and-windows-task.md`.
+
+Windows Search displays the complete application result while its result-region UIA descendants remain unavailable to the existing observation. A separate bounded diagnostic uses the actual Search keyboard launch and verifies the new process path, creation time, window ownership and startup readiness. Its workflow stays on a diagnostic branch and cannot enter the product candidate. Native packaging waits for the integrated final revision. The user requests both-platform completion after this repair, with no additional optimization scope.
+
+The user additionally reports that clicking a piano-rail mark does nothing. A partial history head selects a synthetic process controller as its loaded anchor even though that seat is hidden. The shared navigation projection now excludes the controller while retaining user-message priority and the first loaded content fallback. The focused counterexample fails before the change; 102 related tests and a real pointer scenario across both Desktop chrome modes and narrow layout pass. Both platform packaged smokes now perform the same pointer landing assertion. No event, stored data or public API changes.
+
 ## Mac delivery takes priority — 2026-09-08
 
 The user now requests the Mac package first; Windows Search diagnosis is paused and does not block delivery of the accepted Mac DMG. The commander owns the two-file sidebar repair: synchronize the narrow-layout toggle state before browser input with a layout effect, and cover the first real button click immediately after the collapsed layout commits. The original effect fails the controlled Chromium case; the repair and existing delayed-ResizeObserver case both pass, including after a complete build. Mac review finds no source blocker. A fresh Intel Mac packaged run must accept this revision before the DMG is delivered.

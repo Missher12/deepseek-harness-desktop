@@ -84,7 +84,9 @@ export function turnNavigationItem(
     .map(key => nodes.get(key))
     .filter((node): node is ChatNode => node !== undefined && node.visibility === 'visible')
   const user = loaded.find(node => node.kind === 'user')
-  const anchor = user ?? loaded[0]
+  // A partial history head can start at an unrendered process controller.
+  // Navigation must target transcript content, even before its user row loads.
+  const anchor = user ?? loaded.find(node => node.kind !== 'turn-process')
   if (anchor === undefined) return undefined
   const response = loaded.findLast(node => responseText(node) !== '')
   return {

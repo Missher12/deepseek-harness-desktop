@@ -4,23 +4,23 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 describe('Windows Desktop runtime evidence wiring', () => {
-  it.skipIf(process.platform !== 'win32')('rejects background windows, partial queries, ambiguous results and changed foregrounds', () => {
+  it.skipIf(process.platform !== 'win32')('rejects background windows, partial or duplicate queries and changed foregrounds before Search Enter', () => {
     const source = fileURLToPath(new URL('./windows-desktop-native-visual-smoke.ps1', import.meta.url))
     const command = `
       $tokens = $null; $errors = $null
       $ast = [System.Management.Automation.Language.Parser]::ParseFile($env:DSH_VISUAL_SCRIPT, [ref]$tokens, [ref]$errors)
       if ($errors.Count -ne 0) { throw 'Visual smoke did not parse.' }
-      $definitions = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in @('Test-SearchProcessName', 'Test-SearchApplicationObservation') }, $true)
+      $definitions = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in @('Test-SearchProcessName', 'Test-SearchQueryObservation') }, $true)
       foreach ($definition in $definitions) { . ([scriptblock]::Create($definition.Extent.Text)) }
       @(
-        (Test-SearchApplicationObservation SearchHost 'DeepSeek Harness' 1 $true 'DeepSeek Harness')
-        (Test-SearchApplicationObservation 'DeepSeek Harness' 'DeepSeek Harness' 1 $true 'DeepSeek Harness')
-        (Test-SearchApplicationObservation SearchHost 'DeepSe' 1 $true 'DeepSeek Harness')
-        (Test-SearchApplicationObservation SearchHost 'DeepSeek Harness' 0 $true 'DeepSeek Harness')
-        (Test-SearchApplicationObservation SearchHost 'DeepSeek Harness' 2 $true 'DeepSeek Harness')
-        (Test-SearchApplicationObservation SearchHost 'DeepSeek Harness' 1 $false 'DeepSeek Harness')
-        (Test-SearchApplicationObservation SearchHost 'DeepSeek Harness' 1 $true 'DeepSeek Harness Setup')
-        (Test-SearchApplicationObservation SearchHost 'DeepSeek Harness' 1 $true 'DeepSeek Harness Notes.txt')
+        (Test-SearchQueryObservation SearchHost 'DeepSeek Harness' 1 $true $true)
+        (Test-SearchQueryObservation 'DeepSeek Harness' 'DeepSeek Harness' 1 $true $true)
+        (Test-SearchQueryObservation SearchHost 'DeepSe' 1 $true $true)
+        (Test-SearchQueryObservation SearchHost 'DeepSeek Harness' 0 $true $true)
+        (Test-SearchQueryObservation SearchHost 'DeepSeek Harness' 2 $true $true)
+        (Test-SearchQueryObservation SearchHost 'DeepSeek Harness' 1 $false $true)
+        (Test-SearchQueryObservation SearchHost 'DeepSeek Harness' 1 $true $false)
+        (Test-SearchQueryObservation SearchHost 'DeepSeek Harness Setup' 1 $true $true)
       ) | ConvertTo-Json -Compress
     `
     const result = execFileSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], {
@@ -29,6 +29,40 @@ describe('Windows Desktop runtime evidence wiring', () => {
       timeout: 30_000,
     })
     expect(JSON.parse(result)).toEqual([true, false, false, false, false, false, false, false])
+  })
+
+  it.skipIf(process.platform !== 'win32')('accepts Search launch only for a fresh exact-image foreground window with readiness', () => {
+    const source = fileURLToPath(new URL('./windows-desktop-native-visual-smoke.ps1', import.meta.url))
+    const command = `
+      $ErrorActionPreference = 'Stop'
+      $tokens = $null; $errors = $null
+      $ast = [System.Management.Automation.Language.Parser]::ParseFile($env:DSH_VISUAL_SCRIPT, [ref]$tokens, [ref]$errors)
+      if ($errors.Count -ne 0) { throw 'Visual smoke did not parse.' }
+      $definition = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-SearchLaunchObservation' }, $true)
+      . ([scriptblock]::Create($definition.Extent.Text))
+      $entered = [datetime]'2026-09-08T00:00:00Z'
+      $created = $entered.AddMilliseconds(50)
+      $expected = 'C:\\isolated\\DeepSeek Harness.exe'
+      @(
+        (Test-SearchLaunchObservation $expected $expected $false $created $entered 42 42 42 $true)
+        (Test-SearchLaunchObservation 'c:\\ISOLATED\\deepseek harness.exe' $expected $false $created $entered 42 42 42 $true)
+        (Test-SearchLaunchObservation 'C:\\other\\DeepSeek Harness.exe' $expected $false $created $entered 42 42 42 $true)
+        (Test-SearchLaunchObservation ($expected + '.other.exe') $expected $false $created $entered 42 42 42 $true)
+        (Test-SearchLaunchObservation $expected $expected $true $created $entered 42 42 42 $true)
+        (Test-SearchLaunchObservation $expected $expected $false ($entered.AddSeconds(-1)) $entered 42 42 42 $true)
+        (Test-SearchLaunchObservation $expected $expected $false $created $entered 42 99 42 $true)
+        (Test-SearchLaunchObservation $expected $expected $false $created $entered 42 42 99 $true)
+        (Test-SearchLaunchObservation $expected $expected $false $created $entered 42 42 42 $false)
+        (Test-SearchLaunchObservation $expected $expected $false $created $entered 0 0 0 $true)
+        (Test-SearchLaunchObservation '' $expected $false $created $entered 42 42 42 $true)
+      ) | ConvertTo-Json -Compress
+    `
+    const result = execFileSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], {
+      encoding: 'utf8',
+      env: { ...process.env, DSH_VISUAL_SCRIPT: source },
+      timeout: 30_000,
+    })
+    expect(JSON.parse(result)).toEqual([true, true, false, false, false, false, false, false, false, false, false])
   })
 
   it('restricts historical inventory to the pinned baseline and keeps ordinary runtime evidence strict', () => {
@@ -143,12 +177,18 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(smoke).toContain('./scripts/windows-desktop-native-visual-smoke.ps1')
     expect(visual).toContain('--force-device-scale-factor=')
     expect(visual).toContain('function Save-NativeScreenCapture')
-    const searchWaiter = visual.slice(visual.indexOf('function Wait-SearchApplicationResult'), visual.indexOf('function Invoke-AutomationElement'))
+    const searchWaiter = visual.slice(visual.indexOf('function Get-VerifiedSearchQuery'), visual.indexOf('function Invoke-AutomationElement'))
     expect(searchWaiter).toContain('AutomationElement]::FromHandle($foreground)')
     expect(searchWaiter).not.toContain('RootElement')
     expect(searchWaiter).toContain('ValuePattern]::Pattern')
-    expect(searchWaiter).toContain('Test-SearchApplicationObservation')
-    expect(visual).toContain('[void](Wait-SearchApplicationResult)')
+    expect(searchWaiter).toContain('Test-SearchQueryObservation')
+    expect(visual).toContain('[void](Wait-SearchQuery)')
+    const originalTreeStopped = visual.indexOf('Wait-ProcessIdsStopped -ProcessIds $trackedProcessIds')
+    const searchLaunch = visual.indexOf('$searchLaunch = Invoke-SearchApplicationLaunch')
+    expect(searchLaunch).toBeGreaterThan(originalTreeStopped)
+    expect(visual.slice(originalTreeStopped, searchLaunch)).toContain('if ($DpiPercent -eq 100)')
+    expect(visual).toContain('Test-SearchLaunchObservation')
+    expect(visual).toContain('[NativeVisualInput]::PressEnter()')
     expect(visual).toContain('DwmGetWindowAttribute(window, 9')
     expect(visual).toContain('SetThreadDpiAwarenessContext(previous)')
     expect(visual).toContain('Contains($windowGeometry.WorkArea, $windowGeometry.VisibleFrame)')
