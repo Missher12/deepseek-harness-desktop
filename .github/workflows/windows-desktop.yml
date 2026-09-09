@@ -33,7 +33,7 @@ jobs:
               $childId = $null
               $created = $null
               $record = [ordered]@{
-                iteration = $iteration; retained = $retain; phase = 'start'
+                case = 'late-observation'; iteration = $iteration; retained = $retain; phase = 'start'
                 identityMatched = $false; exited = $false; hasExited = $null
                 exitCode = $null; exception = 'None'; cleanup = 'pending'; remainingOwned = 0
               }
@@ -67,9 +67,24 @@ jobs:
                   if (-not $record.identityMatched) { throw [InvalidOperationException]::new() }
                 } finally { $launcher.Dispose() }
                 # Dispose the launcher's handle before exit so it cannot mask the comparison.
-                $record.phase = 'wait'
+                $record.phase = 'enumerate-until-absent'
                 [void]$gate.Set()
-                $record.exited = $observer.WaitForExit(10000)
+                # Enumerate IDs only: do not acquire a waiting handle before observing exit.
+                $clock = [Diagnostics.Stopwatch]::StartNew()
+                while ($clock.ElapsedMilliseconds -lt 10000) {
+                  $present = $false
+                  $processes = [Diagnostics.Process]::GetProcesses()
+                  try {
+                    foreach ($entry in $processes) {
+                      if ($entry.Id -eq $childId) { $present = $true }
+                    }
+                  } finally {
+                    foreach ($entry in $processes) { $entry.Dispose() }
+                  }
+                  if (-not $present) { $record.exited = $true; break }
+                  [Threading.Thread]::Sleep(25)
+                }
+                $clock.Stop()
                 if (-not $record.exited) { throw [TimeoutException]::new() }
                 $record.phase = 'has-exited'
                 $record.hasExited = $observer.HasExited
