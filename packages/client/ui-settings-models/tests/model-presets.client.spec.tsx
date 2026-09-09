@@ -15,13 +15,24 @@ const preset = {
   configuration: { reasoningEfforts: { high: 'high', max: 'max' } },
 }
 
+function testOperations(discoverModels: ModelsOperations['discoverModels']): ModelsOperations {
+  const unexpected = async (): Promise<never> => { throw new Error('Unexpected host operation') }
+  return {
+    discoverModels,
+    describeCredential: unexpected,
+    storeCredential: unexpected,
+    removeCredential: unexpected,
+    writeSettings: unexpected,
+  }
+}
+
 function mount(discoverModels: ModelsOperations['discoverModels'], initial: ModelDraft = { id: 'known' }) {
   const changed = vi.fn<(models: ModelDraft[]) => void>()
   function Editor() {
     const [models, setModels] = useState([initial])
     return <ModelListEditor models={models} onChange={(next) => { changed(next); setModels(next) }}
       probe={{ settingsNs: 'llm-pi-ai', api: 'openai-completions', apiKey: 'must-not-be-sent' }}
-      operations={{ discoverModels } as ModelsOperations} t={key => en[key]} disabled={false} />
+      operations={testOperations(discoverModels)} t={key => en[key]} disabled={false} />
   }
   const view = render(<Editor />)
   return { ...view, changed }
@@ -74,7 +85,7 @@ describe('automatic local model presets', () => {
     const changed = vi.fn()
     const props = {
       models: [{ id: 'known' }], onChange: changed, disabled: false,
-      operations: { discoverModels: async () => await pending.promise } as ModelsOperations,
+      operations: testOperations(async () => await pending.promise),
       t: (key: keyof typeof en) => en[key],
     }
     const view = render(<ModelListEditor {...props} probe={{ settingsNs: 'llm-pi-ai' }} />)
