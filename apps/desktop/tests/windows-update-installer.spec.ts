@@ -23,6 +23,48 @@ function command() {
   })
 }
 
+function isPreflightReady(output: Buffer): boolean {
+  return output.equals(Buffer.from('DSH_UPDATE_READY\r\n')) || output.equals(Buffer.from('DSH_UPDATE_READY\n'))
+}
+
+function preflightDiagnostics(output: Buffer, stdoutBytes: number, stderrBytes: number,
+  child: Pick<ChildProcess, 'exitCode' | 'signalCode'>): string {
+  const complete = stdoutBytes === output.length
+  return JSON.stringify({
+    stdoutBytes, stderrBytes, stdoutTruncated: !complete,
+    utf8Ready: complete && isPreflightReady(output),
+    utf16leReady: complete && (output.equals(Buffer.from('DSH_UPDATE_READY\r\n', 'utf16le'))
+      || output.equals(Buffer.from('DSH_UPDATE_READY\n', 'utf16le'))),
+    exitCode: child.exitCode, signal: child.signalCode,
+  })
+}
+
+describe('bounded native preflight evidence', () => {
+  it('accepts only the exact production UTF-8 line, not whitespace or foreign data', () => {
+    expect(isPreflightReady(Buffer.from('DSH_UPDATE_READY\r\n'))).toBe(true)
+    expect(isPreflightReady(Buffer.from('DSH_UPDATE_READY\n'))).toBe(true)
+    for (const output of [' DSH_UPDATE_READY\n', 'DSH_UPDATE_READY', 'DSH_UPDATE_READY\nforeign']) {
+      expect(isPreflightReady(Buffer.from(output))).toBe(false)
+    }
+  })
+
+  it('identifies an encoding mismatch without accepting it as readiness', () => {
+    const output = Buffer.from('DSH_UPDATE_READY\r\n', 'utf16le')
+    expect(isPreflightReady(output)).toBe(false)
+    expect(JSON.parse(preflightDiagnostics(output, output.length, 0, { exitCode: null, signalCode: null })))
+      .toMatchObject({ stdoutBytes: 36, stderrBytes: 0, utf8Ready: false, utf16leReady: true, exitCode: null })
+  })
+
+  it('reports byte counts and exit facts without leaking unknown native output', () => {
+    const output = Buffer.from('PRIVATE_PROFILE_MUST_NOT_APPEAR')
+    const summary = preflightDiagnostics(output, 1_000_000, 2_000_000, { exitCode: 1, signalCode: null })
+    expect(summary).not.toContain('PRIVATE_PROFILE')
+    expect(JSON.parse(summary)).toEqual({ stdoutBytes: 1_000_000, stderrBytes: 2_000_000,
+      stdoutTruncated: true, utf8Ready: false, utf16leReady: false, exitCode: 1, signal: null })
+    expect(summary.length).toBeLessThan(256)
+  })
+})
+
 describe('Windows update handoff command', () => {
   it('uses a fixed independent system helper and a visible Setup only after parent exit and revalidation', () => {
     const plan = command()
@@ -85,20 +127,50 @@ describe('Windows update handoff command', () => {
       const options = {
         parentPid: parent.pid!, parentExecutable,
         systemRoot: process.env.SystemRoot ?? process.env.SYSTEMROOT ?? 'C:\\Windows',
+        environment: process.env,
       }
       const plan = createWindowsUpdateCommand(nativeDescriptor, options)
-      helper = spawn(plan.executable, plan.args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'], env: plan.env })
+      // Match the production launcher's detached process and filtered environment.
+      // Only stderr differs: drain/count it for diagnostics, never print its bytes.
+      helper = spawn(plan.executable, plan.args, {
+        detached: true, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: plan.env,
+      })
       const activeHelper = helper
       await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => { reject(new Error('Native update preflight did not acknowledge.')) }, 20_000)
-        let output = ''
-        activeHelper.stdout!.setEncoding('utf8')
-        activeHelper.stdout!.on('data', (chunk: string) => {
-          output += chunk
-          if (output.trim() === 'DSH_UPDATE_READY') { clearTimeout(timer); resolve() }
-        })
-        activeHelper.once('error', () => { clearTimeout(timer); reject(new Error('Native helper failed.')) })
-        activeHelper.once('exit', () => { clearTimeout(timer); reject(new Error('Native helper exited before handoff.')) })
+        let output = Buffer.alloc(0)
+        let stdoutBytes = 0
+        let stderrBytes = 0
+        let settled = false
+        const finish = (failure?: 'timeout' | 'spawn-error' | 'exit' | 'output-limit'): void => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          activeHelper.stdout!.off('data', onOutput)
+          activeHelper.stderr!.off('data', onErrorOutput)
+          activeHelper.off('error', onError)
+          activeHelper.off('exit', onExit)
+          if (failure === undefined) { resolve(); return }
+          const evidence = preflightDiagnostics(output, stdoutBytes, stderrBytes, activeHelper)
+          const parentExited = parent!.exitCode !== null || parent!.signalCode !== null
+          const helperExited = activeHelper.exitCode !== null || activeHelper.signalCode !== null
+          reject(new Error(`Native update preflight ${failure}; parentExited=${parentExited}; helperExited=${helperExited}; ${evidence}`))
+        }
+        const onOutput = (chunk: Buffer): void => {
+          stdoutBytes += chunk.length
+          // A strict bounded prefix is held privately for token classification;
+          // unknown stdout/stderr content never enters errors or artifacts.
+          output = Buffer.concat([output, chunk.subarray(0, Math.max(0, 128 - output.length))])
+          if (stdoutBytes > 128) finish('output-limit')
+          else if (isPreflightReady(output)) finish()
+        }
+        const onErrorOutput = (chunk: Buffer): void => { stderrBytes += chunk.length }
+        const onError = (): void => { finish('spawn-error') }
+        const onExit = (): void => { finish('exit') }
+        const timer = setTimeout(() => { finish('timeout') }, 20_000)
+        activeHelper.stdout!.on('data', onOutput)
+        activeHelper.stderr!.on('data', onErrorOutput)
+        activeHelper.once('error', onError)
+        activeHelper.once('exit', onExit)
       })
       expect(parent.exitCode).toBeNull()
       expect(helper.exitCode).toBeNull()
