@@ -1,6 +1,16 @@
 # DeepSeek Harness Desktop — Project Context
 
-## Current 0.5.7 checkpoint — 2026-09-09
+## Latest 0.5.7 scope and release state — 2026-09-09
+
+The user additionally requires System Update on both Windows and Ubuntu. All three platforms must display actual installed versions, check releases, download and verify a matching installer, and offer an explicit install or guided package action. Windows is the sole shared updater implementation owner; Ubuntu owns only its agreed Linux adapter and platform tests. Mac reviews compatibility and consumes the shared implementation. Preserve the legacy Mac update manifest and protected DMG flow. Do not imply that guided Linux package installation is automatic or silently change system privileges, AppArmor, running AppImages or user data.
+
+The commander has integrated Ubuntu commit `211f9a1dcca99f78951aba6fcf4fc8115c163d2c` after the pushed checkpoint `c9bf6bc8c8352f7fce168c9b7e8486c21f38397a`. That checkpoint passed the normal pre-push hook and was dispatched exactly once per platform: Mac run `34299515973` passed native CI; Windows `34299528338` failed its released-0.5.6 installer comparison; Ubuntu `34299537406` built both 0.5.7 packages but both OS jobs failed the new separate-home ownership test while reading PID through an Electron inspector context. These runs are diagnostic, not final release evidence. No 0.5.7 tag or Release exists. Keep formal 0.5.6 available.
+
+The Ubuntu test repair uses the supported launch-process PID and checks actual liveness/exit status; UI, writer-preservation and cleanup assertions remain. It also retains bounded redacted failure diagnostics before cleanup. Its owner reports 10 targeted tests, strict TypeScript, typed lint and normal hooks passed; the Linux native test is explicitly skipped on macOS. The original failure does not yet establish whether the application exited or only its inspector context failed. Windows owns the installer comparison diagnosis and the shared System Update addition. Final Mac ten-sample startup measurement is held until the new common candidate; no general 0.5.7 startup speedup has been established.
+
+Read `.artifacts/desktop-057-release-state.json` for fresh run/SHA status, and the repository-root `.artifacts/desktop-0.5.7-task.md` final two System Update sections for the confirmed scope, ownership and acceptance. The commander alone integrates, normally pushes, locks one final SHA, dispatches and publishes. First confirm the revised Ubuntu native path, then build and accept Mac/Windows at the same final SHA. All three platforms and their update metadata ship in one formal 0.5.7 release after checksums and anonymous download verification. Earlier checkpoint sections below are historical.
+
+## Earlier 0.5.7 integration checkpoint — 2026-09-09
 
 Implemented shared changes: the statistics row retains every metric from the first step and displays known timing before step closure; local exact-model-ID presets fill missing fields without credentials or HTTP, preserve manual changes and discard late results; reasoning defaults to the highest supported level while explicit choices remain authoritative. Desktop metadata is 0.5.7, Harness remains 0.1.3-alpha.1. Linux staging, PNG window icon, sandboxed Playwright launch and the platform package entry are integrated with Ubuntu-owner commits. Nothing has been tagged or released as 0.5.7.
 
