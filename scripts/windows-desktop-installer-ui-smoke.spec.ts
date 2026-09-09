@@ -199,6 +199,52 @@ describe('installer progress evidence CLI', () => {
 })
 
 describe('Windows Desktop assisted installer smoke', () => {
+  // MUI's directory/instfiles pages append Caption " " to the outer title.
+  // Exercise the actual script pattern, not a second hard-coded selector.
+  const titleCases = [
+    { caption: 'DeepSeek Harness Setup', matches: true },
+    { caption: 'DeepSeek Harness Setup ', matches: true },
+    { caption: 'DeepSeek Harness', matches: true },
+    { caption: 'DeepSeek Harness ', matches: true },
+    { caption: 'DeepSeek Harness Setup  ', matches: false },
+    { caption: 'DeepSeek Harness Setup\t', matches: false },
+    { caption: ' DeepSeek Harness Setup', matches: false },
+    { caption: 'DeepSeek Harness Setup - unrelated', matches: false },
+    { caption: 'Other DeepSeek Harness Setup', matches: false },
+    { caption: '', matches: false },
+  ]
+
+  function installerTitlePattern(): string {
+    const source = readFileSync(new URL('./windows-desktop-installer-ui-smoke.ps1', import.meta.url), 'utf8')
+    const pattern = /\$matchesProductName = \$window\.Current\.Name -match '([^']+)'/u.exec(source)?.[1]
+    if (pattern === undefined) throw new Error('Installer title selector is missing.')
+    return pattern
+  }
+
+  it.each(titleCases)('handles the actual NSIS page caption: $caption', ({ caption, matches }) => {
+    // This literal ASCII pattern uses the shared JS/.NET regex subset. The
+    // native case below also executes PowerShell's real -match operator.
+    expect(new RegExp(installerTitlePattern(), 'iu').test(caption)).toBe(matches)
+  })
+
+  it.skipIf(process.platform !== 'win32')('recognizes MUI captions with the native PowerShell matcher', () => {
+    const env = Object.fromEntries(Object.entries(process.env)
+      .filter(([key]) => !/KEY|SECRET|TOKEN|PASSWORD|^NODE_OPTIONS$|^NODE_PATH$/iu.test(key)))
+    const child = spawnSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
+      '$cases = $env:DSH_INSTALLER_TITLE_CASES | ConvertFrom-Json; ' +
+      '$results = @($cases | ForEach-Object { $_.caption -match $env:DSH_INSTALLER_TITLE_PATTERN }); ' +
+      'ConvertTo-Json -InputObject $results -Compress',
+    ], {
+      env: { ...env, DSH_INSTALLER_TITLE_CASES: JSON.stringify(titleCases),
+        DSH_INSTALLER_TITLE_PATTERN: installerTitlePattern() },
+      encoding: 'utf8', timeout: 15_000,
+    })
+    expect(child.error).toBeUndefined()
+    expect(child.signal).toBeNull()
+    expect(child.status, child.stderr).toBe(0)
+    expect(JSON.parse(child.stdout)).toEqual(titleCases.map(item => item.matches))
+  })
+
   it('masks native detail rectangles in physical coordinates and bounds observation files', () => {
     const source = readFileSync(new URL('./windows-desktop-installer-ui-smoke.ps1', import.meta.url), 'utf8')
     expect(source).toContain('RedactionBounds')

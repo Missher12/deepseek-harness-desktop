@@ -196,7 +196,8 @@ function Get-InstallerWindow {
     try {
       $matchesProcess = $script:InstallerProcessId -gt 0 -and `
         $window.Current.ProcessId -eq $script:InstallerProcessId
-      $matchesProductName = $window.Current.Name -match '^DeepSeek Harness(?: Setup)?$'
+      # MUI Directory/InstFiles append the single-space page subcaption.
+      $matchesProductName = $window.Current.Name -match '^DeepSeek Harness(?: Setup)? ?$'
       if ($matchesProcess -and $matchesProductName) {
         return $window
       }
