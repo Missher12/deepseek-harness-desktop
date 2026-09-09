@@ -40,6 +40,31 @@ describe('Desktop update release validation', () => {
     expect(validateDesktopUpdateManifest({ ...validManifest, releaseUrl: 'https://evil.example/release' })).toBeNull()
   })
 
+  it.each([
+    { platform: 'win32', packageFormat: 'nsis', assetName: 'DeepSeek-Harness-Setup-0.2.0-win-x64.exe' },
+    { platform: 'linux', packageFormat: 'deb', assetName: 'DeepSeek-Harness-0.2.0-linux-x64.deb' },
+    { platform: 'linux', packageFormat: 'appimage', assetName: 'DeepSeek-Harness-0.2.0-linux-x64.AppImage' },
+  ] as const)('selects only the runtime-compatible $platform/$packageFormat payload', (entry) => {
+    const { platform, packageFormat, assetName } = entry
+    const target = { ...entry, arch: 'x64' as const }
+    const manifest = { ...validManifest, schema: 2, platform, packageFormat, assetName }
+    expect(validateDesktopUpdateManifest(manifest, target)).toEqual(manifest)
+    expect(validateDesktopUpdateManifest(validManifest, target)).toBeNull()
+    expect(validateDesktopUpdateManifest(manifest)).toBeNull()
+    expect(validateDesktopUpdateManifest({ ...manifest, arch: 'arm64' }, target)).toBeNull()
+    expect(validateDesktopUpdateManifest({ ...manifest, assetName: validManifest.assetName }, target)).toBeNull()
+    expect(validateDesktopUpdateManifest({ ...manifest, packageFormat: 'dmg' }, target)).toBeNull()
+  })
+
+  it.each([
+    'https://github.com/Missher12/deepseek-harness-desktop/releases/tag/desktop-v0.1.9',
+    'https://github.com/Missher12/deepseek-harness-desktop/releases/download/desktop-v0.2.0/payload',
+    'https://github.com/Missher12/deepseek-harness-desktop/releases/tag/desktop-v0.2.0?other=1',
+    'https://user@github.com/Missher12/deepseek-harness-desktop/releases/tag/desktop-v0.2.0',
+  ])('rejects a manifest not bound to its exact public Desktop release: %s', (releaseUrl) => {
+    expect(validateDesktopUpdateManifest({ ...validManifest, releaseUrl })).toBeNull()
+  })
+
   it('distinguishes upstream-only availability from an installable Desktop release', () => {
     expect(selectUpdateAvailability({
       runningDesktop: '0.1.9',
