@@ -34,6 +34,8 @@ The Windows helper uses an attached short bootstrap and a native `Start-Process`
 
 ## Consequences
 
+Private Windows directories are compared by filesystem device and file identity, not canonical-path spelling. Same-directory case and 8.3 aliases remain usable; every ancestor is checked independently so canonicalization cannot grant authority through a symlink or junction. Generated PowerShell parsing uses owned UTF-8 files rather than console stdin and reports only fixed script names, error counts and bounded process-result fields.
+
 Installed Windows versions without the bridge require a manual Setup bootstrap. Failed verification keeps the application open and removes install authority without deleting the retained file. Cancelling before Windows handoff keeps the current application open; cancellation or failure inside the external wizard is not observable as an installation result. A helper acknowledgement is not proof of a finished upgrade.
 
 ## Testing

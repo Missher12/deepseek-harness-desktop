@@ -7,6 +7,15 @@ function source(path: string): string {
 }
 
 describe('installed Windows update handoff entrance', () => {
+  it('parses both generated scripts from owned files without waiting on console stdin', () => {
+    const driver = source('../apps/desktop/tests/windows-update-installer.spec.ts')
+    const parser = driver.slice(driver.indexOf("'parses both the real bootstrap"), driver.indexOf("'validates the real payload"))
+    expect(parser).toContain('Parser]::ParseFile')
+    expect(parser).toContain("['ignore', 'pipe', 'pipe']")
+    expect(parser).toContain("'bootstrap.ps1','worker.ps1'")
+    expect(parser).not.toContain('[Console]::In.ReadToEnd()')
+    expect(parser).toContain('DSH_PARSE')
+  })
   it('uses the real installed application and production command, not a fake bridge or inert executable', () => {
     const driver = source('../apps/desktop/tests/windows-update-handoff-smoke.spec.ts')
     expect(driver).toContain("import { createWindowsUpdateCommand, stopWindowsUpdateWorker } from '../src/update/windows-installer.ts'")

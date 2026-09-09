@@ -1,7 +1,7 @@
 /** Private physical rendezvous and serialized decisions for the Windows update bootstrap. */
 import { randomBytes } from 'node:crypto'
 import { link, lstat, mkdtemp, open, realpath, unlink, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 /** Private update rendezvous allocated by the native main process, never the renderer. */
 export interface WindowsUpdateSignal {
@@ -16,15 +16,28 @@ export interface WindowsUpdateWorker {
 }
 
 async function physicalDirectory(directory: string): Promise<void> {
-  const stat = await lstat(directory)
-  if (!stat.isDirectory() || stat.isSymbolicLink() || resolve(await realpath(directory)) !== resolve(directory)) {
+  const path = resolve(directory)
+  const before = await lstat(path, { bigint: true })
+  // Case and 8.3 spellings can identify one directory. A link at any ancestor
+  // cannot acquire authority merely because its target has the same file ID.
+  for (let current = path;; current = dirname(current)) {
+    const component = await lstat(current, { bigint: true })
+    if (!component.isDirectory() || component.isSymbolicLink()) throw new Error('Invalid private update signal directory.')
+    if (dirname(current) === current) break
+  }
+  const physical = await lstat(await realpath(path), { bigint: true })
+  const after = await lstat(path, { bigint: true })
+  if (!before.isDirectory() || before.ino === 0n || !physical.isDirectory() || !after.isDirectory()
+    || after.isSymbolicLink() || physical.isSymbolicLink()
+    || before.dev !== physical.dev || before.ino !== physical.ino
+    || before.dev !== after.dev || before.ino !== after.ino) {
     throw new Error('Invalid private update signal directory.')
   }
 }
 
 /**
  * Allocate a private, unpredictable signal directory beneath the verified payload stage.
- * @param stage Physical, already verified native payload directory.
+ * @param stage Already verified native payload directory; physical case/8.3 aliases retain their spelling.
  * @returns A newly owned directory and its transaction nonce.
  */
 export async function createWindowsUpdateSignal(stage: string): Promise<WindowsUpdateSignal> {

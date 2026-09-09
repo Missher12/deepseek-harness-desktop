@@ -2,12 +2,12 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
 import { watch } from 'node:fs'
-import { copyFile, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createWindowsUpdateCommand, isWindowsBootstrapReady, stopWindowsUpdateWorker } from '../src/update/windows-installer.ts'
-import { createWindowsUpdateSignal, decideWindowsUpdateSignal, readWindowsUpdateSignal, WindowsUpdateDecision } from '../src/update/windows-signal.ts'
+import { createWindowsUpdateSignal, decideWindowsUpdateSignal, readWindowsUpdateSignal, WindowsUpdateDecision, type WindowsUpdateSignal } from '../src/update/windows-signal.ts'
 import { updatePayload } from './update-fixtures.ts'
 
 const descriptor = {
@@ -19,14 +19,45 @@ const descriptor = {
 }
 const fixtureSignal = { directory: descriptor.stagingDirectory + '\\handoff-fixture', nonce: 'c'.repeat(64) }
 
-function command() {
+function command(environment: NodeJS.ProcessEnv = {}) {
   return createWindowsUpdateCommand(descriptor, {
     parentPid: 123, parentExecutable: 'C:\\Users\\Fixture\\App\\DeepSeek Harness.exe',
-    systemRoot: 'C:\\Windows', signal: fixtureSignal,
+    systemRoot: 'C:\\Windows', signal: fixtureSignal, environment,
   })
 }
 
 describe('private Windows update readiness', () => {
+  it('accepts an OS-resolved case alias of the same physical directory without rewriting its spelling', async (context) => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-signal-alias-')))
+    try {
+      const physical = join(root, 'MixedCaseStage')
+      const alias = join(root, 'mIXEDcASEsTAGE')
+      await mkdir(physical)
+      const exists = await lstat(alias).then(() => true, (error: unknown) => {
+        if (process.platform !== 'win32' && error instanceof Error && 'code' in error && error.code === 'ENOENT') return false
+        throw error
+      })
+      if (!exists) { context.skip('This filesystem distinguishes case; Windows executes this alias regression.'); return }
+      expect(await realpath(alias)).not.toBe(alias)
+      const signal = await createWindowsUpdateSignal(alias)
+      expect(signal.directory.startsWith(alias)).toBe(true)
+      await decideWindowsUpdateSignal(signal, true)
+      expect(await readFile(join(signal.directory, 'decision'), 'utf8')).toBe(signal.nonce)
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
+  it('rejects both a linked directory and a linked ancestor even when their target is owned', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-signal-link-')))
+    try {
+      const target = join(root, 'target')
+      await mkdir(join(target, 'child'), { recursive: true })
+      const alias = join(root, 'indirect')
+      await symlink(target, alias, process.platform === 'win32' ? 'junction' : 'dir')
+      await expect(createWindowsUpdateSignal(alias)).rejects.toThrow('Invalid private update signal directory')
+      await expect(createWindowsUpdateSignal(join(alias, 'child'))).rejects.toThrow('Invalid private update signal directory')
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
   it('publishes a complete approval before a directory observer can open its final name', async () => {
     const stage = await realpath(await mkdtemp(join(tmpdir(), 'dsh-signal-')))
     const signal = await createWindowsUpdateSignal(stage)
@@ -170,27 +201,60 @@ describe('Windows update bootstrap and independent worker', () => {
     expect(() => createWindowsUpdateCommand(descriptor, { ...options, signal: { ...fixtureSignal, nonce: 'wrong' } })).toThrow()
   })
 
-  it.skipIf(process.platform !== 'win32')('parses both the real bootstrap and nested worker with Windows PowerShell', () => {
-    const plan = command()
+  it.skipIf(process.platform !== 'win32')('parses both the real bootstrap and nested worker with Windows PowerShell', async () => {
+    const directory = await realpath(await mkdtemp(join(tmpdir(), 'dsh-update-parser-')))
+    const plan = command(process.env)
     const source = Buffer.from(plan.args.at(-1)!, 'base64').toString('utf16le')
     const marker = "$workerScript = @'\n"
     const start = source.indexOf(marker) + marker.length
     const worker = source.slice(start, source.indexOf("\n'@", start))
-    const parser = '$tokens=$null; $errors=$null; $sources=[Console]::In.ReadToEnd() | ConvertFrom-Json; foreach($source in $sources){[void][System.Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors); if($errors.Count){exit 1}}'
-    const result = spawnSync(plan.executable, ['-NoProfile', '-NonInteractive', '-Command', parser], {
-      input: JSON.stringify([source, worker]), encoding: 'utf8', shell: false, timeout: 10_000, env: plan.env,
-    })
-    expect(result.error === undefined && result.status === 0 && result.signal === null).toBe(true)
+    const parser = `
+$ErrorActionPreference='Stop'
+$failed=$false
+foreach($name in @('bootstrap.ps1','worker.ps1')) {
+  $tokens=$null; $errors=$null
+  [void][System.Management.Automation.Language.Parser]::ParseFile([IO.Path]::Combine($env:DSH_PARSER_ROOT,$name),[ref]$tokens,[ref]$errors)
+  [Console]::Out.WriteLine(('DSH_PARSE {0} {1}' -f $name,@($errors).Count))
+  if(@($errors).Count -gt 0){$failed=$true}
+}
+if($failed){exit 1}
+`
+    const parse = () => {
+      const result = spawnSync(plan.executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand',
+        Buffer.from(parser, 'utf16le').toString('base64')], {
+        stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', shell: false, windowsHide: true,
+        timeout: 10_000, maxBuffer: 1024, env: { ...plan.env, DSH_PARSER_ROOT: directory },
+      })
+      const lines = result.stdout?.trim().split(/\r?\n/u) ?? []
+      return { status: result.status, signal: result.signal,
+        errorCode: result.error === undefined ? null
+          : 'code' in result.error && typeof result.error.code === 'string' ? result.error.code : 'UNKNOWN',
+        counts: lines.map(line => /^DSH_PARSE (bootstrap|worker)\.ps1 (\d+)$/u.exec(line)?.slice(1) ?? ['invalid']),
+        stderrBytes: Buffer.byteLength(result.stderr ?? '') }
+    }
+    try {
+      await writeFile(join(directory, 'bootstrap.ps1'), source, { flag: 'wx', mode: 0o600 })
+      await writeFile(join(directory, 'worker.ps1'), worker, { flag: 'wx', mode: 0o600 })
+      expect(parse()).toEqual({ status: 0, signal: null, errorCode: null,
+        counts: [['bootstrap', '0'], ['worker', '0']], stderrBytes: 0 })
+      await writeFile(join(directory, 'worker.ps1'), ')')
+      const rejected = parse()
+      expect(rejected).toMatchObject({ status: 1, signal: null, errorCode: null, stderrBytes: 0 })
+      expect(rejected.counts[0]).toEqual(['bootstrap', '0'])
+      expect(rejected.counts[1]?.[0]).toBe('worker')
+      expect(Number(rejected.counts[1]?.[1])).toBeGreaterThan(0)
+    } finally { await rm(directory, { recursive: true, force: true }) }
   })
 
   it.skipIf(process.platform !== 'win32')('validates the real payload, survives bootstrap exit and cancels the exact worker without running the inert Setup', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'dsh-update-native-'))
+    const requestedDirectory = await mkdtemp(join(tmpdir(), 'dsh-update-native-'))
+    const directory = await realpath(requestedDirectory)
     let parent: ChildProcess | undefined
     let bootstrap: ChildProcess | undefined
     let worker: { pid: number; started: string } | undefined
     const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT ?? 'C:\\Windows'
     const powershell = join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-    const signal = await createWindowsUpdateSignal(directory)
+    let signal: WindowsUpdateSignal | undefined
     const controlWorker = (terminate: boolean): void => {
       if (worker === undefined) return
       const source = '$ErrorActionPreference=\"Stop\"; try {$p=[Diagnostics.Process]::GetProcessById(' + String(worker.pid)
@@ -210,6 +274,16 @@ describe('Windows update bootstrap and independent worker', () => {
       await closed
     }
     try {
+      signal = await createWindowsUpdateSignal(directory)
+      const requestedInfo = await lstat(requestedDirectory, { bigint: true })
+      const canonicalInfo = await lstat(directory, { bigint: true })
+      const identity = { spellingChanged: requestedDirectory !== directory,
+        sameFileId: requestedInfo.dev === canonicalInfo.dev && requestedInfo.ino === canonicalInfo.ino,
+        isDirectory: requestedInfo.isDirectory(), isLink: requestedInfo.isSymbolicLink() }
+      console.info('DSH_UPDATE_PATH_IDENTITY', JSON.stringify(identity))
+      expect(identity).toMatchObject({ sameFileId: true, isDirectory: true, isLink: false })
+      const aliasSignal = await createWindowsUpdateSignal(requestedDirectory)
+      await decideWindowsUpdateSignal(aliasSignal, false)
       const parentExecutable = join(directory, 'DeepSeek Harness.exe')
       await copyFile(process.execPath, parentExecutable)
       parent = spawn(parentExecutable, ['-e', 'setInterval(() => {}, 1000)'], {
@@ -268,7 +342,7 @@ describe('Windows update bootstrap and independent worker', () => {
       expect(bad.stdout).not.toContain('DSH_UPDATE_READY')
       expect(parent.exitCode).toBeNull()
     } finally {
-      await decideWindowsUpdateSignal(signal, false)
+      if (signal !== undefined) await decideWindowsUpdateSignal(signal, false)
       if (bootstrap !== undefined && bootstrap.exitCode === null && bootstrap.signalCode === null) {
         await expect.poll(() => bootstrap!.exitCode !== null || bootstrap!.signalCode !== null, { timeout: 20_000 }).toBe(true)
       }
