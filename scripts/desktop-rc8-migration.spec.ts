@@ -11,7 +11,7 @@ const readUpdateMetadata = (): { desktopVersion?: unknown; harnessVersion?: unkn
   }
 
 describe('official core Desktop migration', () => {
-  it('aligns the official alpha.1 core and the Desktop 0.5.6 release manifests', () => {
+  it('aligns the official alpha.1 core and the Desktop 0.5.7 release manifests', () => {
     expect(readManifest('package.json').version).toBe('0.1.3-alpha.1')
     for (const manifest of [
       'packages/client/runtime/package.json',
@@ -28,10 +28,10 @@ describe('official core Desktop migration', () => {
     for (const manifest of [
       'apps/desktop/package.json',
     ]) {
-      expect(readManifest(manifest).version, manifest).toBe('0.5.6')
+      expect(readManifest(manifest).version, manifest).toBe('0.5.7')
     }
     expect(readUpdateMetadata()).toMatchObject({
-      desktopVersion: '0.5.6',
+      desktopVersion: '0.5.7',
       harnessVersion: '0.1.3-alpha.1',
     })
   })
