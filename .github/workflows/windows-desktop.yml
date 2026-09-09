@@ -104,6 +104,7 @@ jobs:
           apps/desktop/tests/packaged-smoke-helpers.spec.ts
           scripts/windows-desktop-runtime-evidence.spec.ts
           scripts/windows-desktop-installer-ui-smoke.spec.ts
+          scripts/windows-desktop-update-handoff.spec.ts
           apps/desktop/tests/preload-api.spec.ts
           apps/desktop/tests/update-release.spec.ts
           apps/desktop/tests/update-service.spec.ts
@@ -317,6 +318,7 @@ jobs:
             s/apps/desktop/release/desktop-package-setup-baseline-0.5.3.json
             s/apps/desktop/release/windows-installer-ui-evidence/installer-progress.json
             s/apps/desktop/release/windows-installer-ui-baseline-0.5.6/installer-progress.json
+            s/apps/desktop/release/windows-update-handoff-evidence/handoff.json
           if-no-files-found: error
           retention-days: 14
 
@@ -343,6 +345,7 @@ jobs:
             s/apps/desktop/release/windows-installer-ui-baseline-0.5.6/installer-progress.json
             s/apps/desktop/release/windows-native-visual-evidence/*.png
             s/apps/desktop/release/windows-native-visual-evidence/*.json
+            s/apps/desktop/release/windows-update-handoff-evidence/handoff-welcome.png
             s/apps/desktop/release/desktop-smoke-win32.png
             s/apps/desktop/release/desktop-smoke-first-run-win32.png
             s/apps/desktop/release/desktop-smoke-first-run-win32.json
