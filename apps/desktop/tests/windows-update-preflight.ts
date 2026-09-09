@@ -87,6 +87,27 @@ export async function readNativePhase(
 }
 
 /**
+ * Interpret only fixed bootstrap stderr markers; no diagnostic frame grants readiness.
+ * @param stderr Bounded private stderr accumulated from the retained bootstrap.
+ * @returns Observed fixed codes and whether stderr is empty or contains only permitted progress frames.
+ */
+export function bootstrapProgress(stderr: string) {
+  const lines = stderr.split(/\r?\n/u)
+  let stderrAllowed = lines.pop() === ''
+  const progress: string[] = []
+  let previous = -1
+  for (const line of lines) {
+    const code = /^DSHB:([EJIPSWRF])$/u.exec(line)?.[1]
+    if (code === undefined) { stderrAllowed = false; continue }
+    const position = 'EJIPSWRF'.indexOf(code)
+    if (position <= previous || code === 'F') stderrAllowed = false
+    progress.push(code)
+    previous = position
+  }
+  return { progress, stderrAllowed }
+}
+
+/**
  * Observe only the retained child, draining output without exposing source or private paths.
  * @param child Process created by this test; no PID lookup or process discovery.
  * @returns Bounded readiness/close waits, owned stop and fixed public process facts.
@@ -94,8 +115,9 @@ export async function readNativePhase(
 export function observePreflightChild(child: ChildProcess) {
   const facts = { spawned: false, error: false, exited: false, closed: false,
     status: null as number | null, signal: null as NodeJS.Signals | null,
-    stdoutBytes: 0, stderrBytes: 0, stdoutOverflow: false, stderrOverflow: false }
+    stdoutBytes: 0, stderrBytes: 0, stdoutOverflow: false, stderrOverflow: false, ...bootstrapProgress('') }
   let output = ''
+  let stderr = ''
   let readyResolve: () => void = () => {}
   let readyReject: (error: Error) => void = () => {}
   const ready = new Promise<void>((resolve, reject) => { readyResolve = resolve; readyReject = reject })
@@ -118,8 +140,11 @@ export function observePreflightChild(child: ChildProcess) {
     if (isWindowsBootstrapReady(output)) readyResolve()
   })
   child.stderr?.on('data', (chunk: Buffer) => {
-    facts.stderrOverflow ||= facts.stderrBytes + chunk.length > 4096
-    facts.stderrBytes = Math.min(4096, facts.stderrBytes + chunk.length)
+    stderr += chunk.subarray(0, 128 - facts.stderrBytes).toString('utf8')
+    facts.stderrOverflow ||= facts.stderrBytes + chunk.length > 128
+    facts.stderrBytes = Math.min(128, facts.stderrBytes + chunk.length)
+    Object.assign(facts, bootstrapProgress(stderr))
+    facts.stderrAllowed &&= !facts.stderrOverflow
   })
   const bounded = async (pending: Promise<void>, timeout: number, code: string): Promise<void> => {
     let timer: ReturnType<typeof setTimeout> | undefined

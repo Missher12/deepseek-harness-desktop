@@ -178,7 +178,11 @@ try {
 } catch { ${observe('worker-failed')} exit 1 }
 finally { ${observe('worker-finally')} if($null -ne $self){$self.Dispose()} }
 `
+  // E/J bracket JSON; J/I acquire self, I/P bracket the property-reading phase;
+  // S/W bracket native spawn, R confirms worker identity, F reports a caught failure.
   const script = `
+function Trace($c){try{[Console]::Error.WriteLine('DSHB:'+$c);[Console]::Error.Flush()}catch{}}
+Trace 'E'
 $ErrorActionPreference = 'Stop'
 $worker = $null
 $approved = $false
@@ -188,17 +192,23 @@ ${workerScript}
 '@
 try {
   $config = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${config}')) | ConvertFrom-Json
+  Trace 'J'
   $self = [Diagnostics.Process]::GetCurrentProcess()
+  Trace 'I'
   ${observe('bootstrap-entered')}
+  Trace 'P'
   $signal = [IO.DirectoryInfo]::new($config.signal)
   if (!$signal.Exists -or ($signal.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Invalid signal directory' }
   $systemPowerShell = [IO.Path]::Combine($env:SYSTEMROOT,'System32','WindowsPowerShell','v1.0','powershell.exe')
   $workerArguments = @('-NoLogo','-NoProfile','-NonInteractive','-WindowStyle','Hidden','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($workerScript)))
   ${observe('bootstrap-before-worker')}
+  Trace 'S'
   $worker = Start-Process -FilePath $systemPowerShell -ArgumentList $workerArguments -WindowStyle Hidden -PassThru
+  Trace 'W'
   [void]$worker.Handle
   $started = $worker.StartTime.ToUniversalTime().Ticks.ToString()
   if ($worker.MainModule.FileName -ine $systemPowerShell) { throw 'Wrong worker executable' }
+  Trace 'R'
   ${observe('bootstrap-after-worker', 'worker')}
   $deadline = [DateTime]::UtcNow.AddSeconds(20)
   $readyPath = [IO.Path]::Combine($config.signal,'ready.json')
@@ -232,7 +242,7 @@ try {
     [Threading.Thread]::Sleep(100)
   }
   if (!$approved) { throw 'Handoff acknowledgement timed out' }
-} catch { ${observe('bootstrap-failed')} exit 1 }
+} catch { Trace 'F'; ${observe('bootstrap-failed')} exit 1 }
 finally {
   ${observe('bootstrap-finally')}
   if($null -ne $self){$self.Dispose()}

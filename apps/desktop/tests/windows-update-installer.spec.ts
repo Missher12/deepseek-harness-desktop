@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { createWindowsUpdateCommand, isWindowsBootstrapReady, stopWindowsUpdateWorker } from '../src/update/windows-installer.ts'
 import { createWindowsUpdateSignal, decideWindowsUpdateSignal, readWindowsUpdateSignal, WindowsUpdateDecision, type WindowsUpdateSignal } from '../src/update/windows-signal.ts'
 import { updatePayload } from './update-fixtures.ts'
-import { nativeUpdatePhases, observePreflightChild, preflightTempRoot, readNativePhase, settlePreflight } from './windows-update-preflight.ts'
+import { bootstrapProgress, nativeUpdatePhases, observePreflightChild, preflightTempRoot, readNativePhase, settlePreflight } from './windows-update-preflight.ts'
 
 const descriptor = {
   target: { platform: 'win32', arch: 'x64', packageFormat: 'nsis' } as const,
@@ -160,6 +160,17 @@ describe('private Windows update readiness', () => {
 })
 
 describe('Windows update bootstrap and independent worker', () => {
+  it('reports only fixed bootstrap progress frames without treating them as readiness', () => {
+    expect(bootstrapProgress('DSHB:E\r\nDSHB:J\r\nDSHB:I\r\nDSHB:P\r\nDSHB:S\r\nDSHB:W\r\nDSHB:R\r\n'))
+      .toEqual({ progress: ['E', 'J', 'I', 'P', 'S', 'W', 'R'], stderrAllowed: true })
+    expect(bootstrapProgress('DSHB:E\nDSHB:F\n')).toEqual({ progress: ['E', 'F'], stderrAllowed: false })
+    expect(bootstrapProgress('')).toEqual({ progress: [], stderrAllowed: true })
+    expect(bootstrapProgress('DSHB:J\n')).toEqual({ progress: ['J'], stderrAllowed: true })
+    for (const unexpected of ['DSHB:E-extra\n', 'DSHB:E\nDSHB:E\n', 'DSHB:P\nDSHB:I\n', 'private error text', 'DSHB:', 'DSHB:E']) {
+      expect(bootstrapProgress(unexpected).stderrAllowed).toBe(false)
+    }
+    expect(isWindowsBootstrapReady('DSHB:E\nDSHB:J\nDSHB:P\n')).toBe(false)
+  })
   it('retains the first preflight failure while finishing every owned cleanup in order', async () => {
     const primary = new Error('readiness failed')
     const attempted: string[] = []
@@ -181,7 +192,7 @@ describe('Windows update bootstrap and independent worker', () => {
   })
 
   it('drains only bounded byte counts and awaits the retained child close after stopping it', async () => {
-    const child = spawn(process.execPath, ['-e', 'process.stdout.write("DSH_UPDATE_READY\\n"); process.stderr.write("x".repeat(5000)); setInterval(() => {}, 1000)'],
+    const child = spawn(process.execPath, ['-e', 'process.stdout.write("DSH_UPDATE_READY\\n"); process.stderr.write("DSHB:E\\n"+"x".repeat(5000)); setInterval(() => {}, 1000)'],
       { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { SYSTEMROOT: process.env.SYSTEMROOT } })
     const observed = observePreflightChild(child)
     try {
@@ -189,7 +200,7 @@ describe('Windows update bootstrap and independent worker', () => {
       await expect.poll(() => observed.facts.stderrOverflow).toBe(true)
       await observed.stop()
       expect(observed.facts).toMatchObject({ spawned: true, error: false, exited: true, closed: true,
-        stdoutBytes: 17, stderrBytes: 4096, stdoutOverflow: false, stderrOverflow: true })
+        stdoutBytes: 17, stderrBytes: 128, stdoutOverflow: false, stderrOverflow: true, progress: ['E'], stderrAllowed: false })
       expect(observed.exactReady()).toBe(true)
       expect(child.exitCode !== null || child.signalCode !== null).toBe(true)
       await observed.stop()
@@ -423,7 +434,7 @@ if($failed){exit 1}
         await bootstrapObservation.waitClosed(20_000)
         expect(bootstrap.exitCode).toBe(0)
         expect(bootstrap.signalCode).toBeNull()
-        expect(bootstrapObservation.facts.stderrBytes).toBe(0)
+        expect(bootstrapObservation.facts.stderrAllowed).toBe(true)
         expect(bootstrapObservation.exactReady()).toBe(true)
         for (const record of await publicPhases()) {
           if (!record.present) continue
