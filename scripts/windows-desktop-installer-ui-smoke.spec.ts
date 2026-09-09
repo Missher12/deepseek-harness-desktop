@@ -19,6 +19,23 @@ function observedInstallation() {
 }
 
 describe('helper-launched installer observation', () => {
+  it('retains the exact Setup handle before Cancel and releases it only after owned cleanup', () => {
+    const source = readFileSync(new URL('./windows-desktop-installer-ui-smoke.ps1', import.meta.url), 'utf8')
+    const observer = source.slice(source.indexOf('function Observe-UpdateHandoff'), source.indexOf('$resolvedSetup ='))
+    const held = observer.indexOf('[void]$setup.Handle')
+    expect(held).toBeGreaterThan(observer.indexOf('::GetProcessById'))
+    expect(held).toBeLessThan(observer.indexOf('Test-HandoffRetainedSetupIdentity $current $children[0]'))
+    expect(observer.indexOf('$setupIdentityVerified = $true')).toBeGreaterThan(held)
+    expect(observer.indexOf('$setupIdentityVerified = $true')).toBeLessThan(observer.indexOf("$handoffStage = 'cancel-find'"))
+    expect(observer).toContain('$setupIdentityVerified -and -not $setup.HasExited')
+    expect(observer.lastIndexOf('$setup.Dispose()')).toBeGreaterThan(observer.indexOf('$setup.WaitForExit(10000)'))
+    for (const stage of ['find', 'invoke', 'confirm', 'wait', 'exit-code', 'window']) {
+      expect(observer).toContain(`$handoffStage = 'cancel-${stage}'`)
+    }
+    expect(observer).toContain('$setup.ExitCode -notin @(0, 1)')
+    expect(observer).toContain('.AddSeconds(30)')
+    expect(observer).toContain('$dialog.Current.ProcessId -ne $script:InstallerProcessId')
+  })
   it('attaches before the normal direct-install entry without starting Setup or advancing installation', () => {
     const source = readFileSync(new URL('./windows-desktop-installer-ui-smoke.ps1', import.meta.url), 'utf8')
     const start = source.indexOf('function Observe-UpdateHandoff')
@@ -48,13 +65,13 @@ describe('helper-launched installer observation', () => {
       $tokens=$null; $errors=$null
       $ast=[System.Management.Automation.Language.Parser]::ParseFile($env:DSH_OBSERVER_SOURCE,[ref]$tokens,[ref]$errors)
       if($errors.Count){throw 'Observer parse failed.'}
-      foreach($name in @('Test-HandoffSetupIdentity','Test-HandoffWorkerIdentity')) {
+      foreach($name in @('Test-HandoffSetupIdentity','Test-HandoffWorkerIdentity','Test-HandoffRetainedSetupIdentity')) {
         $definition=$ast.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name},$true)
         . ([scriptblock]::Create($definition.Extent.Text))
       }
       $ready=[datetime]'2026-09-09T00:00:00Z'
       $path='C:\\owned\\DeepSeek-Harness-Setup-0.5.7-win-x64.exe'
-      $row=[pscustomobject]@{ParentProcessId=123;ExecutablePath=$path;CreationDate=$ready.AddSeconds(1)}
+      $row=[pscustomobject]@{ProcessId=456;ParentProcessId=123;ExecutablePath=$path;CreationDate=$ready.AddSeconds(1)}
       $results=@()
       $results += Test-HandoffSetupIdentity $row 123 $path $ready
       $results += Test-HandoffSetupIdentity $row 124 $path $ready
@@ -69,6 +86,15 @@ describe('helper-launched installer observation', () => {
       $results += Test-HandoffWorkerIdentity $row 123 $path ($ready.ToUniversalTime().ToString('o'))
       $results += Test-HandoffWorkerIdentity $row 0 $path $created
       $results += Test-HandoffWorkerIdentity $null 123 $path $created
+      $results += Test-HandoffRetainedSetupIdentity $row $row 123 $path $ready
+      $other=$row.PSObject.Copy(); $other.ProcessId=457
+      $results += Test-HandoffRetainedSetupIdentity $other $row 123 $path $ready
+      $other=$row.PSObject.Copy(); $other.CreationDate=$ready.AddSeconds(2)
+      $results += Test-HandoffRetainedSetupIdentity $other $row 123 $path $ready
+      $results += Test-HandoffRetainedSetupIdentity $row $row 124 $path $ready
+      $results += Test-HandoffRetainedSetupIdentity $row $row 123 ($path+'.other.exe') $ready
+      $results += Test-HandoffRetainedSetupIdentity $null $row 123 $path $ready
+      $results += Test-HandoffRetainedSetupIdentity $row $null 123 $path $ready
       $results | ConvertTo-Json -Compress
     `
     const result = spawnSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
@@ -78,7 +104,10 @@ describe('helper-launched installer observation', () => {
     expect(result.error).toBeUndefined()
     expect(result.signal).toBeNull()
     expect(result.status).toBe(0)
-    expect(JSON.parse(result.stdout)).toEqual([true, false, false, false, false, false, true, false, false, false, false, false])
+    expect(JSON.parse(result.stdout)).toEqual([
+      true, false, false, false, false, false, true, false, false, false, false, false,
+      true, false, false, false, false, false, false,
+    ])
   })
 })
 

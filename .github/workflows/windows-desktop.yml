@@ -230,6 +230,31 @@ jobs:
           '@ | node --input-type=module
           if ($LASTEXITCODE -ne 0) { throw 'Host Node ABI recovery failed.' }
 
+      # Internal candidate only: preserving build evidence does not pass native
+      # acceptance or authorize release. Keep one upload even if lifecycle fails.
+      - name: Record SHA-256
+        shell: pwsh
+        run: |
+          $artifact = 'apps/desktop/release/${{ steps.desktop.outputs.artifact }}'
+          $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+          $file = Get-Item -LiteralPath $artifact
+          $record = Get-Content -LiteralPath 'apps/desktop/release/desktop-package-setup.json' -Raw | ConvertFrom-Json
+          if ($record.path -cne $file.Name -or $record.bytes -ne $file.Length -or $record.sha256 -cne $hash) {
+            throw 'Setup candidate no longer matches its build evidence.'
+          }
+          $checksum = "$hash  $(Split-Path -Leaf $artifact)`n"
+          [System.IO.File]::WriteAllText("$artifact.sha256", $checksum, [System.Text.Encoding]::ASCII)
+
+      - name: Preserve unaccepted internal Setup candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ steps.source.outputs.sha }}
+          path: |
+            s/apps/desktop/release/${{ steps.desktop.outputs.artifact }}
+            s/apps/desktop/release/${{ steps.desktop.outputs.artifact }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Measure the pinned public 0.5.3 baseline on this runner
         shell: pwsh
         run: |
@@ -361,21 +386,4 @@ jobs:
             s/apps/desktop/release/desktop-smoke-dpi-150-win32.png
             s/apps/desktop/release/desktop-smoke-dpi-150-win32.json
           if-no-files-found: ignore
-          retention-days: 14
-
-      - name: Record SHA-256
-        shell: pwsh
-        run: |
-          $artifact = 'apps/desktop/release/${{ steps.desktop.outputs.artifact }}'
-          $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
-          $checksum = "$hash  $(Split-Path -Leaf $artifact)`n"
-          [System.IO.File]::WriteAllText("$artifact.sha256", $checksum, [System.Text.Encoding]::ASCII)
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: DeepSeek-Harness-Setup-win-x64-${{ steps.desktop.outputs.version }}-${{ steps.source.outputs.sha }}
-          path: |
-            s/apps/desktop/release/${{ steps.desktop.outputs.artifact }}
-            s/apps/desktop/release/${{ steps.desktop.outputs.artifact }}.sha256
-          if-no-files-found: error
           retention-days: 14

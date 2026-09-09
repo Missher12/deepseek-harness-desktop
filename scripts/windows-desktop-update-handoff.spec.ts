@@ -7,6 +7,20 @@ function source(path: string): string {
 }
 
 describe('installed Windows update handoff entrance', () => {
+  it('preserves one SHA-bound internal Setup candidate before native lifecycle can fail', () => {
+    const workflow = source('../.github/workflows/windows-desktop.yml')
+    const checksum = workflow.indexOf('- name: Record SHA-256')
+    const upload = workflow.indexOf('name: DeepSeek-Harness-Setup-win-x64-')
+    const abi = workflow.indexOf('- name: Restore host Node ABI')
+    const baseline = workflow.indexOf('- name: Measure the pinned public')
+    expect(checksum).toBeGreaterThan(abi)
+    expect(upload).toBeGreaterThan(checksum)
+    expect(upload).toBeLessThan(baseline)
+    expect(workflow.match(/name: DeepSeek-Harness-Setup-win-x64-/gu)).toHaveLength(1)
+    expect(workflow.slice(checksum, upload)).toContain('$record.bytes -ne $file.Length')
+    expect(workflow.slice(checksum, upload)).toContain('$record.sha256 -cne $hash')
+    expect(workflow.slice(upload)).toContain('${{ steps.desktop.outputs.version }}-${{ steps.source.outputs.sha }}')
+  })
   it('uses the same fixed Utility import for exact-worker cleanup before its first JSON command', () => {
     const installer = source('../apps/desktop/src/update/windows-installer.ts')
     const cleanup = installer.slice(installer.indexOf('export async function stopWindowsUpdateWorker'), installer.indexOf('interface WindowsUpdateCommandOptions'))

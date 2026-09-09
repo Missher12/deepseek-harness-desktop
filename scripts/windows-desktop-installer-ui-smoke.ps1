@@ -480,6 +480,13 @@ function Test-HandoffWorkerIdentity {
     $Process.CreationDate.ToUniversalTime().ToString('o') -ceq $ExpectedCreated
 }
 
+function Test-HandoffRetainedSetupIdentity {
+  param($Process, $Observed, [int]$HelperId, [string]$ExpectedPath, [datetime]$ReadyAt)
+  return (Test-HandoffSetupIdentity $Process $HelperId $ExpectedPath $ReadyAt) -and
+    $null -ne $Observed -and $Process.ProcessId -eq $Observed.ProcessId -and
+    $Process.CreationDate.ToUniversalTime() -eq $Observed.CreationDate.ToUniversalTime()
+}
+
 function Observe-UpdateHandoff {
   param([string]$ResolvedSetup, [string]$ResolvedEvidenceRoot)
 
@@ -494,6 +501,7 @@ function Observe-UpdateHandoff {
   }
   $readyAt = [DateTime]::UtcNow
   $setup = $null
+  $setupIdentityVerified = $false
   $handoffStage = 'waiting-for-setup'
   try {
     [Console]::Out.WriteLine('DSH_HANDOFF_OBSERVER_READY')
@@ -509,6 +517,15 @@ function Observe-UpdateHandoff {
         }
         $script:InstallerProcessId = [int]$children[0].ProcessId
         $setup = [Diagnostics.Process]::GetProcessById($script:InstallerProcessId)
+        # Retain the kernel handle while Setup is alive so late ExitCode reads
+        # after UIA Cancel cannot lose the process's normal exit status.
+        [void]$setup.Handle
+        $current = Get-CimInstance Win32_Process -Filter "ProcessId = $script:InstallerProcessId"
+        if (-not (Test-HandoffRetainedSetupIdentity $current $children[0] $HandoffHelperId $ResolvedSetup $readyAt) -or
+            $setup.HasExited) {
+          throw 'Setup identity changed while retaining its handle.'
+        }
+        $setupIdentityVerified = $true
         # Private bounded control channel, never a public artifact. Persist the
         # identity before a fast Cancel can make it disappear between inventories.
         $identity = [ordered]@{
@@ -528,14 +545,20 @@ function Observe-UpdateHandoff {
     $handoffStage = 'capturing-welcome'
     Save-RedactedInstallerScreenshot -Window $window `
       -Path (Join-Path $ResolvedEvidenceRoot 'handoff-welcome.png')
-    $handoffStage = 'controlled-cancel'
-    Invoke-InstallerButton -Window $window -NamePattern '^Cancel$'
+    $handoffStage = 'cancel-find'
+    $cancel = Find-Control -Element $window `
+      -ControlType ([System.Windows.Automation.ControlType]::Button) -NamePattern '^Cancel$'
+    if ($null -eq $cancel) { throw 'Setup Cancel button was not found.' }
+    $handoffStage = 'cancel-invoke'
+    $cancel.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
     $cancelDeadline = [DateTime]::UtcNow.AddSeconds(30)
     $confirmed = $false
+    $handoffStage = 'cancel-wait'
     while (-not $setup.HasExited -and [DateTime]::UtcNow -lt $cancelDeadline) {
       # MUI_ABORTWARNING may ask for Yes. Only this Setup's modal dialog is
       # eligible; neither a desktop-wide Yes nor a synthetic process kill is cancellation.
       if (-not $confirmed) {
+        $handoffStage = 'cancel-confirm'
         $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
           [System.Windows.Automation.TreeScope]::Children,
           [System.Windows.Automation.Condition]::TrueCondition)
@@ -551,11 +574,14 @@ function Observe-UpdateHandoff {
           }
         }
       }
+      $handoffStage = 'cancel-wait'
       Start-Sleep -Milliseconds 100
     }
     if (-not $setup.HasExited) { throw 'Setup did not exit after controlled cancellation.' }
     # Require the observed Cancel and a normal bootstrap exit, never a kill.
+    $handoffStage = 'cancel-exit-code'
     if ($setup.ExitCode -notin @(0, 1)) { throw 'Setup failed instead of cancelling normally.' }
+    $handoffStage = 'cancel-window'
     if ($null -ne (Get-InstallerWindow)) { throw 'The cancelled Setup window remained visible.' }
     [Console]::Out.WriteLine('DSH_HANDOFF_CANCELLED')
   }
@@ -567,11 +593,12 @@ function Observe-UpdateHandoff {
   }
   finally {
     if ($null -ne $setup) {
-      if (-not $setup.HasExited) {
-        $setup.Kill($true)
-        if (-not $setup.WaitForExit(10000)) { throw 'Owned Setup cleanup did not finish.' }
-      }
-      $setup.Dispose()
+      try {
+        if ($setupIdentityVerified -and -not $setup.HasExited) {
+          $setup.Kill($true)
+          if (-not $setup.WaitForExit(10000)) { throw 'Owned Setup cleanup did not finish.' }
+        }
+      } finally { $setup.Dispose() }
     }
   }
 }

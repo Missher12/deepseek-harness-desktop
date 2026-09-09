@@ -45,6 +45,12 @@ interface ObservedChild {
   output: string
 }
 
+function handoffFailureStage(output: string): string | undefined {
+  const pattern = new RegExp('^DSH_HANDOFF_FAILED (waiting-for-setup|waiting-for-welcome|capturing-welcome|'
+    + 'cancel-(?:find|invoke|confirm|wait|exit-code|window))\\r?$', 'mu')
+  return pattern.exec(output)?.[1]
+}
+
 // Self-contained: Playwright serializes this function into the installed main.
 function spawnInstalledBootstrap(_electron: unknown, plan: { executable: string; args: readonly string[]; env: NodeJS.ProcessEnv }) {
   const native = process.getBuiltinModule('node:child_process')
@@ -133,6 +139,15 @@ function collectOwnedProcesses(
 }
 
 describe('handoff process ownership', () => {
+  it('reports only allowlisted native Cancel substages, never arbitrary observer text', () => {
+    for (const stage of ['cancel-find', 'cancel-invoke', 'cancel-confirm', 'cancel-wait', 'cancel-exit-code', 'cancel-window']) {
+      expect(handoffFailureStage(`DSH_HANDOFF_OBSERVER_READY\nDSH_HANDOFF_FAILED ${stage}\r\n`)).toBe(stage)
+    }
+    for (const input of ['DSH_HANDOFF_FAILED private-path\n', 'DSH_HANDOFF_FAILED cancel-invoke private-text\n',
+      'DSH_HANDOFF_FAILED controlled-cancel\n', 'prefix DSH_HANDOFF_FAILED cancel-window\n']) {
+      expect(handoffFailureStage(input)).toBeUndefined()
+    }
+  })
   it('binds the installed main to this live launcher tree rather than equating shell and main PIDs', () => {
     const launcher = { ProcessId: 10, ParentProcessId: 1, Created: '01', ExecutablePath: 'cmd.exe' }
     const main = { ProcessId: 20, ParentProcessId: 10, Created: '02', ExecutablePath: 'C:\\App\\DeepSeek Harness.exe' }
@@ -375,8 +390,7 @@ describe('real installed Windows native-command update handoff', () => {
       applicationClosed = true
       const activeObserver = observer
       await expect.poll(async () => { await captureOwned(); return activeObserver.closed }, { timeout: 150_000 }).toBe(true)
-      const failedStage = /^DSH_HANDOFF_FAILED (waiting-for-setup|waiting-for-welcome|capturing-welcome|controlled-cancel)\r?$/mu
-        .exec(activeObserver.output)?.[1]
+      const failedStage = handoffFailureStage(activeObserver.output)
       if (failedStage !== undefined) throw new Error(`Native handoff failed at ${failedStage}.`)
       expect(activeObserver.failed).toBe(false)
       expect(activeObserver.child.exitCode).toBe(0)
