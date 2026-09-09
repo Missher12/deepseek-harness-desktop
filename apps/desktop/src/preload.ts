@@ -7,6 +7,7 @@ import {
   isDesktopPreferenceMutation,
   isDesktopPreferencesSnapshot,
   isDesktopUpdateSnapshot,
+  isDesktopInstallResult,
   isRecoveryAction,
   supportsDesktopUpdates,
 } from './preload-api.ts'
@@ -40,12 +41,17 @@ const api: DesktopApi = {
       if (!isDesktopUpdateSnapshot(value)) throw new Error('Invalid Desktop update status.')
       return value
     },
+    async cancelUpdateDownload() {
+      const value: unknown = await ipcRenderer.invoke('desktop:update-cancel-download')
+      if (!isDesktopUpdateSnapshot(value)) throw new Error('Invalid Desktop update status.')
+      return value
+    },
     async installUpdate() {
       const value: unknown = await ipcRenderer.invoke('desktop:update-install')
-      if (typeof value !== 'object' || value === null || !('opened' in value) || typeof value.opened !== 'boolean') {
+      if (!isDesktopInstallResult(value)) {
         throw new Error('Invalid Desktop installer result.')
       }
-      return value as { opened: boolean; message?: string }
+      return value
     },
     onUpdateStatus(listener: (snapshot: DesktopUpdateSnapshot) => void) {
       const handler = (_event: Electron.IpcRendererEvent, value: unknown): void => {

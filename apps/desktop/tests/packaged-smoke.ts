@@ -21,6 +21,7 @@ import { startReaderSmokeProvider } from './reader-smoke-provider.ts'
 import { exerciseReaderPresentation } from './reader-presentation-smoke.ts'
 import { exerciseComposerContinuity } from './composer-continuity-smoke.ts'
 import { prepareTurnNavigationViewport, verifyTurnNavigationClick } from './turn-navigation-viewport.ts'
+import { isDesktopUpdateSnapshot } from '../src/update/contracts.ts'
 
 const execFileAsync = promisify(execFile)
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
@@ -1581,35 +1582,32 @@ async function exercisePersonalization(
   await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
 }
 
+/** Verify installed runtime facts, not the platform of the test driver or a cached target version. */
+export function assertInstalledUpdateSnapshot(value: unknown, platform: NodeJS.Platform, desktop: string, harness: string): void {
+  if (!isDesktopUpdateSnapshot(value)) throw new Error('Packaged updater returned an invalid native snapshot.')
+  expect(value).toMatchObject({ platform, arch: 'x64', runningDesktop: desktop, includedHarness: harness, supportReason: null })
+  if (platform === 'darwin') expect(value).toMatchObject({ packageFormat: 'dmg', installAction: 'protected-replace' })
+  else if (platform === 'win32') expect(value).toMatchObject({ packageFormat: 'nsis', installAction: 'open-setup-wizard' })
+  else {
+    expect(['deb', 'appimage']).toContain(value.packageFormat)
+    expect(value.installAction).toBe('reveal-package')
+  }
+}
+
 async function exerciseSystemUpdate(page: Page, platform: NodeJS.Platform): Promise<void> {
   const bridgeShape = await page.evaluate(() => ({
     getUpdateStatus: typeof window.dshDesktop?.getUpdateStatus,
     checkForUpdates: typeof window.dshDesktop?.checkForUpdates,
     downloadUpdate: typeof window.dshDesktop?.downloadUpdate,
+    cancelUpdateDownload: typeof window.dshDesktop?.cancelUpdateDownload,
     installUpdate: typeof window.dshDesktop?.installUpdate,
     onUpdateStatus: typeof window.dshDesktop?.onUpdateStatus,
   }))
-  if (platform !== 'darwin') {
-    expect(bridgeShape).toEqual({
-      getUpdateStatus: 'undefined',
-      checkForUpdates: 'undefined',
-      downloadUpdate: 'undefined',
-      installUpdate: 'undefined',
-      onUpdateStatus: 'undefined',
-    })
-    const settingsTrigger = page.locator('[data-dsh-desktop-command="open-settings"]')
-    if (await settingsTrigger.getAttribute('aria-expanded') !== 'true') await settingsTrigger.click()
-    const settingsDialog = page.getByRole('dialog').last()
-    await settingsDialog.waitFor({ state: 'visible', timeout: 15_000 })
-    expect(await settingsDialog.getByRole('button', { name: /^(?:System Update|系统更新)$/u }).count()).toBe(0)
-    await page.keyboard.press('Escape')
-    await settingsDialog.waitFor({ state: 'detached', timeout: 15_000 })
-    return
-  }
   expect(bridgeShape).toEqual({
     getUpdateStatus: 'function',
     checkForUpdates: 'function',
     downloadUpdate: 'function',
+    cancelUpdateDownload: 'function',
     installUpdate: 'function',
     onUpdateStatus: 'function',
   })
@@ -1629,7 +1627,15 @@ async function exerciseSystemUpdate(page: Page, platform: NodeJS.Platform): Prom
     await readFile(join(repositoryRoot, 'apps/desktop/package.json'), 'utf8'),
   ) as { version?: unknown }
   if (typeof desktopManifest.version !== 'string') throw new Error('Desktop package version is missing.')
+  const harnessManifest = JSON.parse(await readFile(join(repositoryRoot, 'package.json'), 'utf8')) as { version?: unknown }
+  if (typeof harnessManifest.version !== 'string') throw new Error('Harness package version is missing.')
+  await expect.poll(async () => await page.evaluate(async () => (await window.dshDesktop!.getUpdateStatus!()).supportReason), { timeout: 20_000 }).not.toBe('detecting')
+  const snapshot = await page.evaluate(async () => await window.dshDesktop!.getUpdateStatus!())
+  assertInstalledUpdateSnapshot(snapshot, platform, desktopManifest.version, harnessManifest.version)
   await expect.poll(() => section.innerText(), { timeout: 15_000 }).toContain(`v${desktopManifest.version}`)
+  await expect.poll(() => section.innerText(), { timeout: 15_000 }).toContain(`v${harnessManifest.version}`)
+  const platformCopy = platform === 'darwin' ? /macOS.*Intel/u : platform === 'win32' ? /Windows.*x64/u : /Linux.*x64/u
+  await expect.poll(() => section.innerText(), { timeout: 15_000 }).toMatch(platformCopy)
   await page.screenshot({
     path: join(repositoryRoot, `apps/desktop/release/desktop-smoke-system-update-${platform}.png`),
   })

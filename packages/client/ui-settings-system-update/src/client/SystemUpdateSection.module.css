@@ -41,6 +41,10 @@
 .statusActions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding-top: 16px; border-top: 0.5px solid var(--dsw-alias-border-l2); }
 .statusActions > span { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
 .statusActions button { flex: none; margin-left: auto; }
+.statusActions button + button { margin-left: 0; }
+.downloadFacts, .guidance { color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 19px; overflow-wrap: anywhere; }
+.downloadFacts p, .guidance p { margin: 0; }
+.guidance p + p { margin-top: 8px; }
 .progress { display: block; appearance: none; border: 0; width: 100%; height: 6px; border-radius: 99px; corner-shape: round; overflow: hidden; background: var(--dsw-alias-interactive-bg-hover); accent-color: var(--dsw-alias-state-business-primary); }
 .progress::-webkit-progress-bar { background: var(--dsw-alias-interactive-bg-hover); }
 .progress::-webkit-progress-value { background: var(--dsw-alias-state-business-primary); }

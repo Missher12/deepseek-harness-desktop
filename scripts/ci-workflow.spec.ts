@@ -117,6 +117,20 @@ describe('CI workflow', () => {
     expect(build?.run).not.toContain('run inventory:package -- --output')
   })
 
+  it('runs native updater contracts before building Setup without dropping legacy fallback coverage', () => {
+    const windows = workflowJob(loadWorkflow('.github/workflows/windows-desktop.yml'), 'build-install-smoke')
+    if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')
+    const steps = windows.steps.filter(isRecord)
+    const contracts = steps.findIndex(step => typeof step.run === 'string' && step.run.includes('apps/desktop/tests/windows-update-installer.spec.ts'))
+    expect(contracts).toBeGreaterThanOrEqual(0)
+    expect(contracts).toBeLessThan(steps.findIndex(step => step.name === 'Build the assisted Windows Setup'))
+    const run = steps[contracts]?.run
+    expect(run).toContain('packages/boot/app-boot/tests/profile.spec.ts')
+    expect(run).toContain('apps/desktop/tests/update-service-platforms.spec.ts')
+    expect(run).toContain('apps/desktop/tests/update-install.spec.ts')
+    expect(run).toContain('apps/desktop/tests/preload-api.spec.ts')
+  })
+
   it('restores the Windows fixture ABI without changing the packaged candidate', () => {
     const windows = workflowJob(loadWorkflow('.github/workflows/windows-desktop.yml'), 'build-install-smoke')
     if (!Array.isArray(windows.steps)) throw new TypeError('Windows Desktop workflow must define steps')

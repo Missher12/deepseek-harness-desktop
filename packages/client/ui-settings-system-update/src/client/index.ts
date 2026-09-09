@@ -20,7 +20,7 @@ export const inject = ['slots', 'locale']
 function isDesktopUpdateBridge(value: unknown): value is DesktopUpdateBridge {
   if (typeof value !== 'object' || value === null) return false
   const bridge = value as Record<string, unknown>
-  return ['getUpdateStatus', 'checkForUpdates', 'downloadUpdate', 'installUpdate', 'onUpdateStatus']
+  return ['getUpdateStatus', 'checkForUpdates', 'downloadUpdate', 'cancelUpdateDownload', 'installUpdate', 'onUpdateStatus']
     .every(key => typeof bridge[key] === 'function')
 }
 
@@ -30,22 +30,48 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-system-update: dictionaries')
   const store = createSystemUpdateStore()
   let bound: BoundActions<typeof store> | undefined
-  const sync = (snapshot: DesktopUpdateSnapshot): void => { bound?.sync(snapshot) }
-  const unsubscribe = bridge.onUpdateStatus(sync)
-  ctx.effect(() => unsubscribe, 'ui-settings-system-update: Desktop IPC subscription')
+  let revision = 0
+  const sync = (snapshot: DesktopUpdateSnapshot): void => {
+    revision += 1
+    bound?.sync(snapshot)
+  }
+  ctx.effect(() => {
+    const unsubscribe = bridge.onUpdateStatus(sync)
+    return () => {
+      bound = undefined
+      revision += 1
+      unsubscribe()
+    }
+  }, 'ui-settings-system-update: Desktop IPC subscription')
   const invoke = async (operation: () => Promise<DesktopUpdateSnapshot>): Promise<void> => {
-    sync(await operation())
+    const requestRevision = ++revision
+    const snapshot = await operation()
+    if (requestRevision === revision) sync(snapshot)
+  }
+  const readStatus = async (): Promise<void> => {
+    if (!bound) return
+    const requestRevision = ++revision
+    bound.loading()
+    try {
+      const snapshot = await bridge.getUpdateStatus()
+      if (requestRevision === revision) sync(snapshot)
+    } catch {
+      if (requestRevision === revision) bound.loadFailed()
+    }
   }
   const injected = (actions: BoundActions<typeof store>): SystemUpdateInjected => {
     bound = actions
-    void bridge.getUpdateStatus().then(sync)
+    revision += 1
+    void readStatus()
     return {
+      retryStatus: readStatus,
       check: async () => { await invoke(() => bridge.checkForUpdates()) },
       download: async () => { await invoke(() => bridge.downloadUpdate()) },
+      cancelDownload: async () => { await invoke(() => bridge.cancelUpdateDownload()) },
       install: async () => {
         const result = await bridge.installUpdate()
-        if (!result.opened) throw new Error(result.message ?? 'Failed to open the verified installer.')
-        sync(await bridge.getUpdateStatus())
+        if (result.status === 'error') throw new Error(result.message)
+        await readStatus()
       },
     }
   }

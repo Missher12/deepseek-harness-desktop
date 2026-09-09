@@ -104,6 +104,15 @@ jobs:
           apps/desktop/tests/packaged-smoke-helpers.spec.ts
           scripts/windows-desktop-runtime-evidence.spec.ts
           scripts/windows-desktop-installer-ui-smoke.spec.ts
+          apps/desktop/tests/preload-api.spec.ts
+          apps/desktop/tests/update-release.spec.ts
+          apps/desktop/tests/update-service.spec.ts
+          apps/desktop/tests/update-service-platforms.spec.ts
+          apps/desktop/tests/update-install.spec.ts
+          apps/desktop/tests/update-helper.spec.ts
+          apps/desktop/tests/windows-update-installer.spec.ts
+          apps/desktop/tests/linux-installer.spec.ts
+          packages/client/ui-settings-system-update
           --config vitest.config.ts
           --reporter=verbose
 

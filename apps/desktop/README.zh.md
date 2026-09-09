@@ -64,6 +64,18 @@ Desktop 使用侧边栏、对话和按需打开的详情布局。轮次导航与
 
 Desktop 设置外壳统一约束原生、内置与 profile 安装分区的 760 像素内容宽度、页标题、简介和小节标题排版。各插件仍拥有自己的控件与业务布局，但不会再因为来源不同而出现标题字号、顶部留白或正文起点跳变。
 
+## 系统更新
+
+“系统更新”分别显示正在运行的 Desktop 版本和内置 Harness 核心版本。检查固定的官方 Harness Release 可以提示存在更新的核心，但不会宣称已安装核心已经改变。原生进程选择匹配的 Intel macOS DMG、Windows x64 Setup，或已识别的 Linux x64 `.deb`／AppImage；Linux 安装格式未知时会禁用下载与安装，不会猜测。
+
+下载按 manifest（元数据清单）的准确大小显示已接收字节，服务器未提供 Content-Length 时也如此。取消只清理当前未完成的暂存目录。完整下载必须通过预期 Release URL、字节数、SHA-256、原生文件格式和物理文件检查；验证失败不会启用安装。渲染端不能提供 URL、文件系统路径、校验值或命令。首次状态读取失败时可仅重试状态读取。
+
+macOS 的“重启并安装”会准备现有的受保护替换辅助进程，只有准备成功才退出。Windows 的“打开安装向导”先要求用户保存工作并确认关闭应用；经过验证的辅助进程随后等待所属父进程退出，再次检查安装包并打开可见 Setup，不传静默安装参数。取消确认会保持应用打开。辅助进程接收交接后，界面只报告已经交接，不会宣称安装成功，也不推测外部向导的结果。
+
+Linux 的“查看安装包”只打开已验证安装包的所在目录，应用继续运行。它不会执行安装包、调用 sudo、修改可执行位、修改 AppArmor 或替换应用。可以重复查看，`.deb` 与 AppImage 各自保留独立安装说明。完整且已验证的安装包在检查更新、发生错误与应用退出后仍会保留；更新器不会自动回收它们或删除用户数据。没有此更新桥接的 Windows 版本需要手动下载 Setup，才能进入这条更新路径。
+
+[原生更新源码](src/update/)拥有安装包选择与安装权限；[设置包](../../packages/client/ui-settings-system-update/README.zh.md)拥有本地化展示。各平台的 manifest 使用不同名称，因此生成 Windows 或 Linux manifest 不会替换 macOS manifest。[更新决策](../../.agents/notes/implemented/architecture/2026-09-09-platform-specific-desktop-updates.zh.md)记录校验机制与原生验收边界。
+
 <a id="icon-provenance"></a>
 
 ## 图标来源
@@ -109,7 +121,7 @@ Windows Setup 是当前用户范围的可见向导式 NSIS 安装器。正常双
 
 使用 `sudo apt install ./DeepSeek-Harness-<version>-linux-x64.deb` 安装 `.deb`。安装包会配置桌面入口、图标、依赖及应用专属 AppArmor 策略。卸载会保留 Harness 设置、会话和 Electron 用户数据。
 
-AppImage 需要 `lsof`、FUSE 2（22.04 为 `libfuse2`，24.04 为 `libfuse2t64`）和可执行权限。使用 `sudo apt install lsof` 安装启动时检查既存 Harness 写入进程所需的工具。24.04 启动前，使用 `sudo bash scripts/linux-desktop-appimage-policy.sh install /absolute/path/DeepSeek-Harness-<version>-linux-x64.AppImage` 安装绑定准确路径的用户命名空间策略。辅助脚本必须来自安装包对应的源码版本；路径支持 ASCII 字母、数字、空格、斜杠、点、下划线和连字符。移动镜像或更换文件名时，需要使用 `remove` 移除旧路径策略，再为新路径安装。启动器拒绝关闭沙箱的参数；辅助脚本保持系统级用户命名空间限制开启。Linux 暂不提供应用内自更新。
+AppImage 需要 `lsof`、FUSE 2（22.04 为 `libfuse2`，24.04 为 `libfuse2t64`）和可执行权限。使用 `sudo apt install lsof` 安装启动时检查既存 Harness 写入进程所需的工具。24.04 启动前，使用 `sudo bash scripts/linux-desktop-appimage-policy.sh install /absolute/path/DeepSeek-Harness-<version>-linux-x64.AppImage` 安装绑定准确路径的用户命名空间策略。辅助脚本必须来自安装包对应的源码版本；路径支持 ASCII 字母、数字、空格、斜杠、点、下划线和连字符。移动镜像或更换文件名时，需要使用 `remove` 移除旧路径策略，再为新路径安装。启动器拒绝关闭沙箱的参数；辅助脚本保持系统级用户命名空间限制开启。“系统更新”下载并验证匹配的 Linux 安装包，安装仍由用户手动完成。
 
 应用使用操作系统分配的随机回环端口，不会占用固定的 65000 端口。
 
@@ -136,6 +148,6 @@ Windows 在原生系统生成 Setup 后运行：
 
 可选的 macOS 交互计时使用[原生启动测量器](tests/macos-startup-scenarios.spec.ts)。提供位于 `/private/tmp/dsh-macos-startup-mount-*` 的自有只读挂载目录，设置 `DSH_MACOS_STARTUP_EXECUTABLE`、已核验的 `DSH_MACOS_STARTUP_ASAR_SHA256` 与 `DSH_MACOS_STARTUP_SOURCE_SHA`，以及 `DSH_MACOS_STARTUP_REPETITIONS=1` 或 `10`。脱敏观测写入 `.artifacts/desktop-057-startup/fresh-*`；结果受[测量边界](../../.agents/notes/implemented/architecture/2026-08-18-overlapped-desktop-startup.zh.md)约束。
 
-成品测试使用仓库外的临时工作目录、临时 Electron 用户数据和临时 `DSH_HOME`。macOS 与 Windows 原生验收都会验证 preload、关闭偏好往返、后台保留时关闭隐藏且 Harness 继续运行、恢复窗口、普通与归档 Session ID 写入真实系统剪贴板且不打开／恢复／删除／发送／启动 Agent、对等会话发送／回复元数据、原生无卡片渲染与拒绝分支无副作用、Add 菜单、工作台移除状态、默认向下且可自适应翻转的思考滑块与 effort 持久化、Canvas 确实输出且小人物关闭、使用统计的全部 371 个颗粒与每日／每周／累积悬停语义、插件市场分类顺序稳定及分离后的搜索／筛选／分类几何、随机监听端口，以及原生退出后的完整进程回收。受保护自更新继续仅限 macOS，并在 Windows 上明确验证为不存在。工具级验收会另行证明双向 Agent 启动／回复行为、准确 receipt 绑定等待、协作停止与匹配回复拒绝；它不发起外部模型请求。Desktop staging 还要求 staged 树中有且只有一个 `dshmarket@1.10.1`，其源码、Client bundle 与 source map 的紧凑布局和分类轨道标记一致，Host 自保护标记存在，并强制检查不可变 Desktop patch、插件运行时 provider、内置 pnpm 入口及向导式安装器 include 确实进入成品。Windows UI 测试会依次操作可见的欢迎、目录、展开的进度／明细和完成页面；生命周期测试则验证相同功能行为，以及静默安装、快捷方式创建、真实剪贴板复制、卸载清理和数据保留。原生 Windows CI 会从包版本派生产物名、构建 Setup、运行两项测试、记录 SHA-256，并上传两个精确文件。
+成品测试使用仓库外的临时工作目录、临时 Electron 用户数据和临时 `DSH_HOME`。macOS 与 Windows 原生验收都会验证 preload、关闭偏好往返、后台保留时关闭隐藏且 Harness 继续运行、恢复窗口、普通与归档 Session ID 写入真实系统剪贴板且不打开／恢复／删除／发送／启动 Agent、对等会话发送／回复元数据、原生无卡片渲染与拒绝分支无副作用、Add 菜单、工作台移除状态、默认向下且可自适应翻转的思考滑块与 effort 持久化、Canvas 确实输出且小人物关闭、使用统计的全部 371 个颗粒与每日／每周／累积悬停语义、插件市场分类顺序稳定及分离后的搜索／筛选／分类几何、随机监听端口，以及原生退出后的完整进程回收。设置测试会检查真实六项操作的更新桥接、准确的运行版本和原生平台展示。真实安装器交接与替换仍须单独进行原生验收；设置分区可见或辅助进程预检并不等于这些证据。工具级验收会另行证明双向 Agent 启动／回复行为、准确 receipt 绑定等待、协作停止与匹配回复拒绝；它不发起外部模型请求。Desktop staging 还要求 staged 树中有且只有一个 `dshmarket@1.10.1`，其源码、Client bundle 与 source map 的紧凑布局和分类轨道标记一致，Host 自保护标记存在，并强制检查不可变 Desktop patch、插件运行时 provider、内置 pnpm 入口及向导式安装器 include 确实进入成品。Windows UI 测试会依次操作可见的欢迎、目录、展开的进度／明细和完成页面；生命周期测试则验证相同功能行为，以及静默安装、快捷方式创建、真实剪贴板复制、卸载清理和数据保留。原生 Windows CI 会从包版本派生产物名、构建 Setup、运行两项测试、记录 SHA-256，并上传两个精确文件。
 
 本地产物没有签名。macOS 可能要求从 Finder 右键菜单选择“打开”，Windows SmartScreen 可能要求确认未知发布者；只有受信任的平台签名凭据才能消除这些系统提示。
