@@ -45,7 +45,7 @@ describe('Linux native sandbox acceptance', () => {
       extends: string
       linux: { executableArgs: string[]; target: Array<{ target: string; arch: string[] }> }
       appImage: { executableArgs: string[] }
-      deb: { appArmorProfile: string }
+      deb: { appArmorProfile: string; depends: string[] }
     }
     expect(configuration.extends).toBe('./electron-builder.yml')
     expect(configuration.linux.target).toEqual([
@@ -54,5 +54,6 @@ describe('Linux native sandbox acceptance', () => {
     expect(configuration.linux.executableArgs).toEqual([])
     expect(configuration.appImage.executableArgs).toEqual([])
     expect(configuration.deb.appArmorProfile).toBe('build/linux/apparmor-profile')
+    expect(configuration.deb.depends).toContain('lsof')
   })
 })
