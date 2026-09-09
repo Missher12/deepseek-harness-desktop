@@ -1,7 +1,8 @@
 param(
   [Parameter(Mandatory = $true)]
   [string]$SetupPath,
-  [string]$EvidenceRoot = 'apps/desktop/release/windows-installer-ui-evidence'
+  [string]$EvidenceRoot = 'apps/desktop/release/windows-installer-ui-evidence',
+  [switch]$ExpectBlankDetails
 )
 
 Set-StrictMode -Version Latest
@@ -12,6 +13,7 @@ Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Drawing
 Add-Type -TypeDefinition @'
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -20,7 +22,7 @@ public static class NativeInstallerWindow
     private delegate bool EnumChildProc(IntPtr window, IntPtr parameter);
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct Rect
+    public struct Rect
     {
         public int Left;
         public int Top;
@@ -46,26 +48,139 @@ public static class NativeInstallerWindow
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr window);
 
-    public static bool HasVisibleChildClass(IntPtr parent, string expectedClass)
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowEnabled(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern int GetDlgCtrlID(IntPtr window);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr SendMessageTimeout(
+        IntPtr window, uint message, UIntPtr wParam, IntPtr lParam,
+        uint flags, uint timeout, out UIntPtr result);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SendMessageTimeoutW")]
+    private static extern IntPtr ReadTextTimeout(
+        IntPtr window, uint message, UIntPtr capacity, StringBuilder text,
+        uint flags, uint timeout, out UIntPtr result);
+
+    public sealed class ProgressSnapshot
     {
-        var found = false;
+        public int Minimum;
+        public int Maximum;
+        public int Position;
+        public int DetailsRows;
+        public bool StatusPresent;
+    }
+
+    private static IntPtr FindVisibleChild(IntPtr parent, string expectedClass, int controlId = 0)
+    {
+        var found = IntPtr.Zero;
         EnumChildWindows(parent, (window, parameter) =>
         {
             var className = new StringBuilder(256);
             Rect rectangle;
             if (GetClassName(window, className, className.Capacity) > 0 &&
-                String.Equals(className.ToString(), expectedClass, StringComparison.Ordinal) &&
+                String.Equals(className.ToString(), expectedClass, StringComparison.OrdinalIgnoreCase) &&
+                (controlId == 0 || GetDlgCtrlID(window) == controlId) &&
                 IsWindowVisible(window) &&
                 GetWindowRect(window, out rectangle) &&
                 rectangle.Right > rectangle.Left &&
                 rectangle.Bottom > rectangle.Top)
             {
-                found = true;
+                found = window;
                 return false;
             }
             return true;
         }, IntPtr.Zero);
         return found;
+    }
+
+    private static int ReadInteger(IntPtr window, uint message, uint argument = 0)
+    {
+        UIntPtr result;
+        if (SendMessageTimeout(window, message, new UIntPtr(argument), IntPtr.Zero,
+            2, 200, out result) == IntPtr.Zero || result.ToUInt64() > Int32.MaxValue)
+            return -1;
+        return (int)result.ToUInt64();
+    }
+
+    public static bool IsFinishPage(IntPtr parent)
+    {
+        // NSIS IDOK is Next/Install/Finish. Inspect only this native button,
+        // never the thousands of UIA list descendants added by file extraction.
+        var button = FindVisibleChild(parent, "Button", 1);
+        if (button == IntPtr.Zero || !IsWindowEnabled(button)) return false;
+        var text = new StringBuilder(64);
+        UIntPtr length;
+        if (ReadTextTimeout(button, 0x000D, new UIntPtr((uint)text.Capacity), text,
+            2, 200, out length) == IntPtr.Zero) return false;
+        var label = text.ToString();
+        return label == "&Finish" || label == "Finish";
+    }
+
+    public static ProgressSnapshot CaptureProgress(IntPtr parent)
+    {
+        var progress = FindVisibleChild(parent, "msctls_progress32");
+        var details = FindVisibleChild(parent, "SysListView32");
+        var status = FindVisibleChild(parent, "Static", 1006);
+        if (progress == IntPtr.Zero || details == IntPtr.Zero || status == IntPtr.Zero)
+            return null;
+        var snapshot = new ProgressSnapshot {
+            Minimum = ReadInteger(progress, 0x0407, 1), // PBM_GETRANGE low
+            Maximum = ReadInteger(progress, 0x0407, 0), // PBM_GETRANGE high
+            Position = ReadInteger(progress, 0x0408),   // PBM_GETPOS
+            DetailsRows = ReadInteger(details, 0x1004) // LVM_GETITEMCOUNT
+        };
+        if (snapshot.Minimum < 0 || snapshot.Maximum <= snapshot.Minimum ||
+            snapshot.Position < 0 || snapshot.DetailsRows < 0) return null;
+        var text = new StringBuilder(1024);
+        UIntPtr length;
+        if (ReadTextTimeout(status, 0x000D, new UIntPtr((uint)text.Capacity), text,
+            2, 200, out length) == IntPtr.Zero) return null; // WM_GETTEXT
+        snapshot.StatusPresent = !String.IsNullOrWhiteSpace(text.ToString());
+        return snapshot;
+    }
+
+    public static Rect[] RedactionBounds(IntPtr parent, bool requireProgress)
+    {
+        Rect bounds;
+        if (!IsWindowVisible(parent) || !GetWindowRect(parent, out bounds) ||
+            bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top) return null;
+        var rectangles = new List<Rect> { bounds };
+        var valid = true;
+        var hasDetails = false;
+        var hasStatus = false;
+        EnumChildWindows(parent, (window, parameter) =>
+        {
+            if (!IsWindowVisible(window)) return true;
+            var className = new StringBuilder(256);
+            if (GetClassName(window, className, className.Capacity) == 0)
+            {
+                valid = false;
+                return false;
+            }
+            var name = className.ToString();
+            var details = String.Equals(name, "SysListView32", StringComparison.OrdinalIgnoreCase);
+            var status = String.Equals(name, "Static", StringComparison.OrdinalIgnoreCase) && GetDlgCtrlID(window) == 1006;
+            if (!details && !status && !String.Equals(name, "Edit", StringComparison.OrdinalIgnoreCase)) return true;
+            Rect rectangle;
+            if (!GetWindowRect(window, out rectangle) || rectangle.Right <= rectangle.Left ||
+                rectangle.Bottom <= rectangle.Top || rectangle.Left < bounds.Left ||
+                rectangle.Top < bounds.Top || rectangle.Right > bounds.Right || rectangle.Bottom > bounds.Bottom)
+            {
+                valid = false;
+                return false;
+            }
+            rectangles.Add(rectangle);
+            hasDetails |= details;
+            hasStatus |= status;
+            return true;
+        }, IntPtr.Zero);
+        return valid && (!requireProgress || (hasDetails && hasStatus)) ? rectangles.ToArray() : null;
     }
 }
 '@
@@ -82,7 +197,7 @@ function Get-InstallerWindow {
       $matchesProcess = $script:InstallerProcessId -gt 0 -and `
         $window.Current.ProcessId -eq $script:InstallerProcessId
       $matchesProductName = $window.Current.Name -match '^DeepSeek Harness(?: Setup)?$'
-      if ($matchesProcess -or $matchesProductName) {
+      if ($matchesProcess -and $matchesProductName) {
         return $window
       }
     }
@@ -159,59 +274,58 @@ function Find-Control {
 function Save-RedactedInstallerScreenshot {
   param(
     [Parameter(Mandatory = $true)]$Window,
-    [Parameter(Mandatory = $true)][string]$Path
+    [Parameter(Mandatory = $true)][string]$Path,
+    [switch]$RequireProgress
   )
 
-  $bounds = $Window.Current.BoundingRectangle
-  $width = [int][Math]::Ceiling($bounds.Width)
-  $height = [int][Math]::Ceiling($bounds.Height)
-  if ($width -le 0 -or $height -le 0) {
-    throw 'Installer window has no visible bounds for its screenshot.'
+  # GetWindowRect and CopyFromScreen must share physical coordinates at every
+  # DPI. Restore the caller's context even when an unverifiable image is dropped.
+  $previousDpi = [NativeInstallerWindow]::SetThreadDpiAwarenessContext([IntPtr](-4))
+  if ($previousDpi -eq [IntPtr]::Zero) {
+    throw 'Could not establish physical screenshot coordinates.'
   }
-  $resolved = [System.IO.Path]::GetFullPath($Path)
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $resolved) | Out-Null
-  $bitmap = [System.Drawing.Bitmap]::new($width, $height)
-  $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-  $brush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(255, 224, 228, 235))
+  $bitmap = $null
+  $graphics = $null
+  $brush = $null
   try {
+    $handle = [IntPtr]$Window.Current.NativeWindowHandle
+    $beforeRedaction = [NativeInstallerWindow]::RedactionBounds($handle, [bool]$RequireProgress)
+    if ($null -eq $beforeRedaction) { throw 'Installer screenshot redaction bounds are unavailable.' }
+    $bounds = $beforeRedaction[0]
+    $width = $bounds.Right - $bounds.Left
+    $height = $bounds.Bottom - $bounds.Top
+    $resolved = [System.IO.Path]::GetFullPath($Path)
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $resolved) | Out-Null
+    $bitmap = [System.Drawing.Bitmap]::new($width, $height)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $brush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(255, 224, 228, 235))
     $graphics.CopyFromScreen(
-      [int][Math]::Floor($bounds.Left),
-      [int][Math]::Floor($bounds.Top),
+      $bounds.Left,
+      $bounds.Top,
       0,
       0,
       [System.Drawing.Size]::new($width, $height)
     )
-    $sensitiveTypes = @(
-      [System.Windows.Automation.ControlType]::Edit,
-      [System.Windows.Automation.ControlType]::List
-    )
-    foreach ($control in $Window.FindAll(
-      [System.Windows.Automation.TreeScope]::Descendants,
-      [System.Windows.Automation.Condition]::TrueCondition
-    )) {
-      try {
-        if ($sensitiveTypes -notcontains $control.Current.ControlType) {
-          continue
-        }
-        $redact = $control.Current.BoundingRectangle
-        $left = [int][Math]::Max(0, [Math]::Floor($redact.Left - $bounds.Left))
-        $top = [int][Math]::Max(0, [Math]::Floor($redact.Top - $bounds.Top))
-        $right = [int][Math]::Min($width, [Math]::Ceiling($redact.Right - $bounds.Left))
-        $bottom = [int][Math]::Min($height, [Math]::Ceiling($redact.Bottom - $bounds.Top))
-        if ($right -gt $left -and $bottom -gt $top) {
-          $graphics.FillRectangle($brush, $left, $top, $right - $left, $bottom - $top)
-        }
-      }
-      catch {
-        # A transient installer control can disappear after the screen pixels were captured.
-      }
+    $afterRedaction = [NativeInstallerWindow]::RedactionBounds($handle, [bool]$RequireProgress)
+    if ($null -eq $afterRedaction -or
+        ($beforeRedaction | ConvertTo-Json -Compress) -ne ($afterRedaction | ConvertTo-Json -Compress)) {
+      throw 'Installer controls changed during capture; the unverified screenshot was discarded.'
+    }
+    # Mask native Edit, SysListView32 and status rectangles. A report-style
+    # NSIS list may be a UIA DataGrid, so UIA ControlType is not a privacy guard.
+    for ($index = 1; $index -lt $beforeRedaction.Count; $index++) {
+      $redact = $beforeRedaction[$index]
+      $graphics.FillRectangle($brush,
+        [int]($redact.Left - $bounds.Left), [int]($redact.Top - $bounds.Top),
+        [int]($redact.Right - $redact.Left), [int]($redact.Bottom - $redact.Top))
     }
     $bitmap.Save($resolved, [System.Drawing.Imaging.ImageFormat]::Png)
   }
   finally {
-    $brush.Dispose()
-    $graphics.Dispose()
-    $bitmap.Dispose()
+    if ($null -ne $brush) { $brush.Dispose() }
+    if ($null -ne $graphics) { $graphics.Dispose() }
+    if ($null -ne $bitmap) { $bitmap.Dispose() }
+    [void][NativeInstallerWindow]::SetThreadDpiAwarenessContext($previousDpi)
   }
 }
 
@@ -398,45 +512,46 @@ try {
   Invoke-InstallerButton -Window $destination -NamePattern '^Install$'
 
   $deadline = [DateTime]::UtcNow.AddMinutes(3)
-  $progressObserved = $false
+  $progressClock = [System.Diagnostics.Stopwatch]::StartNew()
+  $observations = [System.Collections.Generic.List[object]]::new()
   $progressScreenshotCaptured = $false
-  $detailsObserved = $false
   $finish = $null
+  $finishedElapsedMs = 0
   while ([DateTime]::UtcNow -lt $deadline) {
+    $native = $null
     $window = Get-InstallerWindow
     if ($null -ne $window) {
-      $text = Get-AutomationText -Element $window
-      $progress = Find-Control -Element $window `
-        -ControlType ([System.Windows.Automation.ControlType]::ProgressBar)
-      if ($null -ne $progress -or $text -match 'Installing, please wait') {
-        $progressObserved = $true
-        if (-not $progressScreenshotCaptured) {
-          Save-RedactedInstallerScreenshot -Window $window `
+      if ([NativeInstallerWindow]::IsFinishPage([IntPtr]$window.Current.NativeWindowHandle)) {
+        $finish = $window
+        $finishedElapsedMs = $progressClock.ElapsedMilliseconds
+        # From this point any assertion failure must run the isolated uninstaller.
+        $installed = $true
+        break
+      }
+      $native = [NativeInstallerWindow]::CaptureProgress([IntPtr]$window.Current.NativeWindowHandle)
+      if ($null -ne $native) {
+        $observations.Add([ordered]@{
+          elapsedMs = $progressClock.ElapsedMilliseconds
+          minimum = $native.Minimum
+          maximum = $native.Maximum
+          position = $native.Position
+          detailsRows = $native.DetailsRows
+          statusPresent = $native.StatusPresent
+        })
+        $incomplete = $native.Position -lt $native.Maximum
+        $hasDetails = $native.DetailsRows -gt 0 -and $native.StatusPresent
+        if (-not $progressScreenshotCaptured -and $incomplete -and ($hasDetails -or $ExpectBlankDetails)) {
+          Save-RedactedInstallerScreenshot -Window $window -RequireProgress `
             -Path (Join-Path $resolvedEvidenceRoot 'installer-progress.png')
           $progressScreenshotCaptured = $true
         }
       }
-      $details = Find-Control -Element $window `
-        -ControlType ([System.Windows.Automation.ControlType]::List)
-      $nativeDetailsVisible = [NativeInstallerWindow]::HasVisibleChildClass(
-        [IntPtr]$window.Current.NativeWindowHandle,
-        'SysListView32'
-      )
-      if ($null -ne $details -or $nativeDetailsVisible -or $text -match 'Application files installed|Shortcuts are ready') {
-        $detailsObserved = $true
-      }
-      if ($text -match 'Completing DeepSeek Harness Setup') {
-        $finish = $window
-        break
-      }
     }
+    if ($null -eq $native) {
+      $observations.Add([ordered]@{ elapsedMs = $progressClock.ElapsedMilliseconds; missing = $true })
+    }
+    if ($observations.Count -gt 3600) { throw 'Installer exceeded the bounded observation count.' }
     Start-Sleep -Milliseconds 50
-  }
-  if (-not $progressObserved) {
-    throw 'The assisted installer never exposed its installation progress.'
-  }
-  if (-not $detailsObserved) {
-    throw 'The assisted installer never exposed its expanded installation details.'
   }
   if ($null -eq $finish) {
     throw 'Timed out waiting for the visible Setup finish page.'
@@ -477,6 +592,17 @@ try {
   if ((Test-Path -LiteralPath $desktopShortcut) -or (Test-Path -LiteralPath $startMenuShortcut)) {
     throw 'Visible Setup uninstall left a shortcut behind.'
   }
+
+  # Verify after normal uninstall so the expected historical RED cannot leave
+  # registrations or shortcuts behind. Only bounded numeric/boolean data leaves
+  # this process; control text and native handles never enter evidence files.
+  $observationsPath = Join-Path $temporaryRoot 'installer-progress-observations.json'
+  $observed = [ordered]@{ schemaVersion = 1; finishedElapsedMs = $finishedElapsedMs; samples = @($observations.ToArray()) }
+  [System.IO.File]::WriteAllText($observationsPath, ($observed | ConvertTo-Json -Depth 4 -Compress), [System.Text.UTF8Encoding]::new($false))
+  $progressArguments = @('--input', $observationsPath, '--output', (Join-Path $resolvedEvidenceRoot 'installer-progress.json'))
+  if ($ExpectBlankDetails) { $progressArguments += '--expect-blank-details' }
+  & node scripts/windows-desktop-installer-progress.ts @progressArguments
+  if ($LASTEXITCODE -ne 0) { throw 'Native installer progress/details verification failed.' }
 
   Write-Host 'Windows installer UI smoke passed: welcome, destination, progress/details, finish, shortcuts, and uninstall.'
 }

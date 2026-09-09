@@ -51,12 +51,21 @@ jobs:
           foreach ($scriptName in $scriptNames) {
             $tokens = $null
             $parseErrors = $null
-            [void][System.Management.Automation.Language.Parser]::ParseFile(
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
               [System.IO.Path]::GetFullPath($scriptName),
               [ref]$tokens,
               [ref]$parseErrors
             )
             if (@($parseErrors).Count -eq 0) {
+              if ($scriptName -eq 'scripts/windows-desktop-installer-ui-smoke.ps1') {
+                $nativeClass = @($ast.FindAll({
+                  param($node)
+                  $node -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
+                    $node.Value.Contains('public static class NativeInstallerWindow')
+                }, $true))
+                if ($nativeClass.Count -ne 1) { throw 'Expected one native installer observer implementation.' }
+                Add-Type -TypeDefinition $nativeClass[0].Value
+              }
               continue
             }
             $fileName = [System.IO.Path]::GetFileName($scriptName)
@@ -94,6 +103,7 @@ jobs:
           packages/boot/app-boot/tests/profile.spec.ts
           apps/desktop/tests/packaged-smoke-helpers.spec.ts
           scripts/windows-desktop-runtime-evidence.spec.ts
+          scripts/windows-desktop-installer-ui-smoke.spec.ts
           --config vitest.config.ts
           --reporter=verbose
 
@@ -246,6 +256,23 @@ jobs:
             -HistoricalBaselineInventory
           Remove-Item -LiteralPath $baselinePath -Force
 
+      - name: Prove the released 0.5.6 blank-details regression
+        shell: pwsh
+        run: |
+          $baselinePath = Join-Path $env:RUNNER_TEMP 'DeepSeek-Harness-Setup-0.5.6-win-x64.exe'
+          if (-not (Test-Path -LiteralPath $baselinePath)) {
+            Invoke-WebRequest -Uri 'https://github.com/Missher12/deepseek-harness-desktop/releases/download/desktop-v0.5.6/DeepSeek-Harness-Setup-0.5.6-win-x64.exe' -OutFile $baselinePath
+          }
+          $baseline = Get-Item -LiteralPath $baselinePath
+          $hash = (Get-FileHash -LiteralPath $baselinePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($baseline.Length -ne 146634670 -or $hash -ne '622afd88789070e7137533d1cadad5c9c26784b7ec69c0fc87b1af4d79be8744') {
+            throw 'The released installer regression baseline does not match its fixed bytes.'
+          }
+          ./scripts/windows-desktop-installer-ui-smoke.ps1 `
+            -SetupPath $baselinePath `
+            -EvidenceRoot apps/desktop/release/windows-installer-ui-baseline-0.5.6 `
+            -ExpectBlankDetails
+
       - name: Exercise the visible installer pages
         shell: pwsh
         run: >-
@@ -279,6 +306,8 @@ jobs:
             s/apps/desktop/release/desktop-package-installed-baseline-0.5.3.json
             s/apps/desktop/release/desktop-windows-install-evidence-baseline-0.5.3.json
             s/apps/desktop/release/desktop-package-setup-baseline-0.5.3.json
+            s/apps/desktop/release/windows-installer-ui-evidence/installer-progress.json
+            s/apps/desktop/release/windows-installer-ui-baseline-0.5.6/installer-progress.json
           if-no-files-found: error
           retention-days: 14
 
@@ -300,6 +329,9 @@ jobs:
           name: Windows-native-visual-evidence-${{ steps.source.outputs.sha }}
           path: |
             s/apps/desktop/release/windows-installer-ui-evidence/*.png
+            s/apps/desktop/release/windows-installer-ui-baseline-0.5.6/*.png
+            s/apps/desktop/release/windows-installer-ui-evidence/installer-progress.json
+            s/apps/desktop/release/windows-installer-ui-baseline-0.5.6/installer-progress.json
             s/apps/desktop/release/windows-native-visual-evidence/*.png
             s/apps/desktop/release/windows-native-visual-evidence/*.json
             s/apps/desktop/release/desktop-smoke-win32.png

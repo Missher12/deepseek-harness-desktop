@@ -2,9 +2,29 @@
 ; double-click exposes welcome, destination, progress, and finish pages.
 
 !macro customHeader
-  ; Keep the extraction log expanded on the progress page. This gives users a
-  ; concrete view of the files and shortcuts being installed.
   ShowInstDetails show
+  ; The custom running check retains electron-builder's original implementation.
+  ; Its default include and pid declaration are skipped when this hook exists.
+  !include "getProcessInfo.nsh"
+  Var pid
+!macroend
+
+!macro customCheckAppRunning
+  !ifndef BUILD_UNINSTALLER
+    ; installSection.nsh disables output immediately before this hook.
+    ; Keep the stock Nsis7z progress and file operations; only restore output.
+    ${IfNot} ${Silent}
+      SetDetailsPrint both
+      DetailPrint "Checking for a running DeepSeek Harness..."
+    ${EndIf}
+  !endif
+  !insertmacro IS_POWERSHELL_AVAILABLE
+  !insertmacro _CHECK_APP_RUNNING
+  !ifndef BUILD_UNINSTALLER
+    ${IfNot} ${Silent}
+      DetailPrint "Preparing and installing application files..."
+    ${EndIf}
+  !endif
 !macroend
 
 !macro customWelcomePage
