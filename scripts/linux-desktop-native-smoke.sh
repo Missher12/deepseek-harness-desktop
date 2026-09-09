@@ -51,6 +51,7 @@ if [[ "$ubuntu_version" == 24.04 ]]; then
 fi
 export DSH_LINUX_DESKTOP_EXECUTABLE='/opt/DeepSeek Harness/deepseek-harness'
 export DSH_LINUX_EVIDENCE_ROOT="$evidence/deb"
+export DSH_LINUX_PACKAGE_FORMAT=deb
 landlock='/opt/DeepSeek Harness/resources/app.asar.unpacked/node_modules/@deepseek-ai/node-addon-landlock-run-linux-x64/bin/landlock-run'
 test -x "$landlock"
 "$landlock" --probe > "$evidence/landlock-probe.txt"
@@ -84,6 +85,7 @@ export DSH_DESKTOP_SMOKE_DSH_HOME="$owned/appimage-profile/dsh-home"
 export DSH_DESKTOP_SMOKE_USER_DATA="$owned/appimage-profile/electron-data"
 export DSH_LINUX_DESKTOP_EXECUTABLE="$appimage"
 export DSH_LINUX_EVIDENCE_ROOT="$evidence/appimage"
+export DSH_LINUX_PACKAGE_FORMAT=appimage
 run_linux_native_checks
 if [[ "$policy_installed" == true ]]; then
   sudo bash scripts/linux-desktop-appimage-policy.sh remove "$appimage"

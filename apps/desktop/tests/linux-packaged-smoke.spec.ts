@@ -8,10 +8,57 @@ import { describe, expect, it } from 'vitest'
 import { assertLinuxSandbox } from '../../../scripts/linux-desktop-sandbox.ts'
 import { runPackagedDesktopSmoke } from './packaged-smoke.ts'
 import { linuxDescendants as descendants, processAlive as alive } from './linux-writer-fixture.ts'
+import type {} from '../src/preload-api.ts'
 
 const execFileAsync = promisify(execFile)
 const executable = process.env.DSH_LINUX_DESKTOP_EXECUTABLE
 const evidenceRoot = process.env.DSH_LINUX_EVIDENCE_ROOT
+const expectedPackageFormat = process.env.DSH_LINUX_PACKAGE_FORMAT
+
+async function verifyNativeUpdateStatus(page: Page, directory: string): Promise<void> {
+  if (expectedPackageFormat !== 'deb' && expectedPackageFormat !== 'appimage') {
+    throw new Error('Linux native package format expectation is required')
+  }
+  const metadata = JSON.parse(await readFile(new URL('../update-metadata.json', import.meta.url), 'utf8')) as {
+    desktopVersion: unknown
+    harnessVersion: unknown
+  }
+  if (typeof metadata.desktopVersion !== 'string' || typeof metadata.harnessVersion !== 'string') {
+    throw new Error('Linux candidate version metadata is invalid')
+  }
+  const expected = {
+    platform: 'linux', arch: 'x64', packageFormat: expectedPackageFormat,
+    installAction: 'reveal-package', supportReason: null,
+    runningDesktop: metadata.desktopVersion, includedHarness: metadata.harnessVersion,
+  }
+  const readStatus = async () => await page.evaluate(async () => {
+    if (typeof window.dshDesktop?.getUpdateStatus !== 'function') throw new Error('Native update status bridge is missing')
+    const value: unknown = await window.dshDesktop.getUpdateStatus()
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Native update status is invalid')
+    const status = value as Record<string, unknown>
+    // Retain only these non-sensitive observations from the real, unmodified bridge.
+    return {
+      phase: status.phase, platform: status.platform, arch: status.arch,
+      packageFormat: status.packageFormat, installAction: status.installAction,
+      supportReason: status.supportReason, runningDesktop: status.runningDesktop,
+      includedHarness: status.includedHarness,
+    }
+  })
+  let observed: Awaited<ReturnType<typeof readStatus>> | undefined
+  await expect.poll(async () => {
+    observed = await readStatus()
+    return {
+      ...observed,
+      detecting: observed.phase === 'detecting' || observed.supportReason === 'detecting',
+    }
+  }, { timeout: 30_000 }).toMatchObject({ ...expected, detecting: false })
+  expect(typeof observed?.phase).toBe('string')
+  await mkdir(directory, { recursive: true })
+  await writeFile(join(directory, 'system-update-native.json'), JSON.stringify({
+    schemaVersion: 1, status: 'passed', observation: 'native no-argument getUpdateStatus bridge',
+    expected, observed, futureUpdateDownloadOrInstall: 'not-tested',
+  }, null, 2) + '\n')
+}
 
 async function command(pid: number): Promise<string[]> {
   return (await readFile(`/proc/${String(pid)}/cmdline`, 'utf8')).split('\0').filter(Boolean)
@@ -24,13 +71,16 @@ async function verifyNativeSandbox(target: string): Promise<void> {
   let phase = 'electron-launch'
   let tracked: number[] = []
   try {
+    // This selects the test assertion only; it must not reach product detection.
+    const applicationEnvironment = { ...process.env }
+    delete applicationEnvironment.DSH_LINUX_PACKAGE_FORMAT
     application = await electron.launch({
       executablePath: target,
       chromiumSandbox: true,
       args: [`--user-data-dir=${join(root, 'electron')}`, '--ozone-platform=x11'],
       cwd: root,
       env: {
-        ...process.env,
+        ...applicationEnvironment,
         DSH_HOME: join(root, 'harness'),
         DSH_TELEMETRY_DISABLED: '1',
         DEEPSEEK_API_KEY: '',
@@ -45,6 +95,9 @@ async function verifyNativeSandbox(target: string): Promise<void> {
     page = await application.firstWindow()
     phase = 'backend-ready'
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:/u, { timeout: 120_000 })
+    phase = 'system-update-native'
+    if (evidenceRoot === undefined) throw new Error('Linux evidence root is required')
+    await verifyNativeUpdateStatus(page, evidenceRoot)
     const observed = await application.evaluate(({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows()[0]!
       return {
@@ -117,6 +170,7 @@ describe('Ubuntu packaged application', () => {
     'keeps kernel sandboxing and passes controlled-model desktop lifecycle',
     async () => {
       if (executable === undefined || evidenceRoot === undefined) throw new Error('Linux native inputs are missing')
+      if (expectedPackageFormat !== 'deb' && expectedPackageFormat !== 'appimage') throw new Error('Linux native package format expectation is required')
       expect(process.getuid?.()).not.toBe(0)
       await verifyNativeSandbox(executable)
       await runPackagedDesktopSmoke(executable, 'linux')
