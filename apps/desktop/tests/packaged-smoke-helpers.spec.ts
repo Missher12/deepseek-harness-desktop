@@ -6,6 +6,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { describe, expect, it } from 'vitest'
 import * as packagedSmoke from './packaged-smoke.ts'
+import { createDesktopUpdatePresentation } from '../src/update/contracts.ts'
 
 const {
   descendantProcessTree,
@@ -16,6 +17,24 @@ const {
 } = packagedSmoke
 
 describe('packaged desktop process inspection', () => {
+  it.each(['darwin', 'win32', 'linux'] as const)('requires real %s update bridge status and both installed versions', (platform) => {
+    const verify = (packagedSmoke as unknown as {
+      assertInstalledUpdateSnapshot?: (value: unknown, platform: NodeJS.Platform, desktop: string, harness: string) => void
+    }).assertInstalledUpdateSnapshot
+    expect(verify).toBeTypeOf('function')
+    if (verify === undefined) return
+    const snapshot = {
+      ...createDesktopUpdatePresentation(platform, 'x64', platform === 'linux' ? 'deb' : undefined),
+      phase: 'idle', runningDesktop: '0.5.7', includedHarness: '0.1.3-alpha.1',
+      latestOfficialHarness: null, latestDesktop: null, lastCheckedAt: null, downloadProgress: null,
+      message: null, assetName: null, downloadedBytes: null, downloadTotalBytes: null,
+    }
+    expect(() => { verify(snapshot, platform, '0.5.7', '0.1.3-alpha.1') }).not.toThrow()
+    expect(() => { verify({ ...snapshot, runningDesktop: '0.5.8' }, platform, '0.5.7', '0.1.3-alpha.1') }).toThrow()
+    expect(() => { verify({ ...snapshot, platform: 'unsupported' }, platform, '0.5.7', '0.1.3-alpha.1') }).toThrow()
+    expect(() => { verify({ ...snapshot, includedHarness: '0.1.3' }, platform, '0.5.7', '0.1.3-alpha.1') }).toThrow()
+  })
+
   it('parses both PowerShell single-object and array JSON', () => {
     expect(parseWindowsProcessRows('{"ProcessId":12,"ParentProcessId":4}')).toEqual([
       { processId: 12, parentProcessId: 4 },

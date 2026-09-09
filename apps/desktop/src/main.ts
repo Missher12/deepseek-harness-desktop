@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   nativeImage,
@@ -41,6 +42,9 @@ import {
 } from './preferences.ts'
 import { DesktopUpdateService } from './update/service.ts'
 import { launchDesktopInstaller } from './update/installer.ts'
+import { DesktopUpdateInstaller } from './update/install.ts'
+import { launchWindowsDesktopInstaller } from './update/windows-installer.ts'
+import { detectLinuxPackageFormat, revealLinuxUpdatePackage } from './update/linux-installer.ts'
 import { allowRendererPermission, classifyNavigation } from './window/navigation.ts'
 import { createMenuTemplate } from './window/menu.ts'
 import {
@@ -146,9 +150,52 @@ const preferencesReady = readDesktopPreferences(preferencesPath, process.platfor
   return desktopPreferences
 })
 const updateService = new DesktopUpdateService({
+  platform: process.platform,
+  arch: process.arch,
+  resolveLinuxFormat: () => detectLinuxPackageFormat({
+    platform: process.platform, arch: process.arch, isPackaged: app.isPackaged,
+    executablePath: process.execPath,
+    ...(process.env.APPIMAGE === undefined ? {} : { appImagePath: process.env.APPIMAGE }),
+    ...(process.env.APPDIR === undefined ? {} : { appDir: process.env.APPDIR }),
+  }),
   runningDesktop: app.getVersion(),
   includedHarness: resolveHarnessVersion(),
   userData,
+})
+const updateInstaller = new DesktopUpdateInstaller(updateService, {
+  isPackaged: app.isPackaged,
+  confirmSetup: async () => {
+    if (nativeWindow === undefined || nativeWindow.isDestroyed()) return false
+    const chinese = app.getLocale().startsWith('zh')
+    const result = await dialog.showMessageBox(nativeWindow, {
+      type: 'question', title: PRODUCT_NAME,
+      message: chinese ? '关闭应用并打开安装向导？' : 'Close the application and open Setup?',
+      detail: chinese ? '请先保存工作。应用退出后会显示 Windows 安装向导；仍需你在向导中确认安装。'
+        : 'Save your work first. After the app exits, the visible Windows Setup wizard will ask you to confirm installation.',
+      buttons: chinese ? ['取消', '关闭并打开安装向导'] : ['Cancel', 'Close and open Setup'],
+      defaultId: 0, cancelId: 0, noLink: true,
+    })
+    return result.response === 1
+  },
+  launchMac: (descriptor) => {
+    launchDesktopInstaller({
+      helperSource: updateHelperPath, electronExecutable: process.execPath,
+      currentAppPath: resolve(dirname(process.execPath), '../..'), dmgPath: descriptor.localPath,
+      expectedDesktopVersion: descriptor.desktopVersion, expectedHarnessVersion: descriptor.harnessVersion,
+      expectedSha256: descriptor.sha256,
+    })
+  },
+  launchWindows: async (descriptor) => { await launchWindowsDesktopInstaller(descriptor) },
+  revealLinux: async (descriptor) => {
+    if (descriptor.target.platform !== 'linux') throw new Error('Invalid Linux update target.')
+    await revealLinuxUpdatePackage({
+      platform: 'linux', arch: descriptor.target.arch, packageFormat: descriptor.target.packageFormat,
+      desktopVersion: descriptor.desktopVersion, assetName: descriptor.assetName,
+      filePath: descriptor.localPath, stagingDirectory: descriptor.stagingDirectory,
+      bytes: descriptor.bytes, sha256: descriptor.sha256,
+    }, directory => shell.openPath(directory))
+  },
+  quit: () => { setImmediate(() => { app.quit() }) },
 })
 const startupTimeline = new DesktopStartupTimeline(record)
 
@@ -411,43 +458,29 @@ ipcMain.handle('desktop:preferences-set', async (event, value: unknown) => {
 })
 
 if (desktopUpdatesEnabled) {
-  ipcMain.handle('desktop:update-status', (event) => {
-    if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
+  ipcMain.handle('desktop:update-status', (event, ...args: unknown[]) => {
+    if (!isHarnessSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
     return updateService.getSnapshot()
   })
 
-  ipcMain.handle('desktop:update-check', async (event) => {
-    if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
+  ipcMain.handle('desktop:update-check', async (event, ...args: unknown[]) => {
+    if (!isHarnessSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
     return await updateService.check(true)
   })
 
-  ipcMain.handle('desktop:update-download', async (event) => {
-    if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
+  ipcMain.handle('desktop:update-download', async (event, ...args: unknown[]) => {
+    if (!isHarnessSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
     return await updateService.download()
   })
 
-  ipcMain.handle('desktop:update-install', async (event) => {
-    if (!isHarnessSender(event)) throw new Error('Untrusted Desktop update sender.')
-    const descriptor = updateService.getInstallDescriptor()
-    if (descriptor === null) throw new Error('No verified Desktop update is ready.')
-    if (process.platform === 'darwin' && app.isPackaged) {
-      launchDesktopInstaller({
-        helperSource: updateHelperPath,
-        electronExecutable: process.execPath,
-        currentAppPath: resolve(dirname(process.execPath), '../..'),
-        dmgPath: descriptor.dmgPath,
-        expectedDesktopVersion: descriptor.desktopVersion,
-        expectedHarnessVersion: descriptor.harnessVersion,
-        expectedSha256: descriptor.sha256,
-      })
-      updateService.beginInstall()
-      setImmediate(() => { app.quit() })
-      return { opened: true }
-    }
-    const message = await shell.openPath(descriptor.dmgPath)
-    if (message !== '') return { opened: false, message: message.slice(0, 300) }
-    updateService.beginInstall()
-    return { opened: true }
+  ipcMain.handle('desktop:update-cancel-download', async (event, ...args: unknown[]) => {
+    if (!isHarnessSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
+    return await updateService.cancelDownload()
+  })
+
+  ipcMain.handle('desktop:update-install', async (event, ...args: unknown[]) => {
+    if (!isHarnessSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
+    return await updateInstaller.install()
   })
 
   updateService.subscribe((snapshot) => {

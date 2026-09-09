@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DesktopUpdateService } from '../src/update/service.ts'
+import { updatePayload } from './update-fixtures.ts'
 
 const directories: string[] = []
 
@@ -42,6 +43,7 @@ describe('Desktop update service', () => {
       })
     })
     const service = new DesktopUpdateService({
+      platform: 'darwin', arch: 'x64',
       runningDesktop: '0.1.9',
       includedHarness: '0.1.0-rc.5',
       userData: makeUserData(),
@@ -63,6 +65,7 @@ describe('Desktop update service', () => {
       throw new Error(`unexpected URL: ${url}`)
     })
     const service = new DesktopUpdateService({
+      platform: 'darwin', arch: 'x64',
       runningDesktop: '0.1.9',
       includedHarness: '0.1.0-rc.5',
       userData: makeUserData(),
@@ -78,7 +81,7 @@ describe('Desktop update service', () => {
   })
 
   it('accepts a matching Desktop release manifest and verified asset', async () => {
-    const payload = Buffer.from('fixture dmg bytes')
+    const payload = updatePayload('dmg')
     const sha256 = createHash('sha256').update(payload).digest('hex')
     const manifest = {
       schema: 1,
@@ -107,6 +110,7 @@ describe('Desktop update service', () => {
       throw new Error(`unexpected URL: ${url}`)
     })
     const service = new DesktopUpdateService({
+      platform: 'darwin', arch: 'x64',
       runningDesktop: '0.1.9',
       includedHarness: '0.1.0-rc.5',
       userData: makeUserData(),
@@ -141,15 +145,16 @@ describe('Desktop update service', () => {
         html_url: manifest.releaseUrl,
         draft: false,
         assets: [
-          { name: 'deepseek-harness-desktop-update.json', size: 512, browser_download_url: 'https://github.com/Missher12/deepseek-harness-desktop/releases/download/v/manifest.json' },
-          { name: manifest.assetName, size: payload.byteLength, browser_download_url: `https://github.com/Missher12/deepseek-harness-desktop/releases/download/v/${manifest.assetName}` },
+          { name: 'deepseek-harness-desktop-update.json', size: 512, browser_download_url: 'https://github.com/Missher12/deepseek-harness-desktop/releases/download/desktop-v0.2.0/deepseek-harness-desktop-update.json' },
+          { name: manifest.assetName, size: payload.byteLength, browser_download_url: `https://github.com/Missher12/deepseek-harness-desktop/releases/download/desktop-v0.2.0/${manifest.assetName}` },
         ],
       }])
-      if (url.endsWith('manifest.json')) return json(manifest)
+      if (url.endsWith('deepseek-harness-desktop-update.json')) return json(manifest)
       if (url.endsWith('.dmg')) return new Response(payload, { status: 200, headers: { 'content-length': String(payload.byteLength) } })
       throw new Error(`unexpected URL: ${url}`)
     })
     const service = new DesktopUpdateService({
+      platform: 'darwin', arch: 'x64',
       runningDesktop: '0.1.9',
       includedHarness: '0.1.0-rc.5',
       userData: makeUserData(),
@@ -198,6 +203,7 @@ describe('Desktop update service', () => {
       throw new Error(`unexpected URL: ${url}`)
     })
     const first = new DesktopUpdateService({
+      platform: 'darwin', arch: 'x64',
       runningDesktop: '0.1.9',
       includedHarness: '0.1.0-rc.5',
       userData,
@@ -207,6 +213,7 @@ describe('Desktop update service', () => {
     fetcher.mockClear()
 
     const restarted = new DesktopUpdateService({
+      platform: 'darwin', arch: 'x64',
       runningDesktop: '0.1.9',
       includedHarness: '0.1.0-rc.5',
       userData,
