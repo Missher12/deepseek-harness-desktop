@@ -12,6 +12,7 @@ import { desktopUpdateAssetName, type VerifiedDesktopUpdate } from '../src/updat
 import { verifyDesktopUpdateFile } from '../src/update/verification.ts'
 import { createWindowsUpdateCommand, stopWindowsUpdateWorker } from '../src/update/windows-installer.ts'
 import { createWindowsUpdateSignal, decideWindowsUpdateSignal, readWindowsUpdateSignal, type WindowsUpdateWorker } from '../src/update/windows-signal.ts'
+import { bootstrapProgress } from './windows-update-preflight.ts'
 
 const execFileAsync = promisify(execFile)
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
@@ -42,6 +43,29 @@ interface ObservedChild {
   closed: boolean
   failed: boolean
   output: string
+}
+
+// Self-contained: Playwright serializes this function into the installed main.
+function spawnInstalledBootstrap(_electron: unknown, plan: { executable: string; args: readonly string[]; env: NodeJS.ProcessEnv }) {
+  const native = process.getBuiltinModule('node:child_process')
+  const child = native.spawn(plan.executable, plan.args, {
+    detached: false, windowsHide: true, shell: false, env: plan.env, stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const state = { child, closed: false, failed: false, output: '', stderr: Buffer.alloc(0), stderrOverflow: false }
+  child.once('error', () => { state.failed = true })
+  child.once('close', () => { state.closed = true })
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', (chunk: string) => {
+    if (state.output.length + chunk.length > 128) state.failed = true
+    else state.output += chunk
+  })
+  // Drain into a private byte cap; parse only at close so split frames are safe.
+  child.stderr.on('data', (chunk: Buffer) => {
+    const remaining = 128 - state.stderr.length
+    if (chunk.length > remaining) state.stderrOverflow = true
+    state.stderr = Buffer.concat([state.stderr, chunk.subarray(0, remaining)])
+  })
+  return state
 }
 
 function observeChild(executable: string, args: readonly string[], env: NodeJS.ProcessEnv): ObservedChild {
@@ -96,6 +120,29 @@ function collectOwnedProcesses(
 }
 
 describe('handoff process ownership', () => {
+  it('accepts chunked bootstrap progress only after close and rejects unknown or overflowing stderr', async () => {
+    for (const [stderr, allowed] of [
+      ['DSHB:E\nDSHB:J\n', true], ['', true], ['DSHB:F\n', false],
+      ['unknown\n', false], ['DSHB:E', false], ['x'.repeat(129), false],
+    ] as const) {
+      const state = spawnInstalledBootstrap(null, {
+        executable: process.execPath, env: {}, args: ['-e',
+          `process.stderr.write(${JSON.stringify(stderr.slice(0, 3))}); setTimeout(() => { process.stderr.write(${JSON.stringify(stderr.slice(3))}); process.stdout.write('DSH_UPDATE_READY\\n') }, 20)`],
+      })
+      try {
+        await expect.poll(() => state.closed, { timeout: 5_000 }).toBe(true)
+        expect(state.failed).toBe(false)
+        expect(state.stderr.length).toBeLessThanOrEqual(128)
+        expect(!state.stderrOverflow && bootstrapProgress(state.stderr.toString('utf8')).stderrAllowed).toBe(allowed)
+        expect(state.output).toBe('DSH_UPDATE_READY\n')
+      } finally {
+        if (!state.closed) {
+          state.child.kill()
+          await expect.poll(() => state.closed, { timeout: 5_000 }).toBe(true)
+        }
+      }
+    }
+  })
   const row = (id: number, parent: number, created: string): ProcessIdentity => ({
     ProcessId: id, ParentProcessId: parent, Created: created, ExecutablePath: 'fixture.exe',
   })
@@ -148,7 +195,7 @@ describe('real installed Windows native-command update handoff', () => {
     const signal = await createWindowsUpdateSignal(stagingDirectory)
     let application: ElectronApplication | undefined
     let applicationClosed = false
-    let bootstrap: JSHandle<ObservedChild> | undefined
+    let bootstrap: JSHandle<ReturnType<typeof spawnInstalledBootstrap>> | undefined
     let bootstrapPid: number | undefined
     let observer: ObservedChild | undefined
     let worker: WindowsUpdateWorker | undefined
@@ -161,10 +208,13 @@ describe('real installed Windows native-command update handoff', () => {
     const powershell = join(systemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe')
     async function bootstrapState() {
       if (bootstrap === undefined) throw new Error('The installed main has not created a bootstrap.')
-      return await bootstrap.evaluate(state => ({
+      const snapshot = await bootstrap.evaluate(state => ({
         pid: state.child.pid, closed: state.closed, failed: state.failed, output: state.output,
         exitCode: state.child.exitCode, signal: state.child.signalCode,
+        stderr: state.stderr.toString('utf8'), stderrOverflow: state.stderrOverflow,
       }))
+      const { stderr, stderrOverflow, ...facts } = snapshot
+      return { ...facts, stderrAllowed: facts.closed && !stderrOverflow && bootstrapProgress(stderr).stderrAllowed }
     }
     async function processes(): Promise<ProcessIdentity[]> {
       const { stdout } = await execFileAsync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
@@ -254,22 +304,7 @@ describe('real installed Windows native-command update handoff', () => {
       })
       // Create the real command INSIDE the installed Electron main so app.quit
       // closes the actual creator's libuv job, not only a separately watched PID.
-      bootstrap = await application.evaluateHandle((_electron, plan) => {
-        const native = process.getBuiltinModule('node:child_process')
-        const child = native.spawn(plan.executable, plan.args, {
-          detached: false, windowsHide: true, shell: false, env: plan.env, stdio: ['ignore', 'pipe', 'pipe'],
-        })
-        const state = { child, closed: false, failed: false, output: '' }
-        child.once('error', () => { state.failed = true })
-        child.once('close', () => { state.closed = true })
-        child.stdout.setEncoding('utf8')
-        child.stdout.on('data', (chunk: string) => {
-          if (state.output.length + chunk.length > 128) state.failed = true
-          else state.output += chunk
-        })
-        child.stderr.on('data', () => { state.failed = true })
-        return state
-      }, command)
+      bootstrap = await application.evaluateHandle(spawnInstalledBootstrap, command)
       bootstrapPid = (await bootstrapState()).pid
       if (bootstrapPid === undefined) throw new Error('Update bootstrap has no PID.')
       roots.add(bootstrapPid)
@@ -287,7 +322,7 @@ describe('real installed Windows native-command update handoff', () => {
         || waiting.ExecutablePath.toLowerCase() !== powershell.toLowerCase()) throw new Error('Independent worker identity was not observed.')
       await decideWindowsUpdateSignal(signal, true)
       await expect.poll(async () => (await bootstrapState()).closed, { timeout: 20_000 }).toBe(true)
-      expect(await bootstrapState()).toMatchObject({ exitCode: 0, signal: null, failed: false })
+      expect(await bootstrapState()).toMatchObject({ exitCode: 0, signal: null, failed: false, stderrAllowed: true })
       expect((await captureOwned()).some(row => row.ProcessId === worker!.pid && row.Created === waiting.Created)).toBe(true)
       // Attach to the helper's future child. No /S, /D, fake bridge, future
       // release metadata, replacement fetch, or direct Setup spawn is involved.
