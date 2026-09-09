@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
-import { copyFile, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -38,6 +38,89 @@ function preflightDiagnostics(output: Buffer, stdoutBytes: number, stderrBytes: 
     exitCode: child.exitCode, signal: child.signalCode,
   })
 }
+
+async function collectLaunchProbe(executable: string, args: string[], env: NodeJS.ProcessEnv,
+  detached: boolean, windowsHide = true) {
+  const start = () => spawn(executable, args, {
+    detached, shell: false, windowsHide, stdio: ['ignore', 'pipe', 'pipe'], env,
+  })
+  let child: ReturnType<typeof start>
+  try { child = start() } catch {
+    // A synchronous OS spawn failure acquired no process or pipes.
+    return { stdoutBytes: 0, stderrBytes: 0, retainedBytes: 0, entered: false, completed: false,
+      timedOut: false, spawnError: true, closed: true, exitCode: null, signal: null }
+  }
+  let output = Buffer.alloc(0)
+  let stdoutBytes = 0
+  let stderrBytes = 0
+  let timedOut = false
+  let spawnError = false
+  const onOutput = (chunk: Buffer): void => {
+    stdoutBytes += chunk.length
+    output = Buffer.concat([output, chunk.subarray(0, Math.max(0, 128 - output.length))])
+  }
+  const onStderr = (chunk: Buffer): void => { stderrBytes += chunk.length }
+  const onError = (): void => { spawnError = true }
+  child.stdout.on('data', onOutput)
+  child.stderr.on('data', onStderr)
+  child.on('error', onError)
+  // These probes spawn no children. Await close, not exit, to drain both pipes.
+  const closed = new Promise<void>((resolve) => { child.once('close', () => { resolve() }) })
+  const timer = setTimeout(() => {
+    timedOut = true
+    child.kill('SIGKILL')
+  }, 5_000)
+  try {
+    await closed
+    const text = output.toString('utf8')
+    return {
+      stdoutBytes, stderrBytes, retainedBytes: output.length,
+      entered: text.startsWith('DSH_PROBE_ENTER\r\n') || text.startsWith('DSH_PROBE_ENTER\n'),
+      completed: text === 'DSH_PROBE_ENTER\r\nDSH_PROBE_EXIT\r\n' || text === 'DSH_PROBE_ENTER\nDSH_PROBE_EXIT\n',
+      timedOut, spawnError, closed: true, exitCode: child.exitCode, signal: child.signalCode,
+    }
+  } finally {
+    clearTimeout(timer)
+    child.stdout.off('data', onOutput)
+    child.stderr.off('data', onStderr)
+    child.off('error', onError)
+  }
+}
+
+describe('native launch probe collector', () => {
+  it('drains a real process through close and recognizes both fixed script milestones', async () => {
+    const result = await collectLaunchProbe(process.execPath,
+      ['-e', "process.stdout.write('DSH_PROBE_ENTER\\nDSH_PROBE_EXIT\\n')"], {}, false)
+    expect(result).toEqual({ stdoutBytes: 31, stderrBytes: 0, retainedBytes: 31,
+      entered: true, completed: true, timedOut: false, spawnError: false,
+      closed: true, exitCode: 0, signal: null })
+  })
+
+  it('bounds retained bytes and reports no unknown stdout or stderr contents', async () => {
+    const result = await collectLaunchProbe(process.execPath, ['-e',
+      "process.stdout.write('PRIVATE'.repeat(10000)); process.stderr.write('PRIVATE')"], {}, false)
+    expect(result.stdoutBytes).toBe(70_000)
+    expect(result.stderrBytes).toBe(7)
+    expect(result.retainedBytes).toBeLessThanOrEqual(128)
+    expect(result.entered).toBe(false)
+    expect(result.completed).toBe(false)
+    expect(JSON.stringify(result)).not.toContain('PRIVATE')
+  })
+
+  it('kills and awaits its owned stalled process before reporting a timeout', async () => {
+    const result = await collectLaunchProbe(process.execPath,
+      ['-e', 'setInterval(() => {}, 1000)'], {}, false)
+    expect(result).toMatchObject({ timedOut: true, closed: true, completed: false, spawnError: false })
+    expect(result.exitCode !== null || result.signal !== null).toBe(true)
+  }, 10_000)
+
+  it('settles a spawn error without exposing its executable path', async () => {
+    const result = await collectLaunchProbe(join(process.execPath, 'PRIVATE_MISSING_EXECUTABLE'), [], {}, false)
+    expect(result).toMatchObject({ spawnError: true, timedOut: false, closed: true,
+      stdoutBytes: 0, stderrBytes: 0, entered: false, completed: false })
+    expect(JSON.stringify(result)).not.toContain('PRIVATE')
+  })
+})
 
 describe('bounded native preflight evidence', () => {
   it('accepts only the exact production UTF-8 line, not whitespace or foreign data', () => {
@@ -99,6 +182,40 @@ describe('Windows update handoff command', () => {
     expect(result.status).toBe(0)
     expect(result.signal).toBeNull()
   })
+
+  it.skipIf(process.platform !== 'win32')('records bounded console launch contrasts without running an installer', async () => {
+    const plan = createWindowsUpdateCommand(descriptor, {
+      parentPid: process.pid, parentExecutable: 'C:\\Fixture\\DeepSeek Harness.exe',
+      systemRoot: process.env.SystemRoot ?? process.env.SYSTEMROOT ?? 'C:\\Windows', environment: process.env,
+    })
+    const directory = await mkdtemp(join(tmpdir(), 'dsh-console-probe-'))
+    const evidence = []
+    try {
+      for (const detached of [false, true]) {
+        for (const windowsHide of [false, true]) {
+          const sentinel = join(directory, `probe-${evidence.length}.txt`)
+          const pathData = Buffer.from(sentinel).toString('base64')
+          const script = `$ErrorActionPreference='Stop'; $p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${pathData}')); [IO.File]::WriteAllText($p,'ENTER'); [Console]::Out.WriteLine('DSH_PROBE_ENTER'); [Console]::Out.Flush(); [Threading.Thread]::Sleep(250); [IO.File]::WriteAllText($p,'EXIT'); [Console]::Out.WriteLine('DSH_PROBE_EXIT'); [Console]::Out.Flush(); exit 0`
+          const args = ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden',
+            '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')]
+          const result = await collectLaunchProbe(plan.executable, args, plan.env, detached, windowsHide)
+          const marker = await readFile(sentinel, 'utf8').catch((error: unknown) => {
+            if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return ''
+            throw new Error('Cannot inspect owned launch probe sentinel.')
+          })
+          evidence.push({ detached, windowsHide, ...result,
+            enteredOnDisk: marker === 'ENTER' || marker === 'EXIT', completedOnDisk: marker === 'EXIT' })
+        }
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+    // Fixed labels and counts only; no command, environment, paths or native text.
+    console.log('DSH_UPDATE_LAUNCH_PROBES', JSON.stringify(evidence))
+    expect(evidence.every(item => item.closed && !item.spawnError)).toBe(true)
+    expect(evidence[0]).toMatchObject({ entered: true, completed: true, enteredOnDisk: true,
+      completedOnDisk: true, timedOut: false, exitCode: 0, signal: null })
+  }, 30_000)
 
   it.skipIf(process.platform !== 'win32')('natively validates the retained payload and waits for its exact parent without launching an installer', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'dsh-update-native-'))
