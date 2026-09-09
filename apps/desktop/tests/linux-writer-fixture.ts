@@ -45,6 +45,21 @@ export function processAlive(pid: number): boolean {
   }
 }
 
+/** Read the supported launch-process identity, which can be an AppImage wrapper, without inspector evaluation. */
+export function linuxLaunchRootPid(
+  application: { process(): { pid?: number | undefined; exitCode: number | null; signalCode: NodeJS.Signals | null } },
+  isAlive: (pid: number) => boolean = processAlive,
+): number {
+  const child = application.process()
+  if (child.pid === undefined || !Number.isSafeInteger(child.pid) || child.pid <= 0) {
+    throw new Error('Linux launch process PID is missing or invalid')
+  }
+  if (child.exitCode !== null || child.signalCode !== null || !isAlive(child.pid)) {
+    throw new Error('Linux launch process exited before the native scenario completed')
+  }
+  return child.pid
+}
+
 /** Read descendants of an owned Linux process; exited processes have no children. */
 export async function linuxDescendants(pid: number): Promise<number[]> {
   let children: string

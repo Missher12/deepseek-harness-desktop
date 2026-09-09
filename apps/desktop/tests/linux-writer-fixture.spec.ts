@@ -1,7 +1,30 @@
 import { access, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { linuxDesktopEnvironment, processAlive, withLinuxWriterFixture, type LinuxWriterFixture } from './linux-writer-fixture.ts'
+import { describe, expect, it, vi } from 'vitest'
+import { linuxDesktopEnvironment, linuxLaunchRootPid, processAlive, withLinuxWriterFixture, type LinuxWriterFixture } from './linux-writer-fixture.ts'
+
+describe('Linux launch-process identity', () => {
+  it('uses the supported process API even when the inspector context is unavailable', () => {
+    const application = {
+      process: () => ({ pid: 1234, exitCode: null, signalCode: null }),
+      evaluate: vi.fn(() => { throw new Error('Execution context was destroyed') }),
+    }
+    const alive = vi.fn(() => true)
+    expect(linuxLaunchRootPid(application, alive)).toBe(1234)
+    expect(alive).toHaveBeenCalledWith(1234)
+    expect(application.evaluate).not.toHaveBeenCalled()
+  })
+  it.each([
+    { pid: undefined, exitCode: null, signalCode: null, alive: true },
+    { pid: 0, exitCode: null, signalCode: null, alive: true },
+    { pid: 1234, exitCode: 0, signalCode: null, alive: true },
+    { pid: 1234, exitCode: 1, signalCode: null, alive: true },
+    { pid: 1234, exitCode: null, signalCode: 'SIGSEGV' as const, alive: true },
+    { pid: 1234, exitCode: null, signalCode: null, alive: false },
+  ])('rejects missing or exited launch processes: %j', (child) => {
+    expect(() => linuxLaunchRootPid({ process: () => child }, () => child.alive)).toThrow()
+  })
+})
 
 describe('Linux Desktop native environment isolation', () => {
   it('keeps display transport and replaces account paths without provider or runtime injections', () => {
