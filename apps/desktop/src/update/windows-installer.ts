@@ -1,16 +1,69 @@
-import { spawn } from 'node:child_process'
+/** Fixed Windows PowerShell bootstrap, independent worker and verified installer handoff. */
+import { execFile, spawn } from 'node:child_process'
 import { win32 } from 'node:path'
+import { promisify } from 'node:util'
 import { validateDesktopUpdateManifest, type VerifiedDesktopUpdate } from './release.ts'
 import { verifyDesktopUpdateFile } from './verification.ts'
+import { createWindowsUpdateSignal, readWindowsUpdateSignal, WindowsUpdateDecision, type WindowsUpdateSignal, type WindowsUpdateWorker } from './windows-signal.ts'
+
+const execFileAsync = promisify(execFile)
+
+/**
+ * Stop only the verified worker through a retained kernel handle; an absent worker is already stopped.
+ * @param worker Exact PID and creation ticks from the verified bootstrap receipt.
+ * @param systemRoot Fixed Windows system directory used to create the worker.
+ * @returns Resolves after exit; rejects identity mismatch or incomplete cleanup.
+ */
+export async function stopWindowsUpdateWorker(worker: WindowsUpdateWorker, systemRoot: string): Promise<void> {
+  if (!/^[a-z]:\\Windows$/i.test(systemRoot)) throw new Error('Invalid system directory.')
+  const executable = win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+  const data = Buffer.from(JSON.stringify(worker)).toString('base64')
+  const source = `
+$ErrorActionPreference = 'Stop'
+try {
+  $r = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')) | ConvertFrom-Json
+  try { $p = [Diagnostics.Process]::GetProcessById($r.pid) }
+  catch [ArgumentException] { exit 0 }
+  try {
+    [void]$p.Handle
+    if ($p.HasExited) { exit 0 }
+    if ($p.StartTime.ToUniversalTime().Ticks.ToString() -cne $r.started -or $p.MainModule.FileName -ine [IO.Path]::Combine($env:SYSTEMROOT,'System32','WindowsPowerShell','v1.0','powershell.exe')) { throw 'Worker identity changed' }
+    if (!$p.HasExited) { $p.Kill() }
+    if (!$p.WaitForExit(5000)) { throw 'Worker cleanup incomplete' }
+  } catch { if (!$p.HasExited) { throw } }
+  finally { $p.Dispose() }
+} catch { exit 1 }
+`
+  await execFileAsync(executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand',
+    Buffer.from(source, 'utf16le').toString('base64')], {
+    shell: false, windowsHide: true, timeout: 10_000, maxBuffer: 1024,
+    env: { SYSTEMROOT: systemRoot, WINDIR: systemRoot },
+  })
+}
 
 interface WindowsUpdateCommandOptions {
   parentPid: number
   parentExecutable: string
   systemRoot: string
   environment?: NodeJS.ProcessEnv
+  signal: WindowsUpdateSignal
 }
 
-/** Independent system process: it never holds the installed Electron EXE open during replacement. */
+/**
+ * The whole bootstrap stream must be one exact readiness line, including at close.
+ * @param output Complete bounded bootstrap stdout.
+ * @returns Whether the output contains exactly the fixed readiness line.
+ */
+export function isWindowsBootstrapReady(output: string): boolean {
+  return output === 'DSH_UPDATE_READY\r\n' || output === 'DSH_UPDATE_READY\n'
+}
+
+/**
+ * Prepare a short bootstrap and an independent worker without holding the installed EXE open during replacement.
+ * @param descriptor Verified native Setup and its owned staging directory.
+ * @param options Native parent identity, system directory and private transaction.
+ * @returns Fixed system executable, encoded arguments and allowlisted environment.
+ */
 export function createWindowsUpdateCommand(descriptor: VerifiedDesktopUpdate, options: WindowsUpdateCommandOptions): {
   executable: string
   args: string[]
@@ -24,6 +77,9 @@ export function createWindowsUpdateCommand(descriptor: VerifiedDesktopUpdate, op
     || !/^[a-z]:\\/i.test(descriptor.localPath)
     || win32.dirname(descriptor.localPath) !== descriptor.stagingDirectory
     || win32.basename(descriptor.localPath) !== descriptor.assetName
+    || win32.dirname(options.signal.directory) !== descriptor.stagingDirectory
+    || !/^handoff-[a-z0-9]+$/i.test(win32.basename(options.signal.directory))
+    || !/^[a-f0-9]{64}$/.test(options.signal.nonce)
     || validateDesktopUpdateManifest({
       schema: 2, ...descriptor.target, desktopVersion: descriptor.desktopVersion, harnessVersion: descriptor.harnessVersion,
       assetName: descriptor.assetName, bytes: descriptor.bytes, sha256: descriptor.sha256,
@@ -33,9 +89,10 @@ export function createWindowsUpdateCommand(descriptor: VerifiedDesktopUpdate, op
     parentPid: options.parentPid, parentExecutable: options.parentExecutable,
     path: descriptor.localPath, stage: descriptor.stagingDirectory,
     name: descriptor.assetName, bytes: descriptor.bytes, sha256: descriptor.sha256,
+    signal: options.signal.directory, nonce: options.signal.nonce,
   })).toString('base64')
   // Only base64 data is substituted. No renderer-supplied script, command or arguments.
-  const script = `
+  const workerScript = `
 $ErrorActionPreference = 'Stop'
 try {
   $config = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${config}')) | ConvertFrom-Json
@@ -66,13 +123,28 @@ try {
     } catch { $file.Dispose(); throw }
   }
   $parent = [Diagnostics.Process]::GetProcessById($config.parentPid)
+  [void]$parent.Handle
   if ($parent.MainModule.FileName -ine $config.parentExecutable) { throw 'Wrong parent process' }
   $preflight = Open-VerifiedPayload
   $preflight.Dispose()
-  [Console]::Out.WriteLine('DSH_UPDATE_READY')
-  [Console]::Out.Flush()
-  if (!$parent.WaitForExit(120000)) { throw 'Application did not exit' }
+  $signal = [IO.DirectoryInfo]::new($config.signal)
+  if (!$signal.Exists -or ($signal.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Invalid signal directory' }
+  $self = [Diagnostics.Process]::GetCurrentProcess()
+  $record = @{schema=1;nonce=$config.nonce;token='DSH_UPDATE_READY';pid=$PID;started=$self.StartTime.ToUniversalTime().Ticks.ToString()} | ConvertTo-Json -Compress
+  $ready = [IO.File]::Open([IO.Path]::Combine($config.signal,'ready.json'), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+  try {
+    $bytes = [Text.Encoding]::UTF8.GetBytes($record)
+    $ready.Write($bytes,0,$bytes.Length); $ready.Flush()
+  } finally { $ready.Dispose(); $self.Dispose() }
+  $parentDeadline = [DateTime]::UtcNow.AddSeconds(120)
+  while (!$parent.WaitForExit(100)) {
+    if ([IO.File]::Exists([IO.Path]::Combine($config.signal,'cancelled'))) { throw 'Cancelled handoff' }
+    if ([DateTime]::UtcNow -ge $parentDeadline) { throw 'Application did not exit' }
+  }
   $parent.Dispose()
+  if ([IO.File]::Exists([IO.Path]::Combine($config.signal,'cancelled'))) { throw 'Cancelled handoff' }
+  $decision = [IO.FileInfo]::new([IO.Path]::Combine($config.signal,'decision'))
+  if (!$decision.Exists -or ($decision.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $decision.Length -ne 64 -or [IO.File]::ReadAllText($decision.FullName) -cne $config.nonce) { throw 'Unapproved handoff' }
   $lockedPayload = Open-VerifiedPayload
   try {
     $setup = Start-Process -FilePath $config.path -WorkingDirectory $config.stage -WindowStyle Normal -PassThru
@@ -80,6 +152,61 @@ try {
     $setup.Dispose()
   } finally { $lockedPayload.Dispose() }
 } catch { exit 1 }
+`
+  const script = `
+$ErrorActionPreference = 'Stop'
+$worker = $null
+$approved = $false
+$workerScript = @'
+${workerScript}
+'@
+try {
+  $config = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${config}')) | ConvertFrom-Json
+  $signal = [IO.DirectoryInfo]::new($config.signal)
+  if (!$signal.Exists -or ($signal.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Invalid signal directory' }
+  $systemPowerShell = [IO.Path]::Combine($env:SYSTEMROOT,'System32','WindowsPowerShell','v1.0','powershell.exe')
+  $workerArguments = @('-NoLogo','-NoProfile','-NonInteractive','-WindowStyle','Hidden','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($workerScript)))
+  $worker = Start-Process -FilePath $systemPowerShell -ArgumentList $workerArguments -WindowStyle Hidden -PassThru
+  [void]$worker.Handle
+  $started = $worker.StartTime.ToUniversalTime().Ticks.ToString()
+  if ($worker.MainModule.FileName -ine $systemPowerShell) { throw 'Wrong worker executable' }
+  $deadline = [DateTime]::UtcNow.AddSeconds(20)
+  $readyPath = [IO.Path]::Combine($config.signal,'ready.json')
+  $acknowledged = $false
+  while ([DateTime]::UtcNow -lt $deadline) {
+    if ([IO.File]::Exists([IO.Path]::Combine($config.signal,'cancelled'))) { throw 'Handoff cancelled' }
+    if ($worker.HasExited) { throw 'Worker exited before handoff' }
+    if (!$acknowledged -and [IO.File]::Exists($readyPath)) {
+      $info = [IO.FileInfo]::new($readyPath)
+      if (($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $info.Length -gt 1024) { throw 'Invalid readiness file' }
+      $ready = $null
+      try { $ready = [IO.File]::Open($readyPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read) }
+      catch [IO.IOException] { if (($_.Exception.HResult -band 65535) -ne 32) { throw } }
+      if ($null -ne $ready) {
+        try { if ($ready.Length -gt 1024) { throw 'Oversized readiness' }; $reader = [IO.StreamReader]::new($ready); try { $record = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() } }
+        finally { $ready.Dispose() }
+        if (@($record.PSObject.Properties).Count -ne 5 -or $record.schema -ne 1 -or $record.token -cne 'DSH_UPDATE_READY' -or $record.nonce -cne $config.nonce -or $record.pid -ne $worker.Id -or $record.started -cne $started) { throw 'Wrong worker readiness' }
+        [Console]::Out.WriteLine('DSH_UPDATE_READY'); [Console]::Out.Flush()
+        $acknowledged = $true
+      }
+    }
+    $decisionPath = [IO.Path]::Combine($config.signal,'decision')
+    if ([IO.File]::Exists($decisionPath)) {
+      $decision = [IO.FileInfo]::new($decisionPath)
+      if (!$acknowledged -or ($decision.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $decision.Length -ne 64 -or [IO.File]::ReadAllText($decisionPath) -cne $config.nonce) { throw 'Handoff cancelled' }
+      $approved = $true
+      break
+    }
+    [Threading.Thread]::Sleep(100)
+  }
+  if (!$approved) { throw 'Handoff acknowledgement timed out' }
+} catch { exit 1 }
+finally {
+  if ($null -ne $worker) {
+    if (!$approved -and !$worker.HasExited) { $worker.Kill(); if (!$worker.WaitForExit(5000)) { throw 'Worker cleanup incomplete' } }
+    $worker.Dispose()
+  }
+}
 `
   const encoded = Buffer.from(script, 'utf16le').toString('base64')
   if (encoded.length > 28_000) throw new Error('Windows update command exceeds its safe size limit.')
@@ -94,42 +221,93 @@ try {
   }
 }
 
-/** Resolve only after the helper has validated the payload and is waiting for this app to exit. */
+/**
+ * Resolve only after the verified independent worker is committed and the short bootstrap has closed.
+ * @param descriptor Verified native Setup selected by the update service.
+ * @returns The worker PID; failure leaves the application open and retains the payload.
+ */
 export async function launchWindowsDesktopInstaller(descriptor: VerifiedDesktopUpdate): Promise<number> {
   if (process.platform !== 'win32') throw new Error('Windows Setup requires an installed Windows application.')
   await verifyDesktopUpdateFile(descriptor)
+  const signal = await createWindowsUpdateSignal(descriptor.stagingDirectory)
+  let worker: WindowsUpdateWorker | undefined
+  const decision = new WindowsUpdateDecision(signal, async () => {
+    worker = await readWindowsUpdateSignal(signal)
+    return worker
+  })
+  const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT ?? 'C:\\Windows'
   const command = createWindowsUpdateCommand(descriptor, {
     parentPid: process.pid, parentExecutable: process.execPath,
-    systemRoot: process.env.SystemRoot ?? process.env.SYSTEMROOT ?? 'C:\\Windows', environment: process.env,
+    systemRoot, environment: process.env, signal,
   })
-  return await new Promise<number>((fulfill, reject) => {
-    const child = spawn(command.executable, command.args, {
-      detached: true, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'], env: command.env,
+  const child = spawn(command.executable, command.args, {
+    detached: false, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'], env: command.env,
+  })
+  let output = ''
+  let failed = false
+  const hasFailed = (): boolean => failed
+  let acknowledge: () => void = () => {}
+  let refuse: () => void = () => {}
+  const ready = new Promise<void>((resolve, reject) => {
+    acknowledge = resolve
+    refuse = () => { reject(new Error('Windows update bootstrap did not acknowledge.')) }
+  })
+  const fail = (): void => {
+    failed = true
+    refuse()
+    void decision.cancel().catch(() => {
+      // Keep the rejection and deadline when the owned cancellation file is inaccessible.
     })
-    let settled = false
-    let output = ''
-    const finish = (success: boolean): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      child.stdout.destroy()
-      if (success && child.pid !== undefined) {
-        child.unref()
-        fulfill(child.pid)
-      } else {
-        child.kill()
-        reject(new Error('Could not prepare Windows Setup. The application has not been closed.'))
-      }
+  }
+  const closed = new Promise<void>((resolve) => {
+    child.once('close', () => {
+      if (child.exitCode !== 0 || child.signalCode !== null || !isWindowsBootstrapReady(output)) fail()
+      refuse()
+      resolve()
+    })
+  })
+  child.once('error', fail)
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', (chunk: string) => {
+    if (output.length + chunk.length > 128) { fail(); return }
+    output += chunk
+    if (isWindowsBootstrapReady(output)) acknowledge()
+    else if (!'DSH_UPDATE_READY\r\n'.startsWith(output) && !'DSH_UPDATE_READY\n'.startsWith(output)) {
+      fail()
     }
-    const timer = setTimeout(() => { finish(false) }, 30_000)
-    timer.unref()
-    child.on('error', () => { finish(false) })
-    child.once('exit', () => { finish(false) })
-    child.stdout.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => {
-      output += chunk
-      if (output.length > 128) finish(false)
-      else if (output === 'DSH_UPDATE_READY\r\n' || output === 'DSH_UPDATE_READY\n') finish(true)
-    })
   })
+  const timer = setTimeout(() => {
+    failed = true
+    refuse()
+    // Missing or cancelled approval also prevents a surviving worker from
+    // executing Setup if this application is later closed manually.
+    void decision.cancel().catch(() => {
+      // An inaccessible private signal still leaves readiness unconfirmed.
+    }).then(() => { child.kill() })
+  }, 30_000)
+  timer.unref()
+  try {
+    await ready
+    if (hasFailed()) throw new Error('Invalid bootstrap readiness.')
+    worker = await decision.approve()
+    await closed
+    if (hasFailed() || child.exitCode !== 0 || child.signalCode !== null
+      || !isWindowsBootstrapReady(output)) {
+      throw new Error('Bootstrap did not commit the worker.')
+    }
+    return worker.pid
+  } catch {
+    await decision.cancel().catch(() => {
+      // The private signal may be inaccessible; the bootstrap deadline remains armed.
+    })
+    await closed
+    if (worker !== undefined) {
+      try { await stopWindowsUpdateWorker(worker, systemRoot) }
+      catch { throw new Error('Windows update worker cleanup was not confirmed. The application has not been closed.') }
+    }
+    throw new Error('Could not prepare Windows Setup. The application has not been closed.')
+  } finally {
+    clearTimeout(timer)
+    child.stdout.destroy()
+  }
 }

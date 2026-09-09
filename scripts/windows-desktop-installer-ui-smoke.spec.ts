@@ -36,6 +36,7 @@ describe('helper-launched installer observation', () => {
     expect(source).toContain('Observe-UpdateHandoff -ResolvedSetup $resolvedSetup')
     expect(source).toContain('[int]$HandoffHelperId = 0')
     expect(source).toContain('[int]$HandoffParentId = 0')
+    expect(observer).toContain('Test-HandoffWorkerIdentity $helper $HandoffBootstrapId $expectedHelper $HandoffWorkerCreated')
     const entry = source.indexOf('if ($HandoffHelperId -gt 0)')
     expect(entry).toBeLessThan(source.indexOf('$smokeId ='))
     expect(source.slice(entry, source.indexOf('$smokeId ='))).toContain('return')
@@ -47,8 +48,10 @@ describe('helper-launched installer observation', () => {
       $tokens=$null; $errors=$null
       $ast=[System.Management.Automation.Language.Parser]::ParseFile($env:DSH_OBSERVER_SOURCE,[ref]$tokens,[ref]$errors)
       if($errors.Count){throw 'Observer parse failed.'}
-      $definition=$ast.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-HandoffSetupIdentity'},$true)
-      . ([scriptblock]::Create($definition.Extent.Text))
+      foreach($name in @('Test-HandoffSetupIdentity','Test-HandoffWorkerIdentity')) {
+        $definition=$ast.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name},$true)
+        . ([scriptblock]::Create($definition.Extent.Text))
+      }
       $ready=[datetime]'2026-09-09T00:00:00Z'
       $path='C:\\owned\\DeepSeek-Harness-Setup-0.5.7-win-x64.exe'
       $row=[pscustomobject]@{ParentProcessId=123;ExecutablePath=$path;CreationDate=$ready.AddSeconds(1)}
@@ -59,6 +62,13 @@ describe('helper-launched installer observation', () => {
       $results += Test-HandoffSetupIdentity $row 123 $path ($ready.AddSeconds(2))
       $results += Test-HandoffSetupIdentity $row 0 $path $ready
       $results += Test-HandoffSetupIdentity $null 123 $path $ready
+      $created=$row.CreationDate.ToUniversalTime().ToString('o')
+      $results += Test-HandoffWorkerIdentity $row 123 $path $created
+      $results += Test-HandoffWorkerIdentity $row 124 $path $created
+      $results += Test-HandoffWorkerIdentity $row 123 ($path+'.other.exe') $created
+      $results += Test-HandoffWorkerIdentity $row 123 $path ($ready.ToUniversalTime().ToString('o'))
+      $results += Test-HandoffWorkerIdentity $row 0 $path $created
+      $results += Test-HandoffWorkerIdentity $null 123 $path $created
       $results | ConvertTo-Json -Compress
     `
     const result = spawnSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
@@ -68,7 +78,7 @@ describe('helper-launched installer observation', () => {
     expect(result.error).toBeUndefined()
     expect(result.signal).toBeNull()
     expect(result.status).toBe(0)
-    expect(JSON.parse(result.stdout)).toEqual([true, false, false, false, false, false])
+    expect(JSON.parse(result.stdout)).toEqual([true, false, false, false, false, false, true, false, false, false, false, false])
   })
 })
 

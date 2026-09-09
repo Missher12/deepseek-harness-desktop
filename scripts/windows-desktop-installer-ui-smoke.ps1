@@ -4,7 +4,9 @@ param(
   [string]$EvidenceRoot = 'apps/desktop/release/windows-installer-ui-evidence',
   [switch]$ExpectBlankDetails,
   [int]$HandoffHelperId = 0,
-  [int]$HandoffParentId = 0
+  [int]$HandoffParentId = 0,
+  [int]$HandoffBootstrapId = 0,
+  [string]$HandoffWorkerCreated = ''
 )
 
 Set-StrictMode -Version Latest
@@ -469,6 +471,15 @@ function Test-HandoffSetupIdentity {
     $Process.CreationDate.ToUniversalTime() -ge $ReadyAt
 }
 
+function Test-HandoffWorkerIdentity {
+  param($Process, [int]$BootstrapId, [string]$ExpectedPath, [string]$ExpectedCreated)
+  return $null -ne $Process -and $BootstrapId -gt 0 -and
+    -not [string]::IsNullOrEmpty($ExpectedCreated) -and
+    $Process.ParentProcessId -eq $BootstrapId -and
+    $Process.ExecutablePath -ieq $ExpectedPath -and
+    $Process.CreationDate.ToUniversalTime().ToString('o') -ceq $ExpectedCreated
+}
+
 function Observe-UpdateHandoff {
   param([string]$ResolvedSetup, [string]$ResolvedEvidenceRoot)
 
@@ -477,7 +488,7 @@ function Observe-UpdateHandoff {
   $helper = Get-CimInstance Win32_Process -Filter "ProcessId = $HandoffHelperId"
   $parent = Get-CimInstance Win32_Process -Filter "ProcessId = $HandoffParentId"
   $expectedHelper = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-  if ($null -eq $helper -or $helper.ExecutablePath -ine $expectedHelper -or
+  if (-not (Test-HandoffWorkerIdentity $helper $HandoffBootstrapId $expectedHelper $HandoffWorkerCreated) -or
       $null -eq $parent -or [IO.Path]::GetFileName($parent.ExecutablePath) -cne 'DeepSeek Harness.exe') {
     throw 'Handoff observer requires the owned waiting helper and a live installed parent.'
   }
@@ -572,7 +583,7 @@ if ($HandoffHelperId -gt 0) {
   Observe-UpdateHandoff -ResolvedSetup $resolvedSetup -ResolvedEvidenceRoot $resolvedEvidenceRoot
   return
 }
-if ($HandoffParentId -ne 0 -or $HandoffHelperId -ne 0) { throw 'Invalid handoff identity.' }
+if ($HandoffParentId -ne 0 -or $HandoffHelperId -ne 0 -or $HandoffBootstrapId -ne 0 -or $HandoffWorkerCreated -ne '') { throw 'Invalid handoff identity.' }
 $smokeId = [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $temporaryRoot = Join-Path $env:RUNNER_TEMP "dsh-installer-ui-$smokeId"
 $requestedInstallRoot = $temporaryRoot

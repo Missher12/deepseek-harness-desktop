@@ -9,8 +9,13 @@ function source(path: string): string {
 describe('installed Windows update handoff entrance', () => {
   it('uses the real installed application and production command, not a fake bridge or inert executable', () => {
     const driver = source('../apps/desktop/tests/windows-update-handoff-smoke.spec.ts')
-    expect(driver).toContain("import { createWindowsUpdateCommand } from '../src/update/windows-installer.ts'")
+    expect(driver).toContain("import { createWindowsUpdateCommand, stopWindowsUpdateWorker } from '../src/update/windows-installer.ts'")
     expect(driver).toContain('await electron.launch(')
+    expect(driver).toContain('bootstrap = await application.evaluateHandle(')
+    expect(driver).toContain("process.getBuiltinModule('node:child_process')")
+    expect(driver).toContain('expect(creator?.ParentProcessId).toBe(mainPid)')
+    expect(driver).toContain("'-HandoffWorkerCreated', waiting.Created")
+    expect(driver).toContain('detached: false')
     expect(driver).toContain('process.execPath')
     expect(driver).toContain('DSH_UPDATE_READY')
     expect(driver).toContain('DSH_HANDOFF_OBSERVER_READY')

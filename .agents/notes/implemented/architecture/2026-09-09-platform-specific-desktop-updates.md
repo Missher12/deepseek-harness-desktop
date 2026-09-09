@@ -18,11 +18,15 @@ The [installation dispatcher](../../../../apps/desktop/src/update/install.ts) pr
 
 The [settings plugin](../../../../packages/client/ui-settings-system-update/README.md) renders platform-specific actions and actual byte progress. Initial status failures have a status-only retry; stale responses and disposed subscriptions cannot overwrite newer state. macOS copy does not promise an extra native confirmation; only Windows asks for one.
 
+The Windows helper uses an attached short bootstrap and a native `Start-Process` worker. The bootstrap retains the worker handle, creation time and system executable identity, validates a bounded physical nonce receipt, and emits exactly one readiness line. Approval is published complete under a private final filename; cancellation is serialized, irreversible and checked while waiting for the retained parent handle. The application accepts readiness only after validating the entire stdout and successful bootstrap exit. Failed preparation cancels and stops a known worker through its exact handle and identity; the application and verified payload remain available.
+
 ## Alternatives considered
 
 **One manifest and one install action for every platform.** Rejected because a DMG replacement, visible NSIS wizard and manually installed Linux package have different ownership and completion semantics. Native selection prevents format guessing and cannot overwrite the Mac manifest during generation.
 
 **Renderer-selected paths or shell commands.** Rejected because the installed application, not a web page, owns the exact release asset and verified staging directory. A narrow no-argument bridge keeps untrusted data out of executable selection.
+
+**A direct detached PowerShell or pipe-owned console host.** Native probes show the detached PowerShell can exit without executing its script, whereas the attached bootstrap executes. A long-lived attached child depends on the creator's libuv job lifetime; a pipe-owned console host also couples shutdown to its input pipe. The native worker avoids those dependencies, but requires installed-main creation and post-creator-exit acceptance rather than a test-driver-only launch.
 
 **Silent Windows replacement and automatic Linux privilege changes.** Rejected because users need visible Setup progress and explicit control of Linux package management and exact-path sandbox policy. Windows reports only handoff; Linux remains a manual install.
 
@@ -37,3 +41,5 @@ Installed Windows versions without the bridge require a manual Setup bootstrap. 
 Platform-matrix tests exercise native-shaped inert packages, wrong size/hash/format, cancellation, retained files and older asynchronous responses. Controlled-promise tests pause Windows confirmation, revalidation and handoff while a concurrent check runs. UI tests cover all platform actions, initial-status retry, stale/disposed rejection and localized copy. The Windows-only helper tests parse real PowerShell and verify readiness and wrong-hash rejection using an owned temporary parent; they stop the helper before an inert payload could run.
 
 Those tests do not prove a real Setup upgrade. Native acceptance separately requires the final same-SHA installed application, real settings bridge, visible Setup handoff after process exit, installation lifecycle and user-data preservation. Platform-independent passes or a helper readiness acknowledgement do not substitute for that evidence.
+
+The handoff driver creates the production bootstrap inside the installed Electron main, verifies the observed main-to-bootstrap-to-worker identities, closes the creator, and checks the worker-to-Setup identity, visible Welcome and controlled Cancel. Its observer remains attached to the live test driver. This path requires Windows native execution; local signal, cancellation and parser-source checks cannot establish worker survival or wizard visibility.

@@ -6,11 +6,12 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { logPath } from '@deepseek-ai/dsh-session-persistence-jsonl/src/format.ts'
-import { _electron as electron, type ElectronApplication } from 'playwright'
+import { _electron as electron, type ElectronApplication, type JSHandle } from 'playwright'
 import { describe, expect, it } from 'vitest'
 import { desktopUpdateAssetName, type VerifiedDesktopUpdate } from '../src/update/release.ts'
 import { verifyDesktopUpdateFile } from '../src/update/verification.ts'
-import { createWindowsUpdateCommand } from '../src/update/windows-installer.ts'
+import { createWindowsUpdateCommand, stopWindowsUpdateWorker } from '../src/update/windows-installer.ts'
+import { createWindowsUpdateSignal, decideWindowsUpdateSignal, readWindowsUpdateSignal, type WindowsUpdateWorker } from '../src/update/windows-signal.ts'
 
 const execFileAsync = promisify(execFile)
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
@@ -44,7 +45,7 @@ interface ObservedChild {
 }
 
 function observeChild(executable: string, args: readonly string[], env: NodeJS.ProcessEnv): ObservedChild {
-  const child = spawn(executable, args, { env, shell: false, windowsHide: true, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(executable, args, { env, shell: false, windowsHide: true, detached: false, stdio: ['ignore', 'pipe', 'pipe'] })
   const result: ObservedChild = { child, closed: false, failed: false, output: '' }
   child.once('error', () => { result.failed = true })
   child.once('close', () => { result.closed = true })
@@ -144,16 +145,27 @@ describe('real installed Windows native-command update handoff', () => {
     const evidenceRoot = join(repositoryRoot, 'apps/desktop/release/windows-update-handoff-evidence')
     await mkdir(evidenceRoot, { recursive: true })
     const stagingDirectory = await mkdtemp(join(smokeRoot, 'handoff-'))
+    const signal = await createWindowsUpdateSignal(stagingDirectory)
     let application: ElectronApplication | undefined
     let applicationClosed = false
-    let helper: ObservedChild | undefined
+    let bootstrap: JSHandle<ObservedChild> | undefined
+    let bootstrapPid: number | undefined
     let observer: ObservedChild | undefined
+    let worker: WindowsUpdateWorker | undefined
     const owned = new Map<number, ProcessIdentity>()
     const roots = new Set<number>()
     let handedOffSetupPath: string | undefined
     const safeEnv = Object.fromEntries(Object.entries(process.env)
       .filter(([key, value]) => value !== undefined && !/KEY|SECRET|TOKEN|PASSWORD|^NODE_OPTIONS$|^NODE_PATH$/iu.test(key)))
-    const powershell = join(process.env.SystemRoot ?? process.env.SYSTEMROOT ?? 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe')
+    const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT ?? 'C:\\Windows'
+    const powershell = join(systemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe')
+    async function bootstrapState() {
+      if (bootstrap === undefined) throw new Error('The installed main has not created a bootstrap.')
+      return await bootstrap.evaluate(state => ({
+        pid: state.child.pid, closed: state.closed, failed: state.failed, output: state.output,
+        exitCode: state.child.exitCode, signal: state.child.signalCode,
+      }))
+    }
     async function processes(): Promise<ProcessIdentity[]> {
       const { stdout } = await execFileAsync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
         "@(Get-CimInstance Win32_Process | Where-Object { $null -ne $_.CreationDate } | Select-Object ProcessId,ParentProcessId,ExecutablePath,@{n='Created';e={$_.CreationDate.ToUniversalTime().ToString('o')}}) | ConvertTo-Json -Compress",
@@ -167,7 +179,7 @@ describe('real installed Windows native-command update handoff', () => {
         for (const line of identities) {
           const identity = JSON.parse(line.slice('DSH_HANDOFF_SETUP '.length)) as Omit<ProcessIdentity, 'ExecutablePath'>
           if (!Number.isSafeInteger(identity.ProcessId) || identity.ProcessId <= 0
-            || identity.ParentProcessId !== helper?.child.pid || !Number.isFinite(Date.parse(identity.Created))) {
+            || identity.ParentProcessId !== worker?.pid || !Number.isFinite(Date.parse(identity.Created))) {
             throw new Error('Observer reported an invalid owned Setup identity.')
           }
           const previous = owned.get(identity.ProcessId)
@@ -238,24 +250,58 @@ describe('real installed Windows native-command update handoff', () => {
       expect(identity.version).toBe(desktop.version)
       const command = createWindowsUpdateCommand(descriptor, {
         parentPid: identity.pid, parentExecutable: identity.executable,
-        systemRoot: process.env.SystemRoot ?? process.env.SYSTEMROOT ?? 'C:\\Windows', environment: safeEnv,
+        systemRoot, environment: safeEnv, signal,
       })
-      helper = observeChild(command.executable, command.args, command.env)
-      if (helper.child.pid === undefined) throw new Error('Update helper has no PID.')
-      roots.add(helper.child.pid)
-      await waitForReady(helper, 'DSH_UPDATE_READY')
+      // Create the real command INSIDE the installed Electron main so app.quit
+      // closes the actual creator's libuv job, not only a separately watched PID.
+      bootstrap = await application.evaluateHandle((_electron, plan) => {
+        const native = process.getBuiltinModule('node:child_process')
+        const child = native.spawn(plan.executable, plan.args, {
+          detached: false, windowsHide: true, shell: false, env: plan.env, stdio: ['ignore', 'pipe', 'pipe'],
+        })
+        const state = { child, closed: false, failed: false, output: '' }
+        child.once('error', () => { state.failed = true })
+        child.once('close', () => { state.closed = true })
+        child.stdout.setEncoding('utf8')
+        child.stdout.on('data', (chunk: string) => {
+          if (state.output.length + chunk.length > 128) state.failed = true
+          else state.output += chunk
+        })
+        child.stderr.on('data', () => { state.failed = true })
+        return state
+      }, command)
+      bootstrapPid = (await bootstrapState()).pid
+      if (bootstrapPid === undefined) throw new Error('Update bootstrap has no PID.')
+      roots.add(bootstrapPid)
+      await expect.poll(async () => {
+        const state = await bootstrapState()
+        if (state.closed || state.failed) throw new Error('Installed bootstrap stopped before readiness.')
+        return state.output === 'DSH_UPDATE_READY\r\n' || state.output === 'DSH_UPDATE_READY\n'
+      }, { timeout: 20_000 }).toBe(true)
+      worker = await readWindowsUpdateSignal(signal)
+      const tree = await captureOwned()
+      const creator = tree.find(row => row.ProcessId === bootstrapPid)
+      expect(creator?.ParentProcessId).toBe(mainPid)
+      const waiting = tree.find(row => row.ProcessId === worker!.pid)
+      if (waiting === undefined || waiting.ParentProcessId !== bootstrapPid
+        || waiting.ExecutablePath.toLowerCase() !== powershell.toLowerCase()) throw new Error('Independent worker identity was not observed.')
+      await decideWindowsUpdateSignal(signal, true)
+      await expect.poll(async () => (await bootstrapState()).closed, { timeout: 20_000 }).toBe(true)
+      expect(await bootstrapState()).toMatchObject({ exitCode: 0, signal: null, failed: false })
+      expect((await captureOwned()).some(row => row.ProcessId === worker!.pid && row.Created === waiting.Created)).toBe(true)
       // Attach to the helper's future child. No /S, /D, fake bridge, future
       // release metadata, replacement fetch, or direct Setup spawn is involved.
       observer = observeChild('pwsh', ['-NoLogo', '-NoProfile', '-File',
         join(repositoryRoot, 'scripts/windows-desktop-installer-ui-smoke.ps1'),
         '-SetupPath', localPath, '-EvidenceRoot', evidenceRoot,
-        '-HandoffHelperId', String(helper.child.pid), '-HandoffParentId', String(mainPid),
+        '-HandoffHelperId', String(worker.pid), '-HandoffParentId', String(mainPid),
+        '-HandoffBootstrapId', String(bootstrapPid), '-HandoffWorkerCreated', waiting.Created,
       ], safeEnv)
       if (observer.child.pid === undefined) throw new Error('Handoff observer has no PID.')
       roots.add(observer.child.pid)
       await waitForReady(observer, 'DSH_HANDOFF_OBSERVER_READY')
       await captureOwned()
-      expect((await processes()).filter(row => row.ParentProcessId === helper!.child.pid
+      expect((await processes()).filter(row => row.ParentProcessId === worker!.pid
         && row.ExecutablePath?.toLowerCase() === localPath.toLowerCase())).toHaveLength(0)
       const closed = application.waitForEvent('close', { timeout: 120_000 })
       await application.evaluate(({ app }) => { app.quit() })
@@ -271,10 +317,6 @@ describe('real installed Windows native-command update handoff', () => {
       expect(activeObserver.child.signalCode).toBeNull()
       expect(activeObserver.output.split(/\r?\n/u)).toContain('DSH_HANDOFF_CANCELLED')
       expect(activeObserver.output.split(/\r?\n/u).filter(line => line.startsWith('DSH_HANDOFF_SETUP '))).toHaveLength(1)
-      await expect.poll(() => helper!.closed, { timeout: 15_000 }).toBe(true)
-      expect(helper.failed).toBe(false)
-      expect(helper.child.exitCode).toBe(0)
-      expect(helper.child.signalCode).toBeNull()
       await waitForStopped()
       expect(await snapshot()).toEqual(protectedBefore)
       expect(await digest(localPath)).toBe(expectedSha256)
@@ -285,6 +327,7 @@ describe('real installed Windows native-command update handoff', () => {
         schemaVersion: 1, entrance: 'native-command', payload: 'same-build-setup',
         desktopVersion: desktop.version, setupBytes: descriptor.bytes, setupSha256: expectedSha256,
         desktopSurfaceReady: true, parentIdentityMatched: true, helperAcknowledged: true,
+        bootstrapCreatedByInstalledMain: true, bootstrapExitedBeforeParent: true, independentWorkerIdentityMatched: true,
         setupStartedAfterParentExit: true, setupOwnedByHelper: true, welcomeVisible: true,
         cancellationObservedBy: 'native-test-driver', cancellationCompleted: true,
         protectedFileCount: protectedPaths.length, protectedBytesUnchanged: true, remainingOwnedProcesses: 0,
@@ -296,8 +339,18 @@ describe('real installed Windows native-command update handoff', () => {
       const clean = async (action: () => Promise<unknown>): Promise<void> => {
         try { await action() } catch { cleanupFailed = true }
       }
+      await clean(async () => { await decideWindowsUpdateSignal(signal, false) })
       await clean(captureOwned)
-      await clean(async () => { await stopChild(helper) })
+      await clean(async () => {
+        if (worker === undefined) return
+        const current = (await captureOwned()).find(row => row.ProcessId === worker!.pid)
+        if (current === undefined) return
+        await stopWindowsUpdateWorker(worker, systemRoot)
+      })
+      await clean(async () => {
+        if (bootstrap === undefined || applicationClosed) return
+        await expect.poll(async () => (await bootstrapState()).closed, { timeout: 20_000 }).toBe(true)
+      })
       await clean(captureOwned)
       await clean(async () => { if (!applicationClosed && application !== undefined) await application.close() })
       await clean(captureOwned)
