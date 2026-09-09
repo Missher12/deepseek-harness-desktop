@@ -20,6 +20,8 @@ A lifecycle test holds the loading page open and proves that ownership discovery
 
 The installed candidate returned HTTP 200 with a complete boot manifest on its owned random loopback port. Live before/after timing was not treated as comparative evidence because unrelated host processes saturated CPU during the measurement window.
 
+The [macOS native startup runner](../../../../apps/desktop/tests/macos-startup-scenarios.spec.ts) binds an owned read-only mounted artifact to its source and ASAR digests. Its outer clock records window observation, successful composer click actionability, keyboard response and onboarding independently of the application timeline. Each pristine profile must leave no owned process or listener and preserve its fixture bytes. The [summary](../../../../scripts/macos-desktop-startup-benchmark.ts) requires ten comparable samples; nearest-rank p95 is their maximum. Single samples and uncontrolled host load establish diagnostics, not a version-to-version speed improvement.
+
 ## Alternatives considered
 
 **Announce the loopback URL before the Loader tree settles.** This could show the Web shell sooner, but a sibling plugin may still fail after the URL is published. Desktop keeps the complete readiness signal truthful.

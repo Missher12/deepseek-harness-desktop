@@ -134,6 +134,8 @@ Windows 在原生系统生成 Setup 后运行：
   -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.5.4-win-x64.exe
 ```
 
+可选的 macOS 交互计时使用[原生启动测量器](tests/macos-startup-scenarios.spec.ts)。提供位于 `/private/tmp/dsh-macos-startup-mount-*` 的自有只读挂载目录，设置 `DSH_MACOS_STARTUP_EXECUTABLE`、已核验的 `DSH_MACOS_STARTUP_ASAR_SHA256` 与 `DSH_MACOS_STARTUP_SOURCE_SHA`，以及 `DSH_MACOS_STARTUP_REPETITIONS=1` 或 `10`。脱敏观测写入 `.artifacts/desktop-057-startup/fresh-*`；结果受[测量边界](../../.agents/notes/implemented/architecture/2026-08-18-overlapped-desktop-startup.zh.md)约束。
+
 成品测试使用仓库外的临时工作目录、临时 Electron 用户数据和临时 `DSH_HOME`。macOS 与 Windows 原生验收都会验证 preload、关闭偏好往返、后台保留时关闭隐藏且 Harness 继续运行、恢复窗口、普通与归档 Session ID 写入真实系统剪贴板且不打开／恢复／删除／发送／启动 Agent、对等会话发送／回复元数据、原生无卡片渲染与拒绝分支无副作用、Add 菜单、工作台移除状态、默认向下且可自适应翻转的思考滑块与 effort 持久化、Canvas 确实输出且小人物关闭、使用统计的全部 371 个颗粒与每日／每周／累积悬停语义、插件市场分类顺序稳定及分离后的搜索／筛选／分类几何、随机监听端口，以及原生退出后的完整进程回收。受保护自更新继续仅限 macOS，并在 Windows 上明确验证为不存在。工具级验收会另行证明双向 Agent 启动／回复行为、准确 receipt 绑定等待、协作停止与匹配回复拒绝；它不发起外部模型请求。Desktop staging 还要求 staged 树中有且只有一个 `dshmarket@1.10.1`，其源码、Client bundle 与 source map 的紧凑布局和分类轨道标记一致，Host 自保护标记存在，并强制检查不可变 Desktop patch、插件运行时 provider、内置 pnpm 入口及向导式安装器 include 确实进入成品。Windows UI 测试会依次操作可见的欢迎、目录、展开的进度／明细和完成页面；生命周期测试则验证相同功能行为，以及静默安装、快捷方式创建、真实剪贴板复制、卸载清理和数据保留。原生 Windows CI 会从包版本派生产物名、构建 Setup、运行两项测试、记录 SHA-256，并上传两个精确文件。
 
 本地产物没有签名。macOS 可能要求从 Finder 右键菜单选择“打开”，Windows SmartScreen 可能要求确认未知发布者；只有受信任的平台签名凭据才能消除这些系统提示。

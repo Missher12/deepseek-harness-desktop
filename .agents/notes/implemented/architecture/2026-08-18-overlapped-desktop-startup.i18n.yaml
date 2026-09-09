@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-18-overlapped-desktop-startup.md
-2026-08-18-overlapped-desktop-startup.md: 640d04d72e4640d12b53eb467fd6d28e3629c90f
-2026-08-18-overlapped-desktop-startup.zh.md: 86edaf0cf7e0495f0c1e0b9d62db6c0e932cf987
+2026-08-18-overlapped-desktop-startup.md: d936cb8b384b30b59d6b196a41b22a808d6d8821
+2026-08-18-overlapped-desktop-startup.zh.md: e22811cd9b5d24ba75035bff655ea686c7921f92
