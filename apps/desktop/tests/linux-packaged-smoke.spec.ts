@@ -7,6 +7,7 @@ import { _electron as electron, type ElectronApplication, type Page } from 'play
 import { describe, expect, it } from 'vitest'
 import { assertLinuxSandbox } from '../../../scripts/linux-desktop-sandbox.ts'
 import { runPackagedDesktopSmoke } from './packaged-smoke.ts'
+import { linuxDescendants as descendants, processAlive as alive } from './linux-writer-fixture.ts'
 
 const execFileAsync = promisify(execFile)
 const executable = process.env.DSH_LINUX_DESKTOP_EXECUTABLE
@@ -14,28 +15,6 @@ const evidenceRoot = process.env.DSH_LINUX_EVIDENCE_ROOT
 
 async function command(pid: number): Promise<string[]> {
   return (await readFile(`/proc/${String(pid)}/cmdline`, 'utf8')).split('\0').filter(Boolean)
-}
-
-async function descendants(pid: number): Promise<number[]> {
-  let children: string
-  try {
-    children = await readFile(`/proc/${String(pid)}/task/${String(pid)}/children`, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw error
-  }
-  const direct = children.trim().split(/\s+/u).filter(Boolean).map(Number)
-  return [...direct, ...(await Promise.all(direct.map(descendants))).flat()]
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false
-    throw error
-  }
 }
 
 async function verifyNativeSandbox(target: string): Promise<void> {

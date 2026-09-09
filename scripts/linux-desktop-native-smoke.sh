@@ -24,9 +24,17 @@ cleanup() {
   if [[ "$deb_installed" == true ]]; then sudo apt-get remove -y deepseek-harness; fi
 }
 trap cleanup EXIT
+run_linux_native_checks() {
+  # Separate owned phases: the simulated writer must be reaped before ordinary smoke.
+  for spec in linux-existing-writer.spec.ts linux-packaged-smoke.spec.ts; do
+    env -u NODE_PATH -u NODE_OPTIONS node node_modules/vitest/vitest.mjs run \
+      "apps/desktop/tests/$spec" --config vitest.config.ts
+  done
+}
 [[ "$(dpkg-deb -f "$deb" Package)" == deepseek-harness ]]
 [[ "$(dpkg-deb -f "$deb" Version)" == "$version" ]]
 [[ "$(dpkg-deb -f "$deb" Architecture)" == amd64 ]]
+dpkg-deb -f "$deb" Depends | tr ',' '\n' | grep -Eq '^[[:space:]]*lsof([[:space:]]|$)'
 sudo apt-get install -y "$deb"
 deb_installed=true
 desktop=/usr/share/applications/deepseek-harness.desktop
@@ -46,8 +54,7 @@ export DSH_LINUX_EVIDENCE_ROOT="$evidence/deb"
 landlock='/opt/DeepSeek Harness/resources/app.asar.unpacked/node_modules/@deepseek-ai/node-addon-landlock-run-linux-x64/bin/landlock-run'
 test -x "$landlock"
 "$landlock" --probe > "$evidence/landlock-probe.txt"
-env -u NODE_PATH -u NODE_OPTIONS node node_modules/vitest/vitest.mjs run \
-  apps/desktop/tests/linux-packaged-smoke.spec.ts --config vitest.config.ts
+run_linux_native_checks
 
 # Reinstall tests dpkg's upgrade maintainer-script path; neither reinstall nor
 # purge may remove the user's Harness settings, Sessions, or Electron profile.
@@ -77,8 +84,7 @@ export DSH_DESKTOP_SMOKE_DSH_HOME="$owned/appimage-profile/dsh-home"
 export DSH_DESKTOP_SMOKE_USER_DATA="$owned/appimage-profile/electron-data"
 export DSH_LINUX_DESKTOP_EXECUTABLE="$appimage"
 export DSH_LINUX_EVIDENCE_ROOT="$evidence/appimage"
-env -u NODE_PATH -u NODE_OPTIONS node node_modules/vitest/vitest.mjs run \
-  apps/desktop/tests/linux-packaged-smoke.spec.ts --config vitest.config.ts
+run_linux_native_checks
 if [[ "$policy_installed" == true ]]; then
   sudo bash scripts/linux-desktop-appimage-policy.sh remove "$appimage"
   policy_installed=false
@@ -111,6 +117,8 @@ await writeFile(join(process.env.RUNNER_TEMP, 'linux-native-evidence/candidate-e
   artifacts, display: 'X11/Xvfb', wayland: 'not-tested',
   sandbox: 'kernel-verified', provider: 'controlled-loopback',
   debLifecycle: 'passed', appImageLifecycle: 'passed',
+  existingWriter: 'real kernel and packaged Desktop with simulated writer; passed',
+  realExternalWebService: 'not-tested',
 }, null, 2) + '\n')
 NODE
 trap - EXIT

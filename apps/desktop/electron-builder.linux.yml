@@ -32,6 +32,7 @@ deb:
   packageName: deepseek-harness
   appArmorProfile: build/linux/apparmor-profile
   depends:
+    - lsof
     - libgtk-3-0
     - libnotify4
     - libnss3
