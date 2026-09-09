@@ -5,6 +5,17 @@ import { join } from 'node:path'
 import { isWindowsBootstrapReady } from '../src/update/windows-installer.ts'
 import type { WindowsUpdateSignal } from '../src/update/windows-signal.ts'
 
+/**
+ * Select the runner-owned temporary root for the native command's bounded path budget.
+ * @param environment Current runner environment, without mutating it.
+ * @param fallback OS temporary root for local execution outside Actions.
+ * @returns Parent directory for an atomically allocated, test-owned working directory.
+ */
+export function preflightTempRoot(environment: NodeJS.ProcessEnv, fallback: string): string {
+  const root = environment.RUNNER_TEMP
+  return root === undefined || root.length === 0 ? fallback : root
+}
+
 /** Separate outcomes; callers must not print the private original error object. */
 export interface PreflightResult {
   primary?: { error: unknown }

@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { createWindowsUpdateCommand, isWindowsBootstrapReady, stopWindowsUpdateWorker } from '../src/update/windows-installer.ts'
 import { createWindowsUpdateSignal, decideWindowsUpdateSignal, readWindowsUpdateSignal, WindowsUpdateDecision, type WindowsUpdateSignal } from '../src/update/windows-signal.ts'
 import { updatePayload } from './update-fixtures.ts'
-import { nativeUpdatePhases, observePreflightChild, readNativePhase, settlePreflight } from './windows-update-preflight.ts'
+import { nativeUpdatePhases, observePreflightChild, preflightTempRoot, readNativePhase, settlePreflight } from './windows-update-preflight.ts'
 
 const descriptor = {
   target: { platform: 'win32', arch: 'x64', packageFormat: 'nsis' } as const,
@@ -279,6 +279,23 @@ describe('Windows update bootstrap and independent worker', () => {
     expect(script).not.toContain('Write-Phase')
   })
 
+  it('keeps native runner preflight phase observations within the command budget', () => {
+    const temporary = 'C:\\Users\\runneradmin\\AppData\\Local\\Temp'
+    const root = preflightTempRoot({ RUNNER_TEMP: 'D:\\a\\_temp' }, temporary)
+    const stagingDirectory = root + '\\dsh-u-ABCDEF'
+    const plan = createWindowsUpdateCommand({ ...descriptor, stagingDirectory,
+      localPath: stagingDirectory + '\\' + descriptor.assetName }, {
+      parentPid: 12345, parentExecutable: stagingDirectory + '\\DeepSeek Harness.exe', systemRoot: 'C:\\Windows',
+      signal: { ...fixtureSignal, directory: stagingDirectory + '\\handoff-ABCDEF' },
+    })
+    const encoded = plan.args.at(-1)!
+    expect(encoded.length).toBeLessThanOrEqual(28_000)
+    expect(Buffer.from(encoded, 'base64').toString('utf16le').includes('function Write-Phase')).toBe(true)
+    expect(root).toBe('D:\\a\\_temp')
+    expect(preflightTempRoot({}, temporary)).toBe(temporary)
+    expect(preflightTempRoot({ RUNNER_TEMP: '' }, temporary)).toBe(temporary)
+  })
+
   it.skipIf(process.platform !== 'win32')('parses both the real bootstrap and nested worker with Windows PowerShell', async () => {
     const directory = await realpath(await mkdtemp(join(tmpdir(), 'dsh-update-parser-')))
     const plan = command(process.env)
@@ -325,8 +342,8 @@ if($failed){exit 1}
   })
 
   it.skipIf(process.platform !== 'win32')('validates the real payload, survives bootstrap exit and cancels the exact worker without running the inert Setup', async () => {
-    const requestedDirectory = await mkdtemp(join(tmpdir(), 'dsh-update-native-'))
-    const directory = await realpath(requestedDirectory)
+    const directory = await realpath(await mkdtemp(join(preflightTempRoot(process.env, tmpdir()), 'dsh-u-')))
+    let requestedDirectory: string | undefined
     let parent: ChildProcess | undefined
     let bootstrap: ChildProcess | undefined
     let worker: { pid: number; started: string } | undefined
@@ -362,9 +379,12 @@ if($failed){exit 1}
     const outcome = await settlePreflight(async () => {
       try {
         signal = await createWindowsUpdateSignal(directory)
+        // Preserve the OS tmpdir spelling check separately from the short command's working directory.
+        requestedDirectory = await mkdtemp(join(tmpdir(), 'dsh-update-native-'))
+        const canonicalRequestedDirectory = await realpath(requestedDirectory)
         const requestedInfo = await lstat(requestedDirectory, { bigint: true })
-        const canonicalInfo = await lstat(directory, { bigint: true })
-        const identity = { spellingChanged: requestedDirectory !== directory,
+        const canonicalInfo = await lstat(canonicalRequestedDirectory, { bigint: true })
+        const identity = { spellingChanged: requestedDirectory !== canonicalRequestedDirectory,
           sameFileId: requestedInfo.dev === canonicalInfo.dev && requestedInfo.ino === canonicalInfo.ino,
           isDirectory: requestedInfo.isDirectory(), isLink: requestedInfo.isSymbolicLink() }
         console.info('DSH_UPDATE_PATH_IDENTITY', JSON.stringify(identity))
@@ -464,6 +484,9 @@ if($failed){exit 1}
       { code: 'parent', run: async () => {
         if (bootstrap !== undefined && !cancelled && !workerStopped) throw new Error('PARENT_CLOSE_UNSAFE')
         await parentObservation?.stop()
+      } },
+      { code: 'alias-files', run: async () => {
+        if (requestedDirectory !== undefined) await rm(requestedDirectory, { recursive: true, force: true })
       } },
     ])
     const native = await publicPhases()
