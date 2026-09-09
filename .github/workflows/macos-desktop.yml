@@ -1,42 +1,46 @@
 name: macOS Desktop DMG
 
+# Diagnosis-only branch. Never merge this replacement workflow into the product.
 on:
-  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: macos-desktop-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: macos-sidebar-diag-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   DSH_TELEMETRY_DISABLED: '1'
 
 jobs:
   build-native-smoke:
-    name: Intel build and native lifecycle
+    name: Intel historical-package sidebar diagnosis (not release acceptance)
+    if: github.ref == 'refs/heads/codex/desktop-0.5.7-mac-sidebar-diag'
     runs-on: macos-15-intel
-    timeout-minutes: 60
+    timeout-minutes: 15
     defaults:
       run:
         shell: bash
-    env:
-      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
 
-      - name: Verify exact source and Intel runner
-        id: source
+      - name: Verify frozen product and historical helper parity
         run: |
-          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
           [[ "$(uname -m)" == "x86_64" ]]
-          echo "sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+          git merge-base --is-ancestor 7f544cd31c43f239c09c3a209ae0d05fe677c710 HEAD
+          git diff --exit-code ba93a61a69e3a236c2f84e8fab4299285168035b 7f544cd31c43f239c09c3a209ae0d05fe677c710 -- \
+            apps/desktop/src apps/desktop/extensions apps/web/src packages \
+            apps/desktop/tests/packaged-smoke.ts apps/desktop/tests/turn-navigation-viewport.ts
+          git diff --exit-code 7f544cd31c43f239c09c3a209ae0d05fe677c710 HEAD -- \
+            apps/desktop/src apps/desktop/extensions apps/web/src packages \
+            apps/desktop/tests/packaged-smoke.ts apps/desktop/tests/turn-navigation-viewport.ts
+          git diff --quiet HEAD --
 
       - uses: pnpm/action-setup@v4
         with:
@@ -47,201 +51,43 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Resolve candidate metadata
-        id: desktop
-        run: |
-          version=$(node -p "require('./apps/desktop/package.json').version")
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "artifact=DeepSeek-Harness-$version-mac-x64.dmg" >> "$GITHUB_OUTPUT"
-
-      - name: Install immutable dependencies
+      - name: Install only the existing test driver dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build the Intel macOS DMG
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
-        run: pnpm run desktop:dmg
-
-      - name: Restore host Node ABI without changing packaged bytes
-        env:
-          ARTIFACT: ${{ steps.desktop.outputs.artifact }}
+      - name: Load host fixture native dependency (never rebuild the app)
         run: |
-          env -u NODE_PATH -u NODE_OPTIONS node --input-type=module <<'NODE'
-          import assert from 'node:assert/strict'
-          import { createHash } from 'node:crypto'
-          import { spawnSync } from 'node:child_process'
-          import { createReadStream } from 'node:fs'
-          import { readdir, realpath } from 'node:fs/promises'
+          node --input-type=module <<'NODE'
           import { createRequire } from 'node:module'
-          import { dirname, join, resolve, sep } from 'node:path'
-
-          const resources = 'apps/desktop/release/mac/DeepSeek Harness.app/Contents/Resources'
-          const unpacked = join(resources, 'app.asar.unpacked')
-          async function fingerprint() {
-            const native = (await readdir(unpacked, { recursive: true }))
-              .filter(name => name.endsWith('.node')).sort()
-            assert(native.length > 0, 'Packaged native binaries are missing')
-            const files = [
-              join('apps/desktop/release', process.env.ARTIFACT),
-              join(resources, 'app.asar'),
-              ...native.map(name => join(unpacked, name)),
-            ]
-            return Promise.all(files.map(async file => {
-              const hash = createHash('sha256')
-              for await (const chunk of createReadStream(file)) hash.update(chunk)
-              return [file, hash.digest('hex')]
-            }))
-          }
-
-          const fixtureRequire = createRequire(resolve('packages/session/session-persistence-jsonl/package.json'))
-          const manifest = await realpath(fixtureRequire.resolve('fs-ext/package.json'))
-          const fsExtDir = dirname(manifest)
-          const nodeGyp = await realpath(createRequire(manifest).resolve('node-gyp/bin/node-gyp.js'))
-          const rootModules = resolve('node_modules') + sep
-          assert(fsExtDir.startsWith(rootModules), 'fs-ext is outside root node_modules')
-          assert(nodeGyp.startsWith(rootModules), 'node-gyp is outside root node_modules')
-          assert.equal(process.versions.electron, undefined, 'Host rebuild requires plain Node')
-
-          const env = { ...process.env }
-          const hostOverrides = new Set([
-            'target', 'runtime', 'disturl', 'dist-url', 'nodedir', 'devdir',
-            'debug', 'arch', 'target-arch', 'target-platform', 'directory', 'tarball',
-          ])
-          for (const key of Object.keys(env)) {
-            const prefix = /^(?:npm_config_|npm_package_config_node_gyp_)/i
-            if (prefix.test(key) && hostOverrides.has(
-              key.replace(prefix, '').replaceAll('_', '-').toLowerCase(),
-            )) delete env[key]
-          }
-          delete env.NODE_OPTIONS
-          delete env.NODE_PATH
-
-          const before = await fingerprint()
-          const rebuilt = spawnSync(process.execPath, [
-            nodeGyp, 'rebuild', '--release',
-            '--target=' + process.versions.node, '--arch=' + process.arch,
-          ], { cwd: fsExtDir, env, stdio: 'inherit' })
-          if (rebuilt.error) throw rebuilt.error
-          assert.equal(rebuilt.status, 0, 'Host fs-ext rebuild failed')
-          assert.deepEqual(await fingerprint(), before, 'Packaged bytes changed during host rebuild')
-          fixtureRequire('fs-ext')
-          console.log('Host fs-ext loaded; ABI=' + process.versions.modules + '; packaged bytes unchanged')
+          const require = createRequire(new URL('./packages/session/session-persistence-jsonl/package.json', 'file://' + process.cwd() + '/'))
+          require('fs-ext')
+          console.log('Host fs-ext ready; ABI=' + process.versions.modules)
           NODE
 
-      - name: Exercise the packaged application
+      - name: Read exactly one known historical candidate artifact
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: '10097278922'
+          run-id: '34332886003'
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/macos-sidebar-historical
+          merge-multiple: true
+
+      - name: Diagnose one original sidebar preparation and up to three independent resizes
+        env:
+          DSH_MACOS_SIDEBAR_DIAGNOSTIC_DMG: ${{ runner.temp }}/macos-sidebar-historical/DeepSeek-Harness-0.5.7-mac-x64.dmg
+          DSH_MACOS_SIDEBAR_DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/macos-sidebar-diagnostic
         run: |
-          test -x 'apps/desktop/release/mac/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness'
           env -u NODE_PATH -u NODE_OPTIONS node node_modules/vitest/vitest.mjs run \
-            apps/desktop/tests/packaged-smoke.spec.ts --config vitest.config.ts
+            apps/desktop/tests/macos-sidebar-diagnostic.spec.ts --config vitest.config.ts
 
-      - name: Verify the disk image and record SHA-256
-        env:
-          ARTIFACT: ${{ steps.desktop.outputs.artifact }}
-        run: |
-          hdiutil verify "apps/desktop/release/$ARTIFACT"
-          cd apps/desktop/release
-          shasum -a 256 "$ARTIFACT" > "$ARTIFACT.sha256"
-          shasum -a 256 -c "$ARTIFACT.sha256"
-
-      - name: Exercise mounted visuals at 100 and 150 percent
-        env:
-          ARTIFACT: ${{ steps.desktop.outputs.artifact }}
-          EXPECTED_VERSION: ${{ steps.desktop.outputs.version }}
-        run: |
-          mountpoint="$RUNNER_TEMP/dsh-macos-candidate-mount"
-          mkdir -p "$mountpoint"
-          hdiutil attach -readonly -nobrowse -noautoopen \
-            -mountpoint "$mountpoint" "apps/desktop/release/$ARTIFACT"
-          cleanup_mount() { hdiutil detach "$mountpoint" >/dev/null; }
-          trap cleanup_mount EXIT
-          app="$mountpoint/DeepSeek Harness.app"
-          executable="$app/Contents/MacOS/DeepSeek Harness"
-          test -x "$executable"
-          [[ "$(lipo -archs "$executable")" == "x86_64" ]]
-          [[ "$(plutil -extract CFBundleShortVersionString raw -o - "$app/Contents/Info.plist")" == "$EXPECTED_VERSION" ]]
-          [[ "$(plutil -extract CFBundleIdentifier raw -o - "$app/Contents/Info.plist")" == "ai.deepseek.harness.desktop" ]]
-          cmp "$app/Contents/Resources/app.asar" \
-            'apps/desktop/release/mac/DeepSeek Harness.app/Contents/Resources/app.asar'
-          DSH_MACOS_DESKTOP_EXECUTABLE="$executable" \
-          DSH_MACOS_VISUAL_EVIDENCE_ROOT="$RUNNER_TEMP/macos-native-evidence/visual" \
-            env -u NODE_PATH -u NODE_OPTIONS node node_modules/vitest/vitest.mjs run \
-              apps/desktop/tests/macos-native-visual-smoke.spec.ts --config vitest.config.ts
-          cleanup_mount
-          trap - EXIT
-
-      - name: Bind bounded native evidence to source and artifact
-        env:
-          ARTIFACT: ${{ steps.desktop.outputs.artifact }}
-        run: |
-          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
-          git diff --quiet HEAD --
-          node --import tsx --input-type=module <<'NODE'
-          import { createReadStream } from 'node:fs'
-          import { lstat, readFile, readdir, writeFile } from 'node:fs/promises'
-          import { createHash } from 'node:crypto'
-          import { join } from 'node:path'
-          import { assertPortableMacEvidence } from './scripts/macos-desktop-runtime-evidence.ts'
-          const root = join(process.env.RUNNER_TEMP, 'macos-native-evidence')
-          const visual = join(root, 'visual')
-          const digest = async (file) => {
-            const hash = createHash('sha256')
-            for await (const chunk of createReadStream(file)) hash.update(chunk)
-            return hash.digest('hex')
-          }
-          for (const scale of [100, 150]) {
-            const summary = JSON.parse(await readFile(join(visual, 'native-visual-' + scale + '.json'), 'utf8'))
-            if (summary.scalePercent !== scale || summary.sharedFeatureSmoke !== 'passed'
-              || summary.processTreeRemaining !== 0) throw new Error('Native visual acceptance is incomplete')
-          }
-          const names = (await readdir(visual)).sort()
-          if (names.length > 64) throw new Error('Native evidence file count exceeds its bound')
-          const files = []
-          let totalBytes = 0
-          for (const name of names) {
-            if (!/^(?:native-visual-(?:100|150)\.json|desktop-smoke-[a-z0-9-]+-darwin-(?:100|150)\.(?:json|png))$/u.test(name)) {
-              throw new Error('Unexpected native evidence file')
-            }
-            const file = join(visual, name)
-            const info = await lstat(file)
-            totalBytes += info.size
-            if (!info.isFile() || info.size > 8 * 1024 * 1024 || totalBytes > 64 * 1024 * 1024) {
-              throw new Error('Native evidence size or file type is invalid')
-            }
-            if (name.endsWith('.json')) assertPortableMacEvidence(JSON.parse(await readFile(file, 'utf8')))
-            files.push({ name, bytes: info.size, sha256: await digest(file) })
-          }
-          const artifact = join('apps/desktop/release', process.env.ARTIFACT)
-          const metadata = JSON.parse(await readFile('apps/desktop/update-metadata.json', 'utf8'))
-          const evidence = {
-            schemaVersion: 1,
-            candidateRevision: process.env.CANDIDATE_SHA,
-            platform: 'darwin-x64',
-            desktopVersion: metadata.desktopVersion,
-            harnessVersion: metadata.harnessVersion,
-            artifact: { name: process.env.ARTIFACT, bytes: (await lstat(artifact)).size, sha256: await digest(artifact) },
-            appAsarSha256: await digest('apps/desktop/release/mac/DeepSeek Harness.app/Contents/Resources/app.asar'),
-            visuals: files,
-          }
-          assertPortableMacEvidence(evidence)
-          await writeFile(join(root, 'candidate-evidence.json'), JSON.stringify(evidence, null, 2) + '\n')
-          NODE
-
-      - uses: actions/upload-artifact@v7
+      - name: Preserve bounded diagnosis even when the original assertion fails
+        if: always()
+        uses: actions/upload-artifact@v7
         with:
-          name: DeepSeek-Harness-mac-x64-${{ steps.desktop.outputs.version }}-${{ steps.source.outputs.sha }}
+          name: macOS-sidebar-diagnostic-${{ github.sha }}
           path: |
-            apps/desktop/release/${{ steps.desktop.outputs.artifact }}
-            apps/desktop/release/${{ steps.desktop.outputs.artifact }}.sha256
+            ${{ runner.temp }}/macos-sidebar-diagnostic/diagnostic.json
+            ${{ runner.temp }}/macos-sidebar-diagnostic/cleanup.json
+            ${{ runner.temp }}/macos-sidebar-diagnostic/sidebar.png
           if-no-files-found: error
-          retention-days: 14
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: macOS-native-evidence-${{ steps.source.outputs.sha }}
-          path: |
-            ${{ runner.temp }}/macos-native-evidence/candidate-evidence.json
-            ${{ runner.temp }}/macos-native-evidence/visual/*.json
-            ${{ runner.temp }}/macos-native-evidence/visual/*.png
-          if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
