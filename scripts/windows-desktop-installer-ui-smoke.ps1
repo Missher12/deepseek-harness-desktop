@@ -2,7 +2,9 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$SetupPath,
   [string]$EvidenceRoot = 'apps/desktop/release/windows-installer-ui-evidence',
-  [switch]$ExpectBlankDetails
+  [switch]$ExpectBlankDetails,
+  [int]$HandoffHelperId = 0,
+  [int]$HandoffParentId = 0
 )
 
 Set-StrictMode -Version Latest
@@ -459,8 +461,118 @@ function Wait-PathRemoved {
   }
 }
 
+function Test-HandoffSetupIdentity {
+  param($Process, [int]$HelperId, [string]$ExpectedPath, [datetime]$ReadyAt)
+  return $null -ne $Process -and $HelperId -gt 0 -and
+    $Process.ParentProcessId -eq $HelperId -and
+    $Process.ExecutablePath -ieq $ExpectedPath -and
+    $Process.CreationDate.ToUniversalTime() -ge $ReadyAt
+}
+
+function Observe-UpdateHandoff {
+  param([string]$ResolvedSetup, [string]$ResolvedEvidenceRoot)
+
+  # The caller started the production helper against the real installed main
+  # PID. Attach only: this branch must never start Setup or press Install.
+  $helper = Get-CimInstance Win32_Process -Filter "ProcessId = $HandoffHelperId"
+  $parent = Get-CimInstance Win32_Process -Filter "ProcessId = $HandoffParentId"
+  $expectedHelper = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+  if ($null -eq $helper -or $helper.ExecutablePath -ine $expectedHelper -or
+      $null -eq $parent -or [IO.Path]::GetFileName($parent.ExecutablePath) -cne 'DeepSeek Harness.exe') {
+    throw 'Handoff observer requires the owned waiting helper and a live installed parent.'
+  }
+  $readyAt = [DateTime]::UtcNow
+  $setup = $null
+  $handoffStage = 'waiting-for-setup'
+  try {
+    [Console]::Out.WriteLine('DSH_HANDOFF_OBSERVER_READY')
+    [Console]::Out.Flush()
+    $deadline = $readyAt.AddSeconds(90)
+    while ([DateTime]::UtcNow -lt $deadline) {
+      $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $HandoffHelperId" |
+        Where-Object { Test-HandoffSetupIdentity $_ $HandoffHelperId $ResolvedSetup $readyAt })
+      if ($children.Count -gt 1) { throw 'The updater started duplicate Setup processes.' }
+      if ($children.Count -eq 1) {
+        if ($null -ne (Get-Process -Id $HandoffParentId -ErrorAction SilentlyContinue)) {
+          throw 'Setup started before the installed parent exited.'
+        }
+        $script:InstallerProcessId = [int]$children[0].ProcessId
+        $setup = [Diagnostics.Process]::GetProcessById($script:InstallerProcessId)
+        # Private bounded control channel, never a public artifact. Persist the
+        # identity before a fast Cancel can make it disappear between inventories.
+        $identity = [ordered]@{
+          ProcessId = $script:InstallerProcessId
+          ParentProcessId = $HandoffHelperId
+          Created = $children[0].CreationDate.ToUniversalTime().ToString('o')
+        }
+        [Console]::Out.WriteLine('DSH_HANDOFF_SETUP ' + ($identity | ConvertTo-Json -Compress))
+        [Console]::Out.Flush()
+        break
+      }
+      Start-Sleep -Milliseconds 100
+    }
+    if ($null -eq $setup) { throw 'The production helper did not start its owned Setup.' }
+    $handoffStage = 'waiting-for-welcome'
+    $window = Wait-InstallerPage -Pattern 'Welcome to DeepSeek Harness Setup'
+    $handoffStage = 'capturing-welcome'
+    Save-RedactedInstallerScreenshot -Window $window `
+      -Path (Join-Path $ResolvedEvidenceRoot 'handoff-welcome.png')
+    $handoffStage = 'controlled-cancel'
+    Invoke-InstallerButton -Window $window -NamePattern '^Cancel$'
+    $cancelDeadline = [DateTime]::UtcNow.AddSeconds(30)
+    $confirmed = $false
+    while (-not $setup.HasExited -and [DateTime]::UtcNow -lt $cancelDeadline) {
+      # MUI_ABORTWARNING may ask for Yes. Only this Setup's modal dialog is
+      # eligible; neither a desktop-wide Yes nor a synthetic process kill is cancellation.
+      if (-not $confirmed) {
+        $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+          [System.Windows.Automation.TreeScope]::Children,
+          [System.Windows.Automation.Condition]::TrueCondition)
+        foreach ($dialog in $windows) {
+          if ($dialog.Current.ProcessId -ne $script:InstallerProcessId) { continue }
+          $text = Get-AutomationText -Element $dialog
+          if ($text -notmatch 'quit.*Setup|exit.*Setup|cancel.*Setup') { continue }
+          $yes = Find-Control -Element $dialog -ControlType ([System.Windows.Automation.ControlType]::Button) -NamePattern '^&?Yes$'
+          if ($null -ne $yes) {
+            $yes.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+            $confirmed = $true
+            break
+          }
+        }
+      }
+      Start-Sleep -Milliseconds 100
+    }
+    if (-not $setup.HasExited) { throw 'Setup did not exit after controlled cancellation.' }
+    # Require the observed Cancel and a normal bootstrap exit, never a kill.
+    if ($setup.ExitCode -notin @(0, 1)) { throw 'Setup failed instead of cancelling normally.' }
+    if ($null -ne (Get-InstallerWindow)) { throw 'The cancelled Setup window remained visible.' }
+    [Console]::Out.WriteLine('DSH_HANDOFF_CANCELLED')
+  }
+  catch {
+    # Never forward UI text or machine paths from the generic observer errors.
+    [Console]::Out.WriteLine("DSH_HANDOFF_FAILED $handoffStage")
+    [Console]::Out.Flush()
+    throw "Native update handoff observation failed ($handoffStage)."
+  }
+  finally {
+    if ($null -ne $setup) {
+      if (-not $setup.HasExited) {
+        $setup.Kill($true)
+        if (-not $setup.WaitForExit(10000)) { throw 'Owned Setup cleanup did not finish.' }
+      }
+      $setup.Dispose()
+    }
+  }
+}
+
 $resolvedSetup = (Resolve-Path -LiteralPath $SetupPath).Path
 $resolvedEvidenceRoot = [System.IO.Path]::GetFullPath($EvidenceRoot)
+if ($HandoffHelperId -gt 0) {
+  if ($HandoffParentId -le 0 -or $ExpectBlankDetails) { throw 'Invalid handoff observation mode.' }
+  Observe-UpdateHandoff -ResolvedSetup $resolvedSetup -ResolvedEvidenceRoot $resolvedEvidenceRoot
+  return
+}
+if ($HandoffParentId -ne 0 -or $HandoffHelperId -ne 0) { throw 'Invalid handoff identity.' }
 $smokeId = [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $temporaryRoot = Join-Path $env:RUNNER_TEMP "dsh-installer-ui-$smokeId"
 $requestedInstallRoot = $temporaryRoot

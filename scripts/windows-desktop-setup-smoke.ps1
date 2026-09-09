@@ -519,6 +519,21 @@ try {
       throw 'Packaged smoke did not preserve the recovered legacy module fallback files.'
     }
 
+    # Same built Setup, same isolated installed application; enter at the
+    # production native command layer, not a fabricated future update bridge.
+    $env:DSH_WINDOWS_UPDATE_HANDOFF = '1'
+    $env:DSH_WINDOWS_UPDATE_SETUP = $resolvedSetup
+    $env:DSH_WINDOWS_UPDATE_SETUP_SHA256 = (Get-FileHash -LiteralPath $resolvedSetup -Algorithm SHA256).Hash.ToLowerInvariant()
+    try {
+      & pnpm exec vitest run apps/desktop/tests/windows-update-handoff-smoke.spec.ts --config vitest.config.ts
+      if ($LASTEXITCODE -ne 0) { throw 'Installed Windows update handoff smoke failed.' }
+    }
+    finally {
+      Remove-Item Env:DSH_WINDOWS_UPDATE_HANDOFF -ErrorAction SilentlyContinue
+      Remove-Item Env:DSH_WINDOWS_UPDATE_SETUP -ErrorAction SilentlyContinue
+      Remove-Item Env:DSH_WINDOWS_UPDATE_SETUP_SHA256 -ErrorAction SilentlyContinue
+    }
+
     $powerShell = (Get-Process -Id $PID).Path
     $visualSmoke = './scripts/windows-desktop-native-visual-smoke.ps1'
     foreach ($dpiPercent in @(100, 150)) {

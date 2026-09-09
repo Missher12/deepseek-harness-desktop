@@ -18,6 +18,60 @@ function observedInstallation() {
   }
 }
 
+describe('helper-launched installer observation', () => {
+  it('attaches before the normal direct-install entry without starting Setup or advancing installation', () => {
+    const source = readFileSync(new URL('./windows-desktop-installer-ui-smoke.ps1', import.meta.url), 'utf8')
+    const start = source.indexOf('function Observe-UpdateHandoff')
+    const end = source.indexOf('$resolvedSetup =', start)
+    expect(start).toBeGreaterThan(0)
+    const observer = source.slice(start, end)
+    expect(observer).toContain('DSH_HANDOFF_OBSERVER_READY')
+    expect(observer).toContain('ParentProcessId')
+    expect(observer).toContain('ExecutablePath')
+    expect(observer).toContain('Test-HandoffSetupIdentity $_ $HandoffHelperId $ResolvedSetup $readyAt')
+    expect(source).toContain('$Process.CreationDate.ToUniversalTime() -ge $ReadyAt')
+    expect(observer).toContain('Save-RedactedInstallerScreenshot')
+    expect(observer).toContain("-NamePattern '^Cancel$'")
+    expect(observer).not.toMatch(/Start-Process|ProcessStartInfo|-NamePattern '\^?(?:Install|Next|Finish)/u)
+    expect(source).toContain('Observe-UpdateHandoff -ResolvedSetup $resolvedSetup')
+    expect(source).toContain('[int]$HandoffHelperId = 0')
+    expect(source).toContain('[int]$HandoffParentId = 0')
+    const entry = source.indexOf('if ($HandoffHelperId -gt 0)')
+    expect(entry).toBeLessThan(source.indexOf('$smokeId ='))
+    expect(source.slice(entry, source.indexOf('$smokeId ='))).toContain('return')
+  })
+
+  it.skipIf(process.platform !== 'win32')('rejects foreign parents, paths and stale Setup creation times with native PowerShell', () => {
+    const script = `
+      $ErrorActionPreference = 'Stop'
+      $tokens=$null; $errors=$null
+      $ast=[System.Management.Automation.Language.Parser]::ParseFile($env:DSH_OBSERVER_SOURCE,[ref]$tokens,[ref]$errors)
+      if($errors.Count){throw 'Observer parse failed.'}
+      $definition=$ast.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-HandoffSetupIdentity'},$true)
+      . ([scriptblock]::Create($definition.Extent.Text))
+      $ready=[datetime]'2026-09-09T00:00:00Z'
+      $path='C:\\owned\\DeepSeek-Harness-Setup-0.5.7-win-x64.exe'
+      $row=[pscustomobject]@{ParentProcessId=123;ExecutablePath=$path;CreationDate=$ready.AddSeconds(1)}
+      $results=@()
+      $results += Test-HandoffSetupIdentity $row 123 $path $ready
+      $results += Test-HandoffSetupIdentity $row 124 $path $ready
+      $results += Test-HandoffSetupIdentity $row 123 ($path+'.other.exe') $ready
+      $results += Test-HandoffSetupIdentity $row 123 $path ($ready.AddSeconds(2))
+      $results += Test-HandoffSetupIdentity $row 0 $path $ready
+      $results += Test-HandoffSetupIdentity $null 123 $path $ready
+      $results | ConvertTo-Json -Compress
+    `
+    const result = spawnSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
+      env: { ...process.env, DSH_OBSERVER_SOURCE: fileURLToPath(new URL('./windows-desktop-installer-ui-smoke.ps1', import.meta.url)) },
+      encoding: 'utf8', timeout: 30_000,
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.signal).toBeNull()
+    expect(result.status).toBe(0)
+    expect(JSON.parse(result.stdout)).toEqual([true, false, false, false, false, false])
+  })
+})
+
 describe('native installer progress observations', () => {
   it('accepts changing native progress with populated details before completion', () => {
     expect(summarizeInstallerProgress(observedInstallation())).toEqual({
