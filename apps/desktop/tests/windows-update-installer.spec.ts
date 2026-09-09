@@ -40,7 +40,7 @@ function preflightDiagnostics(output: Buffer, stdoutBytes: number, stderrBytes: 
 }
 
 async function collectLaunchProbe(executable: string, args: string[], env: NodeJS.ProcessEnv,
-  detached: boolean, windowsHide = true) {
+  detached: boolean, windowsHide = true, owner?: { child?: ChildProcess }) {
   const start = () => spawn(executable, args, {
     detached, shell: false, windowsHide, stdio: ['ignore', 'pipe', 'pipe'], env,
   })
@@ -50,6 +50,7 @@ async function collectLaunchProbe(executable: string, args: string[], env: NodeJ
     return { stdoutBytes: 0, stderrBytes: 0, retainedBytes: 0, entered: false, completed: false,
       timedOut: false, spawnError: true, closed: true, exitCode: null, signal: null }
   }
+  if (owner !== undefined) owner.child = child
   let output = Buffer.alloc(0)
   let stdoutBytes = 0
   let stderrBytes = 0
@@ -89,8 +90,11 @@ async function collectLaunchProbe(executable: string, args: string[], env: NodeJ
 
 describe('native launch probe collector', () => {
   it('drains a real process through close and recognizes both fixed script milestones', async () => {
+    const owner: { child?: ChildProcess } = {}
     const result = await collectLaunchProbe(process.execPath,
-      ['-e', "process.stdout.write('DSH_PROBE_ENTER\\nDSH_PROBE_EXIT\\n')"], {}, false)
+      ['-e', "process.stdout.write('DSH_PROBE_ENTER\\nDSH_PROBE_EXIT\\n')"], {}, false, true, owner)
+    expect(owner.child?.pid).toBeTypeOf('number')
+    expect(owner.child?.exitCode).toBe(0)
     expect(result).toEqual({ stdoutBytes: 31, stderrBytes: 0, retainedBytes: 31,
       entered: true, completed: true, timedOut: false, spawnError: false,
       closed: true, exitCode: 0, signal: null })
@@ -215,6 +219,102 @@ describe('Windows update handoff command', () => {
     expect(evidence.every(item => item.closed && !item.spawnError)).toBe(true)
     expect(evidence[0]).toMatchObject({ entered: true, completed: true, enteredOnDisk: true,
       completedOnDisk: true, timedOut: false, exitCode: 0, signal: null })
+  }, 30_000)
+
+  it.skipIf(process.platform !== 'win32')('probes one detached system console host with an observed PowerShell child and no installer', async () => {
+    const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT ?? 'C:\\Windows'
+    const plan = createWindowsUpdateCommand(descriptor, {
+      parentPid: process.pid, parentExecutable: 'C:\\Fixture\\DeepSeek Harness.exe', systemRoot, environment: process.env,
+    })
+    const host = join(systemRoot, 'System32', 'conhost.exe')
+    const directory = await mkdtemp(join(tmpdir(), 'dsh-conhost-probe-'))
+    const marker = join(directory, 'identity.json')
+    const owner: { child?: ChildProcess } = {}
+    const data = Buffer.from(JSON.stringify({ marker, host, worker: plan.executable })).toString('base64')
+    const script = `
+$ErrorActionPreference='Stop'
+try {
+  $c=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')) | ConvertFrom-Json
+  $self=[Diagnostics.Process]::GetCurrentProcess()
+  $row=Get-CimInstance Win32_Process -Filter ("ProcessId = " + $PID)
+  $parent=[Diagnostics.Process]::GetProcessById($row.ParentProcessId)
+  $record=[ordered]@{pid=$PID; parentPid=$row.ParentProcessId; started=$self.StartTime.ToUniversalTime().Ticks.ToString(); parentStarted=$parent.StartTime.ToUniversalTime().Ticks.ToString(); workerPathMatches=($self.MainModule.FileName -ieq $c.worker); parentPathMatches=($parent.MainModule.FileName -ieq $c.host); entered=$true; completed=$false}
+  [IO.File]::WriteAllText($c.marker,($record | ConvertTo-Json -Compress))
+  [Console]::Out.WriteLine('DSH_PROBE_ENTER'); [Console]::Out.Flush()
+  [Threading.Thread]::Sleep(250)
+  $record.completed=$true
+  [IO.File]::WriteAllText($c.marker,($record | ConvertTo-Json -Compress))
+  [Console]::Out.WriteLine('DSH_PROBE_EXIT'); [Console]::Out.Flush()
+  exit 0
+} catch { exit 1 }
+`
+    let result: Awaited<ReturnType<typeof collectLaunchProbe>> | undefined
+    let childIdentityMatched = false
+    let enteredOnDisk = false
+    let completedOnDisk = false
+    let cleanupVerified = false
+    try {
+      result = await collectLaunchProbe(host, ['--headless', plan.executable, '-NoLogo', '-NoProfile',
+        '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand',
+        Buffer.from(script, 'utf16le').toString('base64')], plan.env, true, true, owner)
+      const content = await readFile(marker, 'utf8').catch((error: unknown) => {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return ''
+        throw new Error('Cannot read owned console-host evidence.')
+      })
+      if (content !== '') {
+        const record = JSON.parse(content) as Record<string, unknown>
+        childIdentityMatched = Number.isSafeInteger(record.pid) && Number(record.pid) > 0
+          && record.parentPid === owner.child?.pid && record.workerPathMatches === true && record.parentPathMatches === true
+          && typeof record.started === 'string' && /^\d+$/u.test(record.started)
+          && typeof record.parentStarted === 'string' && /^\d+$/u.test(record.parentStarted)
+          && BigInt(record.started) >= BigInt(record.parentStarted)
+        enteredOnDisk = record.entered === true
+        completedOnDisk = record.completed === true
+      }
+    } finally {
+      if (owner.child?.pid !== undefined) {
+        // The fixed script creates exactly one PowerShell child. Its private
+        // kernel identity fences cleanup; unknown children are never killed.
+        const cleanup = `
+$ErrorActionPreference='Stop'
+try {
+  $c=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')) | ConvertFrom-Json
+  $rootId=${owner.child.pid}
+  if ([IO.File]::Exists($c.marker)) {
+    $r=[IO.File]::ReadAllText($c.marker) | ConvertFrom-Json
+    if ($r.parentPid -ne $rootId -or !$r.workerPathMatches -or !$r.parentPathMatches -or $r.pid -le 0 -or [long]$r.started -lt [long]$r.parentStarted) { throw 'Unknown probe identity' }
+    $row=Get-CimInstance Win32_Process -Filter ("ProcessId = " + $r.pid)
+    if ($null -ne $row) {
+      $p=[Diagnostics.Process]::GetProcessById($r.pid)
+      try {
+        [void]$p.Handle
+        if ($row.ParentProcessId -ne $rootId -or $p.MainModule.FileName -ine $c.worker -or $p.StartTime.ToUniversalTime().Ticks.ToString() -cne $r.started) { throw 'Changed probe identity' }
+        $p.Kill(); if (!$p.WaitForExit(5000)) { throw 'Probe cleanup incomplete' }
+      } finally { $p.Dispose() }
+    }
+  }
+  if (@(Get-CimInstance Win32_Process -Filter ("ParentProcessId = " + $rootId)).Count -ne 0) { throw 'Unknown surviving probe child' }
+  [Console]::Out.WriteLine('DSH_PROBE_CLEAN')
+} catch { exit 1 }
+`
+        const stopped = spawnSync(plan.executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand',
+          Buffer.from(cleanup, 'utf16le').toString('base64')], {
+          shell: false, windowsHide: true, env: plan.env, encoding: 'utf8', timeout: 15_000, maxBuffer: 1024,
+        })
+        cleanupVerified = stopped.error === undefined && stopped.status === 0 && stopped.signal === null
+          && /^DSH_PROBE_CLEAN\r?\n$/u.test(stopped.stdout)
+      } else {
+        cleanupVerified = result?.spawnError === true
+      }
+      console.log('DSH_UPDATE_CONHOST_PROBE', JSON.stringify({ ...result,
+        childIdentityMatched, enteredOnDisk, completedOnDisk, cleanupVerified }))
+      if (cleanupVerified) await rm(directory, { recursive: true, force: true })
+    }
+    expect(cleanupVerified).toBe(true)
+    expect(childIdentityMatched).toBe(true)
+    expect(enteredOnDisk && completedOnDisk).toBe(true)
+    expect(result).toMatchObject({ entered: true, completed: true, timedOut: false,
+      spawnError: false, closed: true, exitCode: 0, signal: null })
   }, 30_000)
 
   it.skipIf(process.platform !== 'win32')('natively validates the retained payload and waits for its exact parent without launching an installer', async () => {
