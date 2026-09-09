@@ -8,6 +8,10 @@ import { createWindowsUpdateSignal, readWindowsUpdateSignal, WindowsUpdateDecisi
 
 const execFileAsync = promisify(execFile)
 
+// Import only manifests shipped beside the fixed system PowerShell executable.
+const utilityModule = String.raw`Microsoft.PowerShell.Core\Import-Module "$PSHOME\Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1"`
+const managementModule = String.raw`Microsoft.PowerShell.Core\Import-Module "$PSHOME\Modules\Microsoft.PowerShell.Management\Microsoft.PowerShell.Management.psd1"`
+
 /**
  * Stop only the verified worker through a retained kernel handle; an absent worker is already stopped.
  * @param worker Exact PID and creation ticks from the verified bootstrap receipt.
@@ -20,7 +24,9 @@ export async function stopWindowsUpdateWorker(worker: WindowsUpdateWorker, syste
   const data = Buffer.from(JSON.stringify(worker)).toString('base64')
   const source = `
 $ErrorActionPreference = 'Stop'
+$PSModuleAutoLoadingPreference = 'None'
 try {
+  ${utilityModule}
   $r = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')) | ConvertFrom-Json
   try { $p = [Diagnostics.Process]::GetProcessById($r.pid) }
   catch [ArgumentException] { exit 0 }
@@ -112,8 +118,11 @@ function Write-Phase($n,$p) {
   // Only base64 data is substituted. No renderer-supplied script, command or arguments.
   const workerScript = `
 $ErrorActionPreference = 'Stop'
+$PSModuleAutoLoadingPreference = 'None'
 ${phases}
 try {
+  ${utilityModule}
+  ${managementModule}
   $config = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${config}')) | ConvertFrom-Json
   $self = [Diagnostics.Process]::GetCurrentProcess()
   ${observe('worker-entered')}
@@ -178,12 +187,13 @@ try {
 } catch { ${observe('worker-failed')} exit 1 }
 finally { ${observe('worker-finally')} if($null -ne $self){$self.Dispose()} }
 `
-  // E/J bracket JSON; J/I acquire self, I/P bracket the property-reading phase;
-  // S/W bracket native spawn, R confirms worker identity, F reports a caught failure.
+  // U/V bracket Utility import, J confirms JSON; I/P bracket the identity phase.
+  // M/N bracket Management import, S/W spawn; E enters, R validates, F fails.
   const script = `
 function Trace($c){try{[Console]::Error.WriteLine('DSHB:'+$c);[Console]::Error.Flush()}catch{}}
 Trace 'E'
 $ErrorActionPreference = 'Stop'
+$PSModuleAutoLoadingPreference = 'None'
 $worker = $null
 $approved = $false
 ${phases}
@@ -191,6 +201,9 @@ $workerScript = @'
 ${workerScript}
 '@
 try {
+  Trace 'U'
+  ${utilityModule}
+  Trace 'V'
   $config = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${config}')) | ConvertFrom-Json
   Trace 'J'
   $self = [Diagnostics.Process]::GetCurrentProcess()
@@ -202,6 +215,9 @@ try {
   $systemPowerShell = [IO.Path]::Combine($env:SYSTEMROOT,'System32','WindowsPowerShell','v1.0','powershell.exe')
   $workerArguments = @('-NoLogo','-NoProfile','-NonInteractive','-WindowStyle','Hidden','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($workerScript)))
   ${observe('bootstrap-before-worker')}
+  Trace 'M'
+  ${managementModule}
+  Trace 'N'
   Trace 'S'
   $worker = Start-Process -FilePath $systemPowerShell -ArgumentList $workerArguments -WindowStyle Hidden -PassThru
   Trace 'W'
@@ -257,6 +273,9 @@ finally {
     // Optional observations cannot displace the actual handoff in Windows' command-line budget.
     let unobserved = script.replaceAll(phases, '')
     for (const call of phaseCalls) unobserved = unobserved.replaceAll(call, '')
+    // Only our fixed script is indented; substituted user data is single-line base64.
+    // Keep imports and direct checkpoints while removing non-semantic indentation.
+    unobserved = unobserved.replace(/^[ \t]+/gmu, '')
     encoded = Buffer.from(unobserved, 'utf16le').toString('base64')
   }
   if (encoded.length > 28_000) throw new Error('Windows update command exceeds its safe size limit.')

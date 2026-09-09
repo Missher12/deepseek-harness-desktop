@@ -7,6 +7,14 @@ function source(path: string): string {
 }
 
 describe('installed Windows update handoff entrance', () => {
+  it('uses the same fixed Utility import for exact-worker cleanup before its first JSON command', () => {
+    const installer = source('../apps/desktop/src/update/windows-installer.ts')
+    const cleanup = installer.slice(installer.indexOf('export async function stopWindowsUpdateWorker'), installer.indexOf('interface WindowsUpdateCommandOptions'))
+    expect(cleanup).toContain("$PSModuleAutoLoadingPreference = 'None'")
+    expect(cleanup.indexOf('${utilityModule}')).toBeGreaterThan(0)
+    expect(cleanup.indexOf('${utilityModule}')).toBeLessThan(cleanup.indexOf('| ConvertFrom-Json'))
+    expect(cleanup).not.toMatch(/ExecutionPolicy|PSModulePath/u)
+  })
   it('parses both generated scripts from owned files without waiting on console stdin', () => {
     const driver = source('../apps/desktop/tests/windows-update-installer.spec.ts')
     const parser = driver.slice(driver.indexOf("'parses both the real bootstrap"), driver.indexOf("'validates the real payload"))

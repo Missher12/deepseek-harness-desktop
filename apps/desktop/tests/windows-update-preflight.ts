@@ -97,9 +97,9 @@ export function bootstrapProgress(stderr: string) {
   const progress: string[] = []
   let previous = -1
   for (const line of lines) {
-    const code = /^DSHB:([EJIPSWRF])$/u.exec(line)?.[1]
+    const code = /^DSHB:([EUVJIPMNSWRF])$/u.exec(line)?.[1]
     if (code === undefined) { stderrAllowed = false; continue }
-    const position = 'EJIPSWRF'.indexOf(code)
+    const position = 'EUVJIPMNSWRF'.indexOf(code)
     if (position <= previous || code === 'F') stderrAllowed = false
     progress.push(code)
     previous = position

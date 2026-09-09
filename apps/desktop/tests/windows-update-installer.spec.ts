@@ -160,6 +160,25 @@ describe('private Windows update readiness', () => {
 })
 
 describe('Windows update bootstrap and independent worker', () => {
+  it('loads fixed system modules before JSON and spawning without module discovery', () => {
+    const script = Buffer.from(command().args.at(-1)!, 'base64').toString('utf16le')
+    const worker = script.split("$workerScript = @'\n")[1]!.split("\n'@")[0]!
+    expect(worker.indexOf('Modules\\Microsoft.PowerShell.Management\\Microsoft.PowerShell.Management.psd1'))
+      .toBeLessThan(worker.indexOf("token='DSH_UPDATE_READY'"))
+    const bootstrap = script.replace(worker, '')
+    for (const part of [worker, bootstrap]) {
+      const utility = part.indexOf('Modules\\Microsoft.PowerShell.Utility\\Microsoft.PowerShell.Utility.psd1')
+      const management = part.indexOf('Modules\\Microsoft.PowerShell.Management\\Microsoft.PowerShell.Management.psd1')
+      expect(part).toContain("$PSModuleAutoLoadingPreference = 'None'")
+      expect(part).toContain('Microsoft.PowerShell.Core\\Import-Module "$PSHOME\\Modules\\')
+      expect(utility).toBeGreaterThan(0)
+      expect(utility).toBeLessThan(part.indexOf('| ConvertFrom-Json'))
+      expect(management).toBeGreaterThan(0)
+      expect(management).toBeLessThan(part.indexOf('Start-Process'))
+      expect(part).not.toContain('Set-ExecutionPolicy')
+    }
+    expect(bootstrapProgress('DSHB:E\nDSHB:U\nDSHB:V\nDSHB:J\nDSHB:I\nDSHB:P\nDSHB:M\nDSHB:N\nDSHB:S\nDSHB:W\nDSHB:R\n').stderrAllowed).toBe(true)
+  })
   it('reports only fixed bootstrap progress frames without treating them as readiness', () => {
     expect(bootstrapProgress('DSHB:E\r\nDSHB:J\r\nDSHB:I\r\nDSHB:P\r\nDSHB:S\r\nDSHB:W\r\nDSHB:R\r\n'))
       .toEqual({ progress: ['E', 'J', 'I', 'P', 'S', 'W', 'R'], stderrAllowed: true })
@@ -296,7 +315,7 @@ describe('Windows update bootstrap and independent worker', () => {
     expect(script).not.toContain('Write-Phase')
   })
 
-  it('keeps native runner preflight phase observations within the command budget', () => {
+  it('keeps native runner preflight entry and import observations within the command budget', () => {
     const temporary = 'C:\\Users\\runneradmin\\AppData\\Local\\Temp'
     const root = preflightTempRoot({ RUNNER_TEMP: 'D:\\a\\_temp' }, temporary)
     const stagingDirectory = root + '\\dsh-u-ABCDEF'
@@ -307,7 +326,8 @@ describe('Windows update bootstrap and independent worker', () => {
     })
     const encoded = plan.args.at(-1)!
     expect(encoded.length).toBeLessThanOrEqual(28_000)
-    expect(Buffer.from(encoded, 'base64').toString('utf16le').includes('function Write-Phase')).toBe(true)
+    const source = Buffer.from(encoded, 'base64').toString('utf16le')
+    for (const code of ['E', 'U', 'V', 'J', 'M', 'N']) expect(source).toContain(`Trace '${code}'`)
     expect(root).toBe('D:\\a\\_temp')
     expect(preflightTempRoot({}, temporary)).toBe(temporary)
     expect(preflightTempRoot({ RUNNER_TEMP: '' }, temporary)).toBe(temporary)

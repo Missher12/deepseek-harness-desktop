@@ -122,7 +122,7 @@ function collectOwnedProcesses(
 describe('handoff process ownership', () => {
   it('accepts chunked bootstrap progress only after close and rejects unknown or overflowing stderr', async () => {
     for (const [stderr, allowed] of [
-      ['DSHB:E\nDSHB:J\n', true], ['', true], ['DSHB:F\n', false],
+      ['DSHB:E\nDSHB:U\nDSHB:V\nDSHB:J\nDSHB:I\nDSHB:P\nDSHB:M\nDSHB:N\nDSHB:S\nDSHB:W\nDSHB:R\n', true], ['', true], ['DSHB:F\n', false],
       ['unknown\n', false], ['DSHB:E', false], ['x'.repeat(129), false],
     ] as const) {
       const state = spawnInstalledBootstrap(null, {
