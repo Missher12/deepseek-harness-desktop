@@ -133,9 +133,9 @@ Both commands target Intel (`x86_64`) macOS. `desktop:pack` produces a directly 
 pnpm run desktop:setup
 ```
 
-Run this command on native Windows x64. The Setup name is derived from `apps/desktop/package.json`; version 0.5.4 produces `apps/desktop/release/DeepSeek-Harness-Setup-0.5.4-win-x64.exe`. Production staging uses a dedicated short directory on Windows CI to keep native MSVC rebuilds below legacy path limits; all release output is written to `apps/desktop/release`.
+Run this command on native Windows x64. The Setup name is derived from `apps/desktop/package.json`; the output is `apps/desktop/release/DeepSeek-Harness-Setup-<version>-win-x64.exe`. Production staging uses a dedicated short directory on Windows CI to keep native MSVC rebuilds below legacy path limits; all release output is written to `apps/desktop/release`.
 
-The Windows Setup is a visible assisted, per-user NSIS installer. A normal double-click walks through Welcome, installation directory, expanded progress/details, and Finish pages. It needs no administrator elevation, Node.js, pnpm, terminal, browser, or fixed port; it creates desktop and Start menu shortcuts and offers to launch DeepSeek Harness from the finish page. Uninstall removes the application and shortcuts while preserving Harness and Electron user data.
+The Windows Setup is a visible assisted, per-user NSIS installer. A normal double-click walks through Welcome, installation directory, expanded progress/details, and Finish pages. During installation, the progress bar follows native extraction and installation work, with visible phase text and populated details. Silent installation remains available. It needs no administrator elevation, Node.js, pnpm, terminal, browser, or fixed port; it creates desktop and Start menu shortcuts and offers to launch DeepSeek Harness from the finish page. Uninstall removes the application and shortcuts while preserving Harness and Electron user data.
 
 ### Ubuntu 22.04 / 24.04 x64
 

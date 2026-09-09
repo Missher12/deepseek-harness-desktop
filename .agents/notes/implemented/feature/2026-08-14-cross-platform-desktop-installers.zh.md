@@ -15,7 +15,7 @@ Status: implemented
 - macOS 保留隐藏式标题栏、应用菜单、关闭到 Dock、POSIX 进程组、数据根目录打开文件精确所有权检查、`.app` 和 DMG。
 - Windows 使用标准原生窗框、File/Edit/View/Window/Help 菜单、关闭即退出、封闭失败的 PowerShell 进程发现，以及针对准确 PID 的 `taskkill /T /F` 清理。
 - 工作台终端选择完整的原生命令：Windows 使用系统内置 PowerShell，POSIX 使用首个可用的 zsh 或 bash 登录 shell。平台参数与可执行文件一起解析，确保 Windows 永远不会收到 POSIX 的 `-l` 参数。
-- Electron Builder 以一键、当前用户范围、非升权模式输出一个未签名 Windows x64 NSIS Setup。交互式安装创建桌面和开始菜单快捷方式并启动应用；卸载保留 Harness 与 Electron 数据。
+- Electron Builder 以向导式、当前用户范围、非升权模式输出一个未签名 Windows x64 NSIS Setup。安装器在检查运行中应用时恢复 NSIS 状态和明细输出，同时保留上游检查与原生解压进度。交互式安装创建桌面和开始菜单快捷方式，并提供启动应用的选项；卸载保留 Harness 与 Electron 数据。
 - 圆角 RGBA 母版同时生成 [`icon.icns` 和 `icon.ico`](../../../../apps/desktop/README.zh.md#icon-provenance)，因此 Finder、Dock、Windows 资源管理器、快捷方式、Setup 和卸载程序使用同一个应用图形身份。
 - [Windows Setup 设计](../../../../docs/superpowers/specs/2026-08-14-deepseek-harness-windows-setup-design.zh.md)拥有完整的打包、生命周期和失败行为说明。
 
@@ -24,6 +24,8 @@ Status: implemented
 平台无关测试在 macOS 上覆盖 Windows 菜单与窗口决策、命令解析、封闭失败的所有权检查、进程树终止、NSIS 设置、工作流接线和成品测试的进程输出解析。生产暂存会验证构建后的桌面入口、Web 客户端、运行时 CLI、图标容器和原生模块是否存在。
 
 独立的 `Windows Desktop Setup` 工作流和仓库原生 Windows PR 任务都运行在 GitHub 面向公开仓库提供的标准 `windows-2025` 运行器上。独立工作流从 `apps/desktop/package.json` 派生精确 Setup 与校验和名称，并作为有界发布路径执行：不可变依赖安装、完整产品构建、Setup 打包、可见安装器页面、隔离安装、两种快捷方式检查、使用临时 Harness 与 Electron 数据启动成品、共享 Add 菜单／工作台／思考等级控件、精确剪贴板值与拒绝反馈、关闭原生窗口、监听端口与进程树清理、卸载、数据标记保留、SHA-256 和产物上传。它没有 Release 写权限；验收后由操作方只追加已验证 Windows 资产。更广泛的原生任务继续提供完整 Windows 检查作为额外证据；如果以后配置了自托管运行器，master 备用任务会运行相同的打包生命周期测试。
+
+安装验收在完成之前观察真实进度条的范围和位置、非空明细行与非空状态文字。位置必须在同一个原生范围内发生变化，同时明细保持可见。固定字节的公开基线验证空白明细回归，候选版本必须通过明细填充条件。两种检查都先正常卸载，再判断观测结果。证据只保留有界计数、耗时和遮蔽后的图像。
 
 Windows Search 会稳定暴露查询输入框，但已渲染的结果区域可能不提供可访问性后代节点。因此，Search 验收先核对前台中的完整查询，再发送 Enter，并证明本次安装的精确执行文件创建了新进程、其自有可见窗口和本次启动标记。该启动发生在 100% 托盘 Quit 及进程树退出之后。由于 Search 通过 Explorer 的环境启动程序，这项验证使用临时 runner 中全新的默认 profile。它的自有进程清理记录与托盘生命周期证据分开保存。
 

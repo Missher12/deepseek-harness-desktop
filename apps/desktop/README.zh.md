@@ -99,9 +99,9 @@ pnpm run desktop:dmg
 pnpm run desktop:setup
 ```
 
-这个命令必须在原生 Windows x64 上运行。Setup 名称由 `apps/desktop/package.json` 派生；0.5.4 会输出 `apps/desktop/release/DeepSeek-Harness-Setup-0.5.4-win-x64.exe`。Windows CI 使用独立的短暂存目录，避免原生 MSVC 重编译触发旧式路径长度限制；所有发布产物都写入 `apps/desktop/release`。
+这个命令必须在原生 Windows x64 上运行。Setup 名称由 `apps/desktop/package.json` 派生；输出路径为 `apps/desktop/release/DeepSeek-Harness-Setup-<version>-win-x64.exe`。Windows CI 使用独立的短暂存目录，避免原生 MSVC 重编译触发旧式路径长度限制；所有发布产物都写入 `apps/desktop/release`。
 
-Windows Setup 是当前用户范围的可见向导式 NSIS 安装器。正常双击后会依次显示欢迎、安装目录、展开的安装进度／明细与完成页面；它不需要管理员权限，也不需要 Node.js、pnpm、终端、浏览器或固定端口。安装会创建桌面和开始菜单快捷方式，并在完成页提供启动 DeepSeek Harness 的选项。卸载会删除应用和快捷方式，但保留 Harness 与 Electron 用户数据。
+Windows Setup 是当前用户范围的可见向导式 NSIS 安装器。正常双击后会依次显示欢迎、安装目录、展开的安装进度／明细与完成页面。安装时，进度条反映实际解压和安装过程，并显示阶段文字与安装明细。静默安装仍可用；它不需要管理员权限，也不需要 Node.js、pnpm、终端、浏览器或固定端口。安装会创建桌面和开始菜单快捷方式，并在完成页提供启动 DeepSeek Harness 的选项。卸载会删除应用和快捷方式，但保留 Harness 与 Electron 用户数据。
 
 ### Ubuntu 22.04 / 24.04 x64
 
