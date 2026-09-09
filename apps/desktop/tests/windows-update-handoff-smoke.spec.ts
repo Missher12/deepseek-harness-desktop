@@ -97,6 +97,19 @@ interface ProcessIdentity {
   Created: string
 }
 
+function verifyInstalledMain(
+  rows: readonly ProcessIdentity[], launcher: ProcessIdentity, mainPid: number, executable: string,
+): ProcessIdentity {
+  const liveLauncher = rows.find(row => row.ProcessId === launcher.ProcessId)
+  if (liveLauncher?.Created !== launcher.Created || liveLauncher.ExecutablePath !== launcher.ExecutablePath) {
+    throw new Error('Installed main identity has no matching live launcher.')
+  }
+  const tree = collectOwnedProcesses(rows, new Set([launcher.ProcessId]), new Map([[launcher.ProcessId, launcher]]))
+  const main = tree.find(row => row.ProcessId === mainPid && row.ExecutablePath.toLowerCase() === executable.toLowerCase())
+  if (main === undefined) throw new Error('Installed main identity mismatch.')
+  return main
+}
+
 function collectOwnedProcesses(
   rows: readonly ProcessIdentity[], roots: ReadonlySet<number>, owned: Map<number, ProcessIdentity>,
 ): ProcessIdentity[] {
@@ -120,6 +133,18 @@ function collectOwnedProcesses(
 }
 
 describe('handoff process ownership', () => {
+  it('binds the installed main to this live launcher tree rather than equating shell and main PIDs', () => {
+    const launcher = { ProcessId: 10, ParentProcessId: 1, Created: '01', ExecutablePath: 'cmd.exe' }
+    const main = { ProcessId: 20, ParentProcessId: 10, Created: '02', ExecutablePath: 'C:\\App\\DeepSeek Harness.exe' }
+    const expected = main.ExecutablePath
+    expect(verifyInstalledMain([launcher, main], launcher, 20, expected).ProcessId).toBe(20)
+    for (const rows of [
+      [launcher, { ...main, ParentProcessId: 99 }],
+      [launcher, { ...main, Created: '00' }],
+      [{ ...launcher, Created: '03' }, main],
+      [main], [launcher, { ...main, ExecutablePath: 'C:\\Other\\DeepSeek Harness.exe' }],
+    ]) expect(() => verifyInstalledMain(rows, launcher, 20, expected)).toThrow('Installed main identity')
+  })
   it('accepts chunked bootstrap progress only after close and rejects unknown or overflowing stderr', async () => {
     for (const [stderr, allowed] of [
       ['DSHB:E\nDSHB:U\nDSHB:V\nDSHB:J\nDSHB:I\nDSHB:P\nDSHB:M\nDSHB:N\nDSHB:S\nDSHB:W\nDSHB:R\n', true], ['', true], ['DSHB:F\n', false],
@@ -282,10 +307,13 @@ describe('real installed Windows native-command update handoff', () => {
           MISSHER_TENCENTDB_DIR: join(smokeRoot, 'memory-source-unconfigured'), DEEPSEEK_API_KEY: '' },
         timeout: 120_000,
       })
-      const mainPid = application.process().pid
-      if (mainPid === undefined) throw new Error('Installed handoff application has no main PID.')
-      roots.add(mainPid)
-      await captureOwned()
+      // On Windows Playwright launches through a shell; its retained process is
+      // the launcher, not necessarily the inspector-connected Electron main.
+      const launcherPid = application.process().pid
+      if (launcherPid === undefined) throw new Error('Installed handoff application has no launcher PID.')
+      roots.add(launcherPid)
+      const launcher = (await captureOwned()).find(row => row.ProcessId === launcherPid)
+      if (launcher === undefined) throw new Error('Installed handoff launcher identity was not observed.')
       const page = await application.firstWindow({ timeout: 120_000 })
       await expect.poll(() => page.locator('body[data-dsh-surface="desktop"]').count(), { timeout: 120_000 }).toBe(1)
       await expect.poll(async () => Promise.all([
@@ -294,9 +322,12 @@ describe('real installed Windows native-command update handoff', () => {
       ]), { timeout: 120_000 }).toEqual([1, 1, 1])
       const identity = await application.evaluate(({ app }) => ({
         pid: process.pid, executable: process.execPath, version: app.getVersion(),
+        harnessHome: process.env.DSH_HOME, userData: app.getPath('userData'),
       }))
-      expect(identity.pid).toBe(mainPid)
+      const main = verifyInstalledMain(await captureOwned(), launcher, identity.pid, executable)
+      const mainPid = main.ProcessId
       expect(resolve(identity.executable) === executable).toBe(true)
+      expect(identity.harnessHome === harnessHome && resolve(identity.userData) === userData).toBe(true)
       expect(identity.version).toBe(desktop.version)
       const command = createWindowsUpdateCommand(descriptor, {
         parentPid: identity.pid, parentExecutable: identity.executable,
