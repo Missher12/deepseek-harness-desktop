@@ -14,6 +14,8 @@ Build x64 `.deb` and AppImage packages natively on Ubuntu 22.04 using Clang 15 a
 
 Both Ubuntu 22.04 and 24.04 consume the exact same artifacts and verify their SHA-256 digests. Native checks exercise installation, renderer isolation, a controlled loopback model, shutdown and data-preserving removal. They record package identity and kernel observations independently of UI readiness. X11/Xvfb evidence does not establish Wayland acceptance.
 
+Startup conflict detection inspects another Harness Web process with the operating system's installed `lsof`: `/usr/bin/lsof` on Linux and `/usr/sbin/lsof` on macOS. Only files below the same Harness home establish a conflict. Missing executables and denied inspection remain failures; they cannot establish that another writer is absent.
+
 ## Alternatives considered
 
 **Use the builder's legacy AppImage sandbox fallback.** It can add `--no-sandbox`. The packaged launcher rejects sandbox-disabling flags, and the renderer must retain Seccomp, NoNewPrivs and a separate user namespace.
@@ -26,4 +28,4 @@ Debian installation manages its desktop entry, icons, dependencies and AppArmor 
 
 ## Testing
 
-Local tests cover staging, native window options, the Linux launch wrapper and accepted or rejected kernel observations, including Chromium's space-joined process title. The native matrix retains installed-byte hashes and failure evidence. Platform acceptance status belongs in the release handover, rather than this implementation note.
+Local tests cover staging, native window options, host-specific open-file commands, distinct Harness homes, inspection failures, the Linux launch wrapper and accepted or rejected kernel observations, including Chromium's space-joined process title. The native matrix retains installed-byte hashes and failure evidence. Platform acceptance status belongs in the release handover, rather than this implementation note.

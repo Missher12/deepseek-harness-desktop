@@ -113,9 +113,11 @@ async function listWindowsProcesses(): Promise<readonly ProcessRecord[]> {
   return parseWindowsProcesses(stdout)
 }
 
-async function listOpenFiles(pid: number): Promise<readonly string[]> {
+async function listOpenFiles(pid: number, platform: NodeJS.Platform): Promise<readonly string[]> {
   try {
-    const stdout = await execText('/usr/sbin/lsof', ['-Fn', '-p', String(pid)])
+    const stdout = await execText(platform === 'linux' ? '/usr/bin/lsof' : '/usr/sbin/lsof', [
+      '-Fn', '-p', String(pid),
+    ])
     return stdout.split(/\r?\n/u).filter(line => line.startsWith('n/')).map(line => line.slice(1))
   } catch (error) {
     const code = (error as { code?: unknown }).code
@@ -168,7 +170,7 @@ export async function findConflictingHarness(
     ?? (platform === 'win32' ? listWindowsProcesses
       : platform === 'darwin' ? listMacProcesses
         : listPosixProcesses)
-  const openFileLister = dependencies.listOpenFiles ?? listOpenFiles
+  const openFileLister = dependencies.listOpenFiles ?? (pid => listOpenFiles(pid, platform))
   const canonicalizer = dependencies.canonicalize ?? canonicalize
   const ownPid = dependencies.ownPid ?? process.pid
   const canonicalHome = platform === 'win32' ? undefined : await canonicalizer(dshHome)

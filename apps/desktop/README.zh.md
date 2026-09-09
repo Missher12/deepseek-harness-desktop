@@ -109,7 +109,7 @@ Windows Setup 是当前用户范围的可见向导式 NSIS 安装器。正常双
 
 使用 `sudo apt install ./DeepSeek-Harness-<version>-linux-x64.deb` 安装 `.deb`。安装包会配置桌面入口、图标、依赖及应用专属 AppArmor 策略。卸载会保留 Harness 设置、会话和 Electron 用户数据。
 
-AppImage 需要 FUSE 2（22.04 为 `libfuse2`，24.04 为 `libfuse2t64`）和可执行权限。24.04 启动前，使用 `sudo bash scripts/linux-desktop-appimage-policy.sh install /absolute/path/DeepSeek-Harness-<version>-linux-x64.AppImage` 安装绑定准确路径的用户命名空间策略。辅助脚本必须来自安装包对应的源码版本；路径支持 ASCII 字母、数字、空格、斜杠、点、下划线和连字符。移动镜像或更换文件名时，需要使用 `remove` 移除旧路径策略，再为新路径安装。启动器拒绝关闭沙箱的参数；辅助脚本保持系统级用户命名空间限制开启。Linux 暂不提供应用内自更新。
+AppImage 需要 `lsof`、FUSE 2（22.04 为 `libfuse2`，24.04 为 `libfuse2t64`）和可执行权限。使用 `sudo apt install lsof` 安装启动时检查既存 Harness 写入进程所需的工具。24.04 启动前，使用 `sudo bash scripts/linux-desktop-appimage-policy.sh install /absolute/path/DeepSeek-Harness-<version>-linux-x64.AppImage` 安装绑定准确路径的用户命名空间策略。辅助脚本必须来自安装包对应的源码版本；路径支持 ASCII 字母、数字、空格、斜杠、点、下划线和连字符。移动镜像或更换文件名时，需要使用 `remove` 移除旧路径策略，再为新路径安装。启动器拒绝关闭沙箱的参数；辅助脚本保持系统级用户命名空间限制开启。Linux 暂不提供应用内自更新。
 
 应用使用操作系统分配的随机回环端口，不会占用固定的 65000 端口。
 

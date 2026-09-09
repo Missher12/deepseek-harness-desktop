@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-ubuntu-desktop-packaging.md
-2026-09-09-ubuntu-desktop-packaging.md: 2a814bd50d58ab420d03148bfef25a4717ce84e8
-2026-09-09-ubuntu-desktop-packaging.zh.md: c1b466142415d718c38d4e3bae2a2d589afd2eed
+2026-09-09-ubuntu-desktop-packaging.md: 5c0957458388ecfeeac4d6233cf876e21e7d851d
+2026-09-09-ubuntu-desktop-packaging.zh.md: 44c3a84ef9ac0d57b436e7a083b993abfc801c34
