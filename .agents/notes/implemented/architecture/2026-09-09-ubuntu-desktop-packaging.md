@@ -24,7 +24,11 @@ Startup conflict detection inspects another Harness Web process with the operati
 
 ## Consequences
 
-Debian installation manages its desktop entry, icons, dependencies and AppArmor policy. AppImage users on Ubuntu 24.04 run the matching exact-path helper before launching; changing the path requires updating that policy. Linux self-update, ARM64 and Wayland acceptance are not included. Package build success alone is insufficient release evidence; a release requires the complete native lifecycle checks at the final shared source revision.
+Debian installation manages its desktop entry, icons, dependencies and AppArmor policy. AppImage users on Ubuntu 24.04 run the matching exact-path helper before launching; changing the path requires updating that policy.
+
+The Ubuntu [System Update](../../../../packages/client/ui-settings-system-update/README.md) scope covers version checks, verified downloads matching the installed `.deb` or AppImage format, and opening the package directory. Users complete package installation; Desktop does not automatically elevate privileges, execute the downloaded package, or overwrite the running AppImage.
+
+ARM64 and Wayland remain unaccepted. Package build success alone is insufficient release evidence; a release requires the complete native lifecycle and System Update checks for both package formats on Ubuntu 22.04 and 24.04 at the same final shared source revision. This scope does not establish acceptance of an actual future public-version upgrade.
 
 ## Testing
 
