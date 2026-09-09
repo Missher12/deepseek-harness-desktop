@@ -91,11 +91,32 @@ export function createWindowsUpdateCommand(descriptor: VerifiedDesktopUpdate, op
     name: descriptor.assetName, bytes: descriptor.bytes, sha256: descriptor.sha256,
     signal: options.signal.directory, nonce: options.signal.nonce,
   })).toString('base64')
+  const phaseCalls: string[] = []
+  const observe = (name: string, processName = 'self'): string => {
+    const call = `Write-Phase '${name}' $${processName};`
+    phaseCalls.push(call)
+    return call
+  }
+  // Best-effort private phase records never participate in readiness or approval.
+  const phases = `
+function Write-Phase($n,$p) {
+  try {
+    $d=[IO.DirectoryInfo]::new($config.signal)
+    if(!$d.Exists -or ($d.Attributes -band [IO.FileAttributes]::ReparsePoint)){return}
+    $b=[Text.Encoding]::UTF8.GetBytes((@{nonce=$config.nonce;pid=$p.Id;started=$p.StartTime.ToUniversalTime().Ticks.ToString();path=$p.MainModule.FileName}|ConvertTo-Json -Compress))
+    $f=[IO.File]::Open([IO.Path]::Combine($d.FullName,$n+'.json'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try{$f.Write($b,0,$b.Length)}finally{$f.Dispose()}
+  } catch { } # Diagnostic failure must not change the handoff result.
+}
+`
   // Only base64 data is substituted. No renderer-supplied script, command or arguments.
   const workerScript = `
 $ErrorActionPreference = 'Stop'
+${phases}
 try {
   $config = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${config}')) | ConvertFrom-Json
+  $self = [Diagnostics.Process]::GetCurrentProcess()
+  ${observe('worker-entered')}
   function Open-VerifiedPayload {
     $fileInfo = [IO.FileInfo]::new($config.path)
     $stageInfo = [IO.DirectoryInfo]::new($config.stage)
@@ -125,17 +146,19 @@ try {
   $parent = [Diagnostics.Process]::GetProcessById($config.parentPid)
   [void]$parent.Handle
   if ($parent.MainModule.FileName -ine $config.parentExecutable) { throw 'Wrong parent process' }
+  ${observe('worker-parent')}
   $preflight = Open-VerifiedPayload
   $preflight.Dispose()
+  ${observe('worker-payload')}
   $signal = [IO.DirectoryInfo]::new($config.signal)
   if (!$signal.Exists -or ($signal.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Invalid signal directory' }
-  $self = [Diagnostics.Process]::GetCurrentProcess()
   $record = @{schema=1;nonce=$config.nonce;token='DSH_UPDATE_READY';pid=$PID;started=$self.StartTime.ToUniversalTime().Ticks.ToString()} | ConvertTo-Json -Compress
   $ready = [IO.File]::Open([IO.Path]::Combine($config.signal,'ready.json'), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
   try {
     $bytes = [Text.Encoding]::UTF8.GetBytes($record)
     $ready.Write($bytes,0,$bytes.Length); $ready.Flush()
-  } finally { $ready.Dispose(); $self.Dispose() }
+  } finally { $ready.Dispose() }
+  ${observe('worker-ready')}
   $parentDeadline = [DateTime]::UtcNow.AddSeconds(120)
   while (!$parent.WaitForExit(100)) {
     if ([IO.File]::Exists([IO.Path]::Combine($config.signal,'cancelled'))) { throw 'Cancelled handoff' }
@@ -145,31 +168,38 @@ try {
   if ([IO.File]::Exists([IO.Path]::Combine($config.signal,'cancelled'))) { throw 'Cancelled handoff' }
   $decision = [IO.FileInfo]::new([IO.Path]::Combine($config.signal,'decision'))
   if (!$decision.Exists -or ($decision.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $decision.Length -ne 64 -or [IO.File]::ReadAllText($decision.FullName) -cne $config.nonce) { throw 'Unapproved handoff' }
+  ${observe('worker-decision')}
   $lockedPayload = Open-VerifiedPayload
   try {
     $setup = Start-Process -FilePath $config.path -WorkingDirectory $config.stage -WindowStyle Normal -PassThru
     if (!$setup.Id) { throw 'Setup did not start' }
     $setup.Dispose()
   } finally { $lockedPayload.Dispose() }
-} catch { exit 1 }
+} catch { ${observe('worker-failed')} exit 1 }
+finally { ${observe('worker-finally')} if($null -ne $self){$self.Dispose()} }
 `
   const script = `
 $ErrorActionPreference = 'Stop'
 $worker = $null
 $approved = $false
+${phases}
 $workerScript = @'
 ${workerScript}
 '@
 try {
   $config = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${config}')) | ConvertFrom-Json
+  $self = [Diagnostics.Process]::GetCurrentProcess()
+  ${observe('bootstrap-entered')}
   $signal = [IO.DirectoryInfo]::new($config.signal)
   if (!$signal.Exists -or ($signal.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Invalid signal directory' }
   $systemPowerShell = [IO.Path]::Combine($env:SYSTEMROOT,'System32','WindowsPowerShell','v1.0','powershell.exe')
   $workerArguments = @('-NoLogo','-NoProfile','-NonInteractive','-WindowStyle','Hidden','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($workerScript)))
+  ${observe('bootstrap-before-worker')}
   $worker = Start-Process -FilePath $systemPowerShell -ArgumentList $workerArguments -WindowStyle Hidden -PassThru
   [void]$worker.Handle
   $started = $worker.StartTime.ToUniversalTime().Ticks.ToString()
   if ($worker.MainModule.FileName -ine $systemPowerShell) { throw 'Wrong worker executable' }
+  ${observe('bootstrap-after-worker', 'worker')}
   $deadline = [DateTime]::UtcNow.AddSeconds(20)
   $readyPath = [IO.Path]::Combine($config.signal,'ready.json')
   $acknowledged = $false
@@ -188,6 +218,7 @@ try {
         if (@($record.PSObject.Properties).Count -ne 5 -or $record.schema -ne 1 -or $record.token -cne 'DSH_UPDATE_READY' -or $record.nonce -cne $config.nonce -or $record.pid -ne $worker.Id -or $record.started -cne $started) { throw 'Wrong worker readiness' }
         [Console]::Out.WriteLine('DSH_UPDATE_READY'); [Console]::Out.Flush()
         $acknowledged = $true
+        ${observe('bootstrap-ready')}
       }
     }
     $decisionPath = [IO.Path]::Combine($config.signal,'decision')
@@ -195,20 +226,29 @@ try {
       $decision = [IO.FileInfo]::new($decisionPath)
       if (!$acknowledged -or ($decision.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $decision.Length -ne 64 -or [IO.File]::ReadAllText($decisionPath) -cne $config.nonce) { throw 'Handoff cancelled' }
       $approved = $true
+      ${observe('bootstrap-decision')}
       break
     }
     [Threading.Thread]::Sleep(100)
   }
   if (!$approved) { throw 'Handoff acknowledgement timed out' }
-} catch { exit 1 }
+} catch { ${observe('bootstrap-failed')} exit 1 }
 finally {
+  ${observe('bootstrap-finally')}
+  if($null -ne $self){$self.Dispose()}
   if ($null -ne $worker) {
     if (!$approved -and !$worker.HasExited) { $worker.Kill(); if (!$worker.WaitForExit(5000)) { throw 'Worker cleanup incomplete' } }
     $worker.Dispose()
   }
 }
 `
-  const encoded = Buffer.from(script, 'utf16le').toString('base64')
+  let encoded = Buffer.from(script, 'utf16le').toString('base64')
+  if (encoded.length > 28_000) {
+    // Optional observations cannot displace the actual handoff in Windows' command-line budget.
+    let unobserved = script.replaceAll(phases, '')
+    for (const call of phaseCalls) unobserved = unobserved.replaceAll(call, '')
+    encoded = Buffer.from(unobserved, 'utf16le').toString('base64')
+  }
   if (encoded.length > 28_000) throw new Error('Windows update command exceeds its safe size limit.')
   const env: NodeJS.ProcessEnv = { SYSTEMROOT: options.systemRoot, WINDIR: options.systemRoot }
   for (const key of ['USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'TEMP', 'TMP', 'PATH']) {

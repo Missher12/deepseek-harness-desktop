@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { createWindowsUpdateCommand, isWindowsBootstrapReady, stopWindowsUpdateWorker } from '../src/update/windows-installer.ts'
 import { createWindowsUpdateSignal, decideWindowsUpdateSignal, readWindowsUpdateSignal, WindowsUpdateDecision, type WindowsUpdateSignal } from '../src/update/windows-signal.ts'
 import { updatePayload } from './update-fixtures.ts'
+import { nativeUpdatePhases, observePreflightChild, readNativePhase, settlePreflight } from './windows-update-preflight.ts'
 
 const descriptor = {
   target: { platform: 'win32', arch: 'x64', packageFormat: 'nsis' } as const,
@@ -159,6 +160,69 @@ describe('private Windows update readiness', () => {
 })
 
 describe('Windows update bootstrap and independent worker', () => {
+  it('retains the first preflight failure while finishing every owned cleanup in order', async () => {
+    const primary = new Error('readiness failed')
+    const attempted: string[] = []
+    const outcome = await settlePreflight(async () => { throw primary }, [
+      { code: 'cancel', run: async () => { attempted.push('cancel') } },
+      { code: 'worker', run: async () => { attempted.push('worker'); throw new Error('worker cleanup failed') } },
+      { code: 'bootstrap', run: async () => { attempted.push('bootstrap'); throw new Error('bootstrap cleanup failed') } },
+      { code: 'parent', run: async () => { attempted.push('parent') } },
+    ])
+    expect(outcome.primary?.error).toBe(primary)
+    expect(outcome.cleanupFailures).toEqual(['worker', 'bootstrap'])
+    expect(attempted).toEqual(['cancel', 'worker', 'bootstrap', 'parent'])
+  })
+
+  it('reports cleanup failure even when the preflight itself succeeds', async () => {
+    const outcome = await settlePreflight(async () => {}, [{ code: 'bootstrap', run: async () => { throw new Error('failed stop') } }])
+    expect(outcome.primary).toBeUndefined()
+    expect(outcome.cleanupFailures).toEqual(['bootstrap'])
+  })
+
+  it('drains only bounded byte counts and awaits the retained child close after stopping it', async () => {
+    const child = spawn(process.execPath, ['-e', 'process.stdout.write("DSH_UPDATE_READY\\n"); process.stderr.write("x".repeat(5000)); setInterval(() => {}, 1000)'],
+      { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { SYSTEMROOT: process.env.SYSTEMROOT } })
+    const observed = observePreflightChild(child)
+    try {
+      await observed.waitReady()
+      await expect.poll(() => observed.facts.stderrOverflow).toBe(true)
+      await observed.stop()
+      expect(observed.facts).toMatchObject({ spawned: true, error: false, exited: true, closed: true,
+        stdoutBytes: 17, stderrBytes: 4096, stdoutOverflow: false, stderrOverflow: true })
+      expect(observed.exactReady()).toBe(true)
+      expect(child.exitCode !== null || child.signalCode !== null).toBe(true)
+      await observed.stop()
+    } finally { await observed.stop() }
+  })
+
+  it('keeps private phase identities separate from readiness and rejects incomplete or indirect records', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-native-phases-')))
+    try {
+      const signal = await createWindowsUpdateSignal(root)
+      const record = { nonce: signal.nonce, pid: 123, started: '456', path: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' }
+      const file = join(signal.directory, 'bootstrap-after-worker.json')
+      expect(await readNativePhase(signal, 'bootstrap-after-worker')).toBeNull()
+      await writeFile(file, JSON.stringify(record), { flag: 'wx', mode: 0o600 })
+      expect(await readNativePhase(signal, 'bootstrap-after-worker')).toEqual({ pid: 123, started: '456', path: record.path })
+      // No READY token or decision can be derived from a diagnostic record.
+      await expect(readWindowsUpdateSignal(signal)).rejects.toThrow()
+      for (const malformed of [JSON.stringify({ ...record, nonce: 'wrong' }), JSON.stringify({ ...record, extra: 1 }),
+        JSON.stringify({ ...record, pid: 0 }), '{', 'x'.repeat(2049)]) {
+        await writeFile(file, malformed)
+        expect(await readNativePhase(signal, 'bootstrap-after-worker')).toBeNull()
+      }
+      await rm(file)
+      const foreign = join(root, 'foreign.json')
+      await writeFile(foreign, JSON.stringify(record), { flag: 'wx' })
+      if (process.platform !== 'win32') {
+        // Creating file symlinks needs an elevated token on some Windows runners; native directories remain independently guarded.
+        await symlink(foreign, file)
+        expect(await readNativePhase(signal, 'bootstrap-after-worker')).toBeNull()
+      }
+      expect(await readFile(foreign, 'utf8')).toBe(JSON.stringify(record))
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
   it('rejects even short trailing output after an otherwise exact READY line', () => {
     expect(isWindowsBootstrapReady('DSH_UPDATE_READY\r\n')).toBe(true)
     expect(isWindowsBootstrapReady('DSH_UPDATE_READY\n')).toBe(true)
@@ -199,6 +263,20 @@ describe('Windows update bootstrap and independent worker', () => {
     expect(() => createWindowsUpdateCommand(descriptor, { ...options, parentPid: 0 })).toThrow()
     expect(() => createWindowsUpdateCommand(descriptor, { ...options, signal: { ...fixtureSignal, directory: 'C:\\other' } })).toThrow()
     expect(() => createWindowsUpdateCommand(descriptor, { ...options, signal: { ...fixtureSignal, nonce: 'wrong' } })).toThrow()
+  })
+
+  it('keeps a supported long installed path usable without requiring optional phase records', () => {
+    const stagingDirectory = 'C:\\Users\\Fixture\\AppData\\Local\\DeepSeek Harness\\updates\\' + 'download-'.repeat(15)
+    const plan = createWindowsUpdateCommand({ ...descriptor, stagingDirectory,
+      localPath: stagingDirectory + '\\' + descriptor.assetName }, {
+      parentPid: 123, parentExecutable: 'C:\\Users\\Fixture\\AppData\\Local\\Programs\\DeepSeek Harness\\DeepSeek Harness.exe',
+      systemRoot: 'C:\\Windows', signal: { ...fixtureSignal, directory: stagingDirectory + '\\handoff-fixture' },
+    })
+    expect(plan.args.at(-1)!.length).toBeLessThanOrEqual(28_000)
+    const script = Buffer.from(plan.args.at(-1)!, 'base64').toString('utf16le')
+    expect(script).toContain("[Console]::Out.WriteLine('DSH_UPDATE_READY')")
+    expect(script).toContain('Wrong worker readiness')
+    expect(script).not.toContain('Write-Phase')
   })
 
   it.skipIf(process.platform !== 'win32')('parses both the real bootstrap and nested worker with Windows PowerShell', async () => {
@@ -252,6 +330,20 @@ if($failed){exit 1}
     let parent: ChildProcess | undefined
     let bootstrap: ChildProcess | undefined
     let worker: { pid: number; started: string } | undefined
+    let parentObservation: ReturnType<typeof observePreflightChild> | undefined
+    let bootstrapObservation: ReturnType<typeof observePreflightChild> | undefined
+    let phase = 'signal'
+    let workerStopped = false
+    let cancelled = false
+    let primaryCode: string | null = null
+    let phaseRecordsEnabled = false
+    const publicPhases = async () => Promise.all(nativeUpdatePhases.map(async (name) => {
+      const record = signal === undefined ? null : await readNativePhase(signal, name)
+      return { phase: name, present: record !== null,
+        bootstrapMatches: record !== null && record.pid === bootstrap?.pid,
+        workerMatches: record !== null && record.pid === worker?.pid && record.started === worker?.started,
+        systemPathMatches: record !== null && record.path.toLowerCase() === powershell.toLowerCase() }
+    }))
     const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT ?? 'C:\\Windows'
     const powershell = join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
     let signal: WindowsUpdateSignal | undefined
@@ -267,88 +359,125 @@ if($failed){exit 1}
       })
       expect(result.error === undefined && result.status === 0 && result.signal === null).toBe(true)
     }
-    const stop = async (child: ChildProcess | undefined): Promise<void> => {
-      if (child === undefined || child.exitCode !== null || child.signalCode !== null) return
-      const closed = once(child, 'close')
-      child.kill()
-      await closed
-    }
-    try {
-      signal = await createWindowsUpdateSignal(directory)
-      const requestedInfo = await lstat(requestedDirectory, { bigint: true })
-      const canonicalInfo = await lstat(directory, { bigint: true })
-      const identity = { spellingChanged: requestedDirectory !== directory,
-        sameFileId: requestedInfo.dev === canonicalInfo.dev && requestedInfo.ino === canonicalInfo.ino,
-        isDirectory: requestedInfo.isDirectory(), isLink: requestedInfo.isSymbolicLink() }
-      console.info('DSH_UPDATE_PATH_IDENTITY', JSON.stringify(identity))
-      expect(identity).toMatchObject({ sameFileId: true, isDirectory: true, isLink: false })
-      const aliasSignal = await createWindowsUpdateSignal(requestedDirectory)
-      await decideWindowsUpdateSignal(aliasSignal, false)
-      const parentExecutable = join(directory, 'DeepSeek Harness.exe')
-      await copyFile(process.execPath, parentExecutable)
-      parent = spawn(parentExecutable, ['-e', 'setInterval(() => {}, 1000)'], {
-        shell: false, windowsHide: true, stdio: 'ignore', env: { SYSTEMROOT: systemRoot },
-      })
-      await once(parent, 'spawn')
-      const bytes = updatePayload('nsis')
-      const localPath = join(directory, descriptor.assetName)
-      await writeFile(localPath, bytes, { flag: 'wx' })
-      const nativeDescriptor = { ...descriptor, localPath, stagingDirectory: directory,
-        sha256: createHash('sha256').update(bytes).digest('hex') }
-      const options = { parentPid: parent.pid!, parentExecutable, systemRoot, environment: process.env, signal }
-      const plan = createWindowsUpdateCommand(nativeDescriptor, options)
-      bootstrap = spawn(plan.executable, plan.args, {
-        detached: false, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: plan.env,
-      })
-      const active = bootstrap
-      let output = ''
-      let stderrBytes = 0
-      active.stderr!.on('data', (chunk: Buffer) => { stderrBytes += chunk.length })
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => { reject(new Error('Native bootstrap readiness timeout.')) }, 20_000)
-        active.once('error', () => { clearTimeout(timer); reject(new Error('Native bootstrap spawn failed.')) })
-        active.once('close', () => {
-          clearTimeout(timer)
-          if (output !== 'DSH_UPDATE_READY\r\n' && output !== 'DSH_UPDATE_READY\n') reject(new Error('Native bootstrap closed without readiness.'))
+    const outcome = await settlePreflight(async () => {
+      try {
+        signal = await createWindowsUpdateSignal(directory)
+        const requestedInfo = await lstat(requestedDirectory, { bigint: true })
+        const canonicalInfo = await lstat(directory, { bigint: true })
+        const identity = { spellingChanged: requestedDirectory !== directory,
+          sameFileId: requestedInfo.dev === canonicalInfo.dev && requestedInfo.ino === canonicalInfo.ino,
+          isDirectory: requestedInfo.isDirectory(), isLink: requestedInfo.isSymbolicLink() }
+        console.info('DSH_UPDATE_PATH_IDENTITY', JSON.stringify(identity))
+        expect(identity).toMatchObject({ sameFileId: true, isDirectory: true, isLink: false })
+        const aliasSignal = await createWindowsUpdateSignal(requestedDirectory)
+        await decideWindowsUpdateSignal(aliasSignal, false)
+        phase = 'parent-spawn'
+        const parentExecutable = join(directory, 'DeepSeek Harness.exe')
+        await copyFile(process.execPath, parentExecutable)
+        parent = spawn(parentExecutable, ['-e', 'setInterval(() => {}, 1000)'], {
+          shell: false, windowsHide: true, stdio: 'ignore', env: { SYSTEMROOT: systemRoot },
         })
-        active.stdout!.on('data', (chunk: Buffer) => {
-          if (output.length + chunk.length > 128) { clearTimeout(timer); reject(new Error('Native bootstrap output limit.')); return }
-          output += chunk.toString('utf8')
-          if (output === 'DSH_UPDATE_READY\r\n' || output === 'DSH_UPDATE_READY\n') { clearTimeout(timer); resolve() }
+        parentObservation = observePreflightChild(parent)
+        await once(parent, 'spawn')
+        phase = 'payload'
+        const bytes = updatePayload('nsis')
+        const localPath = join(directory, descriptor.assetName)
+        await writeFile(localPath, bytes, { flag: 'wx' })
+        const nativeDescriptor = { ...descriptor, localPath, stagingDirectory: directory,
+          sha256: createHash('sha256').update(bytes).digest('hex') }
+        const options = { parentPid: parent.pid!, parentExecutable, systemRoot, environment: process.env, signal }
+        const plan = createWindowsUpdateCommand(nativeDescriptor, options)
+        phaseRecordsEnabled = Buffer.from(plan.args.at(-1)!, 'base64').toString('utf16le').includes('function Write-Phase')
+        phase = 'bootstrap-ready'
+        bootstrap = spawn(plan.executable, plan.args, {
+          detached: false, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: plan.env,
         })
-      })
-      worker = await readWindowsUpdateSignal(signal)
-      expect(worker.pid).not.toBe(bootstrap.pid)
-      await decideWindowsUpdateSignal(signal, true)
-      await expect.poll(() => bootstrap!.exitCode, { timeout: 20_000 }).toBe(0)
-      expect(bootstrap.signalCode).toBeNull()
-      expect(stderrBytes).toBe(0)
-      expect(output === 'DSH_UPDATE_READY\r\n' || output === 'DSH_UPDATE_READY\n').toBe(true)
-      expect(parent.exitCode).toBeNull()
-      controlWorker(false)
-      await expect(stopWindowsUpdateWorker({ ...worker, started: '1' }, systemRoot)).rejects.toThrow()
-      controlWorker(false)
-      await decideWindowsUpdateSignal(signal, false)
-      await stopWindowsUpdateWorker(worker, systemRoot)
-      await stopWindowsUpdateWorker(worker, systemRoot)
-      worker = undefined
-      const rejectedSignal = await createWindowsUpdateSignal(directory)
-      const rejected = createWindowsUpdateCommand({ ...nativeDescriptor, sha256: 'b'.repeat(64) },
-        { ...options, signal: rejectedSignal })
-      const bad = spawnSync(rejected.executable, rejected.args, {
-        shell: false, windowsHide: true, encoding: 'utf8', timeout: 20_000, env: rejected.env,
-      })
-      expect(bad.error === undefined && bad.status === 1 && bad.signal === null).toBe(true)
-      expect(bad.stdout).not.toContain('DSH_UPDATE_READY')
-      expect(parent.exitCode).toBeNull()
-    } finally {
-      if (signal !== undefined) await decideWindowsUpdateSignal(signal, false)
-      if (bootstrap !== undefined && bootstrap.exitCode === null && bootstrap.signalCode === null) {
-        await expect.poll(() => bootstrap!.exitCode !== null || bootstrap!.signalCode !== null, { timeout: 20_000 }).toBe(true)
+        bootstrapObservation = observePreflightChild(bootstrap)
+        await bootstrapObservation.waitReady()
+        phase = 'worker-receipt'
+        worker = await readWindowsUpdateSignal(signal)
+        expect(worker.pid).not.toBe(bootstrap.pid)
+        phase = 'approval'
+        await decideWindowsUpdateSignal(signal, true)
+        phase = 'bootstrap-close'
+        await bootstrapObservation.waitClosed(20_000)
+        expect(bootstrap.exitCode).toBe(0)
+        expect(bootstrap.signalCode).toBeNull()
+        expect(bootstrapObservation.facts.stderrBytes).toBe(0)
+        expect(bootstrapObservation.exactReady()).toBe(true)
+        for (const record of await publicPhases()) {
+          if (!record.present) continue
+          expect(record.systemPathMatches).toBe(true)
+          if (record.phase.startsWith('worker-') || record.phase === 'bootstrap-after-worker') expect(record.workerMatches).toBe(true)
+          else expect(record.bootstrapMatches).toBe(true)
+        }
+        expect(parent.exitCode).toBeNull()
+        phase = 'worker-identity'
+        controlWorker(false)
+        await expect(stopWindowsUpdateWorker({ ...worker, started: '1' }, systemRoot)).rejects.toThrow()
+        controlWorker(false)
+        await decideWindowsUpdateSignal(signal, false)
+        await stopWindowsUpdateWorker(worker, systemRoot)
+        await stopWindowsUpdateWorker(worker, systemRoot)
+        workerStopped = true
+        phase = 'wrong-hash'
+        const rejectedSignal = await createWindowsUpdateSignal(directory)
+        const rejected = createWindowsUpdateCommand({ ...nativeDescriptor, sha256: 'b'.repeat(64) },
+          { ...options, signal: rejectedSignal })
+        const bad = spawnSync(rejected.executable, rejected.args, {
+          shell: false, windowsHide: true, encoding: 'utf8', timeout: 20_000, env: rejected.env,
+        })
+        expect(bad.error === undefined && bad.status === 1 && bad.signal === null).toBe(true)
+        expect(bad.stdout).not.toContain('DSH_UPDATE_READY')
+        expect(parent.exitCode).toBeNull()
+        phase = 'complete'
+      } catch (error) {
+        // Keep the original object private; public output is only a fixed phase/code and bounded facts.
+        const fixedFailure = /^(?:BOOTSTRAP_(?:READY_TIMEOUT|SPAWN_ERROR|CLOSED_BEFORE_READY|STDOUT_LIMIT)|CHILD_CLOSE_TIMEOUT)$/u
+        primaryCode = error instanceof Error && fixedFailure.test(error.message)
+          ? error.message : 'PREFLIGHT_ASSERTION_OR_OPERATION_FAILED'
+        console.info('DSH_UPDATE_PREFLIGHT_PRIMARY', JSON.stringify({ phase, code: primaryCode, phaseRecordsEnabled,
+          bootstrap: bootstrapObservation?.facts ?? null }))
+        throw error
       }
-      if (worker !== undefined) await stopWindowsUpdateWorker(worker, systemRoot)
-      await stop(parent)
-      await rm(directory, { recursive: true, force: true })
+    }, [
+      { code: 'cancel', run: async () => {
+        if (signal !== undefined) await decideWindowsUpdateSignal(signal, false)
+        cancelled = true
+      } },
+      { code: 'worker', run: async () => {
+        if (bootstrap === undefined || workerStopped) return
+        if (worker === undefined && signal !== undefined) {
+          const creator = await readNativePhase(signal, 'bootstrap-entered')
+          const created = await readNativePhase(signal, 'bootstrap-after-worker')
+          if (creator !== null && creator.pid === bootstrap.pid && created !== null && created.pid !== bootstrap.pid
+            && creator.path.toLowerCase() === powershell.toLowerCase() && created.path.toLowerCase() === powershell.toLowerCase()) {
+            // Cleanup only: stopWindowsUpdateWorker independently checks the exact live start time and executable.
+            worker = { pid: created.pid, started: created.started }
+          }
+        }
+        if (worker === undefined) throw new Error('WORKER_CLEANUP_UNCONFIRMED')
+        await stopWindowsUpdateWorker(worker, systemRoot)
+        workerStopped = true
+      } },
+      { code: 'bootstrap', run: async () => { await bootstrapObservation?.stop() } },
+      { code: 'parent', run: async () => {
+        if (bootstrap !== undefined && !cancelled && !workerStopped) throw new Error('PARENT_CLOSE_UNSAFE')
+        await parentObservation?.stop()
+      } },
+    ])
+    const native = await publicPhases()
+    // Retain private files on unconfirmed cleanup; never publish them as artifacts.
+    if (outcome.cleanupFailures.length === 0) {
+      try { await rm(directory, { recursive: true, force: true }) }
+      catch { outcome.cleanupFailures.push('files') }
     }
+    console.info('DSH_UPDATE_PREFLIGHT_RESULT', JSON.stringify({ phase, primaryCode, phaseRecordsEnabled, primaryFailed: outcome.primary !== undefined,
+      cleanupFailures: outcome.cleanupFailures, bootstrap: bootstrapObservation?.facts ?? null,
+      parentClosed: parentObservation?.facts.closed ?? true, workerStopped, native }))
+    if (outcome.primary !== undefined) {
+      throw new Error(`Native update preflight ${primaryCode} at ${phase}; cleanup failures: ${outcome.cleanupFailures.join(',') || 'none'}.`)
+    }
+    expect(outcome.cleanupFailures).toEqual([])
   }, 45_000)
 })
