@@ -39,12 +39,15 @@ const DUPLICATE_SAFE_PACKAGES: readonly string[] = [
 
 /**
  * Runtime exports whose values remain valid when npm installs another package copy.
+ * New entries are forbidden by default. Automated agents must not add an
+ * exception; every addition requires explicit human review and a dedicated,
+ * prominent heading in the pull request description.
  */
 const SAFE_HOST_DEPENDENCY_EXPORTS = {
   '@deepseek-ai/dsh-attachment/types': ['MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS', 'promptAttachmentBase64CodeUnits'],
   '@deepseek-ai/dsh-credentials': ['credentialKey'],
   '@deepseek-ai/dsh-deque': ['Deque'],
-  '@deepseek-ai/dsh-llm': ['BlockAssembler', 'MessageId', 'callConfigEquals', 'expandAssistantStream', 'freezeMessage'],
+  '@deepseek-ai/dsh-llm': ['MessageId', 'callConfigEquals', 'freezeMessage'],
   '@deepseek-ai/dsh-session': ['SessionId'],
   '@deepseek-ai/dsh-storage-domain': ['defineDomain', 'domainTable'],
   '@deepseek-ai/dsh-session-format': ['sessionFormatLogFilename'],

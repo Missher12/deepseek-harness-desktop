@@ -1,8 +1,9 @@
 // Trusted non-loopback Web access cannot call the loopback-only settings API;
 // the notice therefore advances for this browser process and returns on reload.
+import dns from 'node:dns'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   acknowledgeReloadConnectionLoss, launchWebScaffold, watchConsole, webSnapshotMode,
   WELCOME_NOTICE_COPY,
@@ -17,8 +18,15 @@ describe.skipIf(MODE === 'record')('web e2e: remote welcome notice', () => {
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  let restoreLookup: (() => void) | undefined
 
   beforeAll(async () => {
+    const lookup = dns.lookup
+    const mockedLookup = vi.spyOn(dns, 'lookup').mockImplementation((hostname, ...args) => {
+      // Node does not resolve *.localhost on every OS; keep the real remote Host and policy checks.
+      Reflect.apply(lookup, dns, [hostname === 'remote.localhost' ? '127.0.0.1' : hostname, ...args])
+    })
+    restoreLookup = () => { mockedLookup.mockRestore() }
     scaffold = await launchWebScaffold({
       remoteAuthority: 'remote.localhost',
       welcomeNoticePending: true,
@@ -34,8 +42,9 @@ describe.skipIf(MODE === 'record')('web e2e: remote welcome notice', () => {
   }, 120_000)
 
   afterAll(async () => {
-    await browser?.close()
-    await scaffold?.close()
+    try { await browser?.close() } finally {
+      try { await scaffold?.close() } finally { restoreLookup?.() }
+    }
   })
 
   it('advances process-locally and presents the notice again after reload', async () => {

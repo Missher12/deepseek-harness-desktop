@@ -20,14 +20,13 @@ import { StatsLine } from '../src/client/chat/StatsLine.tsx'
 import { zh } from '../src/client/locale.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 
-/** jsdom has no ResizeObserver; StatsLine watches its row for ellipsis truncation through one. */
-class ResizeObserverStub {
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
-}
+beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class {
+    observe(): void {}
+    disconnect(): void {}
+  })
+})
 
-beforeEach(() => { vi.stubGlobal('ResizeObserver', ResizeObserverStub) })
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
@@ -1030,7 +1029,7 @@ describe('useCalendarDay boundary refresh', () => {
 })
 
 describe('small branch tails', () => {
-  it('AssistantMarkdown single-line reasoning summary skips the newline cut', () => {
+  it('AssistantMarkdown retains literal single-line reasoning', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
@@ -1085,6 +1084,10 @@ describe('user file attachments', () => {
     expect(view.getByTitle('notes.pdf').textContent).toContain('3.2MB')
     expect(view.getByTitle('tiny.txt').textContent).toContain('12B')
     expect(view.getByTitle('mid.csv').textContent).toContain('500KB')
+    const icons = ['notes.pdf', 'tiny.txt', 'mid.csv'].map(name =>
+      view.getByTitle(name).querySelector('svg')?.innerHTML,
+    )
+    expect(new Set(icons).size).toBe(icons.length)
     expect(view.getByText('summarize these')).toBeTruthy()
   })
 })

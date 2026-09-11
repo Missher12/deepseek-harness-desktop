@@ -110,7 +110,7 @@ async function harness(root: string): Promise<{ ctx: Context; cache: SessionProj
 
 function headerFor(id: SessionId, identity: FixtureRecord['identity']): SessionHeader {
   return {
-    version: 2,
+    version: 3,
     id,
     createdAt: identity.createdAt,
     isSeeded: false,

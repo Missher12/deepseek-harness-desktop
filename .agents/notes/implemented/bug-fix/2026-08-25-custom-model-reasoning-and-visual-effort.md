@@ -26,7 +26,7 @@ Client tests distinguish exact High-only capability from a `low`/`medium`/`high`
 
 **Add one provider-wide reasoning switch.** Rejected because one provider can serve models with different ceilings; a route-wide value would either overclaim support or hide capability from stronger models.
 
-**Send `ultra` to the provider or change the core effort id.** Rejected because Ultra is a Desktop presentation stop, not a capability every adapter advertises. The core continues to require exact adapter-owned ids as defined by the [adapter-owned capability decision](../architecture/2026-07-24-adapter-owned-reasoning-effort-capabilities.md).
+**Send `ultra` to the provider or change the core effort id.** Rejected because Ultra is a Desktop presentation stop, not a capability every adapter advertises. The core continues to require exact adapter-owned ids as defined by the [adapter-owned capability decision](../../archived/architecture/2026-07-24-adapter-owned-reasoning-effort-capabilities.md).
 
 **Relabel Ultra to the mapped actual value.** Rejected because it makes the control appear to undo the user's selection. The separate model-limit line already communicates the real ceiling without changing the chosen visual stop.
 

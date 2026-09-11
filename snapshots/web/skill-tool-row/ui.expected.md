@@ -1,8 +1,9 @@
 - banner:
   - navigation "Session hierarchy":
     - button "Load the editing-cordis-compositions ski" [disabled]
-  - button "Session log":
-    - text: Session log
+  - button "More actions":
+    - img
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]
@@ -53,7 +54,7 @@
   - img
   - text: Ran for {{duration}}
 - text: {{date}} {{clock}}
-- textbox "Message or run a task... / commands, @ files or sessions"
+- textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add":
   - img
 - button "Add attachment":
@@ -63,4 +64,4 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: 1 turns · 2 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 0% Input 280 tok · Output 30 tok Turn est. ¥{{price}} Session est. ¥{{price}} {{pricing tier}}
+- text: 1 turns · 2 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} · — tok/s Cache hit 0% Input 280 tok · Output 30 tok Turn est. ¥{{price}} Session est. ¥{{price}} {{pricing tier}}

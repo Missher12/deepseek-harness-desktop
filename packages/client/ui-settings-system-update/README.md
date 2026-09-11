@@ -9,6 +9,19 @@ English | [中文](README.zh.md)
 
 ## Summary
 
+View the running Desktop and Harness versions, check for updates, and follow verified download progress from Settings. Supported native packages offer the platform-specific install or reveal action, with download cancellation and retryable errors. Electron owns release selection, verification and installation; a successful handoff does not claim that installation completed.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Model Experience](#model-experience)
+- [Invariant ownership](#invariant-ownership)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+<a id="use-this-package"></a>
+## Use this package
+
 System Update shows the running Desktop and Harness versions and the native system's update status in Settings. This Desktop-only client package renders the narrow `window.dshDesktop` state and invokes fixed check, download, download-cancellation, and installation actions owned by the Electron main process.
 
 The package never selects a repository, network URL, destination path, checksum, or executable command. Official Harness tags are informational; a validated manifest matching the native platform and package format enables the Desktop package actions.
@@ -18,13 +31,6 @@ The page presents a status card and exactly two running-version rows for Desktop
 Before the native status arrives, the UI shows a loading state, not an unsupported-platform result. A status-read failure shows bounded localized copy and a retry that calls only `getUpdateStatus`; checking, downloading, and installing remain unavailable until status is confirmed. Transport error details are not displayed.
 
 On Intel macOS, selecting “Restart and install” prepares the protected update helper and then quits Desktop; no additional native confirmation is shown. Windows x64 offers a visible Setup wizard after native confirmation. Linux x64 .deb and AppImage packages offer only “Reveal installation package”; Desktop stays running and the action remains repeatable. Cancelling Windows native confirmation is not an error, and a handoff or reveal never changes the displayed running versions or claims installation completed.
-
-## Table of Contents
-
-- [Model Experience](#model-experience)
-- [Invariant ownership](#invariant-ownership)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
 
 ## Invariant ownership
 

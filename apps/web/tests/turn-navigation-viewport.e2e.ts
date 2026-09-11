@@ -24,7 +24,7 @@ describe('web e2e: installed transcript viewport readiness', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
     await seedSession(scaffold, await readFile(
-      new URL('../../../snapshots/web/seeded-history/session.v2.jsonl', import.meta.url), 'utf8',
+      new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url), 'utf8',
     ), 'turn-navigation-viewport')
     browser = await chromium.launch()
     page = await newEnglishPage(browser)

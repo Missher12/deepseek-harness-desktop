@@ -22,6 +22,7 @@ function props(overrides: Partial<PersonalizationSectionProps> = {}): Personaliz
     useSessions: unusedHook,
     useSessionPendingInteraction: unusedHook,
     useWorkspaces: unusedHook,
+    usePanelInfo: unusedHook, useResource: unusedHook,
     t: makeTranslate(en),
     load: vi.fn(async () => base),
     save: vi.fn(async (input: Parameters<PersonalizationSectionProps['save']>[0]) => ({

@@ -8,10 +8,9 @@ import {
   normalizeSessionSnapshot,
   normalizeSessionSnapshots,
   normalizeStdout,
-  scrubRequestHeaders,
+  scrubModelRequestBulk,
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
-import { prepareSessionEventNotificationsForComparison } from '@deepseek-ai/dsh-llm-replay'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 import {
   decompressZstdFrame,
@@ -75,16 +74,15 @@ async function expectSessionSnapshot(
   expect(parseJsonl(normalizedActual ?? '')).toEqual(parseJsonl(normalizedExpected ?? ''))
 }
 
-/** Compare current headless session-event wrappers with a committed v1 stream. */
+/** Compare the complete current-writer headless notification sequence. */
 async function expectHeadlessStream(normalized: string, expectedPath: string): Promise<void> {
-  const expected = prepareSessionEventNotificationsForComparison(await readFile(expectedPath, 'utf8'))
+  const expected = await readFile(expectedPath, 'utf8')
   expect(parseJsonl(normalized)).toEqual(parseJsonl(expected))
 }
 
 /** Serve one deterministic DeepSeek-compatible response while retaining its request body. */
-async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
+async function deepseekDefaultsServer(options: { waitForTitleRequest?: boolean } = {}): Promise<DeepSeekDefaultsServer> {
   const requests: JsonObject[] = []
-  const responses: ServerResponse[] = []
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     let body = ''
     request.setEncoding('utf8')
@@ -92,19 +90,24 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
     request.on('end', () => {
       requests.push(JSON.parse(body) as JsonObject)
       response.writeHead(200, { 'content-type': 'text/event-stream' })
-      response.write(': keep-alive\n\n')
-      responses.push(response)
-      // A one-shot process may cancel its auxiliary title during shutdown.
-      // Hold the final answer until both real requests have crossed the wire,
-      // so this adapter-default assertion does not race that lifecycle.
-      if (responses.length !== 2) return
-      const reply = [
-        'data: {"choices":[{"delta":{"content":"DEFAULTS_OK"}}]}',
-        'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
-        'data: [DONE]',
-        '',
-      ].join('\n\n')
-      for (const pending of responses) pending.end(reply)
+      let keepAlives = 3
+      const write = (): void => {
+        // One-shot teardown may cancel background title work after the main response.
+        if (keepAlives-- > 0
+          || (options.waitForTitleRequest === true && !requests.some(request => request.max_tokens === 64))) {
+          response.write(': keep-alive\n\n')
+          timer = setTimeout(write, 60)
+          return
+        }
+        response.end([
+          'data: {"choices":[{"delta":{"content":"DEFAULTS_OK"}}]}',
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
+          'data: [DONE]',
+          '',
+        ].join('\n\n'))
+      }
+      let timer = setTimeout(write, 60)
+      response.once('close', () => { clearTimeout(timer) })
     })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -152,7 +155,7 @@ function normalizeHeadlessStream(rawStdout: string, cwd: string): string {
     }
     return record.event as JsonObject
   })
-  const normalizedEvents = parseJsonl(scrubRequestHeaders(normalizeSessionLog(
+  const normalizedEvents = parseJsonl(scrubModelRequestBulk(normalizeSessionLog(
     `${events.map(event => JSON.stringify(event)).join('\n')}\n`,
     context,
   )))
@@ -499,8 +502,45 @@ describe('headless stream-json snapshots', () => {
     }
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
+  it('keeps the compatibility stream open until the title request arrives', async () => {
+    const server = await deepseekDefaultsServer({ waitForTitleRequest: true })
+    try {
+      const response = await fetch(server.url, {
+        method: 'POST',
+        body: JSON.stringify({ max_tokens: 1024 }),
+      })
+      const reader = response.body!.getReader()
+      try {
+        const decoder = new TextDecoder()
+        let body = ''
+        // Four heartbeats cross the ordinary fixture's three-heartbeat response.
+        while (body.split(': keep-alive\n\n').length < 5) {
+          const chunk = await reader.read()
+          expect(chunk.done).toBe(false)
+          body += decoder.decode(chunk.value)
+          expect(body).not.toContain('data:')
+        }
+        const title = await fetch(server.url, {
+          method: 'POST',
+          body: JSON.stringify({ max_tokens: 64 }),
+        })
+        for (;;) {
+          const chunk = await reader.read()
+          if (chunk.done) break
+          body += decoder.decode(chunk.value)
+        }
+        expect(body).toContain('data: [DONE]')
+        expect(await title.text()).toContain('data: [DONE]')
+      } finally {
+        await reader.cancel()
+      }
+    } finally {
+      await server.close()
+    }
+  })
+
   it('sends pi-ai DeepSeek compatibility through the one-shot app', async () => {
-    const server = await deepseekDefaultsServer()
+    const server = await deepseekDefaultsServer({ waitForTitleRequest: true })
     try {
       const result = await runLoaderSmoke({
         label: 'pi-ai DeepSeek compatibility headless stream-json snapshot',

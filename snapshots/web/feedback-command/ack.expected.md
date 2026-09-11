@@ -3,8 +3,9 @@
     - button "Reply with the single word" [disabled]
   - img
   - text: Standard mode
-  - button "Session log":
-    - text: Session log
+  - button "More actions":
+    - img
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]
@@ -32,11 +33,11 @@
   - img
   - text: Ran for {{duration}}
 - text: {{clock}}
-- 'button "feedback Feedback recorded for session session-{{uuid}} Anonymous user: {{uuid}}. Session sharing is enabled."':
+- 'button "feedback Feedback recorded for session session-{{uuid}} Anonymous user: {{uuid}}."':
   - img
   - img
-  - text: "feedback Feedback recorded for session session-{{uuid}} Anonymous user: {{uuid}}. Session sharing is enabled."
-- textbox "Message or run a task... / commands, @ files or sessions"
+  - text: "feedback Feedback recorded for session session-{{uuid}} Anonymous user: {{uuid}}."
+- textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add":
   - img
 - button "Add attachment":

@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import type { Session } from '@deepseek-ai/dsh-session'
+import { SessionSeq, type Session } from '@deepseek-ai/dsh-session'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session/types'
 import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
@@ -29,21 +30,17 @@ afterEach(async () => {
 })
 
 const userEvent = (seq: number, date: string): SessionEvent => ({
-  seq,
+  seq: SessionSeq(seq),
+  surfaceOp: 'append',
   time: Date.parse(date),
   type: 'user/message',
-  data: {
-    id: `user-${seq}`,
-    role: 'user',
-    source: { kind: 'user' },
-    content: [],
-  },
-} as SessionEvent)
+  data: createUserMessage({ content: [], source: { kind: 'user' } }),
+})
 
 function stored(id: string, revision: string, events: SessionEvent[]): StoredLog {
   return {
     header: {
-      version: 2,
+      version: 3,
       id: id as SessionId,
       createdAt: Date.parse('2026-01-01T00:00:00.000Z'),
       isSeeded: false,
@@ -91,7 +88,7 @@ async function harness(
         read: async () => {
           log.onRead?.()
           if (log.readError !== undefined) throw log.readError
-          return structuredClone(log.events)
+          return { events: structuredClone(log.events), eventState: 'detached' }
         },
         close: vi.fn(async () => { log.onClose?.() }),
       }

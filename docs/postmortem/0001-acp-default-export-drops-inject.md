@@ -28,7 +28,10 @@ The ACP server could not create or load a single session — the two RPCs an edi
 
 `packages/acp/acp/src/index.ts` is a *namespace plugin*: it exports `name`, `inject`, `Config`, and `apply` as separate named exports, as every other plugin in the repo does (`invariants`, `llm-deepseek`, `tool-bash`, `tui`, …). But it *also* ended with one extra line no other plugin had:
 
-```ts ignore-check
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { AcpConfig } from '@deepseek-ai/dsh-acp'
+
 export const name = 'acp'
 export const inject = ['agents', 'sessions', 'sessionPersistence']
 export function apply(ctx: Context, config: AcpConfig): void { /* … */ }

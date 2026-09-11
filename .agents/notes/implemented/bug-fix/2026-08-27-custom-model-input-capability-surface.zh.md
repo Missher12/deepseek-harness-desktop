@@ -8,7 +8,7 @@ Status: implemented
 
 pi-ai 适配器已经接受显式的逐模型输入模态，但 Models 页面无法编辑它。通过自定义提供方流程创建的每个模型都会省略 `input`，除非用户手动编辑 `settings.yaml`，因此真正的多模态模型可能显示为无法接受图片。端点发现也会丢弃部分 OpenAI 兼容网关明确返回的模态字段。
 
-本记录只取代[路由默认输入模态记录](../architecture/2026-08-12-pi-ai-route-default-input-modalities.zh.md)中“配置界面不编辑 `input`”这一项决定。它保守的解析顺序以及“未知能力不得猜测”的规则保持不变。
+本记录只取代[路由默认输入模态记录](../../archived/architecture/2026-08-12-pi-ai-route-default-input-modalities.md)中“配置界面不编辑 `input`”这一项决定。它保守的解析顺序以及“未知能力不得猜测”的规则保持不变。
 
 ## Decision
 

@@ -27,6 +27,7 @@ function props(load: PersonalizationSectionProps['load'], save: PersonalizationS
   return {
     close: vi.fn(), useSessions: unusedHook, useSessionPendingInteraction: unusedHook,
     useWorkspaces: unusedHook,
+    usePanelInfo: unusedHook, useResource: unusedHook,
     t: makeTranslate(en), load, save,
   }
 }

@@ -16,3 +16,17 @@
 
     - id: desktop-system-update
       name: '@deepseek-ai/dsh-client-ui-settings-system-update'
+
+# Desktop retains its full-width conversation and native file-opening flow.
+- id: session-controller
+  config:
+    noProjectDirectory: deepseek-temp
+
+- id: ui-sidebar-right
+  disabled: true
+
+- id: ui-sidebar-documentpreview
+  disabled: true
+
+- id: ui-sidebar-files
+  disabled: true

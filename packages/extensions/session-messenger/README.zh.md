@@ -10,11 +10,11 @@ kind: "package-bundle"
 <a id="summary"></a>
 ## 概述
 
-面向 Desktop 的 Host 与 Client 插件，用于在同一个活动 profile 内的普通 DeepSeek Harness 会话之间进行类似 Codex 的有界通信。复制会话 A 的准确 ID，粘贴到会话 B 的普通聊天框，再让 B 的 Agent 发送消息：插件会启动 A 的已有 Agent，A 可以通过可信的来源与 delivery 元数据回复 B。任意一方都能发起、继续或停止一条交流链。它注册五个模型工具，持久化 write-ahead 投递 receipt，通过 Host 所有的 Typert lookup 寻址 live 或 cold 会话，并把交流显示在普通会话历史中，不改变普通 Web 组合。
+在同一活动 Desktop profile 中，让普通 DeepSeek Harness 会话互发有界消息。向 Agent 提供另一个 Session ID，即可发送、继续或停止交流，也支持向冷会话投递。可信凭证保留投递和回复权限，交流出现在普通历史中。本组合包不改变普通 Web 组合。
 
-<a id="table-of-contents"></a>
 ## 目录
 
+- [使用本包](#use-this-package)
 - [工具约定](#tool-contracts)
 - [寻址、持久性与生命周期](#addressing-durability-and-lifecycle)
 - [Desktop 组合](#desktop-composition)
@@ -23,6 +23,13 @@ kind: "package-bundle"
 - [Invariant ownership](#invariant-ownership)
 - [已知限制与暂缓事项](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
+
+<a id="use-this-package"></a>
+## 使用本包
+
+面向 Desktop 的 Host 与 Client 插件，用于在同一个活动 profile 内的普通 DeepSeek Harness 会话之间进行类似 Codex 的有界通信。复制会话 A 的准确 ID，粘贴到会话 B 的普通聊天框，再让 B 的 Agent 发送消息：插件会启动 A 的已有 Agent，A 可以通过可信的来源与 delivery 元数据回复 B。任意一方都能发起、继续或停止一条交流链。它注册五个模型工具，持久化 write-ahead 投递 receipt，通过 Host 所有的 Typert lookup 寻址 live 或 cold 会话，并把交流显示在普通会话历史中，不改变普通 Web 组合。
+
+<a id="table-of-contents"></a>
 
 <a id="tool-contracts"></a>
 ## 工具约定

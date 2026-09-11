@@ -1,7 +1,8 @@
 /** Session Controller renderer projection: durable document addresses never cross the wire. */
 
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
+import type { Inbox } from '@deepseek-ai/dsh-agent'
+import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import {
@@ -10,7 +11,7 @@ import {
   createUserMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { SessionControlController } from '../src/control.ts'
@@ -55,13 +56,11 @@ async function harness(): Promise<{
   control: SessionControlController
 }> {
   const ctx = new Context()
-  await ctx.plugin(SessionStore)
-  await ctx.plugin(AgentRegistry)
+  await mountAgentLoopTestDependencies(ctx)
   installSessionReadTestServices(ctx)
-  const session = ctx.sessions.create(SessionId('renderer-session'), { meta: { cwd: '/workspace' } })
-  const inbox = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
-  const agent = { id: session.id, session, inbox, status: 'idle', ctx } as Agent
-  ctx.agents.register(agent)
+  const driver = await mountAgentLoopTestHarness(ctx)
+  const agent = await driver.create(SessionId('renderer-session'), {}, { cwd: '/workspace' })
+  const { session, inbox } = agent
   return {
     ctx,
     session,

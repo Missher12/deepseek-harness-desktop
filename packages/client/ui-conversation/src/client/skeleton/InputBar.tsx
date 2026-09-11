@@ -36,6 +36,7 @@ import type { ComposerBarProps } from '../contract/slots.ts'
 import { ComposerContentEditable } from '../input/editor/ComposerContentEditable.tsx'
 import { DecoratorPortals } from '../input/editor/DecoratorPortals.tsx'
 import { registerComposerKeymap } from '../input/editor/keymap.ts'
+import { resolveSubmitMode } from '../input/submission-policy.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
 import { classifyComposerFile, COMPOSER_ATTACHMENT_ACCEPT } from '../attachment-files.ts'
 import { bindComposerImagePicker } from '../input/composer-add-source.ts'
@@ -48,14 +49,15 @@ export type InputBarProps = ComposerBarProps
 export const InputBar = memo(function InputBar({
   useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments,
   retryFileUpload,
-  resolveSubmitMode, toggleAddMenu, stop, command, t,
-  renderSlot, useFileUploads, useNotices, useLexicon, useMenuLauncher,
+  toggleAddMenu, stop, command, t,
+  renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
   placeholder, accessory,
 }: InputBarProps) {
   const input = useInput(s => s)
   const notice = useNotices(s => s)
+  const busyEnter = useBusyEnter(s => s)
   void useLexicon // hook seat stays bound by the inject compartment; text-ref decoration rides the shell's editor transforms
   const addMenuOpen = useMenuLauncher(source => source === 'composer-add')
   const promptError = useSession(s => s.promptError) ?? null
@@ -149,7 +151,8 @@ export const InputBar = memo(function InputBar({
   const workspaceTrigger = inert && !removed && onRequestWorkspace !== undefined
   const editorDisabled = removed || (locked && !workspaceTrigger)
   const editable = live && !locked && !machineBusy
-  const canSteerQueue = !locked && !machineBusy && !addMenuOpen && empty && running && subagent === null
+  const steeringAvailable = subagent === null || subagent.address.mode === 'continuable'
+  const canSteerQueue = !locked && !machineBusy && !addMenuOpen && empty && running && steeringAvailable
     && input.queue.some(row => row.placement === 'queued')
 
   useEffect(() => {
@@ -311,11 +314,11 @@ export const InputBar = memo(function InputBar({
   // The keymap handlers read live bar state through this ref so the editor
   // registration survives re-renders without re-arming per keystroke.
   const gate = useRef({
-    locked, machineBusy, canSteerQueue, running, subagent, resolveSubmitMode,
+    locked, machineBusy, canSteerQueue, running, steeringAvailable, busyEnter,
     intakeFiles, uploadsPending, showToast, t,
   })
   gate.current = {
-    locked, machineBusy, canSteerQueue, running, subagent, resolveSubmitMode,
+    locked, machineBusy, canSteerQueue, running, steeringAvailable, busyEnter,
     intakeFiles, uploadsPending, showToast, t,
   }
 
@@ -342,10 +345,11 @@ export const InputBar = memo(function InputBar({
           g.showToast(g.t('file.stillUploading'))
           return
         }
-        keyboard.submit(g.resolveSubmitMode(
+        keyboard.submit(resolveSubmitMode(
+          g.busyEnter,
           g.running,
           accelerated ? 'accelerated' : 'enter',
-          g.subagent === null,
+          g.steeringAvailable,
         ))
       },
       intakeFiles: (files) => { gate.current.intakeFiles(files) },
@@ -380,19 +384,33 @@ export const InputBar = memo(function InputBar({
   }
 
   // An ordinary running session keeps Stop while the composer is empty or
-  // owner-blocked; an actionable draft gets the existing Queue action. A
-  // continuable child keeps Send primary and exposes Stop independently.
+  // owner-blocked; an actionable draft gets the busy Send action, delivered
+  // through the same mode plain Enter resolves to. The label names that mode
+  // only when the click would deliver a plain message right now — an enabled
+  // button (no pending upload) over a non-empty draft that is neither a
+  // claimed command nor a `/` line headed for adjudication — so it never
+  // describes a delivery the click cannot or does not perform; every other
+  // state keeps plain Send. A continuable child keeps Send primary and
+  // exposes Stop independently.
   const primaryStops = running && subagent === null && (empty || blocked !== undefined)
+  // Disabled native buttons may omit mouseleave; their tooltip must close from state.
+  const primaryDisabled = primaryStops ? stop === undefined : empty || disabled || machineBusy || uploadsPending
   const interruptible = running && continuable
-  const primaryLabel = primaryStops ? t('input.stop') : t('input.send')
+  const primarySubmitMode = resolveSubmitMode(busyEnter, running, 'enter', steeringAvailable)
+  const plainMessageDraft = !empty && input?.phase === 'plain' && !draft.trimStart().startsWith('/')
+  const primaryLabel = primaryStops
+    ? t('input.stop')
+    : running && steeringAvailable && !disabled && !uploadsPending && plainMessageDraft
+      ? t(primarySubmitMode === 'steer' ? 'input.send.steer' : 'input.send.queue')
+      : t('input.send')
   const onPrimary = (): void => {
     if (primaryStops) {
       stop?.()
       return
     }
-    if (inputActions === undefined) return // absent machine: the button is disabled
+    if (keyboard === undefined) return // absent machine: the button is disabled
     /* v8 ignore next -- defensive: the primary button is disabled for empty, disabled, and pending-upload states. */
-    if (!empty && !disabled && !machineBusy && !uploadsPending) inputActions.submit()
+    if (!empty && !disabled && !machineBusy && !uploadsPending) keyboard.submit(primarySubmitMode)
   }
 
   // The Access seat: the projection-fed permission chip (renders nothing
@@ -526,7 +544,7 @@ export const InputBar = memo(function InputBar({
               onKeyDown={workspaceTrigger ? onWorkspaceKeyDown : undefined}
               style={hint === null ? undefined : { '--dsh-composer-hint': JSON.stringify(hint) } as CSSProperties}
             />
-            {empty && !claimActive && (
+            {draft === '' && attachments.length === 0 && !claimActive && (
               <div aria-hidden className={css.placeholder} data-composer-placeholder>
                 {placeholderText}
               </div>
@@ -578,7 +596,7 @@ export const InputBar = memo(function InputBar({
             {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
             <ContextMeter useProjection={useProjection} t={t} />
             {interruptible && (
-              <Tooltip label={t('input.stop')} side="top" delayMs={500}>
+              <Tooltip label={t('input.stop')} side="top" delayMs={500} disabled={stop === undefined}>
                 <button
                   type="button"
                   className={css.primary}
@@ -593,12 +611,12 @@ export const InputBar = memo(function InputBar({
                 </button>
               </Tooltip>
             )}
-            <Tooltip label={primaryLabel} side="top" delayMs={500}>
+            <Tooltip label={primaryLabel} side="top" delayMs={500} disabled={primaryDisabled}>
               <button
                 type="button"
                 className={css.primary}
                 aria-label={primaryLabel}
-                disabled={primaryStops ? stop === undefined : empty || disabled || machineBusy || uploadsPending}
+                disabled={primaryDisabled}
                 onMouseDown={keepFocus}
                 onClick={onPrimary}
               >

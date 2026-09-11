@@ -66,6 +66,10 @@ Desktop 设置外壳统一约束原生、内置与 profile 安装分区的 760 �
 
 ## 系统更新
 
+原生更新确认和 Windows 托盘使用操作系统语言，中英文文案统一由 `src/locales.ts` 管理。
+
+未选择项目的新会话使用 `~/deepseek-temp/<sessionId>/`（Windows 位于用户目录下）。会话 header 记录工作目录；重新打开或删除对话历史后，生成文件仍然保留。显式项目和已有会话的位置保持不变。
+
 “系统更新”分别显示正在运行的 Desktop 版本和内置 Harness 核心版本。检查固定的官方 Harness Release 可以提示存在更新的核心，但不会宣称已安装核心已经改变。原生进程选择匹配的 Intel macOS DMG、Windows x64 Setup，或已识别的 Linux x64 `.deb`／AppImage；Linux 安装格式未知时会禁用下载与安装，不会猜测。
 
 下载按 manifest（元数据清单）的准确大小显示已接收字节，服务器未提供 Content-Length 时也如此。取消只清理当前未完成的暂存目录。完整下载必须通过预期 Release URL、字节数、SHA-256、原生文件格式和物理文件检查；验证失败不会启用安装。渲染端不能提供 URL、文件系统路径、校验值或命令。首次状态读取失败时可仅重试状态读取。

@@ -9,10 +9,11 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Desktop-only Host and Client plugin for bounded Codex-style messaging between ordinary DeepSeek Harness sessions in one active profile. Copy Session A's exact ID, paste it into Session B's ordinary composer, and ask B's Agent to send a message: the plugin wakes A's existing Agent, and A can reply to B through the trusted source and delivery metadata. Either session can initiate, continue, or stop an exchange chain. The plugin registers five model tools, persists write-ahead delivery receipts, addresses live or cold sessions through the Host-owned Typert lookup, and renders the exchange in ordinary conversation history without changing the ordinary Web composition.
+Exchange bounded messages between ordinary DeepSeek Harness sessions in one active Desktop profile. Give an Agent the other Session ID to send, continue or stop a conversation, including delivery to cold sessions. Trusted receipts preserve delivery and reply authority, and exchanges appear in ordinary history. The bundle leaves the ordinary Web composition unchanged.
 
 ## Table of Contents
 
+- [Use this package](#use-this-package)
 - [Tool contracts](#tool-contracts)
 - [Addressing, durability, and lifecycle](#addressing-durability-and-lifecycle)
 - [Desktop composition](#desktop-composition)
@@ -21,6 +22,11 @@ Desktop-only Host and Client plugin for bounded Codex-style messaging between or
 - [Invariant ownership](#invariant-ownership)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
+
+<a id="use-this-package"></a>
+## Use this package
+
+Desktop-only Host and Client plugin for bounded Codex-style messaging between ordinary DeepSeek Harness sessions in one active profile. Copy Session A's exact ID, paste it into Session B's ordinary composer, and ask B's Agent to send a message: the plugin wakes A's existing Agent, and A can reply to B through the trusted source and delivery metadata. Either session can initiate, continue, or stop an exchange chain. The plugin registers five model tools, persists write-ahead delivery receipts, addresses live or cold sessions through the Host-owned Typert lookup, and renders the exchange in ordinary conversation history without changing the ordinary Web composition.
 
 ## Tool contracts
 

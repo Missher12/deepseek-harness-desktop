@@ -16,7 +16,7 @@ Usage schema 3 reads settled Assistant messages and compact attempt usage, prese
 
 Image, locally extracted document and generic-file paths share the attachment service without conflating their storage or admission contracts. Initial fixture history and live follow use the production renderer projection. The Add menu and paperclip share one file input so disabled intake cannot be bypassed through a duplicate control.
 
-Conversation width follows the existing ResizeObserver and adaptive clamp. Manual drag targets, handlers and stored-width overrides are removed. This partially supersedes [adaptive content width](2026-08-18-conversation-adaptive-content-width.md): its shared width axis and fixed-position descendant rationale remain applicable. System Update distinguishes installed Desktop and Harness versions, unchecked state, prerelease status, progress and actionable failures.
+Conversation width follows the existing ResizeObserver and adaptive clamp. Manual drag targets, handlers and stored-width overrides are removed. This partially supersedes [adaptive content width](../../archived/feature/2026-08-18-conversation-adaptive-content-width.md): its shared width axis and fixed-position descendant rationale remain applicable. System Update distinguishes installed Desktop and Harness versions, unchecked state, prerelease status, progress and actionable failures.
 
 ## Alternatives considered
 

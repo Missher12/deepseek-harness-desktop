@@ -33,8 +33,10 @@ export type {
 } from './contract/context-provenance.ts'
 export type {
   ConversationPromptSnapshot, RequestInspectionSnapshot, RequestPromptChange, RequestPromptInspection, RequestPromptInspector, RequestView,
+  SystemPromptNode,
 } from './contract/request-inspection.ts'
 export { inspectRequestPrompt } from './contract/request-inspection.ts'
+export type { SystemPromptState, SystemPromptInspector } from './contract/system-prompt.ts'
 export type { ConversationStoreState, ConversationViewRequest, ViewTab } from './contract/views.ts'
 
 export { ConversationNodeAssembler } from './conversation/assembler.ts'
@@ -53,7 +55,7 @@ export type {
   ComposerImageAttachment,
   ComposerFileAttachment, DraftFileUpload, DraftFileUploads,
   ComposerBarInjected, ComposerBarOwnerProps, ComposerBarProps, ComposerChainProps,
-  ConversationHeaderActionOwnerProps, ConversationHeaderLineageOwnerProps,
+  ConversationHeaderActionOwnerProps, ConversationHeaderCornerOwnerProps, ConversationHeaderLineageOwnerProps,
   ConversationInjected, ConversationSessionHeaderInjected, ConversationSessionHeaderSlotProps,
   ConversationSessionInjected, ConversationSessionSlotProps, ConversationSlotProps,
   ConversationStore, ConvViewOwnerProps, ConvViewProps, EmptyWorkspaceOwnerProps,

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-25-custom-model-reasoning-and-visual-effort.md
-2026-08-25-custom-model-reasoning-and-visual-effort.md: 8f99faac25630379b91c9f0ff451425bd1060d35
-2026-08-25-custom-model-reasoning-and-visual-effort.zh.md: db34e8398a018358c075aba3732b4da0db65a38f
+2026-08-25-custom-model-reasoning-and-visual-effort.md: 59133fa301553de138933d0f4f0018093b8d8677
+2026-08-25-custom-model-reasoning-and-visual-effort.zh.md: bd1c50b58328706a2a1e65aee2ca3d667c79f6f0

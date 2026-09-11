@@ -27,6 +27,7 @@ import {
 import { HarnessProcess } from './harness/process.ts'
 import { findConflictingHarness } from './harness/ownership.ts'
 import { createLifecycleLogger } from './logging.ts'
+import { nativeDesktopCopy } from './locales.ts'
 import {
   isDesktopPreferenceMutation,
   isRecoveryAction,
@@ -166,13 +167,12 @@ const updateInstaller = new DesktopUpdateInstaller(updateService, {
   isPackaged: app.isPackaged,
   confirmSetup: async () => {
     if (nativeWindow === undefined || nativeWindow.isDestroyed()) return false
-    const chinese = app.getLocale().startsWith('zh')
+    const copy = nativeDesktopCopy(app.getLocale())
     const result = await dialog.showMessageBox(nativeWindow, {
       type: 'question', title: PRODUCT_NAME,
-      message: chinese ? '关闭应用并打开安装向导？' : 'Close the application and open Setup?',
-      detail: chinese ? '请先保存工作。应用退出后会显示 Windows 安装向导；仍需你在向导中确认安装。'
-        : 'Save your work first. After the app exits, the visible Windows Setup wizard will ask you to confirm installation.',
-      buttons: chinese ? ['取消', '关闭并打开安装向导'] : ['Cancel', 'Close and open Setup'],
+      message: copy.setupMessage,
+      detail: copy.setupDetail,
+      buttons: [copy.cancel, copy.openSetup],
       defaultId: 0, cancelId: 0, noLink: true,
     })
     return result.response === 1
@@ -251,10 +251,11 @@ function syncWindowsTray(): void {
   const activeTray = new Tray(loadNativeIcon(windowsTrayIconPaths[size], `Windows ${String(size)}px tray`))
   tray = activeTray
   activeTray.setToolTip(PRODUCT_NAME)
+  const copy = nativeDesktopCopy(app.getLocale())
   activeTray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Show DeepSeek Harness', click: showDesktopWindow },
+    { label: copy.show, click: showDesktopWindow },
     { type: 'separator' },
-    { label: 'Quit', click: () => { app.quit() } },
+    { label: copy.quit, click: () => { app.quit() } },
   ]))
   activeTray.on('double-click', showDesktopWindow)
   nativeVisualTrayEvidence.start({

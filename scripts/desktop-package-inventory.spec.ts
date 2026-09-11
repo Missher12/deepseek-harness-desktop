@@ -107,6 +107,8 @@ describe('desktop package inventory', () => {
   it('rejects non-Windows-x64 native assets, build artifacts, and unapproved Electron locales', () => {
     const forbidden = [
       'locales/fr.pak',
+      'resources/app.asar.unpacked/node_modules/@deepseek-ai/node-addon-system-darwin-x64/bin/system.node',
+      'resources/app.asar.unpacked/node_modules/@deepseek-ai/node-addon-system-linux-x64/bin/glibc/system.node',
       'resources/app.asar.unpacked/node_modules/pkg/debug/addon.pdb',
       'resources/app.asar.unpacked/node_modules/pkg/lib/index.js.map',
       'resources/app.asar.unpacked/node_modules/pkg/lib/index.d.ts',
@@ -130,6 +132,7 @@ describe('desktop package inventory', () => {
   it('keeps the Windows x64 runtime, confirmed locales, licenses, fonts, workers, and WASM', () => {
     const paths = [
       'locales/en-US.pak',
+      'resources/app.asar.unpacked/node_modules/@deepseek-ai/node-addon-system/lib/flock.js',
       'locales/zh-CN.pak',
       'LICENSE.electron.txt',
       'resources/app.asar',

@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-18-conversation-adaptive-content-width.md
-2026-08-18-conversation-adaptive-content-width.md: 497c8ddc5dd7fb2f795d6638982b7468200ea5c0
-2026-08-18-conversation-adaptive-content-width.zh.md: 31489287c58d24496b8e6f5559aa7cb55d5eeb03

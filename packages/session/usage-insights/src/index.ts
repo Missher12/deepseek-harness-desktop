@@ -228,7 +228,7 @@ export class UsageInsightsGateway extends TypertRemoteService {
         // revision before reading; a later append can only invalidate this cache.
         const current = await this.ctx.sessionPersistence.stat(snapshot.header.id, { signal })
         revision = String(current?.revision ?? snapshot.revision)
-        row = foldSessionUsage(handle.header, await handle.read(0, undefined, { signal }), timeZone, handle.inheritedEventCount)
+        row = foldSessionUsage(handle.header, (await handle.read(0, undefined, { signal })).events, timeZone, handle.inheritedEventCount)
       } finally {
         await handle.close()
       }

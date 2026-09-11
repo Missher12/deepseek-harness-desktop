@@ -1,8 +1,9 @@
 - banner:
   - navigation "Session hierarchy":
     - button "Use the read tool twice" [disabled]
-  - button "Session log":
-    - text: Session log
+  - button "More actions":
+    - img
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]
@@ -14,7 +15,7 @@
   - img
   - img
   - text: System prompt
-- text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. 7/25 {{clock}}"
+- text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. {{clock}}"
 - button "Copy":
   - img
 - button "2 tool calls":
@@ -32,13 +33,13 @@
 - button "Ran for {{duration}}":
   - img
   - text: Ran for {{duration}}
-- text: 7/25 {{clock}}
+- text: {{clock}}
 - button "compact Compacted 5 history items (~{{tokens}} tokens)"
 - button "Context injection AGENTS.md":
   - img
   - img
   - text: Context injection AGENTS.md
-- textbox "Message or run a task... / commands, @ files or sessions"
+- textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add":
   - img
 - button "Add attachment":

@@ -1096,7 +1096,7 @@ export async function exerciseExistingSessionModelSwitch(
         // fresh view so this checks durable selection on the exact seeded ID.
         const handle = await observer.sessionPersistence.open(SessionId(seeded.activeSessionId), 'read')
         try {
-          const events = await handle.read()
+          const { events } = await handle.read()
           return events.findLast(event => event.type === 'model/selection')?.data
         } finally {
           await handle.close()
@@ -1769,6 +1769,8 @@ export async function runPackagedDesktopSmoke(
       cwd: temporaryRoot,
       env: {
         ...process.env,
+        HOME: temporaryRoot,
+        USERPROFILE: temporaryRoot,
         DSH_HOME: harnessHome,
         DSH_DESKTOP_SMOKE_MODEL_KEY: 'desktop-smoke-placeholder-key',
         DSH_TELEMETRY_DISABLED: '1',

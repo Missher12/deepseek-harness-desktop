@@ -15,7 +15,9 @@ import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { Inbox } from '@deepseek-ai/dsh-agent'
+import { agentEvents } from '@deepseek-ai/dsh-agent'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import { ReactLoopInbox } from '../../../core/agent-loop/src/inbox.ts'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import ClientModuleRegistry from '@deepseek-ai/dsh-client-modules'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -71,10 +73,11 @@ function ordinaryAgent(ctx: Context, id: string): Agent {
     if (agentRef.current === undefined) throw new Error('agent is not initialized')
     return agentRef.current
   }
-  const inbox = new Inbox(session, {
-    inserted(message) { ctx.emit('agent/inbox/inserted', { agent: currentAgent(), message }) },
-    discarded(message) { ctx.emit('agent/inbox/discarded', { agent: currentAgent(), message }) },
-    claimed(message, turn) { ctx.emit('agent/inbox/claimed', { agent: currentAgent(), message, turn }) },
+  const projections = ctx.get('sessionProjections') ?? new SessionProjectionRegistry(ctx)
+  const inbox = new ReactLoopInbox(projections, session, {
+    emit: (name, payload) => { agentEvents(ctx, currentAgent()).emit(name, payload) },
+    serial: (name, payload) => agentEvents(ctx, currentAgent()).serial(name, payload),
+    waterfall: (name, payload, ...rest) => agentEvents(ctx, currentAgent()).waterfall(name, payload, ...rest),
   })
   const agent: Agent = {
     id: session.id,

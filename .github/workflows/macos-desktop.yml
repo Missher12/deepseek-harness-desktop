@@ -63,7 +63,7 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm run desktop:dmg
 
-      - name: Restore host Node ABI without changing packaged bytes
+      - name: Verify host and packaged flock without changing packaged bytes
         env:
           ARTIFACT: ${{ steps.desktop.outputs.artifact }}
         run: |
@@ -72,12 +72,14 @@ jobs:
           import { createHash } from 'node:crypto'
           import { spawnSync } from 'node:child_process'
           import { createReadStream } from 'node:fs'
-          import { readdir, realpath } from 'node:fs/promises'
+          import { mkdtemp, open, readdir, realpath, rm, stat } from 'node:fs/promises'
           import { createRequire } from 'node:module'
-          import { dirname, join, resolve, sep } from 'node:path'
+          import { tmpdir } from 'node:os'
+          import { dirname, join, sep } from 'node:path'
+          import { pathToFileURL } from 'node:url'
 
-          const resources = 'apps/desktop/release/mac/DeepSeek Harness.app/Contents/Resources'
-          const unpacked = join(resources, 'app.asar.unpacked')
+          const resources = await realpath('apps/desktop/release/mac/DeepSeek Harness.app/Contents/Resources')
+          const unpacked = await realpath(join(resources, 'app.asar.unpacked'))
           async function fingerprint() {
             const native = (await readdir(unpacked, { recursive: true }))
               .filter(name => name.endsWith('.node')).sort()
@@ -94,39 +96,79 @@ jobs:
             }))
           }
 
-          const fixtureRequire = createRequire(resolve('packages/session/session-persistence-jsonl/package.json'))
-          const manifest = await realpath(fixtureRequire.resolve('fs-ext/package.json'))
-          const fsExtDir = dirname(manifest)
-          const nodeGyp = await realpath(createRequire(manifest).resolve('node-gyp/bin/node-gyp.js'))
-          const rootModules = resolve('node_modules') + sep
-          assert(fsExtDir.startsWith(rootModules), 'fs-ext is outside root node_modules')
-          assert(nodeGyp.startsWith(rootModules), 'node-gyp is outside root node_modules')
-          assert.equal(process.versions.electron, undefined, 'Host rebuild requires plain Node')
-
-          const env = { ...process.env }
-          const hostOverrides = new Set([
-            'target', 'runtime', 'disturl', 'dist-url', 'nodedir', 'devdir',
-            'debug', 'arch', 'target-arch', 'target-platform', 'directory', 'tarball',
-          ])
-          for (const key of Object.keys(env)) {
-            const prefix = /^(?:npm_config_|npm_package_config_node_gyp_)/i
-            if (prefix.test(key) && hostOverrides.has(
-              key.replace(prefix, '').replaceAll('_', '-').toLowerCase(),
-            )) delete env[key]
-          }
-          delete env.NODE_OPTIONS
-          delete env.NODE_PATH
-
+          assert.equal(process.versions.electron, undefined, 'flock verification requires plain Node')
+          assert.equal(process.platform, 'darwin')
+          assert.equal(process.arch, 'x64')
+          assert(Number(process.versions.napi) >= 8, 'flock requires Node-API 8')
           const before = await fingerprint()
-          const rebuilt = spawnSync(process.execPath, [
-            nodeGyp, 'rebuild', '--release',
-            '--target=' + process.versions.node, '--arch=' + process.arch,
-          ], { cwd: fsExtDir, env, stdio: 'inherit' })
-          if (rebuilt.error) throw rebuilt.error
-          assert.equal(rebuilt.status, 0, 'Host fs-ext rebuild failed')
-          assert.deepEqual(await fingerprint(), before, 'Packaged bytes changed during host rebuild')
-          fixtureRequire('fs-ext')
-          console.log('Host fs-ext loaded; ABI=' + process.versions.modules + '; packaged bytes unchanged')
+          const scratch = await mkdtemp(join(tmpdir(), 'dsh-macos-flock-'))
+          try {
+            const sources = [
+              ['host', await realpath('packages/session/session-persistence-jsonl/package.json'),
+                await realpath('native/system/packages')],
+              ['packaged', await realpath(join(unpacked,
+                'node_modules/@deepseek-ai/dsh-session-persistence-jsonl/package.json')), unpacked],
+            ]
+            for (const [label, manifest, root] of sources) {
+              if (label === 'packaged') assert(manifest.startsWith(root + sep), 'Packaged JSONL escaped unpacked tree')
+              const entry = await realpath(createRequire(manifest).resolve('@deepseek-ai/node-addon-system/flock'))
+              const platformManifest = await realpath(createRequire(entry).resolve(
+                '@deepseek-ai/node-addon-system-darwin-x64/package.json',
+              ))
+              const binary = await realpath(join(dirname(platformManifest), 'bin/system.node'))
+              for (const file of [entry, platformManifest, binary]) {
+                assert(file.startsWith(root + sep), label + ' flock dependency escaped its dependency tree: ' + file)
+                assert((await stat(file)).isFile(), label + ' flock dependency is not a file: ' + file)
+              }
+              const entryUrl = pathToFileURL(entry).href
+              const { tryLockExclusive } = await import(entryUrl)
+              const lockPath = join(scratch, label + '.lock')
+              const holder = await open(lockPath, 'wx', 0o600)
+              let released = false
+              try {
+                await tryLockExclusive(holder.fd)
+                const contender = String.raw`
+                  import assert from 'node:assert/strict'
+                  import { open } from 'node:fs/promises'
+                  const { tryLockExclusive } = await import(process.argv[1])
+                  const handle = await open(process.argv[2], 'r+')
+                  try {
+                    if (process.argv[3] === 'contended') {
+                      await assert.rejects(tryLockExclusive(handle.fd), error =>
+                        error.syscall === 'flock' && ['EAGAIN', 'EWOULDBLOCK'].includes(error.code))
+                    } else {
+                      assert.equal(process.argv[3], 'released')
+                      await tryLockExclusive(handle.fd)
+                    }
+                  } finally {
+                    await handle.close()
+                  }
+                `
+                for (const expected of ['contended', 'released']) {
+                  if (expected === 'released') {
+                    await holder.close()
+                    released = true
+                  }
+                  const result = spawnSync(process.execPath, [
+                    '--input-type=module', '-e', contender, entryUrl, lockPath, expected,
+                  ], { env: { PATH: process.env.PATH }, timeout: 10_000, killSignal: 'SIGKILL', stdio: 'inherit' })
+                  if (result.error) throw result.error
+                  assert.equal(result.signal, null, label + ' flock contender was terminated')
+                  assert.equal(result.status, 0, label + ' flock ' + expected + ' verification failed')
+                }
+                console.log(label + ' flock acquired, contention rejected, released and reacquired; entry=' + entry + '; binary=' + binary)
+              } finally {
+                if (!released) await holder.close()
+              }
+            }
+          } finally {
+            try {
+              await rm(scratch, { recursive: true, force: true })
+            } finally {
+              assert.deepEqual(await fingerprint(), before, 'Packaged bytes changed during flock verification')
+            }
+          }
+          console.log('Host and packaged flock verified; Node-API=' + process.versions.napi + '; packaged bytes unchanged')
           NODE
 
       - name: Exercise the packaged application

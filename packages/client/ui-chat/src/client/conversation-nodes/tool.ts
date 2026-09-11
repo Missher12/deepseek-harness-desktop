@@ -140,16 +140,15 @@ function acceptsEdge(state: ToolState, parent: string, child: string): boolean {
 
 function updateDispatch(state: ToolState, match: ConversationMatch): ToolState {
   const event = match.event
-  if (event.type !== 'tool/code-dispatch-start' && event.type !== 'tool/code-dispatch') return state
+  if (event.type !== 'tool/ptc-dispatch-start' && event.type !== 'tool/ptc-dispatch') return state
   const parentCallId = String(event.data.parentCallId)
   const subCallId = String(event.data.subCallId)
   const siblings = state.children.get(parentCallId) ?? []
   const index = siblings.findIndex(candidate => candidate.callId === subCallId)
-  if (event.type === 'tool/code-dispatch-start') {
-    const data = event.data
+  if (event.type === 'tool/ptc-dispatch-start') {
     if (index >= 0 || !acceptsEdge(state, parentCallId, subCallId)) return state
     const children = new Map(state.children)
-    children.set(parentCallId, [...siblings, childCall(match, data)])
+    children.set(parentCallId, [...siblings, childCall(match, event.data)])
     const parents = new Map(state.parents)
     parents.set(subCallId, parentCallId)
     return { ...state, children, parents }
@@ -232,7 +231,7 @@ function fallbackState(context: ConversationNodeContext<ToolState>): ToolState |
   return state
 }
 
-/** Root Tool lifecycle and nested Code Dispatch Definition. */
+/** Root Tool lifecycle and nested PTC dispatch Definition. */
 export const toolDefinition: ConversationNodeDefinition<ToolState> = {
   kind: 'tool-call',
   target: 'chat',
@@ -241,7 +240,7 @@ export const toolDefinition: ConversationNodeDefinition<ToolState> = {
     if (event.type === 'tool/result' && isAppendSurfaceEvent(event)) {
       return { id: String(event.data.message.source.callId), role: 'update' }
     }
-    if (event.type === 'tool/code-dispatch-start' || event.type === 'tool/code-dispatch') {
+    if (event.type === 'tool/ptc-dispatch-start' || event.type === 'tool/ptc-dispatch') {
       const rootCallId: unknown = event.data.rootCallId
       return typeof rootCallId === 'string' && rootCallId !== ''
         ? { id: rootCallId, role: 'update' }

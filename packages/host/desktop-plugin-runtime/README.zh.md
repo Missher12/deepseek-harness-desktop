@@ -10,6 +10,19 @@ kind: "package-reference"
 <a id="summary"></a>
 ## 概述
 
+针对当前 profile 执行受信任的 Desktop 插件管理操作，同时保持 profile 身份不可变。操作通过受管子进程服务重新进入打包的 CLI，并在卸载时取消所属进程树。只有私有 Desktop 组合提供这些服务；profile 初始化和组合包协调继续遵循上游 CLI 规则。
+
+## 目录
+
+- [使用本包](#use-this-package)
+- [模型体验](#model-experience)
+- [Invariant ownership](#invariant-ownership)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="use-this-package"></a>
+## 使用本包
+
 这个私有 Host 包为 DeepSeek Harness Desktop 中受信任的插件管理器发布两个结构化服务：不可变的 `desktopProfiles.current` 身份，以及串行化的 `desktopPnpm.runPlugin()` 包操作。
 
 它只由 Desktop 应用的私有 patch 挂载，普通 Web profile 不会获得这些服务。包操作会重新进入内置 `dsh plugin` 命令，因此 profile 初始化、相对调用目录的路径锚定与 `dsh.profile.bundles` 对账仍由上游 CLI 负责。
@@ -17,12 +30,6 @@ kind: "package-reference"
 服务不通过 PATH 查找，而是解析内置 pnpm JavaScript 入口；它会拒绝不安全参数与调用目录，通过受管 subprocess 服务运行，并在清理时取消完整操作进程树。subprocess 边界提供去除凭据的环境；这里只显式增加当前 `DSH_HOME`、内置 pnpm 入口、Electron Node 模式与非交互标记。
 
 <a id="table-of-contents"></a>
-## 目录
-
-- [模型体验](#model-experience)
-- [Invariant ownership](#invariant-ownership)
-- [已知限制与延期工作](#known-limitations-and-deferred-work)
-- [开发备注](#dev-note)
 
 <a id="invariant-ownership"></a>
 ## Invariant ownership

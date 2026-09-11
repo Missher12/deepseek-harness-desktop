@@ -9,19 +9,25 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Host-side, read-only all-history usage index for DeepSeek Harness. The plugin folds durable root, archived, and subagent Session logs into privacy-minimal daily rows, persists those derived rows in the `usage_insights` storage domain, and exposes one `usageInsights.snapshot()` Remote method for Settings.
-
-The index counts provider-reported uncached input, output, cache-read, and cache-write tokens. Reasoning tokens remain part of output and are not added a second time. A forked Session begins after its durable `inheritedEventCount`, so copied parent history is not double-counted. Longest-session time is the sum of closed turn durations rather than wall-clock idle time, and chat streaks use human messages in the machine's current time zone.
-
-Feature rankings deliberately describe **features**, not installed plugins. Native tool calls, Code Mode dispatches, explicit skill invocations, model routes, and reasoning-effort selections can be recovered from durable events; historical logs do not carry a reliable Loader-plugin owner for every tool. Only identifiers and counters enter the derived cache. Prompts, replies, tool arguments, tool results, titles, paths, attachments, and credentials do not.
+Read all-history usage across root, archived and subagent Sessions through one bounded snapshot. Provider-reported tokens, active time, streaks and feature rankings are derived from durable logs and cached for Settings. Forked history is not counted twice, and the cache stores counters and identifiers without retaining prompts, replies, paths or credentials.
 
 ## Table of Contents
 
+- [Use this package](#use-this-package)
 - [Composition](#composition)
 - [Model Experience](#model-experience)
 - [Invariant ownership](#invariant-ownership)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
+
+<a id="use-this-package"></a>
+## Use this package
+
+Host-side, read-only all-history usage index for DeepSeek Harness. The plugin folds durable root, archived, and subagent Session logs into privacy-minimal daily rows, persists those derived rows in the `usage_insights` storage domain, and exposes one `usageInsights.snapshot()` Remote method for Settings.
+
+The index counts provider-reported uncached input, output, cache-read, and cache-write tokens. Reasoning tokens remain part of output and are not added a second time. A forked Session begins after its durable `inheritedEventCount`, so copied parent history is not double-counted. Longest-session time is the sum of closed turn durations rather than wall-clock idle time, and chat streaks use human messages in the machine's current time zone.
+
+Feature rankings deliberately describe **features**, not installed plugins. Native tool calls, Code Mode dispatches, explicit skill invocations, model routes, and reasoning-effort selections can be recovered from durable events; historical logs do not carry a reliable Loader-plugin owner for every tool. Only identifiers and counters enter the derived cache. Prompts, replies, tool arguments, tool results, titles, paths, attachments, and credentials do not.
 
 ## Composition
 

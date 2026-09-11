@@ -80,7 +80,9 @@ export class MyService extends Service {
 
 让 `apply` 抛出异常：
 
-```ts ignore-check
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+
 export function apply(ctx: Context) {
   throw new Error('apply exploded')
 }

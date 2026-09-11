@@ -248,6 +248,16 @@ describe('stageDesktop', () => {
     expect(dependencies.commands).toEqual([])
   })
 
+  it.each([
+    'node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner.js',
+    'node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/worker.cjs',
+    'node_modules/@deepseek-ai/node-addon-system/lib/flock.js',
+  ])('refuses a stage missing the upgraded core runtime entry %s', async (missing) => {
+    const dependencies = fakeDependencies()
+    dependencies.isFile = async path => !path.replaceAll('\\', '/').endsWith(missing)
+    await expect(stageDesktop(REPO_ROOT, dependencies)).rejects.toThrow(`missing required file: ${missing}`)
+  })
+
   it('fails closed when a required file or native module is absent', async () => {
     await expect(stageDesktop(REPO_ROOT, fakeDependencies(false))).rejects.toThrow(/missing required file/i)
     await expect(stageDesktop(REPO_ROOT, fakeDependencies(true, []))).rejects.toThrow(/native.*\.node/i)

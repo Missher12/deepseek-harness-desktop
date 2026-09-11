@@ -67,6 +67,9 @@ function windowsX64PolicyViolation(path: string): string | undefined {
   if (prebuild !== null && !(prebuild[1] ?? '').startsWith('win32-x64')) {
     return 'non-Windows-x64 native prebuild'
   }
+  if (/(?:^|\/)node_modules\/@deepseek-ai\/node-addon-system-(?:darwin|linux)-[^/]+(?:\/|$)/u.test(lower)) {
+    return 'POSIX-only system package in Windows inventory'
+  }
   const sharp = /(?:^|\/)node_modules\/@img\/(?:sharp|sharp-libvips)-([^/]+)(?:\/|$)/u.exec(lower)
   const sharpTarget = sharp?.[1]
   if (sharpTarget !== undefined

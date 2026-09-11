@@ -581,7 +581,7 @@ export class SessionMessengerCoordinator {
     try {
       const handle = await this.ctx.sessionPersistence.open(receipt.targetSessionId, 'read')
       try {
-        return eventsContainMessage(await handle.read(), receipt.messageId)
+        return eventsContainMessage((await handle.read()).events, receipt.messageId)
       } finally {
         await handle.close()
       }

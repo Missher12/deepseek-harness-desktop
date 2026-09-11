@@ -9,18 +9,24 @@ English | [中文](README.zh.md)
 
 ## Summary
 
+Run trusted Desktop plugin-management operations against the active profile while keeping its identity immutable. Operations re-enter the packaged CLI through the managed subprocess service and cancel their process tree during teardown. Only the private Desktop composition provides these services; upstream CLI rules continue to own profile initialization and bundle reconciliation.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Model Experience](#model-experience)
+- [Invariant ownership](#invariant-ownership)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+<a id="use-this-package"></a>
+## Use this package
+
 This private Host package publishes the two structural services consumed by a trusted plugin manager in DeepSeek Harness Desktop: immutable `desktopProfiles.current` identity and serialized `desktopPnpm.runPlugin()` package operations.
 
 It is mounted only by the Desktop application's private patch. Ordinary Web profiles do not receive these services. Package operations re-enter the packaged `dsh plugin` command, so profile initialization, caller-relative path anchoring, and `dsh.profile.bundles` reconciliation remain owned by the upstream CLI.
 
 The service resolves the packaged pnpm JavaScript entry without PATH lookup, rejects unsafe arguments and caller directories, runs through the managed subprocess service, and cancels the complete operation tree during teardown. The subprocess boundary supplies the credential-scrubbed ambient environment; only the active `DSH_HOME`, packaged pnpm entry, Electron Node mode, and non-interactive flag are added explicitly.
-
-## Table of Contents
-
-- [Model Experience](#model-experience)
-- [Invariant ownership](#invariant-ownership)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
 
 ## Invariant ownership
 

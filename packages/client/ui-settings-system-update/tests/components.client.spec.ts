@@ -42,6 +42,7 @@ function props(
     useSessions: unusedHook,
     useSessionPendingInteraction: unusedHook,
     useWorkspaces: unusedHook,
+    usePanelInfo: unusedHook, useResource: unusedHook,
     useStore: selector => selector({ snapshot, statusLoad }),
     actions: unusedHook,
     retryStatus: operations.retryStatus ?? vi.fn(async () => {}),

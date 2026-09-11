@@ -94,7 +94,7 @@ describe('write-ahead recovery', () => {
     if (location === 'cold-event') {
       h.open.mockResolvedValue({
         header: { version: 2, id: SessionId('target'), createdAt: 1 },
-        read: async () => [persistedInsertion()],
+        read: async () => ({ events: [persistedInsertion()], eventState: 'detached' }),
         close: vi.fn(async () => {}),
       })
     }

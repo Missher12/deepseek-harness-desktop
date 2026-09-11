@@ -3,8 +3,7 @@
  * that rescope with `--reverse`. Every harness package declares `cordis` as a
  * peer dependency, so publication carries this framework layer too; publishing
  * it under the upstream names would squat them on the registry
- * ([rationale](../.agents/notes/implemented/process/2026-08-10-vendor-package-rescope.md),
- * [name mapping](../docs/rescope.md)).
+ * ([rationale and name mapping](../docs/rescope.md)).
  *
  * The generic pass rewrites ONLY delimited, complete package-name tokens:
  * `'old'` / `"old"` / `` `old` `` / `'old/subpath'`, plus a YAML `name: old`
@@ -137,6 +136,9 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   { file: 'packages/experimental/inspector/tests/plugin.client.spec.ts', upstream: ['cordis'] },
   { file: 'scripts/gen-cordis-catalog.ts', upstream: ['cordis'] },
   // The UI locale namespace and input-trigger source id are product keys.
+  { file: 'packages/client/ui-input-trigger/tests/menu-view.client.spec.tsx', upstream: ['cordis'] },
+  { file: 'packages/client/ui-input-trigger/tests/service.client.spec.ts', upstream: ['cordis'] },
+  { file: 'packages/extensions/ui-cordis/tests/mention-source.client.spec.ts', upstream: ['cordis'] },
   { file: 'packages/client/ui-settings-plugin-inventory/src/client/PluginInventorySettingsTab.tsx', upstream: ['cordis'] },
   { file: 'packages/extensions/ui-cordis/src/client/CordisActionRow.tsx', upstream: ['cordis'] },
   { file: 'packages/extensions/ui-cordis/src/client/CordisDefineRow.tsx', upstream: ['cordis'] },

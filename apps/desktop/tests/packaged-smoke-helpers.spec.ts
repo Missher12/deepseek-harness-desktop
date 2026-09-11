@@ -172,7 +172,7 @@ describe('packaged desktop process inspection', () => {
           delegationDepth: 1,
         })
         const handle = await reader.sessionPersistence.open(SessionId(seeded.activeSessionId), 'read')
-        const active = { events: await handle.read() }
+        const active = await handle.read()
         await handle.close()
         let currentTurn: number | undefined
         const projectedHumanPrompts: Array<{ seq: number; turn: number }> = []

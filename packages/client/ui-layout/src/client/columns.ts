@@ -1,24 +1,14 @@
 /**
- * Pure concession-chain column solver for the three-column AppFrame.
- * Chain order is fixed by contract: keep center >= CENTER_MIN by shrinking
- * details, then auto-closing it (derived zero width — preferred width
- * preferences are never rewritten, so widening the window restores them).
- * The sidebar never concedes: its rendered width is always the drag
- * preference (or the collapsed rail), and center absorbs any remaining
- * deficit as the last resort. Inputs are the layout store's plain width
- * preferences (0 = closed); a closed sidebar resolves to the fixed
- * SIDEBAR_COLLAPSED control rail while closed details resolve to zero width.
- * The SIDEBAR_AUTO_COLLAPSE breakpoint is consumed by AppFrame, which decides
- * the effective sidebar preference before solving; the solver itself stays
- * breakpoint-free.
+ * Normal column geometry: the right column shrinks, then loses its track,
+ * before the center drops below its minimum. The sidebar never concedes here;
+ * AppFrame supplies its effective preference after responsive collapse.
  */
 
-/** Resolved widths for one frame; center may drop below CENTER_MIN only at the final fallback. */
-export interface Columns { sidebar: number; center: number; details: number; utility: number }
+/** Resolved widths for one frame. */
+export interface Columns { sidebar: number; center: number; rightbar: number }
 
-// Contract-frozen geometry: the three-column concession chain's fixed points.
-/** Center column floor; only the final fallback may go below it. */
-export const CENTER_MIN = 640
+/** Center width protected while the normal right column is open. */
+export const CENTER_MIN = 400
 /** Sidebar drag clamp floor. */
 export const SIDEBAR_MIN = 264
 /** Sidebar drag clamp ceiling. */
@@ -31,17 +21,18 @@ export const SIDEBAR_COLLAPSED = 56
  * LG breakpoint); a manual toggle below it re-expands over the squeezed center
  * (stores.ts narrowExpanded). */
 export const SIDEBAR_AUTO_COLLAPSE = 1024
-/** Details drag clamp floor. */
-export const DETAILS_MIN = 300
-/** Details drag clamp ceiling. */
-export const DETAILS_MAX = 520
-/** Details width before any user drag. */
-export const DETAILS_DEFAULT = 360
-/** Utility workbench drag clamp floor. */
+/** Right column drag clamp floor. */
+export const RIGHTBAR_MIN = 300
+/** Maximum normal right panel width as a fraction of the frame. */
+export const RIGHTBAR_MAX_RATIO = 0.7
+/** First-open right panel preference as a fraction of the frame. */
+export const RIGHTBAR_DEFAULT_RATIO = 0.45
+
+/** Retained workbench preference lower bound. */
 export const UTILITY_MIN = 300
-/** Utility workbench drag clamp ceiling. */
+/** Retained workbench preference upper bound. */
 export const UTILITY_MAX = 720
-/** Utility workbench width before any user drag. */
+/** Initial retained workbench preference. */
 export const UTILITY_DEFAULT = 360
 
 /**
@@ -56,45 +47,18 @@ export function clampWidth(px: number, min: number, max: number): number {
 }
 
 /**
- * Solve the three column widths for one viewport frame. Pure: no hysteresis —
- * the output is a function of (viewport, preferences) only, so recovery on
- * re-widening is automatic. Preferences re-clamp here because they cross the
- * store boundary and callers may still supply stale ranges.
+ * Solve the three column widths for one viewport frame.
  * @param viewport - available frame width in px.
  * @param sidebar - sidebar width preference in px (0 = closed).
- * @param details - details width preference in px (0 = closed).
- * @param utility - utility width preference in px (0 = closed).
- * @returns resolved widths; details 0 means visually closed (never unmounted), while a closed sidebar keeps its compact rail.
+ * @param rightbar - requested right panel width in px (0 = no track).
+ * @returns actual widths after shrinking or removing the right track; only
+ *   without that track may the center fall below its minimum, down to zero.
  */
-export function computeColumns(viewport: number, sidebar: number, details: number, utility = 0): Columns {
-  // The sidebar is fixed at its preference (or the rail) — it never concedes.
+export function computeColumns(viewport: number, sidebar: number, rightbar: number): Columns {
   const s = sidebar === 0 ? SIDEBAR_COLLAPSED : clampWidth(sidebar, SIDEBAR_MIN, SIDEBAR_MAX)
-  // Only one right surface may participate in the concession chain. The
-  // store enforces mutual exclusion; utility wins defensively for stale input.
-  const utilityActive = utility !== 0
-  const d0 = utilityActive || details === 0 ? 0 : clampWidth(details, DETAILS_MIN, DETAILS_MAX)
-  const u0 = utilityActive ? clampWidth(utility, UTILITY_MIN, UTILITY_MAX) : 0
-  const right0 = utilityActive ? u0 : d0
-  const rightMin = utilityActive ? UTILITY_MIN : DETAILS_MIN
-
-  // Step 1: everything fits at preferred widths.
-  if (s + right0 + CENTER_MIN <= viewport) return {
-    sidebar: s,
-    center: viewport - s - right0,
-    details: d0,
-    utility: u0,
-  }
-
-  // Step 2: shrink details toward its minimum.
-  const right1 = right0 === 0 ? 0 : Math.max(rightMin, viewport - s - CENTER_MIN)
-  if (s + right1 + CENTER_MIN <= viewport) return {
-    sidebar: s,
-    center: CENTER_MIN,
-    details: utilityActive ? 0 : right1,
-    utility: utilityActive ? right1 : 0,
-  }
-
-  // Step 3: auto-close details (derived — preferences untouched); center
-  // absorbs any remaining deficit (may drop below CENTER_MIN).
-  return { sidebar: s, center: Math.max(0, viewport - s), details: 0, utility: 0 }
+  const available = viewport - s - CENTER_MIN
+  const r = rightbar === 0 || available < RIGHTBAR_MIN
+    ? 0
+    : Math.min(available, clampWidth(rightbar, RIGHTBAR_MIN, viewport * RIGHTBAR_MAX_RATIO))
+  return { sidebar: s, center: Math.max(0, viewport - s - r), rightbar: r }
 }

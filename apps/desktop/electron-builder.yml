@@ -68,6 +68,8 @@ win:
   files:
     - "!node_modules/node-pty/prebuilds/darwin-x64/**"
     - "!node_modules/node-pty/prebuilds/linux-*/**"
+    - "!node_modules/@deepseek-ai/node-addon-system-darwin-*/**"
+    - "!node_modules/@deepseek-ai/node-addon-system-linux-*/**"
     - "!node_modules/@napi-rs/canvas-android-*/**"
     - "!node_modules/@napi-rs/canvas-darwin-*/**"
     - "!node_modules/@napi-rs/canvas-linux-*/**"

@@ -10,6 +10,19 @@ kind: "package-reference"
 <a id="summary"></a>
 ## 概述
 
+在设置中查看运行中的 Desktop 与 Harness 版本、检查更新并跟踪经过校验的下载进度。受支持的原生安装包提供对应平台的安装或显示文件操作，并支持取消下载和重试错误。Electron 负责选择发行版、校验和安装；成功交接不会被当作安装完成。
+
+## 目录
+
+- [使用本包](#use-this-package)
+- [模型体验](#model-experience)
+- [Invariant ownership](#invariant-ownership)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="use-this-package"></a>
+## 使用本包
+
 “系统更新”在设置中显示 Desktop、Harness 实际运行版本和当前原生系统的更新状态。这个 Desktop 专用客户端包渲染狭窄的 `window.dshDesktop` 状态，并且只调用由 Electron 主进程拥有的固定检查、下载、取消下载和安装操作。
 
 本包绝不选择仓库、网络 URL、目标路径、校验和或可执行命令。官方 Harness 标签只用于提示；匹配原生平台与安装格式的已验证清单才能启用 Desktop 安装包操作。
@@ -21,12 +34,6 @@ kind: "package-reference"
 Intel macOS 点击“重启并安装”后会准备受保护的更新辅助程序，然后退出 Desktop；不会再显示额外的原生确认。Windows x64 在原生确认后提供可见的 Setup 安装向导。Linux x64 的 .deb 和 AppImage 安装包仅提供“查看安装包”；Desktop 保持运行，操作可重复执行。取消 Windows 原生确认不属于错误；交接或查看安装包不会更改运行版本，也不会宣称安装完成。
 
 <a id="table-of-contents"></a>
-## 目录
-
-- [模型体验](#model-experience)
-- [Invariant ownership](#invariant-ownership)
-- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
-- [开发备注](#dev-note)
 
 <a id="invariant-ownership"></a>
 ## Invariant ownership

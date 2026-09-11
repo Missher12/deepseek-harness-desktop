@@ -10,6 +10,20 @@ kind: "package-reference"
 <a id="summary"></a>
 ## 概述
 
+通过一个有界快照读取根会话、归档会话及 subagent Session 的全部历史用量。提供方报告的 token、活动时长、连续天数和功能排名从持久日志计算，并缓存供设置页面使用。分支继承的历史不会重复计数，缓存只保存计数与标识，不保留提示、回复、路径或凭据。
+
+## 目录
+
+- [使用本包](#use-this-package)
+- [组合方式](#composition)
+- [模型体验](#model-experience)
+- [Invariant ownership](#invariant-ownership)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="use-this-package"></a>
+## 使用本包
+
 DeepSeek Harness 的 Host 侧只读全历史使用索引。插件把持久化的根 Session、归档 Session 与子 Agent Session 日志折叠成最小化隐私的每日记录，将这些派生记录保存在 `usage_insights` 存储域中，并为设置页提供一个 `usageInsights.snapshot()` Remote 方法。
 
 索引统计提供方报告的非缓存输入、输出、缓存读取和缓存写入 Token。推理 Token 已包含 在输出中，不会再次相加。分叉 Session 从持久化的 `inheritedEventCount` 之后开始统计，避免重复 计算复制来的父会话历史。最长会话时长取已关闭轮次的时长之和，不把轮次间的空闲时间 算进去；聊天连续天数按本机当前时区中的真人消息计算。
@@ -17,13 +31,6 @@ DeepSeek Harness 的 Host 侧只读全历史使用索引。插件把持久化的
 功能排行明确描述的是**功能**，不是已安装插件。原生工具调用、Code Mode 调度、显式 skill 调用、模型路由和推理强度选择可以从持久化事件恢复；历史日志却不为每次工具调用 保存可靠的 Loader 插件归属。派生缓存只保存标识符和计数，不保存提示词、回复、工具 参数、工具结果、标题、路径、附件或凭据。
 
 <a id="table-of-contents"></a>
-## 目录
-
-- [组合方式](#composition)
-- [模型体验](#model-experience)
-- [Invariant ownership](#invariant-ownership)
-- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
-- [开发备注](#dev-note)
 
 <a id="composition"></a>
 ## 组合方式

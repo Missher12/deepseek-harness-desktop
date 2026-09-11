@@ -4,7 +4,7 @@ import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session/types
 import { foldSessionUsage } from '../src/fold.ts'
 
 const header = (overrides: Partial<SessionHeader> = {}): SessionHeader => ({
-  version: 2,
+  version: 3,
   id: 'usage-test' as SessionHeader['id'],
   createdAt: Date.parse('2026-03-01T00:00:00.000Z'),
   isSeeded: false,

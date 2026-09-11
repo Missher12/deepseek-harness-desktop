@@ -52,7 +52,7 @@ fi
 export DSH_LINUX_DESKTOP_EXECUTABLE='/opt/DeepSeek Harness/deepseek-harness'
 export DSH_LINUX_EVIDENCE_ROOT="$evidence/deb"
 export DSH_LINUX_PACKAGE_FORMAT=deb
-landlock='/opt/DeepSeek Harness/resources/app.asar.unpacked/node_modules/@deepseek-ai/node-addon-landlock-run-linux-x64/bin/landlock-run'
+landlock='/opt/DeepSeek Harness/resources/app.asar.unpacked/node_modules/@deepseek-ai/node-addon-system-linux-x64/bin/landlock-run'
 test -x "$landlock"
 "$landlock" --probe > "$evidence/landlock-probe.txt"
 run_linux_native_checks

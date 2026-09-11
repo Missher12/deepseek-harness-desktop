@@ -10,8 +10,8 @@ probe_root="$(mktemp -d)"
 trap 'rm -rf -- "$probe_root"' EXIT
 "$CXX" -std=c++20 scripts/linux-desktop-toolchain-probe.cc -o "$probe_root/probe"
 "$probe_root/probe"
-pnpm --filter @deepseek-ai/node-addon-landlock-run-workspace run build:native
-node native/landlock-run/scripts/verify-launcher-binary.mjs packages/linux-x64
+pnpm --filter @deepseek-ai/node-addon-system-workspace run build:native
+node native/system/scripts/verify-launcher-binary.mjs packages/linux-x64
 pnpm run desktop:stage
 # Keep this standalone platform entry usable before shared staging integrates.
 cp apps/desktop/electron-builder.linux.yml apps/desktop/.stage/electron-builder.linux.yml

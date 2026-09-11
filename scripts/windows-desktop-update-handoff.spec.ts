@@ -11,7 +11,7 @@ describe('installed Windows update handoff entrance', () => {
     const workflow = source('../.github/workflows/windows-desktop.yml')
     const checksum = workflow.indexOf('- name: Record SHA-256')
     const upload = workflow.indexOf('name: DeepSeek-Harness-Setup-win-x64-')
-    const abi = workflow.indexOf('- name: Restore host Node ABI')
+    const abi = workflow.indexOf('- name: Verify Windows system paths')
     const baseline = workflow.indexOf('- name: Measure the pinned public')
     expect(checksum).toBeGreaterThan(abi)
     expect(upload).toBeGreaterThan(checksum)

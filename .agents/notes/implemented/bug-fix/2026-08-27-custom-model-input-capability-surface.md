@@ -8,7 +8,7 @@ English | [中文](2026-08-27-custom-model-input-capability-surface.zh.md)
 
 The pi-ai adapter already accepted explicit per-model input modalities, but the Models page could not edit them. Every model created through the custom-provider flow therefore omitted `input` unless a user hand-edited `settings.yaml`, so a genuinely multimodal model could appear unable to accept images. Endpoint discovery also discarded modality fields that some OpenAI-compatible gateways explicitly return.
 
-This note supersedes only the earlier decision that no configuration surface edits `input` in [the route-default input-modality note](../architecture/2026-08-12-pi-ai-route-default-input-modalities.md). Its conservative resolution order and rule that unknown capability must not be guessed remain unchanged.
+This note supersedes only the earlier decision that no configuration surface edits `input` in [the route-default input-modality note](../../archived/architecture/2026-08-12-pi-ai-route-default-input-modalities.md). Its conservative resolution order and rule that unknown capability must not be guessed remain unchanged.
 
 ## Decision
 

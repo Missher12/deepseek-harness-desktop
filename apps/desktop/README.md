@@ -100,6 +100,10 @@ source.
 
 ## System Update
 
+Native update confirmation and the Windows tray use the operating-system locale, with Chinese and English copy owned by `src/locales.ts`.
+
+New sessions created with no project use `~/deepseek-temp/<sessionId>/` (under the Windows user profile on Windows). Their header records the working directory; generated files remain after reopening or deleting conversation history. Explicit projects and existing session locations stay unchanged.
+
 System Update shows the running Desktop version and the included Harness core version separately. Checking the fixed official Harness release can report a newer core, but does not claim that the installed core has changed. The native process selects the matching Intel macOS DMG, Windows x64 Setup, or detected Linux x64 `.deb` / AppImage; an unknown Linux package format disables downloading and installation instead of guessing.
 
 Downloads show received bytes against the manifest's exact size, including when the server omits Content-Length. Cancel removes only the active incomplete staging directory. Completed downloads require the expected release URL, byte count, SHA-256, native file format and physical-file checks; verification failure never enables installation. The renderer cannot provide a URL, filesystem path, checksum or command. A failed initial status read offers a status-only retry.

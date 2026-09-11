@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-27-gate-runner-fail-fast.md
-2026-08-27-gate-runner-fail-fast.md: e557b3fc2542fb3e8410699e9f20b9970c4f8d90
-2026-08-27-gate-runner-fail-fast.zh.md: 0705e70ead37ff25356d23116a7f2938e71a439d

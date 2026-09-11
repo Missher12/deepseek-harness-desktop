@@ -6,7 +6,7 @@
 // content-addressed store makes the saved path identical across record and
 // replay once the workspace cwd is tokenized, so the recorded read arguments
 // replay verbatim against a freshly re-uploaded object.
-// Record: DSH_SNAPSHOT=record rewrites session.v2.jsonl, then a keyless
+// Record: DSH_SNAPSHOT=record rewrites session.v3.jsonl, then a keyless
 // DSH_SNAPSHOT=refresh regenerates ui.expected.md.
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -21,7 +21,7 @@ import {
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/file-upload-round', import.meta.url))
-const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/session.v2.jsonl', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/session.v3.jsonl', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/ui.expected.md', import.meta.url))
 const TRAJECTORY_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/trajectory.expected.md', import.meta.url))
 const OVERRIDE = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/replay.override.json', import.meta.url))
@@ -39,6 +39,9 @@ const IMAGE_NAMES = Array.from({ length: 10 }, (_unused, index) => `reference-${
 
 /** Browser-measured relations for the mixed composer attachment rail. */
 interface DraftRailGeometry {
+  readonly fileIconBox: string
+  readonly fileIconColor: string
+  readonly fileIconUsesSolidFill: boolean
   readonly order: readonly string[]
   readonly oneGroup: boolean
   readonly oneRow: boolean
@@ -55,6 +58,9 @@ function renderDraftRailGeometry(geometry: DraftRailGeometry): string {
     '',
     `- selection order: ${geometry.order.join(' > ')}`,
     `- one attachment group: ${String(geometry.oneGroup)}`,
+    `- file icon dimensions: ${geometry.fileIconBox}`,
+    `- file icon color: ${geometry.fileIconColor}`,
+    `- file icon uses a solid fill: ${String(geometry.fileIconUsesSolidFill)}`,
     `- all cards share one row: ${String(geometry.oneRow)}`,
     `- every card is 64px high: ${String(geometry.equalHeight)}`,
     `- the file card is wider than an image: ${String(geometry.fileWider)}`,
@@ -65,6 +71,9 @@ function renderDraftRailGeometry(geometry: DraftRailGeometry): string {
 
 /** Browser-measured relations for one durable mixed-attachment message. */
 interface HistoryAttachmentGeometry {
+  readonly fileIconBox: string
+  readonly fileIconColor: string
+  readonly fileIconUsesSolidFill: boolean
   readonly order: readonly string[]
   readonly oneGroup: boolean
   readonly oneRow: boolean
@@ -82,6 +91,9 @@ function renderHistoryAttachmentGeometry(geometry: HistoryAttachmentGeometry): s
     '',
     `- source order: ${geometry.order.join(' > ')}`,
     `- one attachment group: ${String(geometry.oneGroup)}`,
+    `- file icon dimensions: ${geometry.fileIconBox}`,
+    `- file icon color: ${geometry.fileIconColor}`,
+    `- file icon uses a solid fill: ${String(geometry.fileIconUsesSolidFill)}`,
     `- file and image share one row: ${String(geometry.oneRow)}`,
     `- both cards are 64px high: ${String(geometry.equalHeight)}`,
     `- the image is a 64px tile: ${String(geometry.imageIsTile)}`,
@@ -146,12 +158,18 @@ describe('web e2e: generic file upload through the real assembly', () => {
     const rail = page.getByRole('group', { name: 'Pending attachments' })
     await expect.poll(() => rail.locator(':scope > *').count(), { timeout: 10_000 })
       .toBe(IMAGE_NAMES.length + 1)
+    await rail.locator('svg[viewBox="0 0 28 28"]').waitFor({ timeout: 15_000 })
     const geometry = await rail.evaluate((element): DraftRailGeometry => {
       const cards = [...element.children] as HTMLElement[]
       const boxes = cards.map(card => card.getBoundingClientRect())
       const imageWidth = boxes[cards.findIndex(card => card.querySelector('img') !== null)]?.width ?? 0
-      const fileWidth = boxes[cards.findIndex(card => card.querySelector('[title="poem.bin"]') !== null)]?.width ?? 0
+      const fileCard = cards.find(card => card.querySelector('[title="poem.bin"]') !== null)!
+      const fileWidth = fileCard.getBoundingClientRect().width
+      const fileIcon = fileCard.querySelector('svg[viewBox="0 0 28 28"]')!
       return {
+        fileIconBox: `${fileIcon.getBoundingClientRect().width} × ${fileIcon.getBoundingClientRect().height}`,
+        fileIconColor: getComputedStyle(fileIcon).color,
+        fileIconUsesSolidFill: fileIcon.querySelector('path')?.getAttribute('fill') === 'currentColor',
         order: cards.map(card => card.querySelector('img')?.getAttribute('alt')
           ?? card.querySelector<HTMLElement>('[title]')?.title ?? ''),
         oneGroup: document.querySelectorAll('[role="group"][aria-label="Pending attachments"]').length === 1,
@@ -248,7 +266,11 @@ describe('web e2e: generic file upload through the real assembly', () => {
       const fileIndex = cards.findIndex(card => card.getAttribute('title') === 'poem.bin')
       const imageBox = boxes[imageIndex]
       const fileBox = boxes[fileIndex]
+      const fileIcon = cards[fileIndex]!.querySelector('svg')!
       return {
+        fileIconBox: `${fileIcon.getBoundingClientRect().width} × ${fileIcon.getBoundingClientRect().height}`,
+        fileIconColor: getComputedStyle(fileIcon).color,
+        fileIconUsesSolidFill: fileIcon.querySelector('path')?.getAttribute('fill') === 'currentColor',
         order: cards.map(card => card.getAttribute('title') ?? card.querySelector('img')?.getAttribute('alt') ?? ''),
         oneGroup: document.querySelectorAll('[data-message-attachments]').length === 1,
         oneRow: boxes.every(box => Math.abs(box.top - (boxes[0]?.top ?? box.top)) < 0.5),
@@ -278,7 +300,7 @@ describe('web e2e: generic file upload through the real assembly', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.v2.jsonl', 'replay.override.json', 'ui.expected.md', 'trajectory.expected.md',
+      'session.v3.jsonl', 'replay.override.json', 'ui.expected.md', 'trajectory.expected.md',
     ])
   })
 })

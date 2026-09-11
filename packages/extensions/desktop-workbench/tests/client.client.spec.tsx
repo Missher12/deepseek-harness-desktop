@@ -100,17 +100,16 @@ describe('desktop workbench shell', () => {
   })
 
   it('defers persisted width until the first open after the layout root mounts', () => {
-    const layout = new LayoutController()
-    const controller = new WorkbenchController(layout, {
-      getItem: () => '512',
-      setItem: vi.fn(),
-    })
     const panels = {
       setSidebar: vi.fn(), setDetails: vi.fn(), toggleSidebar: vi.fn(),
       openDetails: vi.fn(), closeDetails: vi.fn(), openUtility: vi.fn(),
       closeUtility: vi.fn(), toggleUtility: vi.fn(), setUtilityWidth: vi.fn(),
     }
-    layout.attachPanels(panels as never)
+    const layout = new LayoutController(panels as never, () => true)
+    const controller = new WorkbenchController(layout, {
+      getItem: () => '512',
+      setItem: vi.fn(),
+    })
 
     controller.open(sessionId)
 

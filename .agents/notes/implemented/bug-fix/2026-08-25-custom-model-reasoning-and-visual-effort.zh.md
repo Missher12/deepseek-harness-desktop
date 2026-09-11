@@ -26,7 +26,7 @@ Client 测试会区分确切的仅 High 能力与 `low`／`medium`／`high` 上�
 
 **增加一个提供方级推理开关。** 不采用，因为一个提供方可以服务不同上限的模型；路由级值要么夸大能力，要么会让更强模型的能力不可见。
 
-**向提供方发送 `ultra` 或修改核心档位 ID。** 不采用，因为 Ultra 是 Desktop 的视觉档位，并非每个适配器都会公布的能力。核心继续按照[适配器持有能力的决策](../architecture/2026-07-24-adapter-owned-reasoning-effort-capabilities.zh.md)要求使用适配器持有的精确 ID。
+**向提供方发送 `ultra` 或修改核心档位 ID。** 不采用，因为 Ultra 是 Desktop 的视觉档位，并非每个适配器都会公布的能力。核心继续按照[适配器持有能力的决策](../../archived/architecture/2026-07-24-adapter-owned-reasoning-effort-capabilities.md)要求使用适配器持有的精确 ID。
 
 **把 Ultra 重新标成映射后的真实值。** 不采用，因为这会让控件看起来撤销了用户的选择。独立的模型上限行已经能说明真实上限，无需改写选中的视觉档位。
 

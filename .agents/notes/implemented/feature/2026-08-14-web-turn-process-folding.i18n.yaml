@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-14-web-turn-process-folding.md
-2026-08-14-web-turn-process-folding.md: 63b1e520452b859b20c31620fe75231774156462
-2026-08-14-web-turn-process-folding.zh.md: 521aeccfaec6ea4064eafa1e65956e66bd9ffc5c

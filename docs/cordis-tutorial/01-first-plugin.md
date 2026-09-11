@@ -80,7 +80,9 @@ Use the function form until you need to expose a service; [chapter 3](03-service
 
 Make `apply` throw:
 
-```ts ignore-check
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+
 export function apply(ctx: Context) {
   throw new Error('apply exploded')
 }

@@ -262,7 +262,7 @@ export const StatsLine = memo(function StatsLine({ useChat, useProjection, t }: 
   // Keep every metric in place and display each fact independently of counts.
   const unavailable = t('stats.unavailable')
   const groups: string[] = [
-    t('stats.counts', { turns: stats.turns, steps: stats.steps }),
+    t('stats.lineCounts', { turns: stats.turns, steps: stats.steps }),
     [
       t('stats.llm', { duration: stats.llmMs > 0 ? formatDuration(stats.llmMs, t) : unavailable }),
       t('stats.toolCall', { duration: stats.toolMs > 0 ? formatDuration(stats.toolMs, t) : unavailable }),

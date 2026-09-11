@@ -1,6 +1,8 @@
 /** Session commands whose activation policy is explicit at each Remote method. */
 
 import { randomUUID } from 'node:crypto'
+import { lstat, mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
@@ -11,7 +13,7 @@ import type {
 import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
 import {
-  ReasoningEffortId, createUserMessage, expandAssistantStream, freezeMessage,
+  ReasoningEffortId, assistantStreamChunks, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
@@ -19,6 +21,7 @@ import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@deeps
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { canonicalClientTimeZone } from '@deepseek-ai/dsh-util-time'
+import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import {
@@ -59,17 +62,27 @@ interface SessionReadState {
   readonly events: readonly SessionEvent[]
 }
 
+type PromptContentCandidate =
+  | SessionPromptRequest['content'][number]
+  | Extract<SessionUpdateQueueRequest['action'], { readonly kind: 'edit' }>['content'][number]
+
+function hasPromptContent(content: readonly PromptContentCandidate[]): boolean {
+  return content.some(part => part.type !== 'text' || part.text.trim().length > 0)
+}
+
 /** Implements Session business commands delegated by the Session Controller Remote service. */
 export class SessionCommandController {
   /**
    * @param ctx - Host context carrying Agent, model, attachment, title, and Workspace services.
    * @param agents - sole owner of create, resume, and Session-local model selection.
    * @param defaultCwd - project directory used when create names neither a Workspace nor a cwd.
+   * @param noProjectDirectory - optional absolute parent for persistent per-Session directories.
    */
   constructor(
     private readonly ctx: Context,
     private readonly agents: ApiSessionAgentController,
     private readonly defaultCwd: string,
+    private readonly noProjectDirectory?: string,
   ) {}
 
   /**
@@ -91,9 +104,9 @@ export class SessionCommandController {
         })
       }
     }
-    const cwd = workspace?.path ?? request.cwd ?? this.defaultCwd
     let adopted: Agent
     try {
+      const cwd = await this.creationCwd(request, sessionId, workspace)
       adopted = await this.agents.ensureSession(
         sessionId,
         cwd,
@@ -116,6 +129,41 @@ export class SessionCommandController {
     }
     const agentPreset = this.agents.presetForSession(adopted.session)
     return { sessionId, ...(agentPreset === undefined ? {} : { agentPreset }) }
+  }
+
+  private async creationCwd(
+    request: SessionCreateRequest,
+    sessionId: SessionId,
+    workspace: Workspace | undefined,
+  ): Promise<string> {
+    if (workspace !== undefined) return workspace.path
+    if (request.cwd !== undefined) return request.cwd
+    if (this.noProjectDirectory === undefined) return this.defaultCwd
+
+    // Adoption keeps recorded work, including Sessions created before this policy existed.
+    if (request.sessionId !== undefined) {
+      const attached = this.ctx.sessions.get(sessionId)
+      if (attached !== undefined) return attached.header.cwd ?? this.defaultCwd
+      try {
+        using observation = await this.ctx.sessionQuery.observeSession(sessionId, { projectionMode: 'none' })
+        return observation.header.cwd ?? this.defaultCwd
+      } catch (error) {
+        if (!(error instanceof SessionQueryError)
+          || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error
+      }
+    }
+
+    // Wire-supplied IDs become one portable path component. Lowercase avoids aliasing on Windows/macOS.
+    if (!/^[a-z0-9][a-z0-9_-]{0,127}$/u.test(sessionId)
+      || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/u.test(sessionId)) {
+      throw new RemoteError('gateway/bad-request', 'sessionId is not a portable Session directory name', {})
+    }
+    const cwd = join(this.noProjectDirectory, sessionId)
+    await mkdir(cwd, { recursive: true, mode: 0o700 })
+    if ((await lstat(cwd)).isSymbolicLink()) {
+      throw new Error(`Session directory "${cwd}" must not be a symbolic link or junction`)
+    }
+    return cwd
   }
 
   /**
@@ -362,11 +410,18 @@ export class SessionCommandController {
   }
 
   /**
-   * Admit one browser prompt after explicit Agent resume and image validation.
+   * Reject empty content, then admit one prompt after Agent and attachment validation.
    * @param request - Session identity, prompt content, source metadata, and delivery mode.
    * @returns acknowledgement that the Agent accepted the prompt.
    */
   async prompt(request: SessionPromptRequest): Promise<SessionPromptValue> {
+    if (!hasPromptContent(request.content)) {
+      throw new RemoteError(
+        'gateway/bad-request',
+        'prompt content must include non-whitespace text or an attachment',
+        {},
+      )
+    }
     const clientTimeZone = request.clientTimeZone === undefined
       ? undefined
       : canonicalClientTimeZone(request.clientTimeZone)
@@ -482,20 +537,34 @@ export class SessionCommandController {
    * @returns acknowledgement that the queue mutation was applied.
    */
   updateQueue(request: SessionUpdateQueueRequest): SessionUpdateQueueValue {
-    if (request.action.kind === 'edit'
-      && request.action.content.some(block => block.type !== 'text')) {
-      throw new RemoteError(
-        'session/attachment-invalid',
-        'queue edits accept text content only',
-        { reason: 'QUEUE_EDIT_NON_TEXT' },
-      )
+    if (request.action.kind === 'edit') {
+      if (request.action.content.some(block => block.type !== 'text')) {
+        throw new RemoteError(
+          'session/attachment-invalid',
+          'queue edits accept text content only',
+          { reason: 'QUEUE_EDIT_NON_TEXT' },
+        )
+      }
+      if (!hasPromptContent(request.action.content)) {
+        throw new RemoteError(
+          'gateway/bad-request',
+          'queue edit content must include non-whitespace text',
+          {},
+        )
+      }
     }
     const agent = this.ctx.agents.get(request.sessionId)
-    if (agent !== undefined && hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
-      throw apiSessionSubagentOwnershipError(request.sessionId)
-    }
     if (agent === undefined) {
       throw new RemoteError('session/queue-item-not-found', 'queued item is no longer pending', { itemId: request.itemId })
+    }
+    if (hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
+      const identity = this.ctx.sessionProjections
+        .snapshot(agent.session, ['subagent'])
+        .values.subagent
+      if (identity?.mode !== 'continuable'
+        || !agent.session.isOwnSeq(identity.seq)) {
+        throw apiSessionSubagentOwnershipError(request.sessionId)
+      }
     }
     const nextTurn = agent.inbox.nextTurn.find(message => message.id === request.itemId)
     const nextStep = agent.inbox.nextStep.find(message => message.id === request.itemId)
@@ -509,20 +578,28 @@ export class SessionCommandController {
     if (request.action.kind === 'steer' && (target !== 'next-turn' || agent.status !== 'running')) {
       throw new RemoteError('session/steer-unavailable', 'current turn no longer accepts steering', { itemId: request.itemId })
     }
-    if (request.action.kind === 'edit') {
-      agent.inbox.replace(request.itemId, freezeMessage<UserMessage>({
-        ...message,
-        content: [...request.action.content],
-      }))
-    } else {
-      agent.inbox.remove(request.itemId)
-      if (request.action.kind === 'remove') {
+    switch (request.action.kind) {
+      case 'edit':
+        agent.inbox.replace(request.itemId, freezeMessage<UserMessage>({
+          ...message,
+          content: [...request.action.content],
+        }))
+        break
+      case 'remove': {
+        agent.inbox.remove(request.itemId)
         const source = message.source
         if (source.kind === 'user' && 'rpcId' in source) {
           this.ctx.fileUploads.retirePrompt(agent, source.rpcId)
         }
+        break
       }
-      if (request.action.kind === 'steer') agent.steer(message)
+      case 'steer':
+        agent.inbox.remove(request.itemId)
+        agent.steer(message)
+        break
+      /* v8 ignore next 2 -- closed-union exhaustiveness guard */
+      default:
+        assertNever(request.action, 'queue action')
     }
     return { accepted: true }
   }
@@ -669,8 +746,7 @@ function imageInEvent(
     if (found !== undefined) return found
   }
   if (event.type === 'assistant/message' || event.type === 'assistant/attempt') {
-    for (const { chunk } of expandAssistantStream(event.data.stream)) {
-      if (chunk.type !== 'block-end') continue
+    for (const chunk of assistantStreamChunks(event.data.stream, 'block-end')) {
       const found = imageBlockIn([chunk.block], match)
       if (found !== undefined) return found
     }
