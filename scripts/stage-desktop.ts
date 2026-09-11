@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { cp, readFile, readdir, rm, stat } from 'node:fs/promises'
+import { cp, readFile, readdir, realpath, rm, stat } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -17,6 +18,8 @@ export interface StageDesktopDependencies {
   run(command: string, args: readonly string[], cwd: string): void
   copy(source: string, target: string): Promise<void>
   isFile(path: string): Promise<boolean>
+  realPath(path: string): Promise<string>
+  resolveModule(specifier: string, importer: string): string
   findPackageDirectories(root: string, packageDirectoryName: string): Promise<readonly string[]>
   findNativeBinaries(root: string): Promise<readonly string[]>
   findForbiddenControlArtifacts(root: string): Promise<readonly string[]>
@@ -159,6 +162,8 @@ const realDependencies: StageDesktopDependencies = {
   run,
   copy: async (source, target) => { await cp(source, target, { recursive: true, force: true }) },
   isFile: pathIsFile,
+  realPath: realpath,
+  resolveModule: (specifier, importer) => createRequire(importer).resolve(specifier),
   findPackageDirectories,
   findNativeBinaries,
   findForbiddenControlArtifacts,
@@ -218,6 +223,22 @@ function stageRelative(stageDir: string, path: string): string {
     throw new Error(`Desktop staging found a file outside the stage directory: ${path}`)
   }
   return value.split(sep).join('/')
+}
+
+/** Resolve the JSONL worker's flock dependency and require both files inside the physical stage. */
+export async function validateStagedFlock(
+  stageDir: string,
+  dependencies: Pick<StageDesktopDependencies, 'isFile' | 'realPath' | 'resolveModule'> = realDependencies,
+): Promise<string> {
+  const root = await dependencies.realPath(stageDir)
+  const worker = await dependencies.realPath(join(stageDir, 'node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/worker.cjs'))
+  stageRelative(root, worker)
+  const entry = await dependencies.realPath(dependencies.resolveModule('@deepseek-ai/node-addon-system/flock', worker))
+  const path = stageRelative(root, entry)
+  if (!await dependencies.isFile(entry)) {
+    throw new Error(`Desktop staging missing required file: ${path}`)
+  }
+  return path
 }
 
 function assertCanonicalSessionMessengerRow(content: string): void {
@@ -351,7 +372,6 @@ export async function stageDesktop(
     'node_modules/@deepseek-ai/dsh/lib/bin.js',
     'node_modules/@deepseek-ai/dsh-subprocess-local/lib/runner.js',
     'node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/worker.cjs',
-    'node_modules/@deepseek-ai/node-addon-system/lib/flock.js',
     'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html',
     'node_modules/@deepseek-ai/dsh-host-desktop-plugin-runtime/lib/index.js',
     'node_modules/@deepseek-ai/dsh-attachment-local/lib/pdf-worker.cjs',
@@ -379,6 +399,7 @@ export async function stageDesktop(
       throw new Error(`Desktop staging missing required file: ${path}`)
     }
   }
+  const flock = await validateStagedFlock(stageDir, dependencies)
 
   const marketPackageDirectories = await dependencies.findPackageDirectories(
     join(stageDir, 'node_modules'),
@@ -433,6 +454,7 @@ export async function stageDesktop(
     stageDir,
     validatedFiles: [
       ...required,
+      flock,
       ...nativeBinaries.map(path => stageRelative(stageDir, path)),
     ],
   }

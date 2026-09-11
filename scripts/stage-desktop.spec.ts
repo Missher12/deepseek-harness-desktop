@@ -1,3 +1,5 @@
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
@@ -6,6 +8,7 @@ import {
   desktopStagePnpmInvocation,
   stageDesktop,
   validateReasoningEffortPatch,
+  validateStagedFlock,
   type StageDesktopDependencies,
 } from './stage-desktop.ts'
 
@@ -72,6 +75,8 @@ function fakeDependencies(
       validated.push(path)
       return filesPresent
     },
+    realPath: async path => path,
+    resolveModule: (_specifier, importer) => join(importer, '../../../node-addon-system/lib/flock.js'),
     readText: async (path) => {
       read.push(path)
       const portablePath = path.replaceAll('\\', '/')
@@ -116,7 +121,64 @@ describe('desktop control release boundary', () => {
   })
 })
 
+describe('staged flock resolution', () => {
+  it.each(['nested', 'missing', 'external-dependency', 'external-worker'] as const)(
+    'checks real Node resolution and physical containment for %s', async (mode) => {
+      const scratch = await mkdtemp(join(tmpdir(), 'dsh-stage-flock-'))
+      try {
+        const stage = join(scratch, 'stage')
+        const scope = join(stage, 'node_modules/@deepseek-ai')
+        const workerPackage = join(mode === 'external-worker' ? scratch : stage, 'node_modules/.pnpm/jsonl/node_modules/@deepseek-ai/dsh-session-persistence-jsonl')
+        await mkdir(join(workerPackage, 'lib'), { recursive: true })
+        await writeFile(join(workerPackage, 'lib/worker.cjs'), '')
+        await mkdir(scope, { recursive: true })
+        await symlink(workerPackage, join(scope, 'dsh-session-persistence-jsonl'), 'junction')
+        const entryPackage = join(mode === 'external-dependency' ? scratch : stage, 'node_modules/.pnpm/system/node_modules/@deepseek-ai/node-addon-system')
+        if (mode !== 'missing') {
+          await mkdir(join(entryPackage, 'lib'), { recursive: true })
+          await writeFile(join(entryPackage, 'package.json'), JSON.stringify({
+            name: '@deepseek-ai/node-addon-system', exports: { './flock': './lib/flock.js' },
+          }))
+          await writeFile(join(entryPackage, 'lib/flock.js'), '')
+          await symlink(entryPackage, join(workerPackage, '../node-addon-system'), 'junction')
+        }
+        if (mode === 'nested') {
+          await expect(validateStagedFlock(stage)).resolves.toBe(
+            'node_modules/.pnpm/system/node_modules/@deepseek-ai/node-addon-system/lib/flock.js',
+          )
+          await expect(realpath(join(scope, 'node-addon-system'))).rejects.toMatchObject({ code: 'ENOENT' })
+        } else {
+          await expect(validateStagedFlock(stage)).rejects.toThrow(
+            // A source loader may resolve the missing package into the workspace; containment must reject that fallback.
+            mode === 'missing' ? /Cannot find module|outside the stage directory/ : /outside the stage directory/,
+          )
+        }
+      } finally {
+        await rm(scratch, { recursive: true, force: true })
+      }
+    },
+  )
+})
+
 describe('stageDesktop', () => {
+  it('resolves nested flock from the staged JSONL worker without requiring a top-level link', async () => {
+    const nested = join(DEFAULT_STAGE, 'node_modules/.pnpm/system/node_modules/@deepseek-ai/node-addon-system/lib/flock.js')
+    const dependencies = {
+      ...fakeDependencies(),
+      realPath: async (path: string) => path,
+      resolveModule: (specifier: string, importer: string) => {
+        expect(specifier).toBe('@deepseek-ai/node-addon-system/flock')
+        expect(importer).toBe(join(DEFAULT_STAGE, 'node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/worker.cjs'))
+        return nested
+      },
+      isFile: async (path: string) => path !== join(DEFAULT_STAGE, 'node_modules/@deepseek-ai/node-addon-system/lib/flock.js'),
+    }
+
+    const result = await stageDesktop(REPO_ROOT, dependencies)
+
+    expect(result.validatedFiles).toContain('node_modules/.pnpm/system/node_modules/@deepseek-ai/node-addon-system/lib/flock.js')
+  })
+
   it('spawns pnpm through its JavaScript entrypoint without a platform shell', () => {
     expect(desktopStagePnpmInvocation(
       ['--filter', '@deepseek-ai/dsh-desktop'],
