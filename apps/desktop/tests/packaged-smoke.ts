@@ -1036,6 +1036,12 @@ export async function waitForDesktopSessionReady(page: Page): Promise<void> {
  * @returns When the selected Session has a visible composer.
  */
 export async function activateSmokeSession(page: Page, title: string): Promise<void> {
+  await page.locator('[class*="sidebarCol"]').waitFor({ state: 'visible', timeout: 15_000 })
+  const collapsed = page.locator('[data-sidebar-collapsed="true"]')
+  if (await collapsed.count() > 0) {
+    await page.getByRole('button', { name: /^(?:Open sidebar|打开侧边栏)$/u }).click()
+    await collapsed.waitFor({ state: 'detached', timeout: 15_000 })
+  }
   const row = page.locator('[class*="sessionRow"]').filter({ has: page.getByText(title, { exact: true }) }).first()
   if (!await row.isVisible()) {
     const projects = page.locator('[class*="projectRow"]')

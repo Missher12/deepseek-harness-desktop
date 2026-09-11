@@ -43,6 +43,9 @@ it('rehearses the exact native directory and copied-V2 checks through real model
     const consoleWatch = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.goto(`${scaffold.baseUrl}/?surface=desktop`, { waitUntil: 'load' })
+    // Native piano navigation leaves this narrow viewport active before the reload checks.
+    await page.setViewportSize({ width: 1012, height: 760 })
+    await expect.poll(() => page.locator('[data-sidebar-collapsed="true"]').count()).toBe(1)
     await exerciseNativeSessionWorkspaces(page, {
       persistenceRoot: scaffold.persistenceRoot, noProjectRoot: join(scaffold.workspaceCwd, 'deepseek-temp'),
       projectTitle: seeded.activeSessionTitle, projectCwd: workspace.path,
