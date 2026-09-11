@@ -49,7 +49,7 @@ it('rehearses the exact native directory and copied-V2 checks through real model
     await exerciseNativeSessionWorkspaces(page, {
       persistenceRoot: scaffold.persistenceRoot, noProjectRoot: join(scaffold.workspaceCwd, 'deepseek-temp'),
       projectTitle: seeded.activeSessionTitle, projectCwd: workspace.path,
-      legacy, writes, selectSession: title => activateSmokeSession(page, title),
+      legacy, writes, selectSession: (title, id) => activateSmokeSession(page, title, id),
       evidencePath: join(scaffold.harnessHome, 'native-session-evidence.json'),
     })
     await verifySessionWorkspaceReceipt(join(scaffold.harnessHome, 'native-session-evidence.json'))

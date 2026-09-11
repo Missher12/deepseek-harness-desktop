@@ -1033,9 +1033,10 @@ export async function waitForDesktopSessionReady(page: Page): Promise<void> {
  * Select a seeded Session through its actual sidebar, including the ungrouped bucket.
  * @param page - The application renderer under test.
  * @param title - Exact title of the owned seed, whose optional Workspace has the same title.
+ * @param expectedSessionId - Stable identity for a Session whose title can change during restoration.
  * @returns When the selected Session has a visible composer.
  */
-export async function activateSmokeSession(page: Page, title: string): Promise<void> {
+export async function activateSmokeSession(page: Page, title: string, expectedSessionId?: SessionId): Promise<void> {
   await page.locator('[class*="sidebarCol"]').waitFor({ state: 'visible', timeout: 15_000 })
   const collapsed = page.locator('[data-sidebar-collapsed="true"]')
   if (await collapsed.count() > 0) {
@@ -1056,7 +1057,16 @@ export async function activateSmokeSession(page: Page, title: string): Promise<v
     }
   }
   await row.click()
-  await expect.poll(() => row.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
+  if (expectedSessionId === undefined) {
+    await expect.poll(() => row.getAttribute('aria-selected'), { timeout: 15_000 }).toBe('true')
+  } else {
+    await expect.poll(() => page.locator('[data-conversation-scroll]').getAttribute('data-session-id'), {
+      timeout: 15_000,
+    }).toBe(expectedSessionId)
+    await expect.poll(() => page.locator('[class*="sessionRow"][aria-selected="true"]').count(), {
+      timeout: 15_000,
+    }).toBe(1)
+  }
   await page.locator('[data-composer-input][contenteditable="true"]')
     .waitFor({ state: 'visible', timeout: 15_000 })
 }
@@ -2002,7 +2012,7 @@ export async function runPackagedDesktopSmoke(
       projectTitle: clipboardSeed.activeSessionTitle,
       projectCwd: join(harnessHome, clipboardSeed.activeSessionTitle),
       legacy: legacySessionSeed, writes: sessionWrites,
-      selectSession: title => activateSmokeSession(page, title),
+      selectSession: (title, id) => activateSmokeSession(page, title, id),
       evidencePath: join(repositoryRoot, 'apps/desktop/release', `desktop-smoke-session-workspaces-${platform}.json`),
     })
     expect(providerTripwire.requests).toEqual([])

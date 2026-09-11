@@ -173,7 +173,7 @@ export interface NativeSessionWorkspaceOptions {
   legacy: LegacySessionSeed
   writes: NativeSessionWrites
   evidencePath: string
-  selectSession(title: string): Promise<void>
+  selectSession(title: string, id: SessionId): Promise<void>
 }
 
 /** Execute five real write-tool turns and verify default directories, reopening and copied V2 migration. */
@@ -267,7 +267,7 @@ export async function exerciseNativeSessionWorkspaces(page: Page, options: Nativ
     expect(second.header.id).not.toBe(first.header.id)
     expect(second.header.cwd).toBe(join(options.noProjectRoot, second.header.id))
     await page.reload({ waitUntil: 'load' })
-    await options.selectSession(first.fixture.title)
+    await options.selectSession(first.fixture.title, first.header.id)
     const continued = await run('continued')
     expect(continued.header.id).toBe(first.header.id)
     expect(continued.header.cwd).toBe(first.header.cwd)
@@ -286,7 +286,7 @@ export async function exerciseNativeSessionWorkspaces(page: Page, options: Nativ
     if (await legacyGroup.getAttribute('aria-expanded') !== 'true') await legacyGroup.click()
     const legacyLabel = await page.locator('[class*="sessionRow"]').filter({ has: page.getByText(legacy.title, { exact: true }) }).count() > 0
       ? legacy.title : basename(legacy.cwd)
-    await options.selectSession(legacyLabel)
+    await options.selectSession(legacyLabel, legacy.id)
     await page.getByText('LIGHTHOUSE', { exact: true }).waitFor()
     await expect.poll(() => readdir(dirname(legacy.path)), { timeout: 15_000 }).toContain('session.v3.jsonl.zstd')
     expect(await readFile(legacy.path)).toEqual(legacy.bytes)
@@ -297,7 +297,7 @@ export async function exerciseNativeSessionWorkspaces(page: Page, options: Nativ
     expect(await readFile(legacy.path)).toEqual(legacy.bytes)
     expect(await readFile(legacy.output, 'utf8')).toBe(legacy.outputBytes)
     await page.reload({ waitUntil: 'load' })
-    await options.selectSession(legacy.title)
+    await options.selectSession(legacy.title, legacy.id)
     await page.getByText(migrated.fixture.done, { exact: true }).waitFor()
     options.writes.assertComplete()
     await mkdir(dirname(options.evidencePath), { recursive: true })
