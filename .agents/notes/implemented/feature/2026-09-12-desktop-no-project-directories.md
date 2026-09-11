@@ -27,3 +27,7 @@ This policy complements the [project Session storage layout](../architecture/202
 ## Consequences
 
 Generated work survives application restarts and Session-history deletion. Users remove unwanted folders themselves. The default output location does not restrict explicitly permitted absolute paths or replace the existing filesystem permission policy. Directory creation and Session publication are separate operations, so a failed Agent composition can leave an empty folder. Controller tests cover separate outputs, adoption, explicit projects, concurrent creation, deletion retention and filesystem failures. Packaged native verification remains necessary on each operating system.
+
+The Client excludes blank Sessions whose cwd matches a registered Workspace when resolving **No project**. Session creation can become visible before the Workspace membership update; both observations are needed to avoid adopting a project Session during that interval. The packaged acceptance also copies a V2 log without opening it through the test persistence provider, waits for the running product to publish V3, checks the original bytes, and exercises five real write-tool turns across isolated, reopened, project and migrated Sessions.
+
+Portable native receipts contain only Session directory leaf names, preservation outcomes, migration versions and hashes. All three packaging pipelines use one validator before retaining those receipts; absolute Host paths are excluded.

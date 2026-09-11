@@ -444,6 +444,26 @@ describe('UiWorkspaceService', () => {
     ])
   })
 
+  it('does not adopt a Workspace blank before its membership snapshot arrives', async () => {
+    const pending = summary('pending-project', { blank: true, cwd: '/w/alpha' })
+    const b = bench({
+      workspaces: workspaceState([workspace('alpha', [])]),
+      sessions: sessionState([pending], pending.id),
+    })
+    b.sessions.create.mockResolvedValue(sid('fresh-no-project'))
+    await expect(b.uiWorkspace.connectNoProject()).resolves.toBe(sid('fresh-no-project'))
+    expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({})
+    expect(b.sessions.open).not.toHaveBeenCalled()
+  })
+
+  it('leaves an initially empty Workspace inventory to explicit user navigation', () => {
+    const b = bench({ workspaces: workspaceState([]), sessions: sessionState([]) })
+    expect(b.sessions.create).not.toHaveBeenCalled()
+    b.workspaces.list.set(workspaceState([workspace('later', [])]))
+    expect(b.sessions.create).not.toHaveBeenCalled()
+    expect(b.sessions.open).not.toHaveBeenCalled()
+  })
+
   it('targets an explicit, current-session, then recent Workspace and reports failed starts', async () => {
     const current = summary('current', { cwd: '/w/current-home', updatedAt: 1 })
     const recent = summary('recent', { cwd: '/w/recent-home', updatedAt: 2 })

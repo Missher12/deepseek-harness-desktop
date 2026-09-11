@@ -1,60 +1,64 @@
 /** Desktop no-project selection uses the shared cwd policy and real Agent filesystem. */
 
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readdir } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
-import { expect, it } from 'vitest'
+import { chromium, type Browser } from 'playwright'
+import { expect, it, vi } from 'vitest'
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import { activateSmokeSession, seedWindowsClipboardSmokeState } from '../../desktop/tests/packaged-smoke.ts'
+import { startReaderSmokeProvider } from '../../desktop/tests/reader-smoke-provider.ts'
+import { exerciseNativeSessionWorkspaces, NativeSessionWrites, seedLegacySessionWorkspace } from '../../desktop/tests/session-workspace-smoke.ts'
+import { verifySessionWorkspaceReceipt } from '../../../scripts/desktop-session-workspace-receipt.ts'
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
 import { newEnglishPage } from './support.ts'
 
-it('creates no-project output directories through the composed UI and retains their files on reopen', async () => {
+it('rehearses the exact native directory and copied-V2 checks through real model tool calls', async () => {
   const scaffold = await launchWebScaffold({
     extraOverlayPath: fileURLToPath(new URL('../../desktop/desktop.cordis.patch.yml', import.meta.url)),
     extraInstallAnchors: [fileURLToPath(new URL('../../desktop/package.json', import.meta.url))],
   })
-  const browser = await chromium.launch()
+  const writes = new NativeSessionWrites()
+  let provider: Awaited<ReturnType<typeof startReaderSmokeProvider>> | undefined
+  let browser: Browser | undefined
   try {
+    provider = await startReaderSmokeProvider(body => writes.respond(body))
+    browser = await chromium.launch()
+    vi.stubEnv('DSH_DESKTOP_SMOKE_MODEL_KEY', 'isolated-desktop-test-key')
+    const seeded = await seedWindowsClipboardSmokeState(scaffold.harnessHome, scaffold.persistenceRoot)
+    const legacy = await seedLegacySessionWorkspace(scaffold.harnessHome, scaffold.persistenceRoot)
+    expect(await readdir(dirname(legacy.path))).toEqual(['session.v2.jsonl.zstd'])
+    const workspace = await scaffold.ctx.workspaceRegistry.create(join(scaffold.harnessHome, seeded.activeSessionTitle))
+    await workspace.attachSession(SessionId(seeded.activeSessionId))
+    await scaffold.ctx.settings.update('llm-pi-ai', { providers: {
+      'desktop-smoke': {
+        displayName: 'Desktop Smoke', apiKeyEnv: 'DSH_DESKTOP_SMOKE_MODEL_KEY', api: 'openai-completions',
+        baseURL: provider.url, reasoning: 'high',
+        models: [{ id: 'native-thinker', name: 'Native Smoke Thinker', contextWindow: 65536, maxTokens: 4096, reasoningEfforts: { high: 'high' } }],
+      },
+    } })
+    await scaffold.ctx.agentDefaultModel.saveSelection({ provider: 'desktop-smoke', model: 'native-thinker', reasoningEffort: ReasoningEffortId('high') })
     const page = await newEnglishPage(browser)
     const consoleWatch = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
-    await page.getByRole('button', { name: 'Choose workspace', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'No project', exact: true }).click()
-    await page.locator('[data-composer-input][contenteditable="true"]').waitFor()
-    await expect.poll(() => scaffold.ctx.sessions.list().length).toBe(1)
-    const first = scaffold.ctx.sessions.list()[0]
-    if (first === undefined) throw new Error('No-project selection did not create a Session')
-    const second = await scaffold.ctx.sessionController.create({})
-    expect(second.sessionId).not.toBe(first.id)
-
-    for (const sessionId of [first.id, second.sessionId]) {
-      const result = await scaffold.ctx.sessionController.resolveAgent(sessionId)
-      if ('error' in result) throw result.error
-      const cwd = result.agent.session.header.cwd
-      expect(cwd).toBe(join(scaffold.workspaceCwd, 'deepseek-temp', sessionId))
-      if (cwd === undefined) throw new Error('Session has no working directory')
-      const writer = await result.agent.ctx.plugin({
-        inject: ['fs'],
-        async apply(ctx) {
-          const target = await ctx.fs.resolve('generated.txt', { cwd })
-          await ctx.fs.writeText(target, `output for ${sessionId}`)
-        },
-      })
-      await writer.dispose()
-      expect(await readFile(join(cwd, 'generated.txt'), 'utf8')).toBe(`output for ${sessionId}`)
-    }
-    expect(scaffold.ctx.workspaceRegistry.list()).toEqual([])
-    await page.reload({ waitUntil: 'load' })
-    await page.getByRole('button', { name: 'Choose workspace', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'No project', exact: true }).click()
-    await page.locator('[data-composer-input][contenteditable="true"]').waitFor()
-    expect(scaffold.ctx.sessions.list()).toHaveLength(2)
-    for (const sessionId of [first.id, second.sessionId]) {
-      expect(await readFile(join(scaffold.workspaceCwd, 'deepseek-temp', sessionId, 'generated.txt'), 'utf8'))
-        .toBe(`output for ${sessionId}`)
-    }
+    await page.goto(`${scaffold.baseUrl}/?surface=desktop`, { waitUntil: 'load' })
+    await exerciseNativeSessionWorkspaces(page, {
+      persistenceRoot: scaffold.persistenceRoot, noProjectRoot: join(scaffold.workspaceCwd, 'deepseek-temp'),
+      projectTitle: seeded.activeSessionTitle, projectCwd: workspace.path,
+      legacy, writes, selectSession: title => activateSmokeSession(page, title),
+      evidencePath: join(scaffold.harnessHome, 'native-session-evidence.json'),
+    })
+    await verifySessionWorkspaceReceipt(join(scaffold.harnessHome, 'native-session-evidence.json'))
+    expect(provider.requests).toEqual([])
+    expect(provider.acceptedRequests).toBe(0)
+    expect(scaffold.ctx.workspaceRegistry.list()).toHaveLength(1)
     expect(consoleWatch.pageErrors).toEqual([])
   } finally {
-    try { await browser.close() } finally { await scaffold.close() }
+    try { await browser?.close() } finally {
+      try { await provider?.close() } finally {
+        try { await scaffold.close() } finally { vi.unstubAllEnvs() }
+      }
+    }
   }
 })

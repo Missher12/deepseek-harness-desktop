@@ -20,6 +20,7 @@ import { expect } from 'vitest'
 import { startReaderSmokeProvider } from './reader-smoke-provider.ts'
 import { exerciseReaderPresentation } from './reader-presentation-smoke.ts'
 import { exerciseComposerContinuity } from './composer-continuity-smoke.ts'
+import { exerciseNativeSessionWorkspaces, NativeSessionWrites, seedLegacySessionWorkspace } from './session-workspace-smoke.ts'
 import { prepareTurnNavigationViewport, verifyTurnNavigationClick } from './turn-navigation-viewport.ts'
 import { isDesktopUpdateSnapshot } from '../src/update/contracts.ts'
 
@@ -1750,18 +1751,22 @@ export async function runPackagedDesktopSmoke(
   await Promise.all([mkdir(harnessHome, { recursive: true }), mkdir(userData, { recursive: true })])
   const legacyFallbackSeed = await seedLegacyModuleFallbackUpgradeState(harnessHome, platform)
   const clipboardSeed = await seedWindowsClipboardSmokeState(harnessHome)
+  const legacySessionSeed = await seedLegacySessionWorkspace(harnessHome, join(harnessHome, 'sessions'))
   const archivedSessionPath = clipboardSeed.protectedPaths[1]
   if (archivedSessionPath === undefined) throw new Error('Packaged smoke: archived Session fixture is missing.')
-  const upgradeProtectedPaths = [...legacyFallbackSeed.protectedPaths, archivedSessionPath]
+  const upgradeProtectedPaths = [
+    ...legacyFallbackSeed.protectedPaths, archivedSessionPath, legacySessionSeed.path, legacySessionSeed.output,
+  ]
   const upgradeProtectedBefore = await protectedFileSnapshot(upgradeProtectedPaths)
-  const providerTripwire = await startReaderSmokeProvider()
-  await writeDesktopSmokeModelSettings(harnessHome, providerTripwire.url)
+  const sessionWrites = new NativeSessionWrites()
+  const providerTripwire = await startReaderSmokeProvider(body => sessionWrites.respond(body))
 
   let nativeApp: ElectronApplication | undefined
   let quitCompleted = false
   let primaryDisplayScaleFactor: number | undefined
   let rendererDevicePixelRatio: number | undefined
   try {
+    await writeDesktopSmokeModelSettings(harnessHome, providerTripwire.url)
     nativeApp = await electron.launch({
       executablePath: executable,
       chromiumSandbox: platform === 'linux',
@@ -1981,6 +1986,16 @@ export async function runPackagedDesktopSmoke(
     })
     expect(providerTripwire.acceptedRequests).toBe(1)
     await expect.poll(() => providerTripwire.acceptedTitleRequests, { timeout: 5_000 }).toBe(1)
+    expect(providerTripwire.requests).toEqual([])
+    await exerciseNativeSessionWorkspaces(page, {
+      persistenceRoot: join(harnessHome, 'sessions'),
+      noProjectRoot: join(temporaryRoot, 'deepseek-temp'),
+      projectTitle: clipboardSeed.activeSessionTitle,
+      projectCwd: join(harnessHome, clipboardSeed.activeSessionTitle),
+      legacy: legacySessionSeed, writes: sessionWrites,
+      selectSession: title => activateSmokeSession(page, title),
+      evidencePath: join(repositoryRoot, 'apps/desktop/release', `desktop-smoke-session-workspaces-${platform}.json`),
+    })
     expect(providerTripwire.requests).toEqual([])
 
     const mainPid = nativeApp.process().pid

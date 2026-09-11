@@ -94,6 +94,8 @@ jobs:
           sudo apt-get install -y xvfb xauth dbus-x11 openbox x11-utils desktop-file-utils lsof "$fuse_package" libgtk-3-0 libnss3 libgbm1 libsecret-1-0 apparmor apparmor-utils
           test -x /usr/bin/lsof
           test -c /dev/fuse
+          # The native test seeder resolves workspace source, not the downloaded app's addon.
+          pnpm run build:native-system
       - name: Enforce Ubuntu 24.04 user namespace restrictions
         if: matrix.ubuntu == '24.04'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1

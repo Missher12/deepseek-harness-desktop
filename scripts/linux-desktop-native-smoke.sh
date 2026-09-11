@@ -30,6 +30,14 @@ run_linux_native_checks() {
     env -u NODE_PATH -u NODE_OPTIONS node node_modules/vitest/vitest.mjs run \
       "apps/desktop/tests/$spec" --config vitest.config.ts
   done
+  node --import tsx/esm --input-type=module <<'NODE'
+import { copyFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { verifySessionWorkspaceReceipt } from './scripts/desktop-session-workspace-receipt.ts'
+const path = 'apps/desktop/release/desktop-smoke-session-workspaces-linux.json'
+await verifySessionWorkspaceReceipt(path)
+await copyFile(path, join(process.env.DSH_LINUX_EVIDENCE_ROOT, 'session-workspaces.json'))
+NODE
 }
 [[ "$(dpkg-deb -f "$deb" Package)" == deepseek-harness ]]
 [[ "$(dpkg-deb -f "$deb" Version)" == "$version" ]]
@@ -120,6 +128,8 @@ await writeFile(join(process.env.RUNNER_TEMP, 'linux-native-evidence/candidate-e
   sandbox: 'kernel-verified', provider: 'controlled-loopback',
   debLifecycle: 'passed', appImageLifecycle: 'passed',
   existingWriter: 'real kernel and packaged Desktop with simulated writer; passed',
+  sessionWriteLease: 'actual installed runtime; contention and release passed',
+  managedProcessRange: 'observed systemd-user scope or PGID fallback; see per-format kernel-ownership/native.json',
   realExternalWebService: 'not-tested',
 }, null, 2) + '\n')
 NODE

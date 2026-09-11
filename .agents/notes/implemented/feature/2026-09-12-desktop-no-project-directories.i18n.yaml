@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-12-desktop-no-project-directories.md
-2026-09-12-desktop-no-project-directories.md: 48167488c126069ac5959f14cfb3b718edb71f33
-2026-09-12-desktop-no-project-directories.zh.md: 77ac531c1c2fd7dad43f655b33d63f4ad3b689f8
+2026-09-12-desktop-no-project-directories.md: 030ce2e94cc4561e1f7f170c97722a1e37665966
+2026-09-12-desktop-no-project-directories.zh.md: 58626a78a0190550214111d75313b1e82f3894e1

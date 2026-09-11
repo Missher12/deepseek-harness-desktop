@@ -7,7 +7,7 @@ import { _electron as electron, type ElectronApplication, type Page } from 'play
 import { describe, expect, it } from 'vitest'
 import { assertLinuxSandbox } from '../../../scripts/linux-desktop-sandbox.ts'
 import { runPackagedDesktopSmoke } from './packaged-smoke.ts'
-import { linuxDescendants as descendants, processAlive as alive } from './linux-writer-fixture.ts'
+import { linuxDescendants as descendants, linuxDesktopEnvironment, prepareLinuxDesktopEnvironment, processAlive as alive } from './linux-writer-fixture.ts'
 import type {} from '../src/preload-api.ts'
 
 const execFileAsync = promisify(execFile)
@@ -72,20 +72,14 @@ async function verifyNativeSandbox(target: string): Promise<void> {
   let tracked: number[] = []
   try {
     // This selects the test assertion only; it must not reach product detection.
-    const applicationEnvironment = { ...process.env }
-    delete applicationEnvironment.DSH_LINUX_PACKAGE_FORMAT
+    const applicationEnvironment = linuxDesktopEnvironment(process.env, root, join(root, 'harness'))
+    await prepareLinuxDesktopEnvironment(applicationEnvironment)
     application = await electron.launch({
       executablePath: target,
       chromiumSandbox: true,
       args: [`--user-data-dir=${join(root, 'electron')}`, '--ozone-platform=x11'],
       cwd: root,
-      env: {
-        ...applicationEnvironment,
-        DSH_HOME: join(root, 'harness'),
-        DSH_TELEMETRY_DISABLED: '1',
-        DEEPSEEK_API_KEY: '',
-        DEEPSEEK_BASE_URL: 'http://127.0.0.1:1/v1',
-      },
+      env: applicationEnvironment,
       timeout: 120_000,
     })
     const mainPid = application.process().pid
@@ -102,10 +96,13 @@ async function verifyNativeSandbox(target: string): Promise<void> {
       const window = BrowserWindow.getAllWindows()[0]!
       return {
         pid: process.pid,
+        home: process.env.HOME, userProfile: process.env.USERPROFILE,
         rendererPid: window.webContents.getOSProcessId(),
         handle: window.getNativeWindowHandle().readUInt32LE(0),
       }
     })
+    expect(observed.home).toBe(applicationEnvironment.HOME)
+    expect(observed.userProfile).toBe(applicationEnvironment.USERPROFILE)
     expect(await page.evaluate(() => typeof process === 'undefined' && typeof require === 'undefined')).toBe(true)
     tracked = [observed.pid, ...await descendants(observed.pid)]
     const mainCommand = await command(observed.pid)

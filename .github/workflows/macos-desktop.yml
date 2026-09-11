@@ -218,12 +218,13 @@ jobs:
         run: |
           [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
           git diff --quiet HEAD --
-          node --import tsx --input-type=module <<'NODE'
+          node --import tsx/esm --input-type=module <<'NODE'
           import { createReadStream } from 'node:fs'
-          import { lstat, readFile, readdir, writeFile } from 'node:fs/promises'
+          import { copyFile, lstat, readFile, readdir, writeFile } from 'node:fs/promises'
           import { createHash } from 'node:crypto'
           import { join } from 'node:path'
           import { assertPortableMacEvidence } from './scripts/macos-desktop-runtime-evidence.ts'
+          import { verifySessionWorkspaceReceipt } from './scripts/desktop-session-workspace-receipt.ts'
           const root = join(process.env.RUNNER_TEMP, 'macos-native-evidence')
           const visual = join(root, 'visual')
           const digest = async (file) => {
@@ -253,6 +254,17 @@ jobs:
             if (name.endsWith('.json')) assertPortableMacEvidence(JSON.parse(await readFile(file, 'utf8')))
             files.push({ name, bytes: info.size, sha256: await digest(file) })
           }
+          const receiptName = 'desktop-smoke-session-workspaces-darwin.json'
+          const receiptSource = join('apps/desktop/release', receiptName)
+          const receipt = await verifySessionWorkspaceReceipt(receiptSource)
+          if (receipt.size > 8 * 1024 * 1024 || totalBytes + receipt.size > 64 * 1024 * 1024) {
+            throw new Error('Session workspace receipt exceeds native evidence size bounds')
+          }
+          const receiptTarget = join(root, receiptName)
+          await copyFile(receiptSource, receiptTarget)
+          if ((await lstat(receiptTarget)).size !== receipt.size || await digest(receiptTarget) !== receipt.sha256) {
+            throw new Error('Session workspace receipt changed during evidence copy')
+          }
           const artifact = join('apps/desktop/release', process.env.ARTIFACT)
           const metadata = JSON.parse(await readFile('apps/desktop/update-metadata.json', 'utf8'))
           const evidence = {
@@ -264,6 +276,7 @@ jobs:
             artifact: { name: process.env.ARTIFACT, bytes: (await lstat(artifact)).size, sha256: await digest(artifact) },
             appAsarSha256: await digest('apps/desktop/release/mac/DeepSeek Harness.app/Contents/Resources/app.asar'),
             visuals: files,
+            sessionWorkspaces: { name: receiptName, bytes: receipt.size, sha256: receipt.sha256 },
           }
           assertPortableMacEvidence(evidence)
           await writeFile(join(root, 'candidate-evidence.json'), JSON.stringify(evidence, null, 2) + '\n')
@@ -283,6 +296,7 @@ jobs:
           name: macOS-native-evidence-${{ steps.source.outputs.sha }}
           path: |
             ${{ runner.temp }}/macos-native-evidence/candidate-evidence.json
+            ${{ runner.temp }}/macos-native-evidence/desktop-smoke-session-workspaces-darwin.json
             ${{ runner.temp }}/macos-native-evidence/visual/*.json
             ${{ runner.temp }}/macos-native-evidence/visual/*.png
           if-no-files-found: error

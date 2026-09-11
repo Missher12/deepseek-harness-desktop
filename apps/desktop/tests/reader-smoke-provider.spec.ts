@@ -10,10 +10,41 @@ import {
   NATIVE_READER_ANSWER, NATIVE_READER_APPEND, NATIVE_READER_PROMPT, NATIVE_READER_REASONING, NATIVE_READER_TITLE,
   startReaderSmokeProvider,
 } from './reader-smoke-provider.ts'
+import { NativeSessionWrites } from './session-workspace-smoke.ts'
 
 const requestBody = JSON.stringify({
   model: 'native-thinker', stream: true,
   messages: [{ role: 'user', content: NATIVE_READER_PROMPT }],
+})
+
+it('keeps additional native writes armed, model-scoped, one-shot, and separate from reader slots', async () => {
+  const writes = new NativeSessionWrites()
+  const provider = await startReaderSmokeProvider(body => writes.respond(body))
+  try {
+    const send = (body: unknown, path = '/chat/completions') => fetch(`${provider.url}${path}`, {
+      method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(5_000),
+    })
+    expect((await send(JSON.parse(requestBody))).status).toBe(500)
+    const run = writes.arm('first')
+    const body = { model: 'native-thinker', stream: true,
+      messages: [{ role: 'user', content: run.prompt }],
+      tools: [{ type: 'function', function: { name: 'write' } }],
+    }
+    expect((await send({ ...body, model: 'unowned-model' })).status).toBe(500)
+    expect((await send(body, '/unowned-path')).status).toBe(500)
+    const tool = await send(body)
+    expect(tool.status).toBe(200)
+    expect(await tool.text()).toContain(run.filename)
+    expect((await send(body)).status).toBe(500)
+    const completion = { ...body, messages: [...body.messages, { role: 'tool', tool_call_id: run.callId, content: 'created' }] }
+    const finished = await send(completion)
+    expect(finished.status).toBe(200)
+    expect(await finished.text()).toContain(run.done)
+    expect((await send(completion)).status).toBe(500)
+    expect(provider.acceptedRequests).toBe(0)
+    expect(provider.acceptedTitleRequests).toBe(0)
+    expect(provider.phase).toBe('idle')
+  } finally { await provider.close() }
 })
 
 it('allows exactly one armed fixture request and delivers only explicitly released phases', async () => {

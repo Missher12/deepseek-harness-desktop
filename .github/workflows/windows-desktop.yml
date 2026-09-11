@@ -562,6 +562,16 @@ jobs:
           -PackagePolicy windows-x64
           -PackageManifestPath apps/desktop/package.json
 
+      - name: Verify portable Session workspace receipt
+        shell: pwsh
+        run: |
+          @'
+          import { verifySessionWorkspaceReceipt } from './scripts/desktop-session-workspace-receipt.ts'
+          await verifySessionWorkspaceReceipt('apps/desktop/release/desktop-smoke-session-workspaces-win32.json')
+          console.log('Portable Session workspace receipt verified: two directories, five writes, preserved V2 and reopened V3')
+          '@ | node --import tsx/esm --input-type=module
+          if ($LASTEXITCODE -ne 0) { throw 'Session workspace receipt validation failed.' }
+
       - name: Preserve portable runtime evidence
         uses: actions/upload-artifact@v7
         with:
@@ -579,6 +589,7 @@ jobs:
             s/apps/desktop/release/windows-installer-ui-evidence/installer-progress.json
             s/apps/desktop/release/windows-installer-ui-baseline-0.5.6/installer-progress.json
             s/apps/desktop/release/windows-update-handoff-evidence/handoff.json
+            s/apps/desktop/release/desktop-smoke-session-workspaces-win32.json
           if-no-files-found: error
           retention-days: 14
 

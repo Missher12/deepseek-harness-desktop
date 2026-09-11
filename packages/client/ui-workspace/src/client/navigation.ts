@@ -39,7 +39,7 @@ export interface UiWorkspace {
    */
   connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>
   /**
-   * Resolve an unarchived, unaccounted ordinary blank Session.
+   * Resolve an unarchived ordinary blank outside registered Workspace membership and paths.
    * @returns a Session already addressable through the Session Controller.
    */
   connectNoProject(): Promise<SessionId>
@@ -145,6 +145,8 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   async connectNoProject(): Promise<SessionId> {
     const workspace = this.workspaces.list.getSnapshot()
     const accounted = new Set(workspace.items.flatMap(item => item.sessionIds))
+    // A newly created Workspace Session can arrive before its membership snapshot.
+    const workspacePaths = new Set<string | undefined>(workspace.items.map(item => item.path))
     const archived = new Set(workspace.archivedSessionIds)
     const sessions = this.sessions.list.getSnapshot()
     for (const id of sessions.ids) {
@@ -153,6 +155,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         && summary.parentId === undefined
         && summary.origin !== 'subagent'
         && !accounted.has(id)
+        && !workspacePaths.has(summary.cwd)
         && !archived.has(id)) return id
     }
     if (this.connectingNoProject !== undefined) return this.connectingNoProject

@@ -13,8 +13,10 @@ export const NATIVE_READER_ANSWER = '# Native reader verified\n\nThe final answe
 
 /** One bounded auxiliary title for the same native reader Turn. */
 export const NATIVE_READER_TITLE = 'Native reader presentation'
-const TITLE_FRAME_PREFIX = 'Generate the session title from this JSON array of human messages:\n'
-const TITLE_SYSTEM = [
+/** Exact automatic-title framing shared by the isolated native fixtures. */
+export const TITLE_FRAME_PREFIX = 'Generate the session title from this JSON array of human messages:\n'
+/** Exact automatic-title instruction; auxiliary requests cannot become arbitrary model calls. */
+export const TITLE_SYSTEM = [
   'Create a concise title for an AI coding-assistant session from the supplied human messages.',
   'Return only the title on one line, **in plain text of natural language**, with no quotes, prefix, explanation, Markdown, XML, or terminal control codes. No code is allowed.',
   'Use the language of the messages.',
@@ -86,9 +88,12 @@ function requestKind(value: unknown): 'reader' | 'title' | undefined {
 
 /**
  * Start the native smoke's local provider tripwire with one explicitly paced Turn.
+ * @param additionalResponse - Optional bounded native scenario; undefined leaves the reader-only tripwire intact.
  * @returns the listener owner and synchronous release controls; callers close it in finally.
  */
-export async function startReaderSmokeProvider(): Promise<ReaderSmokeProvider> {
+export async function startReaderSmokeProvider(
+  additionalResponse?: (body: unknown) => string | undefined,
+): Promise<ReaderSmokeProvider> {
   const requests: string[] = []
   let acceptedRequests = 0
   let acceptedTitleRequests = 0
@@ -118,6 +123,12 @@ export async function startReaderSmokeProvider(): Promise<ReaderSmokeProvider> {
       }
       const kind = requestKind(body)
       const endpointMatches = request.method === 'POST' && request.url === '/v1/chat/completions'
+      const additional = closing === undefined && endpointMatches ? additionalResponse?.(body) : undefined
+      if (additional !== undefined) {
+        response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
+        response.end(additional)
+        return
+      }
       if (closing === undefined && phase !== 'idle' && endpointMatches
         && kind === 'title' && acceptedTitleRequests === 0) {
         acceptedTitleRequests += 1
