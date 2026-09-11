@@ -6,6 +6,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import {
   activateSmokeSession, exerciseExistingSessionModelSwitch, seedWindowsClipboardSmokeState, waitForDesktopSessionReady,
+  waitForDesktopSurface,
 } from '../../desktop/tests/packaged-smoke.ts'
 import { exerciseComposerContinuity } from '../../desktop/tests/composer-continuity-smoke.ts'
 import { startReaderSmokeProvider } from '../../desktop/tests/reader-smoke-provider.ts'
@@ -46,6 +47,7 @@ it('navigates grouped and ungrouped seeds, switches routes, and preserves compos
     const consoleWatch = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.goto(`${scaffold.baseUrl}/?surface=desktop`, { waitUntil: 'load' })
+    await waitForDesktopSurface(page, scaffold.harnessHome)
     await page.locator('[class*="projectRow"]').first().waitFor({ state: 'visible' })
 
     // Exercise both collapsed group kinds, then the already-visible path.

@@ -86,7 +86,7 @@ async function exerciseWindows150PercentSurface(
       page.locator('[class*="sidebarCol"]').count(),
       page.locator('[class*="centerCol"]').count(),
       page.locator('[class*="detailsCol"]').count(),
-    ]), { timeout: 120_000 }).toEqual([1, 1, 1])
+    ]), { timeout: 120_000 }).toEqual([1, 1, 0])
     await expect.poll(() => page.evaluate(() => window.devicePixelRatio), { timeout: 15_000 })
       .toBeCloseTo(1.5, 1)
     await expect.poll(() => application?.evaluate(({ screen }) => screen.getPrimaryDisplay().scaleFactor), {

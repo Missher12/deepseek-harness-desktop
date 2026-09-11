@@ -266,7 +266,7 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(packaged).toContain("page.locator('[class*=\"sidebarCol\"]').count(),")
     expect(packaged).toContain("page.locator('[class*=\"centerCol\"]').count(),")
     expect(packaged).toContain("page.locator('[class*=\"detailsCol\"]').count(),")
-    expect(packaged).toContain(']), { timeout: 120_000 }).toEqual([1, 1, 1])')
+    expect(packaged).toContain(']), { timeout: 120_000 }).toEqual([1, 1, 0])')
     expect(packaged).not.toContain(
       "page.getByRole('navigation', { name: /^(?:Previous prompts|过往发言)$/u })\n"
       + "      .waitFor({ state: 'visible', timeout: 30_000 })",

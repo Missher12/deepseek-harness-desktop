@@ -334,7 +334,7 @@ describe('real installed Windows native-command update handoff', () => {
       await expect.poll(async () => Promise.all([
         page.locator('[class*="sidebarCol"]').count(), page.locator('[class*="centerCol"]').count(),
         page.locator('[class*="detailsCol"]').count(),
-      ]), { timeout: 120_000 }).toEqual([1, 1, 1])
+      ]), { timeout: 120_000 }).toEqual([1, 1, 0])
       const identity = await application.evaluate(({ app }) => ({
         pid: process.pid, executable: process.execPath, version: app.getVersion(),
         harnessHome: process.env.DSH_HOME, userData: app.getPath('userData'),

@@ -672,7 +672,8 @@ async function surfaceCounts(page: Page): Promise<string> {
   })
 }
 
-async function waitForDesktopSurface(page: Page, userData: string, consoleErrors: readonly string[] = []): Promise<void> {
+/** Wait for the complete desktop shell and reject a restored details column. */
+export async function waitForDesktopSurface(page: Page, userData: string, consoleErrors: readonly string[] = []): Promise<void> {
   const deadline = Date.now() + 120_000
   while (Date.now() < deadline) {
     if (page.isClosed()) {
@@ -682,12 +683,14 @@ async function waitForDesktopSurface(page: Page, userData: string, consoleErrors
       const requiredSurfaceCounts = await Promise.all([
         page.locator('[class*="sidebarCol"]').count(),
         page.locator('[class*="centerCol"]').count(),
-        page.locator('[class*="detailsCol"]').count(),
         page.locator('[data-dsh-desktop-command="new-session"]').count(),
         page.locator('[data-dsh-desktop-command="open-add-menu"]').count(),
         page.locator('[data-dsh-desktop-command="open-settings"]').count(),
       ])
-      if (requiredSurfaceCounts.every(count => count === 1)) return
+      if (requiredSurfaceCounts.every(count => count === 1)) {
+        expect(await page.locator('[class*="detailsCol"]').count()).toBe(0)
+        return
+      }
     }
     try {
       const url = new URL(page.url())
@@ -1916,7 +1919,7 @@ export async function runPackagedDesktopSmoke(
 
     expect(await page.locator('[class*="sidebarCol"]').count()).toBe(1)
     expect(await page.locator('[class*="centerCol"]').count()).toBe(1)
-    expect(await page.locator('[class*="detailsCol"]').count()).toBe(1)
+    expect(await page.locator('[class*="detailsCol"]').count()).toBe(0)
     expect(await page.locator('[data-dsh-desktop-command="new-session"]').count()).toBe(1)
     expect(await page.locator('[data-dsh-desktop-command="open-add-menu"]').count()).toBe(1)
     expect(await page.locator('[data-dsh-desktop-command="open-settings"]').count()).toBe(1)
