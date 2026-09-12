@@ -44,24 +44,38 @@ jobs:
           New-Item -ItemType Directory -Path $parserRoot | Out-Null
           $rootPreparation.Stop()
           $env:DSH_PARSER_TIMING_ROOT = $parserRoot
-          $nodePath = (Get-Command node -CommandType Application).Source
-          $info = [Diagnostics.ProcessStartInfo]::new($nodePath)
-          $info.UseShellExecute = $false
-          $info.Arguments = '--experimental-transform-types scripts/windows-update-parser-timing.mjs'
           $entry = $null
           $deadlineHit = $false
           $entryExited = $null
           $entryExitCode = $null
           $scopeRemoved = $false
           $failureType = $null
+          $nativeErrorCode = $null
+          $nodeExists = $null
+          $directoryExists = $null
           try {
+            $resolvedNode = @(node -p 'process.execPath')
+            if ($LASTEXITCODE -ne 0 -or $resolvedNode.Count -ne 1) { throw 'Running Node did not return one executable.' }
+            $nodePath = $resolvedNode[0].Trim()
+            $repositoryDirectory = (Resolve-Path -LiteralPath '.').Path
+            $nodeExists = Test-Path -LiteralPath $nodePath -PathType Leaf
+            $directoryExists = Test-Path -LiteralPath $repositoryDirectory -PathType Container
+            if (-not $nodeExists -or -not $directoryExists) { throw 'Diagnostic executable or working directory is missing.' }
+            $info = [Diagnostics.ProcessStartInfo]::new($nodePath)
+            $info.UseShellExecute = $false
+            $info.WorkingDirectory = $repositoryDirectory
+            $info.Arguments = '--experimental-transform-types scripts/windows-update-parser-timing.mjs'
             $entry = [Diagnostics.Process]::Start($info)
             if ($null -eq $entry) { throw 'Timing entry did not start.' }
             $remaining = [Math]::Max(0, 30000 - $lifetime.ElapsedMilliseconds)
             if (-not $entry.WaitForExit([int]$remaining)) { $deadlineHit = $true; throw 'Independent diagnostic deadline reached.' }
             $entryExitCode = $entry.ExitCode
             if ($entryExitCode -ne 0) { throw 'Native parser measurements or assertions failed.' }
-          } catch { $failureType = $_.Exception.GetBaseException().GetType().Name }
+          } catch {
+            $failure = $_.Exception.GetBaseException()
+            $failureType = $failure.GetType().Name
+            if ($failure -is [System.ComponentModel.Win32Exception]) { $nativeErrorCode = $failure.NativeErrorCode }
+          }
           finally {
             try {
               if ($null -ne $entry) {
@@ -80,6 +94,7 @@ jobs:
               schemaVersion = 1; productSourceSha = '2106cb68aa5b467dc3a7dc3a225027af08142222'; diagnosticSourceSha = '${{ github.sha }}'
               budgetMs = 30000; rootPreparationMs = $rootPreparation.Elapsed.TotalMilliseconds; lifetimeIncludingCleanupMs = $lifetime.Elapsed.TotalMilliseconds
               deadlineHit = $deadlineHit; entryExited = $entryExited; entryExitCode = $entryExitCode; scopeRemoved = $scopeRemoved; failureType = $failureType
+              executableExists = $nodeExists; workingDirectoryExists = $directoryExists; nativeErrorCode = $nativeErrorCode
               parserChildExitProof = 'individual exits are recorded only in windows-parser-timing.json; watchdog termination alone is not proof'
             } | ConvertTo-Json) + "`n"), [Text.UTF8Encoding]::new($false))
           }
