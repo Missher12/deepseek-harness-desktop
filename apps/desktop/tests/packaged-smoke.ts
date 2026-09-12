@@ -1768,6 +1768,8 @@ export async function runPackagedDesktopSmoke(
   const harnessHome = process.env.DSH_DESKTOP_SMOKE_DSH_HOME ?? join(temporaryRoot, 'dsh-home')
   const userData = process.env.DSH_DESKTOP_SMOKE_USER_DATA ?? join(temporaryRoot, 'electron-data')
   await Promise.all([mkdir(harnessHome, { recursive: true }), mkdir(userData, { recursive: true })])
+  // Windows resolves its Desktop shell folder below the isolated USERPROFILE.
+  if (platform === 'win32') await mkdir(join(temporaryRoot, 'Desktop'), { recursive: true })
   const legacyFallbackSeed = await seedLegacyModuleFallbackUpgradeState(harnessHome, platform)
   const clipboardSeed = await seedWindowsClipboardSmokeState(harnessHome)
   const legacySessionSeed = await seedLegacySessionWorkspace(harnessHome, join(harnessHome, 'sessions'))
