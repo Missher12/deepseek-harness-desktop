@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 import { win32 } from 'node:path'
 import { runInNewContext } from 'node:vm'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 const api = await import('./windows-picker-diagnostic-artifact.mjs').catch(() => ({}))
 
@@ -113,4 +115,47 @@ test('observer receives the evaluated Electron main PID, not the retained shell 
     await assert.rejects(execute({}, harnessHome, userData, application), error => error.message === 'Installed diagnostic main identity mismatch.')
     assert.equal(commands.length, 1, 'A foreign identity must not start the observer')
   }
+})
+
+test('accepts a bounded diagnostic-only modal summary but refuses values, excess items and unredacted strings', async () => {
+  const { pickerReceipt } = await import('./windows-picker-diagnostic-driver.mjs')
+  const facts = { phase: 'diagnostic-modal', ownerMatches: true, foregroundMatches: true,
+    dialogKeyboardFocusable: true, dialogEnabled: true, dialogWindowPattern: true,
+    addressKeyboardFocusable: null, addressValuePattern: null, addressReadOnly: null,
+    pathWritten: false, anchorCount: 1, selectedHwnd: 66194, resolution: [], resolutionLast: null, address: null, acceptInvoked: false,
+    diagnosticOnly: true, failureCode: 'DIAGNOSTIC_MODAL_CAPTURE',
+    modalSummary: { caption: 'Location is unavailable', truncated: false, error: null,
+      items: [{ kind: 'Text', name: '[owned-root]\\Desktop is unavailable.', automationId: '65535', invokePattern: false, textPattern: true, error: null }] } }
+  const outcome = change => pickerReceipt('DSH_PICKER_FAILED ' + JSON.stringify({ name: 'RuntimeException', facts: { ...facts, ...change }, message: 'omitted' }))
+  assert.equal(outcome({}).facts.failureCode, 'DIAGNOSTIC_MODAL_CAPTURE')
+  assert.doesNotThrow(() => outcome({ modalSummary: { ...facts.modalSummary, caption: 'token=[redacted-token]' } }))
+  const item = facts.modalSummary.items[0]
+  for (const changed of [
+    { diagnosticOnly: false }, { failureCode: 'ignored' }, { pathWritten: true }, { acceptInvoked: true },
+    { modalSummary: { ...facts.modalSummary, caption: 'C:\\Users\\private\\Desktop' } },
+    { modalSummary: { ...facts.modalSummary, caption: 'a '.repeat(257) } },
+    { modalSummary: { ...facts.modalSummary, caption: 'password=visible' } },
+    { modalSummary: { ...facts.modalSummary, items: Array.from({ length: 17 }, () => item) } },
+    { modalSummary: { ...facts.modalSummary, items: [{ ...item, kind: 'Edit' }] } },
+    { modalSummary: { ...facts.modalSummary, items: [{ ...item, value: 'not allowed' }] } },
+  ]) assert.throws(() => outcome(changed))
+})
+
+test('native text sanitizer masks fixture/runner paths and secrets and caps strings', { skip: process.platform !== 'win32' }, () => {
+  const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `
+    $ErrorActionPreference='Stop';$tokens=$null;$errors=$null
+    $ast=[System.Management.Automation.Language.Parser]::ParseFile($env:DSH_MESSAGE_SOURCE,[ref]$tokens,[ref]$errors)
+    if($errors.Count){throw 'Selector parse error'}
+    $function=$ast.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Protect-PickerDiagnosticText'},$true)
+    . ([scriptblock]::Create($function.Extent.Text))
+    @(
+      (Protect-PickerDiagnosticText 'C:\\owned\\Desktop is unavailable.')
+      (Protect-PickerDiagnosticText 'D:\\runner-temp\\cache is missing.')
+      (Protect-PickerDiagnosticText 'C:\\unknown\\private')
+      (Protect-PickerDiagnosticText ('sk-' + ('x' * 40)))
+      (Protect-PickerDiagnosticText ('a ' * 600)).Length
+    ) | ConvertTo-Json -Compress
+  `], { env: { ...process.env, DSH_MESSAGE_SOURCE: fileURLToPath(new URL('./windows-directory-picker-ui-smoke.ps1', import.meta.url)), DSH_DESKTOP_SMOKE_ROOT: 'C:\\owned', RUNNER_TEMP: 'D:\\runner-temp' }, encoding: 'utf8', timeout: 15_000 })
+  assert.equal(r.status, 0)
+  assert.deepEqual(JSON.parse(r.stdout), ['[owned-root]\\Desktop is unavailable.', '[runner-temp]\\cache is missing.', '[path]', '[redacted-token]', 512])
 })

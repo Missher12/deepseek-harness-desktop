@@ -18,6 +18,40 @@ export function pickerReceipt(stdout) {
   const fields = ['phase', 'ownerMatches', 'foregroundMatches', 'dialogKeyboardFocusable', 'dialogEnabled',
     'dialogWindowPattern', 'addressKeyboardFocusable', 'addressValuePattern', 'addressReadOnly', 'pathWritten',
     'anchorCount', 'selectedHwnd', 'resolution', 'resolutionLast', 'address', 'acceptInvoked']
+  const modalCapture = 'diagnosticOnly' in facts
+  if (modalCapture) {
+    fields.push('diagnosticOnly', 'failureCode', 'modalSummary')
+    assert.equal(failed, true)
+    assert.equal(facts.diagnosticOnly, true)
+    assert.equal(facts.failureCode, 'DIAGNOSTIC_MODAL_CAPTURE')
+    assert.equal(facts.phase, 'diagnostic-modal')
+    assert.equal(facts.pathWritten, false)
+    assert.equal(facts.acceptInvoked, false)
+    const exactKeys = (object, expected) => assert.deepEqual(Object.keys(object).sort(), [...expected].sort())
+    const safeText = (text, limit) => {
+      if (text === null) return
+      assert.equal(typeof text, 'string')
+      assert.ok(text.length <= limit && !/[\x00-\x1f\x7f]/.test(text))
+      assert.ok(!/\b[a-z]:[\\/]|\\\\/i.test(text), 'Unredacted native path')
+      assert.ok(!/\b[A-Za-z0-9_-]{32,}\b/.test(text), 'Unredacted opaque token')
+      assert.ok(!/\b(?:api[_ -]?key|token|password|secret)\s*[:=]\s*(?!\[redacted-token\])\S+/i.test(text), 'Unredacted credential label')
+    }
+    const errorType = error => assert.ok(error === null || /^(?:[A-Za-z][A-Za-z0-9]{0,70})?Exception$/.test(error))
+    const summary = facts.modalSummary
+    exactKeys(summary, ['caption', 'items', 'truncated', 'error'])
+    safeText(summary.caption, 512)
+    assert.equal(typeof summary.truncated, 'boolean')
+    errorType(summary.error)
+    assert.ok(Array.isArray(summary.items) && summary.items.length <= 16)
+    for (const item of summary.items) {
+      exactKeys(item, ['kind', 'name', 'automationId', 'invokePattern', 'textPattern', 'error'])
+      assert.ok(item.kind === 'Text' || item.kind === 'Button')
+      safeText(item.name, 512)
+      safeText(item.automationId, 96)
+      for (const key of ['invokePattern', 'textPattern']) assert.ok(item[key] === null || typeof item[key] === 'boolean')
+      errorType(item.error)
+    }
+  }
   assert.deepEqual(Object.keys(facts).sort(), [...fields].sort())
   const keys = new Set([...fields, 'elapsedMs', 'state', 'anchorHwnd', 'workerPid', 'candidates', 'hwnd',
     'nativePid', 'ownerPid', 'ownerAlive', 'related', 'relationship', 'self', 'child', 'ancestor', 'ownedPopup',
@@ -25,6 +59,7 @@ export function pickerReceipt(stdout) {
     'enabled', 'offscreen', 'windowPattern', 'interactionState', 'modal', 'bounds', 'error', 'x', 'y', 'width', 'height',
     'rootHwnd', 'inside', 'focused', 'edit'])
   const labels = new Set(['find', 'foreground', 'address', 'readback', 'accept', 'close', 'complete',
+    'diagnostic-modal', 'DIAGNOSTIC_MODAL_CAPTURE',
     'Running', 'Closing', 'ReadyForUserInteraction', 'BlockedByModalWindow', 'NotResponding'])
   const walk = (item, key = '', depth = 0) => {
     assert.ok(depth <= 10)
@@ -45,7 +80,7 @@ export function pickerReceipt(stdout) {
       walk(child, childKey, depth + 1)
     }
   }
-  walk(facts)
+  walk(modalCapture ? { ...facts, modalSummary: null } : facts)
   if (!failed) {
     assert.equal(facts.phase, 'complete')
     for (const key of ['pathWritten', 'acceptInvoked', 'ownerMatches', 'foregroundMatches', 'dialogEnabled']) assert.equal(facts[key], true)

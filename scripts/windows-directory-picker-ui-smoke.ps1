@@ -37,6 +37,65 @@ function Test-PickerPathReadback {
     -not [string]::IsNullOrEmpty($Expected) -and $Observed -ceq $Expected
 }
 
+# Diagnostic-branch only. Never read an Edit/Value/password/document surface.
+function Protect-PickerDiagnosticText {
+  param([string]$Text, [int]$Limit = 512)
+  if ($null -eq $Text) { return '' }
+  if ($Text.Length -gt 8192) { $Text = $Text.Substring(0, 8192) }
+  $roots = @(
+    @{ prefix = $env:DSH_DESKTOP_SMOKE_ROOT; label = '[owned-root]' }
+    @{ prefix = $env:RUNNER_TEMP; label = '[runner-temp]' }
+    @{ prefix = $env:GITHUB_WORKSPACE; label = '[workspace]' }
+    @{ prefix = $env:USERPROFILE; label = '[runner-profile]' }
+    @{ prefix = $env:LOCALAPPDATA; label = '[runner-local-data]' }
+    @{ prefix = $env:APPDATA; label = '[runner-roaming-data]' }
+  )
+  foreach ($root in @($roots | Where-Object { -not [string]::IsNullOrEmpty($_.prefix) } | Sort-Object { $_.prefix.Length } -Descending)) {
+    foreach ($prefix in @($root.prefix, $root.prefix.Replace('\', '/'))) {
+      $Text = [regex]::Replace($Text, ([regex]::Escape($prefix) + '(?=[\\/\s.,)]|$)'), $root.label, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    }
+  }
+  $Text = [regex]::Replace($Text, '(?i)\b[a-z]:[\\/][^\r\n"<>|]*|\\\\[^\r\n"<>|]+', '[path]')
+  $Text = [regex]::Replace($Text, '(?i)\b(api[_ -]?key|token|password|secret)\s*[:=]\s*\S+', '$1=[redacted-token]')
+  $Text = [regex]::Replace($Text, '\b[A-Za-z0-9_-]{32,}\b', '[redacted-token]')
+  $Text = [regex]::Replace($Text, '[\x00-\x1f\x7f]+', ' ')
+  return $Text.Substring(0, [Math]::Min($Limit, $Text.Length))
+}
+
+function Get-PickerDiagnosticModalSummary {
+  param([System.Windows.Automation.AutomationElement]$Dialog)
+  $summary = [ordered]@{ caption = $null; items = @(); truncated = $false; error = $null }
+  try {
+    if (-not (Test-PickerForeground $Dialog) -or $Dialog.Current.IsPassword) { throw 'Diagnostic modal identity changed.' }
+    $summary.caption = Protect-PickerDiagnosticText $Dialog.Current.Name
+    $condition = [System.Windows.Automation.OrCondition]::new(
+      [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Text),
+      [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+    )
+    # Direct matching children only: no walk into Edit, Document or other containers.
+    $controls = $Dialog.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
+    $summary.truncated = $controls.Count -gt 16
+    for ($index = 0; $index -lt [Math]::Min(16, $controls.Count); $index += 1) {
+      $control = $controls[$index]
+      $current = $control.Current
+      if ($current.ProcessId -ne $script:PickerOwner.Id -or $current.IsPassword) { continue }
+      if ($current.ControlType -ne [System.Windows.Automation.ControlType]::Text -and $current.ControlType -ne [System.Windows.Automation.ControlType]::Button) { continue }
+      $item = [ordered]@{ kind = $(if ($current.ControlType -eq [System.Windows.Automation.ControlType]::Text) { 'Text' } else { 'Button' });
+        name = $null; automationId = $null; invokePattern = $null; textPattern = $null; error = $null }
+      try {
+        $item.name = Protect-PickerDiagnosticText $current.Name
+        $item.automationId = Protect-PickerDiagnosticText $current.AutomationId 96
+        $pattern = $null
+        $item.invokePattern = $control.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)
+        $pattern = $null
+        $item.textPattern = $control.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern, [ref]$pattern)
+      } catch { $item.error = $_.Exception.GetBaseException().GetType().Name }
+      $summary.items += $item
+    }
+  } catch { $summary.error = $_.Exception.GetBaseException().GetType().Name }
+  return $summary
+}
+
 function Test-PickerForeground {
   param([System.Windows.Automation.AutomationElement]$Dialog)
   $window = [IntPtr]$Dialog.Current.NativeWindowHandle
@@ -301,6 +360,12 @@ try {
   $script:PickerFacts.dialogWindowPattern = $dialog.TryGetCurrentPattern(
     [System.Windows.Automation.WindowPattern]::Pattern, [ref]$windowPattern)
   if (-not $dialog.Current.IsEnabled -or $dialog.Current.IsOffscreen) { throw 'Owned picker is not enabled and visible.' }
+  # One diagnostic-only capture, then fail closed before foreground changes or keys.
+  $script:PickerFacts.phase = 'diagnostic-modal'
+  $script:PickerFacts['diagnosticOnly'] = $true
+  $script:PickerFacts['failureCode'] = 'DIAGNOSTIC_MODAL_CAPTURE'
+  $script:PickerFacts['modalSummary'] = Get-PickerDiagnosticModalSummary $dialog
+  throw 'DIAGNOSTIC_MODAL_CAPTURE'
   $script:PickerFacts.phase = 'foreground'
   [void][NativePickerWindow]::SetForegroundWindow([IntPtr]$dialog.Current.NativeWindowHandle)
   while (-not (Test-PickerForeground $dialog) -and [DateTime]::UtcNow -lt $script:PickerDeadline) {
