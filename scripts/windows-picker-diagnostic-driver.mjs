@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url'
 
 const sourceHash = 'a5ef803903cbb3d79e6c0276d24962cd16f5d1fe030ded2aff5e983cde6040ae'
 
-/** Keep only the bounded, path-free facts emitted by the owned native selector. */
+/** Validate the original product selector's bounded, path-free outcome. */
 export function pickerReceipt(stdout) {
   assert.equal(typeof stdout, 'string')
   assert.ok(stdout.length <= 100_000)
@@ -15,75 +15,15 @@ export function pickerReceipt(stdout) {
   const failed = lines[0].startsWith('DSH_PICKER_FAILED ')
   const value = JSON.parse(lines[0].slice(failed ? 18 : 11))
   const facts = failed ? value.facts : value
-  const fields = ['phase', 'ownerMatches', 'foregroundMatches', 'dialogKeyboardFocusable', 'dialogEnabled',
-    'dialogWindowPattern', 'addressKeyboardFocusable', 'addressValuePattern', 'addressReadOnly', 'pathWritten',
-    'anchorCount', 'selectedHwnd', 'resolution', 'resolutionLast', 'address', 'acceptInvoked']
-  const modalCapture = 'diagnosticOnly' in facts
-  if (modalCapture) {
-    fields.push('diagnosticOnly', 'failureCode', 'modalSummary')
-    assert.equal(failed, true)
-    assert.equal(facts.diagnosticOnly, true)
-    assert.equal(facts.failureCode, 'DIAGNOSTIC_MODAL_CAPTURE')
-    assert.equal(facts.phase, 'diagnostic-modal')
-    assert.equal(facts.pathWritten, false)
-    assert.equal(facts.acceptInvoked, false)
-    const exactKeys = (object, expected) => assert.deepEqual(Object.keys(object).sort(), [...expected].sort())
-    const safeText = (text, limit) => {
-      if (text === null) return
-      assert.equal(typeof text, 'string')
-      assert.ok(text.length <= limit && !/[\x00-\x1f\x7f]/.test(text))
-      assert.ok(!/\b[a-z]:[\\/]|\\\\/i.test(text), 'Unredacted native path')
-      assert.ok(!/\b[A-Za-z0-9_-]{32,}\b/.test(text), 'Unredacted opaque token')
-      assert.ok(!/\b(?:api[_ -]?key|token|password|secret)\s*[:=]\s*(?!\[redacted-token\])\S+/i.test(text), 'Unredacted credential label')
-    }
-    const errorType = error => assert.ok(error === null || /^(?:[A-Za-z][A-Za-z0-9]{0,70})?Exception$/.test(error))
-    const summary = facts.modalSummary
-    exactKeys(summary, ['caption', 'items', 'truncated', 'error'])
-    safeText(summary.caption, 512)
-    assert.equal(typeof summary.truncated, 'boolean')
-    errorType(summary.error)
-    assert.ok(Array.isArray(summary.items) && summary.items.length <= 16)
-    for (const item of summary.items) {
-      exactKeys(item, ['kind', 'name', 'automationId', 'invokePattern', 'textPattern', 'error'])
-      assert.ok(item.kind === 'Text' || item.kind === 'Button')
-      safeText(item.name, 512)
-      safeText(item.automationId, 96)
-      for (const key of ['invokePattern', 'textPattern']) assert.ok(item[key] === null || typeof item[key] === 'boolean')
-      errorType(item.error)
-    }
-  }
-  assert.deepEqual(Object.keys(facts).sort(), [...fields].sort())
-  const keys = new Set([...fields, 'elapsedMs', 'state', 'anchorHwnd', 'workerPid', 'candidates', 'hwnd',
-    'nativePid', 'ownerPid', 'ownerAlive', 'related', 'relationship', 'self', 'child', 'ancestor', 'ownedPopup',
-    'root', 'owners', 'pid', 'foreground', 'popup', 'isWindow', 'nativeEnabled', 'nativeVisible', 'uiaHwnd',
-    'enabled', 'offscreen', 'windowPattern', 'interactionState', 'modal', 'bounds', 'error', 'x', 'y', 'width', 'height',
-    'rootHwnd', 'inside', 'focused', 'edit'])
-  const labels = new Set(['find', 'foreground', 'address', 'readback', 'accept', 'close', 'complete',
-    'diagnostic-modal', 'DIAGNOSTIC_MODAL_CAPTURE',
-    'Running', 'Closing', 'ReadyForUserInteraction', 'BlockedByModalWindow', 'NotResponding'])
-  const walk = (item, key = '', depth = 0) => {
-    assert.ok(depth <= 10)
-    if (item === null || typeof item === 'boolean') return
-    if (typeof item === 'number') { assert.ok(Number.isFinite(item) && Math.abs(item) <= Number.MAX_SAFE_INTEGER); return }
-    if (typeof item === 'string') {
-      assert.ok(labels.has(item) || (key === 'error' && /^(?:[A-Za-z][A-Za-z0-9]{0,70})?Exception$/.test(item)))
-      return
-    }
-    if (Array.isArray(item)) {
-      assert.ok(item.length <= (key === 'candidates' ? 3 : 16))
-      item.forEach(child => walk(child, key, depth + 1))
-      return
-    }
-    assert.equal(typeof item, 'object')
-    for (const [childKey, child] of Object.entries(item)) {
-      assert.ok(keys.has(childKey), 'Unexpected native picker evidence field')
-      walk(child, childKey, depth + 1)
-    }
-  }
-  walk(modalCapture ? { ...facts, modalSummary: null } : facts)
+  const booleans = ['ownerMatches', 'foregroundMatches', 'dialogKeyboardFocusable', 'dialogEnabled',
+    'dialogWindowPattern', 'addressKeyboardFocusable', 'addressValuePattern', 'addressReadOnly', 'pathWritten']
+  assert.deepEqual(Object.keys(facts).sort(), ['phase', ...booleans].sort())
+  assert.ok(['find', 'foreground', 'address', 'readback', 'accept', 'close', 'complete'].includes(facts.phase))
+  for (const key of booleans) assert.equal(typeof facts[key], 'boolean')
   if (!failed) {
     assert.equal(facts.phase, 'complete')
-    for (const key of ['pathWritten', 'acceptInvoked', 'ownerMatches', 'foregroundMatches', 'dialogEnabled']) assert.equal(facts[key], true)
+    for (const key of ['pathWritten', 'ownerMatches', 'foregroundMatches', 'dialogEnabled', 'addressKeyboardFocusable', 'addressValuePattern']) assert.equal(facts[key], true)
+    assert.equal(facts.addressReadOnly, false)
   } else assert.match(value.name, /^(?:[A-Za-z][A-Za-z0-9]{0,70})?Exception$/)
   return { status: failed ? 'failure' : 'success', firstErrorType: failed ? value.name : null, facts }
 }
@@ -205,6 +145,9 @@ it('selects through the native picker then probes the existing full packaged tai
   const executable = process.env.DSH_WINDOWS_DESKTOP_EXECUTABLE
   if (process.platform !== 'win32' || !evidence || !executable) throw new Error('Native diagnostic inputs are required.')
   try {
+    const fixtureRoot = process.env.DSH_DESKTOP_SMOKE_ROOT
+    if (!fixtureRoot) throw new Error('Owned fixture root is required for the Desktop prerequisite.')
+    await mkdir(join(fixtureRoot, 'Desktop'), { recursive: true })
     await runPackagedDesktopSmoke(executable, 'win32')
     diagnosticPhase = 'session-workspace-receipt'
     const path = join(repositoryRoot, 'apps/desktop/release/desktop-smoke-session-workspaces-win32.json')

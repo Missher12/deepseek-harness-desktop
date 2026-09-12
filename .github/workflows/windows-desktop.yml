@@ -30,7 +30,7 @@ jobs:
           if ((git rev-parse HEAD).Trim() -cne $env:DSH_PICKER_DIAGNOSTIC_SHA) { throw 'Diagnostic source revision mismatch.' }
           git merge-base --is-ancestor $source HEAD
           if ($LASTEXITCODE -ne 0) { throw 'Pinned product source is not in the bounded diagnostic ancestry.' }
-          $allowed = @('.github/workflows/windows-desktop.yml', 'scripts/windows-picker-diagnostic-artifact.mjs', 'scripts/windows-picker-diagnostic-artifact.test.mjs', 'scripts/windows-picker-diagnostic-driver.mjs', 'scripts/windows-picker-diagnostic.ps1', 'scripts/windows-picker-diagnostic-run.ps1', 'scripts/windows-directory-picker-ui-smoke.ps1', 'scripts/windows-directory-picker-ui-smoke.spec.ts')
+          $allowed = @('.github/workflows/windows-desktop.yml', 'scripts/windows-picker-diagnostic-artifact.mjs', 'scripts/windows-picker-diagnostic-artifact.test.mjs', 'scripts/windows-picker-diagnostic-driver.mjs', 'scripts/windows-picker-diagnostic.ps1', 'scripts/windows-picker-diagnostic-run.ps1')
           $changed = @(git diff --name-only $source HEAD)
           if ($LASTEXITCODE -ne 0 -or (Compare-Object ($allowed | Sort-Object) ($changed | Sort-Object))) { throw 'Diagnostic source file allowlist mismatch.' }
           foreach ($file in @('scripts/windows-picker-diagnostic.ps1', 'scripts/windows-picker-diagnostic-run.ps1', 'scripts/windows-directory-picker-ui-smoke.ps1')) {
@@ -63,10 +63,10 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           if ($LASTEXITCODE -ne 0) { throw 'Locked diagnostic dependencies failed.' }
-      - name: Test native picker guards and window relationships
+      - name: Test the original native picker guard
         run: |
           pnpm exec vitest run scripts/windows-directory-picker-ui-smoke.spec.ts --config vitest.config.ts
-          if ($LASTEXITCODE -ne 0) { throw 'Native guard or WinForms ownership tests failed; do not start the picker.' }
+          if ($LASTEXITCODE -ne 0) { throw 'Original native picker guard failed; do not start the picker.' }
       - name: Exercise native selection and the existing packaged tail
         run: ./scripts/windows-picker-diagnostic-run.ps1
       - name: Upload only bounded diagnostic receipts

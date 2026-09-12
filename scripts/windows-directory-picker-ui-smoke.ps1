@@ -17,12 +17,6 @@ public static class NativePickerWindow {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr window, uint flags);
-  [DllImport("user32.dll")] public static extern IntPtr GetLastActivePopup(IntPtr window);
-  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr window, uint command);
-  [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr child);
-  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr window);
-  [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr window);
-  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
   [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
   public static uint ProcessId(IntPtr window) {
     uint processId;
@@ -37,74 +31,12 @@ function Test-PickerPathReadback {
     -not [string]::IsNullOrEmpty($Expected) -and $Observed -ceq $Expected
 }
 
-# Diagnostic-branch only. Never read an Edit/Value/password/document surface.
-function Protect-PickerDiagnosticText {
-  param([string]$Text, [int]$Limit = 512)
-  if ($null -eq $Text) { return '' }
-  if ($Text.Length -gt 8192) { $Text = $Text.Substring(0, 8192) }
-  $roots = @(
-    @{ prefix = $env:DSH_DESKTOP_SMOKE_ROOT; label = '[owned-root]' }
-    @{ prefix = $env:RUNNER_TEMP; label = '[runner-temp]' }
-    @{ prefix = $env:GITHUB_WORKSPACE; label = '[workspace]' }
-    @{ prefix = $env:USERPROFILE; label = '[runner-profile]' }
-    @{ prefix = $env:LOCALAPPDATA; label = '[runner-local-data]' }
-    @{ prefix = $env:APPDATA; label = '[runner-roaming-data]' }
-  )
-  foreach ($root in @($roots | Where-Object { -not [string]::IsNullOrEmpty($_.prefix) } | Sort-Object { $_.prefix.Length } -Descending)) {
-    foreach ($prefix in @($root.prefix, $root.prefix.Replace('\', '/'))) {
-      $Text = [regex]::Replace($Text, ([regex]::Escape($prefix) + '(?=[\\/\s.,)]|$)'), $root.label, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-    }
-  }
-  $Text = [regex]::Replace($Text, '(?i)\b[a-z]:[\\/][^\r\n"<>|]*|\\\\[^\r\n"<>|]+', '[path]')
-  $Text = [regex]::Replace($Text, '(?i)\b(api[_ -]?key|token|password|secret)\s*[:=]\s*\S+', '$1=[redacted-token]')
-  $Text = [regex]::Replace($Text, '\b[A-Za-z0-9_-]{32,}\b', '[redacted-token]')
-  $Text = [regex]::Replace($Text, '[\x00-\x1f\x7f]+', ' ')
-  return $Text.Substring(0, [Math]::Min($Limit, $Text.Length))
-}
-
-function Get-PickerDiagnosticModalSummary {
-  param([System.Windows.Automation.AutomationElement]$Dialog)
-  $summary = [ordered]@{ caption = $null; items = @(); truncated = $false; error = $null }
-  try {
-    if (-not (Test-PickerForeground $Dialog) -or $Dialog.Current.IsPassword) { throw 'Diagnostic modal identity changed.' }
-    $summary.caption = Protect-PickerDiagnosticText $Dialog.Current.Name
-    $condition = [System.Windows.Automation.OrCondition]::new(
-      [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Text),
-      [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
-    )
-    # Direct matching children only: no walk into Edit, Document or other containers.
-    $controls = $Dialog.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
-    $summary.truncated = $controls.Count -gt 16
-    for ($index = 0; $index -lt [Math]::Min(16, $controls.Count); $index += 1) {
-      $control = $controls[$index]
-      $current = $control.Current
-      if ($current.ProcessId -ne $script:PickerOwner.Id -or $current.IsPassword) { continue }
-      if ($current.ControlType -ne [System.Windows.Automation.ControlType]::Text -and $current.ControlType -ne [System.Windows.Automation.ControlType]::Button) { continue }
-      $item = [ordered]@{ kind = $(if ($current.ControlType -eq [System.Windows.Automation.ControlType]::Text) { 'Text' } else { 'Button' });
-        name = $null; automationId = $null; invokePattern = $null; textPattern = $null; error = $null }
-      try {
-        $item.name = Protect-PickerDiagnosticText $current.Name
-        $item.automationId = Protect-PickerDiagnosticText $current.AutomationId 96
-        $pattern = $null
-        $item.invokePattern = $control.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)
-        $pattern = $null
-        $item.textPattern = $control.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern, [ref]$pattern)
-      } catch { $item.error = $_.Exception.GetBaseException().GetType().Name }
-      $summary.items += $item
-    }
-  } catch { $summary.error = $_.Exception.GetBaseException().GetType().Name }
-  return $summary
-}
-
 function Test-PickerForeground {
   param([System.Windows.Automation.AutomationElement]$Dialog)
   $window = [IntPtr]$Dialog.Current.NativeWindowHandle
   $owned = $null -ne $script:PickerOwner -and -not $script:PickerOwner.HasExited -and
     $Dialog.Current.ProcessId -eq $script:PickerOwner.Id -and $window -ne [IntPtr]::Zero -and
-    [NativePickerWindow]::ProcessId($window) -eq $script:PickerOwner.Id -and
-    (Get-PickerNativeRelationship $window).related -and
-    $Dialog.Current.IsEnabled -and -not $Dialog.Current.IsOffscreen -and
-    [NativePickerWindow]::IsWindowEnabled($window) -and [NativePickerWindow]::IsWindowVisible($window)
+    [NativePickerWindow]::ProcessId($window) -eq $script:PickerOwner.Id
   $script:PickerFacts.ownerMatches = $owned
   $script:PickerFacts.foregroundMatches = $owned -and [NativePickerWindow]::GetForegroundWindow() -eq $window
   return $script:PickerFacts.foregroundMatches
@@ -123,10 +55,6 @@ function Wait-PickerAddress {
       $script:PickerFacts.addressValuePattern = $hasValue
       $inside = $current.NativeWindowHandle -ne 0 -and
         [NativePickerWindow]::GetAncestor([IntPtr]$current.NativeWindowHandle, 2) -eq [IntPtr]$Dialog.Current.NativeWindowHandle
-      $script:PickerFacts.address = @{ hwnd = [long]$current.NativeWindowHandle; pid = $current.ProcessId;
-        rootHwnd = [NativePickerWindow]::GetAncestor([IntPtr]$current.NativeWindowHandle, 2).ToInt64(); inside = $inside;
-        focused = $current.HasKeyboardFocus; enabled = $current.IsEnabled; offscreen = $current.IsOffscreen;
-        edit = ($current.ControlType -eq [System.Windows.Automation.ControlType]::Edit) }
       if ($current.ControlType -eq [System.Windows.Automation.ControlType]::Edit -and
           $current.ProcessId -eq $script:PickerOwner.Id -and $inside -and
           $current.IsEnabled -and -not $current.IsOffscreen -and
@@ -140,141 +68,32 @@ function Wait-PickerAddress {
   throw 'The owned picker did not expose its focused writable address field.'
 }
 
-function Get-DirectoryPickerAnchor {
+function Get-DirectoryPickerWindow {
   $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
     [System.Windows.Automation.TreeScope]::Children,
     [System.Windows.Automation.Condition]::TrueCondition
   )
-  $anchors = @()
   foreach ($window in $windows) {
     try {
       if ($window.Current.Name -eq 'Select Workspace Directory') {
-        $anchors += $window
+        if ($null -eq $script:PickerOwner) {
+          $script:PickerOwner = [Diagnostics.Process]::GetProcessById($window.Current.ProcessId)
+          [void]$script:PickerOwner.Handle
+          if ($script:PickerOwner.MainModule.FileName -ine $script:PickerExecutable) {
+            throw 'Directory picker belongs to a different executable.'
+          }
+        }
+        if ($script:PickerOwner.HasExited -or $window.Current.ProcessId -ne $script:PickerOwner.Id) {
+          throw 'Directory picker process identity changed.'
+        }
+        return $window
       }
     }
     catch [System.Windows.Automation.ElementNotAvailableException] {
       # The native dialog can close while UI Automation enumerates it.
     }
   }
-  $script:PickerFacts.anchorCount = $anchors.Count
-  if ($anchors.Count -eq 0) { return $null }
-  if ($anchors.Count -ne 1) { throw 'Directory picker has multiple title anchors.' }
-  $anchor = $anchors[0]
-  if ($null -eq $script:PickerOwner) {
-    $script:PickerOwner = [Diagnostics.Process]::GetProcessById($anchor.Current.ProcessId)
-    [void]$script:PickerOwner.Handle
-    if ($script:PickerOwner.MainModule.FileName -ine $script:PickerExecutable) {
-      throw 'Directory picker belongs to a different executable.'
-    }
-  }
-  if ($script:PickerOwner.HasExited) { return $null }
-  $window = [IntPtr]$anchor.Current.NativeWindowHandle
-  if ($anchor.Current.ProcessId -ne $script:PickerOwner.Id -or $window -eq [IntPtr]::Zero -or
-      [NativePickerWindow]::ProcessId($window) -ne $script:PickerOwner.Id) {
-    throw 'Directory picker process identity changed.'
-  }
-  $script:PickerAnchor = $window
-  return $anchor
-}
-
-function Get-PickerNativeRelationship {
-  param([IntPtr]$Window)
-  $anchor = $script:PickerAnchor
-  $anchorOwned = $null -ne $script:PickerOwner -and -not $script:PickerOwner.HasExited -and
-    $anchor -ne [IntPtr]::Zero -and [NativePickerWindow]::IsWindow($anchor) -and
-    [NativePickerWindow]::ProcessId($anchor) -eq $script:PickerOwner.Id
-  $self = $anchorOwned -and $Window -eq $anchor
-  $child = $anchorOwned -and [NativePickerWindow]::IsChild($anchor, $Window)
-  $root = [NativePickerWindow]::GetAncestor($Window, 2)
-  $ancestor = $anchorOwned -and $root -eq $anchor
-  $owners = @()
-  $seen = [System.Collections.Generic.HashSet[long]]::new()
-  $current = $Window
-  $ownedPopup = $false
-  for ($index = 0; $index -lt 16 -and $current -ne [IntPtr]::Zero; $index += 1) {
-    $current = [NativePickerWindow]::GetWindow($current, 4)
-    if ($current -eq [IntPtr]::Zero -or -not $seen.Add($current.ToInt64())) { break }
-    $ownerPid = [NativePickerWindow]::ProcessId($current)
-    $owners += @{ hwnd = $current.ToInt64(); pid = $ownerPid }
-    if (-not $anchorOwned -or $ownerPid -ne $script:PickerOwner.Id) { break }
-    if ($current -eq $anchor) { $ownedPopup = $true; break }
-  }
-  return @{ related = ($self -or $child -or $ancestor -or $ownedPopup); self = $self;
-    child = $child; ancestor = $ancestor; ownedPopup = $ownedPopup; root = $root.ToInt64(); owners = $owners }
-}
-
-function Test-PickerTargetFacts {
-  param([System.Collections.IDictionary]$Facts)
-  return $null -eq $Facts.error -and $Facts.isWindow -and $Facts.ownerAlive -and $Facts.hwnd -ne 0 -and
-    $Facts.uiaHwnd -eq $Facts.hwnd -and $Facts.pid -eq $Facts.ownerPid -and
-    $Facts.nativePid -eq $Facts.ownerPid -and $Facts.related -and $Facts.enabled -and
-    -not $Facts.offscreen -and $Facts.nativeEnabled -and $Facts.nativeVisible
-}
-
-function Select-PickerTarget {
-  param([object[]]$Candidates)
-  $valid = @($Candidates | Where-Object { Test-PickerTargetFacts $_ })
-  if ($valid.Count -gt 1) { throw 'Directory picker has multiple interactive related windows.' }
-  if ($valid.Count -eq 0) { return $null }
-  return $valid[0]
-}
-
-function Get-DirectoryPickerWindow {
-  $anchor = Get-DirectoryPickerAnchor
-  if ($null -eq $anchor) { return $null }
-  $foreground = [NativePickerWindow]::GetForegroundWindow()
-  $popup = [NativePickerWindow]::GetLastActivePopup($script:PickerAnchor)
-  $handles = [System.Collections.Generic.HashSet[long]]::new()
-  $elements = @{}
-  $candidates = @()
-  foreach ($window in @($script:PickerAnchor, $foreground, $popup)) {
-    if ($window -eq [IntPtr]::Zero -or -not $handles.Add($window.ToInt64())) { continue }
-    $relationship = Get-PickerNativeRelationship $window
-    $facts = [ordered]@{
-      hwnd = $window.ToInt64(); nativePid = [NativePickerWindow]::ProcessId($window)
-      ownerPid = $script:PickerOwner.Id; ownerAlive = (-not $script:PickerOwner.HasExited)
-      related = $relationship.related; relationship = $relationship
-      foreground = ($window -eq $foreground); popup = ($window -eq $popup)
-      isWindow = [NativePickerWindow]::IsWindow($window)
-      nativeEnabled = [NativePickerWindow]::IsWindowEnabled($window)
-      nativeVisible = [NativePickerWindow]::IsWindowVisible($window)
-      uiaHwnd = $null; pid = $null; enabled = $null; offscreen = $null
-      windowPattern = $null; interactionState = $null; modal = $null; bounds = $null; error = $null
-    }
-    try {
-      $element = [System.Windows.Automation.AutomationElement]::FromHandle($window)
-      $facts.uiaHwnd = [long]$element.Current.NativeWindowHandle
-      $facts.pid = [int]$element.Current.ProcessId
-      $facts.enabled = $element.Current.IsEnabled
-      $facts.offscreen = $element.Current.IsOffscreen
-      $bounds = $element.Current.BoundingRectangle
-      $facts.bounds = [ordered]@{ x = $bounds.X; y = $bounds.Y; width = $bounds.Width; height = $bounds.Height }
-      foreach ($key in @($facts.bounds.Keys)) {
-        if ([double]::IsNaN($facts.bounds[$key]) -or [double]::IsInfinity($facts.bounds[$key])) { $facts.bounds[$key] = $null }
-      }
-      $pattern = $null
-      $facts.windowPattern = $element.TryGetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern, [ref]$pattern)
-      if ($facts.windowPattern) {
-        $facts.interactionState = $pattern.Current.WindowInteractionState.ToString()
-        $facts.modal = $pattern.Current.IsModal
-      }
-      $elements[$window.ToInt64()] = $element
-    } catch { $facts.error = $_.Exception.GetBaseException().GetType().Name }
-    $candidates += $facts
-  }
-  $state = [ordered]@{ anchorHwnd = $script:PickerAnchor.ToInt64(); workerPid = $script:PickerOwner.Id; candidates = $candidates }
-  $signature = $state | ConvertTo-Json -Depth 8 -Compress
-  $snapshot = @{ elapsedMs = $script:PickerClock.ElapsedMilliseconds; state = $state }
-  if ($signature -cne $script:PickerLastSignature) {
-    if ($script:PickerTrace.Count -lt 16) { $script:PickerTrace.Add($snapshot) }
-    $script:PickerLastSignature = $signature
-  }
-  $script:PickerFacts.resolution = @($script:PickerTrace.ToArray())
-  $script:PickerFacts.resolutionLast = $snapshot
-  $selected = Select-PickerTarget $candidates
-  if ($null -eq $selected) { return $null }
-  $script:PickerFacts.selectedHwnd = $selected.hwnd
-  return $elements[$selected.hwnd]
+  return $null
 }
 
 function Wait-DirectoryPickerWindow {
@@ -339,14 +158,9 @@ if ($resolvedFolder -notmatch '^[A-Za-z0-9:\\ ._-]+$') {
 }
 
 $script:PickerOwner = $null
-$script:PickerAnchor = [IntPtr]::Zero
-$script:PickerTrace = [System.Collections.Generic.List[object]]::new()
-$script:PickerLastSignature = ''
-$script:PickerClock = [System.Diagnostics.Stopwatch]::StartNew()
-$script:PickerFacts = [ordered]@{ phase = 'find'; ownerMatches = $null; foregroundMatches = $null;
-  dialogKeyboardFocusable = $null; dialogEnabled = $null; dialogWindowPattern = $null;
-  addressKeyboardFocusable = $null; addressValuePattern = $null; addressReadOnly = $null; pathWritten = $false;
-  anchorCount = 0; selectedHwnd = $null; resolution = @(); resolutionLast = $null; address = $null; acceptInvoked = $false }
+$script:PickerFacts = [ordered]@{ phase = 'find'; ownerMatches = $false; foregroundMatches = $false;
+  dialogKeyboardFocusable = $false; dialogEnabled = $false; dialogWindowPattern = $false;
+  addressKeyboardFocusable = $false; addressValuePattern = $false; addressReadOnly = $true; pathWritten = $false }
 $script:PickerDeadline = [DateTime]::UtcNow.AddSeconds(45)
 try {
   if ([string]::IsNullOrEmpty($env:DSH_WINDOWS_DESKTOP_EXECUTABLE)) {
@@ -360,12 +174,6 @@ try {
   $script:PickerFacts.dialogWindowPattern = $dialog.TryGetCurrentPattern(
     [System.Windows.Automation.WindowPattern]::Pattern, [ref]$windowPattern)
   if (-not $dialog.Current.IsEnabled -or $dialog.Current.IsOffscreen) { throw 'Owned picker is not enabled and visible.' }
-  # One diagnostic-only capture, then fail closed before foreground changes or keys.
-  $script:PickerFacts.phase = 'diagnostic-modal'
-  $script:PickerFacts['diagnosticOnly'] = $true
-  $script:PickerFacts['failureCode'] = 'DIAGNOSTIC_MODAL_CAPTURE'
-  $script:PickerFacts['modalSummary'] = Get-PickerDiagnosticModalSummary $dialog
-  throw 'DIAGNOSTIC_MODAL_CAPTURE'
   $script:PickerFacts.phase = 'foreground'
   [void][NativePickerWindow]::SetForegroundWindow([IntPtr]$dialog.Current.NativeWindowHandle)
   while (-not (Test-PickerForeground $dialog) -and [DateTime]::UtcNow -lt $script:PickerDeadline) {
@@ -391,16 +199,12 @@ try {
   if ($null -eq $dialog) { throw 'Directory picker closed before its result was confirmed.' }
   if (-not (Test-PickerForeground $dialog)) { throw 'Owned picker lost the foreground before acceptance.' }
   Invoke-DirectoryPickerAccept -Dialog $dialog
-  $script:PickerFacts.acceptInvoked = $true
   $script:PickerFacts.phase = 'close'
   $deadline = [DateTime]::UtcNow.AddSeconds(30)
   while ([DateTime]::UtcNow -lt $deadline) {
-    $anchorGone = $null -eq (Get-DirectoryPickerAnchor)
-    $nativeAnchorGone = $script:PickerOwner.HasExited -or -not [NativePickerWindow]::IsWindow($script:PickerAnchor) -or
-      [NativePickerWindow]::ProcessId($script:PickerAnchor) -ne $script:PickerOwner.Id
-    if ($anchorGone -and $nativeAnchorGone) {
+    if ($null -eq (Get-DirectoryPickerWindow)) {
       $script:PickerFacts.phase = 'complete'
-      [Console]::Out.WriteLine('DSH_PICKER ' + ($script:PickerFacts | ConvertTo-Json -Depth 12 -Compress))
+      [Console]::Out.WriteLine('DSH_PICKER ' + ($script:PickerFacts | ConvertTo-Json -Compress))
       exit 0
     }
     Start-Sleep -Milliseconds 100
@@ -411,7 +215,7 @@ try {
   $message = $first.Message.Replace($resolvedFolder, '[owned-folder]')
   if ($message.Length -gt 512) { $message = $message.Substring(0, 512) }
   [Console]::Out.WriteLine('DSH_PICKER_FAILED ' + (@{ facts = $script:PickerFacts;
-    name = $first.GetType().Name; message = $message } | ConvertTo-Json -Depth 12 -Compress))
+    name = $first.GetType().Name; message = $message } | ConvertTo-Json -Depth 3 -Compress))
   throw
 } finally {
   if ($null -ne $script:PickerOwner) { $script:PickerOwner.Dispose() }
