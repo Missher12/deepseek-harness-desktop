@@ -230,6 +230,18 @@ describe('OpenInAppAction launching', () => {
     expect(b.launch).not.toHaveBeenCalled()
   })
 
+  it('opens the generic Linux file manager without requesting a nonexistent app icon', async () => {
+    const b = bench({ apps: ['filemanager'], cwd: '/w/dir' })
+    const { container } = render(<OpenInAppAction {...b.props} />)
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('svg rect')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh['open.title'].replace('{app}', zh['app.filemanager']) }))
+    await waitFor(() => { expect(b.launch).toHaveBeenCalledWith('filemanager', '/w/dir') })
+    fireEvent.click(screen.getByRole('button', { name: zh['menu.toggle'] }))
+    await screen.findByText(zh['app.filemanager'])
+    expect(document.querySelector('img')).toBeNull()
+  })
+
   it('falls back to the generic icon after a failed image load', async () => {
     const b = bench({ apps: ['terminal'], cwd: '/w/dir' })
     const { container } = render(<OpenInAppAction {...b.props} />)

@@ -7,7 +7,7 @@ import { promisify } from 'node:util'
 import { _electron as electron, type ElectronApplication } from 'playwright'
 import { describe, expect, it } from 'vitest'
 import { redactLogText } from '../src/logging.ts'
-import { classifyLinuxManagedRange, linuxDescendants, linuxDesktopEnvironment, linuxInstalledProbeSource, linuxLaunchRootPid, parseLinuxProcessStat, prepareLinuxDesktopEnvironment, processAlive, readLinuxProcessIdentity, startLinuxInstalledProbe, withLinuxWriterFixture } from './linux-writer-fixture.ts'
+import { classifyLinuxManagedRange, linuxDescendants, linuxDesktopEnvironment, linuxInstalledProbeSource, linuxLaunchRootPid, parseLinuxProcessStat, parseLinuxSystemProcessStat, prepareLinuxDesktopEnvironment, processAlive, readLinuxProcessIdentity, startLinuxInstalledProbe, withLinuxWriterFixture } from './linux-writer-fixture.ts'
 import type { LinuxInstalledProbe, LinuxProcessIdentity } from './linux-writer-fixture.ts'
 
 const execFileAsync = promisify(execFile)
@@ -204,13 +204,13 @@ async function ownedIdentity(pid: number): Promise<LinuxProcessIdentity> {
   return identity
 }
 
-async function groupMembers(processGroupId: number): Promise<number[]> {
+async function groupMembers(processGroupId: number, procRoot = '/proc'): Promise<number[]> {
   const members: number[] = []
-  for (const name of await readdir('/proc')) {
+  for (const name of await readdir(procRoot)) {
     if (!/^\d+$/u.test(name)) continue
     try {
-      const value = await readFile(`/proc/${name}/stat`, 'utf8')
-      if (parseLinuxProcessStat(Number(name), value, '').processGroupId === processGroupId) members.push(Number(name))
+      const value = await readFile(join(procRoot, name, 'stat'), 'utf8')
+      if (parseLinuxSystemProcessStat(Number(name), value, '').processGroupId === processGroupId) members.push(Number(name))
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
@@ -409,6 +409,42 @@ function statFixture(pid: number, parent: number, group: number, name = 'process
 }
 
 describe('Linux kernel ownership classification', () => {
+  it('enumerates target PGID members beside an unrelated zero-PGID process', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-proc-group-'))
+    try {
+      // Synthetic /proc rows, not captured CI identities; the zero-PGID row has all 52 fields.
+      const rows = [
+        [2, `2 (kthreadd) S 0 0 0 0 -1 2129984 ${Array<string>(12).fill('0').join(' ')} 17 ${Array<string>(30).fill('0').join(' ')}`],
+        [23, statFixture(23, 12, 23)],
+        [24, statFixture(24, 23, 23)],
+        [30, statFixture(30, 12, 30)],
+      ] as const
+      for (const [pid, row] of rows) {
+        await mkdir(join(root, String(pid)))
+        await writeFile(join(root, String(pid), 'stat'), row)
+      }
+      expect((await groupMembers(23, root)).sort((a, b) => a - b)).toEqual([23, 24])
+      await rm(join(root, '23'), { recursive: true })
+      await rm(join(root, '24'), { recursive: true })
+      expect(await groupMembers(23, root)).toEqual([])
+      expect(() => parseLinuxProcessStat(2, rows[0][1], '')).toThrow('identity')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+  it('does not hide malformed target identities during group enumeration', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-proc-invalid-'))
+    try {
+      await mkdir(join(root, '23'))
+      const valid = statFixture(23, 12, 23)
+      for (const row of [statFixture(24, 12, 23), valid.replace('123456', 'invalid'), statFixture(23, 12, -1), '23 (truncated) S']) {
+        await writeFile(join(root, '23', 'stat'), row)
+        await expect(groupMembers(23, root)).rejects.toThrow('identity')
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
   it.skipIf(process.platform === 'win32')('keeps IPC errors recoverable and reaps a source-only probe controller', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-linux-probe-protocol-'))
     let probe: LinuxInstalledProbe | undefined

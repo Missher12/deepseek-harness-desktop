@@ -157,21 +157,34 @@ export interface LinuxProcessIdentity {
 }
 
 /**
- * Parse an observed kernel identity.
+ * Parse a system process stat row, including processes with no process group.
  * @param pid - Expected process ID.
  * @param value - Its /proc stat row.
  * @param cgroup - Its observed cgroup membership.
- * @returns Identity retained for ownership checks and safe failure cleanup.
+ * @returns Validated kernel fields; processGroupId may be zero.
  */
-export function parseLinuxProcessStat(pid: number, value: string, cgroup: string): LinuxProcessIdentity {
+export function parseLinuxSystemProcessStat(pid: number, value: string, cgroup: string): LinuxProcessIdentity {
   const fields = value.slice(value.lastIndexOf(')') + 2).trim().split(/\s+/u)
   const parentPid = Number(fields[1])
   const processGroupId = Number(fields[2])
   const startTime = fields[19]
   if (!Number.isSafeInteger(pid) || pid <= 0 || !value.startsWith(`${String(pid)} (`)
-    || !Number.isSafeInteger(parentPid) || parentPid < 0 || !Number.isSafeInteger(processGroupId) || processGroupId <= 0
-    || startTime === undefined || !/^\d+$/u.test(startTime)) throw new Error('Invalid owned Linux process identity')
+    || !Number.isSafeInteger(parentPid) || parentPid < 0 || !Number.isSafeInteger(processGroupId) || processGroupId < 0
+    || startTime === undefined || !/^\d+$/u.test(startTime)) throw new Error('Invalid Linux process identity')
   return { pid, parentPid, processGroupId, startTime, cgroup }
+}
+
+/**
+ * Parse an owned process identity whose process group must be positive.
+ * @param pid - Expected owned process ID.
+ * @param value - Its /proc stat row.
+ * @param cgroup - Its observed cgroup membership.
+ * @returns Identity retained for ownership checks and safe failure cleanup.
+ */
+export function parseLinuxProcessStat(pid: number, value: string, cgroup: string): LinuxProcessIdentity {
+  const identity = parseLinuxSystemProcessStat(pid, value, cgroup)
+  if (identity.processGroupId === 0) throw new Error('Invalid owned Linux process identity')
+  return identity
 }
 
 /**

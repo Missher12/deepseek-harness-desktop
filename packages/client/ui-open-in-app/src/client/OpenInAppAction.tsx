@@ -76,7 +76,8 @@ const failedIcons = new Set<string>()
  */
 function AppIcon({ id, url, size }: { id: string; url: string; size: number }): React.JSX.Element {
   const [failed, setFailed] = useState(failedIcons.has(id))
-  if (failed) {
+  // xdg-open selects the system file manager and has no application icon of its own.
+  if (id === 'filemanager' || failed) {
     return (
       <svg
         width={size}

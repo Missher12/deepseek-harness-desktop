@@ -1,8 +1,8 @@
-/** SSH launch behavior over a recorded conversation and the shipped Web plugin rows. */
+/** Host availability and optional icons over a recorded conversation and the shipped Web plugin rows. */
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Browser, Page } from 'playwright'
+import type { Browser, ConsoleMessage, Page, Request } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -17,7 +17,7 @@ const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/sessio
 const SEED_ID = 'open-in-app-ssh-web-e2e'
 const MODE = webSnapshotMode()
 
-describe.skipIf(MODE === 'record')('web e2e: Open In under SSH', () => {
+describe.skipIf(MODE === 'record')('web e2e: Open In host capabilities', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
@@ -69,5 +69,33 @@ describe.skipIf(MODE === 'record')('web e2e: Open In under SSH', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, ['header.expected.md'])
+  })
+
+  it('renders the generic Linux file manager without a missing-icon request', async () => {
+    const iconRequests: string[] = []
+    const errors: string[] = []
+    const onRequest = (request: Request): void => {
+      if (new URL(request.url()).pathname === '/open-in-app/icon/filemanager') iconRequests.push(request.url())
+    }
+    const onConsole = (message: ConsoleMessage): void => {
+      if (message.type() === 'error') errors.push(message.text())
+    }
+    page.on('request', onRequest)
+    page.on('console', onConsole)
+    try {
+      // The OS application inventory is the only substituted input; the shipped UI makes its real requests.
+      await page.route('**/open-in-app/apps', route => route.fulfill({ json: { apps: ['filemanager'] } }))
+      await page.reload({ waitUntil: 'load' })
+      await page.getByRole('button', { name: 'Open workspace in Files', exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Choose an app to open in', exact: true }).click()
+      await page.getByText('Files', { exact: true }).waitFor()
+      expect(await page.locator('img[src$="/open-in-app/icon/filemanager"]').count()).toBe(0)
+      expect(iconRequests).toEqual([])
+      expect(errors).toEqual([])
+    } finally {
+      page.off('request', onRequest)
+      page.off('console', onConsole)
+      await page.unroute('**/open-in-app/apps')
+    }
   })
 })
