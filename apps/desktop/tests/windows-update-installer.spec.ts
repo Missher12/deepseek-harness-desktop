@@ -333,6 +333,8 @@ describe('Windows update bootstrap and independent worker', () => {
     expect(preflightTempRoot({ RUNNER_TEMP: '' }, temporary)).toBe(temporary)
   })
 
+  // The outer case covers both bounded PowerShell processes and file preparation/cleanup.
+  const parserProcessTimeoutMs = 10_000
   it.skipIf(process.platform !== 'win32')('parses both the real bootstrap and nested worker with Windows PowerShell', async () => {
     const directory = await realpath(await mkdtemp(join(tmpdir(), 'dsh-update-parser-')))
     const plan = command(process.env)
@@ -355,7 +357,7 @@ if($failed){exit 1}
       const result = spawnSync(plan.executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand',
         Buffer.from(parser, 'utf16le').toString('base64')], {
         stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', shell: false, windowsHide: true,
-        timeout: 10_000, maxBuffer: 1024, env: { ...plan.env, DSH_PARSER_ROOT: directory },
+        timeout: parserProcessTimeoutMs, maxBuffer: 1024, env: { ...plan.env, DSH_PARSER_ROOT: directory },
       })
       const lines = result.stdout?.trim().split(/\r?\n/u) ?? []
       return { status: result.status, signal: result.signal,
@@ -376,7 +378,7 @@ if($failed){exit 1}
       expect(rejected.counts[1]?.[0]).toBe('worker')
       expect(Number(rejected.counts[1]?.[1])).toBeGreaterThan(0)
     } finally { await rm(directory, { recursive: true, force: true }) }
-  })
+  }, 2 * parserProcessTimeoutMs + 5_000)
 
   it.skipIf(process.platform !== 'win32')('validates the real payload, survives bootstrap exit and cancels the exact worker without running the inert Setup', async () => {
     const directory = await realpath(await mkdtemp(join(preflightTempRoot(process.env, tmpdir()), 'dsh-u-')))
