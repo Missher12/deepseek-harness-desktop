@@ -2,7 +2,8 @@ param(
   [Parameter(Mandatory = $true)][int]$MainProcessId,
   [Parameter(Mandatory = $true)][string]$Executable,
   [Parameter(Mandatory = $true)][string]$ControlRoot,
-  [Parameter(Mandatory = $true)][string]$EvidenceRoot
+  [Parameter(Mandatory = $true)][string]$EvidenceRoot,
+  [switch]$MonitorUntilExit
 )
 
 Set-StrictMode -Version Latest
@@ -28,6 +29,7 @@ $sampleCount = 0
 $forced = 0
 $cancelInvoked = 0
 $clock = [System.Diagnostics.Stopwatch]::new()
+$observationElapsedMs = 0L
 
 function Write-Receipt {
   param([string]$Name, $Value)
@@ -170,21 +172,34 @@ try {
   Retain-Sample 'first'
   $nextTree = 0L
   while ($clock.ElapsedMilliseconds -lt 45000) {
+    if ($MonitorUntilExit -and ($main.HasExited -or (Test-Path -LiteralPath (Join-Path $ControlRoot 'observe.stop')))) { break }
     if ($clock.ElapsedMilliseconds -ge $nextTree) { Hold-OwnedTree; $nextTree = $clock.ElapsedMilliseconds + 1000 }
     Retain-Sample 'change'
     Start-Sleep -Milliseconds 250
   }
   Retain-Sample 'last'
+  $observationElapsedMs = $clock.ElapsedMilliseconds
+  # Full-tail diagnostics retain process handles until the existing 300s test ends.
+  # The UI observation remains 45s; this monitor does not cancel a successful chooser.
+  if ($MonitorUntilExit) {
+    while (-not $main.HasExited -and -not (Test-Path -LiteralPath (Join-Path $ControlRoot 'observe.stop'))) {
+      if ($clock.ElapsedMilliseconds -ge 300000) { throw 'Packaged diagnostic reached its existing test deadline.' }
+      Hold-OwnedTree
+      Start-Sleep -Milliseconds 250
+    }
+  }
 } catch {
   $firstError = $_.Exception.GetBaseException().GetType().Name
   # Sample the same failing scene without replacing the original failure.
   try { Retain-Sample 'failure' } catch { $cleanupError = $_.Exception.GetBaseException().GetType().Name }
 } finally {
   try {
-    Write-Receipt 'observation.json' ([ordered]@{ schemaVersion = 1; windowMs = 45000; elapsedMs = $clock.ElapsedMilliseconds; sampleCount = $sampleCount; firstError = $firstError; samples = @($samples.ToArray()); lastSample = $lastSample })
+    if ($observationElapsedMs -eq 0) { $observationElapsedMs = $clock.ElapsedMilliseconds }
+    Write-Receipt 'observation.json' ([ordered]@{ schemaVersion = 1; windowMs = 45000; elapsedMs = $observationElapsedMs; lifetimeElapsedMs = $clock.ElapsedMilliseconds; sampleCount = $sampleCount; firstError = $firstError; samples = @($samples.ToArray()); lastSample = $lastSample })
   } catch { $cleanupError = $_.Exception.GetBaseException().GetType().Name }
   try {
-    # Cancellation happens after observation; no focus, keys or acceptance influence the recorded state.
+    # Cancellation belongs to teardown. MonitorUntilExit may observe the independent
+    # selector exercising the dialog before the application exits.
     $all = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
     foreach ($element in $all) {
       if ($element.Current.Name -ne 'Select Workspace Directory') { continue }

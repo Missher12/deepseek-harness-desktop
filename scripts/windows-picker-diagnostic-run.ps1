@@ -67,7 +67,7 @@ try {
   node scripts/windows-picker-diagnostic-driver.mjs
   if ($LASTEXITCODE -ne 0) { throw 'Pinned fixture preparation failed.' }
   $phase = 'native-picker'
-  # Only this temporary prefix is executed; no staging, compiler, builder or full suite.
+  # The pinned packaged driver exercises the selector and existing tail without rebuilding the app.
   pnpm exec vitest run apps/desktop/tests/picker-diagnostic-generated.spec.ts --config vitest.config.ts --reporter=dot
   $driverExit = $LASTEXITCODE
   if ($driverExit -ne 0) { throw 'Bounded native picker diagnostic failed.' }

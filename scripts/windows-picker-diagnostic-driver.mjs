@@ -5,9 +5,66 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const sourceHash = 'a5ef803903cbb3d79e6c0276d24962cd16f5d1fe030ded2aff5e983cde6040ae'
+
+/** Keep only the bounded, path-free facts emitted by the owned native selector. */
+export function pickerReceipt(stdout) {
+  assert.equal(typeof stdout, 'string')
+  assert.ok(stdout.length <= 100_000)
+  const lines = stdout.split(/\r?\n/).filter(line => /^DSH_PICKER(?:_FAILED)? /.test(line))
+  assert.equal(lines.length, 1, 'Expected exactly one native picker outcome')
+  const failed = lines[0].startsWith('DSH_PICKER_FAILED ')
+  const value = JSON.parse(lines[0].slice(failed ? 18 : 11))
+  const facts = failed ? value.facts : value
+  const fields = ['phase', 'ownerMatches', 'foregroundMatches', 'dialogKeyboardFocusable', 'dialogEnabled',
+    'dialogWindowPattern', 'addressKeyboardFocusable', 'addressValuePattern', 'addressReadOnly', 'pathWritten',
+    'anchorCount', 'selectedHwnd', 'resolution', 'resolutionLast', 'address', 'acceptInvoked']
+  assert.deepEqual(Object.keys(facts).sort(), [...fields].sort())
+  const keys = new Set([...fields, 'elapsedMs', 'state', 'anchorHwnd', 'workerPid', 'candidates', 'hwnd',
+    'nativePid', 'ownerPid', 'ownerAlive', 'related', 'relationship', 'self', 'child', 'ancestor', 'ownedPopup',
+    'root', 'owners', 'pid', 'foreground', 'popup', 'isWindow', 'nativeEnabled', 'nativeVisible', 'uiaHwnd',
+    'enabled', 'offscreen', 'windowPattern', 'interactionState', 'modal', 'bounds', 'error', 'x', 'y', 'width', 'height',
+    'rootHwnd', 'inside', 'focused', 'edit'])
+  const labels = new Set(['find', 'foreground', 'address', 'readback', 'accept', 'close', 'complete',
+    'Running', 'Closing', 'ReadyForUserInteraction', 'BlockedByModalWindow', 'NotResponding'])
+  const walk = (item, key = '', depth = 0) => {
+    assert.ok(depth <= 10)
+    if (item === null || typeof item === 'boolean') return
+    if (typeof item === 'number') { assert.ok(Number.isFinite(item) && Math.abs(item) <= Number.MAX_SAFE_INTEGER); return }
+    if (typeof item === 'string') {
+      assert.ok(labels.has(item) || (key === 'error' && /^(?:[A-Za-z][A-Za-z0-9]{0,70})?Exception$/.test(item)))
+      return
+    }
+    if (Array.isArray(item)) {
+      assert.ok(item.length <= (key === 'candidates' ? 3 : 16))
+      item.forEach(child => walk(child, key, depth + 1))
+      return
+    }
+    assert.equal(typeof item, 'object')
+    for (const [childKey, child] of Object.entries(item)) {
+      assert.ok(keys.has(childKey), 'Unexpected native picker evidence field')
+      walk(child, childKey, depth + 1)
+    }
+  }
+  walk(facts)
+  if (!failed) {
+    assert.equal(facts.phase, 'complete')
+    for (const key of ['pathWritten', 'acceptInvoked', 'ownerMatches', 'foregroundMatches', 'dialogEnabled']) assert.equal(facts[key], true)
+  } else assert.match(value.name, /^(?:[A-Za-z][A-Za-z0-9]{0,70})?Exception$/)
+  return { status: failed ? 'failure' : 'success', firstErrorType: failed ? value.name : null, facts }
+}
+
 const observer = String.raw`
 let diagnosticPhase = 'startup-prefix'
 let diagnosticObserver: Promise<boolean> | undefined
+let diagnosticReceiptError: string | null = null
+
+async function savePickerReceipt(stdout: string, evidence: string): Promise<void> {
+  const receipt = pickerReceipt(stdout)
+  await writeFile(join(evidence, 'picker.json'), JSON.stringify({
+    schemaVersion: 1, productSourceSha: '5a17c6b29971b6034929bb8a13e3b11cdc4748e8',
+    diagnosticSourceSha: process.env.DSH_PICKER_DIAGNOSTIC_SHA, ...receipt,
+  }) + '\n')
+}
 
 async function waitDiagnosticMarker(root: string, name: string, timeout: number): Promise<void> {
   await expect.poll(async () => {
@@ -37,44 +94,76 @@ async function exerciseWindowsDirectoryPicker(
     throw new Error('Installed diagnostic main identity mismatch.')
   }
   const mainPid = identity.pid
-  await mkdir(join(harnessHome, 'native-picker-selected'), { recursive: true })
+  const selectedDirectory = join(harnessHome, 'native-picker-selected')
+  await mkdir(selectedDirectory, { recursive: true })
   diagnosticPhase = 'observer-start'
   diagnosticObserver = execFileAsync('powershell.exe', [
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
     '-File', join(repositoryRoot, 'scripts/windows-picker-diagnostic.ps1'),
     '-MainProcessId', String(mainPid), '-Executable', executable,
     '-ControlRoot', control, '-EvidenceRoot', evidence,
-  ], { timeout: 120_000, maxBuffer: 16_384 }).then(() => true, () => false)
+    '-MonitorUntilExit',
+  ], { timeout: 335_000, maxBuffer: 16_384 }).then(() => true, () => false)
   await waitDiagnosticMarker(control, 'observe.ready', 20_000)
   const addWorkspace = page.getByRole('button', { name: /^(?:Add workspace|添加工作区)$/u })
   await addWorkspace.waitFor({ state: 'visible', timeout: 15_000 })
   diagnosticPhase = 'observe-picker'
   await writeFile(join(control, 'observe.go'), 'go', { flag: 'wx' })
+  const automation = execFileAsync('powershell.exe', [
+    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+    '-File', join(repositoryRoot, 'scripts/windows-directory-picker-ui-smoke.ps1'),
+    '-FolderPath', selectedDirectory,
+  ], { timeout: 90_000 }).then(async result => {
+    await savePickerReceipt(result.stdout, evidence)
+    return result
+  }, async (error: unknown) => {
+    try {
+      const stdout = error !== null && typeof error === 'object' && 'stdout' in error && typeof error.stdout === 'string'
+        ? error.stdout : ''
+      await savePickerReceipt(stdout, evidence)
+    } catch (receiptError) { diagnosticReceiptError = receiptError instanceof Error ? receiptError.name : 'UnknownError' }
+    await writeFile(join(control, 'observe.stop'), 'stop')
+    throw error
+  })
   await addWorkspace.click()
-  await waitDiagnosticMarker(control, 'observe.done', 65_000)
-  diagnosticPhase = 'normal-teardown'
+  await automation
+  diagnosticPhase = 'picker-ui-validation'
+  // RESTORE_PICKER_UI
 }
 `
 
-/** Make a throwaway test-only prefix from one audited source file; never rewrite the source. */
+/** Make a throwaway driver from one audited source file; never rewrite the source or rebuild the app. */
 export function createDriver(source) {
   assert.equal(createHash('sha256').update(source).digest('hex'), sourceHash, 'Diagnostic fixture source drift')
   const pickerStart = source.indexOf('async function exerciseWindowsDirectoryPicker(')
   const pickerEnd = source.indexOf('async function dismissCredentialOnboarding(', pickerStart)
   assert.ok(pickerStart > 0 && pickerEnd > pickerStart)
-  let output = source.slice(0, pickerStart) + observer + '\n' + source.slice(pickerEnd)
-  const afterPicker = output.indexOf('      await exerciseSessionMessenger(page, clipboardSeed, platform)')
-  const teardown = output.indexOf('    const mainPid = nativeApp.process().pid', afterPicker)
-  assert.ok(afterPicker > 0 && teardown > afterPicker)
-  output = output.slice(0, afterPicker) + '    } catch (error) { throw error }\n\n' + output.slice(teardown)
+  const originalPicker = source.slice(pickerStart, pickerEnd)
+  const uiStart = originalPicker.indexOf('  const selectedWorkspace =')
+  assert.ok(uiStart > 0)
+  const ui = originalPicker.slice(uiStart, originalPicker.lastIndexOf('\n}'))
+  let output = source.slice(0, pickerStart) + observer.replace('  // RESTORE_PICKER_UI', ui) + '\n' + source.slice(pickerEnd)
   const invocation = 'await exerciseWindowsDirectoryPicker(page, harnessHome, userData)'
   assert.equal(output.split(invocation).length, 2)
   output = output.replace(invocation, 'await exerciseWindowsDirectoryPicker(page, harnessHome, userData, nativeApp)')
+  const runStart = output.indexOf('export async function runPackagedDesktopSmoke(')
+  let run = output.slice(runStart)
+  for (const name of ['exerciseSessionMessenger', 'exerciseComposerAddMenu', 'assertWorkbenchRemoved',
+    'exerciseTurnNavigation', 'exerciseExistingSessionModelSwitch', 'exerciseComposerContinuity', 'exerciseReasoningEffort',
+    'exerciseUsageInsights', 'exercisePersonalization', 'exerciseSystemUpdate', 'exercisePluginMarket',
+    'exerciseReaderPresentation', 'exerciseNativeSessionWorkspaces']) {
+    const call = `await ${name}(`
+    assert.ok(run.includes(call))
+    run = run.replace(call, `diagnosticPhase = '${name}'\n    ${call}`)
+  }
+  output = output.slice(0, runStart) + run
   return output + String.raw`
 
 import { it } from 'vitest'
+import { pickerReceipt } from '../../../scripts/windows-picker-diagnostic-driver.mjs'
+import { verifySessionWorkspaceReceipt } from '../../../scripts/desktop-session-workspace-receipt.ts'
 
-it('observes only the existing native picker and then disposes the isolated fixture', async () => {
+it('selects through the native picker then probes the existing full packaged tail on the same bytes', async () => {
   let primaryError: string | null = null
   let observerOk: boolean | null = null
   const evidence = process.env.DSH_PICKER_EVIDENCE
@@ -82,19 +171,29 @@ it('observes only the existing native picker and then disposes the isolated fixt
   if (process.platform !== 'win32' || !evidence || !executable) throw new Error('Native diagnostic inputs are required.')
   try {
     await runPackagedDesktopSmoke(executable, 'win32')
+    diagnosticPhase = 'session-workspace-receipt'
+    const path = join(repositoryRoot, 'apps/desktop/release/desktop-smoke-session-workspaces-win32.json')
+    await verifySessionWorkspaceReceipt(path)
+    await writeFile(join(evidence, 'session-workspaces.json'), JSON.stringify({
+      productSourceSha: '5a17c6b29971b6034929bb8a13e3b11cdc4748e8',
+      diagnosticSourceSha: process.env.DSH_PICKER_DIAGNOSTIC_SHA,
+      receipt: JSON.parse(await readFile(path, 'utf8')) as unknown,
+    }) + '\n')
     diagnosticPhase = 'closed'
   } catch (error) {
     primaryError = error instanceof Error ? error.name : 'UnknownError'
   } finally {
+    const control = process.env.DSH_PICKER_CONTROL
+    if (control) await writeFile(join(control, 'observe.stop'), 'stop')
     observerOk = diagnosticObserver === undefined ? null : await diagnosticObserver
     await writeFile(join(evidence, 'driver.json'), JSON.stringify({
       schemaVersion: 1, productSourceSha: '5a17c6b29971b6034929bb8a13e3b11cdc4748e8',
       diagnosticSourceSha: process.env.DSH_PICKER_DIAGNOSTIC_SHA,
       fixtureSha256: 'a5ef803903cbb3d79e6c0276d24962cd16f5d1fe030ded2aff5e983cde6040ae',
-      phase: diagnosticPhase, primaryError, observerOk, diagnosticOnly: true,
+      phase: diagnosticPhase, primaryError, observerOk, diagnosticReceiptError, diagnosticOnly: true,
     }) + '\n')
   }
-  expect(primaryError, 'Diagnostic prefix or teardown failed; see bounded receipt.').toBeNull()
+  expect(primaryError, 'Native selection, packaged features or teardown failed; see bounded receipt.').toBeNull()
   expect(observerOk, 'Native observer failed; see bounded receipt.').toBe(true)
 }, 300_000)
 `

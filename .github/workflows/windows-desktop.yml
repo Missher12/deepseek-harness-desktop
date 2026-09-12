@@ -23,17 +23,17 @@ jobs:
         with:
           path: s
           persist-credentials: false
-          fetch-depth: 2
+          fetch-depth: 16
       - name: Pin product source and parse the diagnostic before installation
         run: |
           $source = '5a17c6b29971b6034929bb8a13e3b11cdc4748e8'
           if ((git rev-parse HEAD).Trim() -cne $env:DSH_PICKER_DIAGNOSTIC_SHA) { throw 'Diagnostic source revision mismatch.' }
-          if ((git rev-parse HEAD^) -ne $source) { throw 'Diagnostic must be one commit above the pinned product source.' }
-          $allowed = @('.github/workflows/windows-desktop.yml', 'scripts/windows-picker-diagnostic-artifact.mjs', 'scripts/windows-picker-diagnostic-artifact.test.mjs', 'scripts/windows-picker-diagnostic-driver.mjs', 'scripts/windows-picker-diagnostic.ps1', 'scripts/windows-picker-diagnostic-run.ps1')
-          foreach ($file in @(git diff --name-only $source HEAD)) {
-            if ($file -notin $allowed) { throw 'Diagnostic branch contains an unapproved source change.' }
-          }
-          foreach ($file in @('scripts/windows-picker-diagnostic.ps1', 'scripts/windows-picker-diagnostic-run.ps1')) {
+          git merge-base --is-ancestor $source HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned product source is not in the bounded diagnostic ancestry.' }
+          $allowed = @('.github/workflows/windows-desktop.yml', 'scripts/windows-picker-diagnostic-artifact.mjs', 'scripts/windows-picker-diagnostic-artifact.test.mjs', 'scripts/windows-picker-diagnostic-driver.mjs', 'scripts/windows-picker-diagnostic.ps1', 'scripts/windows-picker-diagnostic-run.ps1', 'scripts/windows-directory-picker-ui-smoke.ps1', 'scripts/windows-directory-picker-ui-smoke.spec.ts')
+          $changed = @(git diff --name-only $source HEAD)
+          if ($LASTEXITCODE -ne 0 -or (Compare-Object ($allowed | Sort-Object) ($changed | Sort-Object))) { throw 'Diagnostic source file allowlist mismatch.' }
+          foreach ($file in @('scripts/windows-picker-diagnostic.ps1', 'scripts/windows-picker-diagnostic-run.ps1', 'scripts/windows-directory-picker-ui-smoke.ps1')) {
             $tokens = $null; $errors = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$tokens, [ref]$errors)
             if ($errors.Count) {
@@ -63,7 +63,11 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           if ($LASTEXITCODE -ne 0) { throw 'Locked diagnostic dependencies failed.' }
-      - name: Observe the existing Setup without rebuilding it
+      - name: Test native picker guards and window relationships
+        run: |
+          pnpm exec vitest run scripts/windows-directory-picker-ui-smoke.spec.ts --config vitest.config.ts
+          if ($LASTEXITCODE -ne 0) { throw 'Native guard or WinForms ownership tests failed; do not start the picker.' }
+      - name: Exercise native selection and the existing packaged tail
         run: ./scripts/windows-picker-diagnostic-run.ps1
       - name: Upload only bounded diagnostic receipts
         if: always()
@@ -76,5 +80,7 @@ jobs:
             s/apps/desktop/release/picker-diagnostic/driver.json
             s/apps/desktop/release/picker-diagnostic/cleanup.json
             s/apps/desktop/release/picker-diagnostic/runner.json
+            s/apps/desktop/release/picker-diagnostic/picker.json
+            s/apps/desktop/release/picker-diagnostic/session-workspaces.json
           if-no-files-found: warn
           retention-days: 7

@@ -51,8 +51,29 @@ test('diagnostic driver refuses source drift and retains the exact prefix and te
   assert.ok(output.includes(teardown))
   const runBody = output.slice(output.indexOf('export async function runPackagedDesktopSmoke'), output.indexOf('/** Verify that layout state'))
   assert.ok(runBody.includes('await exerciseWindowsClipboard('))
-  assert.ok(!runBody.includes('await exerciseNativeSessionWorkspaces('))
-  assert.ok(!runBody.includes('await exerciseReaderPresentation('))
+  assert.ok(runBody.includes('await exerciseNativeSessionWorkspaces('))
+  assert.ok(runBody.includes('await exerciseReaderPresentation('))
+})
+
+test('native picker receipts exclude raw failure messages and reject false success or arbitrary fields', async () => {
+  const parser = await import('./windows-picker-diagnostic-driver.mjs')
+  assert.equal(typeof parser.pickerReceipt, 'function')
+  const facts = { phase: 'complete', ownerMatches: true, foregroundMatches: true,
+    dialogKeyboardFocusable: false, dialogEnabled: true, dialogWindowPattern: true,
+    addressKeyboardFocusable: true, addressValuePattern: true, addressReadOnly: false,
+    pathWritten: true, anchorCount: 0, selectedHwnd: 66190, resolution: [], resolutionLast: null, address: null, acceptInvoked: true }
+  assert.equal(parser.pickerReceipt('DSH_PICKER ' + JSON.stringify(facts)).status, 'success')
+  assert.throws(() => parser.pickerReceipt('DSH_PICKER ' + JSON.stringify({ ...facts, pathWritten: false })))
+  assert.throws(() => parser.pickerReceipt('DSH_PICKER ' + JSON.stringify({ ...facts, absolutePath: 'C:\\private' })))
+  const failed = parser.pickerReceipt('DSH_PICKER_FAILED ' + JSON.stringify({ facts: { ...facts, phase: 'find', pathWritten: false }, name: 'RuntimeException', message: 'private path or token' }))
+  assert.equal(failed.status, 'failure')
+  assert.equal(failed.firstErrorType, 'RuntimeException')
+  assert.ok(!JSON.stringify(failed).includes('private path or token'))
+  assert.equal(parser.pickerReceipt('DSH_PICKER_FAILED ' + JSON.stringify({
+    facts: { ...facts, phase: 'find', pathWritten: false, resolutionLast: { state: { candidates: [{ error: 'Win32Exception' }] } } },
+    name: 'Win32Exception', message: 'private',
+  })).firstErrorType, 'Win32Exception')
+  assert.throws(() => parser.pickerReceipt('DSH_PICKER {}\nDSH_PICKER {}'))
 })
 
 test('observer receives the evaluated Electron main PID, not the retained shell launcher', async () => {
