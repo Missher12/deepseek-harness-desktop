@@ -1,19 +1,15 @@
-name: Windows picker bounded diagnostic
+name: Windows native parser timing diagnostic
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
-  actions: read
-
-env:
-  DSH_PICKER_DIAGNOSTIC_SHA: ${{ github.sha }}
 
 jobs:
-  observe:
+  parser-timing:
     runs-on: windows-2025
-    timeout-minutes: 15
+    timeout-minutes: 5
     defaults:
       run:
         shell: pwsh
@@ -23,64 +19,78 @@ jobs:
         with:
           path: s
           persist-credentials: false
-          fetch-depth: 16
-      - name: Pin product source and parse the diagnostic before installation
-        run: |
-          $source = '5a17c6b29971b6034929bb8a13e3b11cdc4748e8'
-          if ((git rev-parse HEAD).Trim() -cne $env:DSH_PICKER_DIAGNOSTIC_SHA) { throw 'Diagnostic source revision mismatch.' }
-          git merge-base --is-ancestor $source HEAD
-          if ($LASTEXITCODE -ne 0) { throw 'Pinned product source is not in the bounded diagnostic ancestry.' }
-          $allowed = @('.github/workflows/windows-desktop.yml', 'scripts/windows-picker-diagnostic-artifact.mjs', 'scripts/windows-picker-diagnostic-artifact.test.mjs', 'scripts/windows-picker-diagnostic-driver.mjs', 'scripts/windows-picker-diagnostic.ps1', 'scripts/windows-picker-diagnostic-run.ps1')
-          $changed = @(git diff --name-only $source HEAD)
-          if ($LASTEXITCODE -ne 0 -or (Compare-Object ($allowed | Sort-Object) ($changed | Sort-Object))) { throw 'Diagnostic source file allowlist mismatch.' }
-          foreach ($file in @('scripts/windows-picker-diagnostic.ps1', 'scripts/windows-picker-diagnostic-run.ps1', 'scripts/windows-directory-picker-ui-smoke.ps1')) {
-            $tokens = $null; $errors = $null
-            [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$tokens, [ref]$errors)
-            if ($errors.Count) {
-              foreach ($errorItem in $errors) { Write-Output ('{0}:{1}:{2}: {3}' -f (Split-Path $file -Leaf), $errorItem.Extent.StartLineNumber, $errorItem.Extent.StartColumnNumber, $errorItem.Message) }
-              throw 'Diagnostic PowerShell parser failed.'
-            }
-          }
-      - uses: pnpm/action-setup@v4
-        with:
-          version: '11.7.0'
-          dest: ${{ runner.temp }}/setup-pnpm
+          fetch-depth: 8
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-      - name: Artifact identity tests
-        run: node --test scripts/windows-picker-diagnostic-artifact.test.mjs
-      - name: Download the already built internal Setup once
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Check exact source and the bounded decoder without running native payloads
         run: |
-          node scripts/windows-picker-diagnostic-artifact.mjs download "$env:RUNNER_TEMP/picker-candidate"
-          if ($LASTEXITCODE -ne 0) { throw 'Pinned artifact download failed; no retry.' }
-      - name: Prepare only the locked diagnostic test driver
-        env:
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
-          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          if ((git rev-parse HEAD).Trim() -cne '${{ github.sha }}') { throw 'Diagnostic source mismatch.' }
+          $base = '20a141d9ba823c7a1b114bc2b751af5d163efced'
+          git merge-base --is-ancestor $base HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Diagnostic base mismatch.' }
+          $expected = @('.github/workflows/windows-desktop.yml', 'scripts/windows-update-parser-timing.mjs')
+          $actual = @(git diff --name-only $base HEAD)
+          if ($LASTEXITCODE -ne 0 -or (Compare-Object ($expected | Sort-Object) ($actual | Sort-Object))) { throw 'Diagnostic file scope mismatch.' }
+          node --experimental-transform-types scripts/windows-update-parser-timing.mjs --check
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned producer/spec or timing decoder check failed.' }
+      - name: Measure only two native parser invocations within 30 seconds
         run: |
-          pnpm install --frozen-lockfile
-          if ($LASTEXITCODE -ne 0) { throw 'Locked diagnostic dependencies failed.' }
-      - name: Test the original native picker guard
-        run: |
-          pnpm exec vitest run scripts/windows-directory-picker-ui-smoke.spec.ts --config vitest.config.ts
-          if ($LASTEXITCODE -ne 0) { throw 'Original native picker guard failed; do not start the picker.' }
-      - name: Exercise native selection and the existing packaged tail
-        run: ./scripts/windows-picker-diagnostic-run.ps1
-      - name: Upload only bounded diagnostic receipts
+          $lifetime = [Diagnostics.Stopwatch]::StartNew()
+          $rootPreparation = [Diagnostics.Stopwatch]::StartNew()
+          $nativeTemp = (node -p 'require("node:os").tmpdir()').Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Could not locate native temporary directory.' }
+          $parserRoot = Join-Path $nativeTemp ('dsh-parser-timing-' + [Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $parserRoot | Out-Null
+          $rootPreparation.Stop()
+          $env:DSH_PARSER_TIMING_ROOT = $parserRoot
+          $nodePath = (Get-Command node -CommandType Application).Source
+          $info = [Diagnostics.ProcessStartInfo]::new($nodePath)
+          $info.UseShellExecute = $false
+          $info.Arguments = '--experimental-transform-types scripts/windows-update-parser-timing.mjs'
+          $entry = $null
+          $deadlineHit = $false
+          $entryExited = $null
+          $entryExitCode = $null
+          $scopeRemoved = $false
+          $failureType = $null
+          try {
+            $entry = [Diagnostics.Process]::Start($info)
+            if ($null -eq $entry) { throw 'Timing entry did not start.' }
+            $remaining = [Math]::Max(0, 30000 - $lifetime.ElapsedMilliseconds)
+            if (-not $entry.WaitForExit([int]$remaining)) { $deadlineHit = $true; throw 'Independent diagnostic deadline reached.' }
+            $entryExitCode = $entry.ExitCode
+            if ($entryExitCode -ne 0) { throw 'Native parser measurements or assertions failed.' }
+          } catch { $failureType = $_.Exception.GetBaseException().GetType().Name }
+          finally {
+            try {
+              if ($null -ne $entry) {
+                if (-not $entry.HasExited) { $entry.Kill($true); [void]$entry.WaitForExit(5000) }
+                $entryExited = $entry.HasExited
+              }
+              Remove-Item -LiteralPath $parserRoot -Recurse -Force
+              $scopeRemoved = -not (Test-Path -LiteralPath $parserRoot)
+            } catch { if ($null -eq $failureType) { $failureType = $_.Exception.GetBaseException().GetType().Name } }
+            finally { if ($null -ne $entry) { $entry.Dispose() } }
+            $lifetime.Stop()
+            if ($lifetime.ElapsedMilliseconds -ge 30000) { $deadlineHit = $true; if ($null -eq $failureType) { $failureType = 'DiagnosticBudgetExceeded' } }
+            $reportDirectory = 'apps/desktop/release'
+            New-Item -ItemType Directory -Force -Path $reportDirectory | Out-Null
+            [IO.File]::WriteAllText((Join-Path $reportDirectory 'windows-parser-watchdog.json'), (([ordered]@{
+              schemaVersion = 1; productSourceSha = '2106cb68aa5b467dc3a7dc3a225027af08142222'; diagnosticSourceSha = '${{ github.sha }}'
+              budgetMs = 30000; rootPreparationMs = $rootPreparation.Elapsed.TotalMilliseconds; lifetimeIncludingCleanupMs = $lifetime.Elapsed.TotalMilliseconds
+              deadlineHit = $deadlineHit; entryExited = $entryExited; entryExitCode = $entryExitCode; scopeRemoved = $scopeRemoved; failureType = $failureType
+              parserChildExitProof = 'individual exits are recorded only in windows-parser-timing.json; watchdog termination alone is not proof'
+            } | ConvertTo-Json) + "`n"), [Text.UTF8Encoding]::new($false))
+          }
+          if ($null -ne $failureType -or $entryExited -ne $true -or -not $scopeRemoved) { throw 'Parser diagnostic failed; inspect bounded timing/watchdog receipts. Do not retry.' }
+      - name: Preserve only parser measurements and cleanup outcomes
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-picker-diagnostic-${{ github.run_id }}
+          name: windows-parser-timing-${{ github.run_id }}
           path: |
-            s/apps/desktop/release/picker-diagnostic/artifact.json
-            s/apps/desktop/release/picker-diagnostic/observation.json
-            s/apps/desktop/release/picker-diagnostic/driver.json
-            s/apps/desktop/release/picker-diagnostic/cleanup.json
-            s/apps/desktop/release/picker-diagnostic/runner.json
-            s/apps/desktop/release/picker-diagnostic/picker.json
-            s/apps/desktop/release/picker-diagnostic/session-workspaces.json
+            s/apps/desktop/release/windows-parser-timing.json
+            s/apps/desktop/release/windows-parser-watchdog.json
           if-no-files-found: warn
           retention-days: 7
