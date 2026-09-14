@@ -1694,6 +1694,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-chat TranscriptViewRow id \'transcript-view\'',
       'client-ui-conversation EnterBehaviorRow id \'composer-enter\'',
       'client-ui-conversation DesktopPreferencesRow id \'desktop-preferences\'',
+      'client-ui-desktop-shell DesktopCloseRow id \'desktop-close-behavior\'',
+      'client-ui-desktop-shell DesktopRecoveryRow id \'desktop-plugin-recovery\'',
       'client-ui-permission-presets PermissionRow id \'permission\'',
       'client-ui-theme AppearanceRow id \'appearance\'',
       'client-ui-theme FontSizeRow id \'font-size\'',
@@ -2036,6 +2038,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'sidebar.settings\' (client-ui-settings-general), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-desktop-shell DesktopSettingsTrigger',
       'client-ui-settings-general TriggerContent',
     ],
     replaceRisk: 'shadows-shipped-ui',

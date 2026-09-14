@@ -1,3 +1,4 @@
+/** Measures the historical 0.5.3 to 0.5.5 comparison; other artifact versions are rejected. */
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
@@ -21,6 +22,16 @@ const SAMPLE_COUNT = 10
 const BASELINE_VERSION = '0.5.3'
 const CANDIDATE_VERSION = '0.5.5'
 const BASELINE_TAG = 'desktop-v0.5.3'
+/**
+ * Reject versions outside this optional historical experiment.
+ * @param role - Historical baseline or historical candidate role.
+ * @param actualVersion - Version read from the mounted application's Info.plist.
+ */
+export function assertMacHistoricalVersion(role: 'baseline' | 'candidate', actualVersion: string): void {
+  const expected = role === 'baseline' ? BASELINE_VERSION : CANDIDATE_VERSION
+  if (actualVersion !== expected) throw new Error(`Historical Mac ${role} requires ${expected}; received ${actualVersion}.`)
+}
+
 const APP_NAME = 'DeepSeek Harness.app'
 const EXECUTABLE_NAME = 'DeepSeek Harness'
 const BUNDLE_IDENTIFIER = 'ai.deepseek.harness.desktop'
@@ -102,7 +113,7 @@ function compareMetric(baseline: StartupMetric, candidate: StartupMetric): Metri
   }
 }
 
-/** Apply the release contract to one same-runner cold/warm comparison. */
+/** Evaluate the fixed historical experiment's median and P95 thresholds. */
 export function evaluateMacStartupGate(baseline: StartupPair, candidate: StartupPair): MacStartupGate {
   requirePositiveMetric('baseline', 'cold', baseline.cold)
   requirePositiveMetric('baseline', 'warm', baseline.warm)
@@ -199,9 +210,7 @@ async function attachProduct(
     const appRoot = join(mountPoint, APP_NAME)
     const executable = join(appRoot, 'Contents', 'MacOS', EXECUTABLE_NAME)
     const actualVersion = await plistValue(appRoot, 'CFBundleShortVersionString')
-    if (actualVersion !== version) {
-      throw new Error(`macOS runtime evidence: ${role} bundle version mismatch`)
-    }
+    assertMacHistoricalVersion(role, actualVersion)
     const bundleIdentifier = await plistValue(appRoot, 'CFBundleIdentifier')
     if (bundleIdentifier !== BUNDLE_IDENTIFIER) {
       throw new Error(`macOS runtime evidence: ${role} bundle identifier mismatch`)
@@ -510,6 +519,8 @@ async function main(args: readonly string[]): Promise<void> {
       schemaVersion: 1,
       platform: 'darwin-x64',
       sameMachine: true,
+      scope: 'historical-0.5.3-to-0.5.5',
+      currentReleaseAcceptance: false,
       sampleCount: SAMPLE_COUNT,
       baselineTag: BASELINE_TAG,
       candidateRevision: options.candidateRevision,
@@ -533,7 +544,7 @@ async function main(args: readonly string[]): Promise<void> {
   assertPortableMacEvidence(evidence)
   await mkdir(dirname(options.output), { recursive: true })
   await writeFile(options.output, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8')
-  process.stdout.write('macOS Desktop runtime evidence passed: 10 cold and 10 warm launches per product\n')
+  process.stdout.write('Historical Mac comparison collected: 10 cold and 10 warm launches per product; not current release acceptance\n')
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

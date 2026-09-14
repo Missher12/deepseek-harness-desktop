@@ -1,7 +1,8 @@
-import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { createRequire } from 'node:module'
+import { existsSync } from 'node:fs'
 import {
   app,
   BrowserWindow,
@@ -17,7 +18,6 @@ import {
 } from 'electron'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { healProfilesModuleFallbackCached } from '@deepseek-ai/dsh-app-boot'
 import {
   DesktopApplication,
   type AppFacade,
@@ -25,6 +25,9 @@ import {
   type FailureReason,
 } from './application.ts'
 import { HarnessProcess } from './harness/process.ts'
+import { resolveDesktopRuntime } from './harness/composition.ts'
+import { DesktopCompatibilityService } from './compatibility/service.ts'
+import { isDesktopPluginMutation } from './compatibility/contracts.ts'
 import { findConflictingHarness } from './harness/ownership.ts'
 import { createLifecycleLogger } from './logging.ts'
 import { nativeDesktopCopy } from './locales.ts'
@@ -43,6 +46,7 @@ import {
 } from './preferences.ts'
 import { DesktopUpdateService } from './update/service.ts'
 import { launchDesktopInstaller } from './update/installer.ts'
+import { readRestartRequest, writeRestartReady } from './update/restart-receipt.ts'
 import { DesktopUpdateInstaller } from './update/install.ts'
 import { launchWindowsDesktopInstaller } from './update/windows-installer.ts'
 import { detectLinuxPackageFormat, revealLinuxUpdatePackage } from './update/linux-installer.ts'
@@ -61,10 +65,10 @@ import { DesktopStartupTimeline } from './startup-timeline.ts'
 import { createNativeVisualTrayEvidenceController } from './native-visual-tray-evidence.ts'
 
 const PRODUCT_NAME = 'DeepSeek Harness'
-const require = createRequire(import.meta.url)
 const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 const loadingPath = fileURLToPath(new URL('../renderer/loading.html', import.meta.url))
 const failurePath = fileURLToPath(new URL('../renderer/failure.html', import.meta.url))
+const compatibilityPath = fileURLToPath(new URL('../renderer/compatibility.html', import.meta.url))
 const applicationIconPath = fileURLToPath(new URL('../assets/icon-source.png', import.meta.url))
 const windowsIconPath = fileURLToPath(new URL('../assets/icon-windows.ico', import.meta.url))
 const windowsTrayIconPaths: Record<WindowsTrayIconSize, string> = {
@@ -73,21 +77,18 @@ const windowsTrayIconPaths: Record<WindowsTrayIconSize, string> = {
   24: fileURLToPath(new URL('../assets/tray-windows-24.png', import.meta.url)),
   32: fileURLToPath(new URL('../assets/tray-windows-32.png', import.meta.url)),
 }
-const desktopPatchPath = fileURLToPath(new URL('../desktop.cordis.patch.yml', import.meta.url))
 const desktopInstallAnchorPath = fileURLToPath(new URL('../package.json', import.meta.url))
+const desktopRuntime = resolveDesktopRuntime(desktopInstallAnchorPath)
+// The full composition alone owns the fork's cached fallback helper.
+const legacyBoot = desktopRuntime.kind === 'full' ? await import('@deepseek-ai/dsh-app-boot') : undefined
+const legacyFallback: unknown = legacyBoot === undefined ? undefined : Reflect.get(legacyBoot, 'healProfilesModuleFallbackCached')
+if (desktopRuntime.kind === 'full' && typeof legacyFallback !== 'function') {
+  throw new Error('The full Desktop composition requires its cached module fallback helper.')
+}
+const healLegacyModuleFallback = legacyFallback as ((anchor: string, home: string, version: string) => unknown) | undefined
 const updateHelperPath = fileURLToPath(new URL('./update-helper.js', import.meta.url))
 const platformBehavior = desktopPlatformBehavior(process.platform)
 const desktopUpdatesEnabled = supportsDesktopUpdates(process.platform)
-
-function resolveHarnessVersion(): string {
-  const manifest = require('@deepseek-ai/dsh/package.json') as { version?: unknown }
-  return typeof manifest.version === 'string' ? manifest.version : 'unknown'
-}
-
-function resolveCliPath(): string {
-  const packageJson = require.resolve('@deepseek-ai/dsh/package.json')
-  return join(dirname(packageJson), 'lib', 'bin.js')
-}
 
 function resolveWorkspace(): string {
   const cwd = process.cwd()
@@ -114,6 +115,10 @@ const nativeVisualTrayEvidence = createNativeVisualTrayEvidenceController({
 })
 const logger = createLifecycleLogger(logPath)
 const dshHome = resolveDshHome()
+const restartFacts = { desktopVersion: app.getVersion(), harnessVersion: desktopRuntime.harnessVersion,
+  executablePath: process.execPath, home: homedir(), dshHome, userData }
+const restartRequest = await readRestartRequest(process.env.DSH_DESKTOP_RESTART_REQUEST, restartFacts)
+delete process.env.DSH_DESKTOP_RESTART_REQUEST
 
 const appFacade: AppFacade = {
   requestSingleInstanceLock: () => app.requestSingleInstanceLock(),
@@ -138,6 +143,7 @@ const appFacade: AppFacade = {
 }
 
 let nativeWindow: BrowserWindow | undefined
+let compatibilityWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 let activeHarnessRoot: string | undefined
 const lifecycle: { controller?: DesktopApplication } = {}
@@ -160,7 +166,7 @@ const updateService = new DesktopUpdateService({
     ...(process.env.APPDIR === undefined ? {} : { appDir: process.env.APPDIR }),
   }),
   runningDesktop: app.getVersion(),
-  includedHarness: resolveHarnessVersion(),
+  includedHarness: desktopRuntime.harnessVersion,
   userData,
 })
 const updateInstaller = new DesktopUpdateInstaller(updateService, {
@@ -177,12 +183,16 @@ const updateInstaller = new DesktopUpdateInstaller(updateService, {
     })
     return result.response === 1
   },
-  launchMac: (descriptor) => {
-    launchDesktopInstaller({
-      helperSource: updateHelperPath, electronExecutable: process.execPath,
+  launchMac: async (descriptor) => {
+    await launchDesktopInstaller({
+      helperSource: updateHelperPath,
+      helperNodePath: join(process.resourcesPath, 'desktop-helper', 'node'),
+      helperSourceManifest: join(process.resourcesPath, 'desktop-helper', 'source.json'),
+      verifiedDownloadDirectory: descriptor.stagingDirectory,
       currentAppPath: resolve(dirname(process.execPath), '../..'), dmgPath: descriptor.localPath,
       expectedDesktopVersion: descriptor.desktopVersion, expectedHarnessVersion: descriptor.harnessVersion,
       expectedSha256: descriptor.sha256,
+      restart: { home: homedir(), dshHome, userData },
     })
   },
   launchWindows: async (descriptor) => { await launchWindowsDesktopInstaller(descriptor) },
@@ -198,13 +208,81 @@ const updateInstaller = new DesktopUpdateInstaller(updateService, {
   quit: () => { setImmediate(() => { app.quit() }) },
 })
 const startupTimeline = new DesktopStartupTimeline(record)
+let compatibility: Promise<DesktopCompatibilityService> | undefined
+
+function getCompatibilityService(): Promise<DesktopCompatibilityService> {
+  if (desktopRuntime.kind !== 'base') return Promise.reject(new Error('Native compatibility management requires the base composition.'))
+  compatibility ??= (async () => {
+    const resolver = createRequire(desktopRuntime.cli)
+    const boot = await import(pathToFileURL(resolver.resolve('@deepseek-ai/dsh-app-boot')).href) as typeof import('@deepseek-ai/dsh-app-boot')
+    const include = await import(pathToFileURL(resolver.resolve('@deepseek-ai/cordis-plugin-include')).href) as typeof import('@deepseek-ai/cordis-plugin-include')
+    const yaml = await import(pathToFileURL(resolver.resolve('js-yaml')).href) as typeof import('js-yaml')
+    const canonicalDirectory = join(dshHome, 'profiles', 'web')
+    const configured = process.env.DSH_DESKTOP_PLUGIN_FAILURE_CONFIRMATIONS ?? '2'
+    if (!/^(?:[1-9]|[1-5][0-9]|6[0-4])$/.test(configured)) throw new Error('Invalid native plugin confirmation policy.')
+    return new DesktopCompatibilityService({
+      dshHome, canonicalDirectory, effectiveDirectory: join(dshHome, 'profiles', 'desktop-base'),
+      directory: join(dshHome, '.desktop-compatibility'), officialAnchor: resolve(dirname(desktopRuntime.cli), '../package.json'),
+      harnessVersion: desktopRuntime.harnessVersion, policy: { failureConfirmations: Number(configured) },
+      official: {
+        sourceSha: 'fb2c4b9e698e30edb738bca4cf0618587db7d203',
+        loadOverlayPatches: boot.loadOverlayPatches, resolveBundleDir: boot.resolveBundleDir,
+        entryListSchema: include.entryListSchema,
+        yaml: { load: (text, options) => yaml.load(text, { schema: options.schema as import('js-yaml').Schema }),
+          dump: (value, options) => yaml.dump(value, { schema: options.schema as import('js-yaml').Schema, noRefs: true }) },
+      },
+      initializeCanonical: () => {
+        const template = boot.PROFILE_TEMPLATES.web
+        if (template === undefined) throw new Error('Official Web profile template is missing.')
+        boot.initProfile(canonicalDirectory, template.bundles, template.patchReload)
+      },
+      requestedBundles: () => {
+        const names = boot.readProfileManifest('dsh', canonicalDirectory).dsh?.profile?.bundles
+        if (!Array.isArray(names)) throw new Error('Canonical Web profile has no Bundle list.')
+        return names
+      },
+      validateHost: async (signal) => {
+        signal.throwIfAborted()
+        if (await findConflictingHarness(dshHome) !== undefined) throw new Error('Another Harness writer prevents validation.')
+        const candidate = new HarnessProcess({ cli: desktopRuntime.cli, patch: desktopRuntime.patch, profile: 'desktop-base', requireHostReady: true,
+          onOutput: (source, output) => { record(`Compatibility candidate ${source}: ${output}`) } })
+        const stop = (): void => { void candidate.stop().catch(() => { record('Candidate cancellation could not stop the owned process.') }) }
+        signal.addEventListener('abort', stop, { once: true })
+        try {
+          signal.throwIfAborted()
+          await candidate.start(resolveWorkspace())
+          signal.throwIfAborted()
+        } finally { signal.removeEventListener('abort', stop); await candidate.stop() }
+      },
+    })
+  })()
+  return compatibility
+}
 
 const runtime = new HarnessProcess({
-  cli: resolveCliPath(),
-  patch: desktopPatchPath,
+  cli: desktopRuntime.cli,
+  patch: desktopRuntime.patch,
+  ...(desktopRuntime.kind === 'base' ? {
+    profile: desktopRuntime.profile,
+    requireHostReady: true,
+    fromDefaultProfile: () => existsSync(join(dshHome, 'profiles', desktopRuntime.profile, 'package.json')) ? undefined : 'web' as const,
+  } : {}),
   prepare: () => {
-    const result = healProfilesModuleFallbackCached(desktopInstallAnchorPath, dshHome, app.getVersion())
-    record(`module fallback: ${result}`)
+    if (desktopRuntime.kind === 'base') {
+      return (async () => {
+        const resolver = createRequire(desktopRuntime.cli)
+        const imported: unknown = await import(pathToFileURL(resolver.resolve('@deepseek-ai/dsh-app-boot')).href)
+        const boot = imported as typeof import('@deepseek-ai/dsh-app-boot')
+        await (await getCompatibilityService()).prepare()
+        await boot.healProfilesModuleFallback({
+          installAnchor: resolve(dirname(desktopRuntime.cli), '../../../../desktop-native.json'), home: dshHome,
+        })
+      })()
+    }
+    if (healLegacyModuleFallback !== undefined) {
+      const result = healLegacyModuleFallback(desktopInstallAnchorPath, dshHome, app.getVersion())
+      record(`module fallback: ${String(result)}`)
+    }
   },
   onOutput: (source, output) => {
     record(`Harness ${source}: ${output}`)
@@ -418,7 +496,13 @@ const controller = new DesktopApplication({
   workspace: resolveWorkspace(),
   openLogs: () => { shell.showItemInFolder(logPath) },
   log: message => logger.write(message),
-  markStartup: (milestone) => { startupTimeline.mark(milestone) },
+  markStartup: (milestone) => {
+    startupTimeline.mark(milestone)
+    if (milestone === 'desktop-running' && restartRequest !== null && runtime.pid !== undefined) {
+      void writeRestartReady(restartRequest, { ...restartFacts, ownedHostPid: runtime.pid })
+        .catch(() => { record('Updated application could not publish its bound Host readiness receipt.') })
+    }
+  },
 })
 lifecycle.controller = controller
 
@@ -441,6 +525,64 @@ function isHarnessSender(event: IpcMainInvokeEvent): boolean {
   }
 }
 
+function isNativeRecoverySender(event: IpcMainInvokeEvent): boolean {
+  if (event.senderFrame !== event.sender.mainFrame) return false
+  try {
+    const filename = fileURLToPath(new URL(event.sender.getURL()))
+    return (event.sender === nativeWindow?.webContents && filename === failurePath)
+      || (event.sender === compatibilityWindow?.webContents && filename === compatibilityPath)
+  } catch { return false }
+}
+
+function isUpdateSender(event: IpcMainInvokeEvent): boolean {
+  return isHarnessSender(event) || isNativeRecoverySender(event)
+}
+
+async function openCompatibilityWindow(): Promise<void> {
+  await app.whenReady()
+  if (desktopRuntime.kind !== 'base') throw new Error('Native recovery requires the base composition.')
+  if (compatibilityWindow !== undefined && !compatibilityWindow.isDestroyed()) {
+    compatibilityWindow.show()
+    compatibilityWindow.focus()
+    return
+  }
+  const area = screen.getPrimaryDisplay().workArea
+  const window = new BrowserWindow({ width: Math.min(760, area.width), height: Math.min(650, area.height),
+    show: false, ...(nativeWindow === undefined ? {} : { parent: nativeWindow }),
+    title: PRODUCT_NAME, webPreferences: { preload: preloadPath, nodeIntegration: false,
+      contextIsolation: true, sandbox: true, webSecurity: true, partition: 'desktop-native-recovery' } })
+  compatibilityWindow = window
+  installNavigationPolicy(window, () => undefined)
+  window.once('closed', () => { if (compatibilityWindow === window) compatibilityWindow = undefined })
+  await window.loadFile(compatibilityPath)
+  window.show()
+}
+
+ipcMain.handle('desktop:compatibility-open', async (event, ...args: unknown[]) => {
+  if (!isUpdateSender(event) || args.length !== 0) throw new Error('Untrusted native recovery request.')
+  await openCompatibilityWindow()
+})
+
+ipcMain.handle('desktop:compatibility-get', async (event, ...args: unknown[]) => {
+  if (!isUpdateSender(event) || args.length !== 0) throw new Error('Untrusted native compatibility request.')
+  return await (await getCompatibilityService()).getSnapshot()
+})
+
+ipcMain.handle('desktop:compatibility-mutate', async (event, value: unknown, ...args: unknown[]) => {
+  if (!isNativeRecoverySender(event) || !isDesktopPluginMutation(value) || args.length !== 0) throw new Error('Untrusted native plugin choice.')
+  const owner = compatibilityWindow ?? nativeWindow
+  if (owner === undefined) throw new Error('Native recovery window is unavailable.')
+  const copy = nativeDesktopCopy(app.getLocale())
+  const answer = await dialog.showMessageBox(owner, { type: 'question', title: PRODUCT_NAME,
+    message: copy.pluginMessage,
+    detail: copy.pluginDetail,
+    buttons: [copy.cancel, copy.pluginApply], cancelId: 0, defaultId: 0, noLink: true })
+  const service = await getCompatibilityService()
+  if (answer.response !== 1) return await service.getSnapshot()
+  await controller.restartWith(async (signal) => { await service.mutate(value, signal) })
+  return await service.getSnapshot()
+})
+
 ipcMain.on('desktop:recovery', (event, value: unknown) => {
   if (isFailureSender(event) && isRecoveryAction(value)) controller.recover(value)
 })
@@ -455,39 +597,43 @@ ipcMain.handle('desktop:preferences-set', async (event, value: unknown) => {
   if (!isHarnessSender(event) || !isDesktopPreferenceMutation(value)) {
     throw new Error('Untrusted Desktop preference mutation.')
   }
+  if (desktopRuntime.kind === 'base' && value.key !== 'closeBehavior') {
+    throw new Error('This preference belongs to the optional enhancement composition.')
+  }
   return await setDesktopPreference(value)
 })
 
 if (desktopUpdatesEnabled) {
   ipcMain.handle('desktop:update-status', (event, ...args: unknown[]) => {
-    if (!isHarnessSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
+    if (!isUpdateSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
     return updateService.getSnapshot()
   })
 
   ipcMain.handle('desktop:update-check', async (event, ...args: unknown[]) => {
-    if (!isHarnessSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
+    if (!isUpdateSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
     return await updateService.check(true)
   })
 
   ipcMain.handle('desktop:update-download', async (event, ...args: unknown[]) => {
-    if (!isHarnessSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
+    if (!isUpdateSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
     return await updateService.download()
   })
 
   ipcMain.handle('desktop:update-cancel-download', async (event, ...args: unknown[]) => {
-    if (!isHarnessSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
+    if (!isUpdateSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
     return await updateService.cancelDownload()
   })
 
   ipcMain.handle('desktop:update-install', async (event, ...args: unknown[]) => {
-    if (!isHarnessSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
+    if (!isUpdateSender(event) || args.length !== 0) throw new Error('Untrusted Desktop update sender.')
     return await updateInstaller.install()
   })
 
   updateService.subscribe((snapshot) => {
-    if (nativeWindow !== undefined && !nativeWindow.isDestroyed() && activeHarnessRoot !== undefined) {
+    if (nativeWindow !== undefined && !nativeWindow.isDestroyed()) {
       nativeWindow.webContents.send('desktop:update-state', snapshot)
     }
+    if (compatibilityWindow !== undefined && !compatibilityWindow.isDestroyed()) compatibilityWindow.webContents.send('desktop:update-state', snapshot)
   })
 }
 
@@ -498,9 +644,14 @@ app.on('before-quit', () => {
   tray = undefined
 })
 
-Menu.setApplicationMenu(Menu.buildFromTemplate(
-  createMenuTemplate(PRODUCT_NAME, (command) => { controller.sendCommand(command) }, process.platform),
-))
+const nativeMenu = createMenuTemplate(PRODUCT_NAME, (command) => { controller.sendCommand(command) }, process.platform)
+if (desktopRuntime.kind === 'base') {
+  const copy = nativeDesktopCopy(app.getLocale())
+  nativeMenu.push({ label: copy.recoveryMenu, submenu: [{ label: copy.recoveryOpen,
+    click: () => { void openCompatibilityWindow().catch(() => { record('Native recovery window could not open.') }) },
+  }] })
+}
+Menu.setApplicationMenu(Menu.buildFromTemplate(nativeMenu))
 
 void controller.run().then(() => {
   if (platformBehavior.setDockIcon) app.dock?.setIcon(applicationIconPath)

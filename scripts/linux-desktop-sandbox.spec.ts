@@ -55,5 +55,6 @@ describe('Linux native sandbox acceptance', () => {
     expect(configuration.appImage.executableArgs).toEqual([])
     expect(configuration.deb.appArmorProfile).toBe('build/linux/apparmor-profile')
     expect(configuration.deb.depends).toContain('lsof')
+    expect(configuration.deb.depends).toContain('python3')
   })
 })

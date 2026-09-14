@@ -2,156 +2,81 @@
 
 [English](README.md) | 中文
 
-这是官方 DeepSeek Harness 运行时的原生桌面外壳。应用只在本机回环地址启动一个由自身管理的 Harness 子进程，端口由操作系统随机分配，现有 Harness Web 客户端运行在加固后的 Electron 窗口内。
+Desktop 0.6.0 通过根目录的 `desktop:stage` 命令准备官方 Harness 基础组合。应用在操作系统分配的随机端口上管理一个仅限回环地址的 Harness 子进程，并在加固后的 Electron 窗口中运行官方 Web 客户端。这个源码版本不代表公开发布或三端验收通过。
 
-初始窗口和无效状态回退会适配主显示器工作区；恢复窗口时选择可见面积占比最大的合格显示器，较小工作区也会相应降低最小尺寸。成品首启验收先检查窗口范围和“继续”操作，再扩大测试视口；Windows Search 证据会等待前台 Shell 搜索根内的完整查询和唯一可操作结果。
+发布收集与公开步骤遵循[平台发布指南](releasing/README.zh.md)。
 
-侧栏提供类似 Codex 的已归档会话管理器。归档会保留会话日志及其原有
-Workspace 位置，可在管理器中原位恢复；永久删除只能从归档管理器进入，
-必须明确二次确认，且运行中的会话会被拒绝删除。
-每个已有内容的会话都在操作菜单中提供“复制会话 ID”，归档会话卡片也
-提供同一操作，复制时不会恢复或删除会话。应用复制完整且稳定的原始 ID，
-并根据宿主剪贴板是否接受写入显示结果提示。
+<a id="composition-scope"></a>
+## 组合范围
 
-在输入框键入 `@` 会打开同一个聚合菜单：文件／文件夹与会话引用、聚焦的
-“目标”和“计划”操作，以及当前会话实时可用的技能。选择技能后会插入其标准
-`/技能名` 调用，因此发现入口与执行仍共用现有的受审计技能链路。
+基础组合保留完整的官方 Web 依赖图，只追加[原生窗口控制与关闭行为](../../packages/client/ui-desktop-shell/README.zh.md)和[系统更新](../../packages/client/ui-settings-system-update/README.zh.md)。它从规范 `web` 派生受管 `desktop-base` profile，保留规范配置、已安装插件源码和产品数据。仅在规范 profile 缺失时通过官方 Web 模板初始化。计费、统计、个性化与模型辅助由可选插件提供。已删除的工作台及其原生浏览器接口保持排除。
 
-可移除的 `@deepseek-ai/dsh-session-messenger` 插件提供同一 profile 内有界的 Agent
-通信。复制会话 A 的准确 ID，粘贴到会话 B，再让 B 的 Agent 发送：Native Function
-Calling 或 Code Mode 会启动 A 的已有 Agent，A 可通过 receipt 绑定元数据回复或继续
-同一协作链。五个工具覆盖直接发送、可选的发送并等待、一次性 Host 授权回复、显式
-匹配回复等待，以及参与方停止整条协作链。停止会立即结算未完成的投递和等待，拒绝
-后续回复或 continuation；用户明确发起的新消息仍能建立独立新链。通信只显示在普通
-Harness 会话历史中，来源侧消息行仅增加紧凑的“停止／已停止”操作；没有标题栏入口、
-操作抽屉、自定义消息卡片或第二份消息档案。它不会创建新会话、subagent 或自主 Agent
-对聊循环，收到的文字始终按不可信内容处理。
+准备流程将固定在 `fb2c4b9e698e30edb738bca4cf0618587db7d203` 的干净官方源码、Harness `0.1.5-rc.2` 和全部 275 个 tarball 身份绑定到可信描述文件 SHA-256。已安装 runtime 的身份另行绑定输入描述文件、物理文件库存和本机操作系统／架构。版本字符串相同或从其他操作系统复制 runtime 都不能满足这些检查。[可复现输入决策](../../.agents/notes/implemented/architecture/2026-09-13-reproducible-desktop-base-inputs.zh.md)统一说明来源、安装和审计规则。
 
-Desktop 的“常规”设置提供关闭行为与分时费用估算两个偏好。macOS 默认关闭窗口后
-在后台保留，Windows 默认直接退出；Windows 只有选择后台保留时才创建带“显示／退出”
-的系统托盘。任何显式“退出”都会停止应用拥有的 Harness 进程。会话底部保留原有性能
-数据，并在第二行显示已结算的本轮费用估算、会话累计估算、官方接口返回的准确余额和
-当前价格时段；关闭分时估算后会隐藏估算与时段，但不会隐藏准确余额。
+<a id="prepare-the-base-stage"></a>
+## 准备基础 stage
 
-可移除的 `@deepseek-ai/dsh-reasoning-effort` 插件把普通思考等级行替换为支持
-键盘操作的滑块，并且只使用当前模型实际声明的档位。Harness 风格浮层在空间
-足够时默认向下、必要时自动翻到上方；保留标注来源的 HanaAyane Canvas 粒子，
-可选小人物默认关闭，确认后的 effort 继续通过现有模型选择路径持久化。
+在原生 Intel macOS、Windows x64 或 Linux x64 上，从仓库根目录执行，并预先安装当前 checkout 的依赖。提供干净官方源码、经过独立审阅的 tarball 描述文件及其可信 SHA-256。以下 shell 示例中的路径需要替换为自己拥有的输入位置：
 
-Desktop 专属组合还固定接入 `dshmarket@1.10.1`，在设置中提供**插件市场**。
-搜索、安装、更新、卸载、分组和备份只作用于当前 `web` profile，并通过成品
-内置的 `pnpm@11.7.0` 执行，不依赖系统 pnpm 或 PATH。Desktop 模式禁用自重启，
-会修改状态的 HTTP 路由要求同源回环请求，安装目标必须来自精选目录；没有
-Desktop patch 的普通浏览器 profile 不受影响。插件属于第三方代码，安装前
-仍应查看源码，并审阅其请求的构建脚本授权。
+```bash
+pnpm run desktop:stage \
+  --official-source /path/to/official-source \
+  --packages /path/to/official-packages \
+  --descriptor /path/to/official-inputs.json \
+  --descriptor-sha256 '<trusted-descriptor-sha256>' \
+  --runtime /path/to/local-official-runtime
+```
 
-市场界面采用紧凑的 Harness 单列列表：40 像素图标、两行简介、固定且独立的
-搜索／筛选行和分类轨道，以及稳定的“发现／已安装／更新／活动”标签。每个发现项只保留一个
-主操作，详情、源码和复制包名统一放入更多菜单。所有 registry 分类都按来源顺序
-保留在同一条横向滚动轨道上；切换选择不会重排 chip，边缘控件会反映真实滚动边界。
-当前市场包不能停用、卸载或
-更新自身（`dshmarket` 与 `dsh-market` 都会在包运行器启动前被拒绝），普通插件
-操作仍保留上游路由行为。
+Windows 使用相同参数、原生路径，以及单行命令或 PowerShell 续行语法。[`prepare-desktop-base.ts`](../../scripts/prepare-desktop-base.ts) 无 shell 地选择固定的 `pnpm@11.7.0` JavaScript 执行器，验证或准备本机 runtime，准备独立更新 helper runtime，构建原生客户端与主进程，再装配 stage。这些说明定义当前准备入口，不代表安装器流程已经验收完成。
 
-全局“个性化”页面只编辑 `$DSH_HOME/AGENTS.md` 中由 Desktop 管理的有界区块。
-区块外手工维护的内容会原样保留，保存采用版本冲突检测和原子替换；回复风格可选
-默认、简洁、亲和或专业。保存结果从下一次请求起生效，项目内 `AGENTS.md` 仍是
-范围更窄的项目规则。
+已有 runtime 的本机安装回执匹配时，流程只读验证它。经过审计的 S2 runtime 额外使用成对参数 `--runtime-audit /path/to/runtime-audit.json --runtime-audit-sha256 <trusted-audit-sha256>`。外置审计将官方输入描述文件、runtime 库存、当前平台／架构和带 hash 的原生证据绑定在一起。导入不会向不可变 runtime 安装、改写内容或添加回执。回执缺失或不匹配会失败，不会静默重建已验收核心。
 
-Desktop 使用侧边栏、对话和按需打开的详情布局。轮次导航与左侧边界间隔 16px，并为正文保留独立留白。应用不包含工作台、专用浏览器 IPC、BrowserSkill 或 Open Design。插件市场仍可用，应用不内置 Brain、Memory 或 Evolution。用户安装的插件由 Web profile 管理；移除应用内置组合不会删除插件源码或数据。
+helper 是独立的 Node `24.17.0` 可执行文件。`--helper-runtime /path/to/helper-runtime` 选择已准备目录；`--helper-cache /path/to/download-cache` 选择固定版本下载缓存。已有 helper 只读验证。正式准备要求回执记录真实的本机 `--version` 探测；解压其他平台归档或注入测试探测不能满足这一要求。
 
-“使用统计”为每次 Host 刷新设置 12 秒上限，并通过原生持久化取消信号终止待完成的 Session 读取。已完成记录会保留为部分快照，超时记录会计入省略数，共享刷新始终会结束。活动 Session 的折叠结果只会放在进程内，并在下一条 Session 事件到达时失效；因此重复打开页面不必反复扫描同一份长日志，同时不会把领先于持久化修订的数据写入磁盘。渲染端在首次加载 15 秒后会退出无限占位图并提供“重试”；已有缓存汇总仍保持可见，并显示过期提示。
+默认输出为 `apps/desktop/.stage`。`--stage /path/to/dsh-desktop-stage` 选择新的 stage 目录。准备流程拒绝并保留已有 stage；可对它执行打包命令，或另选输出位置。stage 包含 `base-smoke.json`、基础组合描述文件、官方 runtime 和单独标识的原生适配器。成品中的 `official-runtime`、基础 patch 和组合描述文件在 `app.asar.unpacked` 下保持为物理文件，使 profile 解析能够创建真实文件系统链接；独立 helper 复制到 `desktop-helper` 资源目录。
 
-Desktop 设置外壳统一约束原生、内置与 profile 安装分区的 760 像素内容宽度、页标题、简介和小节标题排版。各插件仍拥有自己的控件与业务布局，但不会再因为来源不同而出现标题字号、顶部留白或正文起点跳变。
+`--build-official` 显式运行固定官方源码的正式构建及 tarball 打包命令。它要求新的包集和描述文件输出位置，再让结果通过同一套验证。仅在明确要求重新构建官方核心时使用；已验收核心应复用经过审阅的输入回执。例如：
 
-## 系统更新
+```bash
+pnpm run desktop:stage --build-official \
+  --official-source /path/to/clean-official-source \
+  --packages /path/to/new-official-packages \
+  --descriptor /path/to/new-official-inputs.json \
+  --runtime /path/to/new-local-runtime \
+  --stage /path/to/new/dsh-desktop-stage
+```
 
-原生更新确认和 Windows 托盘使用操作系统语言，中英文文案统一由 `src/locales.ts` 管理。
+使用默认 `.stage` 时，准备完成后执行对应原生平台的包脚本：Intel macOS 使用 `pnpm --filter @deepseek-ai/dsh-desktop run pack:dir` 或 `pack:dmg`，Windows x64 使用 `pack:setup`，Linux x64 使用 `pack:linux`。自定义 `--stage` 也要求打包命令选择同一目录。不得用 full 依赖或增强清单替换这个 base stage。`desktop:full:stage:built` 是显式的历史 full 暂存入口；没有组合描述文件的已安装 full 应用保留既有启动选择。
 
-未选择项目的新会话使用 `~/deepseek-temp/<sessionId>/`（Windows 位于用户目录下）。会话 header 记录工作目录；重新打开或删除对话历史后，生成文件仍然保留。显式项目和已有会话的位置保持不变。
+Windows 的 `pack:win-dir` 与 `pack:setup` 共用 [Windows 打包入口](../../scripts/windows-desktop-builder.ts)。它在原 stage 配置旁保留 `electron-builder.windows-derived.json`，并将该文件排除在安装包之外。已有派生文件会被保留并导致调用拒绝；再次调用需要新准备的 stage。[打包决策](../../.agents/notes/implemented/architecture/2026-09-13-reproducible-desktop-base-inputs.zh.md#packaged-file-selection-and-permissions)说明文件过滤与已安装描述文件的权限。
 
-“系统更新”分别显示正在运行的 Desktop 版本和内置 Harness 核心版本。检查固定的官方 Harness Release 可以提示存在更新的核心，但不会宣称已安装核心已经改变。原生进程选择匹配的 Intel macOS DMG、Windows x64 Setup，或已识别的 Linux x64 `.deb`／AppImage；Linux 安装格式未知时会禁用下载与安装，不会猜测。
+## 插件兼容与恢复
 
-下载按 manifest（元数据清单）的准确大小显示已接收字节，服务器未提供 Content-Length 时也如此。取消只清理当前未完成的暂存目录。完整下载必须通过预期 Release URL、字节数、SHA-256、原生文件格式和物理文件检查；验证失败不会启用安装。渲染端不能提供 URL、文件系统路径、校验值或命令。首次状态读取失败时可仅重试状态读取。
+通用设置中的**插件兼容与恢复**会打开独立原生窗口；启动失败页也能进入同一控制页及系统更新，不依赖失败的 Web 插件图。更改需要原生重启确认，当前生成和工具任务将停止。规范 `web` 始终是 CLI 插件安装目标。Desktop 仅管理同一 Harness home 下的派生 `desktop-base` profile 和 `.desktop-compatibility` 状态；不删除原 Session 代际、配置、插件源码或数据。
 
-macOS 的“重启并安装”会准备现有的受保护替换辅助进程，只有准备成功才退出。Windows 的“打开安装向导”先要求用户保存工作并确认关闭应用。短生命周期的系统引导进程验证独立工作进程后，先于应用退出；工作进程等待准确的父进程退出，再次检查安装包并打开可见 Setup，不传静默安装参数。取消或准备失败会保持应用打开并撤销安装权限；工作进程清理未经确认时报告失败。辅助进程接收交接后，界面只报告已经交接，不会宣称安装成功，也不推测外部向导的结果。
+用户启用选择与兼容健康状态相互独立。可归因的 Bundle YAML 加载失败需要不同观察记录才会自动暂停；`DSH_DESKTOP_PLUGIN_FAILURE_CONFIRMATIONS` 显式配置原生确认阈值，范围为 1 至 64，默认为 2。持久阈值不匹配时，需要关闭 Desktop 后修正配置。网络、鉴权、限流、超时、取消和不明核心故障不会导致 Bundle 暂停。恢复先检查当前安装包并实际启动候选 Host，之后才能消费进程内验证回执；用户原有手动停用选择保持不变。
 
-Linux 的“查看安装包”只打开已验证安装包的所在目录，应用继续运行。它不会执行安装包、调用 sudo、修改可执行位、修改 AppArmor 或替换应用。可以重复查看，`.deb` 与 AppImage 各自保留独立安装说明。完整且已验证的安装包在检查更新、发生错误与应用退出后仍会保留；更新器不会自动回收它们或删除用户数据。没有此更新桥接的 Windows 版本需要手动下载 Setup，才能进入这条更新路径。
+派生 profile 使用 `startup` 补丁加载策略并记录规范配置的原偏好。相对插入插件名通过官方加载器锚定到原补丁路径。不安全的动态引用、冲突的 root 或 preset 引用、损坏的全局输入及非本应用拥有的派生目录会进入原生恢复状态，不会静默丢弃用户配置。包管理命令继续使用 `--profile web`；不支持直接编辑 `desktop-base`。[Profile 恢复决策](../../.agents/notes/implemented/architecture/2026-09-13-desktop-profile-recovery.zh.md)说明范围和验证限制。
 
-[原生更新源码](src/update/)拥有安装包选择与安装权限；[设置包](../../packages/client/ui-settings-system-update/README.zh.md)拥有本地化展示。各平台的 manifest 使用不同名称，因此生成 Windows 或 Linux manifest 不会替换 macOS manifest。[更新决策](../../.agents/notes/implemented/architecture/2026-09-09-platform-specific-desktop-updates.zh.md)记录校验机制与原生验收边界。
+## Linux 与验证边界
+
+Linux `.deb` 将 `python3` 声明为依赖之一。更新能力仍需通过原生能力预检。AppImage 缺少能力不能授权自动替换；已验证安装包与手动安装行为仍由[原生更新实现](src/update/)约束。准备好 helper 或 stage 不代表 Linux 更新或安装已经通过验收。
+
+## 插件入口
+
+从 0.6.0 开始，标准发行方案为基础 Desktop 配套独立的 Enhance 增强插件，其他插件从各自 GitHub 项目获取。基础 stage 继续保持最小组合；默认插件配套属于独立的交付任务，本次源码迁移不代表它已经完成。
+
+当前接入目标是“设置 → 插件”，提供已安装列表和原有插件市场。每个已安装的用户插件都必须显示版本、兼容状态及配置或使用入口。统计与模型辅助保留原有功能入口。该路径仍在完善中，组件归属见[插件清单](../../README.zh.md#plugins)。
+
+## 已发布安装包与源码状态
+
+通过 [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases) 获取已验收安装包。迁入的开发源码版本为 Desktop 0.6.0，已发布版本为 0.5.8。复制源码、生成 stage 或通过隔离样例，不等于完成安装或更新。[迁移记录](../../docs/desktop-source-migration.zh.md) 区分这些状态。
 
 <a id="icon-provenance"></a>
-
 ## 图标来源
 
-`assets/icon-source.png` 是 2026-08-14 通过 macOS 与 Windows 两端验收的
-1254×1254 RGBA 正式母版。透明四角、奶白圆角底板、蓝色内层与白色
-DeepSeek 白鲸均保持原样，未替换、未重新设计。
+应用和托盘资源维护在 [assets](assets/) 中。保留已有来源声明和仓库[许可证](../../LICENSE)。
 
-母版 SHA-256：
-`1fe0c2a3b6475c451f86dc999e97de33e4aabace244e35a284d1c5e162b0672a`
+## 开发备注
 
-`assets/icon.icns` 是由该母版转换的 macOS 标准 16–1024 px 图标集，
-`assets/icon.ico` 是由同一母版生成的 Windows 容器。对应 SHA-256 分别为
-`d453a58a11cb5247f83f3b220bca2c6f0f216f07a6c7dfbb4998bb9f9f72c54e`
-和 `2331df774341ce7796c1c0d06e708ae37bbde84a53e4edd2741659bbe8d4e4ae`。
-
-## 构建
-
-每个发布产物都在对应的原生操作系统上构建。平台无关的单元测试和暂存检查可以在其他系统运行，但安装包包含原生模块，因此交叉构建结果不能作为发布证据。
-
-### Intel macOS
-
-```bash
-pnpm run desktop:pack
-pnpm run desktop:dmg
-```
-
-两个命令都以 Intel（`x86_64`）macOS 为目标。`desktop:pack` 生成可直接启动的 `.app`，`desktop:dmg` 生成安装镜像。
-
-### Windows x64
-
-```bash
-pnpm run desktop:setup
-```
-
-这个命令必须在原生 Windows x64 上运行。Setup 名称由 `apps/desktop/package.json` 派生；输出路径为 `apps/desktop/release/DeepSeek-Harness-Setup-<version>-win-x64.exe`。Windows CI 使用独立的短暂存目录，避免原生 MSVC 重编译触发旧式路径长度限制；所有发布产物都写入 `apps/desktop/release`。
-
-Windows Setup 是当前用户范围的可见向导式 NSIS 安装器。正常双击后会依次显示欢迎、安装目录、展开的安装进度／明细与完成页面。安装时，进度条反映实际解压和安装过程，并显示阶段文字与安装明细。静默安装仍可用；它不需要管理员权限，也不需要 Node.js、pnpm、终端、浏览器或固定端口。安装会创建桌面和开始菜单快捷方式，并在完成页提供启动 DeepSeek Harness 的选项。卸载会删除应用和快捷方式，但保留 Harness 与 Electron 用户数据。
-
-### Ubuntu 22.04 / 24.04 x64
-
-在安装了 Clang 15 和 musl-tools 的原生 Ubuntu 22.04 x64 上运行 `pnpm run desktop:linux`。命令会构建并探测 Landlock 启动器、暂存运行时，在 `apps/desktop/release` 生成 `DeepSeek-Harness-<version>-linux-x64.deb` 和 `.AppImage`。Linux 工作流只在 22.04 构建一次，再使用完全相同的安装包字节验证两个 Ubuntu 版本。ARM64 与 Wayland 验收不在本次范围内。
-
-使用 `sudo apt install ./DeepSeek-Harness-<version>-linux-x64.deb` 安装 `.deb`。安装包会配置桌面入口、图标、依赖及应用专属 AppArmor 策略。卸载会保留 Harness 设置、会话和 Electron 用户数据。
-
-AppImage 需要 `lsof`、FUSE 2（22.04 为 `libfuse2`，24.04 为 `libfuse2t64`）和可执行权限。使用 `sudo apt install lsof` 安装启动时检查既存 Harness 写入进程所需的工具。24.04 启动前，使用 `sudo bash scripts/linux-desktop-appimage-policy.sh install /absolute/path/DeepSeek-Harness-<version>-linux-x64.AppImage` 安装绑定准确路径的用户命名空间策略。辅助脚本必须来自安装包对应的源码版本；路径支持 ASCII 字母、数字、空格、斜杠、点、下划线和连字符。移动镜像或更换文件名时，需要使用 `remove` 移除旧路径策略，再为新路径安装。启动器拒绝关闭沙箱的参数；辅助脚本保持系统级用户命名空间限制开启。“系统更新”下载并验证匹配的 Linux 安装包，安装仍由用户手动完成。
-
-应用使用操作系统分配的随机回环端口，不会占用固定的 65000 端口。
-
-每个发布成品都会附带 ASCII/LF 格式的 `.sha256` 文件。成品的精确字节请以
-[公开 GitHub Release](https://github.com/Missher12/deepseek-harness-desktop/releases)
-及其同名校验文件为准。
-
-## 成品验证
-
-Intel macOS 先生成目录版应用，再运行：
-
-```bash
-pnpm exec vitest run apps/desktop/tests/packaged-smoke.spec.ts --config vitest.config.ts
-```
-
-Windows 在原生系统生成 Setup 后运行：
-
-```powershell
-./scripts/windows-desktop-installer-ui-smoke.ps1 `
-  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.5.4-win-x64.exe
-./scripts/windows-desktop-setup-smoke.ps1 `
-  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.5.4-win-x64.exe
-```
-
-可选的 macOS 交互计时使用[原生启动测量器](tests/macos-startup-scenarios.spec.ts)。提供位于 `/private/tmp/dsh-macos-startup-mount-*` 的自有只读挂载目录，设置 `DSH_MACOS_STARTUP_EXECUTABLE`、已核验的 `DSH_MACOS_STARTUP_ASAR_SHA256` 与 `DSH_MACOS_STARTUP_SOURCE_SHA`，以及 `DSH_MACOS_STARTUP_REPETITIONS=1` 或 `10`。脱敏观测写入 `.artifacts/desktop-057-startup/fresh-*`；结果受[测量边界](../../.agents/notes/implemented/architecture/2026-08-18-overlapped-desktop-startup.zh.md)约束。
-
-成品测试使用仓库外的临时工作目录、临时 Electron 用户数据和临时 `DSH_HOME`。macOS 与 Windows 原生验收都会验证 preload、关闭偏好往返、后台保留时关闭隐藏且 Harness 继续运行、恢复窗口、普通与归档 Session ID 写入真实系统剪贴板且不打开／恢复／删除／发送／启动 Agent、对等会话发送／回复元数据、原生无卡片渲染与拒绝分支无副作用、Add 菜单、工作台移除状态、默认向下且可自适应翻转的思考滑块与 effort 持久化、Canvas 确实输出且小人物关闭、使用统计的全部 371 个颗粒与每日／每周／累积悬停语义、插件市场分类顺序稳定及分离后的搜索／筛选／分类几何、随机监听端口，以及原生退出后的完整进程回收。设置测试会检查真实六项操作的更新桥接、准确的运行版本和原生平台展示。真实安装器交接与替换仍须单独进行原生验收；设置分区可见或辅助进程预检并不等于这些证据。工具级验收会另行证明双向 Agent 启动／回复行为、准确 receipt 绑定等待、协作停止与匹配回复拒绝；它不发起外部模型请求。Desktop staging 还要求 staged 树中有且只有一个 `dshmarket@1.10.1`，其源码、Client bundle 与 source map 的紧凑布局和分类轨道标记一致，Host 自保护标记存在，并强制检查不可变 Desktop patch、插件运行时 provider、内置 pnpm 入口及向导式安装器 include 确实进入成品。Windows UI 测试会依次操作可见的欢迎、目录、展开的进度／明细和完成页面；生命周期测试则验证相同功能行为，以及静默安装、快捷方式创建、真实剪贴板复制、卸载清理和数据保留。原生 Windows CI 会从包版本派生产物名、构建 Setup、运行两项测试、记录 SHA-256，并上传两个精确文件。
-
-本地产物没有签名。macOS 可能要求从 Finder 右键菜单选择“打开”，Windows SmartScreen 可能要求确认未知发布者；只有受信任的平台签名凭据才能消除这些系统提示。
+验证源码与平台工作流已迁入主仓库，本次没有发布新安装包。已有 Windows、Ubuntu 原生失败仍待解决，迁移本身不会重跑或认证这些检查。旧的完整组合说明保留在 Git 历史中，不作为基础产品的定义。

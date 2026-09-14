@@ -8,12 +8,29 @@ param(
   [ValidateSet('windows-x64')]
   [string]$PackagePolicy,
   [string]$PackageManifestPath,
+  [string]$SmokeDescriptorPath,
+  [string]$LegacyRuntimeInputPath,
   [switch]$RuntimeEvidenceOnly,
   [switch]$HistoricalBaselineInventory
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if (-not $RuntimeEvidenceOnly -and [string]::IsNullOrEmpty($SmokeDescriptorPath)) {
+  throw 'Base smoke requires a prepare/stage descriptor.'
+}
+if (-not $RuntimeEvidenceOnly -and (
+  [string]::IsNullOrEmpty($LegacyRuntimeInputPath) -or
+  -not (Test-Path -LiteralPath $LegacyRuntimeInputPath -PathType Leaf)
+)) { throw 'Core acceptance requires an explicit verified Windows 0.5.5 runtime input.' }
+$resolvedSmokeDescriptor = $null
+if (-not $RuntimeEvidenceOnly) {
+  if (-not (Test-Path -LiteralPath $SmokeDescriptorPath -PathType Leaf)) {
+    throw 'Base smoke descriptor is missing.'
+  }
+  $resolvedSmokeDescriptor = (Resolve-Path -LiteralPath $SmokeDescriptorPath).Path
+}
 
 if ($HistoricalBaselineInventory -and (
   -not $RuntimeEvidenceOnly -or
@@ -145,27 +162,23 @@ function Assert-ManagedPackageRootsPhysical {
     [Parameter(Mandatory = $true)]
     [string]$InstallRoot,
     [Parameter(Mandatory = $true)]
-    [string]$ManifestPath
+    [string]$ManifestPath,
+    [Parameter(Mandatory = $true)]
+    [string]$DescriptorPath,
+    [Parameter(Mandatory = $true)]
+    [string]$InventoryPath
   )
 
-  $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
-  $names = @($manifest.dependencies.PSObject.Properties.Name)
-  $optionalDependencies = $manifest.PSObject.Properties['optionalDependencies']
-  if ($null -ne $optionalDependencies -and $null -ne $optionalDependencies.Value) {
-    $names += @($optionalDependencies.Value.PSObject.Properties.Name)
-  }
-  $unpackedModules = Join-Path $InstallRoot 'resources\app.asar.unpacked\node_modules'
-  foreach ($name in @($names | Sort-Object -Unique)) {
-    $packageRoot = Join-Path $unpackedModules ($name.Replace('/', '\'))
-    $packageManifest = Join-Path $packageRoot 'package.json'
-    if (-not (Test-Path -LiteralPath $packageManifest -PathType Leaf)) {
-      throw "Managed package is missing from physical app.asar.unpacked: $name"
-    }
-    $packageDirectory = Get-Item -LiteralPath $packageRoot -Force
-    if (($packageDirectory.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-      throw "Managed package root must not be a reparse point in app.asar.unpacked: $name"
-    }
-  }
+  $resolvedManifest = [System.IO.Path]::GetFullPath($ManifestPath)
+  $resolvedDescriptor = [System.IO.Path]::GetFullPath($DescriptorPath)
+  $inventoryArguments = @(
+    '--output', [System.IO.Path]::GetFullPath($InventoryPath),
+    '--composition', 'base', '--descriptor', $resolvedDescriptor,
+    '--policy', 'windows-x64', '--manifest', $resolvedManifest,
+    $InstallRoot
+  )
+  & pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package @inventoryArguments
+  if ($LASTEXITCODE -ne 0) { throw 'Installed base runtime failed its shared physical inventory validation.' }
 }
 
 function Get-InstalledShortcutEvidence {
@@ -402,28 +415,60 @@ function Write-DesktopRuntimeEvidence {
     }
     $resolvedManifest = [System.IO.Path]::GetFullPath($PackageManifestPath)
     $inventoryArguments += @('--policy', $PackagePolicy, '--manifest', $resolvedManifest)
+    if ([string]::IsNullOrEmpty($resolvedSmokeDescriptor)) { throw 'Candidate inventory requires the base descriptor.' }
+    $resolvedDescriptor = $resolvedSmokeDescriptor
+    $inventoryArguments += @('--composition', 'base', '--descriptor', $resolvedDescriptor)
   }
   $inventoryArguments += (Split-Path -Parent $ExecutablePath)
   & pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package @inventoryArguments
   if ($LASTEXITCODE -ne 0) { throw "Installed package inventory failed with exit code $LASTEXITCODE." }
 }
 
-function Get-FileTreeSnapshot {
+function Get-BaseProtectedSnapshot {
   param(
     [Parameter(Mandatory = $true)]
-    [string]$Directory
+    [string]$Root
   )
 
-  if (-not (Test-Path -LiteralPath $Directory -PathType Container)) {
-    throw "Expected a recovery directory: $Directory"
+  $rootPath = [System.IO.Path]::GetFullPath($Root).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+  $prefix = $rootPath + [System.IO.Path]::DirectorySeparatorChar
+  $inputPath = Join-Path $rootPath 'base-protected-paths.json'
+  $inputItem = Get-Item -LiteralPath $inputPath -Force
+  if ($inputItem.PSIsContainer -or ($inputItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+    throw 'Base protection input must be a physical file.'
   }
-  return @(Get-ChildItem -LiteralPath $Directory -Recurse -Force -File |
-    Sort-Object -Property FullName |
-    ForEach-Object {
-      $relative = [System.IO.Path]::GetRelativePath($Directory, $_.FullName).Replace('\', '/')
-      $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-      "$relative`t$($_.Length)`t$hash"
-    })
+  $inputRecord = Get-Content -LiteralPath $inputPath -Raw | ConvertFrom-Json
+  $fields = @($inputRecord.PSObject.Properties.Name | Sort-Object) -join ','
+  if ($fields -cne 'composition,protectedPaths,schemaVersion' -or $inputRecord.schemaVersion -ne 1 -or
+    $inputRecord.composition -cne 'base' -or $inputRecord.protectedPaths -isnot [array] -or
+    @($inputRecord.protectedPaths).Count -eq 0) {
+    throw 'Invalid base protected file list.'
+  }
+  $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+  $snapshot = @()
+  foreach ($path in (@($inputRecord.protectedPaths) + @($inputPath))) {
+    if ($path -isnot [string] -or -not [System.IO.Path]::IsPathRooted($path)) {
+      throw 'Base protected file must have an absolute owned path.'
+    }
+    $fullPath = [System.IO.Path]::GetFullPath($path)
+    if (-not $fullPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase) -or -not $seen.Add($fullPath)) {
+      throw 'Base protected file is outside its owner or duplicated.'
+    }
+    $item = Get-Item -LiteralPath $fullPath -Force
+    if ($item.PSIsContainer) { throw 'Base protected data must be a file.' }
+    $current = $item
+    while ($null -ne $current) {
+      if (($current.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Base protected file or ancestor is a reparse point.'
+      }
+      if ($current.FullName -ieq $rootPath) { break }
+      $current = if ($current.PSIsContainer) { $current.Parent } else { $current.Directory }
+    }
+    if ($null -eq $current) { throw 'Base protected file owner was not reached.' }
+    $hash = (Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $snapshot += $fullPath.Substring($prefix.Length) + ':' + $hash
+  }
+  return @($snapshot | Sort-Object)
 }
 
 $resolvedSetup = (Resolve-Path -LiteralPath $SetupPath).Path
@@ -434,7 +479,7 @@ $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
 $smokeId = 'dh' + [Guid]::NewGuid().ToString('N').Substring(0, 6)
 $temporaryRoot = Join-Path $localAppData $smokeId
 $installRoot = Join-Path $temporaryRoot 'DeepSeek Harness'
-$harnessHome = Join-Path $temporaryRoot 'dsh-home'
+$harnessHome = if ($RuntimeEvidenceOnly) { Join-Path $temporaryRoot 'dsh-home' } else { Join-Path $temporaryRoot 'home\.dsh' }
 $userData = Join-Path $temporaryRoot 'electron-data'
 $harnessMarker = Join-Path $harnessHome 'preserve-after-uninstall.txt'
 $userDataMarker = Join-Path $userData 'preserve-after-uninstall.txt'
@@ -444,15 +489,22 @@ $uninstaller = $null
 $uninstallerLauncher = Join-Path $temporaryRoot 'DeepSeek-Harness-Uninstall-Smoke.exe'
 $executable = $null
 $installed = $false
-$legacyRecoverySnapshot = $null
-$legacyRecoveryRoot = $null
+$baseProtectedBefore = $null
+$previousSmokeDescriptor = [System.Environment]::GetEnvironmentVariable('DSH_DESKTOP_SMOKE_DESCRIPTOR')
+$previousLegacyFixture = [System.Environment]::GetEnvironmentVariable('DSH_DESKTOP_SMOKE_LEGACY_FIXTURE')
 
 if ((Test-Path -LiteralPath $desktopShortcut) -or (Test-Path -LiteralPath $startMenuShortcut)) {
   throw 'Desktop Setup smoke refuses to overwrite an existing DeepSeek Harness shortcut.'
 }
 
 try {
-  New-Item -ItemType Directory -Path $installRoot, $harnessHome, $userData | Out-Null
+  if (-not $RuntimeEvidenceOnly) {
+    & pnpm exec tsx apps/desktop/tests/windows-core-native.ts prepare $LegacyRuntimeInputPath $temporaryRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Actual Windows legacy history generation failed.' }
+    $env:DSH_DESKTOP_SMOKE_LEGACY_FIXTURE = Join-Path $temporaryRoot 'legacy-fixture.json'
+  }
+  else { New-Item -ItemType Directory -Path $harnessHome | Out-Null }
+  New-Item -ItemType Directory -Path $installRoot, $userData | Out-Null
   Set-Content -LiteralPath $harnessMarker -Value 'preserve Harness data'
   Set-Content -LiteralPath $userDataMarker -Value 'preserve Electron data'
 
@@ -478,7 +530,8 @@ try {
 
   if (-not [string]::IsNullOrEmpty($PackagePolicy)) {
     $resolvedPackageManifest = [System.IO.Path]::GetFullPath($PackageManifestPath)
-    Assert-ManagedPackageRootsPhysical -InstallRoot $installRoot -ManifestPath $resolvedPackageManifest
+    Assert-ManagedPackageRootsPhysical -InstallRoot $installRoot -ManifestPath $resolvedPackageManifest `
+      -DescriptorPath $resolvedSmokeDescriptor -InventoryPath $PackageInventoryPath
   }
 
   Write-DesktopRuntimeEvidence `
@@ -501,6 +554,7 @@ try {
     -Shortcuts $shortcutEvidence
 
   if (-not $RuntimeEvidenceOnly) {
+    $env:DSH_DESKTOP_SMOKE_DESCRIPTOR = $resolvedSmokeDescriptor
     $env:DSH_WINDOWS_DESKTOP_EXECUTABLE = $executable
     $env:DSH_DESKTOP_SMOKE_ROOT = $temporaryRoot
     $env:DSH_DESKTOP_SMOKE_DSH_HOME = $harnessHome
@@ -513,11 +567,7 @@ try {
     if ($remainingProcesses.Count -ne 0) {
       throw "Packaged smoke left $($remainingProcesses.Count) installed application process(es) running."
     }
-    $legacyRecoveryRoot = Join-Path $harnessHome 'recovery\legacy-module-fallback'
-    $legacyRecoverySnapshot = @(Get-FileTreeSnapshot -Directory $legacyRecoveryRoot)
-    if ($legacyRecoverySnapshot.Count -eq 0) {
-      throw 'Packaged smoke did not preserve the recovered legacy module fallback files.'
-    }
+    $baseProtectedBefore = @(Get-BaseProtectedSnapshot -Root $temporaryRoot)
 
     # Same built Setup, same isolated installed application; enter at the
     # production native command layer, not a fabricated future update bridge.
@@ -549,6 +599,11 @@ try {
         throw "Native Windows $dpiPercent percent visual smoke failed with exit code $LASTEXITCODE."
       }
     }
+    & pnpm exec tsx scripts/verify-desktop-base-smoke.ts `
+      --receipt (Join-Path $temporaryRoot 'base-smoke-receipt.json') `
+      --descriptor $resolvedSmokeDescriptor `
+      --smoke-root $temporaryRoot --platform win32 --scope core
+    if ($LASTEXITCODE -ne 0) { throw 'Complete native base receipt validation failed.' }
   }
 
   Invoke-IsolatedUninstall -InstalledUninstaller $uninstaller -InstallRoot $installRoot -LauncherPath $uninstallerLauncher
@@ -565,9 +620,9 @@ try {
     throw 'Uninstall removed the isolated Electron data marker.'
   }
   if (-not $RuntimeEvidenceOnly) {
-    $legacyRecoveryAfterUninstall = @(Get-FileTreeSnapshot -Directory $legacyRecoveryRoot)
-    if (Compare-Object -ReferenceObject $legacyRecoverySnapshot -DifferenceObject $legacyRecoveryAfterUninstall) {
-      throw 'Uninstall changed the recovered legacy module fallback files.'
+    $baseProtectedAfter = @(Get-BaseProtectedSnapshot -Root $temporaryRoot)
+    if (Compare-Object -ReferenceObject $baseProtectedBefore -DifferenceObject $baseProtectedAfter) {
+      throw 'Uninstall changed protected base migration or user data.'
     }
   }
 
@@ -575,10 +630,12 @@ try {
     Write-Host 'Windows desktop runtime evidence passed: install, ten cold and warm launches, process cleanup, uninstall, and data preservation.'
   }
   else {
-    Write-Host 'Windows desktop Setup smoke passed: install, shortcuts, legacy fallback recovery, launch, close, process cleanup, uninstall, and data preservation.'
+    Write-Host 'Windows desktop core smoke passed: base install, historical UI, shortcuts, launch, close, process cleanup, uninstall, and data preservation. Unverified: pauseRecovery.'
   }
 }
 finally {
+  [System.Environment]::SetEnvironmentVariable('DSH_DESKTOP_SMOKE_DESCRIPTOR', $previousSmokeDescriptor)
+  [System.Environment]::SetEnvironmentVariable('DSH_DESKTOP_SMOKE_LEGACY_FIXTURE', $previousLegacyFixture)
   if ($null -ne $executable) {
     Stop-IsolatedInstalledProcesses -ExecutablePath $executable
   }

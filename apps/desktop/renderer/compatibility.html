@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'">
+  <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DeepSeek Harness</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color-scheme: light dark; }
+    body { margin: 0; background: Canvas; color: CanvasText; }
+    main { max-width: 780px; padding: 32px; margin: auto; }
+    h1 { font-size: 22px; } h2 { font-size: 17px; margin: 0 0 16px; }
+    p { font-size: 14px; line-height: 1.6; } section { margin-top: 24px; padding: 20px; border: 1px solid color-mix(in srgb, CanvasText 20%, Canvas); border-radius: 12px; }
+    button { border: 1px solid color-mix(in srgb, CanvasText 24%, Canvas); border-radius: 8px; padding: 7px 12px; background: Canvas; color: CanvasText; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; } button:focus-visible { outline: 3px solid #5873d8; outline-offset: 2px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; } .plugin { border-top: 1px solid color-mix(in srgb, CanvasText 16%, Canvas); padding: 14px 0; overflow-wrap: anywhere; }
+    .plugin strong { font-size: 14px; } .plugin p { margin: 6px 0 10px; } #notice[role=alert] { color: light-dark(#a02626, #ffb6b6); }
+    progress { width: 100%; margin: 8px 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 data-copy="title"></h1>
+    <p data-copy="description"></p>
+    <p id="notice" role="status" aria-live="polite"></p>
+    <section aria-labelledby="plugins-title" data-native-plugin-management>
+      <h2 id="plugins-title" data-copy="plugins"></h2>
+      <p id="profile"></p>
+      <div id="plugins"></div>
+      <button id="refresh" type="button" data-copy="refresh"></button>
+    </section>
+    <section aria-labelledby="updates-title" data-native-system-update>
+      <h2 id="updates-title" data-copy="updates"></h2>
+      <p id="versions"></p><p id="update-state" aria-live="polite"></p>
+      <progress id="progress" max="1" hidden></progress>
+      <div class="actions">
+        <button id="check" type="button" data-copy="check"></button>
+        <button id="download" type="button" data-copy="download" disabled></button>
+        <button id="cancel-download" type="button" data-copy="cancelDownload" disabled></button>
+        <button id="install" type="button" data-copy="install" disabled></button>
+      </div>
+    </section>
+  </main>
+  <script src="compatibility.js"></script>
+</body>
+</html>

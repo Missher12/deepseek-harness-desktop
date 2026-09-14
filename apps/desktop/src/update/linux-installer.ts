@@ -115,11 +115,14 @@ function owned(info: Stats): boolean {
   return typeof process.getuid === 'function' && info.uid === process.getuid() && (info.mode & 0o022) === 0
 }
 
-/** Recheck a retained download, then request its folder. Does not install or quit. */
-export async function revealLinuxUpdatePackage(
+/**
+ * Recheck retained download bytes and physical ownership without executing the package.
+ * @param descriptor - Main-owned package path, format, version and digest.
+ * @returns Canonical verified package path and its owned staging directory.
+ */
+export async function verifyLinuxUpdatePackage(
   descriptor: LinuxInstallDescriptor,
-  openDirectory: (directory: string) => Promise<string>,
-): Promise<LinuxPackageHandoffResult> {
+): Promise<{ path: string; directory: string }> {
   // Snapshot caller-owned fields before any async work.
   const payload: Omit<LinuxInstallDescriptor, 'platform' | 'arch'> & { platform: string; arch: string } = { ...descriptor }
   if (payload.platform !== 'linux' || payload.arch !== 'x64'
@@ -166,10 +169,20 @@ export async function revealLinuxUpdatePackage(
     if (currentDirectory.dev !== directoryInfo.dev || currentDirectory.ino !== directoryInfo.ino || !owned(currentDirectory)) {
       throw new Error('Linux update staging directory changed during verification.')
     }
-    const error = await openDirectory(directory)
-    if (error !== '') throw new Error('Could not open the Linux update folder. Use the displayed package path to install manually.')
-    return { status: 'manual-install-ready', packageFormat: payload.packageFormat, directory }
+    return { path, directory }
   } finally {
     await file.close()
   }
+}
+
+/** Recheck a retained download, then request its folder. Does not install or quit. */
+export async function revealLinuxUpdatePackage(
+  descriptor: LinuxInstallDescriptor,
+  openDirectory: (directory: string) => Promise<string>,
+): Promise<LinuxPackageHandoffResult> {
+  const payload = { ...descriptor }
+  const { directory } = await verifyLinuxUpdatePackage(payload)
+  const error = await openDirectory(directory)
+  if (error !== '') throw new Error('Could not open the Linux update folder. Use the displayed package path to install manually.')
+  return { status: 'manual-install-ready', packageFormat: payload.packageFormat, directory }
 }

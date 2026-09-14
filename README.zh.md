@@ -1,92 +1,70 @@
-# DeepSeek Harness
+# DeepSeek Harness Desktop
 
 [English](README.md) | 中文
 
-DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的开源 agent harness（智能体框架）。
+DeepSeek Harness Desktop 将官方 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 带到 macOS、Windows 和 Ubuntu。它是 Missher 维护的独立社区桌面发行版。
 
-它构建于**一切皆插件**的架构之上，由 [Cordis](https://github.com/cordiverse/cordis) 驱动，其设计参见论文 [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512)。
+项目只有两个目标：把官方 Harness 发布版本做成桌面应用，让用户已经开发的插件在桌面端完整可用。
 
-文档：[https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
+[下载安装包](https://github.com/Missher12/deepseek-harness-desktop/releases) · [桌面使用与开发说明](apps/desktop/README.zh.md) · [插件](#plugins) · [源码迁移记录](docs/desktop-source-migration.zh.md)
 
-## 非官方桌面发行版
+## 下载与开发状态
 
-这个社区仓库保留官方源码，并在 [`apps/desktop`](apps/desktop/README.zh.md) 下增加非官方 Intel macOS 与 Windows x64 桌面应用。它不是 DeepSeek 官方桌面版。应用在原生 Electron 窗口中内置现有 Harness Web 运行时，自主管理随机回环端口，并使用用户提供的鲸鱼图标。
+已发布版本是 [Desktop 0.5.8](https://github.com/Missher12/deepseek-harness-desktop/releases/tag/desktop-v0.5.8)，集成 Harness 0.1.5-rc.2。该版本实际交付的功能、安装说明与校验值以 Release 为准。
 
-请从本仓库的 [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases) 下载 DMG 或 Setup 安装程序。当前成品未签名；首次启动时，macOS 可能要求在 Finder 右键菜单中选择“打开”，Windows 可能显示 SmartScreen 提示。
+| 平台 | 支持目标 | 安装包 |
+| --- | --- | --- |
+| macOS | Intel x64 | DMG |
+| Windows | x64 | Setup EXE |
+| Ubuntu | 22.04 / 24.04 x64 | deb / AppImage |
 
-本地 Desktop 0.5.5 构建集成 Harness `0.1.3-alpha.1`。它保留“项目／会话”树、向内留出 16px 的左侧发言刻度、自适应正文宽度、有界文档附件和带缓存的使用统计。本地产品组合排除了右侧工作台、BrowserSkill、Open Design 及四个配套插件。系统更新分别展示 Desktop 与内核版本，并标记预发布版本。此工作构建尚未公开发布；本地 Intel macOS 验证不能代表 Windows 验收。
+主分支包含从验证仓库迁入的 Desktop 0.6.0 开发源码。基础桌面与插件拆分仍在进行中。本次迁移不发布新安装包，也不代表平台验收已经完成；[迁移记录](docs/desktop-source-migration.zh.md) 列出导入来源与待完成检查。
 
-## 开发者预览
+## 桌面与插件的职责
 
-DeepSeek Harness 处于 _开发者预览_ 阶段，正在快速迭代。**未来将出现破坏兼容性的变更。**
+Desktop 负责原生窗口、运行时启动退出、系统集成、安装和系统更新。官方 Harness 提供标准聊天、模型、工具与会话能力。三端使用同一套产品结构。
 
-运行本项目前，请阅读[安全说明](SAFETY.zh.md)。
+从 Desktop **0.6.0** 开始，桌面端与插件端将完全分开维护和升级。标准版将配套 **Enhance 增强插件**，其他插件从各自的 GitHub 仓库下载安装。
+
+即使作为标配，Enhance 仍是可以独立配置、停用和升级的插件。桌面升级时，兼容插件可以沿用原版本，只做维持现有功能所需的兼容调整。
+
+<a id="plugins"></a>
+
+## 插件
+
+| 组件 | 已有能力 | 项目或获取方式 |
+| --- | --- | --- |
+| Enhance 增强包 | 使用统计、数字高亮底栏、钢琴键、无项目会话、模型辅助、个性化、文档与跨会话消息 | `dsh-missher-enhance`；计划作为 0.6.0 标配，配套打包正在完善 |
+| Project Ops | 项目任务发现、执行、收集与验证 | [dsh-project-ops](https://github.com/Missher12/dsh-project-ops) |
+| Memory | 已确认事实、捕获、搜索与记忆维护 | [dsh-missher-memory](https://github.com/Missher12/dsh-missher-memory) |
+| MSE / Evolution | 原有 MSE 经验与规则系统的 Harness 接入 | [dsh-missher-evolution](https://github.com/Missher12/dsh-missher-evolution) |
+| Media@Missher | 使用原有 Media 运行时完成设置、采集、结果查看与导出 | `dsh-media-missher`；私有／本地分发 |
+| Brain | 协调 Memory、MSE 的共享召回，数据仍由各提供方持有 | `dsh-missher-brain`；本地候选，公开安装入口待完善 |
+
+其他插件统一通过各自 GitHub 仓库及 Releases 获取；尚未发布的入口标为准备中，私有仓库需要访问权限。每个插件分别记录支持的 Harness 版本与平台限制。存在项目链接不等于已兼容当前 Desktop 候选。Media 与 MSE 保留原始核心，本仓库不包含其私有工作数据。
+
+## 插件设置与市场
+
+统一入口目标为 **设置 → 插件**，提供 **已安装** 和 **插件市场**。已安装插件需要显示版本、支持的 Harness 版本、启用或暂停状态，以及配置或使用入口。插件发现、安装与更新复用现有市场，操作结果同步到已安装列表。
+
+补齐这条路径是当前首要接入任务。统计、模型辅助等功能保留各自自然的设置或会话入口。已经删除的右侧工作台及其 BrowserSkill／Open Design 入口不再纳入交付，飞书不在维护范围内。
+
+## 更新流程
+
+官方发布新版后，先适配共同桌面并准备 macOS、Windows、Ubuntu 安装包，再检查现有插件。需要时对插件做小范围兼容调整。确认不兼容的插件可以暂停，同时保留安装与数据；临时网络或 API 错误本身不能证明插件不兼容。
+
+被暂停或尚未验证的插件仍是未完成项。生成安装包、配置检查通过，不能代表全部插件完整可用。平台验收和正式发布遵循[发布说明](apps/desktop/releasing/README.zh.md)。
 
 <a id="run"></a>
 
-## 运行
-
-### 通过 `npm` 运行
-
-安装 `Node.js`，然后运行：
-
-```sh
-npx @deepseek-ai/dsh web
-```
-
-该命令默认会在 `http://127.0.0.1:3080` 启动 Web UI，本机启动时还会用默认浏览器打开页面。通过 SSH 启动时只打印宿主机 URL，因为本地转发地址由 SSH 客户端或编辑器持有。传入 `--no-open` 可仅运行服务器而不打开浏览器。详见 [Web UI 指南](docs/user/guide/index.zh.md)。
-
 <a id="run-from-source"></a>
-
-### 从源码运行
-
-如需从仓库源码运行：
-
-```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
-pnpm install
-pnpm run build
-pnpm dsh web
-```
-
-`pnpm run build` 会准备仓库产物。`pnpm dsh web` 会直接使用这些已构建产物，不会重新构建。
-
-## 社区与支持
-
-- 通过 [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions) 提交反馈或 bug 报告。
-- 为你的插件仓库添加 [`dsh-plugin`](https://github.com/topics/dsh-plugin) 话题，便于被发现。
-- 欢迎加入 DeepSeek Harness 企微群：扫码添加企微小助手并填写入群问卷，完成后小助手会邀请你入群。
-
-<table>
-  <thead>
-    <tr>
-      <th align="center">企微小助手</th>
-      <th align="center">入群问卷</th>
-      <th align="center">微信公众号</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center"><img src="https://cdn.deepseek.com/harness/readme/community-wecom-assistant.png" alt="DeepSeek Harness 企微小助手二维码" width="180" height="180"></td>
-      <td align="center"><a href="https://trtgsjkv6r.feishu.cn/share/base/form/shrcnIt5twSVdLGD52KJBckGCgg"><img src="https://cdn.deepseek.com/harness/readme/community-wecom-survey.png" alt="DeepSeek Harness 入群问卷二维码" width="180" height="180"></a></td>
-      <td align="center"><img src="https://cdn.deepseek.com/harness/readme/community-wechat-official-account.png" alt="DeepSeek Harness 团队微信公众号二维码" width="180" height="180"></td>
-    </tr>
-  </tbody>
-</table>
-
-## 参与贡献
-
-参见 [CONTRIBUTING.md](CONTRIBUTING.zh.md)。
 
 ## 开发
 
-请先阅读[开发指南](docs/development.zh.md)与[架构文档](docs/architecture.zh.md)。
+从[桌面说明](apps/desktop/README.zh.md)、[开发指南](docs/development.zh.md)和[架构说明](docs/architecture.zh.md)开始。直接使用 CLI 请阅读[官方 Profile 参考](apps/cli/reference/README.zh.md)。开发者和 Agent 遵循 [AGENTS.md](AGENTS.md) 及当前[项目上下文](PROJECT_CONTEXT.md)。
 
-面向 agent：请遵循 [AGENTS.md](AGENTS.md)。
+桌面问题提交到[本仓库](https://github.com/Missher12/deepseek-harness-desktop/issues)，插件问题提交到对应项目。官方 Harness 继续由[上游项目](https://github.com/deepseek-ai/deepseek-harness)维护。
 
 ## 许可证
 
-[MIT](LICENSE)
-
-第三方依赖及其许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+[MIT](LICENSE)。保留上游声明，依赖许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

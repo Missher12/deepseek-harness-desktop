@@ -24,6 +24,7 @@
     <p id="reason">请重试，或打开日志查看详细信息。</p>
     <div class="actions">
       <button type="button" data-action="open-logs">打开日志</button>
+      <button type="button" id="compatibility">插件恢复与系统更新</button>
       <button type="button" data-action="quit">退出</button>
       <button type="button" class="primary" data-action="retry">重试</button>
     </div>
@@ -35,6 +36,11 @@
       renderer: '应用界面意外退出。',
       'runtime-exit': 'Harness 运行时意外退出。',
     }
+    document.querySelector('#compatibility').addEventListener('click', () => {
+      void window.dshDesktop?.openCompatibility().catch(() => {
+        document.querySelector('#reason').textContent = '无法打开恢复页，请查看日志。'
+      })
+    })
     const actions = ['retry', 'open-logs', 'quit']
     const reason = new URLSearchParams(location.search).get('reason')
     document.querySelector('#reason').textContent = reasons[reason] ?? '请重试，或打开日志查看详细信息。'

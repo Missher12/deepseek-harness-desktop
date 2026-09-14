@@ -2,190 +2,81 @@
 
 English | [中文](README.zh.md)
 
-Native desktop shell for the official DeepSeek Harness runtime. The app owns one loopback-only Harness child process on an operating-system-assigned port and renders the existing Harness Web client inside a hardened Electron window.
+Desktop 0.6.0 prepares the official Harness base composition through the root `desktop:stage` command. The app owns one loopback-only Harness child process on an operating-system-assigned port and renders the official Web client inside a hardened Electron window. This source version is not a public release or a three-platform acceptance claim.
 
-Initial windows and invalid-state fallbacks fit the primary display work area. Restored windows fit the eligible display containing most of their visible area, and minimum dimensions shrink with smaller work areas. Packaged first-run acceptance checks window bounds and the Continue action before widening the test viewport; Windows Search evidence waits for a complete query and a unique actionable result in the foreground Shell search root.
+Release collection and publication follow the [platform release guide](releasing/README.md).
 
-The sidebar includes a Codex-style archived-session manager. Archiving keeps
-the session log and its Workspace position; the manager can restore it in
-place. Permanent deletion is available only from the archive, requires an
-explicit confirmation, and is rejected while the session is running.
-Every non-blank session row exposes **Copy session ID** in its action menu,
-and archived-session cards expose the same action without restoring or
-deleting the session. The app copies the exact stable id and reports whether
-the host clipboard accepted the write.
+<a id="composition-scope"></a>
+## Composition scope
 
-Typing `@` in the composer opens one combined launcher for file/folder and
-Session references, the focused **Goal** and **Plan** actions, and the live
-skills available to the current Session. Picking a skill inserts its canonical
-`/skill-name` invocation, so discovery and execution still share the existing
-audited skill path.
+The base composition preserves the complete official Web dependency graph and adds only [native window controls and close behavior](../../packages/client/ui-desktop-shell/README.md) and [System Update](../../packages/client/ui-settings-system-update/README.md). It derives the managed `desktop-base` profile from canonical `web`, preserving the canonical configuration, installed plugin sources and product data. An absent canonical profile is initialized through the official Web template. Pricing, statistics, personalization and model helpers belong to optional plugins. The removed Workbench and its native browser bridge remain excluded.
 
-The removable `@deepseek-ai/dsh-session-messenger` plugin adds bounded,
-same-profile Agent messaging. Copy Session A's exact ID, paste it into Session
-B, and ask B's Agent to send: Native Function Calling or Code Mode wakes A's
-existing Agent, and A can reply or continue the same collaboration chain through
-receipt-bound metadata. Five tools cover direct send, optional send-and-wait,
-one-use Host-authorized reply, explicit matching-reply wait, and participant-
-authorized stopping of the complete collaboration chain. Stop immediately
-settles unresolved deliveries and waits and rejects later replies or
-continuations; a fresh user-directed message still starts an independent chain.
-Communication stays in ordinary Harness history, with only a compact
-**Stop / Stopped** action on the existing source-side conversation row. There is
-no header trigger, operator drawer, custom message card, or second archive. The
-plugin never creates new sessions, subagents, or autonomous Agent-to-Agent loops,
-and received text remains untrusted content.
+Preparation binds a clean official checkout at `fb2c4b9e698e30edb738bca4cf0618587db7d203`, Harness `0.1.5-rc.2`, and all 275 tarball identities to a trusted descriptor SHA-256. Installed runtime identity separately binds the input descriptor, physical file inventory and native OS/architecture. A matching version string or a runtime copied from another OS does not satisfy these checks. The [reproducible-input decision](../../.agents/notes/implemented/architecture/2026-09-13-reproducible-desktop-base-inputs.md) owns the source, installation and audit rules.
 
-Desktop General Settings exposes close behavior and tiered price estimates.
-macOS defaults to keeping the app running after its window closes, while Windows
-defaults to quitting; Windows creates a Show/Quit tray only when keep-running is
-selected. Every explicit Quit stops the app-owned Harness process. The
-conversation footer keeps the existing performance data and adds settled
-latest-turn cost, session estimate, exact official-endpoint balance, and current
-pricing tier on a second line. Disabling tiered estimates hides estimates and the
-tier but preserves the exact balance.
+<a id="prepare-the-base-stage"></a>
+## Prepare the base stage
 
-The global **Personalization** section edits only a bounded Desktop-owned block
-inside `$DSH_HOME/AGENTS.md`. It preserves manually maintained content outside
-that block, uses revision checks and atomic replacement, and offers a default,
-concise, friendly, or professional reply style. The saved instructions apply
-from the next request; project-local `AGENTS.md` files remain the narrower
-project authority.
+Run from the repository root on native Intel macOS, Windows x64 or Linux x64 with the checkout's dependencies installed. Supply the clean official source, its independently reviewed tarball descriptor and the trusted SHA-256 of that descriptor. The following shell example uses placeholders for those owned input locations:
 
-The removable `@deepseek-ai/dsh-reasoning-effort` plugin replaces the plain
-effort rows with a keyboard-accessible slider that uses only values advertised
-by the selected model. Its Harness-styled portal opens below when space allows
-and flips above when needed, retains HanaAyane's attributed Canvas particles,
-keeps the optional character disabled by default, and persists the accepted
-effort through the existing model-selection path.
+```bash
+pnpm run desktop:stage \
+  --official-source /path/to/official-source \
+  --packages /path/to/official-packages \
+  --descriptor /path/to/official-inputs.json \
+  --descriptor-sha256 '<trusted-descriptor-sha256>' \
+  --runtime /path/to/local-official-runtime
+```
 
-The Desktop composition also pins `dshmarket@1.10.1` as an in-app **Plugin
-Market** settings section. Search, install, update, uninstall, grouping, and
-backup operations target only the active `web` profile and run through the
-packaged `pnpm@11.7.0`; they do not depend on a system pnpm or PATH. Desktop
-self-restart is disabled, mutating HTTP routes require the same loopback
-origin, and installs must match the curated registry. The ordinary browser
-profile remains unchanged when the Desktop-only patch is absent. Plugins are
-third-party code: inspect their source and requested build-script approvals
-before installing them.
+Use the same arguments on Windows, with native paths and the command on one line or PowerShell continuation syntax. [`prepare-desktop-base.ts`](../../scripts/prepare-desktop-base.ts) selects the pinned `pnpm@11.7.0` JavaScript executor without a shell, verifies or prepares the local runtime, prepares the independent update-helper runtime, builds the native clients and main process, and assembles the stage. These instructions specify the current preparation entry; they do not claim a completed installer run.
 
-The market presentation uses a compact, single-column Harness list with
-40-pixel icons, two-line descriptions, a sticky search/filter row plus a
-separate category rail, and
-stable **Discover / Installed / Updates / Activity** tabs. Each discovery row
-keeps one primary action; details, source, and package-name copy live in its
-overflow menu. Every registry category remains in source order on one
-horizontally scrollable rail; selection never reorders chips, and edge controls
-reflect the actual scroll bounds. The active market package cannot disable, uninstall, or update
-itself (`dshmarket` and `dsh-market` are both rejected before the package
-runner), while ordinary plugin operations retain the upstream route behavior.
+An existing runtime with a matching local installation receipt is verified read-only. An audited S2 runtime uses the additional pair `--runtime-audit /path/to/runtime-audit.json --runtime-audit-sha256 <trusted-audit-sha256>`. The external audit binds the official input descriptor, runtime inventory, current platform/architecture and hashed native evidence. Import does not install into, rewrite or add a receipt inside the immutable runtime. A missing or incompatible receipt fails instead of silently rebuilding an accepted core.
 
-Desktop uses the sidebar, conversation, and on-demand details layout. The turn navigator has a 16px outer inset and a separate text gutter. Workbench, its browser IPC, BrowserSkill, and Open Design are excluded from the application. Plugin Market remains available without bundled Brain, Memory, or Evolution providers. User-installed plugins are managed through the Web profile; removing the application composition does not delete provider source or data.
+The helper is an independent Node `24.17.0` executable. `--helper-runtime /path/to/helper-runtime` selects a prepared directory; `--helper-cache /path/to/download-cache` selects the fixed-release download cache. An existing helper is verified read-only. Formal preparation requires its recorded native `--version` probe; unpacking a foreign-platform archive or an injected test probe does not meet that requirement.
 
-Usage Insights bounds each Host refresh to 12 seconds and cancels pending
-Session reads through their native persistence signals. Completed rows remain
-available as a partial snapshot, timed-out rows are reported as omitted, and the
-shared refresh always settles. A live Session's folded row remains process-local
-and is invalidated by its next Session event, so reopening the page avoids
-rescanning the same long log without persisting data ahead of its durable
-revision. The renderer exits a still-pending first-load skeleton after 15
-seconds and exposes Retry; a previously cached aggregate stays visible with a
-stale notice.
+The default output is `apps/desktop/.stage`. `--stage /path/to/dsh-desktop-stage` selects a new stage directory. Preparation refuses an existing stage and preserves it; use its packaging command or select another output. The stage includes `base-smoke.json`, the base composition descriptor, the official runtime and separately identified native adapters. The packaged `official-runtime`, base patch and composition descriptor remain physical under `app.asar.unpacked` so profile resolution can create real filesystem links; the independent helper is copied to the `desktop-helper` resource directory.
 
-The Desktop Settings shell now gives native, bundled, and profile-installed
-sections one 760px content measure and one page-title, intro, and subsection
-typography contract. Plugins still own their controls and domain layout, while
-their title size, top spacing, and content origin no longer jump according to
-source.
+`--build-official` explicitly runs the pinned source's official build and tarball-pack commands. It requires new package and descriptor outputs, then passes their result through the same verification. Use it only for a deliberately requested new official build; reuse reviewed input receipts for an already accepted core. For example:
 
-## System Update
+```bash
+pnpm run desktop:stage --build-official \
+  --official-source /path/to/clean-official-source \
+  --packages /path/to/new-official-packages \
+  --descriptor /path/to/new-official-inputs.json \
+  --runtime /path/to/new-local-runtime \
+  --stage /path/to/new/dsh-desktop-stage
+```
 
-Native update confirmation and the Windows tray use the operating-system locale, with Chinese and English copy owned by `src/locales.ts`.
+For the default `.stage`, invoke the matching native package script after preparation: `pnpm --filter @deepseek-ai/dsh-desktop run pack:dir` or `pack:dmg` on Intel macOS, `pack:setup` on Windows x64, and `pack:linux` on Linux x64. A custom `--stage` also requires the packaging invocation to select that directory. Do not replace this base stage with the full dependency or enhancement inventory. `desktop:full:stage:built` is the explicit historical full staging entry; a descriptor-less installed full application retains its existing launch selection.
 
-New sessions created with no project use `~/deepseek-temp/<sessionId>/` (under the Windows user profile on Windows). Their header records the working directory; generated files remain after reopening or deleting conversation history. Explicit projects and existing session locations stay unchanged.
+Windows `pack:win-dir` and `pack:setup` share the [Windows builder entry](../../scripts/windows-desktop-builder.ts). It retains `electron-builder.windows-derived.json` beside the original stage configuration and excludes it from the package. An existing derived file is preserved and rejected; another invocation requires a freshly prepared stage. The [packaging decision](../../.agents/notes/implemented/architecture/2026-09-13-reproducible-desktop-base-inputs.md#packaged-file-selection-and-permissions) explains the file filters and installed metadata permissions.
 
-System Update shows the running Desktop version and the included Harness core version separately. Checking the fixed official Harness release can report a newer core, but does not claim that the installed core has changed. The native process selects the matching Intel macOS DMG, Windows x64 Setup, or detected Linux x64 `.deb` / AppImage; an unknown Linux package format disables downloading and installation instead of guessing.
+## Plugin compatibility and recovery
 
-Downloads show received bytes against the manifest's exact size, including when the server omits Content-Length. Cancel removes only the active incomplete staging directory. Completed downloads require the expected release URL, byte count, SHA-256, native file format and physical-file checks; verification failure never enables installation. The renderer cannot provide a URL, filesystem path, checksum or command. A failed initial status read offers a status-only retry.
+General Settings provides **Plugin compatibility and recovery** in a separate native window; the startup failure page reaches the same controls and System Update without loading the failing Web graph. Choices take effect after an explicit native restart confirmation, which stops active generations and tools. Canonical `web` remains the CLI plugin installation target. Desktop owns only its derived `desktop-base` profile and `.desktop-compatibility` state under the same Harness home; original Session generations, configuration, package source and data are not deleted.
 
-On macOS, **Restart and install** prepares the existing protected replacement helper and exits only after preparation succeeds. On Windows, **Open installation wizard** first asks the user to save work and confirm closing the app. A short system bootstrap verifies an independent worker and closes before the app exits; the worker waits for the exact parent process, rechecks the package and launches visible Setup without silent-install arguments. Cancellation or failed preparation keeps the app open and revokes installation authority; an unconfirmed worker cleanup is reported as failure. Once a helper receives the handoff, the UI reports only that handoff, not successful installation or the external wizard's outcome.
+User enablement and compatibility health are separate. Attributable Bundle YAML failures require distinct observations before automatic pause; `DSH_DESKTOP_PLUGIN_FAILURE_CONFIRMATIONS` explicitly configures the native threshold from 1 to 64, default 2. A persisted threshold mismatch requires resolving the configuration while Desktop is closed. Network, authentication, rate-limit, timeout, cancellation and unknown core failures do not pause a Bundle. Restoration checks the currently installed package and an actual candidate Host before consuming a process-local validation receipt; it preserves a manual disabled choice.
 
-On Linux, **View installation package** opens only the verified package's containing directory and leaves the app running. It does not execute the package, invoke sudo, change executable bits, modify AppArmor or replace the app. Repeated viewing is supported; `.deb` and AppImage instructions remain distinct. Fully verified packages survive checks, errors and app exit; this updater does not garbage-collect them or delete user data. Windows versions without this update bridge require a manual Setup download to enter this update path.
+The derived profile uses `startup` patch reload and records the canonical preference. Relative inserted plugin names are anchored at their original patch path using official loaders. Unsafe dynamic references, conflicting root or preset references, malformed global inputs and foreign derived directories enter native recovery instead of silently dropping user configuration. Package-manager commands continue to target `--profile web`; editing `desktop-base` directly is unsupported. The [profile recovery decision](../../.agents/notes/implemented/architecture/2026-09-13-desktop-profile-recovery.md) states the scope and evidence limits.
 
-The [native update sources](src/update/) own package selection and installation authority; the [settings package](../../packages/client/ui-settings-system-update/README.md) owns localized presentation. Platform-specific manifests use separate names so generating a Windows or Linux manifest cannot replace the macOS manifest. The [update decision](../../.agents/notes/implemented/architecture/2026-09-09-platform-specific-desktop-updates.md) records validation and native-acceptance limits.
+## Linux and verification limits
 
+The Linux `.deb` declares `python3` among its dependencies. Update availability still requires native capability preflight. Missing AppImage capabilities do not authorize automatic replacement; the verified-package and manual-install behavior remains subject to the [native update implementation](src/update/). A prepared helper or stage does not establish Linux update or installation acceptance.
+
+## Plugin entries
+
+From 0.6.0, the planned standard distribution pairs the base Desktop with the independent Enhance plugin. Other plugins are obtained from their GitHub projects. The base stage retains its minimal composition; default plugin provisioning is a separate delivery task and is not established by this source migration.
+
+The current integration target is Settings → Plugins, with an installed list and the existing marketplace. Every installed user plugin must be visible with its version, compatibility status and configuration or usage entry. Statistics and model helpers retain their ordinary feature entries. This path is still being completed; see the [component map](../../README.md#plugins).
+
+## Published packages and source status
+
+Use [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases) for accepted installers. The imported development source is Desktop 0.6.0; the published release is 0.5.8. A copied source tree, prepared stage or isolated fixture is not a completed installation or update. The [migration record](../../docs/desktop-source-migration.md) separates those states.
+
+<a id="icon-provenance"></a>
 ## Icon provenance
 
-`assets/icon-source.png` is the exact 1254×1254 RGBA master accepted for the
-macOS and Windows applications on 2026-08-14. It retains the transparent
-corners, cream rounded plate, blue inset, and white DeepSeek whale without
-replacement or visual modification.
+Application and tray assets are maintained under [assets](assets/). Preserve their existing attribution and the repository [license](../../LICENSE).
 
-Source SHA-256:
-`1fe0c2a3b6475c451f86dc999e97de33e4aabace244e35a284d1c5e162b0672a`
+## Dev Note
 
-`assets/icon.icns` is a local format conversion of that source into the
-standard macOS 16–1024 px iconset, and `assets/icon.ico` is the Windows
-container generated from the same master. Their SHA-256 values are
-`d453a58a11cb5247f83f3b220bca2c6f0f216f07a6c7dfbb4998bb9f9f72c54e`
-and `2331df774341ce7796c1c0d06e708ae37bbde84a53e4edd2741659bbe8d4e4ae`.
-
-## Build
-
-Build each release on its native operating system. Platform-independent unit tests and staging checks can run elsewhere, but native modules make a cross-built installer insufficient release evidence.
-
-### Intel macOS
-
-```bash
-pnpm run desktop:pack
-pnpm run desktop:dmg
-```
-
-Both commands target Intel (`x86_64`) macOS. `desktop:pack` produces a directly launchable `.app`; `desktop:dmg` produces the install image.
-
-### Windows x64
-
-```bash
-pnpm run desktop:setup
-```
-
-Run this command on native Windows x64. The Setup name is derived from `apps/desktop/package.json`; the output is `apps/desktop/release/DeepSeek-Harness-Setup-<version>-win-x64.exe`. Production staging uses a dedicated short directory on Windows CI to keep native MSVC rebuilds below legacy path limits; all release output is written to `apps/desktop/release`.
-
-The Windows Setup is a visible assisted, per-user NSIS installer. A normal double-click walks through Welcome, installation directory, expanded progress/details, and Finish pages. During installation, the progress bar follows native extraction and installation work, with visible phase text and populated details. Silent installation remains available. It needs no administrator elevation, Node.js, pnpm, terminal, browser, or fixed port; it creates desktop and Start menu shortcuts and offers to launch DeepSeek Harness from the finish page. Uninstall removes the application and shortcuts while preserving Harness and Electron user data.
-
-### Ubuntu 22.04 / 24.04 x64
-
-Run `pnpm run desktop:linux` on native Ubuntu 22.04 x64 with Clang 15 and musl-tools installed. It builds and probes the Landlock launcher, stages the runtime, and produces `DeepSeek-Harness-<version>-linux-x64.deb` and `.AppImage` under `apps/desktop/release`. The Linux workflow builds once on 22.04 and tests the identical package bytes on both Ubuntu versions. ARM64 and Wayland acceptance are outside this target.
-
-Install the `.deb` with `sudo apt install ./DeepSeek-Harness-<version>-linux-x64.deb`. The package installs its desktop entry, icons, dependencies and per-application AppArmor policy. Uninstalling preserves Harness settings, Sessions and Electron user data.
-
-AppImage requires `lsof`, FUSE 2 (`libfuse2` on 22.04 or `libfuse2t64` on 24.04) and executable permission. Install `lsof` with `sudo apt install lsof` for startup checks against existing Harness writers. On 24.04, install the exact-path user-namespace policy with `sudo bash scripts/linux-desktop-appimage-policy.sh install /absolute/path/DeepSeek-Harness-<version>-linux-x64.AppImage` before launching. Use the helper from the same source revision as the package; its path accepts ASCII letters, digits, spaces, slash, dot, underscore and hyphen. Moving or replacing the image with a different filename requires removing the old path's policy with `remove` and installing the new one. The launcher rejects sandbox-disabling flags; the helper leaves the system-wide user-namespace restriction enabled. System Update downloads and verifies the matching Linux package; installation remains manual.
-
-The application uses an operating-system-assigned loopback port and does not reserve port 65000.
-
-Release artifacts are accompanied by ASCII/LF `.sha256` files. Treat the
-[public GitHub Release](https://github.com/Missher12/deepseek-harness-desktop/releases)
-and its matching checksum asset as the authority for each artifact's exact bytes.
-
-## Packaged verification
-
-For Intel macOS, build the directory app and run:
-
-```bash
-pnpm exec vitest run apps/desktop/tests/packaged-smoke.spec.ts --config vitest.config.ts
-```
-
-For Windows, build the Setup on native Windows and run:
-
-```powershell
-./scripts/windows-desktop-installer-ui-smoke.ps1 `
-  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.5.4-win-x64.exe
-./scripts/windows-desktop-setup-smoke.ps1 `
-  -SetupPath apps/desktop/release/DeepSeek-Harness-Setup-0.5.4-win-x64.exe
-```
-
-Optional macOS interaction timing uses the [native startup runner](tests/macos-startup-scenarios.spec.ts). Supply an owned read-only mount under `/private/tmp/dsh-macos-startup-mount-*`, `DSH_MACOS_STARTUP_EXECUTABLE`, verified `DSH_MACOS_STARTUP_ASAR_SHA256` and `DSH_MACOS_STARTUP_SOURCE_SHA`, and `DSH_MACOS_STARTUP_REPETITIONS=1` or `10`. It writes sanitized observations under `.artifacts/desktop-057-startup/fresh-*`; [measurement limits](../../.agents/notes/implemented/architecture/2026-08-18-overlapped-desktop-startup.md) apply.
-
-The packaged smokes use an external temporary working directory, temporary Electron data, and temporary `DSH_HOME`. Native macOS and Windows acceptance verifies the preload bridge, preference round-trips, hide-on-close with the Harness still running, window restoration, the three-column workspace, exact ordinary and archived Session IDs in the real system clipboard without opening, restoring, deleting, sending, or starting an Agent, peer-session send/reply metadata, ordinary no-card rendering and rejection side effects, the Add menu, the absence of the removed Workbench, the down-first adaptive reasoning slider and persisted effort, visible Canvas output with the optional character off, all 371 Usage particles plus daily/weekly/cumulative hover semantics, stable Plugin Market category order plus separated search/filter/category geometry, random listener, and complete process cleanup after native exit. The settings smoke verifies the real six-operation update bridge, exact running versions and native platform presentation. Real installer handoff and replacement require separate native acceptance; a visible settings section or helper preflight is not that proof. Tool-level acceptance separately proves bidirectional Agent wake/reply behavior, exact receipt-bound waiting, collaboration stop, and matching-reply refusal without making an external model request. Desktop staging additionally requires exactly one `dshmarket@1.10.1`, coherent compact and category-rail markers in its source, Client bundle, and source map, the Host self-protection marker, immutable Desktop patches, plugin-runtime providers, packaged pnpm bin, and the assisted-installer include. The Windows UI smoke walks the visible Welcome, destination, expanded progress/details, and Finish pages, while the lifecycle smoke proves the same feature behavior alongside silent install, shortcut creation, real clipboard copy, uninstall cleanup, and data preservation. Native Windows CI derives the artifact name from the package version, builds the Setup, runs both smokes, records SHA-256, and uploads both exact files.
-
-Local artifacts are unsigned. macOS may require **Open** from Finder's context menu; Windows SmartScreen may require confirmation of the unknown publisher. Removing those prompts requires trusted platform signing credentials.
+The validation source and platform workflows were moved into the main repository without a new installer release. Existing Windows and Ubuntu native failures remain open; this migration does not rerun or certify them. Earlier full-composition descriptions remain available in Git history and do not define the base product.

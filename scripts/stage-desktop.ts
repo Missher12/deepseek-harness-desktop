@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import * as yaml from 'js-yaml'
+import { stageDesktopBase } from './stage-desktop-base.ts'
 const DESKTOP_PACKAGE = '@deepseek-ai/dsh-desktop'
 const SESSION_MESSENGER_PACKAGE = '@deepseek-ai/dsh-session-messenger'
 const SESSION_MESSENGER_ROW_ID = 'session-messenger'
@@ -30,6 +31,11 @@ export interface DesktopStageResult {
   stageDir: string
   validatedFiles: readonly string[]
 }
+
+/** Explicit runtime input selected for one staging operation. */
+export type DesktopStageComposition =
+  | { kind: 'full' }
+  | { kind: 'base'; runtimeDirectory: string; helperRuntimeDirectory: string }
 
 function isMissing(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT'
@@ -300,13 +306,18 @@ export function validateDesktopProductPatch(content: string): void {
  * @param repositoryRoot - Exact DeepSeek Harness repository root.
  * @param dependencies - Injectable filesystem and command seams.
  * @param requestedStageDir - Optional validated stage directory override.
+ * @param composition - Full composition or an independently verified official base runtime.
  * @returns Validated stage directory and repository-portable file list.
  */
 export async function stageDesktop(
   repositoryRoot: string,
   dependencies: StageDesktopDependencies = realDependencies,
   requestedStageDir?: string,
+  composition: DesktopStageComposition = { kind: 'full' },
 ): Promise<DesktopStageResult> {
+  if (composition.kind === 'base') {
+    return stageDesktopBase(repositoryRoot, composition.runtimeDirectory, requestedStageDir, composition.helperRuntimeDirectory)
+  }
   const root = resolve(repositoryRoot)
   const desktopDir = resolve(root, 'apps', 'desktop')
   const defaultStageDir = resolve(desktopDir, '.stage')
@@ -463,10 +474,23 @@ export async function stageDesktop(
 const invokedPath = process.argv[1]
 if (invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invokedPath)).href) {
   try {
+    const kind = process.env.DSH_DESKTOP_COMPOSITION ?? 'full'
+    if (kind !== 'full' && kind !== 'base') throw new Error('Unknown Desktop staging composition.')
+    const runtimeDirectory = process.env.DSH_DESKTOP_BASE_RUNTIME
+    const helperRuntimeDirectory = process.env.DSH_DESKTOP_HELPER_RUNTIME
+    if (kind === 'base' && (runtimeDirectory === undefined || !isAbsolute(runtimeDirectory))) {
+      throw new Error('Base staging requires an absolute DSH_DESKTOP_BASE_RUNTIME directory.')
+    }
+    if (kind === 'base' && (helperRuntimeDirectory === undefined || !isAbsolute(helperRuntimeDirectory))) {
+      throw new Error('Base staging requires an absolute DSH_DESKTOP_HELPER_RUNTIME directory.')
+    }
     const result = await stageDesktop(
       resolve(import.meta.dirname, '..'),
       realDependencies,
       process.env.DSH_DESKTOP_STAGE_DIR,
+      kind === 'base' ? {
+        kind, runtimeDirectory: runtimeDirectory as string, helperRuntimeDirectory: helperRuntimeDirectory as string,
+      } : { kind },
     )
     console.log(`desktop stage: ${result.validatedFiles.length} required file(s) validated in ${result.stageDir}`)
   } catch (error) {

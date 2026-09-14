@@ -19,6 +19,8 @@ jobs:
     name: build, install, launch, and uninstall
     runs-on: windows-2025
     timeout-minutes: 60
+    env:
+      DSH_DESKTOP_OFFICIAL_SOURCE: ${{ github.workspace }}/official
     defaults:
       run:
         working-directory: s
@@ -28,6 +30,12 @@ jobs:
           path: s
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set Desktop temporary directories
+        shell: pwsh
+        run: |
+          "DSH_DESKTOP_STAGE_DIR=$(Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage')" >> $env:GITHUB_ENV
+          "DSH_DESKTOP_BASE_WORK=$(Join-Path $env:RUNNER_TEMP 'desktop-base-inputs')" >> $env:GITHUB_ENV
 
       - name: Verify exact source revision
         id: source
@@ -39,6 +47,14 @@ jobs:
             throw "source revision mismatch: expected $expected, got $actual"
           }
           "sha=$actual" >> $env:GITHUB_OUTPUT
+
+      - name: Checkout the pinned official build input
+        uses: actions/checkout@v6
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: fb2c4b9e698e30edb738bca4cf0618587db7d203
+          path: official
+          persist-credentials: false
 
       - name: Parse Windows Desktop PowerShell smokes
         shell: pwsh
@@ -103,6 +119,8 @@ jobs:
           packages/boot/app-boot/tests/profile.spec.ts
           apps/desktop/tests/packaged-smoke-helpers.spec.ts
           scripts/windows-desktop-runtime-evidence.spec.ts
+          scripts/windows-desktop-legacy-runtime.spec.ts
+          scripts/windows-desktop-builder.spec.ts
           scripts/windows-desktop-installer-ui-smoke.spec.ts
           scripts/windows-desktop-update-handoff.spec.ts
           apps/desktop/tests/preload-api.spec.ts
@@ -116,6 +134,22 @@ jobs:
           packages/client/ui-settings-system-update
           --config vitest.config.ts
           --reporter=verbose
+
+      - name: Prepare the fixed Windows 0.5.5 legacy runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sevenZip = (Get-Command 7z.exe -ErrorAction Stop).Source
+          $legacyRoot = Join-Path $env:RUNNER_TEMP ('wl' + [guid]::NewGuid().ToString('N').Substring(0, 6))
+          New-Item -ItemType Directory -Path $legacyRoot | Out-Null
+          $asset = Join-Path $legacyRoot 'DeepSeek-Harness-Setup-0.5.5-win-x64.exe'
+          Invoke-WebRequest -Uri 'https://github.com/Missher12/deepseek-harness-desktop/releases/download/desktop-v0.5.5/DeepSeek-Harness-Setup-0.5.5-win-x64.exe' -OutFile $asset
+          $prepared = Join-Path $legacyRoot 'prepared'
+          pnpm exec tsx scripts/windows-desktop-legacy-runtime.ts $asset $prepared $sevenZip
+          if ($LASTEXITCODE -ne 0) { throw 'Verified Windows legacy runtime preparation failed.' }
+          $descriptor = Join-Path $prepared 'legacy-runtime.json'
+          if (-not (Test-Path -LiteralPath $descriptor -PathType Leaf)) { throw 'Legacy runtime descriptor was not generated.' }
+          "DSH_WINDOWS_LEGACY_RUNTIME_INPUT=$descriptor" >> $env:GITHUB_ENV
 
       - name: Resolve Desktop release metadata
         id: desktop
@@ -132,9 +166,13 @@ jobs:
       - name: Build the assisted Windows Setup
         shell: pwsh
         run: |
-          $env:DSH_DESKTOP_STAGE_DIR = Join-Path $env:RUNNER_TEMP 'dsh-desktop-stage'
-          pnpm run desktop:stage
-          pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --projectDir "$env:DSH_DESKTOP_STAGE_DIR" --config "$env:DSH_DESKTOP_STAGE_DIR\electron-builder.yml" --win nsis --x64
+          # This fresh hosted runner has no supplied official package receipt.
+          # The explicit build path verifies the pinned clean source first.
+          pnpm exec tsx scripts/prepare-desktop-base.ts --official-source "$env:DSH_DESKTOP_OFFICIAL_SOURCE" --build-official --work-dir "$env:DSH_DESKTOP_BASE_WORK" --stage "$env:DSH_DESKTOP_STAGE_DIR"
+          if ($LASTEXITCODE -ne 0) { throw 'Controlled Desktop base preparation failed.' }
+          $builderEntry = [System.IO.Path]::GetFullPath('scripts/windows-desktop-builder.ts')
+          pnpm --filter @deepseek-ai/dsh-desktop exec node $builderEntry --projectDir "$env:DSH_DESKTOP_STAGE_DIR" --config "$env:DSH_DESKTOP_STAGE_DIR\electron-builder.yml" --win nsis --x64
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop base Setup build failed.' }
           $artifact = '${{ steps.desktop.outputs.artifact }}'
           $builtArtifact = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) "release\$artifact"
           $workspaceArtifact = Join-Path 'apps/desktop/release' $artifact
@@ -142,8 +180,9 @@ jobs:
           Copy-Item -LiteralPath $builtArtifact -Destination $workspaceArtifact
           $unpacked = Join-Path (Split-Path -Parent $env:DSH_DESKTOP_STAGE_DIR) 'release\win-unpacked'
           $inventoryPath = [System.IO.Path]::GetFullPath('apps/desktop/release/desktop-package-staged.json')
-          $manifestPath = [System.IO.Path]::GetFullPath('apps/desktop/package.json')
-          pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package --output $inventoryPath --policy windows-x64 --manifest $manifestPath $unpacked
+          $manifestPath = Join-Path $env:DSH_DESKTOP_STAGE_DIR 'official-runtime/node_modules/@deepseek-ai/dsh/package.json'
+          $baseDescriptor = Join-Path $env:DSH_DESKTOP_STAGE_DIR 'base-smoke.json'
+          pnpm --filter '@deepseek-ai/dsh-desktop' run inventory:package --output $inventoryPath --composition base --descriptor $baseDescriptor --policy windows-x64 --manifest $manifestPath $unpacked
           if ($LASTEXITCODE -ne 0) { throw "Staged package inventory failed with exit code $LASTEXITCODE." }
           $setupFile = Get-Item -LiteralPath $workspaceArtifact
           $setupEvidence = [ordered]@{
@@ -170,30 +209,66 @@ jobs:
           import { createHash } from 'node:crypto'
           import { spawnSync } from 'node:child_process'
           import { createReadStream } from 'node:fs'
-          import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+          import { mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
           import { createRequire } from 'node:module'
-          import { isAbsolute, join, relative, resolve } from 'node:path'
+          import { isAbsolute, join, relative, resolve, sep } from 'node:path'
           import { pathToFileURL } from 'node:url'
 
           const release = join(process.env.RUNNER_TEMP, 'release')
           const resources = join(release, 'win-unpacked', 'resources')
           const unpacked = join(resources, 'app.asar.unpacked')
+          async function resolvePackagedBaseRuntime(resources) {
+            const root = await realpath(join(resources, 'app.asar.unpacked'))
+            async function contained(parent, path) {
+              const physical = await realpath(path)
+              const local = relative(parent, physical)
+              assert(local && !isAbsolute(local) && local !== '..' && !local.startsWith(`..${sep}`),
+                'Base runtime path is outside its installed owner')
+              return physical
+            }
+            const descriptor = JSON.parse(await readFile(await contained(root, join(root, 'desktop-composition.json')), 'utf8'))
+            assert.deepEqual(Object.keys(descriptor).sort(), ['harnessVersion', 'kind', 'officialSha', 'schema'])
+            assert.equal(descriptor.schema, 1)
+            assert.equal(descriptor.kind, 'base')
+            assert.equal(descriptor.officialSha, 'fb2c4b9e698e30edb738bca4cf0618587db7d203')
+            assert.equal(descriptor.harnessVersion, '0.1.5-rc.2')
+            const runtime = await contained(root, join(root, 'official-runtime'))
+            assert((await stat(runtime)).isDirectory(), 'Base runtime must be a physical directory')
+            const provenance = JSON.parse(await readFile(await contained(runtime, join(runtime, 'provenance.json')), 'utf8'))
+            assert.equal(provenance.sourceSha, descriptor.officialSha)
+            assert.equal(provenance.harnessVersion, descriptor.harnessVersion)
+            const manifest = JSON.parse(await readFile(await contained(runtime, join(runtime, 'node_modules/@deepseek-ai/dsh/package.json')), 'utf8'))
+            assert.equal(manifest.name, '@deepseek-ai/dsh')
+            assert.equal(manifest.version, descriptor.harnessVersion)
+            for (const entry of ['node_modules/@deepseek-ai/dsh/lib/bin.js',
+              'node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/worker.cjs']) {
+              assert((await stat(await contained(runtime, join(runtime, entry)))).isFile(), 'Required base runtime entry is not a file')
+            }
+            return runtime
+          }
+          const runtime = await resolvePackagedBaseRuntime(resources)
+          assert.equal(typeof process.env.DSH_DESKTOP_OFFICIAL_SOURCE, 'string', 'Missing pinned official build input')
+          const officialSource = resolve(process.env.DSH_DESKTOP_OFFICIAL_SOURCE)
           async function fingerprint() {
-            const native = (await readdir(unpacked, { recursive: true }))
-              .filter(name => name.endsWith('.node')).sort()
-            assert(native.length > 0, 'Packaged native binaries are missing')
+            const physical = (await readdir(resources, { recursive: true, withFileTypes: true }))
+              .filter(entry => entry.isFile()).map(entry => join(entry.parentPath, entry.name)).sort()
+            assert(physical.some(path => path.endsWith('.node')), 'Packaged native binaries are missing')
+            assert(physical.includes(join(resources, 'app.asar')), 'Packaged ASAR is missing')
             const files = [
               join('apps/desktop/release', process.env.ARTIFACT),
               join(release, process.env.ARTIFACT),
               join(release, 'win-unpacked', 'DeepSeek Harness.exe'),
-              join(resources, 'app.asar'),
-              ...native.map(name => join(unpacked, name)),
+              ...physical,
             ]
-            return Promise.all(files.map(async file => {
-              const hash = createHash('sha256')
-              for await (const chunk of createReadStream(file)) hash.update(chunk)
-              return [file, hash.digest('hex')]
-            }))
+            const result = []
+            for (let index = 0; index < files.length; index += 32) {
+              result.push(...await Promise.all(files.slice(index, index + 32).map(async file => {
+                const hash = createHash('sha256')
+                for await (const chunk of createReadStream(file)) hash.update(chunk)
+                return [file, hash.digest('hex')]
+              })))
+            }
+            return result
           }
 
           assert.equal(process.platform, 'win32', 'System-path validation requires Windows')
@@ -359,11 +434,11 @@ jobs:
 
           const before = await fingerprint()
           try {
-            await verifyFlockEntry(resolve('packages/session/session-persistence-jsonl/package.json'), resolve('.'))
-            await verifyFlockEntry(join(unpacked, 'node_modules/@deepseek-ai/dsh-session-persistence-jsonl/package.json'), unpacked)
+            await verifyFlockEntry(join(officialSource, 'packages/session/session-persistence-jsonl/package.json'), officialSource)
+            await verifyFlockEntry(join(runtime, 'node_modules/@deepseek-ai/dsh-session-persistence-jsonl/package.json'), runtime)
             // Execute the actual emitted Windows lease primitive, not a second semaphore implementation.
             const { acquireLockHandleWin32, releaseLockHandleWin32 } = await import(pathToFileURL(
-              resolve('packages/session/session-persistence-jsonl/lib/types/win32.js'),
+              join(officialSource, 'packages/session/session-persistence-jsonl/lib/types/win32.js'),
             ).href)
             const directory = await mkdtemp(join(process.env.RUNNER_TEMP, 'dsh-host-system-'))
             let handle
@@ -389,7 +464,7 @@ jobs:
               const executable = await realpath(join(release, 'win-unpacked', 'DeepSeek Harness.exe'))
               const electron = JSON.parse(await readFile('apps/desktop/package.json', 'utf8')).devDependencies.electron
               const reportPath = join(jobDirectory, 'result.json')
-              const config = { executable, electron, unpacked, directory: jobDirectory, report: reportPath }
+              const config = { executable, electron, unpacked: runtime, directory: jobDirectory, report: reportPath }
               const script = join(jobDirectory, 'probe.mjs')
               await writeFile(script, describeFailure.toString() + '\n(' + verifyEmbeddedWindowsJob.toString() + ')('
                 + JSON.stringify(config) + ', describeFailure).catch(error => { '
@@ -560,17 +635,9 @@ jobs:
           -InstallationEvidencePath apps/desktop/release/desktop-windows-install-evidence.json
           -VisualEvidenceRoot apps/desktop/release/windows-native-visual-evidence
           -PackagePolicy windows-x64
-          -PackageManifestPath apps/desktop/package.json
-
-      - name: Verify portable Session workspace receipt
-        shell: pwsh
-        run: |
-          @'
-          import { verifySessionWorkspaceReceipt } from './scripts/desktop-session-workspace-receipt.ts'
-          await verifySessionWorkspaceReceipt('apps/desktop/release/desktop-smoke-session-workspaces-win32.json')
-          console.log('Portable Session workspace receipt verified: two directories, five writes, preserved V2 and reopened V3')
-          '@ | node --import tsx/esm --input-type=module
-          if ($LASTEXITCODE -ne 0) { throw 'Session workspace receipt validation failed.' }
+          -PackageManifestPath "${{ env.DSH_DESKTOP_STAGE_DIR }}/official-runtime/node_modules/@deepseek-ai/dsh/package.json"
+          -SmokeDescriptorPath "${{ env.DSH_DESKTOP_STAGE_DIR }}/base-smoke.json"
+          -LegacyRuntimeInputPath "$env:DSH_WINDOWS_LEGACY_RUNTIME_INPUT"
 
       - name: Preserve portable runtime evidence
         uses: actions/upload-artifact@v7
@@ -589,7 +656,6 @@ jobs:
             s/apps/desktop/release/windows-installer-ui-evidence/installer-progress.json
             s/apps/desktop/release/windows-installer-ui-baseline-0.5.6/installer-progress.json
             s/apps/desktop/release/windows-update-handoff-evidence/handoff.json
-            s/apps/desktop/release/desktop-smoke-session-workspaces-win32.json
           if-no-files-found: error
           retention-days: 14
 

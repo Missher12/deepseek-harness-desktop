@@ -25,14 +25,15 @@ type RuntimeEvidenceModule = {
     readonly warm: { readonly medianImprovementPercent: number; readonly p95RegressionPercent: number }
   }
   assertPortableMacEvidence?: (value: unknown) => void
+  assertMacHistoricalVersion?: (role: 'baseline' | 'candidate', actualVersion: string) => void
 }
 
 const runtime = runtimeEvidenceModule as RuntimeEvidenceModule
 
-function loadReleaseWorkflow(): Record<string, unknown> {
-  const loaded: unknown = yaml.load(readFileSync(resolve(repositoryRoot, '.github/workflows/desktop-release.yml'), 'utf8'))
+function loadNativeWorkflow(): Record<string, unknown> {
+  const loaded: unknown = yaml.load(readFileSync(resolve(repositoryRoot, '.github/workflows/macos-desktop.yml'), 'utf8'))
   if (loaded === null || typeof loaded !== 'object' || Array.isArray(loaded)) {
-    throw new TypeError('Desktop release workflow must be an object')
+    throw new TypeError('Mac native workflow must be an object')
   }
   return loaded as Record<string, unknown>
 }
@@ -100,18 +101,11 @@ describe('macOS Desktop runtime evidence', () => {
     }
   })
 
-  it('collects ten cold and ten warm launches with all six optional runtime details', () => {
+  it('keeps ten cold and ten warm samples confined to the optional historical comparison', () => {
     const source = readFileSync(runtimeEvidence, 'utf8')
     expect(source).toContain('const SAMPLE_COUNT = 10')
     expect(source).toContain("const BASELINE_VERSION = '0.5.3'")
     expect(source).toContain("const CANDIDATE_VERSION = '0.5.5'")
-    const desktopManifest: unknown = JSON.parse(readFileSync(
-      new URL('../apps/desktop/package.json', import.meta.url), 'utf8',
-    ))
-    expect(desktopManifest).toMatchObject({
-      name: '@deepseek-ai/dsh-desktop',
-      version: '0.5.5',
-    })
     expect(source).toContain("sampleKind: 'cold' | 'warm' | 'warm-prime'")
     expect(source).toContain('PROFILE_BOOT_DETAIL_PHASES')
     expect(source).toContain('hdiutil')
@@ -135,21 +129,28 @@ describe('macOS Desktop runtime evidence', () => {
     expect(source).toContain('await detachMountPoint(mountPoint)')
   })
 
-  it('wires only bounded Mac evidence into the release job', () => {
-    const workflow = loadReleaseWorkflow()
-    const jobs = workflow.jobs as Record<string, { steps?: unknown[] }>
-    const mac = jobs.mac
-    if (!Array.isArray(mac?.steps)) throw new TypeError('Mac release job must define steps')
-    const serialized = JSON.stringify(mac)
+  it('rejects a current release passed to the historical candidate role', () => {
+    const check = runtime.assertMacHistoricalVersion
+    expect(check).toBeTypeOf('function')
+    if (check === undefined) return
+    expect(() => { check('baseline', '0.5.3') }).not.toThrow()
+    expect(() => { check('candidate', '0.5.5') }).not.toThrow()
+    expect(() => { check('candidate', '0.6.0') }).toThrow(/historical/i)
+    expect(() => { check('baseline', '0.5.5') }).toThrow(/historical/i)
+  })
 
-    expect(serialized).toContain('desktop-v0.5.3')
-    expect(serialized).toContain('DeepSeek-Harness-0.5.3-mac-x64.dmg')
-    expect(serialized).toContain('macos-desktop-runtime-evidence.ts')
+  it('keeps the Mac native job read-only and independent of the historical publisher', () => {
+    const workflow = loadNativeWorkflow()
+    expect(workflow.permissions).toMatchObject({ contents: 'read' })
+    const jobs = workflow.jobs as Record<string, { steps?: unknown[] }>
+    const mac = jobs['build-native-smoke']
+    if (!Array.isArray(mac?.steps)) throw new TypeError('Mac native job must define steps')
+    const serialized = JSON.stringify(mac)
+    expect(serialized).toContain('CANDIDATE_SHA')
     expect(serialized).toContain('macos-native-visual-smoke.spec.ts')
-    expect(serialized).toContain('macos-startup-summary.json')
-    expect(serialized).toContain('macos-native-visual-evidence')
-    expect(serialized).not.toContain('lifecycle.log')
-    expect(serialized).not.toContain('cpuprofile')
+    expect(serialized).toContain('macos-native-evidence')
+    expect(serialized).not.toContain('desktop-v0.5.3')
+    expect(serialized).not.toContain('gh release upload')
     expect(serialized).not.toContain('/Applications/')
   })
 

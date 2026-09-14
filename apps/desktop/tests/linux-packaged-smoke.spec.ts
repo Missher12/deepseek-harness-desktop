@@ -6,7 +6,10 @@ import { promisify } from 'node:util'
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright'
 import { describe, expect, it } from 'vitest'
 import { assertLinuxSandbox } from '../../../scripts/linux-desktop-sandbox.ts'
-import { runPackagedDesktopSmoke } from './packaged-smoke.ts'
+import { validateDesktopBaseSmokeDescriptor } from '../../../scripts/desktop-base-contract.ts'
+import { isDesktopUpdateSnapshot } from '../src/update/contracts.ts'
+import { runPackagedDesktopBaseSmoke } from './packaged-base-smoke.ts'
+import { completeLinuxCoreNative } from './linux-core-native.ts'
 import { linuxDescendants as descendants, linuxDesktopEnvironment, prepareLinuxDesktopEnvironment, processAlive as alive } from './linux-writer-fixture.ts'
 import type {} from '../src/preload-api.ts'
 
@@ -19,37 +22,32 @@ async function verifyNativeUpdateStatus(page: Page, directory: string): Promise<
   if (expectedPackageFormat !== 'deb' && expectedPackageFormat !== 'appimage') {
     throw new Error('Linux native package format expectation is required')
   }
-  const metadata = JSON.parse(await readFile(new URL('../update-metadata.json', import.meta.url), 'utf8')) as {
-    desktopVersion: unknown
-    harnessVersion: unknown
-  }
-  if (typeof metadata.desktopVersion !== 'string' || typeof metadata.harnessVersion !== 'string') {
-    throw new Error('Linux candidate version metadata is invalid')
-  }
+  const descriptorPath = process.env.DSH_DESKTOP_SMOKE_DESCRIPTOR
+  if (descriptorPath === undefined) throw new Error('Linux base descriptor is required')
+  const metadata = validateDesktopBaseSmokeDescriptor(JSON.parse(await readFile(descriptorPath, 'utf8')) as unknown)
   const expected = {
     platform: 'linux', arch: 'x64', packageFormat: expectedPackageFormat,
-    installAction: 'reveal-package', supportReason: null,
     runningDesktop: metadata.desktopVersion, includedHarness: metadata.harnessVersion,
   }
-  const readStatus = async () => await page.evaluate(async () => {
-    if (typeof window.dshDesktop?.getUpdateStatus !== 'function') throw new Error('Native update status bridge is missing')
-    const value: unknown = await window.dshDesktop.getUpdateStatus()
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Native update status is invalid')
-    const status = value as Record<string, unknown>
-    // Retain only these non-sensitive observations from the real, unmodified bridge.
+  const readStatus = async () => {
+    const value: unknown = await page.evaluate(async () => {
+      if (typeof window.dshDesktop?.getUpdateStatus !== 'function') throw new Error('Native update status bridge is missing')
+      return await window.dshDesktop.getUpdateStatus()
+    })
+    if (!isDesktopUpdateSnapshot(value)) throw new Error('Native update status differs from the shared contract')
     return {
-      phase: status.phase, platform: status.platform, arch: status.arch,
-      packageFormat: status.packageFormat, installAction: status.installAction,
-      supportReason: status.supportReason, runningDesktop: status.runningDesktop,
-      includedHarness: status.includedHarness,
+      phase: value.phase, platform: value.platform, arch: value.arch,
+      packageFormat: value.packageFormat, installAction: value.installAction,
+      supportReason: value.supportReason, runningDesktop: value.runningDesktop,
+      includedHarness: value.includedHarness,
     }
-  })
+  }
   let observed: Awaited<ReturnType<typeof readStatus>> | undefined
   await expect.poll(async () => {
     observed = await readStatus()
     return {
       ...observed,
-      detecting: observed.phase === 'detecting' || observed.supportReason === 'detecting',
+      detecting: observed.supportReason === 'detecting',
     }
   }, { timeout: 30_000 }).toMatchObject({ ...expected, detecting: false })
   expect(typeof observed?.phase).toBe('string')
@@ -164,19 +162,26 @@ async function verifyNativeSandbox(target: string): Promise<void> {
 
 describe('Ubuntu packaged application', () => {
   it.skipIf(process.platform !== 'linux' || executable === undefined)(
-    'keeps kernel sandboxing and passes controlled-model desktop lifecycle',
+    'keeps kernel sandboxing and completes core history readback with recovery explicitly untested',
     async () => {
       if (executable === undefined || evidenceRoot === undefined) throw new Error('Linux native inputs are missing')
       if (expectedPackageFormat !== 'deb' && expectedPackageFormat !== 'appimage') throw new Error('Linux native package format expectation is required')
       expect(process.getuid?.()).not.toBe(0)
       await verifyNativeSandbox(executable)
-      await runPackagedDesktopSmoke(executable, 'linux')
+      const base = await runPackagedDesktopBaseSmoke(executable, 'linux')
+      const descriptorPath = process.env.DSH_DESKTOP_SMOKE_DESCRIPTOR
+      const legacyPath = process.env.DSH_DESKTOP_SMOKE_LEGACY_FIXTURE
+      if (descriptorPath === undefined || legacyPath === undefined) throw new Error('Linux core continuation inputs are missing')
+      const receipt = await completeLinuxCoreNative(executable, base, descriptorPath, legacyPath)
+      if (receipt.outcome !== 'core-passed' || receipt.checks.pauseRecovery?.status !== 'not-run') throw new Error('Linux core receipt scope differs')
       await writeFile(join(evidenceRoot, 'native.json'), JSON.stringify({
         schemaVersion: 1, platform: 'linux-x64', display: 'X11/Xvfb',
-        controlledProvider: 'loopback fixture', sharedFeatureSmoke: 'passed',
+        controlledProvider: 'loopback fixture', composition: 'base',
+        baseReceiptPath: base.receiptPath, baseOutcome: receipt.outcome,
+        acceptanceScope: 'core', unverifiedChecks: ['pauseRecovery'],
         processTreeRemaining: 0, wayland: 'not-tested',
       }, null, 2) + '\n')
     },
-    360_000,
+    540_000,
   )
 })

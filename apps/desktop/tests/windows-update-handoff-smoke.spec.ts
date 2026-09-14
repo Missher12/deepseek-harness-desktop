@@ -1,11 +1,10 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { promisify } from 'node:util'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import { logPath } from '@deepseek-ai/dsh-session-persistence-jsonl/src/format.ts'
 import { _electron as electron, type ElectronApplication, type JSHandle } from 'playwright'
 import { describe, expect, it } from 'vitest'
 import { desktopUpdateAssetName, type VerifiedDesktopUpdate } from '../src/update/release.ts'
@@ -13,6 +12,7 @@ import { verifyDesktopUpdateFile } from '../src/update/verification.ts'
 import { createWindowsUpdateCommand, stopWindowsUpdateWorker } from '../src/update/windows-installer.ts'
 import { createWindowsUpdateSignal, decideWindowsUpdateSignal, readWindowsUpdateSignal, type WindowsUpdateWorker } from '../src/update/windows-signal.ts'
 import { bootstrapProgress } from './windows-update-preflight.ts'
+import type { DesktopApi } from '../src/preload-api.ts'
 
 const execFileAsync = promisify(execFile)
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
@@ -36,6 +36,46 @@ async function physicalChild(root: string, path: string): Promise<void> {
     || resolve(await realpath(path)) !== path || (await lstat(path)).isSymbolicLink()) {
     throw new Error('Handoff input is not an owned physical child.')
   }
+}
+
+async function readBaseHandoffInput(smokeRoot: string, executable: string): Promise<{
+  harnessVersion: string
+  protectedPaths: string[]
+}> {
+  const inputPath = join(smokeRoot, 'base-protected-paths.json')
+  await physicalChild(smokeRoot, inputPath)
+  const input: unknown = JSON.parse(await readFile(inputPath, 'utf8'))
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) throw new Error('Invalid base protection input.')
+  const record = input as Record<string, unknown>
+  if (Object.keys(record).sort().join(',') !== 'composition,protectedPaths,schemaVersion'
+    || record.schemaVersion !== 1 || record.composition !== 'base'
+    || !Array.isArray(record.protectedPaths) || record.protectedPaths.length === 0) {
+    throw new Error('Invalid base protection input.')
+  }
+  const protectedPaths: string[] = []
+  for (const path of record.protectedPaths) {
+    if (typeof path !== 'string' || protectedPaths.includes(path)) throw new Error('Invalid protected file identity.')
+    await physicalChild(smokeRoot, path)
+    if (!(await lstat(path)).isFile()) throw new Error('Protected base data must be a regular file.')
+    protectedPaths.push(path)
+  }
+  const unpacked = join(dirname(executable), 'resources/app.asar.unpacked')
+  const compositionPath = join(unpacked, 'desktop-composition.json')
+  const runtime = join(unpacked, 'official-runtime')
+  const provenancePath = join(runtime, 'provenance.json')
+  const manifestPath = await realpath(join(runtime, 'node_modules/@deepseek-ai/dsh/package.json'))
+  await physicalChild(smokeRoot, unpacked)
+  await physicalChild(unpacked, runtime)
+  await physicalChild(runtime, manifestPath)
+  for (const path of [compositionPath, provenancePath, manifestPath]) await physicalChild(smokeRoot, path)
+  const composition: unknown = JSON.parse(await readFile(compositionPath, 'utf8'))
+  expect(composition).toEqual({ schema: 1, kind: 'base',
+    officialSha: 'fb2c4b9e698e30edb738bca4cf0618587db7d203', harnessVersion: '0.1.5-rc.2' })
+  const provenance: unknown = JSON.parse(await readFile(provenancePath, 'utf8'))
+  expect(provenance).toMatchObject({ sourceSha: 'fb2c4b9e698e30edb738bca4cf0618587db7d203', harnessVersion: '0.1.5-rc.2' })
+  const manifest: unknown = JSON.parse(await readFile(manifestPath, 'utf8'))
+  expect(manifest).toMatchObject({ name: '@deepseek-ai/dsh', version: '0.1.5-rc.2' })
+  return { harnessVersion: '0.1.5-rc.2', protectedPaths: [...protectedPaths, inputPath, compositionPath, provenancePath, manifestPath] }
 }
 
 interface ObservedChild {
@@ -213,6 +253,75 @@ describe('handoff process ownership', () => {
   })
 })
 
+describe('base composition handoff inputs', () => {
+  async function fixture(check: (root: string, executable: string, protectedPath: string) => Promise<void>): Promise<void> {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'base-handoff-input-')))
+    try {
+      const executable = join(root, 'installed/DeepSeek Harness.exe')
+      const unpacked = join(dirname(executable), 'resources/app.asar.unpacked')
+      const protectedPath = join(root, 'dsh-home/preserved.txt')
+      const entries = new Map([
+        [executable, 'fixture; not executed'],
+        [protectedPath, 'keep these bytes'],
+        [join(root, 'base-protected-paths.json'), JSON.stringify({ schemaVersion: 1, composition: 'base', protectedPaths: [protectedPath] })],
+        [join(unpacked, 'desktop-composition.json'), JSON.stringify({ schema: 1, kind: 'base', officialSha: 'fb2c4b9e698e30edb738bca4cf0618587db7d203', harnessVersion: '0.1.5-rc.2' })],
+        [join(unpacked, 'official-runtime/provenance.json'), JSON.stringify({ sourceSha: 'fb2c4b9e698e30edb738bca4cf0618587db7d203', harnessVersion: '0.1.5-rc.2' })],
+        [join(unpacked, 'official-runtime/node_modules/@deepseek-ai/dsh/package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.1.5-rc.2' })],
+      ])
+      for (const [path, contents] of entries) {
+        await mkdir(dirname(path), { recursive: true })
+        await writeFile(path, contents, { flag: 'wx' })
+      }
+      await check(root, executable, protectedPath)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  }
+
+  it('uses the installed official identity and real base protected files, without archived enhancement fixtures', async () => {
+    expect(typeof readBaseHandoffInput).toBe('function')
+    await fixture(async (root, executable, protectedPath) => {
+      const input = await readBaseHandoffInput(root, executable)
+      expect(input.harnessVersion).toBe('0.1.5-rc.2')
+      expect(input.protectedPaths).toContain(protectedPath)
+      expect(await readFile(protectedPath, 'utf8')).toBe('keep these bytes')
+    })
+  })
+
+  it.each(['empty', 'duplicate', 'outside', 'missing', 'unexpected-field'] as const)('rejects %s protection input before launching an updater', async (mode) => {
+    expect(typeof readBaseHandoffInput).toBe('function')
+    await fixture(async (root, executable, protectedPath) => {
+      const protectedPaths = mode === 'empty' ? [] : mode === 'duplicate' ? [protectedPath, protectedPath]
+        : mode === 'outside' ? [join(root, '..', 'foreign.txt')]
+          : mode === 'missing' ? [join(root, 'absent.txt')] : [protectedPath]
+      await writeFile(join(root, 'base-protected-paths.json'), JSON.stringify({ schemaVersion: 1, composition: 'base', protectedPaths,
+        ...(mode === 'unexpected-field' ? { allowOutside: true } : {}) }))
+      await expect(readBaseHandoffInput(root, executable)).rejects.toThrow()
+      expect(await readFile(protectedPath, 'utf8')).toBe('keep these bytes')
+    })
+  })
+
+  it('rejects a CLI version that does not match the installed base descriptor', async () => {
+    expect(typeof readBaseHandoffInput).toBe('function')
+    await fixture(async (root, executable) => {
+      await writeFile(join(dirname(executable), 'resources/app.asar.unpacked/official-runtime/node_modules/@deepseek-ai/dsh/package.json'),
+        JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.1.5-rc.1' }))
+      await expect(readBaseHandoffInput(root, executable)).rejects.toThrow()
+    })
+  })
+
+  it('rejects an otherwise valid CLI manifest redirected outside the installed runtime', async () => {
+    await fixture(async (root, executable) => {
+      const manifestPath = join(dirname(executable), 'resources/app.asar.unpacked/official-runtime/node_modules/@deepseek-ai/dsh/package.json')
+      const foreignManifest = join(root, 'foreign-cli.json')
+      await writeFile(foreignManifest, JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.1.5-rc.2' }))
+      await rm(manifestPath)
+      await symlink(foreignManifest, manifestPath, 'file')
+      await expect(readBaseHandoffInput(root, executable)).rejects.toThrow()
+    })
+  })
+})
+
 describe('real installed Windows native-command update handoff', () => {
   it.skipIf(process.platform !== 'win32' || !enabled)('waits for the real app to quit, opens the same-build Setup and cancels without changing protected bytes', async () => {
     const smokeRoot = resolve(requiredEnvironment('DSH_DESKTOP_SMOKE_ROOT'))
@@ -225,7 +334,7 @@ describe('real installed Windows native-command update handoff', () => {
     expect(basename(executable)).toBe('DeepSeek Harness.exe')
     expect(/^[a-f0-9]{64}$/u.test(expectedSha256)).toBe(true)
     const desktop = JSON.parse(await readFile(join(repositoryRoot, 'apps/desktop/package.json'), 'utf8')) as { version: string }
-    const harness = JSON.parse(await readFile(join(repositoryRoot, 'apps/cli/package.json'), 'utf8')) as { version: string }
+    const base = await readBaseHandoffInput(smokeRoot, executable)
     const target = { platform: 'win32', arch: 'x64', packageFormat: 'nsis' } as const
     expect(basename(setupPath)).toBe(desktopUpdateAssetName(desktop.version, target))
     expect(await digest(setupPath)).toBe(expectedSha256)
@@ -242,8 +351,11 @@ describe('real installed Windows native-command update handoff', () => {
     const owned = new Map<number, ProcessIdentity>()
     const roots = new Set<number>()
     let handedOffSetupPath: string | undefined
-    const safeEnv = Object.fromEntries(Object.entries(process.env)
-      .filter(([key, value]) => value !== undefined && !/KEY|SECRET|TOKEN|PASSWORD|^NODE_OPTIONS$|^NODE_PATH$/iu.test(key)))
+    const safeEnv = {
+      ...Object.fromEntries(Object.entries(process.env)
+        .filter(([key, value]) => value !== undefined && !/KEY|SECRET|TOKEN|PASSWORD|^NODE_OPTIONS$|^NODE_PATH$/iu.test(key))),
+      HOME: smokeRoot, USERPROFILE: smokeRoot,
+    }
     const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT ?? 'C:\\Windows'
     const powershell = join(systemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe')
     async function bootstrapState() {
@@ -293,25 +405,17 @@ describe('real installed Windows native-command update handoff', () => {
       handedOffSetupPath = localPath
       await copyFile(setupPath, localPath)
       const descriptor: VerifiedDesktopUpdate = {
-        target, desktopVersion: desktop.version, harnessVersion: harness.version,
+        target, desktopVersion: desktop.version, harnessVersion: base.harnessVersion,
         assetName: basename(setupPath), localPath, stagingDirectory,
         bytes: (await lstat(setupPath)).size, sha256: expectedSha256,
       }
       await verifyDesktopUpdateFile(descriptor)
-      const recoveryRoot = join(harnessHome, 'recovery/legacy-module-fallback')
-      const recovery = (await readdir(recoveryRoot, { recursive: true, withFileTypes: true }))
-        .filter(entry => entry.isFile()).map(entry => join(entry.parentPath, entry.name)).sort()
-      expect(recovery.length).toBeGreaterThan(0)
-      // Exact existing cold business fixtures only; Electron caches, active
-      // session replay, window placement and preferences are allowed to settle.
+      // The base helper owns the cold migration/profile files. It excludes
+      // active Session writes, Electron caches and mutable window preferences.
       const protectedPaths = [
         executable, join(dirname(executable), 'resources/app.asar'),
         join(harnessHome, 'preserve-after-uninstall.txt'), join(userData, 'preserve-after-uninstall.txt'),
-        join(harnessHome, 'profiles/ordinary-upgrade-sentinel/package.json'),
-        join(harnessHome, 'profiles/ordinary-upgrade-sentinel/cordis.patch.yml'),
-        logPath(join(harnessHome, 'sessions'), join(harnessHome, 'desktop-smoke-archived-workspace'),
-          SessionId('desktop-smoke-archived-session-id'), 'zstd'),
-        ...recovery,
+        ...base.protectedPaths,
       ]
       const snapshot = async (): Promise<string[]> => await Promise.all(protectedPaths.map(digest))
       const protectedBefore = await snapshot()
@@ -331,10 +435,15 @@ describe('real installed Windows native-command update handoff', () => {
       if (launcher === undefined) throw new Error('Installed handoff launcher identity was not observed.')
       const page = await application.firstWindow({ timeout: 120_000 })
       await expect.poll(() => page.locator('body[data-dsh-surface="desktop"]').count(), { timeout: 120_000 }).toBe(1)
-      await expect.poll(async () => Promise.all([
-        page.locator('[class*="sidebarCol"]').count(), page.locator('[class*="centerCol"]').count(),
-        page.locator('[class*="detailsCol"]').count(),
-      ]), { timeout: 120_000 }).toEqual([1, 1, 0])
+      await page.locator('[data-composer-input][contenteditable="true"]:not([aria-disabled="true"])')
+        .waitFor({ state: 'visible', timeout: 120_000 })
+      const runningVersions = await page.evaluate(async () => {
+        const api = (window as unknown as { dshDesktop: DesktopApi }).dshDesktop
+        if (typeof api.getUpdateStatus !== 'function') throw new Error('Base system update bridge is unavailable.')
+        return await api.getUpdateStatus()
+      })
+      expect(runningVersions.runningDesktop).toBe(desktop.version)
+      expect(runningVersions.includedHarness).toBe(base.harnessVersion)
       const identity = await application.evaluate(({ app }) => ({
         pid: process.pid, executable: process.execPath, version: app.getVersion(),
         harnessHome: process.env.DSH_HOME, userData: app.getPath('userData'),

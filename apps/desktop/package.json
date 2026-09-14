@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
   "description": "Native desktop shell for DeepSeek Harness",
-  "version": "0.5.8",
+  "version": "0.6.0",
   "license": "MIT",
   "author": "DeepSeek Harness Contributors",
   "private": true,
@@ -22,8 +22,8 @@
     "start": "electron .",
     "pack:dir": "electron-builder --projectDir .stage --config electron-builder.yml --mac dir --x64",
     "pack:dmg": "electron-builder --projectDir .stage --config electron-builder.yml --mac dmg --x64",
-    "pack:win-dir": "electron-builder --projectDir .stage --config electron-builder.yml --win dir --x64",
-    "pack:setup": "electron-builder --projectDir .stage --config electron-builder.yml --win nsis --x64",
+    "pack:win-dir": "node ../../scripts/windows-desktop-builder.ts --projectDir .stage --config electron-builder.yml --win dir --x64",
+    "pack:setup": "node ../../scripts/windows-desktop-builder.ts --projectDir .stage --config electron-builder.yml --win nsis --x64",
     "pack:linux": "electron-builder --projectDir .stage --config electron-builder.linux.yml --linux deb AppImage --x64 --publish never"
   },
   "dependencies": {
@@ -75,6 +75,7 @@
     "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
     "@deepseek-ai/dsh-client-ui-cordis": "workspace:^",
     "@deepseek-ai/dsh-client-ui-deliverables": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-desktop-shell": "workspace:^",
     "@deepseek-ai/dsh-client-ui-directory-picker-browse": "workspace:^",
     "@deepseek-ai/dsh-client-ui-directory-picker-native": "workspace:^",
     "@deepseek-ai/dsh-client-ui-goal": "workspace:^",
@@ -277,5 +278,8 @@
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
+  },
+  "optionalDependencies": {
+    "@homebridge/dbus-native": "0.7.9"
   }
 }

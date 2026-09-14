@@ -8,6 +8,9 @@ asarUnpack:
   # The Harness profile fallback creates filesystem symlinks to installed
   # packages. Keep runtime packages physical so those links can target them.
   - "node_modules/**"
+  - "official-runtime/**"
+  - "desktop-composition.json"
+  - "base.cordis.patch.yml"
 extraResources:
   - from: "update-metadata.json"
     to: "update-metadata.json"
@@ -16,6 +19,10 @@ files:
   - "renderer/**"
   - "assets/**"
   - "desktop.cordis.patch.yml"
+  - "desktop-composition.json"
+  - "base.cordis.patch.yml"
+  - "base-stage.json"
+  - "official-runtime/**"
   - "THIRD_PARTY_NOTICES.md"
   - "node_modules/**"
   # Runtime JavaScript never needs source maps or TypeScript declarations.
@@ -25,6 +32,11 @@ files:
   - "!node_modules/**/*.d.cts"
   - "!node_modules/**/*.d.mts"
   - "!node_modules/**/*.tsbuildinfo"
+  - "!official-runtime/**/*.map"
+  - "!official-runtime/**/*.d.ts"
+  - "!official-runtime/**/*.d.cts"
+  - "!official-runtime/**/*.d.mts"
+  - "!official-runtime/**/*.tsbuildinfo"
   # Credentials belong to the user's runtime home. Fail closed even if a
   # future dependency or staging change accidentally places one in the tree.
   - "!**/.env"
@@ -68,6 +80,11 @@ win:
   files:
     - "!node_modules/node-pty/prebuilds/darwin-x64/**"
     - "!node_modules/node-pty/prebuilds/linux-*/**"
+    # Base composition nests its physical runtime below official-runtime.
+    - "!official-runtime/node_modules/node-pty/prebuilds/darwin-*/**"
+    - "!official-runtime/node_modules/node-pty/prebuilds/linux-*/**"
+    - "!official-runtime/node_modules/node-pty/prebuilds/win32-arm64/**"
+    - "!official-runtime/node_modules/node-pty/**/*.pdb"
     - "!node_modules/@deepseek-ai/node-addon-system-darwin-*/**"
     - "!node_modules/@deepseek-ai/node-addon-system-linux-*/**"
     - "!node_modules/@napi-rs/canvas-android-*/**"

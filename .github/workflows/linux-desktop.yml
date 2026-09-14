@@ -1,113 +1,181 @@
-name: Ubuntu Desktop
+name: Ubuntu Desktop base
 
 on:
-  push:
-    branches: [codex/desktop-0.5.7-ubuntu]
   workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Reviewed complete Desktop candidate SHA matching the selected ref
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: linux-desktop-${{ github.ref }}
+  group: linux-desktop-base-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   DSH_TELEMETRY_DISABLED: '1'
-  CANDIDATE_SHA: ${{ github.sha }}
+  CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+  OFFICIAL_SOURCE_SHA: fb2c4b9e698e30edb738bca4cf0618587db7d203
 
 jobs:
   build:
-    name: Build x64 deb and AppImage on Ubuntu 22.04
+    name: Build base x64 deb and AppImage on Ubuntu 22.04
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
+      - name: Verify the reviewed candidate
+        run: |
+          [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
+          [[ "$(uname -m)" == x86_64 ]]
+      - uses: actions/checkout@v6
+        with:
+          repository: Missher12/deepseek-harness-desktop
+          ref: fb2c4b9e698e30edb738bca4cf0618587db7d203
+          path: .artifacts/linux-official-source
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
           version: '11.7.0'
           dest: ${{ runner.temp }}/setup-pnpm
       - uses: actions/setup-node@v6
         with:
-          node-version: '24'
-      - name: Verify source and install immutable dependencies
+          node-version: '24.17.0'
+      - name: Install immutable dependencies and native toolchain
         run: |
-          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
-          [[ "$(uname -m)" == x86_64 ]]
           pnpm install --frozen-lockfile
-      - name: Verify Linux sandbox guards
-        run: pnpm exec vitest run scripts/linux-desktop-sandbox.spec.ts scripts/linux-desktop-launcher.spec.ts
-      - name: Build native packages
+          sudo apt-get update
+          sudo apt-get install -y musl-tools clang-15 python3
+      - name: Verify Linux guards and base driver selection
+        run: pnpm exec vitest run scripts/linux-desktop-sandbox.spec.ts scripts/linux-desktop-launcher.spec.ts scripts/linux-desktop-base.spec.ts --testTimeout=60000 --hookTimeout=60000
+      - name: Explicitly build the fixed official input once and prepare base packages
         env:
           NODE_OPTIONS: --max-old-space-size=4096
           CC: clang-15
           CXX: clang++-15
         run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools clang-15
-          bash scripts/linux-desktop-package.sh
-      - name: Fingerprint immutable candidate bytes
+          official_source="$PWD/.artifacts/linux-official-source"
+          [[ "$(git -C "$official_source" rev-parse HEAD)" == "$OFFICIAL_SOURCE_SHA" ]]
+          [[ -z "$(git -C "$official_source" status --porcelain)" ]]
+          # This fresh runner has no accepted Linux inputs. The reviewed wrapper also supports
+          # --descriptor-sha256 reuse; never silently replace an existing input with a rebuild.
+          bash scripts/linux-desktop-package.sh \
+            --official-source "$official_source" \
+            --packages "$RUNNER_TEMP/linux-base/official-packages" \
+            --descriptor "$RUNNER_TEMP/linux-base/official-inputs.json" \
+            --runtime "$RUNNER_TEMP/linux-base/official-runtime" \
+            --helper-runtime "$RUNNER_TEMP/linux-base/helper-runtime" \
+            --work-dir "$RUNNER_TEMP/linux-base" \
+            --stage "$RUNNER_TEMP/dsh-desktop-stage" \
+            --build-official
+      - name: Fingerprint the base descriptor and immutable candidate bytes
         run: |
           git diff --quiet HEAD --
           cd apps/desktop/release
-          sha256sum ./*.deb ./*.AppImage > SHA256SUMS-linux
+          sha256sum ./*.deb ./*.AppImage base-smoke.json > SHA256SUMS-linux
       - uses: actions/upload-artifact@v7
         with:
-          name: Ubuntu-packages-${{ github.sha }}
+          name: Ubuntu-base-packages-${{ github.sha }}
           path: |
             apps/desktop/release/*.deb
             apps/desktop/release/*.AppImage
+            apps/desktop/release/base-smoke.json
             apps/desktop/release/SHA256SUMS-linux
           if-no-files-found: error
           retention-days: 14
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Ubuntu-base-input-evidence-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/linux-base/official-inputs.json
+            ${{ runner.temp }}/linux-base/official-runtime/provenance.json
+            ${{ runner.temp }}/linux-base/helper-runtime/source.json
+            .artifacts/linux-official-source/.dsh-build/client-build-environment.json
+          if-no-files-found: warn
+          retention-days: 14
 
   native:
-    name: Ubuntu ${{ matrix.ubuntu }} native lifecycle
+    name: Ubuntu ${{ matrix.ubuntu }} base native lifecycle
     needs: build
     strategy:
       fail-fast: false
       matrix:
         ubuntu: ['22.04', '24.04']
     runs-on: ubuntu-${{ matrix.ubuntu }}
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
+      - name: Verify the same candidate
+        run: '[[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]'
       - uses: pnpm/action-setup@v4
         with:
           version: '11.7.0'
           dest: ${{ runner.temp }}/setup-pnpm
       - uses: actions/setup-node@v6
         with:
-          node-version: '24'
-      - name: Install native test dependencies
+          node-version: '24.17.0'
+      - name: Install disposable native test dependencies
         run: |
           pnpm install --frozen-lockfile
           sudo apt-get update
           fuse_package=libfuse2
           if [[ '${{ matrix.ubuntu }}' == 24.04 ]]; then fuse_package=libfuse2t64; fi
-          sudo apt-get install -y xvfb xauth dbus-x11 openbox x11-utils desktop-file-utils lsof "$fuse_package" libgtk-3-0 libnss3 libgbm1 libsecret-1-0 apparmor apparmor-utils
+          sudo apt-get install -y xvfb xauth dbus-x11 openbox x11-utils desktop-file-utils lsof python3 "$fuse_package" libgtk-3-0 libnss3 libgbm1 libsecret-1-0 apparmor apparmor-utils
           test -x /usr/bin/lsof
           test -c /dev/fuse
-          # The native test seeder resolves workspace source, not the downloaded app's addon.
-          pnpm run build:native-system
-      - name: Enforce Ubuntu 24.04 user namespace restrictions
+      - name: Require Ubuntu 24.04 user namespace restrictions without changing them
         if: matrix.ubuntu == '24.04'
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
+        run: '[[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" == 1 ]]'
       - uses: actions/download-artifact@v8
         with:
-          name: Ubuntu-packages-${{ github.sha }}
+          name: Ubuntu-base-packages-${{ github.sha }}
           path: apps/desktop/release
-      - name: Check downloaded package bytes
+      - name: Verify the same package and descriptor bytes
         working-directory: apps/desktop/release
         run: sha256sum -c SHA256SUMS-linux
-      - name: Install, launch sandboxed, exercise model, quit, uninstall
+      - name: Download the fixed public Linux 0.5.7 baseline anonymously
         run: |
+          legacy_assets="$RUNNER_TEMP/linux-legacy-assets"
+          mkdir -p "$legacy_assets"
+          for suffix in deb AppImage; do
+            name="DeepSeek-Harness-0.5.7-linux-x64.$suffix"
+            curl -q --fail --location --proto '=https' --proto-redir '=https' \
+              --connect-timeout 15 --max-time 300 --retry 2 \
+              "https://github.com/Missher12/deepseek-harness-desktop/releases/download/desktop-v0.5.7/$name" \
+              --output "$legacy_assets/$name"
+            curl -q --fail --location --proto '=https' --proto-redir '=https' \
+              --connect-timeout 15 --max-time 60 --retry 2 \
+              "https://github.com/Missher12/deepseek-harness-desktop/releases/download/desktop-v0.5.7/$name.sha256" \
+              --output "$legacy_assets/$name.sha256"
+          done
+          (cd "$legacy_assets" && printf '%s\n' \
+            '811cf271cb4c84bd91047a08c98e542b774e2b0e95904a5c10911ce9eb5d9bd3  DeepSeek-Harness-0.5.7-linux-x64.deb.sha256' \
+            'ed951cc217998b278d633e24bb6d03c4641ed3455fd9093484cf7bb97af44bcc  DeepSeek-Harness-0.5.7-linux-x64.AppImage.sha256' | sha256sum -c -)
+          (cd "$legacy_assets" && sha256sum -c DeepSeek-Harness-0.5.7-linux-x64.deb.sha256 DeepSeek-Harness-0.5.7-linux-x64.AppImage.sha256)
+          mkdir -p "$RUNNER_TEMP/linux-native-evidence/legacy-source"
+          cp "$legacy_assets/"*.sha256 "$RUNNER_TEMP/linux-native-evidence/legacy-source/"
+          (cd "$legacy_assets" && printf '%s\n' \
+            'e9b432dd29dad775bae4a7b3ba7b056732a2637c64818d119211941d9a535cb7  DeepSeek-Harness-0.5.7-linux-x64.deb' \
+            '397008b717181c1f5231d3ba69158f1a5e8fcaf47be7f34e9494ce036e0bb01a  DeepSeek-Harness-0.5.7-linux-x64.AppImage' | sha256sum -c -)
+      - name: Inspect native update capabilities
+        run: |
+          mkdir -p "$RUNNER_TEMP/linux-native-evidence"
+          bash scripts/linux-desktop-update-preflight.sh "$RUNNER_TEMP/linux-native-evidence/update-preflight.json"
+          pnpm exec vitest run apps/desktop/tests/linux-update-native.spec.ts
+      - name: Exercise installed base lifecycle and require complete base receipts
+        run: |
+          export DSH_DESKTOP_SMOKE_DESCRIPTOR="$PWD/apps/desktop/release/base-smoke.json"
           dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1000x24' bash -c '
             openbox &
             window_manager=$!
@@ -117,10 +185,11 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: Ubuntu-${{ matrix.ubuntu }}-native-evidence-${{ github.sha }}
+          name: Ubuntu-${{ matrix.ubuntu }}-base-native-evidence-${{ github.sha }}
           path: |
             ${{ runner.temp }}/linux-native-evidence/**/*.json
             ${{ runner.temp }}/linux-native-evidence/**/*.png
-            ${{ runner.temp }}/linux-native-evidence/*.txt
+            ${{ runner.temp }}/linux-native-evidence/**/*.txt
+            ${{ runner.temp }}/linux-native-evidence/**/*.sha256
           if-no-files-found: warn
           retention-days: 14

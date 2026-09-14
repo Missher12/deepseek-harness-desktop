@@ -73,45 +73,33 @@ describe('CI workflow', () => {
     }
   })
 
-  it('publishes the updater manifest generated from the same verified macOS DMG', () => {
+  it('validates Desktop release tooling without rebuilding or publishing installers', () => {
     const workflow = loadWorkflow('.github/workflows/desktop-release.yml')
-    const mac = workflowJob(workflow, 'mac')
-    const windows = workflowJob(workflow, 'windows')
-    const publish = workflowJob(workflow, 'publish')
-    if (!Array.isArray(mac.steps) || !Array.isArray(windows.steps) || !Array.isArray(publish.steps)) {
-      throw new TypeError('Desktop release jobs must define steps')
-    }
-    const macSteps = mac.steps.filter(isRecord)
-    const windowsSteps = windows.steps.filter(isRecord)
-    const publishSteps = publish.steps.filter(isRecord)
-    const macMetadata = macSteps.find(step => step.name === 'Resolve Desktop release metadata')
-    const windowsMetadata = windowsSteps.find(step => step.name === 'Resolve Desktop release metadata')
-    const macBuild = macSteps.find(step => step.name === 'Build the Intel macOS DMG')
-    const generate = macSteps.find(step => step.name === 'Generate verified Desktop update manifest')
-    const macUpload = macSteps.find(step => (
-      typeof step.uses === 'string' && step.uses.startsWith('actions/upload-artifact@')
+    expect(workflow.permissions).toEqual({ contents: 'read' })
+    expect(workflow.on).toEqual({ workflow_dispatch: null })
+    if (!isRecord(workflow.jobs)) throw new TypeError('Desktop tooling jobs must be an object')
+    expect(Object.keys(workflow.jobs)).toEqual(['tooling'])
+    const tooling = workflowJob(workflow, 'tooling')
+    expect(tooling.permissions).toBeUndefined()
+    expect(tooling.environment).toBeUndefined()
+    if (!Array.isArray(tooling.steps)) throw new TypeError('Desktop tooling job must define steps')
+    const steps = tooling.steps.filter(isRecord)
+    const validation = steps.find(step => step.name === 'Validate release tooling only')
+    expect(validation?.run).toContain('pnpm exec vitest run')
+    expect(validation?.run).toContain('scripts/create-desktop-update-manifest.spec.ts')
+    expect(validation?.run).toContain('apps/desktop/tests/update-release.spec.ts')
+    expect(validation?.run).toContain('scripts/ci-workflow.spec.ts')
+    const checkout = steps.find(step => (
+      typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@')
     ))
-    const publishRelease = publishSteps.find(step => step.name === 'Upload assets and publish the draft')
-
-    expect(workflow.on).toMatchObject({
-      workflow_dispatch: {
-        inputs: {
-          tag: { default: 'desktop-v0.5.8' },
-        },
-      },
-    })
-    expect(generate?.run).toContain('pnpm exec tsx scripts/create-desktop-update-manifest.ts')
-    expect(generate?.run).toContain('deepseek-harness-desktop-update.json')
-    expect(macMetadata?.run).toContain('apps/desktop/package.json')
-    expect(windowsMetadata?.run).toContain('apps/desktop/package.json')
-    expect(macBuild).toMatchObject({
-      env: { NODE_OPTIONS: '--max-old-space-size=4096' },
-    })
-    expect(JSON.stringify(mac)).toContain('${{ steps.desktop.outputs.artifact }}')
-    expect(JSON.stringify(windows)).toContain('${{ steps.desktop.outputs.artifact }}')
-    expect(JSON.stringify(macUpload)).toContain('deepseek-harness-desktop-update.json')
-    expect(publishRelease?.run).toContain('release/deepseek-harness-desktop-update.json')
-    expect(JSON.stringify(workflow)).not.toContain('0.2.1')
+    expect(checkout).toMatchObject({ with: { 'persist-credentials': false } })
+    const summary = steps.find(step => step.name === 'Record verification scope')
+    expect(summary?.run).toContain('Tooling validation only')
+    expect(summary?.run).toContain('apps/desktop/releasing/README.md')
+    const serialized = JSON.stringify(workflow)
+    expect(serialized).not.toMatch(/secrets\.|GH_TOKEN|GITHUB_TOKEN/)
+    expect(serialized).not.toMatch(/gh release|git tag|--clobber|electron-builder|desktop:(?:dmg|setup|linux)/)
+    expect(serialized).not.toMatch(/actions\/(?:upload|download)-artifact@/)
   })
 
   it('derives every Windows Setup path from the Desktop package version', () => {
@@ -188,18 +176,18 @@ describe('CI workflow', () => {
       "'@ | node --input-type=module", 'if ($LASTEXITCODE -ne 0)',
       "assert.equal(process.platform, 'win32'", 'assert.equal(process.versions.electron, undefined',
       "createRequire(manifest).resolve('@deepseek-ai/node-addon-system/flock')",
-      "await verifyFlockEntry(resolve('packages/session/session-persistence-jsonl/package.json'), resolve('.'))",
-      "await verifyFlockEntry(join(unpacked, 'node_modules/@deepseek-ai/dsh-session-persistence-jsonl/package.json'), unpacked)",
+      "await verifyFlockEntry(join(officialSource, 'packages/session/session-persistence-jsonl/package.json'), officialSource)",
+      "await verifyFlockEntry(join(runtime, 'node_modules/@deepseek-ai/dsh-session-persistence-jsonl/package.json'), runtime)",
       "'System entry escaped its host or packaged dependency root'",
       "code: 'ERR_FLOCK_UNSUPPORTED_PLATFORM'",
-      "resolve('packages/session/session-persistence-jsonl/lib/types/win32.js')",
+      "join(officialSource, 'packages/session/session-persistence-jsonl/lib/types/win32.js')",
       'await acquireLockHandleWin32(lockPath)', "code: 'EBUSY'",
       'await releaseLockHandleWin32(handle)', 'if (handle !== undefined)',
       'finally { await rm(directory, { recursive: true, force: true }) }',
       "'Windows semaphore created a lock file'",
       "join(process.env.RUNNER_TEMP, 'release')", "join(release, 'win-unpacked', 'resources')",
       "join('apps/desktop/release', process.env.ARTIFACT)", 'join(release, process.env.ARTIFACT)',
-      "join(resources, 'app.asar')", "name.endsWith('.node')", "'Packaged native binaries are missing'",
+      "join(resources, 'app.asar')", "path.endsWith('.node')", "'Packaged native binaries are missing'",
       "join(release, 'win-unpacked', 'DeepSeek Harness.exe')", "ELECTRON_RUN_AS_NODE: '1'",
       'assert.equal(process.versions.electron, config.electron)',
       'native.probeCurrentTokenJobSupport(api)', "await entry('@deepseek-ai/dsh-subprocess-local/runner')",

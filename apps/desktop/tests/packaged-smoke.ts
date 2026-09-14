@@ -1,7 +1,11 @@
+import { exerciseWindowsDirectoryPicker } from './native-directory-picker-smoke.ts'
+export { exerciseWindowsDirectoryPicker } from './native-directory-picker-smoke.ts'
+export { runPackagedDesktopBaseSmoke, type PackagedDesktopBaseSmokeResult } from './packaged-base-smoke.ts'
+export { verifyPackagedDesktopBaseSmokeReceipt, completePackagedDesktopBaseSmokeReceipt } from './base-smoke-receipt.ts'
 import { execFile } from 'node:child_process'
 import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
@@ -954,52 +958,6 @@ async function exerciseWindowsClipboard(
   } finally {
     await application.evaluate(({ clipboard }, text) => { clipboard.writeText(text) }, previousClipboard)
   }
-}
-
-async function exerciseWindowsDirectoryPicker(
-  page: Page,
-  harnessHome: string,
-  userData: string,
-): Promise<void> {
-  const selectedDirectory = join(harnessHome, 'native-picker-selected')
-  await mkdir(selectedDirectory, { recursive: true })
-  const automation = execFileAsync('powershell.exe', [
-    '-NoProfile',
-    '-NonInteractive',
-    '-ExecutionPolicy',
-    'Bypass',
-    '-File',
-    join(repositoryRoot, 'scripts/windows-directory-picker-ui-smoke.ps1'),
-    '-FolderPath',
-    selectedDirectory,
-  ], { timeout: 90_000 })
-
-  const addWorkspace = page.getByRole('button', {
-    name: /^(?:Add workspace|添加工作区)$/u,
-  })
-  await addWorkspace.waitFor({ state: 'visible', timeout: 15_000 })
-  await addWorkspace.click()
-  await automation
-
-  const selectedWorkspace = page.locator('[role="treeitem"][aria-expanded]').filter({
-    has: page.getByText(basename(selectedDirectory), { exact: true }),
-  })
-  await expect.poll(() => selectedWorkspace.count(), { timeout: 30_000 }).toBe(1)
-  await selectedWorkspace.waitFor({ state: 'visible', timeout: 30_000 })
-  const nativeBlankSession = page.getByRole('treeitem').filter({
-    has: page.getByText(/^(?:New Session|新会话)$/u, { exact: true }),
-  }).first()
-  await nativeBlankSession.waitFor({ state: 'visible', timeout: 30_000 })
-  await expect.poll(
-    () => nativeBlankSession.getAttribute('aria-selected'),
-    { timeout: 30_000 },
-  ).toBe('true')
-  await page.locator('[class*="centerCol"]')
-    .getByText(basename(selectedDirectory), { exact: true })
-    .waitFor({ state: 'visible', timeout: 30_000 })
-  const lifecycle = await readFile(join(userData, 'logs', 'lifecycle.log'), 'utf8')
-  expect(lifecycle).not.toContain('FATAL ERROR')
-  expect(await page.locator('body[data-dsh-surface="desktop"]').count()).toBe(1)
 }
 
 async function dismissCredentialOnboarding(page: Page, required: boolean): Promise<void> {

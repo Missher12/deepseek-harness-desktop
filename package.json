@@ -167,14 +167,15 @@
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
     "dev:web": "tsx scripts/dev-web.ts --poll",
     "desktop:dev": "pnpm run build && pnpm run build:desktop:main && pnpm --filter @deepseek-ai/dsh-desktop start",
-    "desktop:stage:built": "pnpm run build:desktop:main && pnpm exec tsx scripts/stage-desktop.ts",
-    "desktop:stage": "pnpm run build:official && pnpm run desktop:stage:built",
-    "desktop:pack": "pnpm run desktop:stage && pnpm --filter @deepseek-ai/dsh-desktop run pack:dir",
-    "desktop:dmg": "pnpm run desktop:stage && pnpm --filter @deepseek-ai/dsh-desktop run pack:dmg",
-    "desktop:setup:built": "pnpm run desktop:stage:built && pnpm --filter @deepseek-ai/dsh-desktop run pack:setup",
-    "desktop:setup": "pnpm run build:official && pnpm run desktop:setup:built",
+    "desktop:stage:built": "node --import tsx/esm scripts/prepare-desktop-base.ts",
+    "desktop:stage": "node --import tsx/esm scripts/prepare-desktop-base.ts",
+    "desktop:pack": "pnpm --filter @deepseek-ai/dsh-desktop run pack:dir",
+    "desktop:dmg": "pnpm --filter @deepseek-ai/dsh-desktop run pack:dmg",
+    "desktop:setup:built": "pnpm --filter @deepseek-ai/dsh-desktop run pack:setup",
+    "desktop:setup": "pnpm run desktop:setup:built",
     "desktop:linux": "bash scripts/linux-desktop-package.sh",
-    "postinstall": "node scripts/install-lefthook.mjs"
+    "postinstall": "node scripts/install-lefthook.mjs",
+    "desktop:full:stage:built": "pnpm run build:desktop:main && pnpm exec tsx scripts/stage-desktop.ts"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:^",
@@ -189,6 +190,7 @@
     "@types/mdast": "^4.0.4",
     "@types/node": "^22.20.0",
     "@types/spdx-expression-parse": "^4.0.0",
+    "@types/yauzl": "3.4.0",
     "@vitest/coverage-v8": "^4.1.8",
     "@yao-pkg/pkg": "6.21.0",
     "@yarnpkg/cli-dist": "4.17.1",
@@ -210,10 +212,12 @@
     "publint": "^0.3.21",
     "smol-toml": "^1.7.1",
     "spdx-expression-parse": "^5.0.0",
+    "tar": "7.5.22",
     "tsdown": "^0.22.2",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vite-tsconfig-paths": "^6.1.1",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "yauzl": "3.4.0"
   }
 }

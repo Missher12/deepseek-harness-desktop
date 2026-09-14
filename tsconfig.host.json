@@ -142,6 +142,7 @@
   "references": [
     { "path": "./packages/brain/missher-brain" },
     { "path": "./packages/client/ui-deliverables/tsconfig.host.json" },
+    { "path": "./packages/client/ui-desktop-shell/tsconfig.host.json" },
     { "path": "./vendor/cosmokit" },
     { "path": "./vendor/schemastery" },
     { "path": "./vendor/cordis" },

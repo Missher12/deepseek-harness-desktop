@@ -1,9 +1,219 @@
-import { readFileSync } from 'node:fs'
+import { createReadStream, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
+import assert from 'node:assert/strict'
+import { tmpdir } from 'node:os'
+import { dirname, isAbsolute, join, relative, sep } from 'node:path'
+import { runInNewContext } from 'node:vm'
+import { JSON_SCHEMA, load } from 'js-yaml'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
+async function withBaseRuntime(check: (resources: string) => Promise<void>): Promise<void> {
+  const root = await mkdtemp(join(tmpdir(), 'windows-base-consumer-'))
+  try {
+    const resources = join(root, 'release/win-unpacked/resources')
+    const unpacked = join(resources, 'app.asar.unpacked')
+    const runtime = join(unpacked, 'official-runtime')
+    const identity = { officialSha: 'fb2c4b9e698e30edb738bca4cf0618587db7d203', harnessVersion: '0.1.5-rc.2' }
+    const files = new Map([
+      [join(unpacked, 'desktop-composition.json'), JSON.stringify({ schema: 1, kind: 'base', ...identity })],
+      [join(runtime, 'provenance.json'), JSON.stringify({ sourceSha: identity.officialSha, harnessVersion: identity.harnessVersion })],
+      [join(runtime, 'node_modules/@deepseek-ai/dsh/package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version: identity.harnessVersion })],
+      [join(runtime, 'node_modules/@deepseek-ai/dsh/lib/bin.js'), 'export {}\n'],
+      [join(runtime, 'node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/worker.cjs'), 'module.exports = {}\n'],
+    ])
+    for (const [file, contents] of files) {
+      await mkdir(dirname(file), { recursive: true })
+      await writeFile(file, contents, { flag: 'wx' })
+    }
+    await check(resources)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+}
+
+function packagedBaseResolver(): (resources: string) => Promise<string> {
+  const workflow = readFileSync(new URL('../.github/workflows/windows-desktop.yml', import.meta.url), 'utf8')
+  const start = workflow.indexOf('async function resolvePackagedBaseRuntime(resources) {')
+  const end = workflow.indexOf('const runtime = await resolvePackagedBaseRuntime(resources)', start)
+  expect(start, 'The native workflow must validate its actual base runtime before importing it').toBeGreaterThan(0)
+  expect(end).toBeGreaterThan(start)
+  // Execute the workflow's actual resolver against physical files; no Electron,
+  // native process or runtime package is replaced by a test double.
+  return runInNewContext(`${workflow.slice(start, end)}\nresolvePackagedBaseRuntime`, {
+    assert, readFile, realpath, stat, isAbsolute, join, relative, sep,
+  }) as (resources: string) => Promise<string>
+}
+
+describe('Windows packaged base runtime selection', () => {
+  it('fingerprints physical official JavaScript as well as native libraries before and after a probe', async () => {
+    const workflow = readFileSync(new URL('../.github/workflows/windows-desktop.yml', import.meta.url), 'utf8')
+    const start = workflow.indexOf('async function fingerprint() {')
+    const end = workflow.indexOf("assert.equal(process.platform, 'win32'", start)
+    expect(start).toBeGreaterThan(0)
+    expect(end).toBeGreaterThan(start)
+    await withBaseRuntime(async (resources) => {
+      const release = dirname(dirname(resources))
+      const unpacked = join(resources, 'app.asar.unpacked')
+      const artifact = 'owned-fixture.exe'
+      const workspaceArtifact = join(dirname(release), 'apps/desktop/release', artifact)
+      for (const path of [workspaceArtifact, join(release, artifact), join(release, 'win-unpacked/DeepSeek Harness.exe'),
+        join(resources, 'app.asar'), join(unpacked, 'native.node'), join(resources, 'desktop-helper/node.exe')]) {
+        await mkdir(dirname(path), { recursive: true })
+        await writeFile(path, 'fixture bytes; not executed')
+      }
+      const fingerprint = runInNewContext(workflow.slice(start, end) + '\nfingerprint', {
+        assert, readdir, createReadStream, createHash, release, resources, unpacked,
+        process: { env: { ARTIFACT: artifact } },
+        join: (...paths: string[]) => paths[0] === 'apps/desktop/release' ? workspaceArtifact : join(...paths),
+      }) as () => Promise<[string, string][]>
+      const file = join(unpacked, 'official-runtime/node_modules/@deepseek-ai/dsh/lib/bin.js')
+      const before = new Map(await fingerprint())
+      expect(before.has(file), 'Physical official JS must be part of the immutable-package proof').toBe(true)
+      expect(before.has(join(resources, 'desktop-helper/node.exe')), 'The independent helper runtime must also be protected').toBe(true)
+      await writeFile(file, 'changed physical runtime bytes')
+      const after = new Map(await fingerprint())
+      expect(after.get(file)).not.toBe(before.get(file))
+      expect(after.get(join(unpacked, 'native.node'))).toBe(before.get(join(unpacked, 'native.node')))
+    })
+  })
+
+  it('selects the nested official runtime without requiring retired top-level packages', async () => {
+    const resolveRuntime = packagedBaseResolver()
+    await withBaseRuntime(async (resources) => {
+      await expect(resolveRuntime(resources)).resolves.toBe(await realpath(join(resources, 'app.asar.unpacked/official-runtime')))
+    })
+  })
+
+  it.each([
+    ['missing descriptor', 'desktop-composition.json', undefined],
+    ['full composition', 'desktop-composition.json', { schema: 1, kind: 'full', officialSha: 'fb2c4b9e698e30edb738bca4cf0618587db7d203', harnessVersion: '0.1.5-rc.2' }],
+    ['different official source', 'desktop-composition.json', { schema: 1, kind: 'base', officialSha: 'd1e8bd9c6d49f980405888099087f931ddd26d83', harnessVersion: '0.1.5-rc.2' }],
+    ['unknown descriptor fields', 'desktop-composition.json', { schema: 1, kind: 'base', officialSha: 'fb2c4b9e698e30edb738bca4cf0618587db7d203', harnessVersion: '0.1.5-rc.2', injected: true }],
+    ['changed provenance', 'official-runtime/provenance.json', { sourceSha: 'fb2c4b9e698e30edb738bca4cf0618587db7d203', harnessVersion: '0.1.5-rc.1' }],
+    ['wrong installed CLI', 'official-runtime/node_modules/@deepseek-ai/dsh/package.json', { name: '@deepseek-ai/dsh', version: '0.1.5-rc.1' }],
+    ['missing CLI entry', 'official-runtime/node_modules/@deepseek-ai/dsh/lib/bin.js', undefined],
+    ['missing JSONL worker', 'official-runtime/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/worker.cjs', undefined],
+  ])('rejects %s instead of falling back to the old package graph', async (_name, file, replacement) => {
+    const resolveRuntime = packagedBaseResolver()
+    await withBaseRuntime(async (resources) => {
+      const path = join(resources, 'app.asar.unpacked', file)
+      if (replacement === undefined) await rm(path)
+      else await writeFile(path, JSON.stringify(replacement))
+      await expect(resolveRuntime(resources)).rejects.toThrow()
+    })
+  })
+
+  it('rejects an official runtime linked outside the installed unpacked tree', async () => {
+    const resolveRuntime = packagedBaseResolver()
+    await withBaseRuntime(async (resources) => {
+      const runtime = join(resources, 'app.asar.unpacked/official-runtime')
+      const foreign = join(dirname(resources), 'foreign-runtime')
+      await mkdir(foreign)
+      await rm(runtime, { recursive: true })
+      await symlink(foreign, runtime, 'junction')
+      await expect(resolveRuntime(resources)).rejects.toThrow(/outside/iu)
+    })
+  })
+})
+
 describe('Windows Desktop runtime evidence wiring', () => {
+  it('verifies the installed base receipt before uninstall and keeps private evidence out of artifacts', () => {
+    const script = readFileSync(new URL('./windows-desktop-setup-smoke.ps1', import.meta.url), 'utf8')
+    const gate = script.indexOf('& pnpm exec tsx scripts/verify-desktop-base-smoke.ts')
+    expect(gate, 'Native acceptance requires the complete base receipt, not the old workspace-only receipt').toBeGreaterThan(0)
+    const gateBody = script.slice(gate, script.indexOf('\n  Invoke-IsolatedUninstall', gate))
+    expect(gateBody).toContain('--receipt (Join-Path $temporaryRoot \'base-smoke-receipt.json\')')
+    expect(gateBody).toContain('--descriptor $resolvedSmokeDescriptor')
+    expect(gateBody).toContain('--smoke-root $temporaryRoot --platform win32 --scope core')
+    expect(gateBody).toContain("if ($LASTEXITCODE -ne 0) { throw 'Complete native base receipt validation failed.' }")
+    expect(gate).toBeLessThan(script.indexOf('\n  Invoke-IsolatedUninstall'))
+    expect(script).toContain('windows-core-native.ts prepare')
+    expect(script.indexOf('windows-core-native.ts prepare')).toBeLessThan(script.indexOf('Invoke-CheckedNsisInstall -FilePath $resolvedSetup'))
+    expect(script).toContain('DSH_DESKTOP_SMOKE_LEGACY_FIXTURE')
+    const document = load(readFileSync(new URL('../.github/workflows/windows-desktop.yml', import.meta.url), 'utf8'), {
+      schema: JSON_SCHEMA,
+    }) as { jobs: { 'build-install-smoke': { steps: { run?: string; uses?: string; with?: { path?: string } }[] } } }
+    const steps = document.jobs['build-install-smoke'].steps
+    expect(steps.some(step => step.run?.includes('verifySessionWorkspaceReceipt'))).toBe(false)
+    const uploaded = steps.filter(step => step.uses?.startsWith('actions/upload-artifact@')).map(step => step.with?.path ?? '').join('\n')
+    for (const privateFile of ['base-smoke-receipt.json', 'base-protected-paths.json', 'desktop-smoke-session-workspaces-win32.json']) {
+      expect(uploaded.includes(privateFile)).toBe(false)
+    }
+  })
+
+  it('prepares one base candidate from the pinned separate official source', () => {
+    const document = load(readFileSync(new URL('../.github/workflows/windows-desktop.yml', import.meta.url), 'utf8'), {
+      schema: JSON_SCHEMA,
+    }) as { jobs: { 'build-install-smoke': { steps: { name?: string; run?: string; with?: Record<string, unknown> }[] } } }
+    const steps = document.jobs['build-install-smoke'].steps
+    const official = steps.filter(step => step.with?.repository === 'deepseek-ai/deepseek-harness')
+    expect(official).toHaveLength(1)
+    expect(official[0]?.with).toMatchObject({ ref: 'fb2c4b9e698e30edb738bca4cf0618587db7d203', path: 'official', 'persist-credentials': false })
+    const build = steps.find(step => step.name === 'Build the assisted Windows Setup')?.run ?? ''
+    expect(build.match(/scripts\/prepare-desktop-base\.ts/gu)).toHaveLength(1)
+    expect(build.includes('pnpm run desktop:stage')).toBe(false)
+    expect(build.includes('--official-source "$env:DSH_DESKTOP_OFFICIAL_SOURCE"')).toBe(true)
+    expect(build.includes('--composition base --descriptor')).toBe(true)
+    expect(build.includes('official-runtime/node_modules/@deepseek-ai/dsh/package.json')).toBe(true)
+    const probe = steps.find(step => step.name === 'Verify Windows system paths without changing packaged bytes')?.run ?? ''
+    expect(probe.includes("resolve('packages/session/session-persistence-jsonl")).toBe(false)
+    expect(probe.includes('DSH_DESKTOP_OFFICIAL_SOURCE')).toBe(true)
+  })
+
+  it.skipIf(process.platform !== 'win32')('reads real base protection files and rejects incomplete or foreign lists with Windows PowerShell', () => {
+    const command = `
+      $ErrorActionPreference = 'Stop'
+      $tokens = $null; $errors = $null
+      $ast = [System.Management.Automation.Language.Parser]::ParseFile($env:DSH_SETUP_SCRIPT, [ref]$tokens, [ref]$errors)
+      if ($errors.Count -ne 0) { throw 'Setup smoke did not parse.' }
+      $definition = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-BaseProtectedSnapshot' }, $true)
+      . ([scriptblock]::Create($definition.Extent.Text))
+      $root = Join-Path ([IO.Path]::GetTempPath()) ('base-protection-' + [guid]::NewGuid().ToString('N'))
+      [void][IO.Directory]::CreateDirectory($root)
+      $file = Join-Path $root 'preserve.txt'
+      $inputPath = Join-Path $root 'base-protected-paths.json'
+      [IO.File]::WriteAllText($file, 'keep these bytes')
+      try {
+        $results = @()
+        foreach ($mode in @('valid','empty','duplicate','outside','missing','extra')) {
+          $paths = @($file)
+          if ($mode -eq 'empty') { $paths = @() }
+          if ($mode -eq 'duplicate') { $paths = @($file,$file) }
+          if ($mode -eq 'outside') { $paths = @([IO.Path]::Combine([IO.Path]::GetPathRoot($root), 'foreign.txt')) }
+          if ($mode -eq 'missing') { $paths = @(Join-Path $root 'missing.txt') }
+          $record = @{schemaVersion=1;composition='base';protectedPaths=$paths}
+          if ($mode -eq 'extra') { $record['allowOutside']=$true }
+          [IO.File]::WriteAllText($inputPath, ($record | ConvertTo-Json -Compress))
+          $rejected = $false; $snapshot = @()
+          try { $snapshot = @(Get-BaseProtectedSnapshot -Root $root) } catch { $rejected = $true }
+          $results += if ($mode -eq 'valid') { -not $rejected -and $snapshot.Count -eq 2 } else { $rejected }
+          if ([IO.File]::ReadAllText($file) -cne 'keep these bytes') { throw 'Protected data changed.' }
+        }
+        $results | ConvertTo-Json -Compress
+      } finally { [IO.Directory]::Delete($root, $true) }
+    `
+    const result = execFileSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], {
+      encoding: 'utf8', timeout: 30_000,
+      env: { ...process.env, DSH_SETUP_SCRIPT: fileURLToPath(new URL('./windows-desktop-setup-smoke.ps1', import.meta.url)) },
+    })
+    expect(JSON.parse(result)).toEqual([true, true, true, true, true, true])
+  })
+
+  it('requires a real base smoke descriptor and keeps its protected files through uninstall', () => {
+    const smoke = readFileSync(new URL('./windows-desktop-setup-smoke.ps1', import.meta.url), 'utf8')
+    expect(smoke).toContain('[string]$SmokeDescriptorPath')
+    expect(smoke).toContain('DSH_DESKTOP_SMOKE_DESCRIPTOR')
+    expect(smoke).toContain('function Get-BaseProtectedSnapshot')
+    expect(smoke).toContain('$baseProtectedBefore = @(Get-BaseProtectedSnapshot -Root $temporaryRoot)')
+    expect(smoke).toContain('$baseProtectedAfter = @(Get-BaseProtectedSnapshot -Root $temporaryRoot)')
+    expect(smoke).toContain('Compare-Object -ReferenceObject $baseProtectedBefore -DifferenceObject $baseProtectedAfter')
+    expect(smoke).not.toContain('$legacyRecoverySnapshot')
+    expect(smoke).toContain('Base smoke requires a prepare/stage descriptor.')
+  })
+
   it.skipIf(process.platform !== 'win32')('rejects background windows, partial or duplicate queries and changed foregrounds before Search Enter', () => {
     const source = fileURLToPath(new URL('./windows-desktop-native-visual-smoke.ps1', import.meta.url))
     const command = `
@@ -105,7 +315,8 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(smoke).toContain("'--policy', $PackagePolicy")
     expect(smoke).toContain("'--manifest', $resolvedManifest")
     expect(smoke).toContain('function Assert-ManagedPackageRootsPhysical')
-    expect(smoke).toContain("'resources\\app.asar.unpacked\\node_modules'")
+    expect(smoke).toContain("'--composition', 'base', '--descriptor', $resolvedDescriptor")
+    expect(smoke).not.toContain("$unpackedModules = Join-Path $InstallRoot 'resources\\app.asar.unpacked\\node_modules'")
     expect(smoke).toContain('[System.IO.FileAttributes]::ReparsePoint')
     expect(smoke).not.toContain('Copy-Item -LiteralPath $lifecyclePath')
   })
@@ -250,96 +461,41 @@ describe('Windows Desktop runtime evidence wiring', () => {
     expect(visual).toContain('tray-menu')
     expect(packaged).toContain("'--force-device-scale-factor=1.5'")
     expect(packaged).toContain('window.devicePixelRatio')
-    expect(packaged).toContain('seeded: WindowsClipboardSmokeState')
-    expect(packaged).toContain('const seeded = await runPackagedDesktopSmoke')
+    expect(packaged).toContain('seeded: PackagedDesktopBaseSmokeResult')
+    expect(packaged).toContain("const seeded = await runPackagedDesktopBaseSmoke(executable, 'win32', { scalePercent: 100 })")
+    expect(packaged).toContain('await reopenWindowsCoreHistory(page, legacy)')
+    expect(packaged).toContain('await completeWindowsCoreHistory(smokeRoot, descriptor, [...tracked], [...ports])')
+    expect(packaged).not.toContain('runPackagedDesktopSmoke(')
+    expect(packaged).not.toContain('Turn navigation')
+    expect(packaged).not.toContain('setViewportSize(')
     expect(packaged).toContain('exerciseWindows150PercentSurface(executable, seeded)')
-    expect(packaged).toContain('activateSmokeSession(page, seeded.activeSessionTitle)')
-    expect(packaged).not.toContain("expect(await page.locator('[class*=\"sidebarCol\"]').count()).toBe(1)")
-    expect(packaged).not.toContain("expect(await page.locator('[class*=\"centerCol\"]').count()).toBe(1)")
-    expect(packaged).not.toContain("expect(await page.locator('[class*=\"detailsCol\"]').count()).toBe(1)")
-    const desktopBody = packaged.indexOf('body[data-dsh-surface="desktop"]')
-    const frameColumns = packaged.indexOf('await expect.poll(async () => Promise.all([')
-    const rendererScale = packaged.indexOf('window.devicePixelRatio')
-    expect(desktopBody).toBeGreaterThan(-1)
-    expect(frameColumns).toBeGreaterThan(desktopBody)
-    expect(rendererScale).toBeGreaterThan(frameColumns)
-    expect(packaged).toContain("page.locator('[class*=\"sidebarCol\"]').count(),")
-    expect(packaged).toContain("page.locator('[class*=\"centerCol\"]').count(),")
-    expect(packaged).toContain("page.locator('[class*=\"detailsCol\"]').count(),")
-    expect(packaged).toContain(']), { timeout: 120_000 }).toEqual([1, 1, 0])')
-    expect(packaged).not.toContain(
-      "page.getByRole('navigation', { name: /^(?:Previous prompts|过往发言)$/u })\n"
-      + "      .waitFor({ state: 'visible', timeout: 30_000 })",
-    )
-    expect(packaged).toContain('Collapse sidebar|收起侧边栏')
-    expect(packaged).not.toContain('Close sidebar|关闭侧边栏')
-    const restoredSession = packaged.indexOf('await waitForDesktopSessionReady(page)')
-    const selectedTarget = packaged.indexOf('await activateSmokeSession(page, seeded.activeSessionTitle)')
-    const closeSidebar = packaged.indexOf('const closeSidebar = page.getByRole')
-    const collapsedAfterSelection = packaged.indexOf(
-      "() => page.locator('[class*=\"frame\"][data-sidebar-collapsed]').count()",
-      closeSidebar,
-    )
-    const promptRail = packaged.indexOf('const turnRail = page.locator')
-    const attachedRail = packaged.indexOf("await turnRail.waitFor({ state: 'attached'")
-    const track = packaged.indexOf("turnRail.locator('[data-turn-navigation-track]')")
-    const visibleTrack = packaged.indexOf("await turnRailTrack.waitFor({ state: 'visible'")
-    const populatedRail = packaged.indexOf("turnRail.locator('button[aria-label*=\"\u8df3\u8f6c\"], button[aria-label*=\"jump to\"]')", visibleTrack)
-    const currentRail = packaged.indexOf("turnRail.locator('button[aria-current=\"true\"]')")
-    const openTooltip = packaged.indexOf("page.getByRole('tooltip').waitFor({ state: 'visible'")
-    const workbench = packaged.indexOf('Open workbench|打开工作台')
-    expect(restoredSession).toBeGreaterThan(rendererScale)
-    expect(selectedTarget).toBeGreaterThan(restoredSession)
-    expect(closeSidebar).toBeGreaterThan(selectedTarget)
-    expect(collapsedAfterSelection).toBeGreaterThan(closeSidebar)
-    expect(promptRail).toBeGreaterThan(collapsedAfterSelection)
-    expect(attachedRail).toBeGreaterThan(promptRail)
-    expect(track).toBeGreaterThan(attachedRail)
-    expect(visibleTrack).toBeGreaterThan(track)
-    expect(populatedRail).toBeGreaterThan(visibleTrack)
-    expect(currentRail).toBeGreaterThan(populatedRail)
-    expect(openTooltip).toBeGreaterThan(currentRail)
-    expect(workbench).toBeGreaterThan(openTooltip)
-    expect(packaged).toContain('Turn navigation')
-    expect(packaged).not.toContain("await turnRail.waitFor({ state: 'visible'")
-    expect(packaged).toContain("await turnRail.waitFor({ state: 'attached'")
-    expect(packaged).toContain("await turnRailTrack.waitFor({ state: 'visible'")
-    expect(packaged).toContain('const turnRailBounds = await turnRailTrack.boundingBox()')
-    expect(packaged).toContain('.toBeGreaterThanOrEqual(2)')
-    expect(packaged).toContain(
-      "expect(await page.getByRole('button', { name: /^(?:Open workbench|打开工作台)$/u }).count()).toBe(0)",
-    )
-    for (const selector of [
-      '[data-desktop-workbench-panel], [data-utility-drawer], [data-side="utility"]',
-      '[data-plugin-card="browser-skill"], [data-browser-skill-idle]',
-      '[data-plugin-card="open-design"], [data-open-design-state]',
-    ]) {
-      expect(packaged).toContain(`'${selector}',\n    ).count()).toBe(0)`)
-    }
-    expect(packaged).not.toContain('await workbenchTrigger.click()')
-    expect(packaged).toContain('.toBeGreaterThan(680)')
-    expect(packaged).toContain("queryInlineSize <= 584 ? 'hidden' : 'visible'")
-    const nativeCapture = packaged.indexOf("path: join(nativeEvidenceRoot, 'renderer-native-150.png')")
-    const wideViewport = packaged.indexOf('await page.setViewportSize({ width: 1600, height: 1000 })')
-    expect(nativeCapture).toBeGreaterThan(attachedRail)
-    expect(wideViewport).toBeGreaterThan(nativeCapture)
-    expect(visibleTrack).toBeGreaterThan(wideViewport)
-    expect(packaged).toContain('waitForWindowsProcessesStopped')
-    const sharedPackaged = readFileSync(
-      new URL('../apps/desktop/tests/packaged-smoke.ts', import.meta.url),
-      'utf8',
-    )
-    expect(sharedPackaged.indexOf('await continueButton.click()'))
-      .toBeLessThan(sharedPackaged.indexOf('await page.setViewportSize('))
-    expect(sharedPackaged).toContain('expect(initialButton.receivesPointer).toBe(true)')
-    expect(workflow).toContain('desktop-smoke-first-run-win32.json')
-    expect(sharedPackaged).toContain('exerciseComposerAddMenu(page, clipboardSeed)')
-    expect(sharedPackaged).toContain('exerciseTurnNavigation(page, clipboardSeed)')
-    expect(sharedPackaged).toContain('exerciseWindowsDirectoryPicker(page, harnessHome, userData)')
-    expect(sharedPackaged).toContain('assertWorkbenchRemoved(page)')
-    expect(sharedPackaged).not.toContain('exerciseDesktopWorkbench(')
-    expect(sharedPackaged).not.toContain('seedOpenDesignPluginStatus(')
-    expect(sharedPackaged).not.toContain("join(harnessHome, 'profiles', 'open-design')")
+    expect(packaged.includes('HOME: smokeRoot, USERPROFILE: smokeRoot')).toBe(true)
+    expect(packaged).toContain("from './packaged-base-smoke.ts'")
+    expect(packaged).not.toContain("from './packaged-smoke.ts'")
+    const onboardingWait = packaged.indexOf("await waitForPackagedBaseReady(page, { welcome: 'expected', credentials: 'missing' })")
+    const portObserved = packaged.indexOf('const port = Number(new URL(page.url()).port)')
+    const portRegistered = packaged.indexOf('ports.add(port)')
+    expect(portObserved).toBeGreaterThanOrEqual(0)
+    expect(portRegistered).toBeGreaterThan(portObserved)
+    expect(onboardingWait).toBeGreaterThan(portRegistered)
+    expect(onboardingWait).toBeLessThan(packaged.indexOf('await reopenWindowsCoreHistory(page, legacy)'))
+    expect(packaged).not.toContain('await waitForDesktopSessionReady(page)')
+    expect(packaged).not.toContain('activateSmokeSession(')
+    expect(packaged).toContain("page.locator('[role=\"treeitem\"][aria-selected]')")
+    expect(packaged).toContain('page.getByText(seeded.activeSessionTitle, { exact: true })')
+    expect(packaged).toContain("sessionRow.getAttribute('aria-selected')")
+    expect(packaged).toContain("await composer.fill('Windows base 150% input probe')")
+    expect(packaged).toContain('nativeBounds.x + nativeBounds.width')
+    expect(packaged).toContain('nativeBounds.y + nativeBounds.height')
+    expect(packaged).toContain('waitForWindowsCoreProcessesStopped([...tracked], windowsProcessOutput)')
+    expect(packaged).not.toContain('parseWindowsProcessRows')
+    expect(packaged).toContain('closeBaseSmokeOwnedApplication({')
+    expect(packaged).toContain("$ErrorActionPreference = 'Stop'")
+    expect(packaged).toContain('await protectedSnapshot(seeded.protectedPaths)')
+    expect(packaged).toContain("'base-protected-paths.json'")
+    expect(packaged).toContain("schemaVersion: 1, composition: 'base', protectedPaths: seeded.protectedPaths")
+    expect(packaged).toContain("flag: 'wx', mode: 0o600")
+    expect(workflow).not.toContain('base-protected-paths.json')
     expect(workflow).toContain('Windows-native-visual-evidence-${{ steps.source.outputs.sha }}')
     expect(workflow).not.toContain('fixed-milestones/')
     expect(workflow).not.toContain('lifecycle.log')

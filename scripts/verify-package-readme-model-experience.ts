@@ -120,6 +120,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-settings-models': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/client/ui-settings-plugin-inventory': { kind: 'none', reason: 'Browser-side inventory projection; registers nothing model-facing.' },
   'packages/client/ui-settings-system-update': { kind: 'none', reason: 'Browser-side verified update projection; registers nothing model-facing.' },
+  'packages/client/ui-desktop-shell': { kind: 'none', reason: 'The native shell owns only window presentation, menu navigation and a native preference; it assembles no model request.' },
   'packages/client/ui-settings-personalization': { kind: 'indirect', reason: 'Browser-side editor; the existing Host agent-instructions loader owns the saved document\'s later model-visible effect.' },
   'packages/client/ui-settings-usage': { kind: 'none', reason: 'Browser-side usage projection; registers nothing model-facing.' },
   'packages/client/locale': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },

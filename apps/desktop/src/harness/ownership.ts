@@ -4,10 +4,10 @@ import { isAbsolute, relative, resolve } from 'node:path'
 
 const EXEC_MAX_BUFFER = 4 * 1024 * 1024
 
-/** macOS process-table query narrowed to commands that can contain the `web` subcommand. */
+/** macOS candidate query includes both historical web and current profile launchers. */
 export const MAC_DSH_PROCESS_QUERY = {
   file: '/usr/bin/pgrep',
-  args: ['-lf', 'web'],
+  args: ['-lf', 'dsh'],
   noMatchExitCode: 1,
 } as const
 
@@ -22,6 +22,8 @@ export type HarnessConflict = ProcessRecord
 
 /** Injectable process and open-file discovery seams. */
 export interface OwnershipDependencies {
+  /** Maintenance rejects every observed external dsh CLI, even without a currently open data file. */
+  mode?: 'startup' | 'maintenance'
   platform?: NodeJS.Platform
   listProcesses?: () => Promise<readonly ProcessRecord[]>
   listOpenFiles?: (pid: number) => Promise<readonly string[]>
@@ -135,19 +137,18 @@ async function canonicalize(path: string): Promise<string> {
   }
 }
 
-function isDshWebCommand(command: string): boolean {
+function isDshCommand(command: string): boolean {
   const tokens = command.match(/"[^"]*"|'[^']*'|\S+/gu)?.map(token =>
     token.replace(/^(?:"|')|(?:"|')$/gu, '')) ?? []
-  const webIndex = tokens.findIndex(token => token.toLowerCase() === 'web')
-  if (webIndex < 1) return false
-  const entry = tokens[webIndex - 1]?.replace(/\\/gu, '/').toLowerCase()
-  if (entry === undefined) return false
-  return entry === 'dsh' || entry === 'dsh.cmd' || entry === 'dsh.exe'
+  return tokens.some((token) => {
+    const entry = token.replace(/\\/gu, '/').toLowerCase()
+    return entry === 'dsh' || entry === 'dsh.cmd' || entry === 'dsh.exe'
     || entry.endsWith('/dsh')
     || entry.endsWith('/dsh.cmd')
     || entry.endsWith('/dsh.exe')
     || entry.endsWith('/.bin/dsh')
     || entry.endsWith('/@deepseek-ai/dsh/lib/bin.js')
+  })
 }
 
 function isWithin(root: string, candidate: string): boolean {
@@ -156,7 +157,8 @@ function isWithin(root: string, candidate: string): boolean {
 }
 
 /**
- * Find another local dsh Web Host that has the same Harness home open.
+ * Observe competing CLI processes before admitting a managed operation.
+ * This process-table observation is not a lock against a later uncooperative CLI launch.
  * @param dshHome - Exact resolved data root the desktop child would use.
  * @param dependencies - Injectable host discovery seams.
  * @returns The first conflicting writer, if one is observed.
@@ -176,8 +178,8 @@ export async function findConflictingHarness(
   const canonicalHome = platform === 'win32' ? undefined : await canonicalizer(dshHome)
 
   for (const processRecord of await processLister()) {
-    if (processRecord.pid === ownPid || !isDshWebCommand(processRecord.command)) continue
-    if (platform === 'win32') return processRecord
+    if (processRecord.pid === ownPid || !isDshCommand(processRecord.command)) continue
+    if (platform === 'win32' || dependencies.mode === 'maintenance') return processRecord
     for (const filename of await openFileLister(processRecord.pid)) {
       const canonicalFile = await canonicalizer(filename)
       if (canonicalHome !== undefined && isWithin(canonicalHome, canonicalFile)) return processRecord

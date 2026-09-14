@@ -1,4 +1,5 @@
 import type { DesktopUpdateSnapshot, DesktopInstallResult } from './update/contracts.ts'
+import type { DesktopCompatibilitySnapshot, DesktopPluginMutation } from './compatibility/contracts.ts'
 export { isDesktopUpdateSnapshot, isDesktopInstallResult } from './update/contracts.ts'
 export type { DesktopUpdateSnapshot } from './update/contracts.ts'
 
@@ -91,6 +92,12 @@ export function supportsDesktopUpdates(platform: NodeJS.Platform): boolean {
 
 /** Narrow API exposed through context isolation. */
 export interface DesktopApi {
+  /** Open native plugin recovery without depending on the Web Host's plugin graph. */
+  openCompatibility(): Promise<void>
+  /** Read only safe native plugin choices and pause explanations. */
+  getCompatibility(): Promise<DesktopCompatibilitySnapshot>
+  /** Apply a validated choice after native confirmation and stopped-runtime admission. */
+  mutatePlugin(mutation: DesktopPluginMutation): Promise<DesktopCompatibilitySnapshot>
   /** Trusted native-window presentation that survives renderer redirects. */
   readonly presentation: Readonly<DesktopPresentation>
   /** Subscribe to validated native menu commands. */

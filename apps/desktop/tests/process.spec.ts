@@ -21,6 +21,111 @@ class FakeChild extends EventEmitter {
 }
 
 describe('HarnessProcess', () => {
+  it('stops a live child that never commits startup readiness instead of waiting forever', async () => {
+    const child = new FakeChild()
+    const terminate = vi.fn(() => { child.exit() })
+    const runtime = new HarnessProcess({ cli: '/cli.js', requireHostReady: true, startupTimeoutMs: 25,
+      spawn: () => child as unknown as ChildProcess, terminateTree: terminate })
+    const started = runtime.start('/workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await expect(started).rejects.toThrow('handshake deadline')
+    expect(terminate).toHaveBeenCalledOnce()
+    expect(runtime.pid).toBeUndefined()
+  })
+  it.each([true, false])('waits for committed Host readiness as well as the URL (marker first: %s)', async (markerFirst) => {
+    const child = new FakeChild()
+    const runtime = new HarnessProcess({ cli: '/cli.js', requireHostReady: true,
+      spawn: () => child as unknown as ChildProcess, waitForHarness: async () => {}, terminateTree: () => { child.exit() } })
+    let settled = false
+    const started = runtime.start('/workspace').then(() => { settled = true })
+    try {
+      child.stdout.write(markerFirst ? 'dsh desktop: host-ready\n' : 'dsh web: http://127.0.0.1:45678\n')
+      await Promise.resolve()
+      expect(settled).toBe(false)
+      child.stdout.write(markerFirst ? 'dsh web: http://127.0.0.1:45678\n' : 'dsh desktop: host-ready\n')
+      await started
+      expect(settled).toBe(true)
+    } finally { await runtime.stop() }
+  })
+
+  it('settles asynchronous preparation before spawn and prevents a duplicate start', async () => {
+    let complete: (() => void) | undefined
+    const child = new FakeChild()
+    const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(() => child as unknown as ChildProcess)
+    const runtime = new HarnessProcess({ cli: '/cli.js', spawn, waitForHarness: async () => undefined,
+      prepare: () => new Promise<void>((resolve) => { complete = resolve }),
+    })
+    const started = runtime.start('/workspace')
+    expect(spawn).not.toHaveBeenCalled()
+    await expect(runtime.start('/workspace')).rejects.toThrow('already running')
+    complete?.()
+    await vi.waitFor(() => { expect(spawn).toHaveBeenCalledOnce() })
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await started
+  })
+  it('waits for cancelled preparation without spawning a late child', async () => {
+    let complete: (() => void) | undefined
+    const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>()
+    const runtime = new HarnessProcess({ cli: '/cli.js', spawn,
+      prepare: () => new Promise<void>((resolve) => { complete = resolve }),
+    })
+    const started = runtime.start('/workspace')
+    const rejected = expect(started).rejects.toThrow('cancelled during preparation')
+    const stopping = runtime.stop()
+    complete?.()
+    await Promise.all([rejected, stopping])
+    expect(spawn).not.toHaveBeenCalled()
+  })
+  it('omits profile initialization after the first launch has created it', async () => {
+    const children = [new FakeChild(), new FakeChild()]
+    let created = false
+    const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(() => children[created ? 1 : 0] as unknown as ChildProcess)
+    const owned = new HarnessProcess({
+      cli: '/official/lib/bin.js', profile: 'desktop-base',
+      fromDefaultProfile: () => created ? undefined : 'web',
+      spawn, waitForHarness: async () => undefined, terminateTree: vi.fn(),
+    })
+    const first = owned.start('/workspace')
+    children[0]!.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await first
+    created = true
+    children[0]!.exit()
+    await vi.waitFor(() => { expect(owned.pid).toBeUndefined() })
+    const second = owned.start('/workspace')
+    children[1]!.stdout.write('dsh web: http://127.0.0.1:45679\n')
+    await second
+    expect(spawn.mock.calls[0]?.[1]).toContain('--from-default-profile')
+    expect(spawn.mock.calls[1]?.[1]).not.toContain('--from-default-profile')
+  })
+  it('initializes a missing base profile through the official Web template option', async () => {
+    const child = new FakeChild()
+    const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(() => child as unknown as ChildProcess)
+    const owned = new HarnessProcess({
+      cli: '/official/lib/bin.js', profile: 'desktop-base', fromDefaultProfile: 'web',
+      spawn, waitForHarness: async () => undefined, terminateTree: vi.fn(),
+    })
+    const pending = owned.start('/workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await pending
+    expect(spawn.mock.calls[0]?.[1]).toEqual(expect.arrayContaining(['--from-default-profile', 'web']))
+  })
+
+  it('starts an explicitly selected official profile without the full Web alias', async () => {
+    const child = new FakeChild()
+    const spawn = vi.fn<NonNullable<HarnessProcessOptions['spawn']>>(() => child as unknown as ChildProcess)
+    const owned = new HarnessProcess({
+      executable: '/Electron', cli: '/official/node_modules/@deepseek-ai/dsh/lib/bin.js',
+      profile: 'desktop-base', patch: '/app/base.cordis.patch.yml', spawn,
+      waitForHarness: async () => undefined, terminateTree: vi.fn(),
+    })
+    const pending = owned.start('/workspace')
+    child.stdout.write('dsh web: http://127.0.0.1:45678\n')
+    await expect(pending).resolves.toBe('http://127.0.0.1:45678/')
+    expect(spawn.mock.calls[0]?.[1]).toContain('--profile')
+    expect(spawn.mock.calls[0]?.[1]).toContain('desktop-base')
+    expect(spawn.mock.calls[0]?.[1]).not.toContain('web')
+  })
+
   it('prepares the Desktop-owned module fallback before spawning the CLI', async () => {
     const order: string[] = []
     const markStartup = vi.fn<(milestone: DesktopStartupMilestone) => void>()

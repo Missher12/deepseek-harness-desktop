@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { isDesktopCompatibilitySnapshot, isDesktopPluginMutation } from './compatibility/contracts.ts'
 import {
   type DesktopApi,
   type DesktopUpdateSnapshot,
@@ -13,6 +14,18 @@ import {
 } from './preload-api.ts'
 
 const api: DesktopApi = {
+  async openCompatibility() { await ipcRenderer.invoke('desktop:compatibility-open') },
+  async getCompatibility() {
+    const value: unknown = await ipcRenderer.invoke('desktop:compatibility-get')
+    if (!isDesktopCompatibilitySnapshot(value)) throw new Error('Invalid native compatibility state.')
+    return value
+  },
+  async mutatePlugin(mutation) {
+    if (!isDesktopPluginMutation(mutation)) throw new Error('Invalid native plugin choice.')
+    const value: unknown = await ipcRenderer.invoke('desktop:compatibility-mutate', mutation)
+    if (!isDesktopCompatibilitySnapshot(value)) throw new Error('Invalid native compatibility state.')
+    return value
+  },
   presentation: desktopPresentation(process.platform),
   onCommand(listener) {
     const handler = (_event: Electron.IpcRendererEvent, value: unknown): void => {

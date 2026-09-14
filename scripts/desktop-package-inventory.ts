@@ -4,6 +4,7 @@ import { lstat, mkdir, readFile, readdir, realpath, stat, writeFile } from 'node
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertNoDesktopControlArtifacts } from './stage-desktop.ts'
+import { validateDesktopBaseSmokeDescriptor, type DesktopBaseSmokeDescriptor } from './desktop-base-contract.ts'
 
 /** Stable categories used to compare Desktop package trees. */
 export const DESKTOP_PACKAGE_CATEGORIES = [
@@ -90,6 +91,7 @@ function windowsX64PolicyViolation(path: string): string | undefined {
 export function assertDesktopPackageInventoryPolicy(
   inventory: DesktopPackagePathInventory,
   policy: DesktopPackagePolicy,
+  base?: DesktopBaseSmokeDescriptor,
 ): void {
   const policyLabel: Record<DesktopPackagePolicy, string> = { 'windows-x64': 'Windows x64' }
   const violations = inventory.files.flatMap((file) => {
@@ -100,7 +102,7 @@ export function assertDesktopPackageInventoryPolicy(
     throw new Error(`${policyLabel[policy]} package policy rejected ${String(violations.length)} file(s): ${violations.join(', ')}`)
   }
   const paths = inventory.files.map(file => file.path.replaceAll('\\', '/'))
-  const preservedRuntimeAssets = [
+  const preservedRuntimeAssets = base === undefined ? [
     {
       label: 'offline app.asar renderer',
       present: paths.includes('resources/app.asar'),
@@ -121,7 +123,7 @@ export function assertDesktopPackageInventoryPolicy(
       label: 'runtime WASM',
       present: paths.some(path => path.endsWith('.wasm')),
     },
-  ]
+  ] : base.requiredPaths.map(path => ({ label: path, present: paths.includes(path) }))
   const missing = preservedRuntimeAssets.filter(asset => !asset.present).map(asset => asset.label)
   if (missing.length > 0) {
     throw new Error(`${policyLabel[policy]} package policy is missing preserved runtime assets: ${missing.join(', ')}`)
@@ -138,13 +140,15 @@ export function assertRemovedDesktopFeaturesAbsent(inventory: DesktopPackagePath
 export function assertManagedPackageRootsArePhysical(
   inventory: DesktopPackagePathInventory,
   packageNames: readonly string[],
+  composition: 'base' | 'full' = 'full',
 ): void {
   const paths = new Set(inventory.files.map(file => file.path.replaceAll('\\', '/')))
   for (const packageName of packageNames) {
     if (!/^(?:@[^/]+\/)?[^/]+$/u.test(packageName)) {
       throw new Error('Desktop managed package name must be a package name without path traversal.')
     }
-    const manifest = `resources/app.asar.unpacked/node_modules/${packageName}/package.json`
+    const prefix = composition === 'base' ? 'official-runtime/' : ''
+    const manifest = `resources/app.asar.unpacked/${prefix}node_modules/${packageName}/package.json`
     if (!paths.has(manifest)) {
       throw new Error(`Desktop managed package ${packageName} is missing from physical app.asar.unpacked node_modules.`)
     }
@@ -271,17 +275,20 @@ export function assertWindowsX64PE(bytes: Buffer): void {
 }
 
 async function main(args: readonly string[]): Promise<void> {
-  const usage = 'Desktop package inventory usage: --output <inventory.json> [--historical-baseline | --policy windows-x64 --manifest <package.json>] <package root>'
+  const usage = 'Desktop package inventory usage: --output <inventory.json> [--historical-baseline | --policy windows-x64 --manifest <package.json> [--composition base --descriptor <base-smoke.json>]] <package root>'
   let output: string | undefined
   let policy: DesktopPackagePolicy | undefined
   let manifestPath: string | undefined
   let historicalBaseline = false
+  let composition: 'base' | 'full' = 'full'
+  let descriptorPath: string | undefined
   const roots: string[] = []
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
     if (argument === '--historical-baseline') {
       historicalBaseline = true
-    } else if (argument === '--output' || argument === '--policy' || argument === '--manifest') {
+    } else if (argument === '--output' || argument === '--policy' || argument === '--manifest'
+      || argument === '--composition' || argument === '--descriptor') {
       const value = args[index + 1]
       if (value === undefined) throw new Error(usage)
       if (argument === '--output') output = value
@@ -290,6 +297,11 @@ async function main(args: readonly string[]): Promise<void> {
         policy = value
       }
       if (argument === '--manifest') manifestPath = value
+      if (argument === '--descriptor') descriptorPath = value
+      if (argument === '--composition') {
+        if (value !== 'base' && value !== 'full') throw new Error('Unknown inventory composition.')
+        composition = value
+      }
       index += 1
     } else {
       roots.push(argument ?? '')
@@ -299,18 +311,31 @@ async function main(args: readonly string[]): Promise<void> {
   if (output === undefined || packageRoot === undefined || roots.length !== 1) throw new Error(usage)
   if ((policy === undefined) !== (manifestPath === undefined)) throw new Error(usage)
   if (historicalBaseline && (policy !== undefined || manifestPath !== undefined)) throw new Error(usage)
+  if (composition === 'base' && (historicalBaseline || policy === undefined || descriptorPath === undefined)) throw new Error(usage)
+  if (composition === 'full' && descriptorPath !== undefined) throw new Error(usage)
+  const descriptor = descriptorPath === undefined ? undefined
+    : validateDesktopBaseSmokeDescriptor(JSON.parse(await readFile(resolve(descriptorPath), 'utf8')) as unknown)
+  if (descriptor !== undefined && policy === 'windows-x64' && descriptor.platform !== 'win32') {
+    throw new Error('Windows inventory requires a Windows base descriptor.')
+  }
   const inventory = await createDesktopPackageInventory(packageRoot)
   if (policy !== undefined && manifestPath !== undefined) {
-    assertDesktopPackageInventoryPolicy(inventory, policy)
+    assertDesktopPackageInventoryPolicy(inventory, policy, descriptor)
     const manifest = JSON.parse(await readFile(resolve(manifestPath), 'utf8')) as {
+      name?: string
+      version?: string
       dependencies?: Record<string, unknown>
       optionalDependencies?: Record<string, unknown>
+    }
+    if (descriptor !== undefined && (manifest.name !== '@deepseek-ai/dsh' || manifest.version !== descriptor.harnessVersion
+      || Object.keys(manifest.dependencies ?? {}).length === 0)) {
+      throw new Error('Base inventory requires the real official CLI dependency manifest, not the empty shell manifest.')
     }
     const managedPackages = Object.keys({
       ...manifest.dependencies,
       ...manifest.optionalDependencies,
     }).sort((left, right) => left.localeCompare(right, 'en'))
-    assertManagedPackageRootsArePhysical(inventory, managedPackages)
+    assertManagedPackageRootsArePhysical(inventory, [...new Set([...managedPackages, ...descriptor?.requiredPackages ?? []])], composition)
 
   }
   if (!historicalBaseline) assertRemovedDesktopFeaturesAbsent(inventory)

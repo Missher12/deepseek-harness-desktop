@@ -53,8 +53,8 @@ function createWindow(): DesktopWindow & {
 }
 
 function createRuntime(): RuntimeController & {
-  start: ReturnType<typeof vi.fn>
-  stop: ReturnType<typeof vi.fn>
+  start: ReturnType<typeof vi.fn<RuntimeController['start']>>
+  stop: ReturnType<typeof vi.fn<RuntimeController['stop']>>
 } {
   return {
     start: vi.fn(async () => 'http://127.0.0.1:45678/'),
@@ -63,6 +63,116 @@ function createRuntime(): RuntimeController & {
 }
 
 describe('DesktopApplication', () => {
+  it('stops a second Host start during readiness instead of waiting for its startup deadline on quit', async () => {
+    const app = new FakeApp()
+    const runtime = createRuntime()
+    const second = deferred<string>()
+    runtime.start.mockResolvedValueOnce('http://127.0.0.1:43123').mockReturnValueOnce(second.promise)
+    const controller = new DesktopApplication({ app, runtime, createWindow: async () => createWindow(),
+      findConflict: async () => undefined, workspace: '/workspace' })
+    await controller.run()
+    const pending = controller.restartWith(async () => {})
+    await vi.waitFor(() => { expect(runtime.start).toHaveBeenCalledTimes(2) })
+    runtime.stop.mockImplementation(async () => { second.reject(new Error('Owned startup cancelled')) })
+    app.emit('before-quit', { preventDefault() {} } as never)
+    await vi.waitFor(() => { expect(app.exit).toHaveBeenCalledWith(0) })
+    await pending
+    expect(runtime.stop).toHaveBeenCalledTimes(2)
+  })
+  it('does not invoke a mutation when quit arrives during its second ownership check', async () => {
+    const app = new FakeApp()
+    const runtime = createRuntime()
+    const conflict = deferred<undefined>()
+    const findConflict = vi.fn(async () => undefined).mockResolvedValueOnce(undefined).mockReturnValueOnce(conflict.promise)
+    const controller = new DesktopApplication({ app, runtime, createWindow: async () => createWindow(), findConflict, workspace: '/workspace' })
+    await controller.run()
+    const mutation = vi.fn(async () => {})
+    const pending = controller.restartWith(mutation)
+    const rejected = expect(pending).rejects.toThrow('shutting down')
+    try {
+      await vi.waitFor(() => { expect(findConflict).toHaveBeenCalledTimes(2) })
+      app.emit('before-quit', { preventDefault() {} } as never)
+    } finally { conflict.resolve(undefined); await rejected }
+    await vi.waitFor(() => { expect(app.exit).toHaveBeenCalledWith(0) })
+    expect(mutation).not.toHaveBeenCalled()
+  })
+
+  it('cancels active validation before waiting for its quiescent shutdown', async () => {
+    const app = new FakeApp()
+    const runtime = createRuntime()
+    const controller = new DesktopApplication({ app, runtime, createWindow: async () => createWindow(), findConflict: async () => undefined, workspace: '/workspace' })
+    await controller.run()
+    let ready: (() => void) | undefined
+    const entered = new Promise<void>((resolve) => { ready = resolve })
+    const pending = controller.restartWith(signal => new Promise<void>((_resolve, reject) => {
+      signal.addEventListener('abort', () => { reject(new Error('validation cancelled')) }, { once: true })
+      ready?.()
+    }))
+    const rejected = expect(pending).rejects.toThrow('validation cancelled')
+    await entered
+    app.emit('before-quit', { preventDefault() {} } as never)
+    await rejected
+    await vi.waitFor(() => { expect(app.exit).toHaveBeenCalledWith(0) })
+    expect(runtime.start).toHaveBeenCalledOnce()
+  })
+  it('serializes native maintenance after teardown and waits for it on quit without restarting', async () => {
+    const app = new FakeApp()
+    const runtime = createRuntime()
+    const stopped = deferred<undefined>()
+    const mutated = deferred<undefined>()
+    const mutation = vi.fn(() => mutated.promise)
+    const controller = new DesktopApplication({ app, runtime, createWindow: async () => createWindow(),
+      findConflict: async () => undefined, workspace: '/workspace' })
+    await controller.run()
+    runtime.stop.mockReturnValueOnce(stopped.promise)
+    const pending = controller.restartWith(mutation)
+    try {
+      expect(mutation).not.toHaveBeenCalled()
+      await expect(controller.restartWith(async () => {})).rejects.toThrow('safe restart')
+      stopped.resolve(undefined)
+      await vi.waitFor(() => { expect(mutation).toHaveBeenCalledOnce() })
+      app.emit('before-quit', { preventDefault() {} } as never)
+      expect(app.exit).not.toHaveBeenCalled()
+    } finally {
+      stopped.resolve(undefined)
+      mutated.resolve(undefined)
+      await pending
+    }
+    await vi.waitFor(() => { expect(app.exit).toHaveBeenCalledWith(0) })
+    expect(runtime.start).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the recovery page when a stopped native operation fails and rejects detected writers', async () => {
+    const app = new FakeApp()
+    const runtime = createRuntime()
+    const window = createWindow()
+    const findConflict = vi.fn(async () => undefined as { pid: number; command: string } | undefined)
+    const controller = new DesktopApplication({ app, runtime, createWindow: async () => window,
+      findConflict, workspace: '/workspace' })
+    await controller.run()
+    await expect(controller.restartWith(async () => { throw new Error('fixture failure') })).rejects.toThrow('fixture failure')
+    expect(window.loadFailure).toHaveBeenLastCalledWith('startup')
+    findConflict.mockResolvedValueOnce({ pid: 42, command: 'dsh --profile web' })
+    const mutation = vi.fn(async () => {})
+    await expect(controller.restartWith(mutation)).rejects.toThrow('writer')
+    expect(mutation).not.toHaveBeenCalled()
+    expect(runtime.start).toHaveBeenCalledOnce()
+  })
+
+  it('does not start a late runtime after quitting during conflict discovery', async () => {
+    const app = new FakeApp()
+    const runtime = createRuntime()
+    const conflict = deferred<undefined>()
+    const controller = new DesktopApplication({ app, runtime, createWindow: async () => createWindow(),
+      findConflict: () => conflict.promise, workspace: '/workspace' })
+    const pending = controller.run()
+    try {
+      await vi.waitFor(() => { expect(app.handlers.has('before-quit')).toBe(true) })
+      app.emit('before-quit', { preventDefault() {} } as never)
+    } finally { conflict.resolve(undefined); await pending }
+    expect(runtime.start).not.toHaveBeenCalled()
+  })
+
   it('shows only after local loading content is ready, then loads the desktop URL', async () => {
     const app = new FakeApp()
     const window = createWindow()

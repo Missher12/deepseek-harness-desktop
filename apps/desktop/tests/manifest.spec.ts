@@ -98,7 +98,7 @@ describe('desktop package manifest', () => {
 
     expect(manifest).toMatchObject({
       name: '@deepseek-ai/dsh-desktop',
-      version: '0.5.8',
+      version: '0.6.0',
       packageManager: 'pnpm@11.7.0',
       private: true,
       main: 'lib/main.js',
@@ -122,18 +122,23 @@ describe('desktop package manifest', () => {
     )
   })
 
-  it('builds both desktop platforms with the official client brand profile', () => {
+  it('prepares explicit base inputs and packages reusable Desktop stages', () => {
     const rootManifest = JSON.parse(
       readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
     ) as Pick<DesktopManifest, 'scripts'>
 
     expect(rootManifest.scripts['desktop:stage']).toBe(
-      'pnpm run build:official && pnpm run desktop:stage:built',
+      'node --import tsx/esm scripts/prepare-desktop-base.ts',
     )
-    expect(rootManifest.scripts['desktop:pack']).toContain('desktop:stage')
-    expect(rootManifest.scripts['desktop:dmg']).toContain('desktop:stage')
-    expect(rootManifest.scripts['desktop:setup']).toBe(
-      'pnpm run build:official && pnpm run desktop:setup:built',
+    expect(rootManifest.scripts['desktop:stage:built']).toBe(
+      'node --import tsx/esm scripts/prepare-desktop-base.ts',
+    )
+    expect(rootManifest.scripts['desktop:pack']).toBe('pnpm --filter @deepseek-ai/dsh-desktop run pack:dir')
+    expect(rootManifest.scripts['desktop:dmg']).toBe('pnpm --filter @deepseek-ai/dsh-desktop run pack:dmg')
+    expect(rootManifest.scripts['desktop:setup']).toBe('pnpm run desktop:setup:built')
+    expect(rootManifest.scripts['desktop:setup:built']).toBe('pnpm --filter @deepseek-ai/dsh-desktop run pack:setup')
+    expect(rootManifest.scripts['desktop:full:stage:built']).toBe(
+      'pnpm run build:desktop:main && pnpm exec tsx scripts/stage-desktop.ts',
     )
   })
 
@@ -273,7 +278,9 @@ describe('desktop package manifest', () => {
       icon: 'assets/icon-windows.ico',
       electronLanguages: ['en-US', 'zh-CN'],
     })
-    expect(builder.asarUnpack).toEqual(['node_modules/**'])
+    expect(builder.asarUnpack).toEqual([
+      'node_modules/**', 'official-runtime/**', 'desktop-composition.json', 'base.cordis.patch.yml',
+    ])
     expect(builder.nsis).toMatchObject({
       include: 'build/installer.nsh',
       oneClick: false,

@@ -7,6 +7,11 @@ const en = {
   openSetup: 'Close and open Setup',
   show: 'Show DeepSeek Harness',
   quit: 'Quit',
+  pluginMessage: 'Apply plugin changes and restart the session service?',
+  pluginDetail: 'Active generations and tools will stop. Sessions, plugin code and data are preserved.',
+  pluginApply: 'Apply and restart',
+  recoveryMenu: 'Recovery',
+  recoveryOpen: 'Plugin recovery and system update…',
 } as const
 
 type NativeCopy = Readonly<Record<keyof typeof en, string>>
@@ -18,6 +23,11 @@ const zh: NativeCopy = {
   openSetup: '关闭并打开安装向导',
   show: '显示 DeepSeek Harness',
   quit: '退出',
+  pluginMessage: '应用插件更改并重启会话服务？',
+  pluginDetail: '正在进行的生成和工具任务将停止。会话、插件代码和数据会保留。',
+  pluginApply: '应用并重启',
+  recoveryMenu: '恢复',
+  recoveryOpen: '插件恢复与系统更新…',
 }
 
 /**

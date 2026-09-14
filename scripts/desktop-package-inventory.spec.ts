@@ -12,6 +12,8 @@ import {
   createDesktopPackageInventory,
 } from './desktop-package-inventory.ts'
 
+import { createDesktopBaseSmokeDescriptor } from './desktop-base-contract.ts'
+
 const roots: string[] = []
 
 afterEach(async () => {
@@ -25,6 +27,17 @@ async function write(root: string, relativePath: string, content: string): Promi
 }
 
 describe('desktop package inventory', () => {
+  it('requires the actual base core and native-helper files without imposing retired PDF enhancement assets', () => {
+    const descriptor = createDesktopBaseSmokeDescriptor('0.6.0', 'win32', [])
+    const inventory = { files: descriptor.requiredPaths.map(path => ({ path })) }
+    expect(() => { assertDesktopPackageInventoryPolicy(inventory, 'windows-x64', descriptor) }).not.toThrow()
+    const missing = { files: inventory.files.filter(file => !file.path.endsWith('/worker.cjs')) }
+    expect(() => { assertDesktopPackageInventoryPolicy(missing, 'windows-x64', descriptor) }).toThrow('worker.cjs')
+    expect(() => { assertManagedPackageRootsArePhysical({ files: [
+      { path: 'resources/app.asar.unpacked/node_modules/@deepseek-ai/dsh/package.json' },
+    ] }, ['@deepseek-ai/dsh'], 'base') }).toThrow('missing')
+  })
+
   it('keeps candidate checks strict while measuring historical packages without changing their bytes', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-inventory-cli-'))
     roots.push(root)

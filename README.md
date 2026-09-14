@@ -1,71 +1,70 @@
-# DeepSeek Harness
+# DeepSeek Harness Desktop
 
 English | [中文](README.zh.md)
 
-DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
+DeepSeek Harness Desktop brings the official [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) to macOS, Windows and Ubuntu. It is an independent community desktop distribution maintained by Missher.
 
-It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
+The project has two goals: package official Harness releases as desktop applications, and keep existing user-developed plugins fully usable on those applications.
 
-Documentation: [https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
+[Download](https://github.com/Missher12/deepseek-harness-desktop/releases) · [Desktop guide](apps/desktop/README.md) · [Plugins](#plugins) · [Source migration](docs/desktop-source-migration.md)
 
-## Unofficial desktop distribution
+## Downloads and development status
 
-This community repository preserves the official source and adds an unofficial Intel macOS and Windows x64 desktop application under [`apps/desktop`](apps/desktop/README.md). It is not an official DeepSeek desktop release. The application embeds the existing Harness Web runtime in a native Electron window, owns a random loopback port, and ships the user-supplied whale icon.
+The published release is [Desktop 0.5.8](https://github.com/Missher12/deepseek-harness-desktop/releases/tag/desktop-v0.5.8), built with Harness 0.1.5-rc.2. Use its release notes and checksums for the delivered feature set and installation details.
 
-Download the DMG or Setup executable from this repository's [Releases](https://github.com/Missher12/deepseek-harness-desktop/releases). The current builds are unsigned; macOS may require **Open** from Finder's context menu on first launch, and Windows may show a SmartScreen prompt.
+| Platform | Target | Installer |
+| --- | --- | --- |
+| macOS | Intel x64 | DMG |
+| Windows | x64 | Setup EXE |
+| Ubuntu | 22.04 / 24.04 x64 | deb / AppImage |
 
-The local Desktop 0.5.5 build integrates Harness `0.1.3-alpha.1`. It keeps the Project/Session tree, a left turn rail with a 16px inset, responsive transcript width, bounded document attachments and cached usage statistics. The right Workbench, BrowserSkill, Open Design and four bundled companion plugins are excluded from this local product composition. System Update shows separate Desktop and core versions and marks prereleases. This working build is not a published release; local Intel macOS verification does not establish Windows acceptance.
+The main branch contains Desktop 0.6.0 development source migrated from the validation repository. Its base-and-plugin separation is still in progress. The migration does not publish new installers or establish completed platform acceptance; the [migration record](docs/desktop-source-migration.md) identifies the imported source and outstanding checks.
 
-## Developer preview
+## Desktop and plugin responsibilities
 
-DeepSeek Harness is in _developer preview_ and iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**
+Desktop owns native windows, runtime startup and shutdown, system integration, installation and system updates. Official Harness provides the standard chat, model, tool and session capabilities. The three desktop targets share the same product structure.
 
-Review the [safety notice](SAFETY.md) before running the project.
+Starting with Desktop **0.6.0**, the desktop and plugins will be maintained and upgraded separately. The standard distribution will include **Enhance** as an independent enhancement plugin. Other plugins will be downloaded and installed from their own GitHub repositories.
 
-## Run
+Enhance remains independently configurable, disableable and upgradeable even when included by default. Compatible plugins can retain their versions when Desktop updates; a plugin receives only the compatibility changes needed to keep its existing functions available.
 
-### Run from `npm`
+<a id="plugins"></a>
 
-Install `Node.js`, then run:
+## Plugins
 
-```sh
-npx @deepseek-ai/dsh web
-```
+| Component | Existing capabilities | Project or availability |
+| --- | --- | --- |
+| Enhance | Usage statistics, highlighted footer, piano navigation, projectless sessions, model helpers, personalization, documents and cross-session messaging | `dsh-missher-enhance`; included in the planned 0.6.0 standard distribution, packaging in progress |
+| Project Ops | Project task discovery, execution, collection and verification | [dsh-project-ops](https://github.com/Missher12/dsh-project-ops) |
+| Memory | Reviewed facts, capture, search and memory maintenance | [dsh-missher-memory](https://github.com/Missher12/dsh-missher-memory) |
+| MSE / Evolution | Harness integration for the existing MSE experience and rule system | [dsh-missher-evolution](https://github.com/Missher12/dsh-missher-evolution) |
+| Media@Missher | Setup, collection, run results and export through the existing Media runtime | `dsh-media-missher`; private/local distribution |
+| Brain | Shared recall coordination for Memory and MSE, with data retained by each provider | `dsh-missher-brain`; local candidate, public installation entry pending |
 
-The command starts the Web UI at `http://127.0.0.1:3080` by default and opens it in the default browser for a local launch. An SSH launch only prints the host URL because the SSH client or editor owns the local forwarded address. Pass `--no-open` to run the server without opening a browser. See [Web UI guide](docs/user/guide/index.md).
+Plugin repositories and their Releases are the download entry points for additional plugins; unpublished entries are marked pending, and private repositories require access. Each plugin owns its supported Harness versions and platform limits. A project link alone does not establish compatibility with the current Desktop candidate. Media and MSE retain their original cores; this repository does not contain their private working data.
 
-### Run from source
+## Plugin settings and marketplace
 
-To run from a repository checkout:
+The intended common entry is **Settings → Plugins**, with **Installed** and **Marketplace** views. Installed plugins need visible versions, supported Harness versions, enabled or paused status, and configuration or usage entries. The existing marketplace should supply discovery, installation and updates, with results reflected in the installed list.
 
-```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
-pnpm install
-pnpm run build
-pnpm dsh web
-```
+Completing this path is the first outstanding integration task. Statistics, model helpers and other features retain their natural settings or conversation entries. The removed right Workbench and its BrowserSkill/Open Design entries are excluded. Feishu is outside the maintained plugin scope.
 
-`pnpm run build` prepares the repository artifacts. `pnpm dsh web` uses those built artifacts without rebuilding.
+## Update policy
 
-## Community and support
+For each official release, prepare the shared desktop and its macOS, Windows and Ubuntu packages first, then check the existing plugins against that version. Apply small plugin compatibility changes where needed. Confirmed incompatibility can pause a plugin while preserving its installation and data; temporary network or API failures do not by themselves prove incompatibility.
 
-- Submit feedback or bug reports through [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions).
-- Add the [`dsh-plugin`](https://github.com/topics/dsh-plugin) topic to your plugin repository for discoverability.
-- Join <a href="https://discord.gg/Ycq5dCaS4">DeepSeek Harness Discord community</a>.
+A paused or unverified plugin remains an outstanding item. Package creation and passing configuration checks do not mean every plugin is fully usable. Platform acceptance and release publication follow the [release guide](apps/desktop/releasing/README.md).
 
-## Contributing
+<a id="run"></a>
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+<a id="run-from-source"></a>
 
 ## Development
 
-Start with the [development guide](docs/development.md) and [architecture documentation](docs/architecture.md).
+Start with the [Desktop guide](apps/desktop/README.md), [development guide](docs/development.md) and [architecture](docs/architecture.md). Direct CLI usage belongs to the [official-profile reference](apps/cli/reference/README.md). Contributors and agents follow [AGENTS.md](AGENTS.md) and the current [project context](PROJECT_CONTEXT.md).
 
-For agents, follow [AGENTS.md](AGENTS.md).
+Desktop issues belong in [this repository](https://github.com/Missher12/deepseek-harness-desktop/issues); plugin issues belong in their owning projects. Official Harness development remains with the [upstream project](https://github.com/deepseek-ai/deepseek-harness).
 
 ## License
 
-[MIT](LICENSE)
-
-Third-party dependencies and their licenses are disclosed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[MIT](LICENSE). Preserve upstream notices; dependency notices are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

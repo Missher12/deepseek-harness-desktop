@@ -8,6 +8,22 @@ import {
 } from '../src/harness/ownership.ts'
 
 describe('findConflictingHarness', () => {
+  it('recognizes the official profile CLI without the historical web subcommand', async () => {
+    await expect(findConflictingHarness('/fixture/home', {
+      platform: 'darwin', ownPid: 10,
+      listProcesses: async () => [{ pid: 20, command: 'node /runtime/node_modules/@deepseek-ai/dsh/lib/bin.js --profile desktop-base' }],
+      listOpenFiles: async () => ['/fixture/home/storages/global.json'], canonicalize: async path => path,
+    })).resolves.toMatchObject({ pid: 20 })
+  })
+
+  it('refuses maintenance while an external package CLI is observed even with no open file', async () => {
+    const listOpenFiles = vi.fn(async () => [])
+    await expect(findConflictingHarness('/fixture/home', {
+      platform: 'linux', ownPid: 10, mode: 'maintenance', listOpenFiles,
+      listProcesses: async () => [{ pid: 20, command: '/bin/dsh plugin add example --profile web' }],
+    })).resolves.toMatchObject({ pid: 20 })
+    expect(listOpenFiles).not.toHaveBeenCalled()
+  })
   it('reports another dsh web process holding a file below the same DSH_HOME', async () => {
     const conflict = await findConflictingHarness('/Users/test/.dsh', {
       platform: 'darwin',
@@ -40,7 +56,7 @@ describe('findConflictingHarness', () => {
   it('uses a narrow macOS process query before the exact command and DSH_HOME checks', () => {
     expect(MAC_DSH_PROCESS_QUERY).toEqual({
       file: '/usr/bin/pgrep',
-      args: ['-lf', 'web'],
+      args: ['-lf', 'dsh'],
       noMatchExitCode: 1,
     })
     expect(parsePosixProcesses([

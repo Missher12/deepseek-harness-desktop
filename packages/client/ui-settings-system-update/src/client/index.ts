@@ -1,6 +1,7 @@
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { DesktopUpdateBridge, DesktopUpdateSnapshot } from './contracts.ts'
 import { SystemUpdateSection, type SystemUpdateInjected } from './SystemUpdateSection.tsx'
@@ -24,7 +25,7 @@ function isDesktopUpdateBridge(value: unknown): value is DesktopUpdateBridge {
     .every(key => typeof bridge[key] === 'function')
 }
 
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   const bridge = window.dshDesktop
   if (!isDesktopUpdateBridge(bridge)) return
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-system-update: dictionaries')

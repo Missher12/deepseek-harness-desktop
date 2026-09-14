@@ -1,0 +1,30 @@
+name: Ubuntu update environment preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ['22.04', '24.04']
+    runs-on: ubuntu-${{ matrix.ubuntu }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Read native update capabilities without installation
+        run: bash scripts/linux-desktop-update-preflight.sh "$RUNNER_TEMP/linux-update-preflight.json"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Ubuntu-${{ matrix.ubuntu }}-update-preflight-${{ github.sha }}
+          path: ${{ runner.temp }}/linux-update-preflight.json
+          if-no-files-found: error
+          retention-days: 14

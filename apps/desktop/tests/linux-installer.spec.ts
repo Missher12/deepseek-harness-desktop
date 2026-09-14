@@ -18,6 +18,7 @@ vi.mock('node:fs/promises', { spy: true })
 
 const roots: string[] = []
 afterEach(async () => {
+  vi.resetAllMocks()
   vi.restoreAllMocks()
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
@@ -207,5 +208,11 @@ describe.skipIf(process.platform === 'win32')('Linux verified package folder han
     const reveal = vi.fn(async () => '')
     await expect(revealLinuxUpdatePackage(descriptor, reveal)).rejects.toThrow('changed')
     expect(reveal).not.toHaveBeenCalled()
+  })
+
+  it('keeps the verified format when the folder callback changes its caller-owned descriptor', async () => {
+    const descriptor = await payload('appimage')
+    const result = await revealLinuxUpdatePackage(descriptor, async () => { descriptor.packageFormat = 'deb'; return '' })
+    expect(result.packageFormat).toBe('appimage')
   })
 })

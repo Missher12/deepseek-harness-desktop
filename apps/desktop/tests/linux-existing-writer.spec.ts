@@ -2,10 +2,12 @@ import { execFile, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { _electron as electron, type ElectronApplication } from 'playwright'
 import { describe, expect, it } from 'vitest'
+import { validateDesktopBaseSmokeDescriptor } from '../../../scripts/desktop-base-contract.ts'
+import { resolveDesktopRuntime } from '../src/harness/composition.ts'
 import { redactLogText } from '../src/logging.ts'
 import { classifyLinuxManagedRange, linuxDescendants, linuxDesktopEnvironment, linuxInstalledProbeSource, linuxLaunchRootPid, parseLinuxProcessStat, parseLinuxSystemProcessStat, prepareLinuxDesktopEnvironment, processAlive, readLinuxProcessIdentity, startLinuxInstalledProbe, withLinuxWriterFixture } from './linux-writer-fixture.ts'
 import type { LinuxInstalledProbe, LinuxProcessIdentity } from './linux-writer-fixture.ts'
@@ -32,12 +34,12 @@ async function lifecycleTail(userData: string): Promise<string> {
   }
 }
 
-async function writerDescendants(pid: number): Promise<number[]> {
+async function writerDescendants(pid: number, profile: string): Promise<number[]> {
   const candidates = await linuxDescendants(pid)
   const writers = await Promise.all(candidates.map(async (candidate) => {
     try {
       const command = (await readFile(`/proc/${String(candidate)}/cmdline`, 'utf8')).split('\0')
-      return command.includes('web') ? candidate : undefined
+      return command.includes(profile) ? candidate : undefined
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
       throw error
@@ -140,6 +142,10 @@ describe('Ubuntu packaged ownership with a simulated existing writer', () => {
     'uses real process/FD discovery, rejects the same home and allows a separate home',
     async () => {
       if (executable === undefined || evidenceRoot === undefined) throw new Error('Linux native inputs are missing')
+      const descriptorPath = process.env.DSH_DESKTOP_SMOKE_DESCRIPTOR
+      if (descriptorPath === undefined) throw new Error('Linux base descriptor is required')
+      const descriptor = validateDesktopBaseSmokeDescriptor(JSON.parse(await readFile(descriptorPath, 'utf8')) as unknown)
+      expect(descriptor.platform).toBe('linux')
       expect(process.getuid?.()).not.toBe(0)
       const output = join(evidenceRoot, 'ownership')
       await mkdir(output, { recursive: true })
@@ -160,7 +166,7 @@ describe('Ubuntu packaged ownership with a simulated existing writer', () => {
             await page.waitForURL(url => url.protocol === 'file:'
               && url.searchParams.get('reason') === 'runtime-conflict', { timeout: 30_000 })
             expect(await page.locator('#reason').innerText()).toContain('同一数据目录')
-            expect(await writerDescendants(pid)).toEqual([])
+            expect(await writerDescendants(pid, descriptor.effectiveProfile)).toEqual([])
             const lifecycle = await readFile(join(fixture.root, 'same-electron/logs/lifecycle.log'), 'utf8')
             expect(lifecycle).toContain(`runtime conflict pid=${String(fixture.pid)}`)
             expect(lifecycle).not.toContain('startup fallback-ready:')
@@ -173,7 +179,7 @@ describe('Ubuntu packaged ownership with a simulated existing writer', () => {
           await withDesktop(executable, separateHome, join(fixture.root, 'separate-electron'), join(output, 'separate-home'), async (application, pid) => {
             const page = await application.firstWindow()
             await page.waitForURL(/^http:\/\/127\.0\.0\.1:/u, { timeout: 120_000 })
-            expect((await writerDescendants(pid)).length).toBeGreaterThan(0)
+            expect((await writerDescendants(pid, descriptor.effectiveProfile)).length).toBeGreaterThan(0)
             await page.screenshot({ path: join(output, 'separate-home.png') })
           })
           await assertWriterPreserved()
@@ -181,7 +187,8 @@ describe('Ubuntu packaged ownership with a simulated existing writer', () => {
         })
         await writeFile(join(output, 'native.json'), JSON.stringify({
           schemaVersion: 1, candidateRevision: process.env.CANDIDATE_SHA,
-          scope: 'real kernel and packaged Desktop with simulated existing writer',
+          scope: 'real kernel and packaged base Desktop with simulated existing writer',
+          composition: descriptor.composition, effectiveProfile: descriptor.effectiveProfile,
           realExternalWebService: 'not-tested', sameHomeConflict: 'passed',
           noAdditionalWriterOnConflict: true, separateHomeStartup: 'passed',
           existingWriterPreserved: true, sentinelUnchanged: true,
@@ -270,6 +277,10 @@ describe('Ubuntu installed Session lock and managed subprocess ownership', () =>
     'contends on the actual Session lease and empties the observed native scope or fallback group',
     async () => {
       if (executable === undefined || evidenceRoot === undefined) throw new Error('Linux native inputs are missing')
+      const descriptorPath = process.env.DSH_DESKTOP_SMOKE_DESCRIPTOR
+      if (descriptorPath === undefined) throw new Error('Linux base descriptor is required')
+      const descriptor = validateDesktopBaseSmokeDescriptor(JSON.parse(await readFile(descriptorPath, 'utf8')) as unknown)
+      expect(descriptor.platform).toBe('linux')
       const root = await mkdtemp(join(tmpdir(), 'dsh-linux-installed-ownership-'))
       const output = join(evidenceRoot, 'kernel-ownership')
       await mkdir(output, { recursive: true })
@@ -290,7 +301,11 @@ describe('Ubuntu installed Session lock and managed subprocess ownership', () =>
           expect(runtime.appPath.endsWith('.asar')).toBe(true)
           expect(runtime.home).toBe(join(root, 'electron', 'isolated-host', 'user-home'))
           expect(runtime.userProfile).toBe(runtime.home)
-          const modules = join(`${runtime.appPath}.unpacked`, 'node_modules')
+          const selected = resolveDesktopRuntime(join(runtime.appPath, 'package.json'))
+          expect(selected.kind).toBe('base')
+          expect(selected.profile).toBe(descriptor.effectiveProfile)
+          expect(selected.harnessVersion).toBe(descriptor.harnessVersion)
+          const modules = join(dirname(dirname(runtime.appPath)), descriptor.coreRoot)
           const probes: LinuxInstalledProbe[] = []
           const identities: LinuxProcessIdentity[] = []
           let failure: unknown
@@ -500,3 +515,41 @@ describe('Linux kernel ownership classification', () => {
     expect(() => classifyLinuxManagedRange(root, child, 99)).toThrow('fallback')
   })
 })
+
+
+const legacyExecutable = process.env.DSH_LINUX_LEGACY_EXECUTABLE
+it.skipIf(process.platform !== 'linux' || legacyExecutable === undefined)(
+  'starts the verified old release before a stopped upgrade to the base candidate',
+  async () => {
+    if (legacyExecutable === undefined || evidenceRoot === undefined) throw new Error('Linux legacy launch inputs are required')
+    const descriptorPath = process.env.DSH_DESKTOP_SMOKE_DESCRIPTOR
+    if (descriptorPath === undefined) throw new Error('Linux base descriptor is required')
+    const descriptor = validateDesktopBaseSmokeDescriptor(JSON.parse(await readFile(descriptorPath, 'utf8')) as unknown)
+    expect(descriptor.platform).toBe('linux')
+    const root = await mkdtemp(join(tmpdir(), 'dsh-linux-old-ui-'))
+    try {
+      const home = join(root, 'dsh-home')
+      await mkdir(home)
+      const output = join(evidenceRoot, 'old-native-start')
+      await withDesktop(legacyExecutable, home, join(root, 'electron'), output, async (application) => {
+        const page = await application.firstWindow()
+        await page.waitForURL(/^http:\/\/127\.0\.0\.1:/u, { timeout: 120_000 })
+        const native = await application.evaluate(({ app }) => ({
+          packaged: app.isPackaged, desktopVersion: app.getVersion(), appPath: app.getAppPath(),
+        }))
+        const manifest = JSON.parse(await readFile(join(
+          `${native.appPath}.unpacked`, 'node_modules/@deepseek-ai/dsh/package.json',
+        ), 'utf8')) as { version: string }
+        const actual = { packaged: native.packaged, desktopVersion: native.desktopVersion, harnessVersion: manifest.version }
+        expect(actual).toEqual({
+          packaged: true, desktopVersion: descriptor.baseline.desktopVersion, harnessVersion: descriptor.baseline.harnessVersion,
+        })
+        await writeFile(join(output, 'identity.json'), JSON.stringify({
+          ...actual, sourceSha: descriptor.baseline.sourceSha,
+          scope: 'actual old packaged UI launch; historical session generation/readback is verified separately',
+        }, null, 2) + '\n')
+      })
+    } finally { await rm(root, { recursive: true, force: true }) }
+  },
+  180_000,
+)

@@ -7,6 +7,18 @@ function source(path: string): string {
 }
 
 describe('installed Windows update handoff entrance', () => {
+  it('uses real base versions and protected-file input instead of archived enhancement fixtures', () => {
+    const driver = source('../apps/desktop/tests/windows-update-handoff-smoke.spec.ts')
+    expect(driver).toContain('const base = await readBaseHandoffInput(smokeRoot, executable)')
+    expect(driver).toContain('runningVersions.includedHarness')
+    expect(driver).toContain('...base.protectedPaths')
+    expect(driver).toContain('base-protected-paths.json')
+    expect(driver).not.toContain("join(repositoryRoot, 'apps/cli/package.json')")
+    expect(driver).not.toContain('desktop-smoke-archived-session-id')
+    expect(driver).not.toContain('toEqual([1, 1, 0])')
+    expect(driver.includes('HOME: smokeRoot, USERPROFILE: smokeRoot')).toBe(true)
+  })
+
   it('preserves one SHA-bound internal Setup candidate before native lifecycle can fail', () => {
     const workflow = source('../.github/workflows/windows-desktop.yml')
     const checksum = workflow.indexOf('- name: Record SHA-256')
