@@ -34,14 +34,14 @@ Enhance remains independently configurable, disableable and upgradeable even whe
 
 | Component | Existing capabilities | Project or availability |
 | --- | --- | --- |
-| Enhance | Usage statistics, highlighted footer, piano navigation, projectless sessions, model helpers, personalization, documents and cross-session messaging | `dsh-missher-enhance`; included in the planned 0.6.0 standard distribution, packaging in progress |
+| Enhance | Usage statistics, highlighted footer, piano navigation, projectless sessions, model helpers, personalization, documents and cross-session messaging | [dsh-missher-enhance](https://github.com/Missher12/dsh-missher-enhance); public preview, planned as the default 0.6.0 plugin |
 | Project Ops | Project task discovery, execution, collection and verification | [dsh-project-ops](https://github.com/Missher12/dsh-project-ops) |
 | Memory | Reviewed facts, capture, search and memory maintenance | [dsh-missher-memory](https://github.com/Missher12/dsh-missher-memory) |
 | MSE / Evolution | Harness integration for the existing MSE experience and rule system | [dsh-missher-evolution](https://github.com/Missher12/dsh-missher-evolution) |
-| Media@Missher | Setup, collection, run results and export through the existing Media runtime | `dsh-media-missher`; private/local distribution |
-| Brain | Shared recall coordination for Memory and MSE, with data retained by each provider | `dsh-missher-brain`; local candidate, public installation entry pending |
+| Media@Missher | Setup, collection, run results and export through the existing Media runtime | [dsh-media-missher](https://github.com/Missher12/dsh-media-missher); private macOS distribution, repository access required |
+| Brain | Shared recall coordination for Memory and MSE, with data retained by each provider | [dsh-missher-brain](https://github.com/Missher12/dsh-missher-brain) |
 
-Plugin repositories and their Releases are the download entry points for additional plugins; unpublished entries are marked pending, and private repositories require access. Each plugin owns its supported Harness versions and platform limits. A project link alone does not establish compatibility with the current Desktop candidate. Media and MSE retain their original cores; this repository does not contain their private working data.
+The plugin repositories provide Agent installation guides and release downloads; public plugins also provide a one-command CLI install. GitHub availability is separate from marketplace admission, and private repositories require access. Each plugin owns its supported Harness versions and platform limits. A project link alone does not establish compatibility with the current Desktop candidate. Media and MSE retain their original cores; this repository does not contain their private working data.
 
 ## Plugin settings and marketplace
 

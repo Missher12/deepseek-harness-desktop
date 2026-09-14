@@ -34,14 +34,14 @@ Desktop 负责原生窗口、运行时启动退出、系统集成、安装和系
 
 | 组件 | 已有能力 | 项目或获取方式 |
 | --- | --- | --- |
-| Enhance 增强包 | 使用统计、数字高亮底栏、钢琴键、无项目会话、模型辅助、个性化、文档与跨会话消息 | `dsh-missher-enhance`；计划作为 0.6.0 标配，配套打包正在完善 |
+| Enhance 增强包 | 使用统计、数字高亮底栏、钢琴键、无项目会话、模型辅助、个性化、文档与跨会话消息 | [dsh-missher-enhance](https://github.com/Missher12/dsh-missher-enhance)；已公开预览，计划作为 0.6.0 标配 |
 | Project Ops | 项目任务发现、执行、收集与验证 | [dsh-project-ops](https://github.com/Missher12/dsh-project-ops) |
 | Memory | 已确认事实、捕获、搜索与记忆维护 | [dsh-missher-memory](https://github.com/Missher12/dsh-missher-memory) |
 | MSE / Evolution | 原有 MSE 经验与规则系统的 Harness 接入 | [dsh-missher-evolution](https://github.com/Missher12/dsh-missher-evolution) |
-| Media@Missher | 使用原有 Media 运行时完成设置、采集、结果查看与导出 | `dsh-media-missher`；私有／本地分发 |
-| Brain | 协调 Memory、MSE 的共享召回，数据仍由各提供方持有 | `dsh-missher-brain`；本地候选，公开安装入口待完善 |
+| Media@Missher | 使用原有 Media 运行时完成设置、采集、结果查看与导出 | [dsh-media-missher](https://github.com/Missher12/dsh-media-missher)；私有 macOS 分发，需要仓库访问权限 |
+| Brain | 协调 Memory、MSE 的共享召回，数据仍由各提供方持有 | [dsh-missher-brain](https://github.com/Missher12/dsh-missher-brain) |
 
-其他插件统一通过各自 GitHub 仓库及 Releases 获取；尚未发布的入口标为准备中，私有仓库需要访问权限。每个插件分别记录支持的 Harness 版本与平台限制。存在项目链接不等于已兼容当前 Desktop 候选。Media 与 MSE 保留原始核心，本仓库不包含其私有工作数据。
+各插件仓库提供 Agent 安装指南及发行包下载入口，公开插件还提供一条 CLI 安装命令。GitHub 可下载与市场收录分别维护，私有仓库需要访问权限。每个插件分别记录支持的 Harness 版本与平台限制。存在项目链接不等于已兼容当前 Desktop 候选。Media 与 MSE 保留原始核心，本仓库不包含其私有工作数据。
 
 ## 插件设置与市场
 
