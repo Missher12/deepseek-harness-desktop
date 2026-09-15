@@ -119,16 +119,38 @@ jobs:
             "$appimage" release/linux/deepseek-harness-desktop-update-linux-x64-appimage.json \
             "$version" "$harness" "${{ inputs.tag }}" --target linux-x64-appimage
 
+      - name: Derive per-package Ubuntu sidecars and stage the AppImage policy
+        if: inputs.linux_run != ''
+        run: |
+          set -euo pipefail
+          # The Ubuntu build publishes one combined SHA256SUMS-linux; the release
+          # keeps a sidecar beside each package, the way every other platform
+          # does, so a downloader never has to pick a line out of a shared file.
+          sums="$(find release/linux -maxdepth 1 -name 'SHA256SUMS-linux' | head -1)"
+          test -n "$sums"
+          while read -r hash name; do
+            test -n "${hash:-}" || continue
+            base="$(basename "$name")"
+            printf '%s  %s\n' "$hash" "$base" > "release/linux/$base.sha256"
+          done < "$sums"
+          ls -l release/linux
+
+          # The AppImage policy installer ships beside the AppImage it applies to.
+          policy="$(find scripts -maxdepth 1 -name 'linux-desktop-appimage-policy.sh' | head -1)"
+          test -n "$policy"
+          cp "$policy" release/linux/
+          ( cd release/linux && sha256sum linux-desktop-appimage-policy.sh > linux-desktop-appimage-policy.sh.sha256 )
+          cat release/linux/linux-desktop-appimage-policy.sh.sha256
+
       - name: Upload every fetched asset to the release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          files=$(find release -maxdepth 2 -type f \
-            \( -name '*.dmg' -o -name '*.dmg.sha256' -o -name '*.exe' -o -name '*.exe.sha256' \
-               -o -name '*.deb' -o -name '*.deb.sha256' -o -name '*.AppImage' -o -name '*.AppImage.sha256' \
-               -o -name 'deepseek-harness-desktop-update*.json' \) | sort)
+          # Everything staged above is a public asset except the combined sums
+          # file, whose content is redistributed as per-package sidecars.
+          files=$(find release -maxdepth 2 -type f ! -name 'SHA256SUMS-linux' | sort)
           echo "$files"
           test -n "$files"
           # shellcheck disable=SC2086
