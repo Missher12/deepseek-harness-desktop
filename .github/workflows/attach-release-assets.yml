@@ -1,0 +1,144 @@
+name: Attach Desktop Release Assets
+
+# Move already-accepted native artifacts from their build runs onto an existing
+# Desktop Release, entirely inside GitHub: the artifact download and the asset
+# upload both happen runner-side, so the operator's own link never carries the
+# package bytes. The build workflows deliberately keep `contents: read`; this
+# one is the only job that writes to a release, and it never rebuilds anything.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Desktop release tag to attach assets to
+        required: true
+        type: string
+      mac_run:
+        description: Run id of the macOS Desktop DMG build (empty to skip)
+        required: false
+        type: string
+        default: ''
+      win_run:
+        description: Run id of the Windows Desktop Setup build (empty to skip)
+        required: false
+        type: string
+        default: ''
+      linux_run:
+        description: Run id of the Ubuntu Desktop build (empty to skip)
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  attach:
+    name: Download accepted artifacts and attach them to the release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.7.0'
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install immutable dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # One download per run: download-artifact addresses exactly one run id.
+      - name: Fetch macOS package
+        if: inputs.mac_run != ''
+        uses: actions/download-artifact@v8
+        with:
+          pattern: DeepSeek-Harness-mac-x64-*
+          path: release/mac
+          merge-multiple: true
+          run-id: ${{ inputs.mac_run }}
+          github-token: ${{ github.token }}
+
+      - name: Fetch Windows package
+        if: inputs.win_run != ''
+        uses: actions/download-artifact@v8
+        with:
+          pattern: DeepSeek-Harness-Setup-win-x64-*
+          path: release/win
+          merge-multiple: true
+          run-id: ${{ inputs.win_run }}
+          github-token: ${{ github.token }}
+
+      - name: Fetch Ubuntu packages
+        if: inputs.linux_run != ''
+        uses: actions/download-artifact@v8
+        with:
+          pattern: Ubuntu-packages-*
+          path: release/linux
+          merge-multiple: true
+          run-id: ${{ inputs.linux_run }}
+          github-token: ${{ github.token }}
+
+      - name: Inventory fetched packages
+        run: find release -type f -printf '%s\t%p\n' | sort -k2
+
+      - name: Generate the Windows update manifest
+        if: inputs.win_run != ''
+        run: |
+          set -euo pipefail
+          exe="$(find release/win -maxdepth 1 -name 'DeepSeek-Harness-Setup-*-win-x64.exe' | head -1)"
+          version="$(jq -r .desktopVersion apps/desktop/update-metadata.json)"
+          harness="$(jq -r .harnessVersion apps/desktop/update-metadata.json)"
+          test -n "$exe"
+          pnpm exec tsx scripts/create-desktop-update-manifest.ts \
+            "$exe" release/win/deepseek-harness-desktop-update-win-x64.json \
+            "$version" "$harness" "${{ inputs.tag }}" --target win32-x64-nsis
+
+      - name: Generate the Ubuntu update manifests
+        if: inputs.linux_run != ''
+        run: |
+          set -euo pipefail
+          version="$(jq -r .desktopVersion apps/desktop/update-metadata.json)"
+          harness="$(jq -r .harnessVersion apps/desktop/update-metadata.json)"
+          deb="$(find release/linux -maxdepth 1 -name 'DeepSeek-Harness-*-linux-x64.deb' | head -1)"
+          appimage="$(find release/linux -maxdepth 1 -name 'DeepSeek-Harness-*-linux-x64.AppImage' | head -1)"
+          test -n "$deb" && test -n "$appimage"
+          pnpm exec tsx scripts/create-desktop-update-manifest.ts \
+            "$deb" release/linux/deepseek-harness-desktop-update-linux-x64-deb.json \
+            "$version" "$harness" "${{ inputs.tag }}" --target linux-x64-deb
+          pnpm exec tsx scripts/create-desktop-update-manifest.ts \
+            "$appimage" release/linux/deepseek-harness-desktop-update-linux-x64-appimage.json \
+            "$version" "$harness" "${{ inputs.tag }}" --target linux-x64-appimage
+
+      - name: Upload every fetched asset to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          files=$(find release -maxdepth 2 -type f \
+            \( -name '*.dmg' -o -name '*.dmg.sha256' -o -name '*.exe' -o -name '*.exe.sha256' \
+               -o -name '*.deb' -o -name '*.deb.sha256' -o -name '*.AppImage' -o -name '*.AppImage.sha256' \
+               -o -name 'deepseek-harness-desktop-update*.json' \) | sort)
+          echo "$files"
+          test -n "$files"
+          # shellcheck disable=SC2086
+          gh release upload "${{ inputs.tag }}" $files --clobber
+
+      - name: Report the resulting release inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view "${{ inputs.tag }}" --json tagName,isDraft,isPrerelease,targetCommitish,assets \
+            --jq '{tag:.tagName, draft:.isDraft, prerelease:.isPrerelease, target:.targetCommitish,
+                   assets:[.assets[]|{name,size,state,digest}]}'
