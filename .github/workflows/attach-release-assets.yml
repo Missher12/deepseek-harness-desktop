@@ -91,6 +91,23 @@ jobs:
       - name: Inventory fetched packages
         run: find release -type f -printf '%s\t%p\n' | sort -k2
 
+      - name: Generate the macOS update manifest
+        if: inputs.mac_run != ''
+        run: |
+          set -euo pipefail
+          # The macOS build job publishes the disk image and its sidecar but no
+          # manifest, so an attach that only forwarded what it fetched would
+          # leave the release advertising whichever image had been uploaded
+          # before it. Deriving the manifest here binds it to the bytes that are
+          # actually on the release.
+          dmg="$(find release/mac -maxdepth 1 -name 'DeepSeek-Harness-*-mac-x64.dmg' | head -1)"
+          version="$(jq -r .desktopVersion apps/desktop/update-metadata.json)"
+          harness="$(jq -r .harnessVersion apps/desktop/update-metadata.json)"
+          test -n "$dmg"
+          pnpm exec tsx scripts/create-desktop-update-manifest.ts \
+            "$dmg" release/mac/deepseek-harness-desktop-update.json \
+            "$version" "$harness" "${{ inputs.tag }}"
+
       - name: Generate the Windows update manifest
         if: inputs.win_run != ''
         run: |
