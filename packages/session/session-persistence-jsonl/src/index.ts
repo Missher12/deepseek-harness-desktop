@@ -13,7 +13,7 @@ import {
   sessionFormatCatalog,
 } from '@deepseek-ai/dsh-session-format-catalog'
 import { readdirSync, type Dirent } from 'node:fs'
-import { open, mkdir, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
+import { open, mkdir, readdir, realpath, link, rm, rmdir, stat, truncate } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { scheduler } from 'node:timers/promises'
@@ -466,6 +466,25 @@ class JsonlSessionPersistence extends SessionPersistence {
       await rm(dir, { recursive: true, force: true })
       this.coldLogMemo.delete(id)
       if (process.platform !== 'win32') await this.syncDirPosix(dirname(dir))
+      // The project directory is one level above the session directory, so a
+      // Session that owned its project key outright otherwise leaves an empty
+      // shell behind. Deliberately `rmdir`, never `rm`: a directory still
+      // holding other Sessions (or any other entry) raises ENOTEMPTY and is
+      // kept. The root guard means no unforeseen layout can remove the
+      // sessions root itself, which then holds no session directory of its own.
+      const projectDir = dirname(dir)
+      if (resolve(projectDir) !== resolve(this.root)) {
+        let removed = false
+        try {
+          await rmdir(projectDir)
+          removed = true
+        } catch {
+          // The project directory still holds other Sessions, or is already gone.
+        }
+        // The removal is a directory mutation like any other, so its parent —
+        // now the sessions root — carries the crash-durability barrier.
+        if (removed && process.platform !== 'win32') await this.syncDirPosix(dirname(projectDir))
+      }
       return true
     } finally {
       try {

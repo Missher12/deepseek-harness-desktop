@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -158,5 +158,42 @@ describe('permanent session deletion', () => {
     await expect(first.delete(header.id)).resolves.toBe(true)
     await expect(readFile(oldPath)).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(first.list()).resolves.toEqual([])
+  })
+
+  it('removes the project directory a deleted Session owned alone', async () => {
+    const { root, first } = await setup()
+    const header = meta('sole-owner', '/solo-project')
+    const writer = await first.create(header)
+    await writer.flush()
+    await writer.close()
+    const project = dirname(dirname(logPath(root, header.cwd, header.id, 'none')))
+    await expect(stat(project)).resolves.toBeDefined()
+
+    await expect(first.delete(header.id)).resolves.toBe(true)
+
+    // The empty project shell is bookkeeping the Session owned outright; the
+    // sessions root that contained it stays.
+    await expect(stat(project)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(stat(root)).resolves.toBeDefined()
+  })
+
+  it('keeps a project directory that still holds another Session', async () => {
+    const { root, first } = await setup()
+    const shared = '/shared-project'
+    const doomed = meta('doomed', shared)
+    const keeper = meta('keeper', shared)
+    for (const header of [doomed, keeper]) {
+      const writer = await first.create(header)
+      await writer.flush()
+      await writer.close()
+    }
+    const project = dirname(dirname(logPath(root, shared, doomed.id, 'none')))
+
+    await expect(first.delete(doomed.id)).resolves.toBe(true)
+
+    // ENOTEMPTY from the non-recursive removal is the whole guard: a project
+    // directory shared with a live Session is never taken.
+    await expect(stat(project)).resolves.toBeDefined()
+    await expect(first.stat(keeper.id)).resolves.toBeDefined()
   })
 })

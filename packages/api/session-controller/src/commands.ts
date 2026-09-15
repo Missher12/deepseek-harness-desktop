@@ -1,8 +1,8 @@
 /** Session commands whose activation policy is explicit at each Remote method. */
 
 import { randomUUID } from 'node:crypto'
-import { lstat, mkdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { lstat, mkdir, rmdir } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
@@ -105,15 +105,21 @@ export class SessionCommandController {
       }
     }
     let adopted: Agent
+    let createdScratch: string | undefined
     try {
-      const cwd = await this.creationCwd(request, sessionId, workspace)
+      const location = await this.creationCwd(request, sessionId, workspace)
+      createdScratch = location.created ? location.cwd : undefined
       adopted = await this.agents.ensureSession(
         sessionId,
-        cwd,
+        location.cwd,
         request.sessionId !== undefined,
         request.agentPreset,
       )
     } catch (error) {
+      // A refused mount (an unusable Agent preset is the common one) must not
+      // leave the scratch directory this attempt created: the Session never
+      // came into being, so nothing owns the directory.
+      if (createdScratch !== undefined) await removeEmptyDirectory(createdScratch)
       this.rejectCreation(sessionId, error)
     }
     if (workspace !== undefined) {
@@ -131,22 +137,30 @@ export class SessionCommandController {
     return { sessionId, ...(agentPreset === undefined ? {} : { agentPreset }) }
   }
 
+  /**
+   * Resolve where a new Session lives and create its scratch directory when
+   * the no-project policy owns it.
+   * @param request - requested location and adoption identity.
+   * @param sessionId - the Session identity.
+   * @param workspace - the named Workspace, when the request targets one.
+   * @returns the resolved cwd and whether THIS call created it.
+   */
   private async creationCwd(
     request: SessionCreateRequest,
     sessionId: SessionId,
     workspace: Workspace | undefined,
-  ): Promise<string> {
-    if (workspace !== undefined) return workspace.path
-    if (request.cwd !== undefined) return request.cwd
-    if (this.noProjectDirectory === undefined) return this.defaultCwd
+  ): Promise<{ readonly cwd: string; readonly created: boolean }> {
+    if (workspace !== undefined) return { cwd: workspace.path, created: false }
+    if (request.cwd !== undefined) return { cwd: request.cwd, created: false }
+    if (this.noProjectDirectory === undefined) return { cwd: this.defaultCwd, created: false }
 
     // Adoption keeps recorded work, including Sessions created before this policy existed.
     if (request.sessionId !== undefined) {
       const attached = this.ctx.sessions.get(sessionId)
-      if (attached !== undefined) return attached.header.cwd ?? this.defaultCwd
+      if (attached !== undefined) return { cwd: attached.header.cwd ?? this.defaultCwd, created: false }
       try {
         using observation = await this.ctx.sessionQuery.observeSession(sessionId, { projectionMode: 'none' })
-        return observation.header.cwd ?? this.defaultCwd
+        return { cwd: observation.header.cwd ?? this.defaultCwd, created: false }
       } catch (error) {
         if (!(error instanceof SessionQueryError)
           || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error
@@ -159,11 +173,17 @@ export class SessionCommandController {
       throw new RemoteError('gateway/bad-request', 'sessionId is not a portable Session directory name', {})
     }
     const cwd = join(this.noProjectDirectory, sessionId)
-    await mkdir(cwd, { recursive: true, mode: 0o700 })
-    if ((await lstat(cwd)).isSymbolicLink()) {
-      throw new Error(`Session directory "${cwd}" must not be a symbolic link or junction`)
+    const created = await createScratchDirectory(cwd)
+    try {
+      if ((await lstat(cwd)).isSymbolicLink()) {
+        throw new Error(`Session directory "${cwd}" must not be a symbolic link or junction`)
+      }
+    } catch (error) {
+      // This call made the directory and this call refuses it: leave nothing behind.
+      if (created) await removeEmptyDirectory(cwd)
+      throw error
     }
-    return cwd
+    return { cwd, created }
   }
 
   /**
@@ -226,9 +246,19 @@ export class SessionCommandController {
     if (persistence === undefined) {
       throw new RemoteError('gateway/internal', 'session persistence is unavailable', {})
     }
+    // Read the recorded cwd BEFORE the delete: the header that carries it goes
+    // away with the log, and this is the only chance to learn whether the
+    // Session owned a scratch directory outside every Workspace.
+    const scratch = await this.noProjectScratchDir(sessionId)
     try {
       await persistence.delete(sessionId)
       await this.ctx.workspaceRegistry.purgeSession(sessionId)
+      // A permanent delete is also the one place the Session's own auto-created
+      // working directory may go, so an empty one does not accumulate as junk.
+      // Removal is non-recursive on purpose: files a tool wrote there outlive
+      // the conversation that produced them, and only the empty shell this
+      // policy created is this method's to take. Archiving never reaches here.
+      if (scratch !== undefined) await removeEmptyDirectory(scratch)
       return { deleted: true }
     } catch (error) {
       if (remoteErrorOf(error) !== undefined) throw error
@@ -662,6 +692,27 @@ export class SessionCommandController {
     return { id: inspected.meta.id, header: inspected.meta, events: inspected.events }
   }
 
+  /**
+   * The auto-created scratch directory of a non-project Session, or undefined
+   * when the Session owns none. A Workspace Session's cwd is never returned:
+   * only a cwd exactly equal to `<noProjectDirectory>/<sessionId>` qualifies,
+   * so deleting a Session can never remove a real project directory.
+   * @param sessionId - the archived Session whose recorded cwd is inspected.
+   * @returns the scratch directory to remove alongside the Session, if any.
+   */
+  async noProjectScratchDir(sessionId: SessionId): Promise<string | undefined> {
+    if (this.noProjectDirectory === undefined) return undefined
+    let cwd: string | undefined
+    try {
+      cwd = (await this.readSessionState(sessionId)).header.cwd
+    } catch {
+      return undefined
+    }
+    if (typeof cwd !== 'string' || cwd.length === 0) return undefined
+    const expected = join(this.noProjectDirectory, sessionId)
+    return resolve(cwd) === resolve(expected) ? cwd : undefined
+  }
+
   private async forkWorkspace(source: SessionHeader): Promise<Workspace | undefined> {
     const workspaces = this.ctx.workspaceRegistry.list()
     const direct = workspaces.find(workspace => workspace.sessionIds.includes(source.id))
@@ -672,6 +723,41 @@ export class SessionCommandController {
       if (workspace !== undefined) return workspace
     }
     return undefined
+  }
+}
+
+/**
+ * Create one Session scratch directory, reporting whether THIS call made it.
+ * A directory that was already there is never claimed: rollback may only take
+ * back what this attempt brought into existence. A missing parent is not an
+ * error — the recursive retry creates both levels, and both are then ours.
+ * @param dir - the absolute scratch directory to create.
+ * @returns true when this call created the directory.
+ */
+async function createScratchDirectory(dir: string): Promise<boolean> {
+  try {
+    await mkdir(dir, { mode: 0o700 })
+    return true
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'EEXIST') return false
+    if (code !== 'ENOENT') throw error
+    await mkdir(dir, { recursive: true, mode: 0o700 })
+    return true
+  }
+}
+
+/**
+ * Remove one directory only while it is empty. Non-recursive by construction:
+ * anything the failed attempt actually wrote raises ENOTEMPTY and stays put,
+ * because this cleanup knows of no other writer and must not guess.
+ * @param dir - the directory a failed creation left behind.
+ */
+async function removeEmptyDirectory(dir: string): Promise<void> {
+  try {
+    await rmdir(dir)
+  } catch {
+    // Still non-empty, already gone, or not removable by this process.
   }
 }
 

@@ -225,6 +225,15 @@ async function flush(): Promise<void> {
   await Promise.resolve()
 }
 
+/** Bench with one recent Workspace, so `startSession` has a real creation target. */
+function startBench() {
+  const recent = summary('recent', { cwd: '/w/recent-home', updatedAt: 2 })
+  return bench({
+    sessions: sessionState([recent], recent.id),
+    workspaces: workspaceState([workspace('recent-home', [recent.id])]),
+  })
+}
+
 describe('UiWorkspaceService', () => {
   it('selects a Session before revealing its Conversation, including the current Session', () => {
     const current = sid('current')
@@ -503,6 +512,53 @@ describe('UiWorkspaceService', () => {
     await vi.waitFor(() => {
       expect(warning).toHaveBeenCalledWith('new session failed:', expect.any(Error))
     })
+  })
+
+  it('publishes a refused New Session as a readable banner and clears it on demand', async () => {
+    const b = startBench()
+    const listener = vi.fn()
+    const unsubscribe = b.uiWorkspace.sessionStartFailure.subscribe(listener)
+    expect(b.uiWorkspace.sessionStartFailure.getSnapshot()).toBeNull()
+
+    // The Host folds a business failure into the Remote shape; the code is the
+    // part that names the cause, so the banner has to carry it.
+    b.sessions.create.mockRejectedValueOnce(
+      new Error('session create failed: agent-preset/invalid: preset "mine" failed to mount'),
+    )
+    b.uiWorkspace.startSession(wid('recent-home'))
+
+    await vi.waitFor(() => {
+      expect(b.uiWorkspace.sessionStartFailure.getSnapshot())
+        .toBe('session create failed: agent-preset/invalid: preset "mine" failed to mount')
+    })
+    expect(listener).toHaveBeenCalled()
+
+    b.uiWorkspace.dismissSessionStartFailure()
+    expect(b.uiWorkspace.sessionStartFailure.getSnapshot()).toBeNull()
+    unsubscribe()
+  })
+
+  it('reports the structured Remote code of a refused New Session', async () => {
+    const b = startBench()
+    b.sessions.create.mockRejectedValueOnce(
+      Object.assign(new Error('wrapped'), {
+        rpcError: { code: 'agent-preset/invalid', message: 'preset "mine" failed to mount' },
+      }),
+    )
+    b.uiWorkspace.startSession(wid('recent-home'))
+
+    await vi.waitFor(() => {
+      expect(b.uiWorkspace.sessionStartFailure.getSnapshot())
+        .toBe('agent-preset/invalid: preset "mine" failed to mount')
+    })
+  })
+
+  it('reports a refused no-project Session the same way and still rejects the caller', async () => {
+    const b = bench()
+    b.sessions.create.mockRejectedValueOnce(new Error('no-project create failed'))
+
+    await expect(b.uiWorkspace.openNoProject()).rejects.toThrow('no-project create failed')
+    expect(b.uiWorkspace.sessionStartFailure.getSnapshot()).toBe('no-project create failed')
   })
 
   it('opens the recent Workspace after both baselines arrive', async () => {

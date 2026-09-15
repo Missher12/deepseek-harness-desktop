@@ -177,3 +177,55 @@ describe('the persona row', () => {
     ])
   })
 })
+
+/**
+ * Validate one raw composition config exactly as the Cordis loader does:
+ * through the standard-schema face, with the row's parsed YAML as `unknown`.
+ * That entry point is the one a stored preset actually takes, so a legacy
+ * field name has to be accepted here and not merely by a typed caller.
+ * @param raw - the parsed `config:` mapping of one plugin row.
+ * @returns the resolved persona config.
+ * @throws when validation reports issues.
+ */
+function loadConfig(raw: unknown): Persona.Config {
+  const result = Persona.Config['~standard'].validate(raw)
+  if (result instanceof Promise) throw new Error('config validation must be synchronous')
+  if (result.issues !== undefined) {
+    throw new Error(result.issues.map(issue => issue.message).join('\n'))
+  }
+  return result.value as Persona.Config
+}
+
+describe('the persona config schema', () => {
+  it('accepts the former `text` field and mounts it as the prefix', () => {
+    // A composition written before the rename must not fail the whole preset:
+    // that would take every new Session down with one stale field name.
+    expect(loadConfig({ text: 'Legacy identity.', suffix: 'Legacy suffix.' })).toEqual({
+      prefix: 'Legacy identity.',
+      suffix: 'Legacy suffix.',
+      complete: false,
+      includeRuntimeContext: true,
+    })
+  })
+
+  it('prefers `prefix` when a composition carries both spellings', () => {
+    expect(loadConfig({ prefix: 'New identity.', text: 'Legacy identity.' })).toMatchObject({
+      prefix: 'New identity.',
+    })
+  })
+
+  it('names the rename when neither spelling supplies the persona', () => {
+    expect(() => loadConfig({ suffix: '' })).toThrow(/\$\.prefix missing required value/)
+    expect(() => loadConfig({})).toThrow(/renamed to `prefix`/)
+  })
+
+  it('mounts a legacy composition through the schema, not only the raw apply', async () => {
+    const ctx = await harness('deployment identity')
+    const key: ScopeKey = { agent: 'legacy' }
+
+    await createScope(ctx, key).ctx.plugin(Persona, loadConfig({ text: 'Legacy identity.' }))
+
+    expect(await personaText(ctx, key)).toBe('Legacy identity.')
+    expect(await personaText(ctx)).toBe('deployment identity')
+  })
+})

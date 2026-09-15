@@ -13,7 +13,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Button, IconArchiveOutline20, IconCloseFill14, IconPersonalizationOutline16,
-  IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Toast, Tooltip, writeClipboard,
+  IconProjectAddOutline16, IconSearchOutline16, IconWarningOutline16, Menu, Modal, Toast, Tooltip,
+  writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   SessionListState, SessionSearchResultItem,
@@ -41,6 +42,16 @@ const SEARCH_DEBOUNCE_MS = 250
 const SEARCH_QUERY_MAX_CODE_UNITS = 500
 /** Session rows visible per Workspace before the local overflow control. */
 const COLLAPSED_SESSION_LIMIT = 5
+/**
+ * How long a refused New Session holds before fading.
+ *
+ * Longer than the primitive's default because this banner is the only place
+ * the refusal appears: no Session was created, so there is no conversation to
+ * look at, no row to inspect and nothing in the workspace tree to explain why
+ * the button did nothing. The message names a preset and often a field, which
+ * nobody reads in three seconds.
+ */
+const START_FAILURE_HOLD_MS = 8000
 
 /** Fold one Workspace without charging its provisional New Session against the ordinary-row limit. */
 function collapsedSessionRows(sessions: readonly SessionNode[]): {
@@ -851,6 +862,7 @@ export function WorkspaceBrowser({
   useStore,
   actions,
   startSession,
+  dismissSessionStartFailure,
   open,
   renameSession,
   forkSession,
@@ -866,10 +878,14 @@ export function WorkspaceBrowser({
   searchResultLimit,
   useDirectoryFlow,
   useHostInfo,
+  useSessionStartFailure,
   renderSlot,
   t,
 }: WorkspaceBrowserProps) {
   const home = useHostInfo(info => info.home)
+  // A refused New Session used to reach the operator only as a console line, so
+  // a preset the Host cannot mount looked like a button that does nothing.
+  const sessionStartFailure = useSessionStartFailure(failure => failure)
   const workspaces = useWorkspaces(state => state.items)
   const workspacePhase = useWorkspaces(state => state.phase)
   const workspaceStreamState = useWorkspaces(state => state.state)
@@ -1594,6 +1610,14 @@ export function WorkspaceBrowser({
           key={copyToast.seq}
           text={copyToast.text}
           onDone={() => { setCopyToast(null) }}
+        />
+      )}
+      {sessionStartFailure !== null && (
+        <Toast
+          text={t('session.newFailed', { reason: sessionStartFailure })}
+          icon={<IconWarningOutline16 />}
+          holdMs={START_FAILURE_HOLD_MS}
+          onDone={dismissSessionStartFailure}
         />
       )}
     </div>

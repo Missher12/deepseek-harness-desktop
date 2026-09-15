@@ -103,6 +103,7 @@ export function apply(ctx: Context): void {
     // Explicit group actions keep their target; unscoped New Session inherits
     // the current Session Workspace before the recent-Workspace fallback.
     startSession: (workspaceId) => { uiWorkspace.startSession(workspaceId) },
+    dismissSessionStartFailure: () => { uiWorkspace.dismissSessionStartFailure() },
     open: openSession,
     searchSessions,
     searchResultLimit: sessions.searchResultLimit,
@@ -132,7 +133,11 @@ export function apply(ctx: Context): void {
       await workspaces.insertSessionBefore(workspaceId, sessionId, beforeSessionId)
     },
     createWorkspace: input => workspaces.create(input),
-    hooks: { directoryFlow: browserFlowSource, hostInfo },
+    hooks: {
+      directoryFlow: browserFlowSource,
+      hostInfo,
+      sessionStartFailure: uiWorkspace.sessionStartFailure,
+    },
   })
   const pickerInjected = (): WorkspacePickerInjected => ({
     createWorkspace: input => workspaces.create(input),

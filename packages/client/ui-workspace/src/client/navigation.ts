@@ -10,6 +10,7 @@ import type {
   IWorkspaces, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 
 /** Workspace archive and directory operations consumed by Client UI domains. */
@@ -53,6 +54,15 @@ export interface UiWorkspace {
    * @param workspaceId - explicit target; absent inherits the current or most recent Workspace.
    */
   startSession(workspaceId?: WorkspaceId): void
+  /**
+   * The refusal that stopped the last New Session attempt, or null while none
+   * is outstanding. A Host that cannot mount the configured Agent preset
+   * fails session creation before any Session exists, and this is where that
+   * failure reaches a surface the operator can actually see.
+   */
+  readonly sessionStartFailure: HostObservable<string | null>
+  /** Clear the reported New Session refusal once its banner has been read. */
+  dismissSessionStartFailure(): void
   /**
    * Archive a Session and clear it when it is the current selection.
    * @param sessionId - Session to archive.
@@ -101,6 +111,19 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
   private connectingNoProject: Promise<SessionId> | undefined
   private readonly lifetime = new AbortController()
+  private startFailure: string | null = null
+  private readonly startFailureListeners = new Set<() => void>()
+  /**
+   * Stable source identity: the renderer caches its binding by source, so this
+   * object is built once and only its snapshot moves.
+   */
+  readonly sessionStartFailure: HostObservable<string | null> = {
+    getSnapshot: () => this.startFailure,
+    subscribe: (listener) => {
+      this.startFailureListeners.add(listener)
+      return () => { this.startFailureListeners.delete(listener) }
+    },
+  }
 
   /**
    * @param ctx - Client root Context.
@@ -184,7 +207,16 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   async openNoProject(beforeOpen?: (sessionId: SessionId) => void): Promise<void> {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
     const isCurrent = (): boolean => !navigation.aborted
-    const sessionId = await this.connectNoProject()
+    let sessionId: SessionId
+    try {
+      sessionId = await this.connectNoProject()
+    } catch (reason: unknown) {
+      // The hero's free-standing New Session is the same refusal as the
+      // sidebar button's, so it reports through the same banner and still
+      // rejects for the caller's own handling.
+      this.reportStartFailure(reason)
+      throw reason
+    }
     if (!isCurrent()) return
     beforeOpen?.(sessionId)
     if (isCurrent()) this.openSession(sessionId)
@@ -213,8 +245,26 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       return
     }
     void this.openWorkspace(target).catch(
-      (reason: unknown) => { console.warn('new session failed:', reason) },
+      (reason: unknown) => { this.reportStartFailure(reason) },
     )
+  }
+
+  dismissSessionStartFailure(): void {
+    if (this.startFailure === null) return
+    this.startFailure = null
+    for (const listener of [...this.startFailureListeners]) listener()
+  }
+
+  /**
+   * Publish one refused session start. The console line stays because it keeps
+   * the full object for debugging; the snapshot is what puts the refusal in
+   * front of the operator instead of only in a devtools console.
+   * @param reason - the rejection that left no Session to open.
+   */
+  private reportStartFailure(reason: unknown): void {
+    console.warn('new session failed:', reason)
+    this.startFailure = describeSessionStartFailure(reason)
+    for (const listener of [...this.startFailureListeners]) listener()
   }
 
   async archiveSession(sessionId: SessionId): Promise<void> {
@@ -292,6 +342,23 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     return true
   }
 
+}
+
+/**
+ * Render one refused session start as the identifier and message a person can
+ * act on. `session.create` folds its business failure into a Remote error, and
+ * that code is the part that names the cause — `agent-preset/invalid` says the
+ * configured preset could not mount, while the message names the row and the
+ * field inside it. Anything else degrades to its own message.
+ * @param reason - the rejection from a session-creating call.
+ * @returns the message shown in the refusal banner.
+ */
+function describeSessionStartFailure(reason: unknown): string {
+  const failure = (reason as { rpcError?: { code?: unknown; message?: unknown } } | null)?.rpcError
+  if (typeof failure?.code === 'string' && typeof failure.message === 'string') {
+    return `${failure.code}: ${failure.message}`
+  }
+  return reason instanceof Error ? reason.message : String(reason)
 }
 
 /** Stable tie-breaking follows Host Workspace order. */

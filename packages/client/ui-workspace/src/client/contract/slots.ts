@@ -96,6 +96,13 @@ export type WorkspaceBrowserInjected = {
      * saw. Select the field the surface needs (`info => info.home`).
      */
     hostInfo: HostObservable<RemoteHostFacts>
+    /**
+     * The refusal that stopped the last New Session attempt, or null. Session
+     * creation can fail before any Session exists — an Agent preset the Host
+     * refuses to mount is the common cause — and the sidebar is where the
+     * operator asked for that Session, so the sidebar reports it.
+     */
+    sessionStartFailure: HostObservable<string | null>
   }
   /**
    * Start a New Session in a Workspace: reuse-or-create its blank session and
@@ -103,6 +110,8 @@ export type WorkspaceBrowserInjected = {
    * Workspace, then the recent Workspace, or clear into the New Session view.
    */
   startSession: (workspaceId?: WorkspaceId) => void
+  /** Retire the shown New Session refusal once its banner has been read. */
+  dismissSessionStartFailure: () => void
   /** Open a real Session. */
   open: (sessionId: SessionId) => void
   /**
