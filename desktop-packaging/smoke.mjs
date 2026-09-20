@@ -88,6 +88,7 @@ function alive(pid) {
 
 try {
   application = await electron.launch({ executablePath: resolve(executable),
+    chromiumSandbox: true,
     args: [`--user-data-dir=${join(isolated, 'electron')}`], cwd: isolated,
     env: { ...environment, HOME: isolated, USERPROFILE: isolated,
       APPDATA: join(isolated, 'appdata'), LOCALAPPDATA: join(isolated, 'localappdata'),
@@ -99,9 +100,11 @@ try {
   const page = await application.firstWindow({ timeout: 120_000 })
   page.on('pageerror', error => { report.pageErrors.push(error.message) })
   await page.getByRole('button', { name: /^(New session|新建会话|新会话)$/u }).first().waitFor({ timeout: 120_000 })
-  const actual = await application.evaluate(({ app }) => ({ version: app.getVersion(), packaged: app.isPackaged }))
+  const actual = await application.evaluate(({ app }) => ({ version: app.getVersion(), packaged: app.isPackaged,
+    pid: process.pid, sandboxDisabled: process.argv.includes('--no-sandbox') }))
   assert.equal(actual.version, expectedVersion)
   assert.equal(actual.packaged, true)
+  assert.equal(actual.sandboxDisabled, false, 'Installed Desktop must retain its Chromium sandbox')
   assert(page.url().startsWith('dsh-app://app/'), 'Official packaged application origin is missing')
   report.packaged = actual.packaged
   report.uiReady = true
@@ -112,7 +115,7 @@ try {
     .map(name => readFile(join(evidence, 'journal', name), 'utf8')))).join('\n')
   assert(events.split('\n').filter(Boolean).map(line => JSON.parse(line))
     .some(event => event.event === 'workspace-ready'), 'Official Host never reached readiness')
-  report.host = await hostListener(child.pid)
+  report.host = await hostListener(actual.pid)
   await page.screenshot({ path: join(evidence, 'official-desktop.png') })
   ownedPids = await descendants(child.pid)
   await application.close()

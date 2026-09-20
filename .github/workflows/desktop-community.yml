@@ -44,6 +44,7 @@ jobs:
           node --test desktop-packaging/windows-evidence.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'Windows evidence validation failed' }
       - name: Package unsigned Setup
+        id: package
         shell: pwsh
         run: ./desktop-packaging/windows.ps1 -Mode Package
       - name: Install, open, exit and uninstall
@@ -59,7 +60,8 @@ jobs:
           name: windows-evidence-${{ github.sha }}
           path: ${{ runner.temp }}/windows-official-evidence
           if-no-files-found: ignore
-      - name: Retain accepted Setup
+      - name: Retain built Setup
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-installers-${{ github.sha }}
@@ -93,6 +95,7 @@ jobs:
       - name: Build deb and AppImage
         run: pnpm exec node desktop-packaging/linux.mjs
       - name: Bind artifacts to source
+        id: bind-artifacts
         run: |
           artifacts=apps/desktop/.desktop-build/targets/linux-x64/artifacts
           git rev-parse HEAD > "$artifacts/SOURCE_SHA"
@@ -107,7 +110,8 @@ jobs:
           name: ubuntu-22-evidence-${{ github.sha }}
           path: ${{ runner.temp }}/ubuntu-native
           if-no-files-found: ignore
-      - name: Retain accepted Linux installers
+      - name: Retain built Linux installers
+        if: ${{ !cancelled() && steps.bind-artifacts.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: linux-installers-${{ github.sha }}
