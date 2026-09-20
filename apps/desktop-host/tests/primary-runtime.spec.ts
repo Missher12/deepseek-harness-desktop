@@ -37,7 +37,7 @@ async function fixture() {
   return { source, root, manifest, directory }
 }
 
-it.each(['win32', 'darwin'])('returns %s interpreter and package paths', (platform) => {
+it.each(['win32', 'darwin', 'linux'])('returns %s interpreter and package paths', (platform) => {
   const manifest: PrimaryRuntimeManifest = { desktopVersion: '1', platform, arch: 'x64', components: { python: '3.12.14', node: '24.21.0', pnpm: '11.7.0', numpy: '2.3.5', pandas: '3.0.1' } }
   const paths = workspaceDependencyPaths('/runtime', manifest)
   expect(paths.pythonDistributions).toEqual({})
@@ -190,4 +190,12 @@ it.skipIf(process.platform === 'linux')('loads the real tool through Cordis, exp
   } finally {
     await ctx.fiber.dispose()
   }
+})
+
+it('accepts Linux primary runtime metadata while rejecting unknown platforms', async () => {
+  const { source, manifest } = await fixture()
+  await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, platform: 'linux', arch: 'x64' }))
+  expect((await readPrimaryRuntime(source)).platform).toBe('linux')
+  await writeFile(join(source, 'runtime.json'), JSON.stringify({ ...manifest, platform: 'unknown' }))
+  await expect(readPrimaryRuntime(source)).rejects.toThrow('invalid metadata')
 })

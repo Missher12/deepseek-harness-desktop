@@ -6,12 +6,13 @@ import { zipSync } from 'fflate'
 import { expect, it } from 'vitest'
 import { downloadPrimaryRuntimeAsset, prepareOfficeSkillAssets, primaryRuntimePayloadDigest, smokePrimaryRuntime, unpackPrimaryRuntimeWheel } from '../scripts/prepare-primary-runtime.ts'
 import lock from '../scripts/primary-runtime-lock.json' with { type: 'json' }
+import linuxLock from '../../../desktop-packaging/linux-runtime-lock.json' with { type: 'json' }
 
 const libraryWheel = Buffer.from('UEsDBAoAAAAAAASeLl0sYMPjDAAAAAwAAAAJAAAAc2FtcGxlLnB5c2FtcGxlID0gNDIKUEsBAh4DCgAAAAAABJ4uXSxgw+MMAAAADAAAAAkAAAAAAAAAAQAAAKSBAAAAAHNhbXBsZS5weVBLBQYAAAAAAQABADcAAAAzAAAAAAA=', 'base64')
 const relocatedWheel = Buffer.from('UEsDBAoAAAAAAASeLl3x0Nj9FAAAABQAAAAeAAAAc2FtcGxlLTEuMC5kYXRhL3NjcmlwdHMvc2FtcGxlcmVxdWlyZXMgcmVsb2NhdGlvbgpQSwECHgMKAAAAAAAEni5d8dDY/RQAAAAUAAAAHgAAAAAAAAABAAAApIEAAAAAc2FtcGxlLTEuMC5kYXRhL3NjcmlwdHMvc2FtcGxlUEsFBgAAAAABAAEATAAAAFAAAAAAAA==', 'base64')
 const externalLibraryWheel = Buffer.from('UEsDBBQAAAAAAAAAIVyBOE8OHAAAABwAAAAhAAAAc2FtcGxlLTEuMC5kYXRhL3B1cmVsaWIvc2FtcGxlLnB5cmVxdWlyZXMgbGlicmFyeSByZWxvY2F0aW9uClBLAQIUAxQAAAAAAAAAIVyBOE8OHAAAABwAAAAhAAAAAAAAAAAAAACAAQAAAABzYW1wbGUtMS4wLmRhdGEvcHVyZWxpYi9zYW1wbGUucHlQSwUGAAAAAAEAAQBPAAAAWwAAAAAA', 'base64')
 
-it.each(Object.entries(lock.targets))('records every locked wheel distribution and version for %s', (_target, artifact) => {
+it.each(Object.entries({ ...lock.targets, ...linuxLock.targets }))('records every locked wheel distribution and version for %s', (_target, artifact) => {
   const normalize = (name: string): string => name.toLowerCase().replace(/[-_.]+/gu, '-')
   const distributions = [...artifact.wheels, ...lock.wheels].map(({ url }) => {
     const [name, version] = basename(new URL(url).pathname).split('-')
@@ -128,4 +129,13 @@ it('copies complete Office resources outside the application archive and removes
     expect(await readFile(join(destination, 'scripts', 'check_office.py'), 'utf8')).toBe('print("checker")\n')
     await expect(readFile(join(destination, 'obsolete.py'))).rejects.toMatchObject({ code: 'ENOENT' })
   } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+it('adds the Linux payload without changing official Mac or Windows payload identities', () => {
+  const merged = { ...lock, targets: { ...lock.targets, ...linuxLock.targets } }
+  for (const target of ['mac-arm64', 'mac-x64', 'win-x64'] as const) {
+    expect(primaryRuntimePayloadDigest(target, merged, '11.7.0')).toBe(primaryRuntimePayloadDigest(target, lock, '11.7.0'))
+  }
+  for (const key of ['pythonVersion', 'pythonRelease', 'nodeVersion'] as const) expect(linuxLock[key]).toBe(lock[key])
+  expect(primaryRuntimePayloadDigest('linux-x64', merged, '11.7.0')).toMatch(/^[a-f0-9]{64}$/u)
 })

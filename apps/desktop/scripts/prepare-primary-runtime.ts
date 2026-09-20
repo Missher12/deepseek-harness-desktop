@@ -12,7 +12,13 @@ import { x as extractTar } from 'tar'
 import { workspaceDependencyPaths, type PrimaryRuntimeManifest } from '../../desktop-host/src/primary-runtime.ts'
 import { resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import { scrubWindowsSigningEnvironment } from './windows-sign.mjs'
-import lock from './primary-runtime-lock.json' with { type: 'json' }
+import officialLock from './primary-runtime-lock.json' with { type: 'json' }
+import linuxLock from '../../../desktop-packaging/linux-runtime-lock.json' with { type: 'json' }
+
+for (const key of ['nodeVersion', 'pythonVersion', 'pythonRelease'] as const) {
+  if (linuxLock[key] !== officialLock[key]) throw new Error(`primary runtime: Linux ${key} differs from the official lock`)
+}
+const lock = { ...officialLock, targets: { ...officialLock.targets, ...linuxLock.targets } }
 
 /**
  * Download or reuse an archive only when its bytes match the release lock.
@@ -48,7 +54,11 @@ async function pythonArchive(target: keyof typeof lock.targets, cache: string): 
  * @param pnpmVersion - Package-manager version copied into the payload.
  * @returns SHA-256 payload identity for installation reuse.
  */
-export function primaryRuntimePayloadDigest(target: keyof typeof lock.targets, runtimeLock: typeof lock, pnpmVersion: string): string {
+export function primaryRuntimePayloadDigest<T extends keyof typeof lock.targets>(
+  target: T,
+  runtimeLock: Omit<typeof officialLock, 'targets'> & { targets: Record<T, typeof officialLock.targets['mac-x64']> },
+  pnpmVersion: string,
+): string {
   const { pythonVersion, pythonRelease, nodeVersion, wheels, pythonPackages } = runtimeLock
   // Identity preserves key order within the selected target, wheel records and distribution map, plus wheel-entry order.
   // Bump format when extraction or assembly changes payload bytes without changing locked inputs.
@@ -124,7 +134,7 @@ export async function preparePrimaryRuntime(options: { deferSmoke?: boolean } = 
     const desktop = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8')) as { version: string }
     const manifest: PrimaryRuntimeManifest = {
       desktopVersion: desktop.version,
-      platform: target === 'win-x64' ? 'win32' : 'darwin',
+      platform: target === 'win-x64' ? 'win32' : target === 'linux-x64' ? 'linux' : 'darwin',
       arch: target === 'mac-arm64' ? 'arm64' : 'x64',
       payloadDigest: primaryRuntimePayloadDigest(target, lock, pnpm.version),
       pythonPackages: lock.pythonPackages,
