@@ -1,0 +1,54 @@
+name: Attach existing community Desktop assets
+
+on:
+  push:
+    branches: [codex/publish-existing-016a2-20260921]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  attach:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: desktop-v0.1.6-alpha.2
+      SOURCE_SHA: 013c602ae9e498d4ff4cb89e03828d0462a911cf
+    steps:
+      - name: Verify the draft and immutable build source
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/$GH_REPO/actions/runs/35522618316 --jq .head_sha)" = "$SOURCE_SHA"
+          gh release view "$RELEASE_TAG" --json isDraft,targetCommitish > release.json
+          jq -e --arg source "$SOURCE_SHA" '.isDraft == true and .targetCommitish == $source' release.json
+      - name: Download existing Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installers-013c602ae9e498d4ff4cb89e03828d0462a911cf
+          run-id: 35522618316
+          github-token: ${{ github.token }}
+          path: release/windows
+      - name: Download existing Ubuntu installers
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-installers-013c602ae9e498d4ff4cb89e03828d0462a911cf
+          run-id: 35522618316
+          github-token: ${{ github.token }}
+          path: release/linux
+      - name: Verify packaged bytes and attach to the draft
+        run: |
+          set -euo pipefail
+          test "$(cat release/linux/SOURCE_SHA)" = "$SOURCE_SHA"
+          (cd release/windows && sha256sum -c deepseek-harness-0.1.6-alpha.2-win-x64.exe.sha256)
+          echo 'c3cd20bfb90d108c28ced1307ab70fc7adc756850b86cbf7b2e2b481ef853844  release/windows/deepseek-harness-0.1.6-alpha.2-win-x64.exe' | sha256sum -c -
+          (cd release/linux && sha256sum -c SHA256SUMS-linux)
+          printf '%s\n' '2c01695ccddf25904119d4318aa05cef05db1b610535d5c0c400d85c73f3c7ed  deepseek-harness-0.1.6-alpha.2-mac-x64.dmg' > release/SHA256SUMS
+          (cd release/windows && sha256sum *.exe) >> release/SHA256SUMS
+          (cd release/linux && sha256sum *.deb *.AppImage linux-appimage-policy.sh README.linux.md README.linux.zh.md) >> release/SHA256SUMS
+          files=(release/windows/*.exe release/windows/*.sha256 release/linux/*.deb release/linux/*.AppImage release/linux/SHA256SUMS-linux release/linux/SOURCE_SHA release/linux/linux-appimage-policy.sh release/linux/README.linux.md release/linux/README.linux.zh.md release/SHA256SUMS)
+          gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
+          gh release view "$RELEASE_TAG" --json isDraft,targetCommitish,assets --jq '{isDraft,targetCommitish,assets:[.assets[]|{name,size,state}]}'
