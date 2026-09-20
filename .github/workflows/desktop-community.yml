@@ -1,0 +1,157 @@
+name: Community Desktop installers
+
+on:
+  push:
+    branches: [codex/official-desktop-016a2-20260920]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: community-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+jobs:
+  windows:
+    name: Windows x64 Setup
+    runs-on: windows-2025
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install locked build dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check Windows entry and receipt validation
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD/desktop-packaging/windows.ps1", [ref]$tokens, [ref]$parseErrors)
+          if ($parseErrors.Count) { throw 'Windows packaging PowerShell parse failed' }
+          node --test desktop-packaging/windows-evidence.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Windows evidence validation failed' }
+      - name: Package unsigned Setup
+        shell: pwsh
+        run: ./desktop-packaging/windows.ps1 -Mode Package
+      - name: Install, open, exit and uninstall
+        shell: pwsh
+        run: |
+          $setup = @(Get-ChildItem apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe)
+          if ($setup.Count -ne 1) { throw 'Expected one Setup' }
+          ./desktop-packaging/windows.ps1 -Mode Verify -Setup $setup[0].FullName -EvidenceDirectory "$env:RUNNER_TEMP/windows-official-evidence"
+      - name: Retain Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/windows-official-evidence
+          if-no-files-found: ignore
+      - name: Retain accepted Setup
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers-${{ github.sha }}
+          path: |
+            apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe
+            apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.sha256
+          if-no-files-found: error
+          compression-level: 0
+
+  ubuntu-build:
+    name: Ubuntu 22.04 x64 build and install
+    runs-on: ubuntu-22.04
+    timeout-minutes: 75
+    env:
+      CC: clang-15
+      CXX: clang++-15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install packaging and display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-15 xvfb xauth dbus-x11 libfuse2 libgtk-3-0 libnss3 libgbm1 libasound2 libsecret-1-0 desktop-file-utils lsof
+      - run: pnpm install --frozen-lockfile
+      - name: Build deb and AppImage
+        run: pnpm exec node desktop-packaging/linux.mjs
+      - name: Bind artifacts to source
+        run: |
+          artifacts=apps/desktop/.desktop-build/targets/linux-x64/artifacts
+          git rev-parse HEAD > "$artifacts/SOURCE_SHA"
+          cp desktop-packaging/linux-appimage-policy.sh desktop-packaging/README.linux.md desktop-packaging/README.linux.zh.md "$artifacts/"
+          (cd "$artifacts" && sha256sum linux-appimage-policy.sh README.linux.md README.linux.zh.md >> SHA256SUMS-linux)
+      - name: Install and verify both formats
+        run: bash desktop-packaging/linux-install-smoke.sh "$PWD/apps/desktop/.desktop-build/targets/linux-x64/artifacts" "$RUNNER_TEMP/ubuntu-native"
+      - name: Retain Ubuntu 22.04 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-22-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/ubuntu-native
+          if-no-files-found: ignore
+      - name: Retain accepted Linux installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-installers-${{ github.sha }}
+          path: |
+            apps/desktop/.desktop-build/targets/linux-x64/artifacts/*.deb
+            apps/desktop/.desktop-build/targets/linux-x64/artifacts/*.AppImage
+            apps/desktop/.desktop-build/targets/linux-x64/artifacts/SHA256SUMS-linux
+            apps/desktop/.desktop-build/targets/linux-x64/artifacts/SOURCE_SHA
+            apps/desktop/.desktop-build/targets/linux-x64/artifacts/linux-appimage-policy.sh
+            apps/desktop/.desktop-build/targets/linux-x64/artifacts/README.linux.md
+            apps/desktop/.desktop-build/targets/linux-x64/artifacts/README.linux.zh.md
+          if-no-files-found: error
+          compression-level: 0
+
+  ubuntu-24:
+    name: Ubuntu 24.04 x64 install existing artifacts
+    needs: ubuntu-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth dbus-x11 libfuse2t64 libgtk-3-0t64 libnss3 libgbm1 libasound2t64 libsecret-1-0 desktop-file-utils lsof apparmor apparmor-utils
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-installers-${{ github.sha }}
+          path: ${{ runner.temp }}/linux-artifacts
+      - name: Verify exact source and both installers
+        run: |
+          test "$(cat "$RUNNER_TEMP/linux-artifacts/SOURCE_SHA")" = "$(git rev-parse HEAD)"
+          bash desktop-packaging/linux-install-smoke.sh "$RUNNER_TEMP/linux-artifacts" "$RUNNER_TEMP/ubuntu-native"
+      - name: Retain Ubuntu 24.04 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-24-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/ubuntu-native
+          if-no-files-found: ignore

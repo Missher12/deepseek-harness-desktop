@@ -6,6 +6,8 @@ Status: implemented
 
 插件管理和原生恢复遵循[共享 Web 薄壳决策](2026-09-10-desktop-web-wrapper.zh.md)。
 
+[社区发行版](../process/2026-09-20-community-desktop-packaging.zh.md)使用独立的 ad-hoc 与 unsigned 安装包入口；下文的生产签名要求仍专属于官方发布流程。
+
 [Electron 运行时决策](2026-09-11-desktop-electron-node-runtime.zh.md)替代独立上游 Node 可执行文件的选择；本文其他决策仍然适用。
 
 ## 问题

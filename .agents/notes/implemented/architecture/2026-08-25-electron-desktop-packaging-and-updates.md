@@ -6,6 +6,8 @@ English | [中文](2026-08-25-electron-desktop-packaging-and-updates.zh.md)
 
 Plugin management and native recovery follow the [shared Web wrapper decision](2026-09-10-desktop-web-wrapper.md).
 
+The [community distribution](../process/2026-09-20-community-desktop-packaging.md) uses separate ad-hoc and unsigned installer entry points; the production signing qualifications below remain specific to the official release workflow.
+
 The [Electron runtime decision](2026-09-11-desktop-electron-node-runtime.md) supersedes the separate upstream Node executable; other decisions in this note remain applicable.
 
 ## Problem

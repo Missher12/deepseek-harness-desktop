@@ -1,75 +1,41 @@
-# DeepSeek Harness
+# DeepSeek Harness Desktop
 
 English | [中文](README.zh.md)
 
-DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
+DeepSeek Harness Desktop is an independent community distribution of the official [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), maintained by Missher. It packages the official application for macOS, Windows and Ubuntu.
 
-It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
+The source baseline is **Harness 0.1.6-alpha.2**. Desktop and its bundled Harness use the same version. The three platforms share the official interface, the blue-purple whale icon and an operating-system-assigned loopback port.
 
-Documentation: [https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
+<a id="run"></a>
 
-## Developer preview
+## Downloads
 
-DeepSeek Harness is in _developer preview_ and iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**
+Download installers and their SHA-256 checksums from [GitHub Releases](https://github.com/Missher12/deepseek-harness-desktop/releases). A source branch does not establish that its installers have been published; each release lists the available files and validation results.
 
-Review the [safety notice](SAFETY.md) before running the project.
+| Platform | Architecture | Installer |
+| --- | --- | --- |
+| macOS | Intel x64 | DMG |
+| Windows | x64 | Setup EXE |
+| Ubuntu | 22.04 / 24.04 x64 | deb / AppImage |
 
-## Run
+These community packages carry their own runtime. macOS packages use local ad-hoc signatures and are not notarized; Windows packages are unsigned. Platform installation requirements and native validation results belong to the release notes.
 
-### Run from `npm`
+## Application and plugins
 
-Install `Node.js`, then run:
+The application retains the official chat, model settings, sessions and Plugin Manager. This distribution does not preinstall the Missher enhancement package or other personal plugins.
 
-```sh
-npx @deepseek-ai/dsh web
-```
+Install optional plugins through the official **Plugins** page. Each plugin is responsible for declaring its supported Harness version. The presence of a GitHub repository or an installable package does not establish compatibility.
 
-The command starts the Web UI at `http://127.0.0.1:3080` by default and opens it in the default browser for a local launch. An SSH launch only prints the host URL because the SSH client or editor owns the local forwarded address. Pass `--no-open` to run the server without opening a browser. See [Web UI guide](docs/user/guide/index.md).
+<a id="run-from-source"></a>
 
-### Run from source
+## Source and packaging
 
-To run from a repository checkout:
+The upstream baseline is [dsh-v0.1.6-alpha.2](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.1.6-alpha.2). Community packaging lives in [desktop-packaging](desktop-packaging/); the official Electron shell lives in [apps/desktop](apps/desktop/README.md).
 
-```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
-pnpm install
-pnpm run build
-pnpm dsh web
-```
+Platform packages are built from one integrated source commit. Their checks cover installation, application readiness and exit with isolated data. They do not use paid model calls or establish third-party plugin compatibility.
 
-`pnpm run build` prepares the repository artifacts. `pnpm dsh web` uses those built artifacts without rebuilding.
-
-## Community and support
-
-- Submit feedback or bug reports through [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions).
-- Add the [`dsh-plugin`](https://github.com/topics/dsh-plugin) topic to your plugin repository for discoverability.
-- Join <a href="https://discord.gg/Ycq5dCaS4">DeepSeek Harness Discord community</a>.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Development
-
-Start with the [development guide](docs/development.md) and [architecture documentation](docs/architecture.md).
-
-For agents, follow [AGENTS.md](AGENTS.md).
-
-## Citation
-
-```bibtex
-@misc{deepseek-harness2026,
-  title={DeepSeek Harness: Everything is a Plugin},
-  author={DeepSeek-AI},
-  year={2026},
-  publisher={GitHub},
-  howpublished={\url{https://github.com/deepseek-ai/deepseek-harness}},
-}
-```
+For source development, see the [development guide](docs/development.md), [architecture](docs/architecture.md) and [contribution guide](CONTRIBUTING.md). Report issues with this distribution in [this repository](https://github.com/Missher12/deepseek-harness-desktop/issues).
 
 ## License
 
-[MIT](LICENSE)
-
-Third-party dependencies and their licenses are disclosed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[MIT](LICENSE). Upstream Harness is developed by DeepSeek AI. Dependency licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
