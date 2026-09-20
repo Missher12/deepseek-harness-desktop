@@ -40,6 +40,7 @@ jobs:
           [void][System.Management.Automation.Language.Parser]::ParseFile(
             "$PWD/desktop-packaging/windows.ps1", [ref]$tokens, [ref]$parseErrors)
           if ($parseErrors.Count) { throw 'Windows packaging PowerShell parse failed' }
+          ./desktop-packaging/windows-launch.test.ps1
           node --test desktop-packaging/windows-evidence.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'Windows evidence validation failed' }
       - name: Package unsigned Setup

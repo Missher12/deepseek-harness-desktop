@@ -110,6 +110,10 @@ function Get-OwnedProcesses {
 }
 
 function Invoke-Bounded([string]$File, [string]$Arguments, [int]$Seconds) {
+  if (-not [IO.Path]::IsPathFullyQualified($File) -or -not (Test-Path -LiteralPath $File -PathType Leaf)) {
+    throw "Executable is not an existing absolute file during $($report.stage)."
+  }
+  Write-Output "Starting $($report.stage): $([IO.Path]::GetFileName($File))"
   $process = Start-Process -FilePath $File -ArgumentList $Arguments -PassThru -NoNewWindow
   $identity = Get-CimInstance Win32_Process -Filter "ProcessId=$($process.Id)"
   if ($identity) { $owned[[int]$process.Id] = $identity.CreationDate }
@@ -126,14 +130,26 @@ function Invoke-Bounded([string]$File, [string]$Arguments, [int]$Seconds) {
   if ($process.ExitCode -ne 0) { throw "$($report.stage) exited with code $($process.ExitCode)." }
 }
 
+function Resolve-NodeExecutable {
+  $command = Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1
+  $executable = $command.Source
+  if (-not [IO.Path]::IsPathFullyQualified($executable) -or -not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+    throw 'Selected Node executable is not an existing absolute file.'
+  }
+  return $executable
+}
+
+$primaryFailure = $null
+$cleanupFailure = $null
 try {
   # /D must be the final NSIS argument, without quotes, even when it contains spaces.
   Invoke-Bounded $Setup "/S /currentuser /D=$installRoot" 900
   if (-not (Test-Path -LiteralPath $installedExe -PathType Leaf)) { throw 'Installed executable is missing.' }
   $report.installed = $true
   $report.stage = 'smoke'
-  $node = (Get-Command node -CommandType Application).Source
+  $node = Resolve-NodeExecutable
   $smoke = Join-Path $PSScriptRoot 'smoke.mjs'
+  if (-not (Test-Path -LiteralPath $smoke -PathType Leaf)) { throw 'Shared smoke entry is missing.' }
   $uiEvidence = Join-Path $EvidenceDirectory 'ui'
   Invoke-Bounded $node "`"$smoke`" `"$installedExe`" `"$uiEvidence`"" 360
   & $node (Join-Path $PSScriptRoot 'windows-evidence.mjs') (Join-Path $uiEvidence 'smoke.json') $version
@@ -141,8 +157,9 @@ try {
   $report.smoke = $true
 } catch {
   $report.failureStage = $report.stage
-  throw
+  $primaryFailure = $_
 } finally {
+  try {
   # Forced teardown is failure cleanup, never evidence of a successful ordinary exit.
   foreach ($row in @(Get-OwnedProcesses)) {
     $report.forcedCleanup = $true
@@ -181,7 +198,12 @@ try {
     $report.remainingProcesses = $remaining.Count
     [IO.File]::WriteAllText((Join-Path $EvidenceDirectory 'windows-install.json'), (($report | ConvertTo-Json -Depth 4) + "`n"), $utf8)
   }
+  } catch {
+    $cleanupFailure = $_
+  }
 }
+if ($null -ne $primaryFailure) { throw $primaryFailure }
+if ($null -ne $cleanupFailure) { throw $cleanupFailure }
 if (-not $report.installed -or -not $report.smoke -or -not $report.uninstalled -or
     $report.remainingProcesses -ne 0 -or $report.timedOut -or $report.forcedCleanup) {
   throw 'Windows installation lifecycle did not complete cleanly.'
