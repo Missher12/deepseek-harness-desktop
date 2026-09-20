@@ -17,3 +17,22 @@ test('Linux installer config retains sandboxing in the actual AppImage desktop c
   const baseline = new AppImageTarget('appImage', { ...packager, config: { ...config, appImage: undefined } }, helper, '/unused-test-output')
   assert.match(await baseline.desktopEntry.value, /--no-sandbox/u)
 })
+
+test('deb metadata satisfies FPM and both installer names retain the x64 delivery name', async () => {
+  const { AppInfo } = require('app-builder-lib/out/appInfo.js')
+  const { default: FpmTarget } = require('app-builder-lib/out/targets/FpmTarget.js')
+  const { PlatformPackager } = require('app-builder-lib/out/platformPackager.js')
+  const metadata = { name: '@deepseek-ai/dsh-desktop', version: '0.1.6-alpha.2', ...config.extraMetadata }
+  const appInfo = { info: { metadata }, notNullDevMetadata: {}, linuxPackageName: 'deepseek-harness' }
+  const packager = { appInfo: { ...appInfo, computePackageUrl: () => AppInfo.prototype.computePackageUrl.call(appInfo) },
+    info: { metadata } }
+  const meta = await FpmTarget.prototype.computeFpmMetaInfoOptions.call({ packager, options: { ...config.linux, ...config.deb } })
+  assert.equal(meta.url, 'https://github.com/Missher12/deepseek-harness-desktop')
+  assert.equal(meta.maintainer, config.linux.maintainer)
+  const naming = { appInfo: metadata, platform: { buildConfigurationKey: 'linux' },
+    expandMacro: PlatformPackager.prototype.expandMacro }
+  for (const ext of ['deb', 'AppImage']) {
+    assert.equal(PlatformPackager.prototype.computeArtifactName.call(naming, config.artifactName, ext, 1),
+      `deepseek-harness-0.1.6-alpha.2-linux-x64.${ext}`)
+  }
+})

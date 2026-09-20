@@ -8,9 +8,9 @@ const appId = 'com.deepseek.harness'
 
 export default {
   appId,
-  extraMetadata: { dshDesktopAppId: appId },
+  extraMetadata: { dshDesktopAppId: appId, homepage: 'https://github.com/Missher12/deepseek-harness-desktop' },
   productName: 'DeepSeek Harness',
-  artifactName: 'deepseek-harness-${version}-${os}-${arch}.${ext}',
+  artifactName: 'deepseek-harness-${version}-linux-x64.${ext}',
   directories: { app: appRoot, output: paths.artifacts },
   asar: true,
   electronDist: paths.electron,
