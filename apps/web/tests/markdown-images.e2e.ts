@@ -165,9 +165,11 @@ describe('web e2e: Markdown image rendering', () => {
     scaffold = await launchWebScaffold({})
     await writeFile(join(scaffold.workspaceCwd, 'valid.png'), PNG)
     await writeFile(join(scaffold.workspaceCwd, 'corrupt.png'), 'invalid image')
+    // One byte past the deployment's own single-image byte limit, so the
+    // fixture stays a real over-limit read whatever that limit is configured to.
     const oversized = await open(join(scaffold.workspaceCwd, 'oversized.png'), 'w')
     try {
-      await oversized.truncate(20 * 1024 * 1024 + 1)
+      await oversized.truncate(50 * 1024 * 1024 + 1)
     } finally {
       await oversized.close()
     }

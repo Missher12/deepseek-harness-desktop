@@ -24,20 +24,14 @@
   - img
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
-- button "Expand reasoning":
-  - img
-  - text: Think
-  - img
-- region "Reasoning content": The user wants me to run a simple bash command and reply with "DONE".
+- img
+- text: Think The user wants me to run a simple bash command and reply with "DONE".
 - button "Bash Echo the test string":
   - img
   - img
   - text: Bash Echo the test string
-- button "Expand reasoning":
-  - img
-  - text: Think
-  - img
-- region "Reasoning content": The command executed successfully and output "WEB_E2E_OK". I just need to reply with "DONE".
+- img
+- text: Think The command executed successfully and output "WEB_E2E_OK". I just need to reply with "DONE".
 - paragraph: DONE
 - button "Copy":
   - img

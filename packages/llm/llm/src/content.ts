@@ -660,10 +660,32 @@ export function offloadRequestImagesWithPolicy(
   const lengths: number[] = []
   for (const message of messages) collectImageLengths(message.content, lengths, policy)
   const count = offloadedImagePrefixCount(lengths, policy)
-  if (count === 0) return messages
+  return replaceRequestImagePrefix(messages, count, policy.placeholder)
+}
+
+/**
+ * Replace the oldest `count` image occurrences with their placeholders.
+ *
+ * A caller that decides the count itself — because the payload the request
+ * carries is not monotone in the removal count, and so cannot be reduced to a
+ * prefix length over image bytes — uses this to apply its decision without
+ * re-deriving one. The walk is the same one
+ * {@link offloadRequestImagesWithPolicy} performs, so occurrence order and
+ * nesting are decided in exactly one place.
+ * @param messages - complete request history, oldest first.
+ * @param count - leading image occurrences to replace.
+ * @param placeholder - build the model-visible replacement for one attachment.
+ * @returns original messages when nothing is replaced, otherwise shallow copies with placeholders.
+ */
+export function replaceRequestImagePrefix(
+  messages: readonly Message[],
+  count: number,
+  placeholder: (ref: ImageAttachmentRef) => string,
+): readonly Message[] {
+  if (count <= 0) return messages
   const remaining = { count }
   return messages.map((message) => {
-    const content = replaceOldestImages(message.content, remaining, policy.placeholder)
+    const content = replaceOldestImages(message.content, remaining, placeholder)
     return content === message.content ? message : { ...message, content }
   })
 }

@@ -20,6 +20,10 @@
 - button "1 tool call":
   - text: 1 tool call
   - img
+- img
+- text: Think The user wants me to run a simple bash command and reply with "DONE".
+- img
+- text: Think The command executed successfully and output "WEB_E2E_OK". I just need to reply with "DONE".
 - paragraph: DONE
 - button "Copy":
   - img

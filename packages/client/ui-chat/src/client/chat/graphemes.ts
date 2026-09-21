@@ -1,4 +1,4 @@
-/** Grapheme-cluster counting for progressive reveal and bounded copying. */
+/** Incremental grapheme-cluster segmentation for a text that only ever grows. */
 
 const SEGMENTER: Intl.Segmenter | undefined = typeof Intl.Segmenter === 'function'
   ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
@@ -6,9 +6,6 @@ const SEGMENTER: Intl.Segmenter | undefined = typeof Intl.Segmenter === 'functio
 
 /**
  * Count the grapheme clusters of a display string.
- * A trailing cluster whose code points have been received without its
- * combining marks yet is still one cluster, so a growing stream never has to
- * retract a boundary it already published.
  * @param value - display string.
  * @returns the number of user-perceived characters.
  */
@@ -39,48 +36,80 @@ export function displayPrefix(value: string, count: number): string {
 }
 
 /**
- * Cluster boundaries of one string, segmented once per text change so a
- * per-frame reveal reads a length and a prefix in constant time. The reveal
- * runs on animation frames while the text changes only per streaming chunk, so
- * re-segmenting inside the frame would make every frame's cost follow the whole
- * thought instead of the few clusters it paints.
+ * A draft segmented into grapheme clusters as chunks arrive.
+ *
+ * A chunk may *continue* the last cluster rather than start a new one: a
+ * combining mark, an emoji join sequence, or the second half of a surrogate
+ * pair all change the text without changing the cluster count. The endings of
+ * every cluster except the last are therefore final, and only the last is
+ * recomputed when more text arrives. Segmentation runs once per received chunk,
+ * so a frame that paints a few clusters never walks the whole thought.
  */
-export class GraphemeIndex {
+export class Draft {
+  private readonly endings: number[] = []
   private text = ''
-  private ends: number[] = []
+  private dirty = false
 
-  /**
-   * Resegment when the text moved, and do nothing when it did not.
-   * @param text - current display string.
-   */
-  update(text: string): void {
-    if (text === this.text) return
-    this.text = text
-    this.ends = []
-    if (SEGMENTER === undefined) {
-      for (const cluster of Array.from(text)) {
-        this.ends.push((this.ends.at(-1) ?? 0) + cluster.length)
-      }
-      return
-    }
-    for (const segment of SEGMENTER.segment(text)) {
-      this.ends.push(segment.index + segment.segment.length)
-    }
-  }
-
-  /** @returns the number of clusters in the indexed text. */
+  /** @returns the number of grapheme clusters received so far. */
   get length(): number {
-    return this.ends.length
+    return this.endings.length
+  }
+
+  /** @returns the received text, exactly as plain concatenation of the chunks would produce. */
+  toString(): string {
+    return this.text
+  }
+
+  /** @returns the length of the received text in UTF-16 code units. */
+  get textLength(): number {
+    return this.text.length
   }
 
   /**
-   * Take a prefix of at most `count` clusters of the indexed text.
-   * @param count - maximum number of clusters to retain.
-   * @returns the retained prefix, or the whole indexed text when already within budget.
+   * Offset one past the last code unit of the first `count` clusters.
+   * A cluster a later chunk may still continue counts here as it currently
+   * stands, so a reader never waits on a boundary only the next chunk settles.
+   * @param count - number of clusters.
+   * @returns the prefix offset, or 0 when `count` is not positive.
    */
-  prefix(count: number): string {
-    if (count <= 0) return ''
-    if (count >= this.ends.length) return this.text
-    return this.text.slice(0, this.ends[count - 1])
+  endOf(count: number): number {
+    if (count <= 0) return 0
+    return count >= this.endings.length ? this.text.length : this.endings[count - 1] as number
+  }
+
+  /**
+   * Append one chunk's text, without touching the segmentation.
+   * @param chunk - the chunk exactly as received.
+   */
+  append(chunk: string): void {
+    if (chunk === '') return
+    this.text += chunk
+    this.dirty = true
+  }
+
+  /**
+   * Bring the cluster endings up to date, segmenting only the tail the last
+   * chunk may have changed.
+   * @returns whether the cluster count grew since the previous call.
+   */
+  update(): boolean {
+    if (!this.dirty) return false
+    this.dirty = false
+    const previous = this.endings.length
+    // The last ending is provisional until more text arrives, so it is
+    // recomputed rather than trusted. Every earlier ending is final.
+    if (this.endings.length > 0) this.endings.pop()
+    const start = this.endings.length > 0 ? this.endings[this.endings.length - 1] as number : 0
+    const tail = this.text.slice(start)
+    if (SEGMENTER === undefined) {
+      for (const character of tail) {
+        this.endings.push((this.endings[this.endings.length - 1] ?? start) + character.length)
+      }
+    } else {
+      for (const segment of SEGMENTER.segment(tail)) {
+        this.endings.push(start + segment.index + segment.segment.length)
+      }
+    }
+    return this.endings.length > previous
   }
 }

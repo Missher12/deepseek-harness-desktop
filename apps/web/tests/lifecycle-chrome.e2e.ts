@@ -234,13 +234,12 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       try {
         await input.press('Enter')
         if (MODE !== 'record') {
-          const reasoning = page.locator('[data-variant="think"][data-state="running"]')
-            .getByRole('region', { name: 'Reasoning content' })
+          const reasoning = page.locator('[data-variant="think"][data-state="running"] > div:last-child')
           await expect.poll(async () => {
             if (await reasoning.count() !== 1) return false
             return await reasoning.evaluate((element) => {
-              // The card wraps live text inside its narrow viewport. Following
-              // longer content is exercised by the shared reading scenario.
+              // The body wraps live text in the reading flow. Longer content and
+              // the reveal's timing are exercised by the shared reading scenario.
               return element.textContent !== '' && element.clientHeight > 0
                 && element.scrollWidth <= element.clientWidth + 1
             })

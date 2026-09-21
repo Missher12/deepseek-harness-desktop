@@ -20,6 +20,10 @@
 - button "Thought for a while":
   - text: Thought for a while
   - img
+- group:
+  - status: Retried model request (1/5) · {{duration}}
+- img
+- text: Think The user is asking for a one-sentence description of event sourcing. This is a straightforward knowledge question that doesn't require any skill loading or tool calls.
 - paragraph: Event sourcing is a pattern where all changes to an application's state are stored as an immutable, append-only sequence of events, rather than persisting only the current state, enabling full auditability, temporal queries, and event-driven architectures.
 - button "Copy":
   - img

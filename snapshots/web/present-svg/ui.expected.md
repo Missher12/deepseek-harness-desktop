@@ -12,12 +12,8 @@
   - img
   - img
   - text: 上下文注入 @deepseek-ai/dsh-system-prompt
-- button "展开思考":
-  - img
-  - text: 思考
-  - img
-- region "思考内容": The user wants a simple SVG diagram of the von Neumann architecture, saved as von-neumann.svg. Let me create a clean SVG showing CPU (control unit, ALU), memory, input, and output with bidirectional data/control buses. Let me write the file.
-- text: 原始思考 · 可滚动阅读
+- img
+- text: 思考 The user wants a simple SVG diagram of the von Neumann architecture, saved as von-neumann.svg. Let me create a clean SVG showing CPU (control unit, ALU), memory, input, and output with bidirectional data/control buses. Let me write the file.
 - paragraph: 我来创建一个冯诺依曼架构的 SVG 示意图。
 - button "写入 von-neumann.svg +83 -0":
   - img
@@ -25,11 +21,8 @@
   - text: 写入
   - button "von-neumann.svg"
   - text: +83 -0
-- button "展开思考":
-  - img
-  - text: 思考
-  - img
-- region "思考内容": The file is created. Let me present it as a deliverable.
+- img
+- text: 思考 The file is created. Let me present it as a deliverable.
 - button "交付文件 已交付 von-neumann.svg":
   - img
   - text: 交付文件 已交付 von-neumann.svg

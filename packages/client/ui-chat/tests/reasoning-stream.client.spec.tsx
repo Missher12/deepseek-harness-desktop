@@ -4,7 +4,7 @@ import { act, cleanup, render } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { zh } from '../src/client/locale.ts'
-import { displayLength, displayPrefix, GraphemeIndex } from '../src/client/chat/graphemes.ts'
+import { displayLength, displayPrefix, Draft } from '../src/client/chat/graphemes.ts'
 import {
   BACKLOG_CHASE_MS, CATCH_UP_CLUSTERS, REVEAL_CLUSTERS_PER_SECOND, revealStep,
 } from '../src/client/chat/use-revealed-text.ts'
@@ -17,8 +17,9 @@ let clock = 0
 let frames = new Map<number, FrameRequestCallback>()
 let scheduled = 0
 
-/** Flush every queued animation frame, letting React commit each paint. */
-function flushFrame(): void {
+/** Advance the fake clock, then flush every queued animation frame. */
+function flushFrame(elapsed = 0): void {
+  clock += elapsed
   const queued = [...frames.values()]
   frames.clear()
   act(() => { for (const callback of queued) callback(clock) })
@@ -88,24 +89,30 @@ describe('grapheme boundaries', () => {
     expect(displayLength('\r\n')).toBe(1)
   })
 
-  it('indexes clusters once per text change and slices them without resegmenting', () => {
-    const index = new GraphemeIndex()
-    const family = '\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}'
-    const value = `中${family}e\u0301!`
-    index.update(value)
-    expect(index.length).toBe(4)
-    expect(index.prefix(0)).toBe('')
-    expect(index.prefix(2)).toBe(`中${family}`)
-    expect(index.prefix(4)).toBe(value)
-    expect(index.prefix(99)).toBe(value)
+  it('resegments only the tail a chunk may have continued', () => {
+    const draft = new Draft()
+    draft.append('\u4e2da')
+    draft.update()
+    expect(draft.length).toBe(2)
+    expect(draft.endOf(0)).toBe(0)
+    expect(draft.endOf(1)).toBe(1)
+    expect(draft.endOf(2)).toBe(2)
+    expect(draft.endOf(99)).toBe(2)
 
-    // A text change resegments; an unchanged text is a no-op, which is what
-    // keeps the per-frame cost independent of the thought's length.
-    index.update(value)
-    expect(index.length).toBe(4)
-    index.update('再次思考')
-    expect(index.length).toBe(4)
-    expect(index.prefix(2)).toBe('再次')
+    // A chunk that continues the last cluster keeps the settled endings and
+    // moves only the provisional one: the cluster count is unchanged, which is
+    // exactly why scheduling on the count alone dropped the new text.
+    draft.append('\u0301')
+    expect(draft.update()).toBe(false)
+    expect(draft.length).toBe(2)
+    expect(draft.endOf(1)).toBe(1)
+    expect(draft.endOf(2)).toBe(3)
+    expect(draft.toString()).toBe('\u4e2da\u0301')
+
+    // An unchanged text is a no-op, which is what keeps a frame's cost
+    // independent of the thought's length.
+    expect(draft.update()).toBe(false)
+    expect(draft.length).toBe(2)
   })
 })
 
@@ -224,6 +231,78 @@ describe('ReasoningRow streaming reveal', () => {
     // The sixty clusters the pause already showed stay: only the fifty that
     // arrived after it are typed out, four at a time.
     expect(painted(view)).toBe('思'.repeat(64))
+  })
+
+  it('shows the completed cluster in the rendered text, not only in an attribute', () => {
+    // The paint is only real if the text node carries it: assert the visible
+    // DOM text, which is what a reader sees and selects.
+    const view = render(<ReasoningRow text="e" running t={t} />)
+    flushFrame()
+    expect(body(view).textContent).toBe('e')
+
+    view.rerender(<ReasoningRow text={'e\u0301'} running t={t} />)
+    flushFrame(400)
+    expect(body(view).textContent).toBe('e\u0301')
+    // One text node still holds it, so a selection survives.
+    expect(body(view).childNodes).toHaveLength(1)
+    expect(body(view).firstChild?.nodeType).toBe(Node.TEXT_NODE)
+
+    view.rerender(<ReasoningRow text={'\u{1F468}\u200D\u{1F469}'} running t={t} />)
+    flushFrame(400)
+    expect(body(view).textContent).toBe('\u{1F468}\u200D\u{1F469}')
+  })
+
+  it('completes the last cluster when a later chunk continues it', () => {
+    // A chunk can extend the final cluster without adding one: a combining
+    // mark, an emoji join sequence, or the second half of a surrogate pair.
+    // Each must reach the reader while the stream is still running.
+    const cases: readonly (readonly [string, string])[] = [
+      ['e', 'e\u0301'],
+      ['\u{1F468}', '\u{1F468}\u200D\u{1F469}'],
+      ['\uD83D', '\uD83D\uDE00'],
+    ]
+    for (const [before, after] of cases) {
+      cleanup()
+      const view = render(<ReasoningRow text={before} running t={t} />)
+      flushFrame()
+      expect(painted(view)).toBe(before)
+
+      view.rerender(<ReasoningRow text={after} running t={t} />)
+      flushFrame(400)
+      expect(painted(view)).toBe(after)
+    }
+  })
+
+  it('keeps a cluster count unchanged while the text grows', () => {
+    // The regression the reveal had: scheduling on the cluster count alone
+    // leaves the continuation unpainted until unrelated text arrives.
+    const draft = new Draft()
+    draft.append('\u{1F468}')
+    draft.update()
+    const before = draft.length
+    draft.append('\u200D\u{1F469}')
+    expect(draft.update()).toBe(false)
+    expect(draft.length).toBe(before)
+    expect(draft.toString()).toBe('\u{1F468}\u200D\u{1F469}')
+  })
+
+  it('does not let appends postpone the oldest pending cluster past the window', () => {
+    // 180 clusters arrive, then nine more every three frames at 60Hz: the
+    // oldest 180 are owed display within the catch-up window whatever lands
+    // behind them.
+    const first = '\u601d'.repeat(180)
+    let latest = first
+    const view = render(<ReasoningRow text={latest} running t={t} />)
+    flushFrame()
+    for (let frame = 1; frame <= 24; frame += 1) {
+      if (frame % 3 === 0) {
+        latest += '\u7eed'.repeat(9)
+        view.rerender(<ReasoningRow text={latest} running t={t} />)
+      }
+      flushFrame(1000 / 60)
+    }
+    expect(clock - 1_000).toBeGreaterThan(400)
+    expect(painted(view).slice(0, first.length)).toBe(first)
   })
 
   it('restarts the reveal when a chunk replaces the stream', () => {

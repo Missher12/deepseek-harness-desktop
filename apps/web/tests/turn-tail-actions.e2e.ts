@@ -163,7 +163,11 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     // An aborted Turn keeps its process visible instead of folding it behind
     // the successful-completion disclosure.
     expect(await page.locator('[data-turn-process]').count()).toBe(0)
-    expect(await page.getByRole('region', { name: 'Reasoning content' }).first().isVisible()).toBe(true)
+    // An aborted Turn keeps its reasoning in the reading flow: the literal
+    // text is visible, and the block carries no reading control of its own.
+    const reasoning = page.locator('[data-variant="think"] > div:last-child').first()
+    expect(await reasoning.isVisible()).toBe(true)
+    expect(await reasoning.textContent()).not.toBe('')
     await copyButtons.last().focus()
     const settledAria = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(SETTLED_EXPECTED, settledAria, MODE)
@@ -227,9 +231,20 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     expect(await process.evaluate(element => getComputedStyle(element).borderBottomWidth)).toBe('1px')
     const processBottom = await process.evaluate(element =>
       element.closest<HTMLElement>('[data-chat-flow-kind="turn-process"]')?.getBoundingClientRect().bottom)
-    const answerTop = await page.getByText('DONE', { exact: true }).evaluate(element =>
-      element.closest<HTMLElement>('[data-chat-flow-kind="assistant-step"]')?.getBoundingClientRect().top)
-    expect(answerTop).toBe((processBottom ?? 0) + 8)
+    const answerRow = page.getByText('DONE', { exact: true }).locator('xpath=ancestor::*[@data-chat-flow-kind="assistant-step"][1]')
+    const answerTop = await answerRow.evaluate(element => element.getBoundingClientRect().top)
+    // This Turn's reasoning belongs to the folded process step, not to the
+    // answer, so the control still sits its 8px above the reply row. Reasoning
+    // that does belong to a folded step stays in the reading flow, which the
+    // reading scenario and the Chat suites cover directly.
+    expect(answerTop).toBeGreaterThanOrEqual((processBottom ?? 0) + 8)
+    expect(await answerRow.locator('[data-variant="think"]').count()).toBe(0)
+    const retained = page.locator('[data-turn-process-member] [data-variant="think"] > div:last-child')
+    expect(await retained.count()).toBeGreaterThan(0)
+    for (const body of await retained.all()) {
+      expect(await body.textContent()).not.toBe('')
+      expect(await body.isVisible()).toBe(true)
+    }
     await process.focus()
     const completed = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(COMPLETED_EXPECTED, completed, MODE)

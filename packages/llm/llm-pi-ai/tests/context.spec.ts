@@ -306,6 +306,61 @@ describe('pi-ai request context conversion', () => {
     expect(readImageRequest).toHaveBeenCalledTimes(1)
   })
 
+  it('replaces enough images that the placeholders they leave still fit the bound', async () => {
+    // Replacing an image frees its base64 bytes but adds the text that stands
+    // in for it, so the payload the request carries is not monotone in the
+    // removal count: omitting one image can make the request larger. Counting
+    // only image bytes therefore accepts a projection whose own placeholders
+    // push it past the bound — the size rejection the bound exists to prevent.
+    //
+    // Four distinct 512-byte images under a 2052-code-unit bound: keeping
+    // three costs exactly 2052, and the one placeholder costs 220 more.
+    const count = 4
+    const bound = 2052
+    const sized: ImageAttachmentRef = { ...ref, bytes: 512 }
+    const store = projectionStore(vi.fn((value: ImageAttachmentRef) => (
+      Promise.resolve(requestImage(value, new Uint8Array(value.bytes)))
+    )))
+    const history = Array.from({ length: count }, (_, index) => user([{
+      type: 'image',
+      attachment: {
+        ...sized,
+        attachmentId: AttachmentId(`sha256:${String(index).padStart(4, '0').repeat(16)}`),
+        name: `shot-${index}.png`,
+      },
+    }]))
+
+    const context = await toPiContext(request(history), {
+      attachments: store,
+      resolveImageAccess: () => undefined,
+      maxRequestImageBytes: bound,
+      requestImagePolicy: { maxPixels: 2048 * 2048, maxBytes: 512 },
+    })
+
+    // An image message keeps typed blocks and carries its image as base64; a
+    // message whose images were all replaced flattens to one plain string
+    // holding their placeholders. Only typed blocks hold image bytes.
+    let imageBytes = 0
+    let placeholderText = 0
+    for (const message of context.messages) {
+      const content = message.content as unknown
+      if (typeof content === 'string') {
+        if (content.startsWith('[image omitted')) placeholderText += content.length
+        continue
+      }
+      for (const block of content as readonly unknown[]) {
+        const typed = block as { type?: string; data?: string; text?: string }
+        if (typed.type === 'image') imageBytes += (typed.data as string).length
+        else if (typed.type === 'text' && typed.text?.startsWith('[image omitted')) {
+          placeholderText += (typed.text as string).length
+        }
+      }
+    }
+
+    expect(placeholderText).toBeGreaterThan(0)
+    expect(imageBytes + placeholderText).toBeLessThanOrEqual(bound)
+  })
+
   it('does not prepare an old image removed by the conservative request projection', async () => {
     const old = { ...ref, attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`), bytes: 3 }
     const recent = { ...ref, attachmentId: AttachmentId(`sha256:${'d'.repeat(64)}`), bytes: 3 }
