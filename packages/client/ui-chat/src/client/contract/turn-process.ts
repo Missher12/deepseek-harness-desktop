@@ -8,6 +8,7 @@ export interface TurnProcessSpec {
   readonly processStartSeq: number
   readonly answerAnchorSeq: number | null
   readonly answerStep: number | null
+  /** Recorded fact: the finalized answer carries reasoning of its own. It no longer gates disposition. */
   readonly inlineReasoning: boolean
   /** Reply-bearing durable Assistant messages before the final answer. */
   readonly messageCount: number
@@ -30,6 +31,23 @@ const TURN_PROCESS_INDEPENDENT_KIND_LIST = [
 /** Chat Node kinds that remain independent of a Turn's process disclosure. */
 export const TURN_PROCESS_INDEPENDENT_KINDS: ReadonlySet<string> = new Set(
   TURN_PROCESS_INDEPENDENT_KIND_LIST,
+)
+
+const TURN_PROCESS_MEMBER_KIND_LIST = [
+  'assistant-step',
+  'tool-call',
+  'context',
+] as const satisfies readonly ChatNode['kind'][]
+
+/**
+ * Chat Node kinds a Turn's process range may cover. Reasoning is admitted to a
+ * model request as its own block or packed into the answer message, so a
+ * disclosure that only covers external rows still hides reasoning the reader
+ * was promised at full length. Everything else — the prompt, Turn-level errors
+ * and truncation, and the tail — stays outside the range whatever its anchor.
+ */
+export const TURN_PROCESS_MEMBER_KINDS: ReadonlySet<string> = new Set(
+  TURN_PROCESS_MEMBER_KIND_LIST,
 )
 
 /**

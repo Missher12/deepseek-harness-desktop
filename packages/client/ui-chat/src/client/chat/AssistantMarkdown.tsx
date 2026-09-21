@@ -6,7 +6,6 @@ import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts
 import type { AssistantBlock } from '../contract/snapshot.ts'
 import { markdownLabels } from '../markdown-labels.ts'
 import { ReasoningRow } from './ReasoningRow.tsx'
-import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './AssistantMarkdown.module.css'
 
 /**
@@ -32,20 +31,15 @@ export interface AssistantMarkdownProps {
   interrupted?: boolean | undefined
   /** Render consecutive image blocks through the attachment slot. */
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
-  /** Hide reasoning that belongs to the Turn-level process disclosure. */
-  reasoningHidden?: boolean | undefined
-  /** Reveal the owning Turn-level process disclosure. */
-  revealProcess?: (() => void) | undefined
   /** Resolved prose file mentions for this Assistant's closing turn. */
   mentions?: MarkdownFileMentions | undefined
   /** The owning view's locale seat, passed down as a plain prop. */
   t: ChatViewSlotProps['t']
 }
 
-/** Native Markdown, reasoning cards and attachment seats in received order. */
+/** Native Markdown, reasoning blocks and attachment seats in received order. */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
-  blocks, streaming, interrupted, renderMessageImages,
-  reasoningHidden = false, revealProcess, mentions, t,
+  blocks, streaming, interrupted, renderMessageImages, mentions, t,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
@@ -84,15 +78,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
         )
         break
       case 'reasoning':
-        rendered.push(
-          <ProcessReasoning
-            key={i}
-            hidden={reasoningHidden}
-            reveal={revealProcess}
-          >
-            <ReasoningRow text={block.text} running={streaming && i === last} t={t} />
-          </ProcessReasoning>,
-        )
+        rendered.push(<ReasoningRow key={i} text={block.text} running={streaming && i === last} t={t} />)
         break
       case 'image': {
         // Consecutive image blocks share one gallery so several images tile
@@ -141,14 +127,3 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     </div>
   )
 })
-
-function ProcessReasoning({ hidden, reveal, children }: {
-  hidden: boolean
-  reveal?: (() => void) | undefined
-  children: ReactNode
-}) {
-  const ref = useSearchableHidden(hidden, reveal ?? NOOP)
-  return <div ref={ref} data-turn-process-inline={hidden || undefined}>{children}</div>
-}
-
-const NOOP = (): void => {}

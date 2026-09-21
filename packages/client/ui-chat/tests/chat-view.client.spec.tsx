@@ -1378,7 +1378,7 @@ describe('ChatView', () => {
     expect(branchButtons.map(button => button.getAttribute('aria-disabled'))).toEqual([null, null])
   })
 
-  it('folds Think and Tool rows before the final answer without unmounting them', () => {
+  it('folds Tool rows before the final answer without ever hiding reasoning', () => {
     const first = {
       ...assistant(2, 'earlier reply', 1, 1),
       blocks: [
@@ -1404,13 +1404,16 @@ describe('ChatView', () => {
     expect(toggle.getAttribute('data-turn-process-tool-calls')).toBe('1')
     expect(toggle.getAttribute('data-turn-process-messages')).toBe('1')
     expect(toggle.getAttribute('data-turn-process-subagents')).toBe('1')
+    // The reasoning-bearing Assistant keeps its row in the process range so the
+    // disclosure chrome measures the Turn, but its text stays in the flow.
     const members = [...view.container.querySelectorAll<HTMLElement>('[data-turn-process-member]')]
     expect(members).toHaveLength(3)
     expect(members.map(member => member.getAttribute('hidden')))
-      .toEqual(['until-found', 'until-found', 'until-found'])
+      .toEqual([null, 'until-found', 'until-found'])
     expect(members[0]?.textContent).toContain('inspect the repository')
     expect(members[1]?.textContent).toContain('bash:a')
     expect(members[2]?.textContent).toContain('subagent:b')
+    expect(view.getByText('inspect the repository')).toBeTruthy()
     expect(view.getByText('final answer')).toBeTruthy()
 
     fireEvent.click(toggle)
@@ -1419,13 +1422,15 @@ describe('ChatView', () => {
 
     fireEvent.click(toggle)
     expect(members.map(member => member.getAttribute('hidden')))
-      .toEqual(['until-found', 'until-found', 'until-found'])
+      .toEqual([null, 'until-found', 'until-found'])
     fireEvent(members[1]!, new Event('beforematch'))
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(members.map(member => member.getAttribute('hidden'))).toEqual([null, null, null])
 
+    // A Turn whose only process evidence is reasoning has nothing left to
+    // disclose: no controller appears and the text is already readable.
     act(() => { h.set({ nodes: [user(1, 'question'), first] }) })
-    expect(view.getByRole('button', { name: '已思考' }).getAttribute('aria-expanded')).toBe('false')
+    expect(turnProcessControl(view.container)).toBeNull()
     expect(members[0]?.getAttribute('hidden')).toBeNull()
     act(() => { h.set({
       nodes: [user(1, 'question'), first, toolResult(3, 'a'), toolResult(4, 'b', 'subagent'), second],
@@ -1512,7 +1517,10 @@ describe('ChatView', () => {
     expect(promptRow.getAttribute('hidden')).toBeNull()
     expect(promptRow.hasAttribute('data-turn-process-member')).toBe(false)
     expect(members.map(member => member.dataset.chatFlowKind)).toEqual(['context', 'assistant-step'])
-    expect(members.map(member => member.getAttribute('hidden'))).toEqual(['until-found', 'until-found'])
+    // The Assistant's reasoning-bearing row stays in the flow even while the
+    // Context row beside it folds.
+    expect(members.map(member => member.getAttribute('hidden'))).toEqual(['until-found', null])
+    expect(view.getByText('inspect')).toBeTruthy()
 
     fireEvent.click(toggle)
     expect(renderedFlowKinds(view.container)).toEqual([
@@ -1638,7 +1646,7 @@ describe('ChatView', () => {
     expect(processRow.getAttribute('hidden')).toBe('until-found')
   })
 
-  it('folds final-step reasoning under the fallback title when every summary count is zero', () => {
+  it('keeps final-step reasoning readable with no disclosure when it is the only process', () => {
     const final = {
       ...assistant(3, 'final answer', 1, 1),
       blocks: [
@@ -1648,13 +1656,11 @@ describe('ChatView', () => {
     }
     const h = makeHarness({ nodes: [user(1, 'question'), final], turnEnds: new Map([[1, 4]]) })
     const view = render(<h.ChatView {...h.props} />)
-    const toggle = view.getByRole('button', { name: '已思考' })
-    const reasoning = view.container.querySelector<HTMLElement>('[data-turn-process-inline]')
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(reasoning?.getAttribute('hidden')).toBe('until-found')
-    expect(view.getByText('final answer')).toBeTruthy()
-    fireEvent.click(toggle)
+    expect(turnProcessControl(view.container)).toBeNull()
+    expect(view.container.querySelector('[data-turn-process-inline]')).toBeNull()
     expect(view.getByText('private analysis')).toBeTruthy()
+    expect(view.getByText('final answer')).toBeTruthy()
+    expect(view.queryByRole('button', { name: '已思考' })).toBeNull()
   })
 
   it('folds a completed Turn even while the reader is away from the tail', () => {

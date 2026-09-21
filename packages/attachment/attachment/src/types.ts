@@ -7,8 +7,11 @@ export type { AttachmentId } from './brand.ts'
 
 /**
  * Maximum combined base64 data carried by image and document parts in one
- * browser prompt. The default 300 MiB HTTP envelope keeps 4 MiB for JSON,
- * text, names, and RPC framing around this ASCII payload.
+ * browser prompt. This is the carrier's own ceiling, not a per-category budget:
+ * a submission is admitted only when its encoded attachments fit inside it, so
+ * the per-message image and document limits cannot both be filled at once. The
+ * default 300 MiB HTTP envelope keeps 4 MiB for JSON, text, names, and RPC
+ * framing around this ASCII payload.
  */
 export const MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS = 296 * 1024 * 1024
 
