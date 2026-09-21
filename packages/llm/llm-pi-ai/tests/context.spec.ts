@@ -350,9 +350,9 @@ describe('pi-ai request context conversion', () => {
       }
       for (const block of content as readonly unknown[]) {
         const typed = block as { type?: string; data?: string; text?: string }
-        if (typed.type === 'image') imageBytes += (typed.data as string).length
+        if (typed.type === 'image') imageBytes += typed.data?.length ?? 0
         else if (typed.type === 'text' && typed.text?.startsWith('[image omitted')) {
-          placeholderText += (typed.text as string).length
+          placeholderText += typed.text.length
         }
       }
     }
