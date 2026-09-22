@@ -41,6 +41,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       if (state.failLockProbeWithCode !== undefined && String(path).endsWith('.lock')) {
         const code = state.failLockProbeWithCode
         state.failLockProbeWithCode = undefined
+        if (code === 'NO_CODE') throw new Error('injected lock probe failure without a code')
         throw Object.assign(new Error(`${code}: injected lock probe failure`), { code })
       }
       return (actual.lstat as (path: unknown, ...args: never[]) => ReturnType<typeof actual.lstat>)(path, ...rest)
@@ -248,6 +249,17 @@ describe('withFileLock', () => {
     state.failLockCreateWithEPERM = true
     if (code === 'EPERM') state.failLockProbeWithEPERM = true
     else state.failLockProbeWithCode = code
+
+    await expect(withFileLock(join(dir, 'document'), operation)).rejects.toMatchObject({ code: 'EPERM' })
+    expect(operation).not.toHaveBeenCalled()
+  })
+
+  it('preserves Windows EPERM when the lock probe error has no code', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const dir = await scratch()
+    const operation = vi.fn(async () => {})
+    state.failLockCreateWithEPERM = true
+    state.failLockProbeWithCode = 'NO_CODE'
 
     await expect(withFileLock(join(dir, 'document'), operation)).rejects.toMatchObject({ code: 'EPERM' })
     expect(operation).not.toHaveBeenCalled()
