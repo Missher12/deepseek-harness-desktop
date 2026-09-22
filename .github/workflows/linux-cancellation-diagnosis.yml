@@ -68,3 +68,23 @@ jobs:
           packages/shell/pwsh-local/tests/executor.spec.ts
           -t 'disposal kills wrapped background jobs|kill\(\) requests managed-range termination|a spec.signal abort settles'
           --reporter=verbose --testTimeout=30000
+      - name: Inspect the owned leftover scopes and test explicit stop
+        if: always()
+        run: |
+          mapfile -t units < <(systemctl --user list-units --type=scope --all --plain --no-legend 'dsh-subprocess-*' | awk '{print $1}')
+          for unit in "${units[@]}"; do
+            [[ "$unit" =~ ^dsh-subprocess-[0-9]+-[0-9a-f]+\.scope$ ]] || continue
+            systemctl --user show "$unit" -p Id -p ActiveState -p SubState -p Result -p TasksCurrent -p ControlGroup
+            group=$(systemctl --user show "$unit" -p ControlGroup --value)
+            if [[ "$group" == /* && -r "/sys/fs/cgroup$group/cgroup.events" ]]; then
+              cat "/sys/fs/cgroup$group/cgroup.events"
+              cat "/sys/fs/cgroup$group/cgroup.procs"
+            fi
+            systemctl --user stop --no-block "$unit"
+            for attempt in {1..20}; do
+              state=$(systemctl --user show "$unit" -p ActiveState --value)
+              printf 'after-stop unit=%s state=%s\n' "$unit" "$state"
+              [[ "$state" == inactive || "$state" == failed ]] && break
+              sleep 0.1
+            done
+          done
