@@ -15,10 +15,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSessionTestController, testSessionPersistence } from './test-remote.ts'
 
 const lstatFailure = vi.hoisted(() => ({ next: undefined as Error | undefined }))
+const mkdirFailure = vi.hoisted(() => ({ next: undefined as Error | undefined }))
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...actual,
+    mkdir: async (...args: Parameters<typeof actual.mkdir>) => {
+      const failure = mkdirFailure.next
+      mkdirFailure.next = undefined
+      if (failure !== undefined) throw failure
+      return actual.mkdir(...args)
+    },
     lstat: async (...args: Parameters<typeof actual.lstat>) => {
       const failure = lstatFailure.next
       lstatFailure.next = undefined
@@ -33,6 +40,7 @@ const directories: string[] = []
 const children: Array<{ child: ChildProcess; closed: Promise<unknown> }> = []
 afterEach(async () => {
   lstatFailure.next = undefined
+  mkdirFailure.next = undefined
   try {
     await Promise.all(children.splice(0).map(async ({ child, closed }) => { child.kill(); await closed }))
     await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
@@ -217,6 +225,17 @@ describe('no-project Session directories', () => {
     await expect(b.controller.create({ sessionId: SessionId('blocked-session') })).rejects.toMatchObject({ code: 'gateway/internal' })
     expect(b.persisted.size).toBe(0)
     expect(readFileSync(b.managed, 'utf8')).toBe('a file occupies the directory name')
+  })
+
+  it('reports a non-ENOENT scratch mkdir refusal without creating a Session', async () => {
+    const b = await harness()
+    mkdirFailure.next = Object.assign(new Error('scratch mkdir denied'), { code: 'EACCES' })
+
+    await expect(b.controller.create({ sessionId: SessionId('mkdir-refused') }))
+      .rejects.toMatchObject({ code: 'gateway/internal' })
+
+    expect(b.persisted.size).toBe(0)
+    expect(existsSync(join(b.managed, 'mkdir-refused'))).toBe(false)
   })
 
   it('does not create a replacement directory when stored identity cannot be read', async () => {
