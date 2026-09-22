@@ -51,7 +51,7 @@ function wireImageProjectionBytes(value: unknown): number {
     const comma = url.indexOf(',')
     return comma < 0 ? 0 : Buffer.byteLength(url.slice(comma + 1), 'utf8')
   }
-  return Object.values(record).reduce((sum, item) => sum + wireImageProjectionBytes(item), 0)
+  return Object.values(record).reduce<number>((sum, item) => sum + wireImageProjectionBytes(item), 0)
 }
 
 class MappedFileSystem extends Service {
