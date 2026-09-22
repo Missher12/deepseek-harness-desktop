@@ -2,7 +2,7 @@
 
 Status: implemented
 
-[English](2026-09-22-ptc-golden-scroll-state.md) | 中文
+[English](2026-09-22-ptc-scroll-state.md) | 中文
 
 ## Problem
 
