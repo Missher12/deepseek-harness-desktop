@@ -51,17 +51,26 @@ export class Draft {
   private text = ''
   private dirty = false
 
-  /** @returns the number of grapheme clusters received so far. */
+  /**
+   * Count the received grapheme clusters, including the provisional tail.
+   * @returns the number of grapheme clusters received so far.
+   */
   get length(): number {
     return this.endings.length
   }
 
-  /** @returns the received text, exactly as plain concatenation of the chunks would produce. */
+  /**
+   * Read the complete received draft.
+   * @returns the received text, exactly as plain concatenation of the chunks would produce.
+   */
   toString(): string {
     return this.text
   }
 
-  /** @returns the length of the received text in UTF-16 code units. */
+  /**
+   * Measure the received draft without segmenting it.
+   * @returns the length of the received text in UTF-16 code units.
+   */
   get textLength(): number {
     return this.text.length
   }

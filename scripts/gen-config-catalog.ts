@@ -2,7 +2,8 @@
  * Generate `docs/config-catalog.md` from package entry points, config types,
  * JSDoc, and static Schemastery schemas. Every package must classify, referenced
  * types must resolve without collisions, and every enumerable schema path must
- * exist on the declared config type. External and dynamic types stay unknown;
+ * exist on the declared input type (the config type unless a transform names
+ * a separate input type). External and dynamic types stay unknown;
  * declared runtime-only fields need not appear in the schema. `--check` verifies
  * the committed artifact.
  */
@@ -68,6 +69,8 @@ export interface CatalogEntry {
   className?: string
   /** Name of the config type (kind `config`). */
   configTypeName?: string
+  /** Explicit callback input type for a root `z.transform` schema. */
+  schemaInputTypeName?: string
   /** Verbatim declaration pastes, the config type first (kind `config`). */
   pastes?: Paste[]
   /** References the pastes leave unresolved locally (kind `config`). */
@@ -409,6 +412,30 @@ function unwrapExpr(expr: ts.Expression): ts.Expression {
   return e
 }
 
+/** Resolve schema aliases declared as initialized constants in the same file. */
+function resolveSchemaExpr(ctx: FileCtx, expr: ts.Expression, where: string, violations: string[]): ts.Expression | null {
+  let current = unwrapExpr(expr)
+  const seen = new Set<string>()
+  while (ts.isIdentifier(current)) {
+    const name = current.text
+    if (seen.has(name)) {
+      violations.push(`${where}: schema alias '${name}' is cyclic.`)
+      return null
+    }
+    seen.add(name)
+    const declaration = ctx.sf.statements.filter(ts.isVariableStatement)
+      .filter(statement => (statement.declarationList.flags & ts.NodeFlags.Const) !== 0)
+      .flatMap(statement => [...statement.declarationList.declarations])
+      .find(decl => ts.isIdentifier(decl.name) && decl.name.text === name)
+    if (!declaration?.initializer) {
+      violations.push(`${where}: schema alias '${name}' is not an initialized local constant.`)
+      return null
+    }
+    current = unwrapExpr(declaration.initializer)
+  }
+  return current
+}
+
 /**
  * Statically walk a schemastery schema expression to its key paths plus the
  * packages whose schemas an intersect composes. A key path is the top-level
@@ -450,7 +477,8 @@ function walkSchemaExpr(
     if (ts.isCallExpression(inner)) collectValuePaths(inner, base)
   }
   const visit = (e: ts.Expression): void => {
-    const call = unwrapExpr(e)
+    const call = resolveSchemaExpr(ctx, e, where, violations)
+    if (!call) return
     if (!ts.isCallExpression(call) || !ts.isPropertyAccessExpression(call.expression)) {
       violations.push(`${where}: schema expression is not a statically walkable schemastery call.`)
       return
@@ -660,6 +688,27 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
     }
     const typeName = configParam.type.typeName.text
     entry.configTypeName = typeName
+    let schemaExpr = findSchemaExpr(ctx, pluginClass)
+    if (schemaExpr) {
+      schemaExpr = resolveSchemaExpr(ctx, schemaExpr, pkg, violations)
+      if (schemaExpr && ts.isCallExpression(schemaExpr)
+        && ts.isPropertyAccessExpression(schemaExpr.expression)
+        && schemaExpr.expression.name.text === 'transform'
+        && ts.isIdentifier(schemaExpr.expression.expression)) {
+        const callback = schemaExpr.arguments[1]
+        const inputType = callback && (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback))
+          ? callback.parameters[0]?.type : undefined
+        if (schemaExpr.arguments.length !== 2 || !inputType
+          || !ts.isTypeReferenceNode(inputType) || !ts.isIdentifier(inputType.typeName)) {
+          violations.push(`${pkg}: a transform schema requires an inline callback with a named input parameter type.`)
+          schemaExpr = null
+        } else {
+          entry.schemaInputTypeName = inputType.typeName.text
+          schemaExpr = schemaExpr.arguments[0] ?? null
+        }
+      }
+    }
+    const rootTypeNames = new Set([typeName, ...entry.schemaInputTypeName ? [entry.schemaInputTypeName] : []])
     const pastes: Paste[] = []
     const refs = new Map<string, TypeRef>()
     // A bare name is the fence's whole namespace: two DIFFERENT declarations
@@ -667,7 +716,7 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
     // cannot both render unambiguously, so every resolution is identity-checked
     // by source pointer and a collision is a violation, never a silent skip.
     const pastedDeclByName = new Map<string, string>()
-    const queue: { name: string; from: FileCtx }[] = [{ name: typeName, from: ctx }]
+    const queue: { name: string; from: FileCtx }[] = [...rootTypeNames].map(name => ({ name, from: ctx }))
     for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
       const { name, from } = item
       const resolved = resolveTypeName(from, name, cache, violations)
@@ -676,7 +725,7 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
         continue
       }
       if ('ref' in resolved) {
-        if (name === typeName) {
+        if (rootTypeNames.has(name)) {
           violations.push(`${pkg}: config type '${name}' is imported from '${resolved.ref.specifier}'; a plugin's config type must live in its own package.`)
           continue
         }
@@ -717,7 +766,6 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
     entry.refs = [...refs.values()].sort((a, b) => a.alias.localeCompare(b.alias))
 
     // Statically walk the runtime schema (when one exists) for the subset check.
-    const schemaExpr = findSchemaExpr(ctx, pluginClass)
     if (schemaExpr) {
       const { keys, composes } = walkSchemaExpr(ctx, unwrapExpr(schemaExpr), `${pkg} (${entryRel})`, violations)
       entry.schemaKeys = keys
@@ -743,22 +791,26 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
           violations.push(`${entry.pkg}: schema intersects '${composed}', which is not a workspace package the walk collected.`)
           continue
         }
+        if (target.schemaInputTypeName && !entry.schemaInputTypeName) {
+          violations.push(`${entry.pkg}: composing transformed '${composed}' requires a typed outer transform input.`)
+          continue
+        }
         keys.push(...foldComposed(target))
       }
       return keys
     }
     const allKeys = foldComposed(entry)
-    const mainPaste = entry.pastes?.[0]
-    const mainFile = mainPaste?.source.split(':')[0]
-    const mainCtx = mainFile !== undefined ? cache.get(resolve(scanRoot, mainFile)) : undefined
-    const mainDecl = mainCtx && entry.configTypeName !== undefined ? findTypeDecl(mainCtx, entry.configTypeName) : null
-    if (!mainCtx || !mainDecl) {
-      violations.push(`${entry.pkg}: cannot locate config type '${entry.configTypeName ?? ''}' for the schema-path check.`)
+    const checkedTypeName = entry.schemaInputTypeName ?? entry.configTypeName
+    const entryCtx = cache.get(resolve(scanRoot, entry.entry))
+    const checkedType = entryCtx && checkedTypeName
+      ? resolveTypeName(entryCtx, checkedTypeName, cache, violations) : null
+    if (!checkedType || 'ref' in checkedType) {
+      violations.push(`${entry.pkg}: cannot locate config input type '${checkedTypeName ?? ''}' for the schema-path check.`)
       continue
     }
     for (const keyPath of allKeys) {
-      if (lookupPath(world, mainCtx, mainDecl, parsePath(keyPath), new Set()) === 'missing') {
-        violations.push(`${entry.pkg}: schema validates key '${keyPath}' but config type '${entry.configTypeName ?? ''}' declares no such member — the catalog paste would hide a loader-accepted field.`)
+      if (lookupPath(world, checkedType.ctx, checkedType.decl, parsePath(keyPath), new Set()) === 'missing') {
+        violations.push(`${entry.pkg}: schema validates key '${keyPath}' but config input type '${checkedTypeName ?? ''}' declares no such member — the catalog paste would hide a loader-accepted field.`)
       }
     }
   }
@@ -791,6 +843,9 @@ function renderConfigEntry(entry: CatalogEntry, byName: Map<string, CatalogEntry
   const out = [`<a id="${githubSlug(entry.pkg)}"></a>`, '', `## \`${entry.pkg}\``, '']
   const requires = requiresLine(entry.inject)
   if (requires) out.push(requires, '')
+  if (entry.schemaInputTypeName) {
+    out.push(`Runtime schema input: \`${entry.schemaInputTypeName}\`; normalized plugin config: \`${entry.configTypeName ?? ''}\`.`, '')
+  }
   out.push('```' + FENCE, ...(entry.pastes ?? []).map(p => p.text).join('\n\n').split('\n'), '```', '')
   if (entry.refs && entry.refs.length > 0) {
     out.push(`Depends on: ${entry.refs.map(r => refLink(r, byName)).join(' · ')}`, '')
@@ -817,7 +872,7 @@ export function render(entries: CatalogEntry[]): string {
     '',
     'Every `config:` block a `cordis.yml` entry can set: for each loadable harness package, the verbatim config declaration (JSDoc included) its `apply` function or service constructor receives, with every referenced type pasted alongside (package-local types) or linked (everything else). The paste is the plugin\'s full declared config type — a field the runtime schema deliberately excludes is a runtime-only seam (its own JSDoc says so) and is not settable from `cordis.yml`. This is the **deployment**-axis reference — the wiring a plugin author works against is the generated Cordis API region on each [subsystem page](subsystems/core.md), the model-facing tool schemas are the [tool catalog](tool-catalog.md), and [subsystems/](subsystems/core.md) documents the types these declarations reference.',
     '',
-    'This file is GENERATED from source (`scripts/gen-config-catalog.ts`) and verified fresh by `pnpm run verify-config-catalog` (part of `doc-sync`) — do not edit it by hand. Declaration blocks use a `ts config-catalog` fence (skipped by doc-typecheck, since a lone declaration referencing imports is not standalone-compilable). The generator also cross-checks the runtime schemastery schema against the pasted declaration — every schema-validated key, nested keys included, must be locatable on the declared config type — so the paste cannot hide a loader-accepted field.',
+    'This file is GENERATED from source (`scripts/gen-config-catalog.ts`) and verified fresh by `pnpm run verify-config-catalog` (part of `doc-sync`) — do not edit it by hand. Declaration blocks use a `ts config-catalog` fence (skipped by doc-typecheck, since a lone declaration referencing imports is not standalone-compilable). The generator cross-checks every runtime schema key, nested keys included, against the pasted input declaration. A root `z.transform` callback names its input type explicitly; both that input and the normalized plugin config are pasted, so accepted aliases remain documented without becoming fields on the normalized config.',
     '',
     'A `Requires:` line lists the service keys the plugin `inject`s: its `cordis.yml` tree must also load providers for those services. Scope is the harness tier (`packages/`); the vendored cordis plugins a config tree may also load (`hmr`, the console logger, …) are pinned upstream source ([vendoring policy](../vendor/README.md)) and not catalogued here.',
     '',

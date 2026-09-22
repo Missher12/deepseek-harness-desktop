@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-22-config-transform-input-catalog.md
+2026-09-22-config-transform-input-catalog.md: 56ed29f58cfbdc77c3ce0f71f8d21c8ceae53f1d
+2026-09-22-config-transform-input-catalog.zh.md: fabb128a99e8e4078dbc216a9dc64419b0b4202c
