@@ -147,6 +147,7 @@ describe('web e2e: PTC mode round renders nested sub-calls', () => {
       page,
       '[class*="centerCol"]',
       scaffold.workspaceCwd,
+      { scrollToBottom: true },
     )
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
   })
