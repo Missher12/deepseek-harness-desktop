@@ -535,6 +535,9 @@ describe('UiWorkspaceService', () => {
 
     b.uiWorkspace.dismissSessionStartFailure()
     expect(b.uiWorkspace.sessionStartFailure.getSnapshot()).toBeNull()
+    listener.mockClear()
+    b.uiWorkspace.dismissSessionStartFailure()
+    expect(listener).not.toHaveBeenCalled()
     unsubscribe()
   })
 
@@ -550,6 +553,15 @@ describe('UiWorkspaceService', () => {
     await vi.waitFor(() => {
       expect(b.uiWorkspace.sessionStartFailure.getSnapshot())
         .toBe('agent-preset/invalid: preset "mine" failed to mount')
+    })
+  })
+
+  it('reports a non-Error session-start refusal as readable text', async () => {
+    const b = startBench()
+    b.sessions.create.mockRejectedValueOnce('Host unavailable')
+    b.uiWorkspace.startSession(wid('recent-home'))
+    await vi.waitFor(() => {
+      expect(b.uiWorkspace.sessionStartFailure.getSnapshot()).toBe('Host unavailable')
     })
   })
 

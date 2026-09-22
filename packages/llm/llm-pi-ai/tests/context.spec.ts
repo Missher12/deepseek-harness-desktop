@@ -99,6 +99,15 @@ describe('pi-ai request context conversion', () => {
     expect(toPiContext({ ...base, tools: [] })).toEqual({ messages: [] })
   })
 
+  it('keeps text-only history unchanged when an image-only budget is present', async () => {
+    const context = await toPiContext(
+      request([user([{ type: 'text', text: 'no images here' }])]),
+      imageContext(attachments, { maxRequestImageBytes: 1 }),
+    )
+
+    expect(context.messages).toEqual([{ role: 'user', content: 'no images here', timestamp: 0 }])
+  })
+
   it('converts complete text-only history and rejects nested images without storage', () => {
     const callId = ToolCallId('call-1')
     expect(toPiContext(request([
@@ -503,6 +512,27 @@ describe('pi-ai request context conversion', () => {
       user([{ type: 'image', attachment: { ...ref, bytes: 300 } }]),
     ]), imageContext(store, { maxRequestImageBytes: 8 }))).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     expect(readImageRequest).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when history changes between image preparation and exact projection', async () => {
+    const original = { ...ref, bytes: 512 }
+    const replacement = {
+      ...original,
+      attachmentId: AttachmentId(`sha256:${'e'.repeat(64)}`),
+    }
+    const mutable = structuredClone(user([{ type: 'image', attachment: original }]))
+    const readImageRequest = vi.fn(async (value: ImageAttachmentRef) => {
+      mutable.content[0] = { type: 'image', attachment: replacement }
+      return requestImage(value, Uint8Array.of(1))
+    })
+
+    await expect(toPiContext(request([mutable]), imageContext(projectionStore(readImageRequest), {
+      maxRequestImageBytes: 1500,
+      requestImagePolicy: { maxPixels: 2048 * 2048, maxBytes: 512 },
+    }))).rejects.toMatchObject({
+      code: 'INVALID_REQUEST',
+      message: expect.stringContaining('was not prepared') as string,
+    })
   })
 
   it('offloads repeated image-block occurrences by position rather than shared object identity', async () => {

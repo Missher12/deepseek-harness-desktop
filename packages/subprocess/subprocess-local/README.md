@@ -68,7 +68,7 @@ This section explains the design decisions behind the provider and points at the
 
 ### Design concept
 
-Each spawn selects one owner for both signalling and quiescence. Supported Linux ordinary and terminal launches use transient user-systemd scopes, while supported Windows ordinary launches use a helper-owned kill-on-close Job. macOS, older or unavailable user-systemd, and unavailable Windows native support use the existing detached process-group, `taskkill`, or terminal-session observations with one warning. The provider never replays a command through fallback after a native path may have started it.
+Each spawn selects one owner for both signalling and quiescence. Supported Linux ordinary and terminal launches use transient user-systemd scopes, while supported Windows ordinary launches use a helper-owned kill-on-close Job. macOS, older or unavailable user-systemd, and unavailable Windows native support use the existing detached process-group, `taskkill`, or terminal-session observations with one warning. The provider never replays a command through fallback after a native path may have started it. A Linux launcher terminated by an observed OS signal preserves that outcome even before its bootstrap reads the launch request. Recorded bootstrap errors still take precedence; an unsignalled exit with an unread request remains a startup error.
 
 ### Source map
 

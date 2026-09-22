@@ -12,6 +12,7 @@ import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { createModels, getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type { Api, Model, OpenAICompletionsCompat, Provider } from '@earendil-works/pi-ai'
 import { resolveProfiles } from '../src/config.ts'
+import { catalogModelConfiguration } from '../src/catalog.ts'
 import { buildProvider, supportedProtocols } from '../src/provider.ts'
 import { assemble } from './assemble.ts'
 import { memoryAuth } from './auth-double.ts'
@@ -423,6 +424,28 @@ describe('hand-declared providers', () => {
 })
 
 describe('catalog routes with per-model configuration', () => {
+  it('omits compat settings when the catalog model offers none', () => {
+    const installed = getBuiltinModels('deepseek').find(entry => entry.id === 'deepseek-v4-flash')
+    if (installed === undefined) throw new Error('the installed catalog ships no deepseek model')
+    const model = { ...installed, compat: {}, thinkingLevelMap: {} } satisfies Model<Api>
+
+    expect(catalogModelConfiguration(model)).toEqual({
+      reasoningEfforts: { off: null, minimal: 'minimal', low: 'low', medium: 'medium', high: 'high' },
+    })
+    const configured = {
+      ...model,
+      compat: { thinkingFormat: 'deepseek' },
+    } satisfies Model<Api>
+    expect(catalogModelConfiguration(configured)).toEqual({
+      reasoningEfforts: { off: null, minimal: 'minimal', low: 'low', medium: 'medium', high: 'high' },
+      compat: { thinkingFormat: 'deepseek' },
+    })
+    const noReasoning = { ...model, reasoning: false } satisfies Model<Api>
+    expect(catalogModelConfiguration(noReasoning)).toEqual({
+      reasoningEfforts: false,
+    })
+  })
+
   it('serves the installed catalog untouched when the profile lists no models', async () => {
     const server = await mockServer([])
     const ctx = await harness({ providers: { deepseek: { baseURL: server.url } } })

@@ -110,7 +110,7 @@ The decision history lives in the [unified service decision](../../../.agents/no
 
 `observeSession` builds point observations without a listing preflight. A live observation fixes its cut as the current log length and materializes `events` on first read, so header-, cursor-, or projection-only consumers never copy the log; the log only appends, so a late first read still yields exactly that prefix. The cold path stats the stored session first and consults an own bounded cache keyed by the persistence instance and the `stat` revision: an unchanged revision reuses the restored unpublished Session without re-reading the log; a changed revision, or a replaced persistence instance, reloads through the handle seam and replaces the entry. The cache holds `preparedSessionCacheSize` entries with least-recently-used eviction, entries pinned by active observation leases are never evicted, and a session that goes live mid-read retries the live path.
 
-Large cold observations clone events in bounded batches, yielding between batches so pending Host work and cancellation can run. Each continuation checks cancellation and a newly attached live owner. Preparation and publication still wait for the complete detached event array; yielding does not make decoding or preparation incremental.
+Cold observations adopt the detached or shared-frozen event values reported by `SessionHandle.read()` into a caller-owned outer array, without cloning the event graphs again. The persistence backend owns read scheduling and cancellation. After the complete read and handle close, the observation reader checks cancellation and a newly attached live owner before preparing or caching the stored Session.
 
 ### Reads and traces
 

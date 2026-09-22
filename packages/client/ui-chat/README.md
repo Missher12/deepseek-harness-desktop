@@ -33,7 +33,7 @@ Each nonempty appended `system/message` owns a collapsed prompt row, including a
 <a id="turn-token-usage"></a>
 ## Turn token usage
 
-The session statistics row keeps every named metric below the composer from the first step. Missing values use localized placeholders; known timing and token totals appear independently of whether the first tool step has closed. It never keeps totals from a different session. The dock remains available while the session input is loading; whole-log projections continue to own billing and timing totals.
+The session statistics row keeps every named metric below the composer from the first step. Missing values use localized placeholders; known timing and token totals appear independently of whether the first tool step has closed. It never keeps totals from a different session. The dock remains available while the session input is loading; whole-log projections continue to own billing and timing totals. The statistics line and pill views share the same window totals, duration formatting, and cache-hit calculation.
 
 A completed Turn shows an expandable usage row only when the loaded window includes `turn/start` and every started model attempt reports safe, exact usage. The row omits unavailable optional buckets. Incomplete or contradictory accounting hides the complete disclosure instead of presenting a partial total.
 

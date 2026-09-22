@@ -37,7 +37,7 @@ const MODEL_IMAGE_PATH = '/model/.dsh/attachments/objects/aa/object'
 const LOOPBACK_REQUEST_BYTES = Uint8Array.from({ length: 512 }, (_value, index) => index % 251)
 
 function wireImageProjectionBytes(value: unknown): number {
-  if (Array.isArray(value)) return value.reduce((sum, item) => sum + wireImageProjectionBytes(item), 0)
+  if (Array.isArray(value)) return (value as unknown[]).reduce<number>((sum, item) => sum + wireImageProjectionBytes(item), 0)
   if (typeof value !== 'object' || value === null) return 0
   const record = value as Record<string, unknown>
   if (record.type === 'text' && typeof record.text === 'string' && record.text.startsWith('[image omitted')) {

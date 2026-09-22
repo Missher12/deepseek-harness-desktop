@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ModelListEditor } from '../src/client/ModelListEditor.tsx'
-import type { ModelDraft } from '../src/client/ModelListEditor.tsx'
+import type { ModelDraft, ModelListEditorProps } from '../src/client/ModelListEditor.tsx'
 import type { ModelsOperations } from '../src/client/operations.ts'
 import { en } from '../src/client/locales.ts'
 
@@ -103,7 +103,8 @@ describe('automatic local model presets', () => {
       if (kind === 'offline') throw new Error('Host unavailable')
       return kind === 'refused' ? { kind: 'refused', message: 'Preset unavailable' } : { kind: 'found', models: [] }
     })
-    fireEvent.blur(screen.getByLabelText(`${en.modelId} 1`))
+    await act(async () => { fireEvent.blur(screen.getByLabelText(`${en.modelId} 1`)) })
+    expect(changed).not.toHaveBeenCalled()
     fireEvent.change(screen.getByLabelText(`${en.modelName} 1`), { target: { value: 'Manual name' } })
     await waitFor(() => { expect(changed.mock.lastCall?.[0]).toEqual([{ id: 'known', name: 'Manual name' }]) })
   })
@@ -117,4 +118,43 @@ describe('automatic local model presets', () => {
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'other' } })
     expect(changed.mock.lastCall?.[0]).toEqual([{ id: 'other', contextWindow: 90_000 }])
   })
+  it.each([
+    { disabled: true, settingsNs: 'llm-pi-ai', id: 'known' },
+    { disabled: false, settingsNs: 'another-adapter', id: 'known' },
+    { disabled: false, settingsNs: 'llm-pi-ai', id: '' },
+  ])('does not query presets for an ineligible model input: %j', async ({ disabled, settingsNs, id }) => {
+    const discover = vi.fn(async () => ({ kind: 'found' as const, models: [preset] }))
+    render(<ModelListEditor models={[{ id }]} onChange={vi.fn()} disabled={disabled}
+      probe={{ settingsNs }} operations={testOperations(discover)} t={key => en[key]} />)
+    await act(async () => { fireEvent.blur(screen.getByLabelText(`${en.modelId} 1`)) })
+    expect(discover).not.toHaveBeenCalled()
+  })
+
+  it('keeps a fully populated model unchanged after a matching preset returns', async () => {
+    const { changed } = mount(async () => ({ kind: 'found', models: [preset] }), {
+      id: 'known', name: 'Manual name', contextWindow: 64_000, maxTokens: 4096,
+      reasoningEfforts: false,
+    })
+    await act(async () => { fireEvent.blur(screen.getByLabelText(`${en.modelId} 1`)) })
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('passes provider and endpoint hints while preserving neighboring models', async () => {
+    const discover = vi.fn(async () => ({ kind: 'found' as const, models: [preset] }))
+    const changed = vi.fn<(models: ModelDraft[]) => void>()
+    const other = { id: 'other', name: 'Keep me' }
+    const props: ModelListEditorProps = {
+      models: [{ id: 'known' }, other], onChange: changed, disabled: false,
+      probe: { settingsNs: 'llm-pi-ai', provider: 'openai', baseURL: 'https://example.test/v1' },
+      operations: testOperations(discover), t: key => en[key],
+    }
+    render(<ModelListEditor {...props} />)
+    await act(async () => { fireEvent.blur(screen.getByLabelText(`${en.modelId} 1`)) })
+    expect(discover).toHaveBeenCalledWith('llm-pi-ai', {
+      modelId: 'known', provider: 'openai', baseURL: 'https://example.test/v1',
+    })
+    expect(changed.mock.lastCall?.[0][0]).toMatchObject({ id: 'known', maxTokens: 8192 })
+    expect(changed.mock.lastCall?.[0][1]).toBe(other)
+  })
+
 })

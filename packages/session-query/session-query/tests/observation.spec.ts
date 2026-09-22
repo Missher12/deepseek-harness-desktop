@@ -60,7 +60,7 @@ interface StubHooks {
   /** Runs inside `stat` before it resolves. */
   onStat?: () => void
   /** Runs inside `read` before it resolves. */
-  onRead?: () => void
+  onRead?: () => void | Promise<void>
   /** Observes the detached values returned by `read`. */
   onReadResult?: (events: SessionEvent[]) => void
   /** Replaces the read result for every open handle. */
@@ -85,7 +85,6 @@ function stubPersistence(
     hooks.onStat?.()
     if (hooks.statFailure !== undefined) {
       // Exercise containment of a backend violating the Error rejection convention.
-      // oxlint-disable-next-line typescript/prefer-promise-reject-errors
       return Promise.reject(hooks.statFailure)
     }
     if (entry === undefined) return Promise.resolve(undefined)
@@ -103,16 +102,15 @@ function stubPersistence(
       header: structuredClone(entry.header),
       inheritedEventCount: SessionLogOffset(0),
       access,
-      read: (
+      read: async (
         _offset?: number,
         _length?: number,
         options?: SessionHandleReadOptions,
       ): Promise<SessionHandleReadResult> => {
         counters.read += 1
         void options
-        hooks.onRead?.()
+        await hooks.onRead?.()
         if (hooks.readFailure !== undefined) {
-          // oxlint-disable-next-line typescript/prefer-promise-reject-errors
           return Promise.reject(hooks.readFailure)
         }
         const events = structuredClone(entry.events)
@@ -251,54 +249,80 @@ describe('SessionObservationReader cold path', () => {
     await ctx.fiber.dispose()
   })
 
-  it('lets pending work run while preparing a long history and preserves the complete immutable cut', async () => {
+  it('adopts the complete detached history without cloning it again', async () => {
     const ctx = await readerContext()
-    const meta = header('yielding-history')
+    const meta = header('adopted-history')
     const events = Array.from({ length: 800 }, (_, index) => messageEvent(index, `message ${index}`))
     const store = new Map([[meta.id, { header: meta, events, revision: 'r1' }]])
-    let serviced = false
+    let detached: SessionEvent[] | undefined
     ctx.provide('sessionPersistence', stubPersistence(store, { stat: 0, open: 0, read: 0 }, {
-      onRead: () => { setImmediate(() => { serviced = true }) },
+      onReadResult: (values) => { detached = values },
     }))
-    using observed = await new SessionObservationReader(ctx).read(meta.id, { projectionMode: 'none' })
-    expect(serviced).toBe(true)
-    expect(observed.events).toEqual(events)
-    expect(observed.cursor).toBe(799)
-    expect(Object.isFrozen(observed.events)).toBe(true)
-    expect(observed.events[0]).not.toBe(events[0])
-    await ctx.fiber.dispose()
+    try {
+      using observed = await new SessionObservationReader(ctx).read(meta.id, { projectionMode: 'none' })
+      expect(observed.events).toEqual(events)
+      expect(observed.cursor).toBe(799)
+      expect(Object.isFrozen(observed.events)).toBe(true)
+      expect(observed.events).not.toBe(detached)
+      expect(observed.events[0]).toBe(detached?.[0])
+      expect(observed.events[0]).not.toBe(events[0])
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
-  it('cancels during long-history cloning without publishing a partial preparation', async () => {
+  it('cancels a pending history read without publishing a partial preparation', async () => {
     const ctx = await readerContext()
-    const meta = header('cancel-cloning')
+    const meta = header('cancel-pending-read')
     const events = Array.from({ length: 800 }, (_, index) => messageEvent(index, 'stored'))
     const controller = new AbortController()
+    const started = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
     ctx.provide('sessionPersistence', stubPersistence(new Map([[meta.id, {
       header: meta, events, revision: 'r1',
     }]]), { stat: 0, open: 0, read: 0 }, {
-      onRead: () => { setImmediate(() => { controller.abort(new Error('cancel pending read')) }) },
+      onRead: () => { started.resolve(undefined); return release.promise },
     }))
     const prepare = vi.spyOn(ctx.sessions, 'prepare')
-    await expect(new SessionObservationReader(ctx).read(meta.id, { signal: controller.signal }))
-      .rejects.toMatchObject({ code: 'SESSION_QUERY_ABORTED' })
-    expect(prepare).not.toHaveBeenCalled()
-    await ctx.fiber.dispose()
+    const pending = new SessionObservationReader(ctx).read(meta.id, { signal: controller.signal })
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'SESSION_QUERY_ABORTED' })
+    try {
+      await started.promise
+      controller.abort(new Error('cancel pending read'))
+      release.resolve(undefined)
+      await rejected
+      expect(prepare).not.toHaveBeenCalled()
+    } finally {
+      release.resolve(undefined)
+      await pending.catch(() => {})
+      await ctx.fiber.dispose()
+    }
   })
 
-  it('prefers a live owner attached while a long history yields', async () => {
+  it('prefers a live owner attached while the history read is pending', async () => {
     const ctx = await readerContext()
-    const meta = header('attached-while-cloning')
+    const meta = header('attached-during-read')
     const events = Array.from({ length: 800 }, (_, index) => messageEvent(index, 'stored'))
+    const started = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
     ctx.provide('sessionPersistence', stubPersistence(new Map([[meta.id, {
       header: meta, events, revision: 'r1',
     }]]), { stat: 0, open: 0, read: 0 }, {
-      onRead: () => { setImmediate(() => { ctx.sessions.create(meta.id, { meta: { createdAt: 1 } }) }) },
+      onRead: () => { started.resolve(undefined); return release.promise },
     }))
-    using observed = await new SessionObservationReader(ctx).read(meta.id, { projectionMode: 'none' })
-    expect(observed.source).toBe('live')
-    expect(observed.events).toEqual([])
-    await ctx.fiber.dispose()
+    const pending = new SessionObservationReader(ctx).read(meta.id, { projectionMode: 'none' })
+    try {
+      await started.promise
+      ctx.sessions.create(meta.id, { meta: { createdAt: 1 } })
+      release.resolve(undefined)
+      using observed = await pending
+      expect(observed.source).toBe('live')
+      expect(observed.events).toEqual([])
+    } finally {
+      release.resolve(undefined)
+      await pending.then((value) => { value[Symbol.dispose]() }, () => {})
+      await ctx.fiber.dispose()
+    }
   })
 
   it('reference-counts prepared leases and rejects retention after disposal', async () => {

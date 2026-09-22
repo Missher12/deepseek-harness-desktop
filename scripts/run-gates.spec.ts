@@ -304,11 +304,12 @@ describe('gate graph validation', () => {
     expect(byId.get('coverage')?.allowFailure).not.toBe(true)
     expect(byId.get('coverage')?.needs).toContain('build')
     expect(byId.get('coverage-exempt-heavy')?.allowFailure).not.toBe(true)
-    expect(byId.get('coverage')?.needs).toEqual(['build', 'windows-site'])
+    expect(byId.get('coverage')?.needs).toEqual(['build', 'windows-site', 'native-system'])
     expect(byId.get('coverage-exempt-heavy')?.needs).toEqual([
       'build',
       'windows-site',
       'coverage',
+      'native-system',
     ])
     expect(byId.get('coverage-exempt-heavy')?.args).toContain(
       'packages/experimental/webworker-packer/tests/image-loadable.spec.ts',

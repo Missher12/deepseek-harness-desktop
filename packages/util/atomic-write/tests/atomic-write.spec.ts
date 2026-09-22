@@ -7,6 +7,7 @@ import { withFileLock, writeFileAtomic } from '../src/index.ts'
 const state = vi.hoisted(() => ({
   failLockCreateWithEPERM: false,
   failLockProbeWithEPERM: false,
+  failLockProbeWithCode: undefined as string | undefined,
   failLockParentRead: false,
   renameAttempts: 0,
   renameFailures: [] as string[],
@@ -37,6 +38,11 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         state.failLockProbeWithEPERM = false
         throw Object.assign(new Error('EPERM: injected lock probe failure'), { code: 'EPERM' })
       }
+      if (state.failLockProbeWithCode !== undefined && String(path).endsWith('.lock')) {
+        const code = state.failLockProbeWithCode
+        state.failLockProbeWithCode = undefined
+        throw Object.assign(new Error(`${code}: injected lock probe failure`), { code })
+      }
       return (actual.lstat as (path: unknown, ...args: never[]) => ReturnType<typeof actual.lstat>)(path, ...rest)
     }) as typeof actual.lstat,
     writeFile: (async (path: unknown, ...rest: never[]) => {
@@ -56,6 +62,7 @@ afterEach(async () => {
   vi.restoreAllMocks()
   state.failLockCreateWithEPERM = false
   state.failLockProbeWithEPERM = false
+  state.failLockProbeWithCode = undefined
   state.failLockParentRead = false
   state.renameAttempts = 0
   state.renameFailures.length = 0
@@ -213,24 +220,47 @@ describe('withFileLock', () => {
     expect(called).toBe(true)
   })
 
-  it('preserves Windows EPERM when neither lstat nor the parent directory proves a lock entry', async () => {
+  it.each(['EACCES', 'EBUSY'])('confirms Windows lock contention when lstat reports transient %s', async (code) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const dir = await scratch()
+    const target = join(dir, 'document')
+    const lockPath = `${target}.lock`
+    await writeFile(lockPath, 'holder\n')
+    let releaseCleanup: Promise<void> | undefined
+    const release = setTimeout(() => { releaseCleanup = rm(lockPath, { force: true }) }, 50)
+    state.failLockCreateWithEPERM = true
+    state.failLockProbeWithCode = code
+    let called = false
+
+    try {
+      await withFileLock(target, async () => { called = true })
+    } finally {
+      clearTimeout(release)
+      await releaseCleanup
+    }
+    expect(called).toBe(true)
+  })
+
+  it.each(['EPERM', 'EACCES', 'EBUSY'])('preserves Windows EPERM when neither lstat nor the parent directory proves a lock entry after %s', async (code) => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const dir = await scratch()
     const operation = vi.fn(async () => {})
     state.failLockCreateWithEPERM = true
-    state.failLockProbeWithEPERM = true
+    if (code === 'EPERM') state.failLockProbeWithEPERM = true
+    else state.failLockProbeWithCode = code
 
     await expect(withFileLock(join(dir, 'document'), operation)).rejects.toMatchObject({ code: 'EPERM' })
     expect(operation).not.toHaveBeenCalled()
   })
 
-  it('preserves the original lock refusal when its parent directory cannot be inspected', async () => {
+  it.each(['EPERM', 'EACCES', 'EBUSY'])('preserves the original lock refusal when the parent directory cannot be inspected after %s', async (code) => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const dir = await scratch()
     const target = join(dir, 'document')
     await writeFile(`${target}.lock`, 'owned elsewhere')
     state.failLockCreateWithEPERM = true
-    state.failLockProbeWithEPERM = true
+    if (code === 'EPERM') state.failLockProbeWithEPERM = true
+    else state.failLockProbeWithCode = code
     state.failLockParentRead = true
     const operation = vi.fn(async () => {})
     await expect(withFileLock(target, operation)).rejects.toMatchObject({ code: 'EPERM' })

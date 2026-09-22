@@ -138,7 +138,7 @@
             "provider": "deepseek-official",
             "model": "smoke-model",
             "maxTokens": 256000,
-            "reasoningEffort": "high"
+            "reasoningEffort": "max"
           },
           "adapterDefaults": {
             "reasoningEffort": true,
@@ -565,7 +565,7 @@
             "provider": "deepseek-official",
             "model": "smoke-model",
             "maxTokens": 256000,
-            "reasoningEffort": "high"
+            "reasoningEffort": "max"
           },
           "adapterDefaults": {
             "reasoningEffort": true,
@@ -1387,7 +1387,7 @@
             "provider": "deepseek-official",
             "model": "smoke-model",
             "maxTokens": 256000,
-            "reasoningEffort": "high"
+            "reasoningEffort": "max"
           },
           "adapterDefaults": {
             "reasoningEffort": true,
@@ -1798,7 +1798,7 @@
                 "provider": "deepseek-official",
                 "model": "smoke-model",
                 "maxTokens": 256000,
-                "reasoningEffort": "high"
+                "reasoningEffort": "max"
               },
               "adapterDefaults": {
                 "reasoningEffort": true,
@@ -2321,7 +2321,7 @@
                 "provider": "deepseek-official",
                 "model": "smoke-model",
                 "maxTokens": 256000,
-                "reasoningEffort": "high"
+                "reasoningEffort": "max"
               },
               "adapterDefaults": {
                 "reasoningEffort": true,
@@ -2975,7 +2975,7 @@
               "config": {
                 "provider": "deepseek-official",
                 "model": "smoke-model",
-                "reasoningEffort": "high",
+                "reasoningEffort": "max",
                 "maxTokens": 256000
               },
               "adapterDefaults": {
@@ -3680,7 +3680,7 @@
               "config": {
                 "provider": "deepseek-official",
                 "model": "smoke-model",
-                "reasoningEffort": "high",
+                "reasoningEffort": "max",
                 "maxTokens": 256000
               },
               "adapterDefaults": {
@@ -4258,7 +4258,7 @@
                 "provider": "deepseek-official",
                 "model": "smoke-model",
                 "maxTokens": 256000,
-                "reasoningEffort": "high"
+                "reasoningEffort": "max"
               },
               "adapterDefaults": {
                 "reasoningEffort": true,

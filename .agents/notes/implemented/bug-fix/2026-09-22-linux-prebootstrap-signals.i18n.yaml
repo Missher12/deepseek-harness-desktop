@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-22-linux-prebootstrap-signals.md
+2026-09-22-linux-prebootstrap-signals.md: 2b51ad2a6a9d6a594b32b1aa4f0c89cab7270f59
+2026-09-22-linux-prebootstrap-signals.zh.md: 6d279df7ba358a9056784a86a7217c38b6c6c45e

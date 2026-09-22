@@ -205,7 +205,7 @@ describe('Linux scope establishment and quiescence', () => {
     expect(spawnSync).toHaveBeenCalledWith('/bin/systemctl', expect.arrayContaining([
       'kill', '--kill-whom=all', '--signal=SIGTERM',
     ]), expect.anything())
-    const direct = expect(result.direct).rejects.toThrow('before its bootstrap consumed')
+    const direct = expect(result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
     child.exit(null, 'SIGTERM')
     await direct
     await expect(waiting).resolves.toBeUndefined()
@@ -345,6 +345,16 @@ describe('Linux scope establishment and quiescence', () => {
     result.owner.cleanup?.()
   })
 
+  it.each(['SIGTERM', 'SIGKILL'] as const)('preserves %s before the ordinary bootstrap consumes its request', async (signal) => {
+    const { child, result, requestPath } = launch(async () => missingUnit())
+    expect(existsSync(requestPath)).toBe(true)
+    child.exit(null, signal)
+    await expect(result.direct).resolves.toEqual({ exitCode: null, signal })
+    await expect(result.owner.waitForExit()).resolves.toBeUndefined()
+    result.owner.cleanup?.()
+    expect(existsSync(linuxLaunchFilesFromLocator(requestPath).directory)).toBe(false)
+  })
+
   it('reconstructs a pre-exec startup error instead of exposing bootstrap exit 127', async () => {
     const { child, result, requestPath } = launch(async () => missingUnit())
     const files = linuxLaunchFilesFromLocator(requestPath)
@@ -353,7 +363,7 @@ describe('Linux scope establishment and quiescence', () => {
       type: 'error',
       error: { name: 'Error', message: 'spawn tool ENOENT', code: 'ENOENT' },
     })
-    child.exit(127, null)
+    child.exit(null, 'SIGTERM')
     await expect(result.direct).rejects.toMatchObject({ code: 'ENOENT' })
     result.owner.cleanup?.()
   })
@@ -568,8 +578,19 @@ describe('Linux PTY bootstrap reuse', () => {
     writeLinuxStartupError(files, {
       type: 'error', error: { name: 'Error', message: 'bad cwd', code: 'ENOENT' },
     })
-    expect(() => scope.resolveOutcome({ exitCode: 127, signal: null })).toThrow('bad cwd')
+    expect(() => scope.resolveOutcome({ exitCode: null, signal: 'SIGTERM' })).toThrow('bad cwd')
     scope.cleanup()
+  })
+
+  it.each(['SIGTERM', 'SIGKILL'] as const)('preserves %s before the terminal bootstrap consumes its request', (signal) => {
+    const scope = prepareLinuxTerminalScope(terminalSpec, { TARGET: 'yes' })
+    const requestPath = scope.env[SUBPROCESS_RUNNER_ENV]
+    if (requestPath === undefined) throw new Error('missing PTY request')
+    directories.push(linuxLaunchFilesFromLocator(requestPath).directory)
+    expect(existsSync(requestPath)).toBe(true)
+    expect(scope.resolveOutcome({ exitCode: null, signal })).toEqual({ exitCode: null, signal })
+    scope.cleanup()
+    expect(existsSync(linuxLaunchFilesFromLocator(requestPath).directory)).toBe(false)
   })
 
   it('uses default owner dependencies and rejects an unconsumed request', () => {

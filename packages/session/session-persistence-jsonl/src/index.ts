@@ -473,6 +473,8 @@ class JsonlSessionPersistence extends SessionPersistence {
       // kept. The root guard means no unforeseen layout can remove the
       // sessions root itself, which then holds no session directory of its own.
       const projectDir = dirname(dir)
+      /* v8 ignore else -- listProjectDirs() and resolveGenerationInDirectory() always place a Session below a
+       * project child of root; this guard protects an unforeseen layout. */
       if (resolve(projectDir) !== resolve(this.root)) {
         let removed = false
         try {

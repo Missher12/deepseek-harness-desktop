@@ -14,10 +14,25 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSessionTestController, testSessionPersistence } from './test-remote.ts'
 
+const lstatFailure = vi.hoisted(() => ({ next: undefined as Error | undefined }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    lstat: async (...args: Parameters<typeof actual.lstat>) => {
+      const failure = lstatFailure.next
+      lstatFailure.next = undefined
+      if (failure !== undefined) throw failure
+      return actual.lstat(...args)
+    },
+  }
+})
+
 const contexts: Context[] = []
 const directories: string[] = []
 const children: Array<{ child: ChildProcess; closed: Promise<unknown> }> = []
 afterEach(async () => {
+  lstatFailure.next = undefined
   try {
     await Promise.all(children.splice(0).map(async ({ child, closed }) => { child.kill(); await closed }))
     await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
@@ -211,6 +226,63 @@ describe('no-project Session directories', () => {
       .rejects.toMatchObject({ code: 'gateway/internal' })
     expect(b.persisted.size).toBe(0)
     expect(existsSync(b.managed)).toBe(false)
+  })
+
+  it('removes a scratch directory when its post-create safety probe fails', async () => {
+    const b = await harness()
+    lstatFailure.next = new Error('scratch directory probe failed')
+
+    await expect(b.controller.create({ sessionId: SessionId('probe-failed') }))
+      .rejects.toMatchObject({ code: 'gateway/internal' })
+
+    expect(existsSync(join(b.managed, 'probe-failed'))).toBe(false)
+    expect(b.persisted.size).toBe(0)
+  })
+
+  it('keeps the scratch directory when its archived header cannot be read', async () => {
+    const b = await harness()
+    const sessionId = SessionId('header-unreadable')
+    const scratch = join(b.managed, sessionId)
+    mkdirSync(scratch, { recursive: true })
+    b.persisted.set(sessionId, {
+      version: SESSION_FORMAT_VERSION,
+      id: sessionId,
+      createdAt: 1,
+      cwd: scratch,
+      isSeeded: false,
+    })
+    b.archived.push(sessionId)
+    const observe = b.ctx.sessionQuery.observeSession.bind(b.ctx.sessionQuery)
+    let observations = 0
+    vi.spyOn(b.ctx.sessionQuery, 'observeSession').mockImplementation(async (...args) => {
+      observations += 1
+      if (observations === 2) throw new Error('storage offline')
+      return await observe(...args)
+    })
+
+    await expect(b.controller.delete({ sessionId })).resolves.toEqual({ deleted: true })
+
+    expect(existsSync(scratch)).toBe(true)
+    expect(b.persisted.has(sessionId)).toBe(false)
+  })
+
+  it('does not infer a scratch directory for an archived header without cwd', async () => {
+    const b = await harness()
+    const sessionId = SessionId('legacy-without-cwd')
+    const scratch = join(b.managed, sessionId)
+    mkdirSync(scratch, { recursive: true })
+    b.persisted.set(sessionId, {
+      version: SESSION_FORMAT_VERSION,
+      id: sessionId,
+      createdAt: 1,
+      isSeeded: false,
+    })
+    b.archived.push(sessionId)
+
+    await expect(b.controller.delete({ sessionId })).resolves.toEqual({ deleted: true })
+
+    expect(existsSync(scratch)).toBe(true)
+    expect(b.persisted.has(sessionId)).toBe(false)
   })
 
   it('removes the empty working directory when a permanent delete takes the Session', async () => {
