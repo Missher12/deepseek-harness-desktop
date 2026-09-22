@@ -49,11 +49,11 @@ export async function mockServer(script: {
       closedResponses += 1
       responseClosed.resolve(undefined)
     })
-    let body = ''
-    request.on('data', (chunk: Buffer) => { body += chunk.toString('utf8') })
+    const chunks: Buffer[] = []
+    request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
     request.on('end', () => {
       paths.push(request.url ?? '')
-      const rawBody = Buffer.from(body, 'utf8')
+      const rawBody = Buffer.concat(chunks)
       rawBodies.push(rawBody)
       requests.push(rawBody.length === 0 ? undefined : JSON.parse(rawBody.toString('utf8')))
       headers.push(request.headers)

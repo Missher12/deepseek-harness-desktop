@@ -8,7 +8,7 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { generationLogPath } from '@deepseek-ai/dsh-session-persistence-jsonl/src/format.ts'
 import { compressZstdFrame } from '@deepseek-ai/dsh-session-persistence-jsonl/src/zstd.ts'
 import { errors as playwrightErrors } from 'playwright'
-import type { Page } from 'playwright'
+import type { Locator, Page } from 'playwright'
 import { expect } from 'vitest'
 import { TITLE_FRAME_PREFIX, TITLE_SYSTEM } from './reader-smoke-provider.ts'
 
@@ -177,6 +177,31 @@ export interface NativeSessionWorkspaceOptions {
   selectSession(title: string, id: SessionId): Promise<void>
 }
 
+/** Reveal and activate a session action, retrying only a timed-out real click. */
+export async function clickSessionAction(
+  page: Page,
+  selectedRow: Locator,
+  sessionAction: RegExp,
+  timeoutMs = 10_000,
+): Promise<void> {
+  await expect.poll(async () => {
+    const action = selectedRow.getByRole('button', { name: sessionAction })
+    if (!await action.isVisible()) {
+      await page.mouse.move(0, 0)
+      await selectedRow.hover()
+      if (!await action.isVisible()) return false
+    }
+    try {
+      await action.click({ timeout: 1_000 })
+      return true
+    } catch (error) {
+      if (!(error instanceof playwrightErrors.TimeoutError)) throw error
+      await page.mouse.move(0, 0)
+      return false
+    }
+  }, { timeout: timeoutMs }).toBe(true)
+}
+
 /** Execute five real write-tool turns and verify default directories, reopening and copied V2 migration. */
 export async function exerciseNativeSessionWorkspaces(page: Page, options: NativeSessionWorkspaceOptions): Promise<void> {
   const observer = new Context()
@@ -260,19 +285,9 @@ export async function exerciseNativeSessionWorkspaces(page: Page, options: Nativ
         if (await group.getAttribute('aria-expanded') !== 'true') await group.click()
         if (!await selectedRow.isVisible()) return false
       }
-      const action = selectedRow.getByRole('button', { name: sessionAction })
-      if (await action.isVisible()) return false
-      await page.mouse.move(0, 0)
-      await selectedRow.hover()
-      if (!await action.isVisible()) return false
-      try {
-        await action.click({ timeout: 1_000 })
-        return true
-      } catch (error) {
-        if (!(error instanceof playwrightErrors.TimeoutError)) throw error
-        return false
-      }
+      return true
     }, { timeout: 10_000 }).toBe(true)
+    await clickSessionAction(page, selectedRow, sessionAction)
     await page.getByRole('menuitem', { name: /^(?:Rename|重命名)$/u }).click()
     const rename = page.getByRole('dialog').filter({ has: page.getByRole('textbox', { name: /^(?:Session name|会话名称)$/u }) })
     const title = rename.getByRole('textbox')

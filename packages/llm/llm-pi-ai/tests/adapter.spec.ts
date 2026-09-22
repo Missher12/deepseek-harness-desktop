@@ -1,3 +1,4 @@
+import { request } from 'node:http'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { AttachmentId, AttachmentStore, ImageVariantId } from '@deepseek-ai/dsh-attachment'
@@ -443,6 +444,30 @@ describe('PiAiAdapter provider routing', () => {
     const body = JSON.parse(raw.toString('utf8')) as { messages?: unknown }
     expect(body.messages).toBeDefined()
     expect(wireImageProjectionBytes(body.messages)).toBeLessThanOrEqual(2052)
+  })
+
+  it('preserves exact UTF-8 request bytes when data chunks split code points', async () => {
+    const server = await mockServer([{ status: 200, body: '{}' }])
+    const source = Buffer.from(JSON.stringify({ text: '你好🇨🇳' }), 'utf8')
+    const split = source.indexOf(Buffer.from('你', 'utf8')) + 1
+    await new Promise<void>((resolve, reject) => {
+      const req = request(server.url, {
+        method: 'POST', agent: false,
+        headers: { 'content-type': 'application/json', 'content-length': source.byteLength },
+      }, (response) => {
+        response.resume()
+        response.once('end', resolve)
+        response.once('error', reject)
+      })
+      req.once('error', reject)
+      req.once('socket', (socket) => { socket.setNoDelay(true) })
+      req.flushHeaders()
+      req.write(source.subarray(0, split))
+      setTimeout(() => { req.end(source.subarray(split)) }, 30)
+    })
+
+    expect(server.rawBodies[0]).toEqual(source)
+    expect(server.requests[0]).toEqual({ text: '你好🇨🇳' })
   })
 
   it('rejects an image projection locally without starting the HTTP request', async () => {
