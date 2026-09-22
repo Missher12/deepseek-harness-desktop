@@ -85,6 +85,7 @@ function stubPersistence(
     hooks.onStat?.()
     if (hooks.statFailure !== undefined) {
       // Exercise containment of a backend violating the Error rejection convention.
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors
       return Promise.reject(hooks.statFailure)
     }
     if (entry === undefined) return Promise.resolve(undefined)
@@ -111,6 +112,7 @@ function stubPersistence(
         void options
         await hooks.onRead?.()
         if (hooks.readFailure !== undefined) {
+          // oxlint-disable-next-line typescript/prefer-promise-reject-errors
           return Promise.reject(hooks.readFailure)
         }
         const events = structuredClone(entry.events)
