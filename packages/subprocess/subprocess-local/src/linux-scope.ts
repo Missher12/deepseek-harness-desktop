@@ -162,6 +162,7 @@ interface DirectRange {
 class SystemdScopeOwner implements BoundProcessOwner {
   private establishment: 'pending' | 'established' = 'pending'
   private pendingSignal: 'SIGTERM' | 'SIGKILL' | undefined
+  private unconsumedScopeStopRequested = false
   private stopped = false
   private observation: Promise<void> | undefined
   private killFailure: Error | undefined
@@ -186,6 +187,26 @@ class SystemdScopeOwner implements BoundProcessOwner {
       `--signal=${signal}`,
       this.unit,
     ], { encoding: 'utf8', env: managerEnvironment(), timeout: SYSTEMCTL_TIMEOUT_MS })
+  }
+
+  private stopUnconsumedScope(): void {
+    if (this.unconsumedScopeStopRequested) return
+    const result = this.runSync(this.systemctl, [
+      '--user',
+      'stop',
+      '--no-block',
+      this.unit,
+    ], { encoding: 'utf8', env: managerEnvironment(), timeout: SYSTEMCTL_TIMEOUT_MS })
+    const output = `${result.stdout}\n${result.stderr}`
+    if (result.error === undefined && result.status === 0) {
+      this.unconsumedScopeStopRequested = true
+      return
+    }
+    if (MISSING_UNIT.test(output)) return
+    if (result.error !== undefined) throw result.error
+    throw new Error(
+      `systemctl could not stop ${this.unit}: ${output.trim() || `exit ${String(result.status)}`}`,
+    )
   }
 
   private recordKillFailure(signal: 'SIGTERM' | 'SIGKILL', result: SystemctlResult): void {
@@ -316,6 +337,9 @@ class SystemdScopeOwner implements BoundProcessOwner {
       }
       if (!['active', 'activating', 'reloading', 'deactivating'].includes(activeState)) {
         throw new Error(`systemctl returned unknown ActiveState for ${this.unit}: ${JSON.stringify(activeState)}`)
+      }
+      if (!this.direct.running() && existsSync(this.files.requestPath)) {
+        this.stopUnconsumedScope()
       }
       this.replayPendingSignal()
       if (this.killFailure !== undefined) throw this.killFailure
