@@ -345,6 +345,146 @@ describe('Linux scope establishment and quiescence', () => {
     result.owner.cleanup?.()
   })
 
+  it('stops an active empty scope after a zero-status kill before bootstrap consumption', async () => {
+    let stopRequested = false
+    let stateQueries = 0
+    const firstPoll = Promise.withResolvers<undefined>()
+    const firstPollStarted = Promise.withResolvers<undefined>()
+    const spawnSync = vi.fn((_command: string, args: readonly string[]) => {
+      if (args.includes('stop')) stopRequested = true
+      return { status: 0, stdout: '', stderr: '' }
+    })
+    const launched = launch(
+      async () => {
+        stateQueries += 1
+        return stateQueries < 3 ? activeUnit() : unloadedUnit()
+      },
+      {
+        spawnSync: spawnSync as never,
+        sleep: async () => {
+          if (stateQueries === 1) {
+            firstPollStarted.resolve(undefined)
+            await firstPoll.promise
+          }
+          if (!stopRequested) throw new Error('scope stop was not requested')
+        },
+      },
+    )
+    launched.result.owner.signal('SIGTERM')
+    launched.child.exit(null, 'SIGTERM')
+    await expect(launched.result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
+    const waiting = launched.result.owner.waitForExit()
+    try {
+      await firstPollStarted.promise
+      expect(stopRequested).toBe(true)
+      let settled = false
+      void waiting.then(() => { settled = true }, () => { settled = true })
+      expect(settled).toBe(false)
+      firstPoll.resolve(undefined)
+      await expect(waiting).resolves.toBeUndefined()
+      expect(stateQueries).toBe(3)
+      expect(spawnSync).toHaveBeenNthCalledWith(1, '/bin/systemctl', expect.arrayContaining([
+        '--user', 'kill', '--kill-whom=all', '--signal=SIGTERM',
+      ]), expect.anything())
+      expect(spawnSync).toHaveBeenNthCalledWith(2, '/bin/systemctl', expect.arrayContaining([
+        '--user', 'stop', '--no-block', expect.stringMatching(/\.scope$/u),
+      ]), expect.anything())
+      const killArgs = spawnSync.mock.calls[0]?.[1] as readonly string[]
+      const stopArgs = spawnSync.mock.calls[1]?.[1] as readonly string[]
+      expect(stopArgs[3]).toBe(killArgs[4])
+      expect(spawnSync).toHaveBeenCalledTimes(2)
+    } finally {
+      firstPoll.resolve(undefined)
+      await waiting.catch(() => {})
+      launched.result.owner.cleanup?.()
+    }
+  })
+
+  it('reports a non-missing failure to stop an unconsumed active scope', async () => {
+    const stopError = new Error('scope stop failed')
+    const spawnSync = vi.fn((_command: string, args: readonly string[]) => {
+      if (args.includes('stop')) return { status: 1, stdout: '', stderr: 'permission denied', error: stopError }
+      return { status: 0, stdout: '', stderr: '' }
+    })
+    const launched = launch(async () => activeUnit(), { spawnSync: spawnSync as never })
+    launched.child.exit(127, null)
+    await expect(launched.result.direct).rejects.toThrow('before its bootstrap consumed')
+    await expect(launched.result.owner.waitForExit()).rejects.toBe(stopError)
+    launched.result.owner.cleanup?.()
+  })
+
+  it('formats a non-missing stop status failure when systemctl has no error object', async () => {
+    const spawnSync = vi.fn((_command: string, args: readonly string[]) => {
+      if (args.includes('stop')) return { status: 1, stdout: '', stderr: 'permission denied' }
+      return { status: 0, stdout: '', stderr: '' }
+    })
+    const launched = launch(async () => activeUnit(), { spawnSync: spawnSync as never })
+    launched.child.exit(127, null)
+    await expect(launched.result.direct).rejects.toThrow('before its bootstrap consumed')
+    await expect(launched.result.owner.waitForExit()).rejects.toThrow('systemctl could not stop')
+    launched.result.owner.cleanup?.()
+  })
+
+  it('replays a pending SIGKILL after stopping an unconsumed active scope', async () => {
+    let firstKill = true
+    let stateQueries = 0
+    const spawnSync = vi.fn((_command: string, args: readonly string[]) => {
+      if (args.includes('--signal=SIGKILL') && firstKill) {
+        firstKill = false
+        return missingUnit()
+      }
+      return { status: 0, stdout: '', stderr: '' }
+    })
+    const launched = launch(
+      async () => {
+        stateQueries += 1
+        return stateQueries < 3 ? activeUnit() : unloadedUnit()
+      },
+      { spawnSync: spawnSync as never, sleep: async () => {} },
+    )
+    launched.result.owner.signal('SIGKILL')
+    launched.child.exit(null, 'SIGKILL')
+    await expect(launched.result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGKILL' })
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    expect(spawnSync.mock.calls.map((call) => {
+      const args = call[1] as readonly string[]
+      return args.includes('stop') ? 'stop' : args.find(argument => argument.startsWith('--signal='))
+    })).toEqual([
+      '--signal=SIGKILL',
+      'stop',
+      '--signal=SIGKILL',
+    ])
+    expect(spawnSync.mock.calls[1]?.[1]).toEqual(expect.arrayContaining(['--user', 'stop', '--no-block']))
+    launched.result.owner.cleanup?.()
+  })
+
+  it('waits for manager confirmation when stopping an unconsumed scope reports missing', async () => {
+    let stopAttempts = 0
+    let stateQueries = 0
+    const spawnSync = vi.fn((_command: string, args: readonly string[]) => {
+      if (args.includes('stop')) {
+        stopAttempts += 1
+        return stopAttempts === 1 ? missingUnit() : { status: 0, stdout: '', stderr: '' }
+      }
+      return { status: 0, stdout: '', stderr: '' }
+    })
+    const launched = launch(
+      async () => {
+        stateQueries += 1
+        return stateQueries < 3 ? activeUnit() : missingUnit()
+      },
+      { spawnSync: spawnSync as never, sleep: async () => {} },
+    )
+    launched.child.exit(127, null)
+    await expect(launched.result.direct).rejects.toThrow('before its bootstrap consumed')
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    expect(stopAttempts).toBe(2)
+    expect(spawnSync).toHaveBeenCalledWith('/bin/systemctl', expect.arrayContaining([
+      '--user', 'stop', '--no-block', expect.stringMatching(/\.scope$/u),
+    ]), expect.anything())
+    launched.result.owner.cleanup?.()
+  })
+
   it.each(['SIGTERM', 'SIGKILL'] as const)('preserves %s before the ordinary bootstrap consumes its request', async (signal) => {
     const { child, result, requestPath } = launch(async () => missingUnit())
     expect(existsSync(requestPath)).toBe(true)
