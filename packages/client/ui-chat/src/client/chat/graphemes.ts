@@ -38,12 +38,13 @@ export function displayPrefix(value: string, count: number): string {
 /**
  * A draft segmented into grapheme clusters as chunks arrive.
  *
- * A chunk may *continue* the last cluster rather than start a new one: a
- * combining mark, an emoji join sequence, or the second half of a surrogate
- * pair all change the text without changing the cluster count. The endings of
- * every cluster except the last are therefore final, and only the last is
- * recomputed when more text arrives. Segmentation runs once per received chunk,
- * so a frame that paints a few clusters never walks the whole thought.
+ * A chunk may merge the current tail rather than start a new cluster: a
+ * combining mark, an emoji join sequence, a regional-indicator pair, or the
+ * second half of a surrogate pair can change more than the last provisional
+ * ending. The last two current clusters remain mutable so a boundary that was
+ * created around an incomplete tail is not fixed before the next chunk arrives.
+ * Segmentation runs once per received chunk, so a frame that paints a few
+ * clusters never walks the whole thought.
  */
 export class Draft {
   private readonly endings: number[] = []
@@ -88,18 +89,20 @@ export class Draft {
   }
 
   /**
-   * Bring the cluster endings up to date, segmenting only the tail the last
-   * chunk may have changed.
+   * Bring the cluster endings up to date, segmenting only the mutable tail the
+   * last chunk may have changed.
    * @returns whether the cluster count grew since the previous call.
    */
   update(): boolean {
     if (!this.dirty) return false
     this.dirty = false
     const previous = this.endings.length
-    // The last ending is provisional until more text arrives, so it is
-    // recomputed rather than trusted. Every earlier ending is final.
-    if (this.endings.length > 0) this.endings.pop()
-    const start = this.endings.length > 0 ? this.endings[this.endings.length - 1] as number : 0
+    // A partial regional indicator, join sequence, or surrogate pair can make
+    // the boundary before the provisional ending disappear when the next chunk
+    // arrives. Keep the previous cluster in the re-segmented tail as context.
+    const stableCount = Math.max(0, this.endings.length - 2)
+    const start = stableCount === 0 ? 0 : this.endings[stableCount - 1] as number
+    this.endings.length = stableCount
     const tail = this.text.slice(start)
     if (SEGMENTER === undefined) {
       for (const character of tail) {

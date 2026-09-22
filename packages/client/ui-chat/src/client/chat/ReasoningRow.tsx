@@ -6,11 +6,10 @@ import { useRevealedText } from './use-revealed-text.ts'
 import css from './ReasoningRow.module.css'
 
 /**
- * Render original reasoning at full length without truncating or replaying received text.
+ * Render reasoning without truncation or replay after the stream settles.
  * The block grows with its content and names no reading control: the transcript owns
- * scrolling, and every viewport keeps the complete literal text. While this block is
- * the streaming tail, `useRevealedText` paints a progressively growing prefix whose
- * final frame equals the received text exactly.
+ * scrolling. While this block is the streaming tail, `useRevealedText` paints a
+ * grapheme-aligned prefix whose terminal frame equals the received text exactly.
  * @param props.text - complete or streaming reasoning, with literal whitespace.
  * @param props.running - whether this block is the streaming tail.
  * @param props.t - the owning Chat locale seat.
@@ -36,9 +35,8 @@ export function ReasoningRow({ text, running, t }: { text: string; running: bool
         <span className={css.title}>{t('message.think')}</span>
         {running && <span className={css.status}>{t('row.running')}</span>}
       </div>
-      {/* The complete received text rides a data attribute while the paint
-          catches up: assistive technology and copy never read a partial
-          thought, and the streaming node alone carries the painted prefix. */}
+      {/* These attributes are diagnostic receipts for tests and inspection; the
+          visible and selectable text is the body Text node below the heading. */}
       <div ref={content} className={css.thinkBody}
         data-reasoning-full={text} data-reasoning-shown={shown} />
     </div>

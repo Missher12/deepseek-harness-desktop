@@ -252,6 +252,18 @@ describe('ReasoningRow streaming reveal', () => {
     expect(body(view).textContent).toBe('\u{1F468}\u200D\u{1F469}')
   })
 
+  it.each([
+    { whole: '\u{1F1E8}\u{1F1F3}', split: 3 },
+    { whole: '\u{1F468}\u200D\u{1F469}', split: 4 },
+    { whole: '\u{1F44D}\u{1F3FD}', split: 3 },
+  ])('keeps a completed grapheme whole when UTF-16 chunks cross its tail', ({ whole, split }) => {
+    const view = render(<ReasoningRow text={`abc${whole.slice(0, split)}`} running t={t} />)
+    view.rerender(<ReasoningRow text={`abc${whole}xyz`} running t={t} />)
+    flushFrame(1000 / 60)
+    expect(body(view).textContent).toBe(`abc${whole}`)
+    view.unmount()
+  })
+
   it('completes the last cluster when a later chunk continues it', () => {
     // A chunk can extend the final cluster without adding one: a combining
     // mark, an emoji join sequence, or the second half of a surrogate pair.

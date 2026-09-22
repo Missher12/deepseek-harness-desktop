@@ -6,7 +6,7 @@
 
 import { brandString } from '@deepseek-ai/dsh-brand'
 import {
-  contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, replaceRequestImagePrefix, requestImageHandleText,
+  contentHasImage, LlmError, offloadedImageText, replaceRequestImagePrefix, requestImageHandleText,
 } from '@deepseek-ai/dsh-llm'
 import { promptAttachmentBase64CodeUnits } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message, ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -96,59 +96,61 @@ async function userContent(
  * Project a request's history so the image payload it carries fits the bound.
  * @param messages - history in request order, oldest first.
  * @param maxBytes - route bound on the accumulated image payload.
- * @param imageBytes - base64 length of one occurrence's request version.
+ * @param imageBytes - encoded byte length of one occurrence's request version; the helper expands it to base64 code units.
  * @param placeholder - text written in place of a replaced occurrence.
- * @returns the projected history, and whether the payload it carries fits.
+ * @param minimumOmitted - prefix already replaced by a conservative projection; the exact pass never restores it.
+ * @returns the projected history and its omitted occurrence count.
  */
 function fitRequestImageBudget(
   messages: readonly Message[],
   maxBytes: number,
   imageBytes: (ref: ImageAttachmentRef) => number,
   placeholder: (ref: ImageAttachmentRef) => string,
-): { messages: readonly Message[]; fitted: boolean } {
+  minimumOmitted = 0,
+): { messages: readonly Message[]; omitted: number } {
   const refs: ImageAttachmentRef[] = []
   for (const message of messages) {
-    const found = new Map<AttachmentId, ImageAttachmentRef>()
-    collectImageRefs(message.content, found)
-    refs.push(...found.values())
+    collectImageRefs(message.content, refs)
   }
-  if (refs.length === 0) return { messages, fitted: true }
-  const lengths = refs.map(ref => promptAttachmentBase64CodeUnits(imageBytes(ref)))
+  if (refs.length === 0) return { messages, omitted: 0 }
+  const lengths = refs.map((ref, index) => index < minimumOmitted
+    ? 0
+    : promptAttachmentBase64CodeUnits(imageBytes(ref)))
   const widths = refs.map(ref => Buffer.byteLength(placeholder(ref), 'utf8'))
-  const omitted = fittingOmissionCount(lengths, widths, maxBytes)
+  const omitted = fittingOmissionCount(lengths, widths, maxBytes, minimumOmitted)
   if (omitted === null) {
-    // No removal count fits, even with every image replaced: the placeholders
-    // alone exceed the bound. Replacing as many as the image bytes alone
-    // justify is still the closer reading, and its placeholders keep every
-    // omitted image identifiable, so this is the projection to send.
-    return {
-      messages: offloadRequestImagesWithPolicy(messages, {
-        representation: 'base64',
-        maxBytes,
-        byteQuantum: 1,
-        byteLength: imageBytes,
-        placeholder,
-      }),
-      fitted: false,
-    }
+    throw new LlmError(
+      `request image projection cannot fit maxRequestImageBytes=${maxBytes}; image placeholders alone exceed the image budget`,
+      'INVALID_REQUEST',
+    )
   }
-  if (omitted === 0) return { messages, fitted: true }
-  return { messages: replaceRequestImagePrefix(messages, omitted, placeholder), fitted: true }
+  if (omitted === 0) return { messages, omitted: 0 }
+  return { messages: replaceRequestImagePrefix(messages, omitted, placeholder), omitted }
 }
 
 function collectImageRefs(
   blocks: readonly ContentBlock[],
-  refs: Map<AttachmentId, ImageAttachmentRef>,
+  refs: ImageAttachmentRef[],
 ): void {
   for (const block of blocks) {
-    if (block.type === 'image') refs.set(block.attachment.attachmentId, block.attachment)
+    if (block.type === 'image') refs.push(block.attachment)
     else if (block.type === 'tool-result') collectImageRefs(block.content, refs)
   }
 }
 
+function uniqueImageRefs(messages: readonly Message[]): ImageAttachmentRef[] {
+  const refs = new Map<AttachmentId, ImageAttachmentRef>()
+  const occurrences: ImageAttachmentRef[] = []
+  for (const message of messages) collectImageRefs(message.content, occurrences)
+  for (const ref of occurrences) {
+    if (!refs.has(ref.attachmentId)) refs.set(ref.attachmentId, ref)
+  }
+  return [...refs.values()]
+}
+
 /**
  * Picture one offload outcome: what the request still sends, in base64 code
- * units, and how many images that omits.
+ * units, and how many image occurrences that omits.
  * @param lengths - base64 length of every image occurrence, in request order.
  * @param omitted - how many leading occurrences are replaced.
  * @param placeholderWidths - replaced placeholder length per occurrence.
@@ -178,15 +180,17 @@ function offloadPayload(
  * @param lengths - base64 length of every image occurrence, in request order.
  * @param placeholderWidths - replaced placeholder length per occurrence.
  * @param maxBytes - route bound on the accumulated image payload.
+ * @param minimumOmitted - existing omitted prefix that exact sizing must retain.
  * @returns the omission count, or null when no projection fits.
  */
 function fittingOmissionCount(
   lengths: readonly number[],
   placeholderWidths: readonly number[],
   maxBytes: number,
+  minimumOmitted = 0,
 ): number | null {
   let best: number | null = null
-  for (let omitted = 0; omitted <= lengths.length; omitted++) {
+  for (let omitted = minimumOmitted; omitted <= lengths.length; omitted++) {
     const { payload } = offloadPayload(lengths, omitted, placeholderWidths)
     if (payload > maxBytes) continue
     // The payload can leave the bound and return, so keep the smallest count
@@ -202,9 +206,7 @@ async function prepareRequestImages(
   policy: ImageRequestPolicy,
   signal?: AbortSignal,
 ): Promise<Map<AttachmentId, RequestImageAttachment>> {
-  const refs = new Map<AttachmentId, ImageAttachmentRef>()
-  for (const message of messages) collectImageRefs(message.content, refs)
-  const orderedRefs = [...refs.values()]
+  const orderedRefs = uniqueImageRefs(messages)
   const prepared = await Promise.all(orderedRefs.map(
     ref => attachments.readImageRequest(ref, policy, signal),
   ))
@@ -316,7 +318,7 @@ export interface PiImageRequestContext {
   attachments: AttachmentStore
   /** Resolve current tool access separately from deterministic request-image versions. */
   resolveImageAccess: ImageAttachmentAccessResolver
-  /** Request-level bound on base64-encoded image payload; omission leaves every image in place. */
+  /** Request-level image-projection bound for retained base64 plus generated omission text; other request fields remain outside it. */
   maxRequestImageBytes?: number
   /** Route pixel and raw encoded-byte budgets. */
   requestImagePolicy?: ImageRequestPolicy
@@ -339,9 +341,10 @@ export function toPiContext(
 /**
  * Convert harness history to a pi-ai Context while resolving durable images.
  * Tool result names are recovered from preceding assistant tool calls. When
- * the accumulated base64 image payload exceeds `maxRequestImageBytes`, the
- * oldest images are replaced by text placeholders until the request fits, so
- * an image-heavy session keeps clearing gateway request-size caps.
+ * the image projection exceeds `maxRequestImageBytes`, leading image
+ * occurrences are replaced by text placeholders and the exact encoded
+ * versions are checked again. This bound excludes other request fields and
+ * throws when the placeholders alone cannot fit.
  * @param options - the harness request; `options.system`, else a leading `system` message, maps to pi-ai's single `systemPrompt` slot.
  * @param images - attachment provider, current path resolver, and request limits.
  * @param onReplayDegrade - forwarded to {@link toPiAssistant} for each assistant message.
@@ -378,19 +381,20 @@ async function toPiContextWithImages(
   // removal count is chosen from the payload the request will carry rather
   // than from the image bytes alone.
   const projected = maxRequestImageBytes === undefined
-    ? split.messages
+    ? { messages: split.messages, omitted: 0 }
     : fitRequestImageBudget(split.messages, maxRequestImageBytes, ref => (
       Math.min(ref.bytes, requestImagePolicy.maxBytes)
-    ), ref => offloadedImageText(ref, resolveImageAccess(ref))).messages
-  const requestMessages = projected
-  const requestImages = await prepareRequestImages(requestMessages, attachments, requestImagePolicy, options.signal)
-  const exactMessages = offloadRequestImagesWithPolicy(requestMessages, {
-    representation: 'base64',
-    ...maxRequestImageBytes === undefined ? {} : { maxBytes: maxRequestImageBytes },
-    byteQuantum: 1,
-    byteLength: ref => (requestImages.get(ref.attachmentId) as RequestImageAttachment).bytes,
-    placeholder: ref => offloadedImageText(ref, resolveImageAccess(ref)),
-  })
+    ), ref => offloadedImageText(ref, resolveImageAccess(ref)))
+  const requestImages = await prepareRequestImages(projected.messages, attachments, requestImagePolicy, options.signal)
+  const exactMessages = maxRequestImageBytes === undefined
+    ? projected.messages
+    : fitRequestImageBudget(split.messages, maxRequestImageBytes, (ref) => {
+      const version = requestImages.get(ref.attachmentId)
+      if (version === undefined) {
+        throw new LlmError(`request image ${ref.attachmentId} was not prepared`, 'INVALID_REQUEST')
+      }
+      return version.bytes
+    }, ref => offloadedImageText(ref, resolveImageAccess(ref)), projected.omitted).messages
   const toolNames = new Map<ToolCallId, string>()
   const messages: PiMessage[] = []
 

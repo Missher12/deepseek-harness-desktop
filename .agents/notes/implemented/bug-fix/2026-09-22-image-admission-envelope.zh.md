@@ -16,7 +16,7 @@ Status: implemented
 
 产品限制为：单张 50 MiB、每条消息 20 张、每条消息源字节总量 200 MiB、64,000,000 像素、单边 16384px；MiB 按 1024 × 1024 计算，恰好等于限制可接受。这些值只在 `LocalAttachmentStore.Config` 解析一次，经 `imageLimits` 到达 Host 校验，经 `imageLimits` 投影到达编辑器，因此客户端提示与 Host 拒绝使用的是同一组数字。`DEFAULT_MAX_IMAGE_BYTES` 为 50 MiB，`DEFAULT_MAX_IMAGE_DIMENSION` 为 16384；总量、张数与像素默认值不变。
 
-请求装配改为按**请求实际会携带的负载**选定替换数量。`fitRequestImageBudget` 遍历替换数量，把每种结果计为"保留图片的 base64 加上全部占位文本"，取最小的可行数量。当没有任何数量可行时（占位文本本身就超过上限），退回按字节的投影，因此发送的仍是最接近的读数，且每一张被省略的图片都能由占位文本辨认，不会被静默丢弃。
+请求装配改为按**请求实际会携带的负载**选定替换数量。`fitRequestImageBudget` 按出现顺序遍历替换数量，把每种结果计为"保留图片的 base64 加上全部占位文本"，取最小的可行数量。它先按源引用字节做保守投影，避免读取已经由保守投影省略的图片；保留的请求图片完成转码后，再基于真实字节重算，保留已经省略的前缀，并同时计算已有与新增的占位文本。当占位文本本身就超过图片预算、没有数量可行时，请求装配以具名 `INVALID_REQUEST` 错误失败，不再发送超预算投影。
 
 该包络被记录为一组彼此独立的预算，而不是一个。源准入约束读者可以附加什么；承载上限约束单个 HTTP body：`MAX_PROMPT_ATTACHMENT_BASE64_CODE_UNITS` 为图片与文档合计 296 MiB 的 base64，桥接层 `DEFAULT_MAX_REQUEST_BODY_BYTES` 为 300 MiB，即该天花板加上 4 MiB 用于提示文本、文件名与 RPC JSON。持久化附件在准入之下归一化（`normalizedImageMaxBytes` 4 MiB、2048² 像素、8192px），供应商预算则由所属路由表达（`llm-pi-ai` 的 `maxRequestImageBytes`、`requestImagePixelBudget`、`requestImageMaxBytes`）。分类上限并不承诺各类可以同时填满：图片与文档的编码预算之和超过承载上限，编辑器会在构造请求之前拒绝这样的提交。
 
@@ -30,7 +30,7 @@ Status: implemented
 | 传输 | `client-connection` body 上限 | 单个 HTTP body 300 MiB | 处理器运行前返回 413 与 `connection: close` |
 | 编辑器兜底 | `ui-conversation` / `InputBar` | 图片与文档合计 296 MiB 编码 base64 | 在添加阶段以 `attachment.totalTooLarge` 拒绝 |
 | 存储投影 | `attachment-local` 归一化策略 | 4 MiB、2048² 像素、8192px | 准入时降采样；后续请求复用存储字节 |
-| 供应商请求 | `llm-pi-ai` 路由 profile | 20 MiB base64、2048² 像素、单张 1 MiB | 最旧的图片被替换为文本占位符 |
+| 供应商请求 | `llm-pi-ai` 路由 profile | 20 MiB 图片投影、2048² 像素、单张 1 MiB | 最旧的图片出现被替换为文本占位符；文本、工具与 JSON 仍在此预算之外 |
 
 ## Alternatives considered
 
@@ -48,7 +48,7 @@ Status: implemented
 
 ## Consequences
 
-此前被字节上限拒绝的 25.8 MiB 来源现在可以准入并归一化；16384px 的长边可以通过，而过去的天花板是 8192px。请求装配现在会替换掉足够的图片，使实际发送的负载适配上限；这比按字节的读数多替换几张，换来的是该上限本应产出的请求。当即便替换全部图片也无法适配时，发送最接近的读数，且每张被省略的图片都保留其占位文本，因此没有任何图片被静默丢弃。
+此前被字节上限拒绝的 25.8 MiB 来源现在可以准入并归一化；16384px 的长边可以通过，而过去的天花板是 8192px。请求装配现在会替换足够的图片出现，使发送的图片投影适配上限；这可能比按字节的读数多替换几张。普通文本、图片描述、工具、系统提示词与 JSON 框架仍在 `maxRequestImageBytes` 之外，因此这个确定性的图片投影本身不保证完整 HTTP 请求不触发供应商 413。当占位文本本身超过图片预算、替换全部图片也无法适配时，请求会显式失败，不会发送超预算 context。
 
 传输层边界的行为不变，且已被固化：声明长度超过承载天花板一个字节的 body 在处理器运行前被 413 拒绝；恰好等于天花板的 body 可以通过，因为它所依据的附件天花板已预留了框架开销。该路径无法从编辑器触达——编辑器会先拒绝超过天花板的提交。
 

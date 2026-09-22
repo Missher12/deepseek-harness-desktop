@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-22-reasoning-full-length-reading.md
-2026-09-22-reasoning-full-length-reading.md: a3fc8571d39780eca68f921665e6a0881bf50b9f
-2026-09-22-reasoning-full-length-reading.zh.md: 03913f475181fc415fc0d78b50892bfb0758fe60
+2026-09-22-reasoning-full-length-reading.md: a3827e21f0c5dc8d37e889fc97b336cb92aa737a
+2026-09-22-reasoning-full-length-reading.zh.md: 5e25d2033a998d408bd1991ea76aa703fe5394cc

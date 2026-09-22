@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-22-image-admission-envelope.md
-2026-09-22-image-admission-envelope.md: cd66f4772334154ff1f0ab618bb919771efef8c2
-2026-09-22-image-admission-envelope.zh.md: 64d0997f4d37fd78ae3d18c4b2195b3e9989d7e3
+2026-09-22-image-admission-envelope.md: 2eedcb708e50394295884e2265d4d14a4725a692
+2026-09-22-image-admission-envelope.zh.md: 7e45a8b5f424a11862478dfdd9ab4d4446babff1
