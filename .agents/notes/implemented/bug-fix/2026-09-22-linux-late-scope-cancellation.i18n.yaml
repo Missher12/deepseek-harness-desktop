@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-22-linux-late-scope-cancellation.md
+2026-09-22-linux-late-scope-cancellation.md: 70935ec64f94f692d16a7594533d73cfc998ed9c
+2026-09-22-linux-late-scope-cancellation.zh.md: 0f85520df29bd60e290c62bce45aa352a7868d0c

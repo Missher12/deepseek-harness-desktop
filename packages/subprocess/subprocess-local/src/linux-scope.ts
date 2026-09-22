@@ -161,6 +161,7 @@ interface DirectRange {
 
 class SystemdScopeOwner implements BoundProcessOwner {
   private establishment: 'pending' | 'established' = 'pending'
+  private pendingSignal: 'SIGTERM' | 'SIGKILL' | undefined
   private stopped = false
   private observation: Promise<void> | undefined
   private killFailure: Error | undefined
@@ -177,32 +178,61 @@ class SystemdScopeOwner implements BoundProcessOwner {
     private readonly sleep: (delayMs: number, signal?: AbortSignal) => Promise<void>,
   ) {}
 
-  signal(signal: 'SIGTERM' | 'SIGKILL'): void {
-    if (this.stopped) return
-    this.observeRequestConsumption()
-    const directFallbackRequired = this.establishment === 'pending'
-    if (directFallbackRequired && this.direct.running()) this.direct.signal(signal)
-    const result = this.runSync(this.systemctl, [
+  private sendScopeSignal(signal: 'SIGTERM' | 'SIGKILL'): SystemctlResult {
+    return this.runSync(this.systemctl, [
       '--user',
       'kill',
       '--kill-whom=all',
       `--signal=${signal}`,
       this.unit,
     ], { encoding: 'utf8', env: managerEnvironment(), timeout: SYSTEMCTL_TIMEOUT_MS })
+  }
+
+  private recordKillFailure(signal: 'SIGTERM' | 'SIGKILL', result: SystemctlResult): void {
+    if (signal !== 'SIGKILL') return
+    const output = `${result.stdout}\n${result.stderr}`
+    if (MISSING_UNIT.test(output)) return
+    this.killFailure = result.error ?? new Error(
+      `systemctl could not signal ${this.unit}: ${output.trim() || `exit ${String(result.status)}`}`,
+    )
+  }
+
+  private recordPendingSignal(signal: 'SIGTERM' | 'SIGKILL', result: SystemctlResult): void {
+    const output = `${result.stdout}\n${result.stderr}`
+    if (!MISSING_UNIT.test(output)) return
+    if (this.pendingSignal === undefined || signal === 'SIGKILL') this.pendingSignal = signal
+  }
+
+  private replayPendingSignal(): void {
+    const signal = this.pendingSignal
+    if (signal === undefined) return
+    const result = this.sendScopeSignal(signal)
+    if (result.error === undefined && result.status === 0) {
+      this.pendingSignal = undefined
+      if (signal === 'SIGKILL') this.killFailure = undefined
+      return
+    }
+    this.recordPendingSignal(signal, result)
+    this.recordKillFailure(signal, result)
+  }
+
+  signal(signal: 'SIGTERM' | 'SIGKILL'): void {
+    if (this.stopped) return
+    this.observeRequestConsumption()
+    const directFallbackRequired = this.establishment === 'pending'
+    if (directFallbackRequired && this.direct.running()) this.direct.signal(signal)
+    const result = this.sendScopeSignal(signal)
     this.wakeObservation()
     if (result.error === undefined && result.status === 0) {
+      if (this.pendingSignal === undefined || signal === 'SIGKILL' || this.pendingSignal === signal) {
+        this.pendingSignal = undefined
+      }
       if (signal === 'SIGKILL') this.killFailure = undefined
       return
     }
     if (!directFallbackRequired && this.direct.running()) this.direct.signal(signal)
-    if (signal === 'SIGKILL') {
-      const output = `${result.stdout}\n${result.stderr}`
-      if (!MISSING_UNIT.test(output)) {
-        this.killFailure = result.error ?? new Error(
-          `systemctl could not signal ${this.unit}: ${output.trim() || `exit ${String(result.status)}`}`,
-        )
-      }
-    }
+    this.recordPendingSignal(signal, result)
+    this.recordKillFailure(signal, result)
   }
 
   terminateForHostExit(): void {
@@ -280,10 +310,14 @@ class SystemdScopeOwner implements BoundProcessOwner {
         )
       }
       this.establishment = 'established'
-      if (activeState === 'inactive' || activeState === 'failed') return false
+      if (activeState === 'inactive' || activeState === 'failed') {
+        this.pendingSignal = undefined
+        return false
+      }
       if (!['active', 'activating', 'reloading', 'deactivating'].includes(activeState)) {
         throw new Error(`systemctl returned unknown ActiveState for ${this.unit}: ${JSON.stringify(activeState)}`)
       }
+      this.replayPendingSignal()
       if (this.killFailure !== undefined) throw this.killFailure
       return true
     }
