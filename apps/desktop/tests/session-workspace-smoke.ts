@@ -7,6 +7,7 @@ import SessionStore, { SessionId, type SessionEvent, type SessionHeader } from '
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { generationLogPath } from '@deepseek-ai/dsh-session-persistence-jsonl/src/format.ts'
 import { compressZstdFrame } from '@deepseek-ai/dsh-session-persistence-jsonl/src/zstd.ts'
+import { errors as playwrightErrors } from 'playwright'
 import type { Page } from 'playwright'
 import { expect } from 'vitest'
 import { TITLE_FRAME_PREFIX, TITLE_SYSTEM } from './reader-smoke-provider.ts'
@@ -250,12 +251,28 @@ export async function exerciseNativeSessionWorkspaces(page: Page, options: Nativ
     const first = await run('first')
     expect(first.header.cwd).toBe(join(options.noProjectRoot, first.header.id))
     const selectedRow = page.locator('[class*="sessionRow"][aria-selected="true"]')
-    if (!await selectedRow.isVisible()) {
-      const group = page.locator('[class*="projectRow"]').filter({ hasText: /^(?:Ungrouped|未分组)$/u }).first()
-      if (await group.getAttribute('aria-expanded') !== 'true') await group.click()
-    }
-    await selectedRow.hover()
-    await selectedRow.getByRole('button', { name: /(?:Session actions for|的操作)/u }).click()
+    const sessionAction = /(?:Session actions for|的操作)/u
+    await page.mouse.move(0, 0)
+    await expect.poll(async () => {
+      if (!await selectedRow.isVisible()) {
+        const group = page.locator('[class*="projectRow"]')
+          .filter({ hasText: /^(?:Ungrouped|未分组)$/u }).first()
+        if (await group.getAttribute('aria-expanded') !== 'true') await group.click()
+        if (!await selectedRow.isVisible()) return false
+      }
+      const action = selectedRow.getByRole('button', { name: sessionAction })
+      if (await action.isVisible()) return false
+      await page.mouse.move(0, 0)
+      await selectedRow.hover()
+      if (!await action.isVisible()) return false
+      try {
+        await action.click({ timeout: 1_000 })
+        return true
+      } catch (error) {
+        if (!(error instanceof playwrightErrors.TimeoutError)) throw error
+        return false
+      }
+    }, { timeout: 10_000 }).toBe(true)
     await page.getByRole('menuitem', { name: /^(?:Rename|重命名)$/u }).click()
     const rename = page.getByRole('dialog').filter({ has: page.getByRole('textbox', { name: /^(?:Session name|会话名称)$/u }) })
     const title = rename.getByRole('textbox')

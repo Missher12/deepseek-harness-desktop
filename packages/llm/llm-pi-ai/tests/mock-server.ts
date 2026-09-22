@@ -5,6 +5,10 @@ export interface MockServer {
   url: string
   paths: string[]
   requests: unknown[]
+  /** Exact UTF-8 request bodies, before JSON parsing, in request order. */
+  rawBodies: Buffer[]
+  /** HTTP status returned for each received request, in request order. */
+  statuses: number[]
   headers: IncomingMessage['headers'][]
   readonly closedResponses: number
   responseClosed: Promise<void>
@@ -35,6 +39,8 @@ export async function mockServer(script: {
 }[]): Promise<MockServer> {
   const paths: string[] = []
   const requests: unknown[] = []
+  const rawBodies: Buffer[] = []
+  const statuses: number[] = []
   const headers: IncomingMessage['headers'][] = []
   let closedResponses = 0
   const responseClosed = Promise.withResolvers<undefined>()
@@ -47,9 +53,12 @@ export async function mockServer(script: {
     request.on('data', (chunk: Buffer) => { body += chunk.toString('utf8') })
     request.on('end', () => {
       paths.push(request.url ?? '')
-      requests.push(body.length === 0 ? undefined : JSON.parse(body))
+      const rawBody = Buffer.from(body, 'utf8')
+      rawBodies.push(rawBody)
+      requests.push(rawBody.length === 0 ? undefined : JSON.parse(rawBody.toString('utf8')))
       headers.push(request.headers)
       const behavior = script.shift() ?? { status: 500, body: 'script exhausted' }
+      statuses.push(behavior.status ?? 200)
       if (behavior.status !== undefined && behavior.status !== 200) {
         response.writeHead(behavior.status, { 'content-type': 'application/json', ...behavior.headers })
         response.end(behavior.body ?? '{}')
@@ -80,6 +89,8 @@ export async function mockServer(script: {
     url: `http://127.0.0.1:${address.port}`,
     paths,
     requests,
+    rawBodies,
+    statuses,
     headers,
     responseClosed: responseClosed.promise,
     get closedResponses() { return closedResponses },
