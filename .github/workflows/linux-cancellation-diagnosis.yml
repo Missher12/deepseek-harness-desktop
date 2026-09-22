@@ -1,0 +1,70 @@
+name: Linux cancellation diagnosis
+
+on:
+  push:
+    branches: [codex/desktop-0.5.10-linux-diagnosis]
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install immutable dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Require the native Linux owner
+        run: systemctl --user show --property=Version --value
+      - name: Add temporary scope observations to the runner checkout
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('packages/subprocess/subprocess-local/src/linux-scope.ts')
+          source = path.read_text()
+          def replace(old, new):
+              global source
+              if source.count(old) != 1:
+                  raise SystemExit(f'Expected one observation anchor: {old[:80]}')
+              source = source.replace(old, new)
+          replace('  private sendScopeSignal(', '''  private trace(event: string, facts: Record<string, unknown> = {}): void {
+              console.error('[linux-scope-trace]', JSON.stringify({ unit: this.unit, event,
+                establishment: this.establishment, stopped: this.stopped,
+                pendingSignal: this.pendingSignal, requestExists: existsSync(this.files.requestPath),
+                directRunning: this.direct.running(), ...facts }))
+            }
+
+            private sendScopeSignal(''')
+          replace('    return this.runSync(this.systemctl, [', '    const result = this.runSync(this.systemctl, [')
+          replace('    ], { encoding: \'utf8\', env: managerEnvironment(), timeout: SYSTEMCTL_TIMEOUT_MS })\n  }', '''    ], { encoding: 'utf8', env: managerEnvironment(), timeout: SYSTEMCTL_TIMEOUT_MS })
+              this.trace('signal-result', { signal, status: result.status, stdout: result.stdout,
+                stderr: result.stderr, error: result.error?.message })
+              return result
+            }''')
+          replace('    const output = `${result.stdout}\\n${result.stderr}`\n    if (result.status === 0) {', '''    this.trace('query-result', { status: result.status, stdout: result.stdout,
+                stderr: result.stderr, error: result.error?.message })
+              const output = `${result.stdout}\\n${result.stderr}`
+              if (result.status === 0) {''')
+          replace("    child.once('exit', (exitCode, signal) => {", """    child.once('exit', (exitCode, signal) => {
+                console.error('[linux-direct-exit]', JSON.stringify({ exitCode, signal,
+                  requestExists: existsSync(files.requestPath) }))""")
+          path.write_text(source)
+          PY
+      - name: Reproduce the three original cancellation cases
+        run: >-
+          timeout 180s pnpm exec vitest run
+          packages/shell/bash-sandbox/tests/sandbox.spec.ts
+          packages/shell/pwsh-local/tests/executor.spec.ts
+          -t 'disposal kills wrapped background jobs|kill\(\) requests managed-range termination|a spec.signal abort settles'
+          --reporter=verbose --testTimeout=30000
