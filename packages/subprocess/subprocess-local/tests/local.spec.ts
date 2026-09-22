@@ -361,7 +361,7 @@ describe('LocalSubprocessRuntime', () => {
     if (listener !== undefined) process.off('exit', listener)
   })
 
-  it('releases a terminal after top-level exit reaches quiescence', async () => {
+  it('releases a fallback terminal after top-level exit reaches quiescence', async () => {
     let exitListener: ((event: { exitCode: number; signal?: number }) => void) | undefined
     const inspector = {
       foregroundPgid: () => undefined,
@@ -388,6 +388,10 @@ describe('LocalSubprocessRuntime', () => {
       ...await importOriginal<typeof import('../src/process-inspector.ts')>(),
       createProcessInspector: () => inspector,
     }))
+    vi.doMock('../src/linux-scope.ts', async importOriginal => ({
+      ...await importOriginal<typeof import('../src/linux-scope.ts')>(),
+      probeLinuxNative: () => false,
+    }))
     try {
       const { default: IsolatedLocalSubprocessRuntime } = await import('../src/index.ts')
       const ctx = new Context()
@@ -405,6 +409,7 @@ describe('LocalSubprocessRuntime', () => {
     } finally {
       vi.doUnmock('node-pty')
       vi.doUnmock('../src/process-inspector.ts')
+      vi.doUnmock('../src/linux-scope.ts')
       unmockWin32ForIsolatedRuntime()
       vi.resetModules()
     }
@@ -578,7 +583,7 @@ describe('LocalSubprocessRuntime', () => {
     }
   })
 
-  it('retains a terminal whose automatic cleanup fails', async () => {
+  it('retains a fallback terminal whose automatic cleanup fails', async () => {
     let exitListener: ((event: { exitCode: number; signal?: number }) => void) | undefined
     const terminal = {
       pid: 123,
@@ -599,8 +604,10 @@ describe('LocalSubprocessRuntime', () => {
       const disposalErrors: unknown[] = []
       ctx.logger.error = ((error: unknown) => { disposalErrors.push(error) }) as typeof ctx.logger.error
       const fiber = await ctx.plugin(IsolatedLocalSubprocessRuntime)
+      const service = ctx.subprocess as InstanceType<typeof IsolatedLocalSubprocessRuntime>
+      service.internals = { platform: 'darwin' }
       const alive = new Set([124])
-      ;(ctx.subprocess as InstanceType<typeof IsolatedLocalSubprocessRuntime>).terminalInspector = {
+      service.terminalInspector = {
         foregroundPgid: () => 123,
         isStdinWaiting: () => false,
         snapshot: () => ({
@@ -871,9 +878,10 @@ describe('LocalSubprocessRuntime', () => {
     await fiber.dispose()
   })
 
-  it('disposal contains a spawn-failure rejection that races teardown', async () => {
+  it('disposal contains a fallback spawn-failure rejection that races teardown', async () => {
     const ctx = new Context()
     const fiber = await ctx.plugin(LocalSubprocessRuntime)
+    ;(ctx.subprocess as InstanceType<typeof LocalSubprocessRuntime>).internals = { platform: 'darwin' }
     // Dispose before the rejection continuation removes the handle from the
     // live set, so teardown itself must swallow the rejected done.
     const handle = ctx.subprocess.spawn(spec('true', { cwd: '/nonexistent-dir-dsh-subprocess-test' }))
