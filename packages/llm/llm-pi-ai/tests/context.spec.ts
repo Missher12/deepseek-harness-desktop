@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
+import { AttachmentId, ImageVariantId, promptAttachmentBase64CodeUnits } from '@deepseek-ai/dsh-attachment'
 import type {
   AttachmentStore,
   ImageAttachmentRef,
@@ -56,6 +56,24 @@ function imageContext(
   return { attachments: store, resolveImageAccess: () => undefined, ...overrides }
 }
 
+function imageProjectionBytes(messages: readonly { content: unknown }[]): number {
+  let bytes = 0
+  for (const message of messages) {
+    if (typeof message.content === 'string') {
+      if (message.content.startsWith('[image omitted')) bytes += Buffer.byteLength(message.content, 'utf8')
+      continue
+    }
+    for (const block of message.content as readonly unknown[]) {
+      const typed = block as { type?: string; data?: string; text?: string }
+      if (typed.type === 'image') bytes += typed.data?.length ?? 0
+      else if (typed.type === 'text' && typed.text?.startsWith('[image omitted')) {
+        bytes += Buffer.byteLength(typed.text, 'utf8')
+      }
+    }
+  }
+  return bytes
+}
+
 function request(messages: GenerateOptions['messages']): GenerateOptions {
   return {
     provider: 'openai',
@@ -79,6 +97,15 @@ describe('pi-ai request context conversion', () => {
     const base = { provider: 'openai', model: 'gpt-4.1', messages: [] }
     expect(toPiContext(base)).toEqual({ messages: [] })
     expect(toPiContext({ ...base, tools: [] })).toEqual({ messages: [] })
+  })
+
+  it('keeps text-only history unchanged when an image-only budget is present', async () => {
+    const context = await toPiContext(
+      request([user([{ type: 'text', text: 'no images here' }])]),
+      imageContext(attachments, { maxRequestImageBytes: 1 }),
+    )
+
+    expect(context.messages).toEqual([{ role: 'user', content: 'no images here', timestamp: 0 }])
   })
 
   it('converts complete text-only history and rejects nested images without storage', () => {
@@ -262,10 +289,13 @@ describe('pi-ai request context conversion', () => {
       Promise.resolve(requestImage(value, Uint8Array.of(1, 2, 3)))
     ))
     const store = projectionStore(readImageRequest)
-    const sized: ImageAttachmentRef = { ...ref, bytes: 3 }
+    const sized: ImageAttachmentRef = { ...ref, bytes: 512 }
     const callId = ToolCallId('shot-call')
-    // Three 3-byte images cost 4 base64 characters each (12 total); a bound of
-    // 8 forces exactly the oldest one out, including one nested in a tool result.
+    // Three 3-byte images cost 4 base64 characters each (12 total); leave room
+    // for the oldest placeholder and two retained images, including one nested
+    // in a tool result.
+    const bound = Buffer.byteLength(offloadedImageText(sized), 'utf8')
+      + promptAttachmentBase64CodeUnits(sized.bytes) * 2
     const context = await toPiContext(request([
       user([{
         type: 'tool-result',
@@ -274,7 +304,7 @@ describe('pi-ai request context conversion', () => {
       }]),
       user([{ type: 'image', attachment: sized }, { type: 'text', text: 'newer' }]),
       user([{ type: 'image', attachment: sized }]),
-    ]), imageContext(store, { maxRequestImageBytes: 8 }))
+    ]), imageContext(store, { maxRequestImageBytes: bound }))
 
     expect(context.messages).toEqual([
       {
@@ -306,9 +336,114 @@ describe('pi-ai request context conversion', () => {
     expect(readImageRequest).toHaveBeenCalledTimes(1)
   })
 
+  it('replaces enough images that the placeholders they leave still fit the bound', async () => {
+    // Replacing an image frees its base64 bytes but adds the text that stands
+    // in for it, so the payload the request carries is not monotone in the
+    // removal count: omitting one image can make the request larger. Counting
+    // only image bytes therefore accepts a projection whose own placeholders
+    // push it past the bound — the size rejection the bound exists to prevent.
+    //
+    // Four distinct 512-byte images under a 2052-code-unit bound: keeping
+    // three costs exactly 2052, and the one placeholder costs 220 more.
+    const count = 4
+    const bound = 2052
+    const sized: ImageAttachmentRef = { ...ref, bytes: 512 }
+    const store = projectionStore(vi.fn((value: ImageAttachmentRef) => (
+      Promise.resolve(requestImage(value, new Uint8Array(value.bytes)))
+    )))
+    const history = Array.from({ length: count }, (_, index) => user([{
+      type: 'image',
+      attachment: {
+        ...sized,
+        attachmentId: AttachmentId(`sha256:${String(index).padStart(4, '0').repeat(16)}`),
+        name: `shot-${index}.png`,
+      },
+    }]))
+
+    const context = await toPiContext(request(history), {
+      attachments: store,
+      resolveImageAccess: () => undefined,
+      maxRequestImageBytes: bound,
+      requestImagePolicy: { maxPixels: 2048 * 2048, maxBytes: 512 },
+    })
+
+    // An image message keeps typed blocks and carries its image as base64; a
+    // message whose images were all replaced flattens to one plain string
+    // holding their placeholders. Only typed blocks hold image bytes.
+    let imageBytes = 0
+    let placeholderText = 0
+    for (const message of context.messages) {
+      const content = message.content as unknown
+      if (typeof content === 'string') {
+        if (content.startsWith('[image omitted')) placeholderText += content.length
+        continue
+      }
+      for (const block of content as readonly unknown[]) {
+        const typed = block as { type?: string; data?: string; text?: string }
+        if (typed.type === 'image') imageBytes += typed.data?.length ?? 0
+        else if (typed.type === 'text' && typed.text?.startsWith('[image omitted')) {
+          placeholderText += typed.text.length
+        }
+      }
+    }
+
+    expect(placeholderText).toBeGreaterThan(0)
+    expect(imageBytes + placeholderText).toBeLessThanOrEqual(bound)
+  })
+
+  it('charges every repeated occurrence while preparing one shared request image', async () => {
+    const sized: ImageAttachmentRef = { ...ref, bytes: 512 }
+    const readImageRequest = vi.fn((value: ImageAttachmentRef) => (
+      Promise.resolve(requestImage(value, new Uint8Array(value.bytes)))
+    ))
+    const context = await toPiContext(request([user(Array.from({ length: 4 }, () => ({
+      type: 'image' as const,
+      attachment: sized,
+    })))]), imageContext(projectionStore(readImageRequest), {
+      maxRequestImageBytes: 2052,
+      requestImagePolicy: { maxPixels: 2048 * 2048, maxBytes: 512 },
+    }))
+
+    expect(imageProjectionBytes(context.messages)).toBeLessThanOrEqual(2052)
+    expect(readImageRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('rechecks the image projection after retained request versions are encoded', async () => {
+    const refs = Array.from({ length: 3 }, (_, index) => ({
+      ...ref,
+      attachmentId: AttachmentId(`sha256:${String(index).padStart(4, '0').repeat(16)}`),
+      bytes: 512,
+    }))
+    const readImageRequest = vi.fn((value: ImageAttachmentRef) => (
+      Promise.resolve(requestImage(value, new Uint8Array(1024)))
+    ))
+    const context = await toPiContext(request([user(refs.map(attachment => ({
+      type: 'image' as const,
+      attachment,
+    })))]), imageContext(projectionStore(readImageRequest), {
+      maxRequestImageBytes: 1500,
+      requestImagePolicy: { maxPixels: 2048 * 2048, maxBytes: 512 },
+    }))
+
+    expect(imageProjectionBytes(context.messages)).toBeLessThanOrEqual(1500)
+    expect(readImageRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails explicitly when image placeholders alone exceed the image budget', async () => {
+    const readImageRequest = vi.fn()
+    await expect(toPiContext(request([user([{ type: 'image', attachment: ref }])]), imageContext(
+      projectionStore(readImageRequest),
+      { maxRequestImageBytes: 1 },
+    ))).rejects.toMatchObject({
+      code: 'INVALID_REQUEST',
+      message: expect.stringContaining('placeholders alone exceed the image budget') as string,
+    })
+    expect(readImageRequest).not.toHaveBeenCalled()
+  })
+
   it('does not prepare an old image removed by the conservative request projection', async () => {
-    const old = { ...ref, attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`), bytes: 3 }
-    const recent = { ...ref, attachmentId: AttachmentId(`sha256:${'d'.repeat(64)}`), bytes: 3 }
+    const old = { ...ref, attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`), bytes: 512 }
+    const recent = { ...ref, attachmentId: AttachmentId(`sha256:${'d'.repeat(64)}`), bytes: 512 }
     const readImageRequest = vi.fn((value: ImageAttachmentRef) => {
       if (value.attachmentId === old.attachmentId) throw new Error('old image must not be read')
       return Promise.resolve(requestImage(value, Uint8Array.of(1, 2, 3)))
@@ -317,7 +452,10 @@ describe('pi-ai request context conversion', () => {
     const context = await toPiContext(request([user([
       { type: 'image', attachment: old },
       { type: 'image', attachment: recent },
-    ])]), imageContext(projectionStore(readImageRequest), { maxRequestImageBytes: 4 }))
+    ])]), imageContext(projectionStore(readImageRequest), {
+      maxRequestImageBytes: Buffer.byteLength(offloadedImageText(old), 'utf8')
+        + promptAttachmentBase64CodeUnits(old.bytes),
+    }))
 
     expect(context.messages[0]).toMatchObject({
       role: 'user',
@@ -332,75 +470,88 @@ describe('pi-ai request context conversion', () => {
   })
 
   it('uses independently resolved access when exact encoded bytes require offload', async () => {
-    const sized: ImageAttachmentRef = { ...ref, bytes: 3 }
+    const sized: ImageAttachmentRef = { ...ref, bytes: 512 }
     const access = { readonlyPath: '/tmp/dsh-normalized-image' }
     const readImageRequest = vi.fn((value: ImageAttachmentRef) => Promise.resolve({
-      ...requestImage(value, Uint8Array.of(1, 2, 3, 4)),
+      ...requestImage(value, new Uint8Array(1024)),
     }))
 
     const context = await toPiContext(request([
-      user([{ type: 'image', attachment: sized }]),
+      user([
+        { type: 'image', attachment: sized },
+        { type: 'image', attachment: { ...sized, name: 'second.png' } },
+        { type: 'image', attachment: { ...sized, name: 'third.png' } },
+      ]),
     ]), imageContext(projectionStore(readImageRequest), {
-      maxRequestImageBytes: 4,
+      maxRequestImageBytes: 1500,
       resolveImageAccess: () => access,
+      requestImagePolicy: { maxPixels: 2048 * 2048, maxBytes: 512 },
     }))
 
-    expect(context.messages).toEqual([{
-      role: 'user',
-      content: offloadedImageText(sized, access),
-      timestamp: 0,
-    }])
+    const content = context.messages[0]?.content
+    if (typeof content !== 'string') throw new Error('expected a collapsed user text content')
+    expect(content).toContain('Normalized copy')
+    expect(content).toContain('"second.png"')
+    expect(content).toContain('"third.png"')
+    expect(imageProjectionBytes(context.messages)).toBeLessThanOrEqual(1500)
     expect(readImageRequest).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps every image at exactly the payload bound and drops all of them when even the newest cannot fit', async () => {
-    const sized: ImageAttachmentRef = { ...ref, bytes: 3 }
-    const exact = await toPiContext(request([
+  it('fails before reading when no image projection can fit its placeholders', async () => {
+    const sized: ImageAttachmentRef = { ...ref, bytes: 512 }
+    await expect(toPiContext(request([
       user([{ type: 'image', attachment: sized }]),
       user([{ type: 'image', attachment: sized }]),
-    ]), imageContext(attachments, { maxRequestImageBytes: 8 }))
-    expect(exact.messages).toEqual([
-      {
-        role: 'user',
-        content: [expect.objectContaining({ type: 'text' }), expect.objectContaining({ type: 'image' })],
-        timestamp: 0,
-      },
-      {
-        role: 'user',
-        content: [expect.objectContaining({ type: 'text' }), expect.objectContaining({ type: 'image' })],
-        timestamp: 0,
-      },
-    ])
+    ]), imageContext(attachments, { maxRequestImageBytes: 8 }))).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
 
     const readImageRequest = vi.fn((value: ImageAttachmentRef) => (
       Promise.resolve(requestImage(value, new Uint8Array(300)))
     ))
     const store = projectionStore(readImageRequest)
-    const oversized = await toPiContext(request([
+    await expect(toPiContext(request([
       user([{ type: 'image', attachment: { ...ref, bytes: 300 } }]),
-    ]), imageContext(store, { maxRequestImageBytes: 8 }))
-    // All-text content collapses to the string form; the placeholder still reaches the model.
-    expect(oversized.messages).toEqual([
-      { role: 'user', content: offloadedImageText({ ...ref, bytes: 300 }), timestamp: 0 },
-    ])
+    ]), imageContext(store, { maxRequestImageBytes: 8 }))).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     expect(readImageRequest).not.toHaveBeenCalled()
   })
 
+  it('fails closed when history changes between image preparation and exact projection', async () => {
+    const original = { ...ref, bytes: 512 }
+    const replacement = {
+      ...original,
+      attachmentId: AttachmentId(`sha256:${'e'.repeat(64)}`),
+    }
+    const mutable = structuredClone(user([{ type: 'image', attachment: original }]))
+    const readImageRequest = vi.fn(async (value: ImageAttachmentRef) => {
+      mutable.content[0] = { type: 'image', attachment: replacement }
+      return requestImage(value, Uint8Array.of(1))
+    })
+
+    await expect(toPiContext(request([mutable]), imageContext(projectionStore(readImageRequest), {
+      maxRequestImageBytes: 1500,
+      requestImagePolicy: { maxPixels: 2048 * 2048, maxBytes: 512 },
+    }))).rejects.toMatchObject({
+      code: 'INVALID_REQUEST',
+      message: expect.stringContaining('was not prepared') as string,
+    })
+  })
+
   it('offloads repeated image-block occurrences by position rather than shared object identity', async () => {
-    const sized: ImageAttachmentRef = { ...ref, bytes: 3 }
+    const sized: ImageAttachmentRef = { ...ref, bytes: 512 }
     const shared: ContentBlock = { type: 'image', attachment: sized }
     const readImageRequest = vi.fn((value: ImageAttachmentRef) => (
       Promise.resolve(requestImage(value, Uint8Array.of(1, 2, 3)))
     ))
     const store = projectionStore(readImageRequest)
+    const bound = Buffer.byteLength(offloadedImageText(sized), 'utf8')
+      + promptAttachmentBase64CodeUnits(sized.bytes)
     const aliased = await toPiContext(
       request([user([shared, shared])]),
-      imageContext(store, { maxRequestImageBytes: 4 }),
+      imageContext(store, { maxRequestImageBytes: bound }),
     )
     const replayed = await toPiContext(request([user([
       { type: 'image', attachment: { ...sized } },
       { type: 'image', attachment: { ...sized } },
-    ])]), imageContext(store, { maxRequestImageBytes: 4 }))
+    ])]), imageContext(store, { maxRequestImageBytes: bound }))
 
     const expected = [{
       role: 'user',

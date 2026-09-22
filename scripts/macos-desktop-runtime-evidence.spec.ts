@@ -104,13 +104,13 @@ describe('macOS Desktop runtime evidence', () => {
     const source = readFileSync(runtimeEvidence, 'utf8')
     expect(source).toContain('const SAMPLE_COUNT = 10')
     expect(source).toContain("const BASELINE_VERSION = '0.5.3'")
-    expect(source).toContain("const CANDIDATE_VERSION = '0.5.5'")
+    expect(source).toContain("const CANDIDATE_VERSION = '0.5.10'")
     const desktopManifest: unknown = JSON.parse(readFileSync(
       new URL('../apps/desktop/package.json', import.meta.url), 'utf8',
     ))
     expect(desktopManifest).toMatchObject({
       name: '@deepseek-ai/dsh-desktop',
-      version: '0.5.5',
+      version: '0.5.10',
     })
     expect(source).toContain("sampleKind: 'cold' | 'warm' | 'warm-prime'")
     expect(source).toContain('PROFILE_BOOT_DETAIL_PHASES')

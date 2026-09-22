@@ -26,11 +26,11 @@ import LocalAttachmentStore, {
 describe('local attachment service', () => {
   it('resolves every omitted admission limit explicitly', () => {
     const service = new LocalAttachmentStore(new Context(), {})
-    expect(DEFAULT_MAX_IMAGE_BYTES).toBe(20 * 1024 * 1024)
+    expect(DEFAULT_MAX_IMAGE_BYTES).toBe(50 * 1024 * 1024)
     expect(DEFAULT_MAX_IMAGES_PER_MESSAGE).toBe(20)
     expect(DEFAULT_MAX_MESSAGE_IMAGE_BYTES).toBe(200 * 1024 * 1024)
     expect(DEFAULT_MAX_IMAGE_PIXELS).toBe(64_000_000)
-    expect(DEFAULT_MAX_IMAGE_DIMENSION).toBe(8192)
+    expect(DEFAULT_MAX_IMAGE_DIMENSION).toBe(16384)
     expect(service.imageLimits).toEqual({
       maxImageBytes: DEFAULT_MAX_IMAGE_BYTES,
       maxImagesPerMessage: DEFAULT_MAX_IMAGES_PER_MESSAGE,
@@ -273,6 +273,208 @@ describe('local attachment service', () => {
       await expect(limited.validateImage({ data: valid, mediaType: 'image/png' }))
         .rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
       await expect(service.validateImage({ data: valid, mediaType: 'image/png' })).resolves.toBeUndefined()
+      expect(existsSync(service.root)).toBe(false)
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+})
+
+/**
+ * The product admission envelope, exercised against real encoded bytes rather
+ * than the fixture limits the unit specs use. These are the numbers the client
+ * prompt and the Host validator share, so a regression here is a regression in
+ * what a reader can attach.
+ */
+describe('large source images', () => {
+  /**
+   * Deterministic photographic noise: high entropy, so the encoder cannot
+   * shrink it and the source byte length stays predictable.
+   * @param width - pixel width.
+   * @param height - pixel height.
+   * @returns encoded PNG bytes.
+   */
+  async function noisePng(width: number, height: number): Promise<Uint8Array> {
+    const pixels = Buffer.allocUnsafe(width * height * 3)
+    let state = 0x2545f491
+    for (let index = 0; index < pixels.length; index++) {
+      // xorshift32: deterministic, and no PRNG dependency in the suite.
+      state ^= state << 13
+      state ^= state >>> 17
+      state ^= state << 5
+      pixels[index] = state & 0xff
+    }
+    return new Uint8Array(await sharp(pixels, { raw: { width, height, channels: 3 } })
+      .png({ compressionLevel: 0 }).toBuffer())
+  }
+
+  /**
+   * Deterministic low-entropy pixels, so a screen-sized source stays small.
+   * @param width - pixel width.
+   * @param height - pixel height.
+   * @returns encoded PNG bytes.
+   */
+  async function gradientPng(width: number, height: number): Promise<Uint8Array> {
+    const pixels = Buffer.allocUnsafe(width * height * 3)
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const offset = (y * width + x) * 3
+        pixels[offset] = x & 0xff
+        pixels[offset + 1] = (x >> 8) & 0xff
+        pixels[offset + 2] = y & 0xff
+      }
+    }
+    return new Uint8Array(await sharp(pixels, { raw: { width, height, channels: 3 } })
+      .png().toBuffer())
+  }
+
+  it('admits a source the previous byte limit refused and downsizes it for the request', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-large-bytes-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), { dshHome })
+      expect(service.imageLimits.maxImageBytes).toBe(50 * 1024 * 1024)
+      const source = await noisePng(3000, 3000)
+      // 25.8 MiB measured: over the previous 20 MiB refusal, under the new limit.
+      expect(source.byteLength).toBeGreaterThan(20 * 1024 * 1024)
+      expect(source.byteLength).toBeLessThan(50 * 1024 * 1024)
+
+      const ref = await service.saveImage({ data: source, mediaType: 'image/png', name: 'photo.png' })
+      expect(ref.bytes).toBeLessThanOrEqual(DEFAULT_NORMALIZED_IMAGE_MAX_BYTES)
+      expect(ref.width * ref.height).toBeLessThanOrEqual(DEFAULT_NORMALIZED_IMAGE_MAX_PIXELS)
+      expect(ref.originalDimensions).toEqual({ width: 3000, height: 3000 })
+      await expect(service.readImage(ref)).resolves.toMatchObject({ ref })
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('admits a long edge past the previous cap and still bounds the stored pixels', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-large-edge-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), { dshHome })
+      expect(service.imageLimits.maxImageDimension).toBe(16384)
+      const source = await gradientPng(16384, 200)
+      const ref = await service.saveImage({ data: source, mediaType: 'image/png', name: 'long.png' })
+      // The source carries a long edge the previous 8192 cap refused outright.
+      expect(ref.originalDimensions).toEqual({ width: 16384, height: 200 })
+      // The long-edge cap is what bounds the stored object, so the aspect ratio
+      // is preserved rather than the strip collapsing to the pixel budget.
+      expect(Math.max(ref.width, ref.height)).toBeLessThanOrEqual(16384)
+      expect(ref.width / ref.height).toBeCloseTo(16384 / 200, 2)
+      expect(ref.width * ref.height).toBeLessThanOrEqual(DEFAULT_NORMALIZED_IMAGE_MAX_PIXELS)
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('accepts a source exactly at the byte limit and refuses one byte more', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-exact-bytes-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), { dshHome, maxImageBytes: 256 })
+      const payload = new Uint8Array(await sharp({
+        create: { width: 4, height: 4, channels: 3, background: { r: 7, g: 7, b: 7 } },
+      }).png().toBuffer())
+      expect(payload.byteLength).toBeLessThan(256)
+      const exact = new Uint8Array(256)
+      exact.set(payload)
+      const over = new Uint8Array(257)
+      over.set(payload)
+
+      await expect(service.validateImage({ data: exact, mediaType: 'image/png' })).resolves.toBeUndefined()
+      await expect(service.validateImage({ data: over, mediaType: 'image/png' }))
+        .rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
+  it('accepts exactly the pixel budget and refuses one pixel more', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-exact-pixels-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), { dshHome, maxImagePixels: 64 })
+      const exact = await gradientPng(8, 8)
+      const over = await gradientPng(9, 8)
+
+      await expect(service.validateImage({ data: exact, mediaType: 'image/png' })).resolves.toBeUndefined()
+      await expect(service.validateImage({ data: over, mediaType: 'image/png' }))
+        .rejects.toMatchObject({ code: 'IMAGE_TOO_MANY_PIXELS' })
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
+  it('accepts exactly the edge cap and refuses one pixel more', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-exact-edge-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), { dshHome, maxImageDimension: 40 })
+      await expect(service.validateImage({ data: await gradientPng(40, 3), mediaType: 'image/png' }))
+        .resolves.toBeUndefined()
+      await expect(service.validateImage({ data: await gradientPng(41, 3), mediaType: 'image/png' }))
+        .rejects.toMatchObject({ code: 'IMAGE_DIMENSION_TOO_LARGE' })
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
+  it('admits twenty images and refuses twenty-one', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-count-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), { dshHome, maxImagesPerMessage: 20 })
+      const one = await gradientPng(2, 2)
+      const batch = Array.from({ length: 20 }, () => ({ data: one, mediaType: 'image/png' as const }))
+      await expect(service.saveImages(batch)).resolves.toHaveLength(20)
+      await expect(service.saveImages([...batch, { data: one, mediaType: 'image/png' }]))
+        .rejects.toMatchObject({ code: 'TOO_MANY_IMAGES' })
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('refuses an aggregate over the message budget', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-aggregate-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), { dshHome, maxMessageImageBytes: 64 })
+      const one = await gradientPng(64, 64)
+      expect(one.byteLength).toBeGreaterThan(64)
+      await expect(service.saveImages([
+        { data: one, mediaType: 'image/png' },
+        { data: one, mediaType: 'image/png' },
+      ])).rejects.toMatchObject({ code: 'IMAGES_TOO_LARGE' })
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps aspect ratio and transparency through a large-source downscale', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-shape-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), { dshHome })
+      const strip = await gradientPng(9000, 1200)
+      const wide = await service.saveImage({ data: strip, mediaType: 'image/png' })
+      expect(wide.width / wide.height).toBeCloseTo(9000 / 1200, 2)
+
+      const transparent = new Uint8Array(await sharp({
+        create: { width: 3000, height: 2000, channels: 4, background: { r: 1, g: 2, b: 3, alpha: 0.25 } },
+      }).png().toBuffer())
+      const kept = await service.saveImage({ data: transparent, mediaType: 'image/png' })
+      const stored = await service.readImage(kept)
+      expect((await sharp(stored.data).metadata()).hasAlpha).toBe(true)
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('refuses a forged format and a truncated source before storing anything', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-forged-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), { dshHome })
+      const real = await gradientPng(64, 64)
+      // PNG bytes declared as JPEG, and a header-only PNG: both are decodable
+      // failures rather than size failures, so neither reaches storage.
+      await expect(service.saveImage({ data: real, mediaType: 'image/jpeg' }))
+        .rejects.toMatchObject({ code: 'IMAGE_TYPE_MISMATCH' })
+      await expect(service.saveImage({ data: real.subarray(0, 24), mediaType: 'image/png' }))
+        .rejects.toMatchObject({ code: 'INVALID_IMAGE' })
       expect(existsSync(service.root)).toBe(false)
     } finally {
       await rm(dshHome, { recursive: true, force: true })

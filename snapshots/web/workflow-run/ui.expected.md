@@ -12,12 +12,8 @@
   - img
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
-- button "Expand reasoning":
-  - img
-  - text: Think
-  - img
-- region "Reasoning content": "The user wants me to use the workflow tool exactly once with specific parameters. Let me carefully follow the instructions: 1. args omitted (so I don't include it) 2. meta = { \"name\": \"snapshot-flow\", \"description\": \"one child for the snapshot\" } 3. script = as given verbatim 4. After it returns, reply with \"WORKFLOW_DONE\" Let me do exactly that."
-- text: Original reasoning · scroll to read
+- img
+- text: "Think The user wants me to use the workflow tool exactly once with specific parameters. Let me carefully follow the instructions: 1. args omitted (so I don't include it) 2. meta = { \"name\": \"snapshot-flow\", \"description\": \"one child for the snapshot\" } 3. script = as given verbatim 4. After it returns, reply with \"WORKFLOW_DONE\" Let me do exactly that."
 - button "Tool call workflow ·":
   - img
   - img
@@ -25,11 +21,8 @@
 - button "snapshot-flow 1 member Completed":
   - img
   - text: snapshot-flow 1 member Completed
-- button "Expand reasoning":
-  - img
-  - text: Think
-  - img
-- region "Reasoning content": The workflow returned successfully with the reply "WF_CHILD_OK". Now I need to reply with exactly "WORKFLOW_DONE" and stop.
+- img
+- text: Think The workflow returned successfully with the reply "WF_CHILD_OK". Now I need to reply with exactly "WORKFLOW_DONE" and stop.
 - paragraph: WORKFLOW_DONE
 - button "Copy":
   - img

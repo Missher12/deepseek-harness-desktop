@@ -1,3 +1,4 @@
+import { request } from 'node:http'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { AttachmentId, AttachmentStore, ImageVariantId } from '@deepseek-ai/dsh-attachment'
@@ -33,6 +34,25 @@ const IMAGE_REF: ImageAttachmentRef = {
 }
 const HOST_IMAGE_PATH = '/host/.dsh/attachments/objects/aa/object'
 const MODEL_IMAGE_PATH = '/model/.dsh/attachments/objects/aa/object'
+const LOOPBACK_REQUEST_BYTES = Uint8Array.from({ length: 512 }, (_value, index) => index % 251)
+
+function wireImageProjectionBytes(value: unknown): number {
+  if (Array.isArray(value)) return (value as unknown[]).reduce<number>((sum, item) => sum + wireImageProjectionBytes(item), 0)
+  if (typeof value !== 'object' || value === null) return 0
+  const record = value as Record<string, unknown>
+  if (record.type === 'text' && typeof record.text === 'string' && record.text.startsWith('[image omitted')) {
+    return Buffer.byteLength(record.text, 'utf8')
+  }
+  if (record.type === 'image_url') {
+    const image = record.image_url
+    if (typeof image !== 'object' || image === null) return 0
+    const url = (image as Record<string, unknown>).url
+    if (typeof url !== 'string') return 0
+    const comma = url.indexOf(',')
+    return comma < 0 ? 0 : Buffer.byteLength(url.slice(comma + 1), 'utf8')
+  }
+  return Object.values(record).reduce<number>((sum, item) => sum + wireImageProjectionBytes(item), 0)
+}
 
 class MappedFileSystem extends Service {
   constructor(ctx: Context) {
@@ -41,6 +61,50 @@ class MappedFileSystem extends Service {
 
   processPathFromHostPath(hostPath: string): string | undefined {
     return hostPath === HOST_IMAGE_PATH ? MODEL_IMAGE_PATH : undefined
+  }
+}
+
+/** Minimal image provider for request-chain tests; no durable writes are used. */
+class LoopbackImageStore extends AttachmentStore {
+  readonly imageLimits: ImageAttachmentLimits = {
+    maxImageBytes: 1024 * 1024,
+    maxImagesPerMessage: 20,
+    maxMessageImageBytes: 20 * 1024 * 1024,
+    maxImagePixels: 2048 * 2048,
+    maxImageDimension: 10_000,
+    mediaTypes: ['image/png'],
+  }
+
+  validateImage(_input: SaveImageAttachment): Promise<void> {
+    return Promise.reject(new Error('loopback request test does not save images'))
+  }
+
+  saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
+    return Promise.reject(new Error('loopback request test does not save images'))
+  }
+
+  readImage(ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
+    return Promise.resolve({ ref, data: LOOPBACK_REQUEST_BYTES })
+  }
+
+  override readImageRequest(
+    ref: ImageAttachmentRef,
+    _policy: ImageRequestPolicy,
+    signal?: AbortSignal,
+  ): Promise<RequestImageAttachment> {
+    signal?.throwIfAborted()
+    return Promise.resolve({
+      variantId: ImageVariantId(`sha256:${'c'.repeat(64)}`),
+      attachment: ref,
+      data: LOOPBACK_REQUEST_BYTES,
+      mediaType: ref.mediaType,
+      bytes: LOOPBACK_REQUEST_BYTES.byteLength,
+      width: ref.width,
+      height: ref.height,
+      depth: 'uchar',
+      space: 'srgb',
+      hasAlpha: true,
+    })
   }
 }
 
@@ -330,6 +394,113 @@ describe('PiAiAdapter provider routing', () => {
     }, expect.any(AbortSignal))
     expect(JSON.stringify(server.requests[0])).toContain(MODEL_IMAGE_PATH)
     expect(server.paths).toEqual(['/v1/responses'])
+  })
+
+  it('records the complete request separately from the image-only budget and preserves a provider 413', async () => {
+    const server = await mockServer([{
+      status: 413,
+      body: JSON.stringify({ error: { message: 'payload too large' } }),
+    }])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'vision-gateway': {
+          apiKeyEnv: 'PI_TEST_KEY',
+          api: 'openai-completions',
+          baseURL: server.url,
+          maxRequestImageBytes: 2052,
+          models: [{
+            id: 'vision', name: 'Vision', input: ['text', 'image'], contextWindow: 65_536, maxTokens: 4096,
+          }],
+        },
+      },
+    })
+    await ctx.plugin(LoopbackImageStore)
+
+    const repeated = Array.from({ length: 4 }, () => ({ type: 'image' as const, attachment: {
+      ...IMAGE_REF,
+      bytes: 512,
+    } }))
+    const result = await assemble(ctx, {
+      provider: 'vision-gateway',
+      model: 'vision',
+      system: 'system text reserves request bytes',
+      tools: [{ name: 'lookup', description: 'lookup', parameters: { type: 'object' } }],
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'describe these images' }, ...repeated],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })
+
+    expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'INVALID_REQUEST' } })
+    expect(server.paths).toEqual(['/chat/completions'])
+    expect(server.statuses).toEqual([413])
+    const raw = server.rawBodies[0]
+    if (raw === undefined) throw new Error('loopback server did not receive the request body')
+    // The image projection is within its 2052-byte image-only bound, but the
+    // actual HTTP body also carries system text, tools, message text, and JSON.
+    expect(raw.byteLength).toBeGreaterThan(2052)
+    const body = JSON.parse(raw.toString('utf8')) as { messages?: unknown }
+    expect(body.messages).toBeDefined()
+    expect(wireImageProjectionBytes(body.messages)).toBeLessThanOrEqual(2052)
+  })
+
+  it('preserves exact UTF-8 request bytes when data chunks split code points', async () => {
+    const server = await mockServer([{ status: 200, body: '{}' }])
+    const source = Buffer.from(JSON.stringify({ text: '你好🇨🇳' }), 'utf8')
+    const split = source.indexOf(Buffer.from('你', 'utf8')) + 1
+    await new Promise<void>((resolve, reject) => {
+      const req = request(server.url, {
+        method: 'POST', agent: false,
+        headers: { 'content-type': 'application/json', 'content-length': source.byteLength },
+      }, (response) => {
+        response.resume()
+        response.once('end', resolve)
+        response.once('error', reject)
+      })
+      req.once('error', reject)
+      req.once('socket', (socket) => { socket.setNoDelay(true) })
+      req.flushHeaders()
+      req.write(source.subarray(0, split))
+      setTimeout(() => { req.end(source.subarray(split)) }, 30)
+    })
+
+    expect(server.rawBodies[0]).toEqual(source)
+    expect(server.requests[0]).toEqual({ text: '你好🇨🇳' })
+  })
+
+  it('rejects an image projection locally without starting the HTTP request', async () => {
+    const server = await mockServer([])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'vision-gateway': {
+          apiKeyEnv: 'PI_TEST_KEY',
+          api: 'openai-completions',
+          baseURL: server.url,
+          maxRequestImageBytes: 8,
+          models: [{
+            id: 'vision', name: 'Vision', input: ['text', 'image'], contextWindow: 65_536, maxTokens: 4096,
+          }],
+        },
+      },
+    })
+    await ctx.plugin(LoopbackImageStore)
+
+    const result = await assemble(ctx, {
+      provider: 'vision-gateway',
+      model: 'vision',
+      messages: [createUserMessage({
+        content: [{ type: 'image', attachment: { ...IMAGE_REF, bytes: 512 } }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })
+
+    expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'INVALID_REQUEST' } })
+    expect(server.rawBodies).toEqual([])
+    expect(server.statuses).toEqual([])
   })
 
   it('forces one wire request for an SDK-retryable provider failure', async () => {

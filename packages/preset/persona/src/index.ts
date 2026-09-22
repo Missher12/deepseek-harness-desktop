@@ -46,22 +46,20 @@ export interface Config {
 }
 
 /**
- * What a stored composition may spell: {@link Config}, or the same row written
- * before the persona text was called `text` rather than `prefix`.
- *
- * The old spelling stays accepted rather than rejected because the cost is
- * wildly asymmetric. A composition is a file on disk that no type checker
- * reads, one stale row fails the whole preset mount, and a preset the default
- * seat names fails EVERY new Session — so a rename would silently break
- * existing installations. `prefix` wins when a row carries both.
+ * Stored persona configuration before normalization to {@link Config}.
+ * At least one of `prefix` and its legacy alias `text` is required;
+ * `prefix` wins when both are present.
  */
 interface PersonaConfigInput {
   /** Persona prose; the current name. */
   prefix?: string
   /** The former name of {@link PersonaConfigInput.prefix}. */
   text?: string
+  /** Persona suffix template. */
   suffix?: string
+  /** Make the prefix the complete system prompt. */
   complete?: boolean
+  /** Include dynamic runtime-context snapshots. */
   includeRuntimeContext?: boolean
 }
 
@@ -70,7 +68,7 @@ interface PersonaConfigInput {
  * optional here, and the transform below is what makes exactly one of them
  * required — a rule no single object field can state.
  */
-const PersonaConfigShape = z.object({
+const PersonaConfigShape: z<PersonaConfigInput> = z.object({
   prefix: z.string(),
   text: z.string(),
   suffix: z.string().default(''),
@@ -79,10 +77,8 @@ const PersonaConfigShape = z.object({
 })
 
 /** Runtime schema for the persona row, with the `text` → `prefix` rename accepted. */
-export const Config: z<Config> = z.transform(PersonaConfigShape, (value) => {
-  // The declared shape cannot express "one of these two"; the cast restores the
-  // optionality the schema metadata (not the field schema) actually enforces.
-  const { prefix, text, suffix, complete, includeRuntimeContext } = value as PersonaConfigInput
+export const Config: z<Config> = z.transform(PersonaConfigShape, (value: PersonaConfigInput) => {
+  const { prefix, text, suffix, complete, includeRuntimeContext } = value
   const resolved = prefix ?? text
   if (resolved === undefined) {
     // The historical field name is named here because that is the mistake this

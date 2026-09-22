@@ -29,9 +29,12 @@ describe('chat flow font-size axis', () => {
     expect(declarationsFrom(css, '.thinkBody')).toContain(
       'line-height: calc(21px + var(--dsh-content-font-delta-secondary, 0px))',
     )
-    expect(declarationsFrom(css, '.viewport')).toContain(
-      'max-height: calc(84px + var(--dsh-content-font-delta-secondary, 0px) * 4)',
-    )
+    // The block adds no reading scrollport of its own, so nothing here caps or
+    // scrolls the text at any font-size step. `overflow-wrap` is line wrapping,
+    // not a scrollport, so the check is on the `overflow:`/`overflow-*:` forms.
+    const scrollport = declarationsFrom(css, '.thinkBody').join(';')
+    expect(scrollport).not.toMatch(/max-height/)
+    expect(scrollport).not.toMatch(/\boverflow(-[xy])?:/)
   })
 
   it('command and context summaries read the secondary tier on the shared row line', () => {

@@ -28,20 +28,14 @@
   - img
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
-- button "Expand reasoning":
-  - img
-  - text: Think
-  - img
-- region "Reasoning content": I will inspect the current Session's dynamic Cordis Plugins before defining the snapshot Package.
+- img
+- text: Think I will inspect the current Session's dynamic Cordis Plugins before defining the snapshot Package.
 - 'button "Tool call cordis_inspect_self · {}"':
   - img
   - img
   - text: "Tool call cordis_inspect_self · {}"
-- button "Expand reasoning":
-  - img
-  - text: Think
-  - img
-- region "Reasoning content": No dynamic Plugins are present, so I will define the requested Host and Client Package.
+- img
+- text: Think No dynamic Plugins are present, so I will define the requested Host and Client Package.
 - button "Register Cordis Plugin snapshot noop does nothing, for the snapshot Ready" [expanded]:
   - img
   - text: Register Cordis Plugin snapshot noop does nothing, for the snapshot Ready
@@ -54,20 +48,14 @@
   - code: "return { name: \"snapshot-noop\", apply(ctx) {} }"
 - text: Result Defined snap-1/pkg-1 (snapshot noop); it is not running yet. Use cordis_run to activate this Package. Run controls live in the Cordis panel above Settings
 - button "Inspect"
-- button "Expand reasoning":
-  - img
-  - text: Think
-  - img
-- region "Reasoning content": The Host returned snap-1/pkg-1, so I will request its first activation.
+- img
+- text: Think The Host returned snap-1/pkg-1, so I will request its first activation.
 - img
 - text: Run Cordis Plugin snap-1 · pkg-1 Ready
 - button "Inspect"
 - text: snap-1/pkg-1 is awaiting user approval (run-1).
-- button "Expand reasoning":
-  - img
-  - text: Think
-  - img
-- region "Reasoning content": The activation request has been submitted, so I will return the requested readiness marker.
+- img
+- text: Think The activation request has been submitted, so I will return the requested readiness marker.
 - paragraph: CORDIS_UI_READY
 - button "Copy":
   - img

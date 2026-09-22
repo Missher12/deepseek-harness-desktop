@@ -3,7 +3,7 @@ import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationLocationDataStore, ConversationTurnDataMap } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
-import { TURN_PROCESS_INDEPENDENT_KINDS } from '../contract/turn-process.ts'
+import { TURN_PROCESS_MEMBER_KINDS } from '../contract/turn-process.ts'
 import { storedTurnProcessEntry } from '../stores.ts'
 import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './ChatView.module.css'
@@ -68,9 +68,15 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     && (routedNode?.location.kind === 'turn' || routedNode?.location.kind === 'step')
     && routedNode.location.turn.end?.data.reason.kind === 'completed'
     && !historyIncomplete
+  // A row that carries reasoning is never covered: the reader was promised the
+  // complete literal text, so the disclosure may only fold rows without it.
+  // Everything this gate hides can be revealed by opening the disclosure.
+  const foldableRow = routedNode === undefined
+    || routedNode.kind !== 'assistant-step'
+    || !routedNode.data.blocks.some(block => block.kind === 'reasoning' && block.text.trim() !== '')
   const processMember = routedNode !== undefined
     && processWindowReady
-    && !TURN_PROCESS_INDEPENDENT_KINDS.has(routedNode.kind)
+    && TURN_PROCESS_MEMBER_KINDS.has(routedNode.kind)
     && routedNode.anchorSeq >= processSpec.processStartSeq
     && routedNode.anchorSeq < processSpec.answerAnchorSeq
   const processAnswer = routedNode !== undefined
@@ -79,8 +85,8 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     && routedNode.data.step === processSpec.answerStep
   const ownsDisclosure = routedNode?.kind === 'turn-process' || processAnswer
   const foldable = processWindowReady
-    && (processMember || (ownsDisclosure
-      && (processPresentation.hasExternalProcess || processSpec.inlineReasoning)))
+    && foldableRow
+    && (processMember || (ownsDisclosure && processPresentation.hasExternalProcess))
   const turnProcess = useMemo(() => processSpec === undefined
     ? undefined
     : {

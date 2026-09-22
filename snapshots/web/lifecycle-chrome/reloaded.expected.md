@@ -20,6 +20,8 @@
 - button "Thought for a while":
   - text: Thought for a while
   - img
+- img
+- text: Think The user wants me to reply with a single word. Let me comply.
 - paragraph: LIGHTHOUSE
 - button "Copy":
   - img

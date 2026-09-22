@@ -19,11 +19,8 @@
   - img
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
-- button "Expand reasoning":
-  - img
-  - text: Think
-  - img
-- region "Reasoning content": The user wants me to use the ask_user_question tool with specific parameters. Let me do exactly that.
+- img
+- text: Think The user wants me to use the ask_user_question tool with specific parameters. Let me do exactly that.
 - button "Ask question cancelled" [expanded]:
   - img
   - text: Ask question cancelled

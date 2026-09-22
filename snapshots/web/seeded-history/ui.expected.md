@@ -21,6 +21,10 @@
 - button "2 tool calls":
   - text: 2 tool calls
   - img
+- img
+- text: Think The user wants me to read a.txt and b.txt, then reply with "DONE". Let me do both reads in parallel.
+- img
+- text: Think Both files have been read. a.txt contains "alpha" and b.txt contains "beta". I'll now reply with DONE as instructed.
 - paragraph: DONE
 - button "Copy":
   - img

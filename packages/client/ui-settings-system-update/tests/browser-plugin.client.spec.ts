@@ -195,6 +195,36 @@ describe('ui-settings-system-update browser plugin', () => {
     expect(instance.getSnapshot().snapshot).toEqual(pushed)
   })
 
+  it('keeps a pushed status when an older update command completes and ignores retries after disposal', async () => {
+    const b = await bench()
+    const desktop = bridge()
+    const pending = Promise.withResolvers<DesktopUpdateSnapshot>()
+    desktop.checkForUpdates = vi.fn(() => pending.promise)
+    window.dshDesktop = desktop
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = b.slots.entries('settings.section')[0]!
+    const instance = (entry.store as ReturnType<typeof createSystemUpdateStore>).create()
+    const face = (entry.inject as unknown as (actions: typeof instance.actions) => SystemUpdateInjected)(instance.actions)
+    await vi.waitFor(() => { expect(instance.getSnapshot().snapshot).toEqual(snapshot) })
+    const checking = face.check()
+    const pushed = { ...snapshot, phase: 'downloading' as const }
+    try {
+      desktop.emit(pushed)
+      pending.resolve({ ...snapshot, phase: 'current' })
+      await checking
+      expect(instance.getSnapshot().snapshot).toEqual(pushed)
+      await fiber.dispose()
+      const statusCalls = desktop.statusCalls()
+      await face.retryStatus()
+      expect(desktop.statusCalls()).toBe(statusCalls)
+      expect(instance.getSnapshot().snapshot).toEqual(pushed)
+    } finally {
+      pending.resolve(snapshot)
+      await checking
+    }
+  })
+
   it('recovers from an initial status-read rejection using only a no-argument status retry', async () => {
     const b = await bench()
     const desktop = bridge()

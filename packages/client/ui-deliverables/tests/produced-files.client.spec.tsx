@@ -563,6 +563,14 @@ describe('plugin registration', () => {
     expect(face.hooks.presentedHost.getSnapshot()).toBeNull()
     await face.openPresented(SessionId('child-session'), 2, 0)
     expect(face.hooks.presentedOpen.getSnapshot()['/api/present.open?sessionId=child-session&seq=2&index=0']).toBe('opened')
+    await face.previewPresented(SessionId('child-session'), { path: 'other.docx', seq: 4, index: 0 }, '/project')
+    expect(fetcher).toHaveBeenLastCalledWith('/api/present.open?sessionId=child-session&seq=4&index=0', { method: 'POST', signal: expect.any(AbortSignal) as AbortSignal })
+    const nativeCalls = fetcher.mock.calls.length
+    const openResource = vi.fn()
+    ctx.provide('sidebarRight', { openResource } as never)
+    await face.previewPresented(SessionId('child-session'), { path: 'other.docx', seq: 4, index: 0 }, '/project')
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://file/session/child-session/other.docx')
+    expect(fetcher).toHaveBeenCalledTimes(nativeCalls)
     // A turn that produced nothing yields no vocabulary at all.
     expect(service?.forClosing(tailOwner(undefined, 2), SessionId('viewed-session'))).toBeUndefined()
 

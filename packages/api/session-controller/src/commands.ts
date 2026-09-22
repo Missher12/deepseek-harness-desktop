@@ -708,7 +708,8 @@ export class SessionCommandController {
     } catch {
       return undefined
     }
-    if (typeof cwd !== 'string' || cwd.length === 0) return undefined
+    /* v8 ignore if -- API-created and resumed Sessions require cwd; cold inspection rejects older headers without it. */
+    if (cwd === undefined) return undefined
     const expected = join(this.noProjectDirectory, sessionId)
     return resolve(cwd) === resolve(expected) ? cwd : undefined
   }

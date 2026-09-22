@@ -10,9 +10,12 @@ const readUpdateMetadata = (): { desktopVersion?: unknown; harnessVersion?: unkn
     harnessVersion?: unknown
   }
 
+const EXPECTED_HARNESS_VERSION = '0.1.5-rc.2'
+const EXPECTED_DESKTOP_VERSION = '0.5.10'
+
 describe('official core Desktop migration', () => {
-  it('aligns the official alpha.1 core and the Desktop 0.5.7 release manifests', () => {
-    expect(readManifest('package.json').version).toBe('0.1.3-alpha.1')
+  it('aligns the official rc.2 core and the Desktop 0.5.10 release manifests', () => {
+    expect(readManifest('package.json').version).toBe(EXPECTED_HARNESS_VERSION)
     for (const manifest of [
       'packages/client/runtime/package.json',
       'packages/client/ui-settings-personalization/package.json',
@@ -23,16 +26,16 @@ describe('official core Desktop migration', () => {
       'packages/host/desktop-plugin-runtime/package.json',
       'packages/session/usage-insights/package.json',
     ]) {
-      expect(readManifest(manifest).version, manifest).toBe('0.1.3-alpha.1')
+      expect(readManifest(manifest).version, manifest).toBe(EXPECTED_HARNESS_VERSION)
     }
     for (const manifest of [
       'apps/desktop/package.json',
     ]) {
-      expect(readManifest(manifest).version, manifest).toBe('0.5.7')
+      expect(readManifest(manifest).version, manifest).toBe(EXPECTED_DESKTOP_VERSION)
     }
     expect(readUpdateMetadata()).toMatchObject({
-      desktopVersion: '0.5.7',
-      harnessVersion: '0.1.3-alpha.1',
+      desktopVersion: EXPECTED_DESKTOP_VERSION,
+      harnessVersion: EXPECTED_HARNESS_VERSION,
     })
   })
 

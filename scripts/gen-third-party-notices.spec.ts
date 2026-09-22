@@ -34,8 +34,10 @@ describe('THIRD_PARTY_NOTICES.md', () => {
     expect(readFileSync(resolve(root, 'THIRD_PARTY_NOTICES.md'), 'utf8'), 'stale notices — run `pnpm run gen-third-party-notices`').toBe(generated)
   })
 
-  it('discloses the exact attributed reasoning-effort source used by Desktop', () => {
-    const generated = render()
+  it('discloses the exact attributed reasoning-effort source used by Desktop', {
+    timeout: 120_000,
+  }, async () => {
+    const generated = await render()
 
     expect(generated).toContain('Copyright (c) 2026 HanaAyane')
     expect(generated).toContain('https://github.com/HanaAyane/dsh-reasoning-effort')

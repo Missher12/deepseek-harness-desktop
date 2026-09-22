@@ -205,7 +205,7 @@ describe('Linux scope establishment and quiescence', () => {
     expect(spawnSync).toHaveBeenCalledWith('/bin/systemctl', expect.arrayContaining([
       'kill', '--kill-whom=all', '--signal=SIGTERM',
     ]), expect.anything())
-    const direct = expect(result.direct).rejects.toThrow('before its bootstrap consumed')
+    const direct = expect(result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
     child.exit(null, 'SIGTERM')
     await direct
     await expect(waiting).resolves.toBeUndefined()
@@ -345,6 +345,156 @@ describe('Linux scope establishment and quiescence', () => {
     result.owner.cleanup?.()
   })
 
+  it('stops an active empty scope after a zero-status kill before bootstrap consumption', async () => {
+    let stopRequested = false
+    let stateQueries = 0
+    const firstPoll = Promise.withResolvers<undefined>()
+    const firstPollStarted = Promise.withResolvers<undefined>()
+    const spawnSync = vi.fn((_command: string, args: readonly string[]) => {
+      if (args.includes('stop')) stopRequested = true
+      return { status: 0, stdout: '', stderr: '' }
+    })
+    const launched = launch(
+      async () => {
+        stateQueries += 1
+        return stateQueries < 3 ? activeUnit() : unloadedUnit()
+      },
+      {
+        spawnSync: spawnSync as never,
+        sleep: async () => {
+          if (stateQueries === 1) {
+            firstPollStarted.resolve(undefined)
+            await firstPoll.promise
+          }
+          if (!stopRequested) throw new Error('scope stop was not requested')
+        },
+      },
+    )
+    launched.result.owner.signal('SIGTERM')
+    launched.child.exit(null, 'SIGTERM')
+    await expect(launched.result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
+    const waiting = launched.result.owner.waitForExit()
+    try {
+      await firstPollStarted.promise
+      expect(stopRequested).toBe(true)
+      let settled = false
+      void waiting.then(() => { settled = true }, () => { settled = true })
+      expect(settled).toBe(false)
+      firstPoll.resolve(undefined)
+      await expect(waiting).resolves.toBeUndefined()
+      expect(stateQueries).toBe(3)
+      expect(spawnSync).toHaveBeenNthCalledWith(1, '/bin/systemctl', expect.arrayContaining([
+        '--user', 'kill', '--kill-whom=all', '--signal=SIGTERM',
+      ]), expect.anything())
+      expect(spawnSync).toHaveBeenNthCalledWith(2, '/bin/systemctl', expect.arrayContaining([
+        '--user', 'stop', '--no-block', expect.stringMatching(/\.scope$/u),
+      ]), expect.anything())
+      const killArgs = spawnSync.mock.calls[0]?.[1] as readonly string[]
+      const stopArgs = spawnSync.mock.calls[1]?.[1] as readonly string[]
+      expect(stopArgs[3]).toBe(killArgs[4])
+      expect(spawnSync).toHaveBeenCalledTimes(2)
+    } finally {
+      firstPoll.resolve(undefined)
+      await waiting.catch(() => {})
+      launched.result.owner.cleanup?.()
+    }
+  })
+
+  it('reports a non-missing failure to stop an unconsumed active scope', async () => {
+    const stopError = new Error('scope stop failed')
+    const spawnSync = vi.fn((_command: string, args: readonly string[]) => {
+      if (args.includes('stop')) return { status: 1, stdout: '', stderr: 'permission denied', error: stopError }
+      return { status: 0, stdout: '', stderr: '' }
+    })
+    const launched = launch(async () => activeUnit(), { spawnSync: spawnSync as never })
+    launched.child.exit(127, null)
+    await expect(launched.result.direct).rejects.toThrow('before its bootstrap consumed')
+    await expect(launched.result.owner.waitForExit()).rejects.toBe(stopError)
+    launched.result.owner.cleanup?.()
+  })
+
+  it('formats a non-missing stop status failure when systemctl has no error object', async () => {
+    const spawnSync = vi.fn((_command: string, args: readonly string[]) => {
+      if (args.includes('stop')) return { status: 1, stdout: '', stderr: '' }
+      return { status: 0, stdout: '', stderr: '' }
+    })
+    const launched = launch(async () => activeUnit(), { spawnSync: spawnSync as never })
+    launched.child.exit(127, null)
+    await expect(launched.result.direct).rejects.toThrow('before its bootstrap consumed')
+    await expect(launched.result.owner.waitForExit()).rejects.toThrow('systemctl could not stop')
+    launched.result.owner.cleanup?.()
+  })
+
+  it('replays a pending SIGKILL after stopping an unconsumed active scope', async () => {
+    let firstKill = true
+    let stateQueries = 0
+    const spawnSync = vi.fn((_command: string, args: readonly string[]) => {
+      if (args.includes('--signal=SIGKILL') && firstKill) {
+        firstKill = false
+        return missingUnit()
+      }
+      return { status: 0, stdout: '', stderr: '' }
+    })
+    const launched = launch(
+      async () => {
+        stateQueries += 1
+        return stateQueries < 3 ? activeUnit() : unloadedUnit()
+      },
+      { spawnSync: spawnSync as never, sleep: async () => {} },
+    )
+    launched.result.owner.signal('SIGKILL')
+    launched.child.exit(null, 'SIGKILL')
+    await expect(launched.result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGKILL' })
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    expect(spawnSync.mock.calls.map((call) => {
+      const args = call[1]
+      return args.includes('stop') ? 'stop' : args.find(argument => argument.startsWith('--signal='))
+    })).toEqual([
+      '--signal=SIGKILL',
+      'stop',
+      '--signal=SIGKILL',
+    ])
+    expect(spawnSync.mock.calls[1]?.[1]).toEqual(expect.arrayContaining(['--user', 'stop', '--no-block']))
+    launched.result.owner.cleanup?.()
+  })
+
+  it('waits for manager confirmation when stopping an unconsumed scope reports missing', async () => {
+    let stopAttempts = 0
+    let stateQueries = 0
+    const spawnSync = vi.fn((_command: string, args: readonly string[]) => {
+      if (args.includes('stop')) {
+        stopAttempts += 1
+        return stopAttempts === 1 ? missingUnit() : { status: 0, stdout: '', stderr: '' }
+      }
+      return { status: 0, stdout: '', stderr: '' }
+    })
+    const launched = launch(
+      async () => {
+        stateQueries += 1
+        return stateQueries < 3 ? activeUnit() : missingUnit()
+      },
+      { spawnSync: spawnSync as never, sleep: async () => {} },
+    )
+    launched.child.exit(127, null)
+    await expect(launched.result.direct).rejects.toThrow('before its bootstrap consumed')
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    expect(stopAttempts).toBe(2)
+    expect(spawnSync).toHaveBeenCalledWith('/bin/systemctl', expect.arrayContaining([
+      '--user', 'stop', '--no-block', expect.stringMatching(/\.scope$/u),
+    ]), expect.anything())
+    launched.result.owner.cleanup?.()
+  })
+
+  it.each(['SIGTERM', 'SIGKILL'] as const)('preserves %s before the ordinary bootstrap consumes its request', async (signal) => {
+    const { child, result, requestPath } = launch(async () => missingUnit())
+    expect(existsSync(requestPath)).toBe(true)
+    child.exit(null, signal)
+    await expect(result.direct).resolves.toEqual({ exitCode: null, signal })
+    await expect(result.owner.waitForExit()).resolves.toBeUndefined()
+    result.owner.cleanup?.()
+    expect(existsSync(linuxLaunchFilesFromLocator(requestPath).directory)).toBe(false)
+  })
+
   it('reconstructs a pre-exec startup error instead of exposing bootstrap exit 127', async () => {
     const { child, result, requestPath } = launch(async () => missingUnit())
     const files = linuxLaunchFilesFromLocator(requestPath)
@@ -353,7 +503,7 @@ describe('Linux scope establishment and quiescence', () => {
       type: 'error',
       error: { name: 'Error', message: 'spawn tool ENOENT', code: 'ENOENT' },
     })
-    child.exit(127, null)
+    child.exit(null, 'SIGTERM')
     await expect(result.direct).rejects.toMatchObject({ code: 'ENOENT' })
     result.owner.cleanup?.()
   })
@@ -441,6 +591,154 @@ describe('Linux scope establishment and quiescence', () => {
     await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
     launched.result.owner.terminateForHostExit()
     expect(spawnSync).toHaveBeenCalledTimes(4)
+    launched.result.owner.cleanup?.()
+  })
+
+  it('replays the strongest pending cancellation when a scope appears late', async () => {
+    const spawnSync = vi.fn()
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'Unit dsh.scope could not be found.' })
+      .mockReturnValueOnce({ status: 0, stdout: '', stderr: '' })
+    const states = [missingUnit(), activeUnit(), activeUnit('inactive')]
+    const launched = launch(async () => states.shift() ?? activeUnit('inactive'), {
+      spawnSync: spawnSync as never,
+      sleep: async () => {},
+    })
+    const waiting = launched.result.owner.waitForExit()
+    launched.result.owner.signal('SIGTERM')
+    await expect(waiting).resolves.toBeUndefined()
+    expect(launched.child.kills).toEqual(['SIGTERM'])
+    expect(spawnSync).toHaveBeenNthCalledWith(1, '/bin/systemctl', expect.arrayContaining(['--signal=SIGTERM']), expect.anything())
+    expect(spawnSync).toHaveBeenNthCalledWith(2, '/bin/systemctl', expect.arrayContaining(['--signal=SIGTERM']), expect.anything())
+    expect(spawnSync).toHaveBeenCalledTimes(2)
+    launched.result.owner.cleanup?.()
+  })
+
+  it('keeps a consumed bootstrap cancellation pending until the active scope is observed', async () => {
+    const spawnSync = vi.fn()
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'Unit dsh.scope could not be found.' })
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'Unit dsh.scope could not be found.' })
+      .mockReturnValueOnce({ status: 0, stdout: '', stderr: '' })
+    const states = [activeUnit(), activeUnit('inactive')]
+    const launched = launch(async () => states.shift() ?? activeUnit('inactive'), {
+      spawnSync: spawnSync as never,
+      sleep: async () => {},
+    })
+    launched.child.pid = undefined
+    consumeLinuxLaunchRequest(launched.requestPath)
+    const waiting = launched.result.owner.waitForExit()
+    launched.result.owner.signal('SIGTERM')
+    launched.result.owner.signal('SIGKILL')
+    await expect(waiting).resolves.toBeUndefined()
+    expect(launched.child.kills).toEqual([])
+    expect(spawnSync).toHaveBeenNthCalledWith(1, '/bin/systemctl', expect.arrayContaining(['--signal=SIGTERM']), expect.anything())
+    expect(spawnSync).toHaveBeenNthCalledWith(2, '/bin/systemctl', expect.arrayContaining(['--signal=SIGKILL']), expect.anything())
+    expect(spawnSync).toHaveBeenNthCalledWith(3, '/bin/systemctl', expect.arrayContaining(['--signal=SIGKILL']), expect.anything())
+    expect(spawnSync).toHaveBeenCalledTimes(3)
+    launched.result.owner.cleanup?.()
+  })
+
+  it('does not replay a signal after the initial scope kill succeeds', async () => {
+    const spawnSync = vi.fn(() => ({ status: 0, stdout: '', stderr: '' }))
+    const states = [activeUnit(), activeUnit('inactive')]
+    const launched = launch(async () => states.shift() ?? activeUnit('inactive'), {
+      spawnSync: spawnSync as never,
+      sleep: async () => {},
+    })
+    const waiting = launched.result.owner.waitForExit()
+    launched.result.owner.signal('SIGTERM')
+    await expect(waiting).resolves.toBeUndefined()
+    expect(spawnSync).toHaveBeenCalledOnce()
+    launched.result.owner.cleanup?.()
+  })
+
+  it('retains a pending signal when a replay sees a missing unit', async () => {
+    const spawnSync = vi.fn()
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'Unit dsh.scope could not be found.' })
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'Unit dsh.scope could not be found.' })
+      .mockReturnValueOnce({ status: 0, stdout: '', stderr: '' })
+    const states = [activeUnit(), activeUnit(), activeUnit('inactive')]
+    const launched = launch(async () => states.shift() ?? activeUnit('inactive'), {
+      spawnSync: spawnSync as never,
+      sleep: async () => {},
+    })
+    const waiting = launched.result.owner.waitForExit()
+    launched.result.owner.signal('SIGTERM')
+    await expect(waiting).resolves.toBeUndefined()
+    expect(spawnSync).toHaveBeenNthCalledWith(1, '/bin/systemctl', expect.arrayContaining(['--signal=SIGTERM']), expect.anything())
+    expect(spawnSync).toHaveBeenNthCalledWith(2, '/bin/systemctl', expect.arrayContaining(['--signal=SIGTERM']), expect.anything())
+    expect(spawnSync).toHaveBeenNthCalledWith(3, '/bin/systemctl', expect.arrayContaining(['--signal=SIGTERM']), expect.anything())
+    expect(spawnSync).toHaveBeenCalledTimes(3)
+    launched.result.owner.cleanup?.()
+  })
+
+  it.each([
+    ['missing', { status: 1, stdout: '', stderr: 'Unit dsh.scope could not be found.' }],
+    ['successful weaker signal', { status: 0, stdout: '', stderr: '' }],
+  ] as const)('does not downgrade a pending SIGKILL when a later TERM arrives (%s)', async (_outcome, weakerResult) => {
+    const spawnSync = vi.fn()
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'Unit dsh.scope could not be found.' })
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'Unit dsh.scope could not be found.' })
+      .mockReturnValueOnce(weakerResult)
+      .mockReturnValueOnce({ status: 0, stdout: '', stderr: '' })
+    const states = [activeUnit(), activeUnit('inactive')]
+    const launched = launch(async () => states.shift() ?? activeUnit('inactive'), {
+      spawnSync: spawnSync as never,
+      sleep: async () => {},
+    })
+    const waiting = launched.result.owner.waitForExit()
+    launched.result.owner.signal('SIGTERM')
+    launched.result.owner.signal('SIGKILL')
+    launched.result.owner.signal('SIGTERM')
+    await expect(waiting).resolves.toBeUndefined()
+    expect(spawnSync).toHaveBeenNthCalledWith(1, '/bin/systemctl', expect.arrayContaining(['--signal=SIGTERM']), expect.anything())
+    expect(spawnSync).toHaveBeenNthCalledWith(2, '/bin/systemctl', expect.arrayContaining(['--signal=SIGKILL']), expect.anything())
+    expect(spawnSync).toHaveBeenNthCalledWith(3, '/bin/systemctl', expect.arrayContaining(['--signal=SIGTERM']), expect.anything())
+    expect(spawnSync).toHaveBeenNthCalledWith(4, '/bin/systemctl', expect.arrayContaining(['--signal=SIGKILL']), expect.anything())
+    expect(spawnSync).toHaveBeenCalledTimes(4)
+    launched.result.owner.cleanup?.()
+  })
+
+  it('upgrades a pending replay when a stronger signal arrives during polling', async () => {
+    const spawnSync = vi.fn()
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'Unit dsh.scope could not be found.' })
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'Unit dsh.scope could not be found.' })
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'Unit dsh.scope could not be found.' })
+      .mockReturnValueOnce({ status: 0, stdout: '', stderr: '' })
+    const states = [activeUnit(), activeUnit(), activeUnit('inactive')]
+    const owner = { current: undefined as { signal: (signal: 'SIGTERM' | 'SIGKILL') => void } | undefined }
+    let injected = false
+    const launched = launch(async () => states.shift() ?? activeUnit('inactive'), {
+      spawnSync: spawnSync as never,
+      sleep: async () => {
+        if (!injected) {
+          injected = true
+          owner.current?.signal('SIGKILL')
+        }
+      },
+    })
+    owner.current = launched.result.owner
+    owner.current.signal('SIGTERM')
+    const waiting = launched.result.owner.waitForExit()
+    await expect(waiting).resolves.toBeUndefined()
+    expect(spawnSync.mock.calls.map(call => (call[1] as string[]).find(argument => argument.startsWith('--signal=')))).toEqual([
+      '--signal=SIGTERM',
+      '--signal=SIGTERM',
+      '--signal=SIGKILL',
+      '--signal=SIGKILL',
+    ])
+    launched.result.owner.cleanup?.()
+  })
+
+  it('reports a non-missing failure while replaying a pending SIGKILL', async () => {
+    const spawnSync = vi.fn()
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'Unit dsh.scope could not be found.' })
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'permission denied' })
+    const launched = launch(async () => activeUnit(), {
+      spawnSync: spawnSync as never,
+    })
+    const waiting = launched.result.owner.waitForExit()
+    launched.result.owner.signal('SIGKILL')
+    await expect(waiting).rejects.toThrow('could not signal')
     launched.result.owner.cleanup?.()
   })
 
@@ -568,8 +866,19 @@ describe('Linux PTY bootstrap reuse', () => {
     writeLinuxStartupError(files, {
       type: 'error', error: { name: 'Error', message: 'bad cwd', code: 'ENOENT' },
     })
-    expect(() => scope.resolveOutcome({ exitCode: 127, signal: null })).toThrow('bad cwd')
+    expect(() => scope.resolveOutcome({ exitCode: null, signal: 'SIGTERM' })).toThrow('bad cwd')
     scope.cleanup()
+  })
+
+  it.each(['SIGTERM', 'SIGKILL'] as const)('preserves %s before the terminal bootstrap consumes its request', (signal) => {
+    const scope = prepareLinuxTerminalScope(terminalSpec, { TARGET: 'yes' })
+    const requestPath = scope.env[SUBPROCESS_RUNNER_ENV]
+    if (requestPath === undefined) throw new Error('missing PTY request')
+    directories.push(linuxLaunchFilesFromLocator(requestPath).directory)
+    expect(existsSync(requestPath)).toBe(true)
+    expect(scope.resolveOutcome({ exitCode: null, signal })).toEqual({ exitCode: null, signal })
+    scope.cleanup()
+    expect(existsSync(linuxLaunchFilesFromLocator(requestPath).directory)).toBe(false)
   })
 
   it('uses default owner dependencies and rejects an unconsumed request', () => {

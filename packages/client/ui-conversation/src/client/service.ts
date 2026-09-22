@@ -547,9 +547,11 @@ export class ConversationController extends Service implements IConversation {
       remaining -= encodedLength
     }
 
-    // Keep only one raw File buffer live at a time. The encoded strings must
-    // remain until the request is sent, but concurrent arrayBuffer() calls
-    // would additionally retain every large source buffer at once.
+    // Encode sequentially: each step reads one File into a raw buffer, base64-
+    // encodes it, and drops the buffer, so the only retained growth is the
+    // encoded strings the request itself carries. Encoding several at once
+    // would hold their raw buffers beside those strings, and the carrier
+    // budget already permits more raw bytes than the process can spare.
     const serialized: Parameters<SessionFace['prompt']>[0] = []
     for (const attachment of attachments) {
       if (attachment.kind === 'image') {

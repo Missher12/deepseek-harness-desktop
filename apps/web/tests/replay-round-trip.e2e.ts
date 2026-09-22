@@ -210,21 +210,27 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     await expect.poll(() => body.count()).toBe(0)
   })
 
-  it.skipIf(MODE === 'record')('expands and collapses the reasoning fold from its click target', async () => {
+  it.skipIf(MODE === 'record')('keeps reasoning readable with no fold of its own', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-round-trip-think'))
-    // Interaction over the REAL wire-delivered transcript (the fixture-client
-    // tier pins the same gesture against the fixture Connection RPC; this one runs on
-    // follow-stream-fed state). Runs after the golden capture so the committed
-    // aria surface stays the untouched settled state.
+    // Interaction over the REAL wire-delivered transcript. Runs after the
+    // golden capture so the committed aria surface stays the untouched settled
+    // state. The reasoning has no control to operate: it is literal text in the
+    // reading flow, and reopening the surrounding process disclosure must not
+    // fold it away.
     await expandTurnProcesses(page)
-    const think = page.locator('[data-variant="think"] button[aria-expanded]').first()
-    expect(await think.getAttribute('aria-label')).toBe('Expand reasoning')
-    expect(await think.getAttribute('aria-expanded')).toBe('false')
-    await think.click()
-    await expect.poll(() => think.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('true')
-    expect(await think.getAttribute('aria-label')).toBe('Collapse reasoning')
-    await think.click()
-    await expect.poll(() => think.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('false')
+    const row = page.locator('[data-variant="think"]').first()
+    expect(await row.count()).toBe(1)
+    expect(await row.locator('button').count()).toBe(0)
+    expect(await row.locator('[role="region"]').count()).toBe(0)
+    const body = row.locator('> div:last-child')
+    expect(await body.isVisible()).toBe(true)
+    const text = await body.textContent()
+    expect(text).not.toBe('')
+    // It grows with its content instead of clipping it behind a fixed height.
+    await expect.poll(async () => body.evaluate(node => node.scrollHeight <= node.clientHeight + 1), { timeout: 5_000 })
+      .toBe(true)
+    expect(await body.evaluate(node => node.getBoundingClientRect().height)).toBeGreaterThan(0)
+    expect(await body.textContent()).toBe(text)
   })
 
   it.skipIf(MODE === 'record')('stayed clean: no pageerrors, no reconnect self-healing, no server errors', async () => {

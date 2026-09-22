@@ -257,8 +257,12 @@ describe('canonical event-local surface metadata', () => {
       expect(() => accept(markerless as SessionEvent)).toThrow(/requires a surfaceOp marker/)
       expect(() => accept({ type: 'turn/start', seq: SessionSeq(0), time: 1, data: { turn: 1 }, surfaceOp: 'append' } as never))
         .toThrow(/not surface-eligible/)
-      expect(() => accept({ type: 'turn/start', seq: SessionSeq(0), time: 1, data: { turn: 1 }, sourceEventSeqs: [0] } as never))
-        .toThrow(/not surface-eligible/)
+      // Session.append's typed non-surface options are LogIntent, so this
+      // malformed source-only envelope is exercised by the raw restore paths.
+      if (path !== 'append') {
+        expect(() => accept({ type: 'turn/start', seq: SessionSeq(0), time: 1, data: { turn: 1 }, sourceEventSeqs: [0] } as never))
+          .toThrow(/not surface-eligible/)
+      }
       const assistant = {
         ...userEvent(), type: 'assistant/message', sourceEventSeqs: [0],
         data: { turn: 1, step: 1, stream: [], message: createMessage({
@@ -289,7 +293,12 @@ describe('canonical event-local surface metadata', () => {
       const event = {
         type, seq: SessionSeq(0), time: 1, data: { turn: 1, step: 1, stream: [] }, ignorable: true, ...metadata,
       } as unknown as SessionEvent
-      for (const accept of Object.values(entryPaths)) expect(() => accept(event)).toThrow(/not surface-eligible/)
+      for (const [path, accept] of Object.entries(entryPaths)) {
+        // A source-only option is not representable by append's LogIntent
+        // overload and is therefore omitted by the public constructor path.
+        if (path === 'append' && !('surfaceOp' in metadata)) continue
+        expect(() => accept(event)).toThrow(/not surface-eligible/)
+      }
     }
   })
 

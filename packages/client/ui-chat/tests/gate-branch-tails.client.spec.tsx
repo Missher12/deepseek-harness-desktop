@@ -12,11 +12,28 @@ import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 const t: AssistantMarkdownProps['t'] = makeTranslate(zh, commonZh)
 const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
 
+/** Complete received reasoning text, independent of the painted prefix. */
+function fullReasoning(container: HTMLElement): string | null {
+  return container.querySelector('[data-reasoning-full]')?.getAttribute('data-reasoning-full') ?? null
+}
+
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class {
     observe(): void {}
     disconnect(): void {}
   })
+  // The streaming tail paints on animation frames; running the frame inline
+  // keeps these branch assertions about the settled block, not about timing.
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    callback(0)
+    return 0
+  })
+  vi.stubGlobal('cancelAnimationFrame', () => {})
+  vi.stubGlobal('matchMedia', () => ({
+    matches: false,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }))
 })
 
 afterEach(() => {
@@ -35,8 +52,9 @@ describe('render branch tails', () => {
         renderMessageImages={renderMessageImages}
       />,
     )
-    // reasoning at index 0 with a later block: running is false → ok state.
-    expect(view.getByRole('region', { name: '思考内容' }).textContent).toBe('done thinking')
+    // reasoning at index 0 with a later block: running is false → ok state, and
+    // a settled block never animates.
+    expect(fullReasoning(view.container)).toBe('done thinking')
     expect(view.queryByText('运行中')).toBeNull()
   })
 
@@ -71,7 +89,7 @@ describe('render branch tails', () => {
         renderMessageImages={renderMessageImages}
       />,
     )
-    expect(view.getByRole('region', { name: '思考内容' }).textContent).toBe('still thinking')
+    expect(fullReasoning(view.container)).toBe('still thinking')
     expect(view.getByText('运行中')).toBeTruthy()
   })
 

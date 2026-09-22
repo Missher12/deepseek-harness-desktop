@@ -10,11 +10,26 @@ import { zh } from '../src/client/locale.ts'
 const t: AssistantMarkdownProps['t'] = makeTranslate(zh, commonZh)
 const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
 
+/** Complete received reasoning text, independent of the painted prefix. */
+function fullReasoning(container: HTMLElement): string | null {
+  return container.querySelector('[data-reasoning-full]')?.getAttribute('data-reasoning-full') ?? null
+}
+
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class {
     observe = vi.fn()
     disconnect = vi.fn()
   })
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    callback(0)
+    return 0
+  })
+  vi.stubGlobal('cancelAnimationFrame', () => {})
+  vi.stubGlobal('matchMedia', () => ({
+    matches: false,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }))
 })
 
 afterEach(() => {
@@ -37,7 +52,8 @@ describe('tails', () => {
       />,
     )
     expect(view.getByText('思考')).toBeTruthy()
-    expect(view.getByRole('region', { name: '思考内容' }).textContent).toBe('thinking hard\nsecond line')
+    // The full received text rides the body whatever the paint has reached.
+    expect(fullReasoning(view.container)).toBe('thinking hard\nsecond line')
     expect(view.getByText(/未知内容块/)).toBeTruthy()
     const stopped = render(
       <AssistantMarkdown

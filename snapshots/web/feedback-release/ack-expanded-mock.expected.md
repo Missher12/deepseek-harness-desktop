@@ -24,11 +24,8 @@
   - img
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
-- button "Expand reasoning":
-  - img
-  - text: Think
-  - img
-- region "Reasoning content": The user wants me to reply with a single word. Let me comply.
+- img
+- text: Think The user wants me to reply with a single word. Let me comply.
 - paragraph: LIGHTHOUSE
 - button "Copy":
   - img

@@ -15,6 +15,7 @@ import { lstat, mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 
 const WINDOWS_TRANSIENT_RENAME_ERRORS: ReadonlySet<string> = new Set(['EACCES', 'EBUSY', 'EPERM'])
+const WINDOWS_TRANSIENT_LOCK_PROBE_ERRORS: ReadonlySet<string> = new Set(['EACCES', 'EBUSY', 'EPERM'])
 const WINDOWS_RENAME_RETRY_INITIAL_MS = 20
 const WINDOWS_RENAME_RETRY_MAX_MS = 200
 const WINDOWS_RENAME_RETRY_LIMIT = 8
@@ -102,11 +103,11 @@ async function isLockContention(error: unknown, lockPath: string): Promise<boole
     return true
   } catch (probeError) {
     // Windows can transiently deny metadata access to the same fresh lock that
-    // made exclusive create fail. A parent listing still proves the exact
-    // directory entry exists without treating an unrelated permission failure
-    // as contention.
+    // made exclusive create fail. EACCES, EBUSY, and EPERM are accepted only
+    // when a parent listing proves the exact directory entry exists, so an
+    // unrelated permission failure remains the original lock refusal.
     if (process.platform !== 'win32'
-      || (probeError as NodeJS.ErrnoException | null)?.code !== 'EPERM') return false
+      || !WINDOWS_TRANSIENT_LOCK_PROBE_ERRORS.has((probeError as NodeJS.ErrnoException | null)?.code ?? '')) return false
     try {
       return (await readdir(dirname(lockPath))).includes(basename(lockPath))
     } catch {

@@ -19,11 +19,8 @@
 - button "Copy":
   - img
 - tooltip "Copy"
-- button "Expand reasoning":
-  - img
-  - text: Think
-  - img
-- region "Reasoning content": The user wants me to read a.txt and b.txt, then reply with "DONE". Let me do both reads in parallel.
+- img
+- text: Think The user wants me to read a.txt and b.txt, then reply with "DONE". Let me do both reads in parallel.
 - paragraph: I will read both files before answering.
 - button "Copy":
   - img

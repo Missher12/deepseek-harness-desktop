@@ -1,5 +1,7 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { spawnSync } from 'node:child_process'
 import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 
@@ -10,7 +12,15 @@ const workflow = yaml.load(readFileSync(resolve(import.meta.dirname, '../.github
   env: Record<string, string>
   jobs: Record<'preview', {
     'runs-on': string
-    steps: Array<{ name?: string; uses?: string; run?: string; with?: Record<string, unknown>; env?: Record<string, string> }>
+    steps: Array<{
+      name?: string
+      id?: string
+      if?: string
+      uses?: string
+      run?: string
+      with?: Record<string, unknown>
+      env?: Record<string, string>
+    }>
   }>
 }
 const preview = workflow.jobs.preview
@@ -59,5 +69,44 @@ describe('PR preview workflow', () => {
     const comment = preview.steps.find(step => step.name === 'Comment the preview URL')!
     expect(comment.run).toContain('<!-- dsh-preview-url -->')
     expect(comment.run).toContain('gh pr comment "$PR" --body-file -')
+  })
+
+  it('gates only deployment, remote verification, and URL comments on configured credentials', () => {
+    const gated = preview.steps.filter(step => step.if)
+    expect(gated.map(step => step.name)).toEqual([
+      'Upload to Cloudflare Pages', 'Verify the protected deployment serves the image', 'Comment the preview URL',
+    ])
+    for (const step of gated) expect(step.if).toBe("steps.preview-config.outputs.enabled == 'true'")
+    expect(preview.steps.findIndex(step => step.id === 'preview-config'))
+      .toBeLessThan(preview.steps.findIndex(step => step.name === 'Upload to Cloudflare Pages'))
+  })
+
+  const names = ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET']
+  it.each([0, 1, 2, 3, 4])('executes the configuration check with %i configured credentials', (count) => {
+    const step = preview.steps.find(item => item.id === 'preview-config')!
+    const source = step.run?.match(/^node --input-type=module <<'NODE'\n([\s\S]+)\nNODE\s*$/)?.[1]
+    expect(source).toBeDefined()
+    for (const name of names) expect(step.env?.[name]).toBe('${{ secrets.' + name + ' }}')
+    const scratch = mkdtempSync(join(tmpdir(), 'dsh-preview-config-'))
+    try {
+      const output = join(scratch, 'output')
+      const summary = join(scratch, 'summary')
+      const credentials = Object.fromEntries(names.map((name, i) => [name, i < count ? `synthetic-private-value-${i}` : '']))
+      const result = spawnSync(process.execPath, ['--input-type=module', '--eval', source!], {
+        env: { ...process.env, ...credentials, GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: summary }, encoding: 'utf8',
+      })
+      expect(result.error).toBeUndefined()
+      expect(result.stdout + result.stderr).not.toContain('synthetic-private-value-')
+      if (count === 0 || count === names.length) {
+        expect(result.status).toBe(0)
+        expect(readFileSync(output, 'utf8')).toBe(`enabled=${count === names.length}\n`)
+        if (count === 0) expect(readFileSync(summary, 'utf8')).toContain('no preview was deployed')
+      } else {
+        expect(result.status).not.toBe(0)
+        expect(result.stderr).toContain('configuration is incomplete')
+      }
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
+    }
   })
 })
